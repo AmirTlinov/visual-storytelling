@@ -86,9 +86,16 @@ export async function packDirectory(directory, page = 'index.html', { inline = f
       }
     if (!inline) return result;
     // The renderer consumes a fragment; keep the same main, styles, scripts and attribution.
+    let inHead = false;
     result = result.replace(
-      /<!doctype[^>]*>|<\/?html\b[^>]*>|<\/?head>|<\/?body\b[^>]*>|<title>[\s\S]*?<\/title>/gi,
-      '',
+      /<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>|<!doctype[^>]*>|<\/?(html|head|body)\b[^>]*>|<title\b[^>]*>[\s\S]*?<\/title>/gi,
+      (token, raw, wrapper) => {
+        // SVG titles and markup inside code/styles are part of the scene.
+        if (raw) return token;
+        if (wrapper?.toLowerCase() === 'head') inHead = !token.startsWith('</');
+        if (/^<title\b/i.test(token)) return inHead ? '' : token;
+        return '';
+      },
     );
     if (Buffer.byteLength(result) <= 1_000_000) return result;
     if (bitrate === '24k')

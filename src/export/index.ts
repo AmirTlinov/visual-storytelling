@@ -13,6 +13,7 @@ const properties = [
   'stroke-linejoin',
   'stroke-dasharray',
   'stroke-dashoffset',
+  'vector-effect',
   'stop-color',
   'stop-opacity',
   'flood-color',

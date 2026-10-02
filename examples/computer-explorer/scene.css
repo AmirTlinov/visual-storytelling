@@ -1,0 +1,320 @@
+#computer-explorer {
+  color: var(--p-ink);
+  font:
+    14px/1.4 -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+}
+#computer-explorer * {
+  box-sizing: border-box;
+}
+#computer-explorer .explorer-app {
+  position: relative;
+  background: transparent;
+}
+
+#computer-explorer .explorer-architecture {
+  justify-content: center;
+  gap: 4px;
+}
+#computer-explorer [hidden] {
+  display: none !important;
+}
+#computer-explorer button {
+  font: inherit;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#computer-explorer[data-scene='board'] .explorer-viewport {
+  height: 650px;
+}
+#computer-explorer .nand-controls {
+  padding: 0 8px 8px;
+}
+#computer-explorer .nand-controls .viz-row {
+  justify-content: center;
+}
+#computer-explorer .nand-controls p {
+  text-align: center;
+  margin: 4px 0 8px;
+}
+
+#computer-explorer .explorer-footer {
+  padding: 0 8px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+#computer-explorer .explorer-caption {
+  margin: 0;
+  color: var(--p-muted);
+  font-size: 12px;
+  text-align: center;
+}
+#computer-explorer .explorer-leaf-controls:empty {
+  display: none;
+}
+#computer-explorer .explorer-leaf-controls button {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  min-height: 44px;
+  padding: 8px 12px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: var(--p-border);
+}
+#computer-explorer .explorer-leaf-controls button[aria-pressed='true'] {
+  color: var(--p-accent);
+  text-decoration-color: var(--p-accent);
+}
+#computer-explorer .explorer-back:hover,
+#computer-explorer .explorer-reset:hover,
+#computer-explorer .explorer-path button:hover,
+#computer-explorer .explorer-leaf-controls button:hover {
+  background: color-mix(in srgb, var(--p-ink) 6%, transparent);
+}
+#computer-explorer .part-symbol .active-path {
+  fill: none;
+  stroke: var(--p-accent);
+  stroke-width: 2.4;
+}
+#computer-explorer .part-symbol .display-grid {
+  fill: none;
+  stroke: var(--p-ink);
+  stroke-opacity: 0.16;
+  stroke-width: 0.5;
+  vector-effect: non-scaling-stroke;
+}
+#computer-explorer .part-symbol .charge {
+  fill: var(--p-accent);
+}
+#computer-explorer .part-symbol .arrow {
+  fill: var(--p-ink);
+  stroke: none;
+}
+#computer-explorer .part-symbol .node-title {
+  font-weight: 500;
+}
+#computer-explorer .part-symbol .cable {
+  fill: none;
+  stroke: var(--p-chip);
+  stroke-width: 2.3;
+}
+#computer-explorer .part-symbol .storage-bond {
+  fill: none;
+  stroke: var(--p-gold);
+  stroke-width: 0.8;
+}
+#computer-explorer .part-symbol .storage-track {
+  fill: none;
+  stroke: var(--p-metal-hi);
+  stroke-width: 0.55;
+  opacity: 0.65;
+}
+#computer-explorer .part-symbol .leader {
+  fill: none;
+  stroke: var(--p-muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+#computer-explorer .cpu-clock {
+  padding: 0 8px 8px;
+}
+#computer-explorer .cpu-clock-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+}
+#computer-explorer .cpu-clock-signal {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+#computer-explorer .cpu-clock-wave {
+  display: block;
+  width: 120px;
+  height: 28px;
+  overflow: visible;
+}
+#computer-explorer .cpu-clock-wave path {
+  fill: none;
+  stroke: var(--p-muted);
+  stroke-width: 1.5;
+}
+#computer-explorer .cpu-clock-wave line {
+  stroke: var(--p-accent);
+  stroke-width: 2;
+}
+#computer-explorer .cpu-clock-status {
+  margin: 4px 0 0;
+  text-align: center;
+}
+#computer-explorer .part-symbol .cycle-wire {
+  fill: none;
+  stroke: var(--p-muted);
+  stroke-width: 1.5;
+}
+#computer-explorer .part-symbol .cycle-wire.ready {
+  stroke: var(--p-accent);
+  stroke-width: 2;
+}
+#computer-explorer .part-symbol .cycle-wire.pending {
+  stroke-dasharray: 3 4;
+}
+#computer-explorer .part-symbol .cycle-direction {
+  fill: none;
+  stroke: var(--p-muted);
+  stroke-width: 1.5;
+}
+#computer-explorer .part-symbol [data-state='1'] .paper {
+  fill: color-mix(in srgb, var(--p-accent) 18%, var(--p-surface));
+}
+#computer-explorer .part-symbol .cycle-value {
+  fill: var(--p-ink);
+}
+#computer-explorer .part-symbol .memory-wire {
+  fill: none;
+  stroke: var(--p-ink);
+  stroke-width: 1;
+}
+#computer-explorer .part-symbol .memory-mini .line,
+#computer-explorer .part-symbol .memory-mini .outline {
+  stroke-width: 0.75;
+}
+#computer-explorer .image-job {
+  padding: 0 8px 8px;
+}
+#computer-explorer .image-job-actions,
+#computer-explorer .image-job-flow {
+  justify-content: center;
+}
+#computer-explorer .image-job-flow {
+  gap: 2px;
+}
+#computer-explorer .image-job-flow > span {
+  color: var(--p-muted);
+}
+#computer-explorer .image-job p {
+  text-align: center;
+  margin: 4px 0;
+}
+#computer-explorer .part-symbol .job-selected {
+  stroke: var(--p-accent);
+  stroke-width: 2;
+}
+#computer-explorer .part-symbol [data-job-active] {
+  filter: drop-shadow(0 0 3px var(--p-accent));
+}
+#computer-explorer .display-controls {
+  padding: 0 8px 8px;
+}
+#computer-explorer .display-controls p {
+  text-align: center;
+  margin: 4px 0 8px;
+}
+#computer-explorer .display-actions {
+  display: flex;
+  justify-content: center;
+}
+#computer-explorer .display-rgb {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  max-width: 500px;
+  margin: 0 auto 8px;
+}
+@media (max-width: 520px) {
+  #computer-explorer .explorer-navigation {
+    padding: 0;
+  }
+  #computer-explorer .explorer-path button {
+    padding: 5px 6px;
+    font-size: 11px;
+  }
+  #computer-explorer .explorer-viewport {
+    height: 460px;
+  }
+  #computer-explorer[data-scene='board'] .explorer-viewport {
+    height: 680px;
+  }
+  #computer-explorer[data-scene^='nand-'] .explorer-viewport,
+  #computer-explorer[data-scene^='hdd'] .explorer-viewport,
+  #computer-explorer[data-scene^='ssd-'] .explorer-viewport,
+  #computer-explorer[data-scene='sata-ssd'] .explorer-viewport,
+  #computer-explorer[data-scene='storage-interface'] .explorer-viewport {
+    height: 320px;
+  }
+  #computer-explorer[data-scene^='image-'] .explorer-viewport {
+    height: 320px;
+  }
+  #computer-explorer[data-scene='nvme-ssd'] .explorer-viewport {
+    height: 220px;
+  }
+  #computer-explorer[data-scene='soc'] .explorer-viewport,
+  #computer-explorer[data-scene='system-fabric'] .explorer-viewport,
+  #computer-explorer[data-scene='unified-memory'] .explorer-viewport {
+    height: 300px;
+  }
+  #computer-explorer[data-clock='true'] .explorer-viewport {
+    height: 300px;
+  }
+  #computer-explorer[data-clock='true'][data-scene='gate'] .explorer-viewport {
+    height: 350px;
+  }
+}
+
+/* Engineering illustrations retain their accepted silhouette and material palette. */
+#computer-explorer.ve-scene {
+  background: none;
+  padding: 0;
+  --ve-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --ve-ink: var(--p-ink);
+  --ve-muted: var(--p-muted);
+  --ve-pencil: var(--p-accent);
+}
+#computer-explorer .viz-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+#computer-explorer .btn {
+  min-height: 44px;
+  padding: 8px 12px;
+}
+#computer-explorer button::after {
+  display: none;
+}
+#computer-explorer button[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--p-accent) 14%, transparent);
+  border-radius: 10px;
+}
+
+#computer-explorer .text-small {
+  font-size: 12px;
+}
+#computer-explorer .tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+#computer-explorer .image-job-actions > [data-job-actions] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#computer-explorer .ve-player .time:empty {
+  display: none;
+}
+#computer-explorer .display-rgb input {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--p-accent);
+}
+#computer-explorer .display-rgb label {
+  font: inherit;
+}

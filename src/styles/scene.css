@@ -77,3 +77,5 @@ html:has(>body.ve-standalone){color-scheme:light dark}
 .ve-scene .canvas .purple{color:var(--ve-purple)}
 .ve-scene .canvas .orange{color:var(--ve-orange)}
 .ve-scene .canvas .ink-line{fill:none;stroke:var(--ve-ink);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.ve-scene .ve-player[data-seekable=false]{width:auto;margin:0;container-type:normal}
+.ve-scene .ve-player[data-seekable=false] [data-next]{display:block}

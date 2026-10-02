@@ -1,0 +1,225 @@
+#computer-shapes-preview {
+  padding: 12px;
+}
+#computer-shapes-preview .parts-app {
+  --p-canvas: light-dark(#fafbfd, #1c2025);
+  --p-selected: light-dark(#eaf2fb, #27394f);
+  background: var(--p-surface);
+  color: var(--p-ink);
+  border: 1px solid var(--p-border);
+  border-radius: 16px;
+  overflow: hidden;
+  font:
+    14px/1.4 -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+}
+#computer-shapes-preview * {
+  box-sizing: border-box;
+}
+#computer-shapes-preview [hidden] {
+  display: none !important;
+}
+#computer-shapes-preview button {
+  font: inherit;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+#computer-shapes-preview .parts-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 17px 18px 7px;
+}
+#computer-shapes-preview .parts-header > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  font-size: 16px;
+}
+#computer-shapes-preview .parts-header small {
+  color: var(--p-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+#computer-shapes-preview .parts-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 7px 12px 13px;
+}
+#computer-shapes-preview .parts-tabs button {
+  min-height: 44px;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+}
+#computer-shapes-preview .parts-tabs button[aria-pressed='true'] {
+  background: var(--p-soft);
+  font-weight: 500;
+}
+#computer-shapes-preview .parts-stage {
+  background: var(--p-canvas);
+  border-block: 1px solid var(--p-border);
+  padding: 16px 20px 12px;
+}
+#computer-shapes-preview .parts-selection {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 20px;
+  align-items: center;
+}
+#computer-shapes-preview .parts-name {
+  font-size: 16px;
+  font-weight: 500;
+}
+#computer-shapes-preview .parts-type {
+  color: var(--p-muted);
+  font-size: 12px;
+}
+#computer-shapes-preview .parts-hero {
+  display: block;
+  width: 100%;
+  height: 334px;
+  overflow: visible;
+}
+#computer-shapes-preview .parts-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+}
+#computer-shapes-preview .parts-view {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--p-surface);
+  border: 1px solid var(--p-border);
+  border-radius: 8px;
+  padding: 10px 13px;
+  min-height: 44px;
+}
+#computer-shapes-preview .parts-view[aria-pressed='true'] {
+  background: var(--p-selected);
+  border-color: var(--p-accent);
+}
+#computer-shapes-preview .parts-controls label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 12px;
+  color: var(--p-muted);
+}
+#computer-shapes-preview input {
+  accent-color: var(--p-accent);
+  width: 17px;
+  height: 17px;
+  margin: 0;
+}
+#computer-shapes-preview .parts-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 12px;
+}
+#computer-shapes-preview .parts-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  padding: 7px 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+}
+#computer-shapes-preview .parts-tile:hover {
+  background: var(--p-soft);
+}
+#computer-shapes-preview .parts-tile[aria-pressed='true'] {
+  background: var(--p-selected);
+  border-color: var(--p-accent);
+}
+#computer-shapes-preview .parts-tile svg {
+  display: block;
+  width: 100%;
+  height: 76px;
+}
+#computer-shapes-preview .parts-tile span {
+  font-size: 12px;
+  font-weight: 500;
+}
+#computer-shapes-preview .parts-caption {
+  padding: 0 18px 15px;
+  color: var(--p-muted);
+  text-align: center;
+  font-size: 12px;
+  min-height: 32px;
+}
+#computer-shapes-preview .part-symbol .port-ring {
+  fill: var(--p-surface);
+  stroke: var(--p-accent);
+  stroke-width: 1.7;
+}
+#computer-shapes-preview .parts-tile .part-symbol .outline {
+  stroke-width: 1.05;
+}
+#computer-shapes-preview .parts-tile .part-symbol .line {
+  stroke-width: 1.15;
+}
+#computer-shapes-preview .parts-tile .part-symbol .fine {
+  stroke-width: 0.65;
+}
+@media (max-width: 520px) {
+  #computer-shapes-preview {
+    padding: 4px;
+  }
+  #computer-shapes-preview .parts-header {
+    padding: 13px 12px 5px;
+  }
+  #computer-shapes-preview .parts-header > span {
+    font-size: 14px;
+  }
+  #computer-shapes-preview .parts-header small {
+    font-size: 11px;
+  }
+  #computer-shapes-preview .parts-tabs {
+    padding: 5px 7px 9px;
+  }
+  #computer-shapes-preview .parts-tabs button {
+    padding: 8px 10px;
+  }
+  #computer-shapes-preview .parts-stage {
+    padding: 13px 12px 9px;
+  }
+  #computer-shapes-preview .parts-hero {
+    height: 248px;
+  }
+  #computer-shapes-preview .parts-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 8px;
+  }
+  #computer-shapes-preview .parts-tile svg {
+    height: 75px;
+  }
+  #computer-shapes-preview .parts-controls {
+    gap: 1px;
+  }
+}
+
+#computer-shapes-preview.ve-scene {
+  background: none;
+  --ve-font: -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
+  --ve-ink: var(--p-ink);
+  --ve-muted: var(--p-muted);
+}
+#computer-shapes-preview button::after {
+  display: none;
+}

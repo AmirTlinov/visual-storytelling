@@ -94,5 +94,15 @@
     "title": "Инструменты одного почерка",
     "page": "index.html",
     "time": 4
+  },
+  "computer-explorer": {
+    "title": "Внутри компьютера",
+    "page": "index.html",
+    "time": 0
+  },
+  "neuron-explorer": {
+    "title": "Внутри нейрона",
+    "page": "index.html",
+    "time": 0
   }
 }

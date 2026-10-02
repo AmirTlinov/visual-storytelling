@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Компьютерные фигуры</title>
+  </head>
+  <body class="ve-standalone">
+    <div id="computer-shapes-preview" class="ve-scene computer-art" data-paper="false">
+      <section class="parts-app" aria-label="Библиотека компьютерных фигур">
+        <header class="parts-header">
+          <span> Компьютерные фигуры</span><button type="button" data-download>Скачать SVG</button>
+        </header>
+        <nav class="parts-tabs" aria-label="Семейство фигур">
+          <button type="button" data-family="hardware" aria-pressed="true">Вычисления</button>
+          <button type="button" data-family="memory" aria-pressed="false">Память</button>
+          <button type="button" data-family="logic" aria-pressed="false">Логика</button>
+        </nav>
+        <div class="parts-stage">
+          <div class="parts-selection">
+            <span class="parts-name">GPU</span><span class="parts-type">Графический процессор</span>
+          </div>
+          <svg
+            class="parts-hero vs-canvas"
+            role="img"
+            aria-label="GPU: подложка, открытый кристалл и вычислительные секции"
+          ></svg>
+          <div class="parts-controls">
+            <button class="parts-view" type="button" aria-pressed="false">
+              <span>Снять кожух</span>
+            </button>
+            <label><input class="parts-ports" type="checkbox" /> Точки соединения</label>
+          </div>
+        </div>
+        <div class="parts-grid" aria-label="Выбрать фигуру"></div>
+        <div class="parts-caption" aria-live="polite"></div>
+      </section>
+    </div>
+
+    <script type="module" src="catalog.js"></script>
+  </body>
+</html>

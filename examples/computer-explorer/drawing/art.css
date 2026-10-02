@@ -1,0 +1,105 @@
+.computer-art {
+  --p-surface: light-dark(#fff, #22262b);
+  --p-ink: light-dark(#303d49, #dce4ec);
+  --p-muted: light-dark(#667580, #9eaeba);
+  --p-border: light-dark(#e2e7ed, #3c444f);
+  --p-soft: light-dark(#edf1f5, #303843);
+  --p-accent: light-dark(#2878c6, #83b9f0);
+  --p-board: light-dark(#d6e5df, #324b46);
+  --p-trace: light-dark(#7d9e91, #678d80);
+  --p-metal: light-dark(#d4dce5, #515f6c);
+  --p-metal-hi: light-dark(#f4f7fa, #718292);
+  --p-chip: light-dark(#4f5b68, #607080);
+  --p-chip-ink: light-dark(#edf2f8, #f1f5fa);
+  --p-die: light-dark(#9abcc2, #698e98);
+  --p-die-dark: light-dark(#6a939f, #395d6c);
+  --p-gold: light-dark(#c4a573, #bca176);
+  --p-shadow: light-dark(#b3bfcc, #14191f);
+  --p-chip-line: light-dark(#354552, #a3b2be);
+}
+.computer-art .part-symbol * {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.computer-art .part-symbol .outline {
+  stroke: var(--p-ink);
+  stroke-width: 1.6;
+}
+.computer-art .part-symbol .fine {
+  stroke: var(--p-ink);
+  stroke-width: 0.85;
+}
+.computer-art .part-symbol .line {
+  fill: none;
+  stroke: var(--p-ink);
+  stroke-width: 1.7;
+}
+.computer-art .part-symbol .trace {
+  fill: none;
+  stroke: var(--p-trace);
+  stroke-width: 1;
+}
+.computer-art .part-symbol .micro {
+  fill: none;
+  stroke: var(--p-trace);
+  stroke-width: 0.5;
+}
+.computer-art .part-symbol .engraving {
+  fill: none;
+  stroke: var(--p-chip-ink);
+  stroke-width: 0.55;
+  opacity: 0.62;
+}
+.computer-art .part-symbol .edge {
+  fill: none;
+  stroke: var(--p-metal-hi);
+  stroke-width: 0.9;
+}
+.computer-art .part-symbol .paper {
+  fill: var(--p-surface);
+}
+.computer-art .part-symbol .board {
+  fill: var(--p-board);
+}
+.computer-art .part-symbol .metal {
+  fill: var(--p-metal);
+}
+.computer-art .part-symbol .metal-hi {
+  fill: var(--p-metal-hi);
+}
+.computer-art .part-symbol .chip {
+  fill: var(--p-chip);
+  stroke: var(--p-chip-line);
+  stroke-width: 1;
+}
+.computer-art .part-symbol .die {
+  fill: var(--p-die);
+}
+.computer-art .part-symbol .die-dark {
+  fill: var(--p-die-dark);
+}
+.computer-art .part-symbol .gold {
+  fill: var(--p-gold);
+}
+.computer-art .part-symbol .shadow {
+  fill: var(--p-shadow);
+}
+.computer-art .part-symbol .soft {
+  fill: var(--p-soft);
+}
+.computer-art .part-symbol .dot {
+  fill: var(--p-ink);
+}
+.computer-art .part-symbol text {
+  fill: var(--p-ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 500;
+}
+.computer-art .part-symbol .etch {
+  fill: var(--p-chip-ink);
+}
+.computer-art .part-symbol .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 400;
+}

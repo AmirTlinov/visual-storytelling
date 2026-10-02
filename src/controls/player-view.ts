@@ -30,10 +30,20 @@ function mount(
   {
     chapters = false,
     sound = false,
+    forwardOnly = false,
+    seekable = true,
     max = 1,
     step = 0.01,
     label = 'Позиция воспроизведения',
-  }: { chapters?: boolean; sound?: boolean; max?: number; step?: number; label?: string } = {},
+  }: {
+    chapters?: boolean;
+    sound?: boolean;
+    forwardOnly?: boolean;
+    seekable?: boolean;
+    max?: number;
+    step?: number;
+    label?: string;
+  } = {},
 ) {
   element.classList.add('ve-player');
   element.setAttribute('role', 'group');
@@ -60,10 +70,12 @@ function mount(
   };
   const play = button('play', 'Воспроизвести');
   const back = chapters ? button('back', 'Предыдущий шаг') : null;
-  const next = chapters ? button('next', 'Следующий шаг') : null;
+  const next = chapters || forwardOnly ? button('next', 'Следующий шаг') : null;
   const seek = document.createElement('input');
   Object.assign(seek, { type: 'range', min: 0, max, step, value: 0 });
   seek.dataset.seek = '';
+  seek.hidden = !seekable;
+  element.dataset.seekable = String(seekable);
   seek.setAttribute('aria-label', label);
   const time = document.createElement('output');
   time.className = 'time';

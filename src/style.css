@@ -1,3 +1,4 @@
+@import './styles/explorer.css';
 @import './styles/scene.css';
 @import './styles/scene-shell.css';
 .vs-notebook{max-width:900px;margin:auto}

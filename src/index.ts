@@ -13,3 +13,6 @@ export * from './story/media.js';
 export * from './scene.js';
 export { default as rough } from 'roughjs';
 export { gsap } from 'gsap';
+export * from './explorer/index.js';
+export * from './story/simulation.js';
+export * from './host/widget-state.js';

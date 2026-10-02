@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Внутри компьютера</title>
+  </head>
+  <body class="ve-standalone">
+    <main id="computer-explorer" class="ve-scene computer-art" data-paper="false">
+      <section class="explorer-app" aria-label="Внутри компьютера">
+        <div class="explorer-architecture viz-row" role="group" aria-label="Архитектура памяти">
+          <button
+            type="button"
+            class="btn"
+            data-architecture="discrete"
+            aria-pressed="true"
+            title="CPU с оперативной памятью и отдельный GPU с GDDR"
+          >
+            RAM + VRAM
+          </button>
+          <button
+            type="button"
+            class="btn"
+            data-architecture="unified"
+            aria-pressed="false"
+            title="CPU и GPU в SoC используют общую LPDDR"
+          >
+            Unified memory
+          </button>
+        </div>
+        <div class="explorer-stage"></div>
+        <section class="image-job" aria-label="Изображение с SSD на экран">
+          <div class="viz-row image-job-actions">
+            <button type="button" class="btn" data-job-toggle aria-expanded="false">
+              SSD → экран
+            </button>
+            <div class="viz-row" data-job-actions hidden>
+              <div data-job-player></div>
+              <button type="button" class="btn" data-job-restart>Сначала</button>
+            </div>
+          </div>
+          <div
+            class="viz-row image-job-flow"
+            data-job-flow
+            role="group"
+            aria-label="Исследовать данные сценария"
+            hidden
+          >
+            <button type="button" class="btn" data-job-open="ssd" aria-pressed="false">SSD</button
+            ><span aria-hidden="true">→</span>
+            <button type="button" class="btn" data-job-open="ram" aria-pressed="false">RAM</button
+            ><span aria-hidden="true">→</span>
+            <button type="button" class="btn" data-job-open="cpu" aria-pressed="false">CPU</button
+            ><span aria-hidden="true">→</span>
+            <button type="button" class="btn" data-job-open="gpu" aria-pressed="false">GPU</button
+            ><span aria-hidden="true">→</span>
+            <button type="button" class="btn" data-job-open="monitor" aria-pressed="false">
+              LCD
+            </button>
+          </div>
+          <p class="text-small" data-job-status aria-live="polite" hidden></p>
+        </section>
+        <div class="cpu-clock" aria-label="Такт ядра C0" hidden>
+          <div class="cpu-clock-row">
+            <div data-clock-player></div>
+            <span class="cpu-clock-signal"
+              ><span class="text-small">CLK</span
+              ><svg
+                class="cpu-clock-wave"
+                viewBox="0 0 174 36"
+                role="img"
+                aria-label="CLK: фиксация результата на правом нарастающем фронте"
+              >
+                <path d="M 3 27 H 9 V 9 H 85 V 27 H 161 V 9 H 171" />
+                <line data-clock-marker x1="9" x2="9" y1="3" y2="33" /></svg
+            ></span>
+          </div>
+          <p class="text-small cpu-clock-status" data-clock-status aria-live="polite"></p>
+        </div>
+        <section class="display-controls" aria-label="Кадр и развёртка LCD" hidden>
+          <div data-display-editor hidden>
+            <p class="text-small" data-display-address></p>
+            <div class="display-rgb">
+              <label class="form-label"
+                >R <output class="tabular-nums">0</output
+                ><input
+                  class="form-range"
+                  type="range"
+                  min="0"
+                  max="255"
+                  step="1"
+                  data-display-channel="0"
+                  aria-label="Красный канал буфера кадра"
+              /></label>
+              <label class="form-label"
+                >G <output class="tabular-nums">0</output
+                ><input
+                  class="form-range"
+                  type="range"
+                  min="0"
+                  max="255"
+                  step="1"
+                  data-display-channel="1"
+                  aria-label="Зелёный канал буфера кадра"
+              /></label>
+              <label class="form-label"
+                >B <output class="tabular-nums">0</output
+                ><input
+                  class="form-range"
+                  type="range"
+                  min="0"
+                  max="255"
+                  step="1"
+                  data-display-channel="2"
+                  aria-label="Синий канал буфера кадра"
+              /></label>
+            </div>
+          </div>
+          <div class="display-actions">
+            <div class="viz-row">
+              <button type="button" class="btn" data-display-step>Прочитать строку 0</button>
+              <button type="button" class="btn" data-display-frame>Обновить кадр</button>
+              <button type="button" class="btn" data-display-light aria-pressed="true">
+                Подсветка: вкл.
+              </button>
+            </div>
+          </div>
+          <p class="text-small" data-display-status aria-live="polite"></p>
+        </section>
+        <section class="nand-controls" aria-label="Запись и стирание NAND" hidden>
+          <div class="viz-row">
+            <button type="button" class="btn" data-nand-program>Записать 0</button>
+            <button type="button" class="btn" data-nand-erase>Стереть блок</button>
+          </div>
+          <p class="text-small tabular-nums" data-nand-status aria-live="polite"></p>
+        </section>
+        <div class="explorer-footer" hidden>
+          <p class="explorer-caption" aria-live="polite"></p>
+          <div class="explorer-leaf-controls"></div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="scene.js"></script>
+  </body>
+</html>

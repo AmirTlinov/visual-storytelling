@@ -10,7 +10,7 @@ npm run build
 npm run dev
 ```
 
-Каталог должен быть пустым. Выбери пример из `examples/catalog.json` библиотеки: `area-story`, `remainder-story`, `fraction-of-a-set`, `equation-balance`, `threshold-neuron`, `bubble-sort`, `shared-memory`, `explorer-3d`, `explorer-svg`, `controls`, `logic-gates`, `geometric-tensor`, `parameter-cube`, `lc-oscillator`, `vector`, `materials`.
+Каталог должен быть пустым. Выбери пример из `examples/catalog.json` библиотеки: `area-story`, `remainder-story`, `fraction-of-a-set`, `equation-balance`, `threshold-neuron`, `bubble-sort`, `shared-memory`, `explorer-3d`, `explorer-svg`, `controls`, `logic-gates`, `geometric-tensor`, `parameter-cube`, `lc-oscillator`, `vector`, `materials`, `computer-explorer`, `neuron-explorer`.
 
 Сцена получает предметные исходники, готовые данные и версионированный tarball `@visual-storytelling/core`; `npm install` создаёт lockfile. Меняй содержание в этой папке. `npm run build` собирает `dist/`, `npm run dev` открывает HTTP-сервер с перемоткой звука. Библиотека устанавливается зависимостью; её исходники и стили в сцену не копируются.
 
@@ -108,3 +108,5 @@ npm run export -- --format mp4      # те же сцена и звуковая �
 Для показа в чате загрузи `$visualize`. Режим `--inline` сжимает звук в Opus и проверяет размер; при превышении лимита открой результат в браузере. Сохраняй атрибуцию звука. Примени [проверки формата](../SKILL.md#сделать-и-проверить) к конечной поверхности.
 
 Галерея навыка собирается из тех же исходников: в корне библиотеки `npm run build && npm run preview`. После правки производных SVG сначала `npm run generate`. Превью пересоздаёт `npm run previews`; обновляй их после визуального просмотра.
+
+Вложенные устройства и изменяемые симуляции: [камера, контуры и навигация](nested-explorer.md).

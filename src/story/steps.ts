@@ -12,6 +12,8 @@ function mount(
   root: HTMLElement,
   { count, render, initial = 0, persist = () => {}, interval = 2200 }: StepOptions,
 ) {
+  const abort = new AbortController(),
+    listen = { signal: abort.signal };
   const view = PlayerControls.mount(root.querySelector<HTMLElement>('[data-player]')!, {
     chapters: true,
     max: count - 1,
@@ -53,35 +55,60 @@ function mount(
       else schedule();
     }, interval);
   }
-  play.addEventListener('click', () => {
-    if (playing) {
+  play.addEventListener(
+    'click',
+    () => {
+      if (playing) {
+        stop();
+        return;
+      }
+      if (index === count - 1) go(0, false);
+      playing = true;
+      controls();
+      schedule();
+    },
+    listen,
+  );
+  back!.addEventListener(
+    'click',
+    () => {
       stop();
-      return;
-    }
-    if (index === count - 1) go(0, false);
-    playing = true;
-    controls();
-    schedule();
-  });
-  back!.addEventListener('click', () => {
-    stop();
-    go(index - 1);
-  });
-  next!.addEventListener('click', () => {
-    stop();
-    go(index + 1);
-  });
-  seek.addEventListener('input', () => {
-    const value = Number(seek.value);
-    stop();
-    go(value, false);
-  });
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) stop();
-  });
+      go(index - 1);
+    },
+    listen,
+  );
+  next!.addEventListener(
+    'click',
+    () => {
+      stop();
+      go(index + 1);
+    },
+    listen,
+  );
+  seek.addEventListener(
+    'input',
+    () => {
+      const value = Number(seek.value);
+      stop();
+      go(value, false);
+    },
+    listen,
+  );
+  document.addEventListener(
+    'visibilitychange',
+    () => {
+      if (document.hidden) stop();
+    },
+    listen,
+  );
   controls();
   render(index, index, false);
   return {
+    dispose() {
+      stop();
+      abort.abort();
+      view.element.replaceChildren();
+    },
     get index() {
       return index;
     },
