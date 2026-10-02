@@ -1,0 +1,275 @@
+@font-face {
+  font-family: Notebook;
+  src: url('./assets/shantell.woff2') format('woff2');
+  font-weight: 300 800;
+  font-style: normal;
+  font-display: block;
+}
+.vs-notebook {
+  font-family: Notebook, cursive;
+  color: var(--vs-ink);
+  background: transparent;
+  max-width: 900px;
+  margin: auto;
+  --vs-progress: 0%;
+  line-height: 1.5;
+}
+.vs-notebook * {
+  box-sizing: border-box;
+}
+.vs-heading {
+  text-align: center;
+  padding: 18px 10px 0;
+}
+.vs-heading h1 {
+  font-size: clamp(23px, 3.6vw, 34px);
+  font-weight: 400;
+  margin: 0;
+}
+.vs-heading p {
+  font-size: 16px;
+  margin: 6px 0 0;
+}
+.vs-canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+  color: var(--vs-ink);
+  font-family: Notebook, cursive;
+}
+.vs-canvas path {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.vs-grid {
+  opacity: var(--vs-grid-opacity);
+  pointer-events: none;
+}
+.vs-marker > path {
+  opacity: var(--vs-marker-opacity);
+}
+.vs-hatch {
+  opacity: 0.68;
+}
+.vs-parameters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px 34px;
+  padding: 8px 18px;
+}
+.vs-parameters:empty {
+  display: none;
+}
+.vs-field {
+  display: grid;
+  gap: 2px;
+  min-width: 150px;
+  flex: 1;
+  max-width: 260px;
+  font-size: 16px;
+  user-select: none;
+}
+.vs-field-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: baseline;
+}
+.vs-field output {
+  font-variant-numeric: tabular-nums;
+}
+.vs-button {
+  position: relative;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  min-height: 44px;
+  padding: 7px 12px;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  white-space: nowrap;
+}
+.vs-button:hover {
+  opacity: 0.82;
+}
+.vs-button:active {
+  transform: translateY(1px);
+}
+.vs-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.vs-button[aria-pressed='true']::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  left: 10%;
+  width: 80%;
+  height: 4px;
+  border-bottom: 1.5px solid currentColor;
+  border-radius: 45% 30% 48% 20%;
+  transform: rotate(-1deg);
+}
+.vs-button:focus {
+  outline: none;
+}
+.vs-button:focus-visible,
+.vs-range:focus-visible {
+  outline: 1.5px dashed currentColor;
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+.vs-icon-button {
+  width: 44px;
+  height: 44px;
+  padding: 5px;
+  flex: 0 0 44px;
+}
+.vs-icon-button svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.vs-icon-button svg path:first-child {
+  stroke-width: 1;
+  opacity: 0.8;
+}
+.vs-choice {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.vs-player {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 12px;
+  user-select: none;
+  width: 100%;
+}
+.vs-player > .vs-range {
+  flex: 1;
+  min-width: 36px;
+}
+.vs-time {
+  font-size: 13px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  padding: 0 6px;
+}
+.vs-range {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 38px;
+  cursor: pointer;
+  color: inherit;
+  background: transparent;
+  margin: 0;
+  accent-color: var(--vs-ink);
+  touch-action: pan-y;
+  user-select: none;
+}
+.vs-range::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 50%;
+  background: linear-gradient(
+    to right,
+    currentColor var(--vs-progress),
+    color-mix(in srgb, currentColor 20%, transparent) var(--vs-progress)
+  );
+  transform: rotate(-0.12deg);
+}
+.vs-range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 17px;
+  height: 18px;
+  margin-top: -8px;
+  border: 1.4px solid currentColor;
+  border-radius: 46% 52% 48% 44%;
+  background: light-dark(#fffdf7, #242522);
+}
+.vs-range::-moz-range-track {
+  height: 2px;
+  border-radius: 50%;
+  background: color-mix(in srgb, currentColor 20%, transparent);
+}
+.vs-range::-moz-range-progress {
+  height: 2px;
+  background: currentColor;
+}
+.vs-range::-moz-range-thumb {
+  width: 16px;
+  height: 17px;
+  border: 1.4px solid currentColor;
+  border-radius: 46% 52% 48% 44%;
+  background: light-dark(#fffdf7, #242522);
+}
+.vs-return {
+  display: block;
+  margin: 0 auto;
+  color: var(--vs-purple);
+}
+.vs-return[hidden] {
+  display: none;
+}
+.vs-status {
+  color: var(--vs-red);
+  font-size: 14px;
+  margin: 0 16px;
+}
+.vs-status:empty {
+  display: none;
+}
+.vs-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 440px) {
+  .vs-player {
+    gap: 0;
+    padding: 8px 0;
+  }
+  .vs-time {
+    font-size: 11px;
+    padding: 0 3px;
+  }
+  .vs-heading {
+    padding-top: 12px;
+  }
+  .vs-parameters {
+    gap: 6px 24px;
+    padding: 4px 12px;
+  }
+  .vs-field {
+    min-width: 120px;
+  }
+  .vs-icon-button {
+    flex-basis: 40px;
+    width: 40px;
+    padding: 5px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vs-button:active {
+    transform: none;
+  }
+}
