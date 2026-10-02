@@ -1,0 +1,363 @@
+{
+  "version": 1,
+  "sample_rate": 48000,
+  "duration": 20.0125,
+  "audio": "audio.wav",
+  "voice": "voice.wav",
+  "music": null,
+  "voice_settings": {
+    "speaker": "xenia",
+    "rate": 1.04,
+    "focus_intensity": 2
+  },
+  "segments": [
+    {
+      "id": "origin",
+      "text": "Начнём в отмеченной точке. Одна клетка — один шаг.",
+      "start": 0.48045,
+      "end": 3.73855,
+      "audio_start": 0.4,
+      "audio_end": 4.0,
+      "words": [
+        {
+          "text": "Начнём",
+          "start": 0.48045,
+          "end": 0.80223,
+          "score": 0.999
+        },
+        {
+          "text": "в",
+          "start": 0.84246,
+          "end": 0.86257,
+          "score": 1.0
+        },
+        {
+          "text": "отмеченной",
+          "start": 0.90279,
+          "end": 1.32514,
+          "score": 0.817
+        },
+        {
+          "text": "точке",
+          "start": 1.38547,
+          "end": 1.74749,
+          "score": 1.0
+        },
+        {
+          "text": "Одна",
+          "start": 2.35084,
+          "end": 2.53184,
+          "score": 1.0
+        },
+        {
+          "text": "клетка",
+          "start": 2.61229,
+          "end": 2.9743,
+          "score": 0.969
+        },
+        {
+          "text": "один",
+          "start": 3.19553,
+          "end": 3.41676,
+          "score": 0.961
+        },
+        {
+          "text": "шаг",
+          "start": 3.51732,
+          "end": 3.73855,
+          "score": 0.957
+        }
+      ]
+    },
+    {
+      "id": "horizontal",
+      "text": "Сначала пройдём три шага вправо.",
+      "start": 4.7006,
+      "end": 6.41071,
+      "audio_start": 4.6,
+      "audio_end": 6.7125,
+      "words": [
+        {
+          "text": "Сначала",
+          "start": 4.7006,
+          "end": 5.08286,
+          "score": 0.955
+        },
+        {
+          "text": "пройдём",
+          "start": 5.16333,
+          "end": 5.48524,
+          "score": 1.0
+        },
+        {
+          "text": "три",
+          "start": 5.56571,
+          "end": 5.66631,
+          "score": 1.0
+        },
+        {
+          "text": "шага",
+          "start": 5.7669,
+          "end": 5.98821,
+          "score": 1.0
+        },
+        {
+          "text": "вправо",
+          "start": 6.02845,
+          "end": 6.41071,
+          "score": 0.976
+        }
+      ]
+    },
+    {
+      "id": "vertical",
+      "text": "Затем из новой точки — два шага вверх.",
+      "start": 7.65354,
+      "end": 9.97071,
+      "audio_start": 7.5125,
+      "audio_end": 10.2125,
+      "words": [
+        {
+          "text": "Затем",
+          "start": 7.65354,
+          "end": 7.95578,
+          "score": 1.0
+        },
+        {
+          "text": "из",
+          "start": 8.03638,
+          "end": 8.11698,
+          "score": 1.0
+        },
+        {
+          "text": "новой",
+          "start": 8.17743,
+          "end": 8.39907,
+          "score": 1.0
+        },
+        {
+          "text": "точки",
+          "start": 8.45951,
+          "end": 8.84235,
+          "score": 1.0
+        },
+        {
+          "text": "два",
+          "start": 9.10429,
+          "end": 9.22519,
+          "score": 1.0
+        },
+        {
+          "text": "шага",
+          "start": 9.36623,
+          "end": 9.58787,
+          "score": 1.0
+        },
+        {
+          "text": "вверх",
+          "start": 9.64832,
+          "end": 9.97071,
+          "score": 1.0
+        }
+      ]
+    },
+    {
+      "id": "result",
+      "text": "Итоговое перемещение соединяет начало и конец пути. В исследовании меняйте оба шага, включая отрицательные значения.",
+      "start": 11.09272,
+      "end": 18.09163,
+      "audio_start": 11.0125,
+      "audio_end": 18.4125,
+      "words": [
+        {
+          "text": "Итоговое",
+          "start": 11.09272,
+          "end": 11.53391,
+          "score": 0.987
+        },
+        {
+          "text": "перемещение",
+          "start": 11.57402,
+          "end": 12.17564,
+          "score": 1.0
+        },
+        {
+          "text": "соединяет",
+          "start": 12.25586,
+          "end": 12.69705,
+          "score": 0.994
+        },
+        {
+          "text": "начало",
+          "start": 12.77727,
+          "end": 13.13825,
+          "score": 1.0
+        },
+        {
+          "text": "и",
+          "start": 13.19841,
+          "end": 13.21846,
+          "score": 1.0
+        },
+        {
+          "text": "конец",
+          "start": 13.25857,
+          "end": 13.55938,
+          "score": 0.997
+        },
+        {
+          "text": "пути",
+          "start": 13.65965,
+          "end": 13.9003,
+          "score": 1.0
+        },
+        {
+          "text": "В",
+          "start": 14.6022,
+          "end": 14.62226,
+          "score": 1.0
+        },
+        {
+          "text": "исследовании",
+          "start": 14.66236,
+          "end": 15.20383,
+          "score": 0.946
+        },
+        {
+          "text": "меняйте",
+          "start": 15.28404,
+          "end": 15.60491,
+          "score": 0.991
+        },
+        {
+          "text": "оба",
+          "start": 15.70518,
+          "end": 15.80545,
+          "score": 0.661
+        },
+        {
+          "text": "шага",
+          "start": 15.92578,
+          "end": 16.20654,
+          "score": 1.0
+        },
+        {
+          "text": "включая",
+          "start": 16.46724,
+          "end": 16.90843,
+          "score": 0.953
+        },
+        {
+          "text": "отрицательные",
+          "start": 16.94854,
+          "end": 17.55017,
+          "score": 0.886
+        },
+        {
+          "text": "значения",
+          "start": 17.61033,
+          "end": 18.09163,
+          "score": 0.886
+        }
+      ]
+    }
+  ],
+  "cues": {
+    "origin": {
+      "text": "Начнём в отмеченной точке. Одна клетка — один шаг.",
+      "start": 0.48045,
+      "end": 3.73855
+    },
+    "horizontal": {
+      "text": "Сначала пройдём три шага вправо.",
+      "start": 4.7006,
+      "end": 6.41071
+    },
+    "move_x": {
+      "text": "три шага вправо",
+      "start": 5.56571,
+      "end": 6.41071
+    },
+    "vertical": {
+      "text": "Затем из новой точки — два шага вверх.",
+      "start": 7.65354,
+      "end": 9.97071
+    },
+    "move_y": {
+      "text": "два шага вверх",
+      "start": 9.10429,
+      "end": 9.97071
+    },
+    "result": {
+      "text": "Итоговое перемещение соединяет начало и конец пути. В исследовании меняйте оба шага, включая отрицательные значения.",
+      "start": 11.09272,
+      "end": 18.09163
+    },
+    "result_arrow": {
+      "text": "соединяет начало и конец пути",
+      "start": 12.25586,
+      "end": 13.9003
+    }
+  },
+  "alignment": {
+    "method": "ctc-forced-alignment",
+    "model": "jonatasgrosman/wav2vec2-large-xlsr-53-russian",
+    "revision": "2329100508896c6d9b157019803ab5601e6f3406",
+    "device": "mps",
+    "nominal_frame_seconds": 0.02
+  },
+  "mix": {
+    "peak": 0.7959,
+    "music": null
+  },
+  "warnings": [],
+  "build": {
+    "seconds": 0.085,
+    "segments": [
+      {
+        "id": "origin",
+        "synthesis": {
+          "cached": true,
+          "seconds": 0.0
+        },
+        "alignment": {
+          "cached": true,
+          "seconds": 0.0
+        }
+      },
+      {
+        "id": "horizontal",
+        "synthesis": {
+          "cached": true,
+          "seconds": 0.0
+        },
+        "alignment": {
+          "cached": true,
+          "seconds": 0.0
+        }
+      },
+      {
+        "id": "vertical",
+        "synthesis": {
+          "cached": true,
+          "seconds": 0.0
+        },
+        "alignment": {
+          "cached": true,
+          "seconds": 0.0
+        }
+      },
+      {
+        "id": "result",
+        "synthesis": {
+          "cached": true,
+          "seconds": 0.0
+        },
+        "alignment": {
+          "cached": true,
+          "seconds": 0.0
+        }
+      }
+    ]
+  }
+}

@@ -7,6 +7,9 @@ const types = {
   '.css': 'text/css',
   '.woff2': 'font/woff2',
   '.m4a': 'audio/mp4',
+  '.wav': 'audio/wav',
+  '.webm': 'audio/webm',
+  '.json': 'application/json',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
 };
@@ -23,6 +26,7 @@ export async function serve(directory = 'site', port = 0) {
       const bytes = await readFile(file);
       res.setHeader('Content-Type', types[extname(file)] ?? 'application/octet-stream');
       res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Cache-Control', 'no-store');
       const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range ?? '');
       if (range) {
         const start = Number(range[1]),

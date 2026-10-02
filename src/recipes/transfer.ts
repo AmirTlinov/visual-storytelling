@@ -45,7 +45,7 @@ export function transfer(
   packet.highlight(false);
   // A travelling label masks the route beneath its own characters.
   packet.content.prepend(
-    svg('path', { d: roundedRect(-width / 2, -size / 2, width, size), fill: 'var(--vs-surface)' }),
+    svg('path', { d: roundedRect(-width / 2, -size / 2, width, size), fill: 'var(--ve-surface)' }),
   );
   return {
     element: mark.element,

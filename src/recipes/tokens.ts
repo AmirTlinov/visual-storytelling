@@ -18,7 +18,7 @@ export function token(
     fill: 'marker',
   });
   const label = lettering(mark.content, value, { y: size * 0.17, size: size * 0.58 });
-  const wash = shape.element.querySelector<SVGGElement>('.vs-marker')!;
+  const wash = shape.element.querySelector<SVGGElement>('.ve-marker')!;
   return {
     ...mark,
     label,

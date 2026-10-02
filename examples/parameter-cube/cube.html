@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BERT-mini — параметры и активации</title>
+<style>
+*{box-sizing:border-box}html{color-scheme:light dark}body{margin:0;background:transparent}main{width:min(100%,1320px);margin:auto}
+header{padding:32px 5.82% 8px}.meta{display:flex;gap:20px;align-items:center;justify-content:space-between;font-size:16px;color:var(--ve-muted);margin-bottom:18px}.meta a{color:inherit;text-underline-offset:4px}
+form{display:flex;gap:14px;align-items:center}input{width:100%;font:inherit;font-size:27px;border:0;border-bottom:1px solid var(--ve-pencil);border-radius:0;padding:10px 0;background:transparent;color:inherit;outline:none}input:focus{border-color:var(--ve-pencil)}input[aria-invalid=true]{border-color:var(--ve-orange)}
+
+#status{font-size:17px;min-height:23px;margin-top:9px;color:var(--ve-orange)}#status:empty{visibility:hidden}
+object{display:block;width:100%;height:auto;aspect-ratio:1100/1770}
+@media(max-width:650px){object{aspect-ratio:550/3860}}
+@media(max-width:700px){header{padding-top:20px}.meta{font-size:13px;gap:8px}input{font-size:22px}}
+</style>
+<body class="ve-standalone"><main id="app" class="ve-scene">
+<header>
+<div class="meta"><span><a href="https://huggingface.co/prajjwal1/bert-mini" target="_blank" rel="noopener">BERT-mini</a> · слой 4 · проекция Q · английский</span><a href="https://arxiv.org/html/1706.03762v7#S3.SS2" target="_blank" rel="noopener">Формула</a></div>
+<form id="form"><input id="text" aria-label="Английский текст для вычисления проекции" autocomplete="off" spellcheck="false" maxlength="512" disabled><button type="submit" id="compute" disabled>Вычислить</button></form>
+<div id="status" role="status" aria-live="polite"></div>
+</header>
+<object id="scene" type="image/svg+xml" data="tensor-cube.svg" aria-label="Постоянные параметры W_Q и вычисленные векторы"></object>
+</main>
+<script>
+const app=document.getElementById('app'),input=document.getElementById('text'),scene=document.getElementById('scene'),status=document.getElementById('status');
+let view,controller,timer,version=0;
+function loaded(){
+  view=scene.contentDocument?.defaultView;if(!view?.getProjection)return;
+  input.value=view.getProjection().text;input.disabled=false;document.getElementById('compute').disabled=false;
+}
+scene.addEventListener('load',loaded);loaded();
+async function compute(){
+  clearTimeout(timer);const current=++version;controller?.abort();controller=new AbortController();
+  app.setAttribute('aria-busy','true');view?.setPending(true);app.classList.remove('invalid');input.removeAttribute('aria-invalid');status.textContent='Вычисляю локально…';
+  try{
+    const response=await fetch('/api/projection',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:input.value}),signal:controller.signal});
+    const data=await response.json();if(current!==version)return;
+    if(!response.ok)throw Error(data.error||'Не удалось вычислить проекцию.');
+    view.setProjection(data);
+    status.textContent=data.tokens.includes('[UNK]')?'Есть [UNK]: модель не распознала часть текста. Попробуйте английскую фразу.':'';
+  }catch(error){
+    if(current!==version||error.name==='AbortError')return;
+    status.textContent=error instanceof TypeError?'Локальный вычислитель недоступен. Запустите serve.command.':error.message;
+    input.setAttribute('aria-invalid','true');app.classList.add('invalid');
+  }finally{if(current===version)app.removeAttribute('aria-busy');}
+}
+input.addEventListener('input',()=>{++version;controller?.abort();clearTimeout(timer);app.setAttribute('aria-busy','true');view?.setPending(true);status.textContent='';timer=setTimeout(compute,280)});
+input.addEventListener('compositionstart',()=>{clearTimeout(timer)});
+input.addEventListener('compositionend',()=>{clearTimeout(timer);timer=setTimeout(compute,280)});
+document.getElementById('form').addEventListener('submit',event=>{event.preventDefault();compute()});
+</script>
+</body></html>

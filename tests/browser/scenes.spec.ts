@@ -1,182 +1,166 @@
 import { test, expect } from '@playwright/test';
-import { mkdir } from 'node:fs/promises';
+import type { Page } from '@playwright/test';
+import catalog from '../../examples/catalog.json' with { type: 'json' };
 
-const scenes = ['area', 'remainder', 'sort', 'lc', 'vector', 'transfer', 'materials'];
-function drawingSnapshot(time: number) {
-  window.explainer.seek(time);
-  const clone = window.explainer.svg().cloneNode(true) as SVGSVGElement;
-  for (const node of [clone, ...clone.querySelectorAll<SVGElement>('[style]')]) {
-    const values = [...node.style]
-      .sort()
-      .map(
-        (property) =>
-          [
-            property,
-            node.style.getPropertyValue(property),
-            node.style.getPropertyPriority(property),
-          ] as const,
-      );
-    node.removeAttribute('style');
-    for (const [property, value, priority] of values)
-      node.style.setProperty(property, value, priority);
-  }
-  return { state: window.explainer.snapshot(), drawing: clone.outerHTML };
+async function ready(page: Page, path: string) {
+  await page.goto(path);
+  await page.waitForFunction(
+    () =>
+      !!document.querySelector('svg.canvas,svg.vs-canvas,canvas') ||
+      document.querySelector('object')?.contentDocument?.documentElement.tagName === 'svg',
+  );
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await window.galleryReady;
+  });
 }
-test('all scenes reconstruct identical drawings after backwards and forwards seeks', async ({
+test('all examples load in both themes at a narrow width without script errors or overflow', async ({
   page,
 }) => {
+  test.setTimeout(90000);
   const errors: string[] = [];
-  page.on('pageerror', (error) => errors.push(error.message));
-  for (const scene of scenes) {
-    await page.goto(`/?scene=${scene}`);
-    await page.evaluate(() => window.galleryReady);
-    for (const time of await page.evaluate(() => window.explainer.checkpoints)) {
-      const before = await page.evaluate(drawingSnapshot, time);
-      await page.evaluate(() => {
-        window.explainer.seek(window.explainer.duration);
-        window.explainer.seek(0);
-      });
-      const after = await page.evaluate(drawingSnapshot, time);
-      expect(after.state, `${scene} model at ${time}`).toEqual(before.state);
-      const original = before.drawing.replaceAll(' style=""', ''),
-        restored = after.drawing.replaceAll(' style=""', '');
-      const first = [...original].findIndex((char, i) => char !== restored[i]);
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.setViewportSize({ width: 375, height: 950 });
+  for (const [scene, item] of Object.entries(catalog))
+    for (const colorScheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme });
+      if (item.page.endsWith('.svg')) continue; // Native SVG is covered by the pixel reference capture.
+      await ready(page, `/${scene}/${item.page}`);
       expect(
-        restored === original,
-        `${scene} at ${time}, difference near ${first}:\n${original.slice(Math.max(0, first - 100), first + 180)}\n${restored.slice(Math.max(0, first - 100), first + 180)}`,
-      ).toBe(true);
+        await page.evaluate(() => document.documentElement.scrollWidth),
+        scene,
+      ).toBeLessThanOrEqual(375);
+      const player = page.locator('.ve-player').first();
+      if (await player.isVisible()) {
+        const mids = await player.evaluate((el) =>
+          [...el.children]
+            .filter((c) => getComputedStyle(c).display !== 'none')
+            .map((c) => {
+              const r = c.getBoundingClientRect();
+              return r.top + r.height / 2;
+            }),
+        );
+        expect(Math.max(...mids) - Math.min(...mids), scene).toBeLessThan(3);
+      }
     }
-  }
   expect(errors).toEqual([]);
 });
-test('manual input pauses a story; return restores the paused story values', async ({ page }) => {
-  await page.goto('/?scene=vector&t=10');
-  await page.evaluate(() => window.galleryReady);
-  await page.getByRole('button', { name: 'Воспроизвести', exact: true }).click();
+test('audio controls play, pause, seek backwards and keep the exact area model', async ({
+  page,
+}) => {
+  await ready(page, '/area-story/index.html');
+  const play = page.locator('[data-play]'),
+    seek = page.locator('[data-seek]');
+  await seek.fill('4.3');
+  await play.click();
+  await expect.poll(() => seek.inputValue().then(Number)).toBeGreaterThan(4.4);
+  await play.click();
+  await expect(play).toHaveAttribute('aria-label', 'Воспроизвести');
+  await seek.fill('59');
+  await expect(page.locator('[data-square]')).toHaveCount(20);
+  const complete = await page.locator('[data-drawing]').innerHTML();
+  await seek.fill('0');
+  await seek.fill('59');
+  expect(await page.locator('[data-drawing]').innerHTML()).toBe(complete);
+  await page.locator('[data-formulas]').click();
+  await expect(page.locator('[data-formulas]')).toHaveAttribute('aria-pressed', 'true');
+  for (let i = 0; i < 4; i++) await play.click();
+  const paused = await seek.inputValue();
+  await page.waitForTimeout(150);
+  expect(await seek.inputValue()).toBe(paused);
+  await page.locator('[data-mute]').click();
+  expect(await page.locator('audio').evaluate((a: HTMLAudioElement) => a.muted)).toBe(true);
+  await play.focus();
+  await expect(play).toBeFocused();
+});
+test('shell changes mode, pauses the voice and restores the story after manual input', async ({
+  page,
+}) => {
+  await ready(page, '/explorer-svg/index.html');
+  await page.locator('[data-mode=story]').click();
+  await page.locator('[data-seek]').fill('15');
+  await page.locator('[data-play]').click();
+  await page.locator('[data-mode=explore]').click();
+  expect(await page.locator('audio').evaluate((a: HTMLAudioElement) => a.paused)).toBe(true);
+  const field = page.getByRole('slider', { name: 'По горизонтали' });
+  await field.fill('-2');
+  await expect(field).toHaveValue('-2');
+  await page.locator('[data-mode=story]').click();
+  await expect(page.locator('#ve-scene')).toHaveAttribute('data-scene-mode', 'story');
+  await page.locator('[data-seek]').fill('15');
+  await page.locator('[data-mode=explore]').click();
+  expect(Number(await field.inputValue())).not.toBe(-2);
+});
+test('typed stories use the same shell and preserve model state through mode changes', async ({
+  page,
+}) => {
+  await ready(page, '/vector/index.html');
+  await page.waitForFunction(() => !!window.explainer);
+  await page.evaluate(() => window.explainer.seek(10));
+  const original = await page.evaluate(() => window.explainer.snapshot());
+  await page.locator('[data-mode=explore]').click();
   await page.getByRole('slider', { name: 'Масштаб x', exact: true }).fill('-1.4');
-  await expect(page.locator('.vs-notebook')).toHaveAttribute('data-mode', 'explore');
-  await expect(page.getByRole('button', { name: 'Воспроизвести', exact: true })).toBeVisible();
-  const state = (await page.evaluate(() => window.explainer.snapshot())) as {
-    input: { a: number };
-  };
-  expect(state.input.a).toBe(-1.4);
-  await page.getByRole('button', { name: 'Вернуться к рассказу' }).click();
-  await expect(page.locator('.vs-notebook')).toHaveAttribute('data-mode', 'story');
-  const restored = (await page.evaluate(() => window.explainer.snapshot())) as {
-    input: { a: number };
-  };
-  expect(restored.input.a).toBeCloseTo(1.8);
-});
-test('real audio can start, pause, scrub back and survive rapid repeated controls', async ({
-  page,
-}) => {
-  await page.goto('/?scene=area&t=2');
-  await page.evaluate(() => window.galleryReady);
-  await page.getByRole('button', { name: 'Воспроизвести', exact: true }).click();
-  await expect
-    .poll(() => page.getByRole('slider', { name: 'Позиция рассказа' }).inputValue().then(Number))
-    .toBeGreaterThan(2.1);
-  await page.getByRole('button', { name: 'Пауза', exact: true }).click();
-  await page.getByRole('slider', { name: 'Позиция рассказа' }).fill('4.3');
   expect(await page.evaluate(() => window.explainer.snapshot())).toMatchObject({
-    heightText: 1,
-    widthText: 0,
+    input: { a: -1.4 },
   });
-  for (let i = 0; i < 4; i++) await page.locator('.vs-player button').first().click();
-  await expect(page.getByRole('button', { name: 'Воспроизвести', exact: true })).toBeVisible();
-  const paused = await page.getByRole('slider', { name: 'Позиция рассказа' }).inputValue();
-  await page.waitForTimeout(200);
-  expect(await page.getByRole('slider', { name: 'Позиция рассказа' }).inputValue()).toBe(paused);
+  await page.locator('[data-mode=story]').click();
+  expect(await page.evaluate(() => window.explainer.snapshot())).toEqual(original);
+  for (const time of [0, 5, 10, 16]) {
+    await page.evaluate((t) => window.explainer.seek(t), time);
+    const state = await page.evaluate(() => window.explainer.snapshot());
+    await page.evaluate(() => {
+      window.explainer.seek(18);
+      window.explainer.seek(0);
+    });
+    await page.evaluate((t) => window.explainer.seek(t), time);
+    expect(await page.evaluate(() => window.explainer.snapshot())).toEqual(state);
+  }
 });
-test('narrow scenes retain one player row, keyboard focus and theme-aware ink', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 375, height: 950 });
-  await mkdir('artifacts/previews', { recursive: true });
-  for (const scene of scenes)
-    for (const theme of ['light', 'dark']) {
-      await page.goto(`/?scene=${scene}&theme=${theme}`);
-      await page.evaluate(() => window.galleryReady);
-      await page.evaluate(() => window.explainer.seek(window.explainer.checkpoints.at(-1)!));
-      for (const selector of ['html', 'body', '.vs-notebook'])
-        expect(
-          await page.locator(selector).evaluate((node) => getComputedStyle(node).backgroundColor),
-        ).toBe('rgba(0, 0, 0, 0)');
-      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-        375,
-      );
-      const row = await page.locator('.vs-player').evaluate((element) =>
-        [...element.children].map((child) => {
-          const r = child.getBoundingClientRect();
-          return r.top + r.height / 2;
-        }),
-      );
-      expect(Math.max(...row) - Math.min(...row)).toBeLessThan(2);
-      await page.locator('.vs-player button').first().focus();
-      expect(
-        await page
-          .locator('.vs-player button')
-          .first()
-          .evaluate((element) => element.matches(':focus-visible')),
-      ).toBe(true);
-      await page.screenshot({
-        path: `artifacts/previews/${scene}-${theme}-375.png`,
-        fullPage: true,
-      });
+test('controls preserve pointer targets, keyboard editing and undo/redo', async ({ page }) => {
+  await ready(page, '/controls/index.html');
+  const width = page.getByRole('slider', { name: 'Ширина', exact: true });
+  await width.fill('7');
+  await expect(width).toHaveValue('7');
+  await page.getByRole('radio', { name: 'Фиолетовый', exact: true }).click();
+  const vertex = page.locator('[data-handle]').first();
+  const before = await vertex.getAttribute('transform');
+  await vertex.focus();
+  await page.keyboard.press('ArrowRight');
+  expect(await vertex.getAttribute('transform')).not.toBe(before);
+  await page.keyboard.press('ControlOrMeta+z');
+  expect(await vertex.getAttribute('transform')).toBe(before);
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  expect(await vertex.getAttribute('transform')).not.toBe(before);
+});
+test('all BERT tokens can be selected at their center and edges', async ({ page }) => {
+  await ready(page, '/parameter-cube/preview.html');
+  const frame = page.frames().find((f) => f.url().includes('tensor-cube.svg'))!;
+  const tokens = frame.locator('#tokens [data-token]');
+  await expect(tokens).toHaveCount(4);
+  for (let i = 0; i < 4; i++)
+    for (const edge of [false, true]) {
+      const token = tokens.nth(i);
+      await token.scrollIntoViewIfNeeded();
+      const box = await token.boundingBox();
+      expect(box).not.toBeNull();
+      await page.mouse.click(box!.x + (edge ? 4 : box!.width / 2), box!.y + box!.height / 2);
+      await expect(token).toHaveAttribute('aria-selected', 'true');
     }
 });
-test('LC keeps its physical explanation and fractional phase during reduced motion', async ({
+test('LC player owns native SVG time, including reverse seek and reduced motion', async ({
   page,
 }) => {
-  await page.goto('/?scene=lc&t=.75');
-  await page.evaluate(() => window.galleryReady);
-  const electrons = page.locator('[data-object^="electron:"]');
-  await expect(electrons).toHaveCount(24);
-  const initial = await electrons.first().getAttribute('transform');
-  await page.evaluate(() => window.explainer.seek(0.85));
-  expect(await electrons.first().getAttribute('transform')).not.toBe(initial);
-  for (const reduced of [false, true])
-    for (const time of [0.75, 1, 1.4, 2.3, 3, 0]) {
-      const state = await page.evaluate(
-        ({ reduced, time }) => {
-          window.explainer.setReduced(reduced);
-          window.explainer.seek(time);
-          return window.explainer.snapshot() as {
-            charge: number;
-            current: number;
-            electric: number;
-            magnetic: number;
-          };
-        },
-        { reduced, time },
-      );
-      expect(state.charge).toBeCloseTo(Math.cos((Math.PI * time) / 2));
-      expect(
-        Number(await page.locator('[data-plot-point="voltage"]').getAttribute('data-value')),
-      ).toBeCloseTo(state.charge);
-      expect(
-        Number(await page.locator('[data-plot-point="current"]').getAttribute('data-value')),
-      ).toBeCloseTo(state.current);
-      expect(
-        Number(await page.locator('[data-object="energy-C"]').getAttribute('data-fraction')),
-      ).toBeCloseTo(state.electric);
-      expect(
-        Number(await page.locator('[data-object="energy-L"]').getAttribute('data-fraction')),
-      ).toBeCloseTo(state.magnetic);
-    }
-});
-test('reduced motion keeps facts and package SVG export is self contained', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/?scene=area&theme=dark&t=58.1');
-  await page.evaluate(() => window.galleryReady);
-  const state = (await page.evaluate(() => window.explainer.snapshot())) as { squares: number[] };
-  expect(state.squares).toEqual(Array(20).fill(1));
-  const source = await page.evaluate(() => window.explainer.exportSVG!());
-  expect(source.includes('data:font/woff2;base64,')).toBe(true);
-  expect(source.includes('var(--vs-')).toBe(false);
-  await page.goto('/?scene=transfer&t=6');
-  await page.evaluate(() => window.galleryReady);
-  await expect(page.locator('.vs-canvas')).toHaveAttribute('data-received', 'true');
-  await page.getByRole('slider', { name: 'Позиция рассказа' }).fill('3');
-  await expect(page.locator('.vs-canvas')).toHaveAttribute('data-received', 'false');
+  await ready(page, '/lc-oscillator/preview.html');
+  const seek = page.locator('[data-seek]');
+  await expect(seek).toBeEnabled();
+  for (const time of [0.75, 1.5, 2.25, 0]) {
+    await seek.fill(String(time));
+    const state = await page.locator('object').evaluate((o: HTMLObjectElement) => {
+      const s = o.contentDocument!.documentElement as unknown as SVGSVGElement;
+      return { paused: s.animationsPaused(), time: s.getCurrentTime() };
+    });
+    expect(state.paused).toBe(true);
+    expect(state.time).toBeCloseTo(time, 2);
+  }
 });

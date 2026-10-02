@@ -1,0 +1,28 @@
+@font-face{font-family:SketchPencil;src:url('../assets/pencil.woff2') format('woff2');font-display:swap}
+@font-face{font-family:SketchShantell;src:url('../assets/shantell.woff2') format('woff2');font-display:swap}
+.ve-scene{
+  --ve-ink:var(--foreground,light-dark(#292724,#eeece7));--ve-surface:var(--background,Canvas);
+  --ve-font:SketchPencil,SketchShantell,'Chalkboard SE',sans-serif;
+  /* Thin handwriting needs opaque ink; UI-muted colors can have only half opacity. */
+  --ve-muted:color-mix(in srgb,var(--ve-ink) 78%,var(--ve-surface));
+  --ve-pencil:color-mix(in srgb,var(--ve-ink) 62%,var(--ve-surface));
+  --ve-blue:light-dark(#2367b0,#83b6ff);--ve-orange:light-dark(#b85516,#f6ad62);
+  --ve-purple:light-dark(#8050b5,#c2a0ff);--ve-green:light-dark(#26794e,#78cca4);
+  --ve-red:light-dark(#b33f58,#f294a7);--ve-yellow:light-dark(#927013,#dfc066);
+  --ve-blue-wash:color-mix(in srgb,var(--ve-blue) 18%,transparent);--ve-blue-soft:color-mix(in srgb,var(--ve-blue) 34%,transparent);
+  --ve-orange-wash:color-mix(in srgb,var(--ve-orange) 18%,transparent);--ve-orange-soft:color-mix(in srgb,var(--ve-orange) 34%,transparent);
+  --ve-purple-wash:color-mix(in srgb,var(--ve-purple) 18%,transparent);--ve-purple-soft:color-mix(in srgb,var(--ve-purple) 34%,transparent);
+  --ve-green-wash:color-mix(in srgb,var(--ve-green) 18%,transparent);--ve-green-soft:color-mix(in srgb,var(--ve-green) 34%,transparent);
+  --ve-accent:var(--ve-blue);
+  --ve-soft:color-mix(in srgb,var(--ve-accent) 34%,transparent);
+  --ve-wash:color-mix(in srgb,var(--ve-accent) 18%,transparent);
+  --ve-wash-alt:color-mix(in srgb,var(--ve-accent) 24%,transparent);
+  --ve-grid-ink:color-mix(in srgb,var(--ve-ink) 14%,transparent);
+  --ve-grid-step:30px;--ve-grid-x:0px;--ve-grid-y:0px;
+  --ve-grid:linear-gradient(var(--ve-grid-ink) 1px,transparent 1px),linear-gradient(90deg,var(--ve-grid-ink) 1px,transparent 1px);
+  color:var(--ve-ink);font-family:var(--ve-font);font-weight:400;font-synthesis:none;line-height:1.45;
+  -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+  background-color:transparent;background-image:var(--ve-grid);background-size:var(--ve-grid-step) var(--ve-grid-step);background-position:var(--ve-grid-x) var(--ve-grid-y)
+}
+.ve-scene[data-paper=false]{background-image:none}
+svg.ve-scene{color-scheme:light dark}

@@ -6,3 +6,6 @@
 /test-results/
 /playwright-report/
 *.tgz
+
+__pycache__/
+.venv/

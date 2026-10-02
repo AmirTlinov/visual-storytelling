@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# Resolve the entry point even when installed as a symlink in ~/.local/bin.
+entry="${BASH_SOURCE[0]}"
+while [ -L "$entry" ]; do
+  base="$(cd -P "$(dirname "$entry")" && pwd)"
+  entry="$(readlink "$entry")"
+  [[ "$entry" = /* ]] || entry="$base/$entry"
+done
+tool_dir="$(cd -P "$(dirname "$entry")" && pwd)"
+export UV_PROJECT_ENVIRONMENT="${SKETCH_AUDIO_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/sketch-visualization}/venv"
+export TOKENIZERS_PARALLELISM=false
+export PYTHONDONTWRITEBYTECODE=1
+exec uv run --quiet --locked --project "$tool_dir" python "$tool_dir/audio/cli.py" "$@"

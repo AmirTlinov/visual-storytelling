@@ -1,13 +1,15 @@
 {
   "name": "@visual-storytelling/core",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Carefully hand-drawn, deterministic visual explanations.",
   "files": [
     "dist",
-    "src/**/*.ts",
     "src/assets/shantell-OFL.txt",
+    "examples",
+    "tools",
+    "skill",
     "docs",
     "README.md",
     "PHILOSOPHY.md",
@@ -38,37 +40,54 @@
       "types": "./dist/export/index.d.ts",
       "import": "./dist/export/index.js"
     },
-    "./style.css": "./dist/style.css"
+    "./style.css": "./dist/style.css",
+    "./three": {
+      "types": "./dist/viewport/index.d.ts",
+      "import": "./dist/viewport/index.js"
+    }
   },
   "sideEffects": [
-    "**/*.css"
+    "**/*.css",
+    "./examples/**"
   ],
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 8793 --strictPort",
-    "build": "tsc -p tsconfig.build.json && node tools/build.mjs && vite build",
+    "build": "node tools/build.mjs",
     "check": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "test:browser": "playwright test",
     "test:delivery": "node tools/check-delivery.mjs",
-    "preview": "vite preview --host 127.0.0.1 --port 8793 --strictPort",
+    "preview": "node tools/scene.mjs preview site --port 8793",
     "export": "node tools/export.mjs",
     "previews": "node tools/previews.mjs",
     "profile": "node tools/profile.mjs",
     "format": "prettier --write src examples tools tests *.ts *.json README.md PHILOSOPHY.md AGENTS.md THIRD_PARTY.md docs",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "generate": "node tools/generate.mjs",
+    "test:visual": "node tools/visual-regression.mjs compare site artifacts/migrated"
   },
   "dependencies": {
+    "esbuild": "0.27.4",
     "gsap": "3.15.0",
-    "roughjs": "4.6.6"
+    "roughjs": "4.6.6",
+    "three": "0.186.1",
+    "playwright": "1.63.0"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
     "@types/node": "24.10.0",
+    "@types/three": "0.183.1",
+    "pngjs": "7.0.0",
     "prettier": "3.6.2",
     "typescript": "5.9.3",
     "vite": "8.3.2"
   },
   "engines": {
     "node": ">=22.18"
+  },
+  "bin": {
+    "visual-story": "tools/scene.mjs",
+    "sketch-audio": "tools/sketch-audio",
+    "visual-story-export": "tools/export.mjs"
   }
 }

@@ -42,9 +42,9 @@ export function pen(canvas: SVGSVGElement) {
       bowing: 0.6,
       stroke:
         style.stroke === 'pencil'
-          ? 'var(--vs-pencil)'
+          ? 'var(--ve-pencil)'
           : style.stroke === 'ink'
-            ? 'var(--vs-ink)'
+            ? 'var(--ve-ink)'
             : 'currentColor',
       strokeWidth: style.width ?? 1.65,
       disableMultiStroke: true,

@@ -10,7 +10,7 @@ import {
   pigments,
 } from '@visual-storytelling/core';
 import type { Pigment } from '@visual-storytelling/core';
-import type { Example } from '../types';
+import type { SceneHandle as Example } from '@visual-storytelling/core';
 
 export function mount(parent: HTMLElement): Example {
   const book = notebook(parent, {

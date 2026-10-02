@@ -1,0 +1,124 @@
+"""Narration input and named cues, independent of any visual scenario."""
+import json
+import math
+from pathlib import Path
+import re
+from resources import DEFAULT_DELIVERY, REFERENCE_AUDIO, REFERENCE_TEXT
+
+WORD = re.compile(r"[А-Яа-яЁё]+(?:[-‑][А-Яа-яЁё]+)*")
+ID = re.compile(r"[a-z][a-z0-9_.-]*\Z")
+TAG = re.compile(r"<\|([a-z]+):([a-z_]+)\|>")
+CONTROLS = {
+    "emotion": set("elation amusement enthusiasm determination pride contentment affection relief contemplation confusion surprise awe longing arousal anger fear disgust bitterness sadness shame helplessness".split()),
+    "style": {"singing", "shouting", "whispering"},
+    "prosody": set("speed_very_slow speed_slow speed_fast speed_very_fast pause long_pause pitch_low pitch_high expressive_high expressive_low".split()),
+    "sfx": set("cough laughter crying screaming burping humming sigh sniff sneeze".split()),
+}
+
+
+def without_controls(text):
+    for match in TAG.finditer(text):
+        if match[2] not in CONTROLS.get(match[1], set()):
+            raise ValueError(f"Unsupported Higgs control: {match[0]}")
+    return TAG.sub("", text)
+
+
+def delivery(value):
+    if not isinstance(value, str) or without_controls(value).strip():
+        raise ValueError("delivery must contain only native Higgs controls, or be empty")
+    return value
+
+
+def words(text):
+    return [m.group() for m in WORD.finditer(without_controls(text))]
+
+
+def normalized(text):
+    return [w.lower().replace("ё", "е").replace("‑", "-") for w in words(text)]
+
+
+def number(value, label, low, high):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not low <= value <= high:
+        raise ValueError(f"{label} must be between {low} and {high}")
+    return float(value)
+
+
+def read_script(path):
+    spec = json.loads(path.read_text())
+    if spec.get("version") != 3:
+        raise ValueError("Script version must be 3; use native Higgs delivery controls")
+    spec["intro"] = number(spec.get("intro", .65), "intro", 0, 30)
+    spec["outro"] = number(spec.get("outro", 1.0), "outro", 0, 30)
+    voice = spec.setdefault("voice", {})
+    if set(voice) - {"delivery", "seed", "reference_audio", "reference_text"}:
+        raise ValueError("voice accepts delivery, seed, reference_audio and reference_text")
+    voice["delivery"] = delivery(voice.get("delivery", DEFAULT_DELIVERY))
+    voice.setdefault("seed", 42)
+    if type(voice["seed"]) is not int or not 0 <= voice["seed"] < 2**32:
+        raise ValueError("voice.seed must be an integer from 0 to 4294967295")
+    if bool(voice.get("reference_audio")) != bool(voice.get("reference_text")):
+        raise ValueError("Provide both voice.reference_audio and its exact reference_text")
+    if voice.get("reference_audio"):
+        if not isinstance(voice["reference_text"], str) or not voice["reference_text"].strip():
+            raise ValueError("voice.reference_text must contain the exact spoken reference transcript")
+        voice["reference_audio"] = str((path.parent / voice["reference_audio"]).resolve())
+        if not Path(voice["reference_audio"]).is_file():
+            raise ValueError("Voice reference audio does not exist")
+    else:
+        voice["reference_audio"] = str(REFERENCE_AUDIO)
+        voice["reference_text"] = REFERENCE_TEXT
+    segments = spec.get("segments")
+    if not isinstance(segments, list) or not segments:
+        raise ValueError("Provide a non-empty segments array")
+    ids = set()
+    for segment in segments:
+        sid = segment.get("id", "")
+        if not ID.fullmatch(sid) or sid in ids:
+            raise ValueError(f"Invalid or duplicate segment id: {sid}")
+        ids.add(sid)
+    for segment in segments:
+        sid = segment["id"]
+        if not isinstance(segment.get("text"), str) or not segment["text"].strip() or "ssml" in segment or "rate" in segment:
+            raise ValueError(f"{sid}: provide Russian text with optional native Higgs controls")
+        text = " ".join(without_controls(segment["text"]).split())
+        if any(char in text for char in "[]<>*+\u0301"):
+            raise ValueError(f"{sid}: use plain Russian spelling and native Higgs controls")
+        # Author the spoken form explicitly: 23, CPU and formulas have ambiguous
+        # pronunciations. The JS drawing can display any notation independently.
+        if re.search(r"[0-9A-Za-z]", text) or not words(text):
+            raise ValueError(f"{sid}: write spoken numbers, abbreviations and formulas in Russian words")
+        if len(text) > 1000:
+            raise ValueError(f"{sid}: split this narration into shorter semantic phrases (max 1000 characters)")
+        segment["spoken"] = text
+        segment["delivery"] = delivery(segment.get("delivery", voice["delivery"]))
+        segment["pause_after"] = number(segment.get("pause_after", 0), f"{sid}.pause_after", 0, 30)
+        tokens = normalized(text)
+        for cue in segment.setdefault("cues", []):
+            cid = cue.get("id", "")
+            if not ID.fullmatch(cid) or cid in ids:
+                raise ValueError(f"Invalid or duplicate cue id: {cid}")
+            ids.add(cid)
+            quote = normalized(cue.get("quote", ""))
+            matches = [i for i in range(len(tokens) - len(quote) + 1) if tokens[i:i + len(quote)] == quote] if quote else []
+            occurrence = cue.get("occurrence")
+            if not matches or (len(matches) > 1 and occurrence is None):
+                raise ValueError(f"{cid}: quote is missing or ambiguous; set occurrence (1-based) when repeated")
+            occurrence = 1 if occurrence is None else occurrence
+            if not isinstance(occurrence, int) or not 1 <= occurrence <= len(matches):
+                raise ValueError(f"{cid}: occurrence does not exist")
+            cue["word_start"] = matches[occurrence - 1]
+            cue["word_end"] = cue["word_start"] + len(quote)
+    music = spec.get("music")
+    if music is not None:
+        if not isinstance(music, dict) or not (music.get("path") or music.get("track") == "inspired"):
+            raise ValueError("music needs a local path or track: inspired; use null for no music")
+        if music.get("path"):
+            music["path"] = str((path.parent / music["path"]).resolve())
+            if not Path(music["path"]).is_file():
+                raise ValueError("Music file does not exist")
+            credit = music.get("credit", {})
+            if not all(credit.get(k) for k in ("title", "artist", "source", "license")):
+                raise ValueError("Custom music needs credit: title, artist, source, license")
+        music["offset"] = number(music.get("offset", 0), "music.offset", 0, 86400)
+        music["level_db"] = number(music.get("level_db", -19), "music.level_db", -40, -8)
+    return spec

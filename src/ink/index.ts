@@ -8,3 +8,6 @@ export { pen, roundedRect } from './pen.js';
 export type { Pen, Point, Fill, PenStyle } from './pen.js';
 export { lettering } from './lettering.js';
 export type { Lettering, LetteringOptions } from './lettering.js';
+
+export * from './marks.js';
+export { SketchMotion } from './motion.js';

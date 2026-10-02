@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Доля от двенадцати</title><script type="module">import '@visual-storytelling/core/style.css';</script></head>
+<body class="ve-standalone"><main id="ve-scene" class="ve-scene">
+<style>#ve-scene .canvas text{font-size:22px}#ve-scene .canvas .note{font-size:17px}#ve-scene .partition{display:flex;align-items:center;justify-content:center;gap:5px;flex-wrap:wrap}#ve-scene .inputs{max-width:480px;margin:12px auto}#ve-scene .fraction-result{font-size:27px}</style>
+<h1>Доля от двенадцати</h1>
+<div class="modes" role="group" aria-label="Вид записи"><button type="button" data-mode="numbers" aria-pressed="true">Числа</button><button type="button" data-mode="formulas" aria-pressed="false">Формулы</button></div>
+<svg class="canvas" role="img" aria-labelledby="fraction-title fraction-desc"><title id="fraction-title">Двенадцать фишек, разделённых поровну</title><desc id="fraction-desc"></desc><g data-guides></g><g data-chips></g><g data-labels></g></svg>
+<div class="partition" role="group" aria-label="Количество равных частей"><span>Разделить на</span><button type="button" data-parts="2" data-mode="parts" aria-pressed="false">2</button><button type="button" data-parts="3" data-mode="parts" aria-pressed="true">3</button><button type="button" data-parts="4" data-mode="parts" aria-pressed="false">4</button><button type="button" data-parts="6" data-mode="parts" aria-pressed="false">6</button><span>частей</span></div>
+<div class="inputs"><label>Взять частей: <output data-count>2 из 3</output><input data-taken type="range" min="0" max="3" step="1" value="2" aria-label="Сколько частей взять"></label></div>
+<output class="sr-only" aria-live="polite" data-result></output>
+</main><script type="module" src="scene.js"></script></body></html>

@@ -1,0 +1,648 @@
+{
+  "version": 1,
+  "sample_rate": 48000,
+  "duration": 28.4625,
+  "audio": "audio.wav",
+  "voice": "voice.wav",
+  "music": "music.wav",
+  "voice_settings": {
+    "speaker": "xenia",
+    "rate": 1.04,
+    "focus_intensity": 2
+  },
+  "segments": [
+    {
+      "id": "question",
+      "text": "Откуда берётся остаток при делении? Давайте посмотрим.",
+      "start": 0.69019,
+      "end": 4.02624,
+      "audio_start": 0.65,
+      "audio_end": 4.2875,
+      "words": [
+        {
+          "text": "Откуда",
+          "start": 0.69019,
+          "end": 1.03184,
+          "score": 1.0
+        },
+        {
+          "text": "берётся",
+          "start": 1.11222,
+          "end": 1.43377,
+          "score": 0.999
+        },
+        {
+          "text": "остаток",
+          "start": 1.49406,
+          "end": 1.8759,
+          "score": 0.996
+        },
+        {
+          "text": "при",
+          "start": 1.95628,
+          "end": 2.03667,
+          "score": 0.667
+        },
+        {
+          "text": "делении",
+          "start": 2.09696,
+          "end": 2.53909,
+          "score": 0.964
+        },
+        {
+          "text": "Давайте",
+          "start": 3.1018,
+          "end": 3.38315,
+          "score": 1.0
+        },
+        {
+          "text": "посмотрим",
+          "start": 3.46354,
+          "end": 4.02624,
+          "score": 0.968
+        }
+      ]
+    },
+    {
+      "id": "number",
+      "text": "Возьмём двадцать три предмета.",
+      "start": 4.81809,
+      "end": 6.12765,
+      "audio_start": 4.7375,
+      "audio_end": 6.45,
+      "words": [
+        {
+          "text": "Возьмём",
+          "start": 4.81809,
+          "end": 5.12029,
+          "score": 0.881
+        },
+        {
+          "text": "двадцать",
+          "start": 5.18074,
+          "end": 5.50309,
+          "score": 0.967
+        },
+        {
+          "text": "три",
+          "start": 5.54338,
+          "end": 5.62397,
+          "score": 1.0
+        },
+        {
+          "text": "предмета",
+          "start": 5.70456,
+          "end": 6.12765,
+          "score": 1.0
+        }
+      ]
+    },
+    {
+      "id": "grouping",
+      "text": "Собираем их в группы по три. В каждую группу кладём ровно три предмета.",
+      "start": 7.23035,
+      "end": 11.4286,
+      "audio_start": 7.15,
+      "audio_end": 11.75,
+      "words": [
+        {
+          "text": "Собираем",
+          "start": 7.23035,
+          "end": 7.69236,
+          "score": 1.0
+        },
+        {
+          "text": "их",
+          "start": 7.77271,
+          "end": 7.85306,
+          "score": 1.0
+        },
+        {
+          "text": "в",
+          "start": 7.89323,
+          "end": 7.91332,
+          "score": 1.0
+        },
+        {
+          "text": "группы",
+          "start": 7.95349,
+          "end": 8.23472,
+          "score": 1.0
+        },
+        {
+          "text": "по",
+          "start": 8.31507,
+          "end": 8.37533,
+          "score": 1.0
+        },
+        {
+          "text": "три",
+          "start": 8.49585,
+          "end": 8.61638,
+          "score": 1.0
+        },
+        {
+          "text": "В",
+          "start": 9.33952,
+          "end": 9.35961,
+          "score": 1.0
+        },
+        {
+          "text": "каждую",
+          "start": 9.41987,
+          "end": 9.76135,
+          "score": 1.0
+        },
+        {
+          "text": "группу",
+          "start": 9.82162,
+          "end": 10.08275,
+          "score": 0.987
+        },
+        {
+          "text": "кладём",
+          "start": 10.14301,
+          "end": 10.46441,
+          "score": 1.0
+        },
+        {
+          "text": "ровно",
+          "start": 10.54476,
+          "end": 10.78581,
+          "score": 0.933
+        },
+        {
+          "text": "три",
+          "start": 10.86616,
+          "end": 10.94651,
+          "score": 1.0
+        },
+        {
+          "text": "предмета",
+          "start": 11.02686,
+          "end": 11.4286,
+          "score": 1.0
+        }
+      ]
+    },
+    {
+      "id": "product",
+      "text": "Получилось семь полных групп. Семь умножить на три — это двадцать один.",
+      "start": 12.49013,
+      "end": 16.8441,
+      "audio_start": 12.45,
+      "audio_end": 17.125,
+      "words": [
+        {
+          "text": "Получилось",
+          "start": 12.49013,
+          "end": 12.97167,
+          "score": 0.982
+        },
+        {
+          "text": "семь",
+          "start": 13.05193,
+          "end": 13.23251,
+          "score": 1.0
+        },
+        {
+          "text": "полных",
+          "start": 13.31277,
+          "end": 13.6338,
+          "score": 0.981
+        },
+        {
+          "text": "групп",
+          "start": 13.69399,
+          "end": 13.97489,
+          "score": 1.0
+        },
+        {
+          "text": "Семь",
+          "start": 14.61695,
+          "end": 14.8176,
+          "score": 0.75
+        },
+        {
+          "text": "умножить",
+          "start": 14.85773,
+          "end": 15.19882,
+          "score": 0.776
+        },
+        {
+          "text": "на",
+          "start": 15.23895,
+          "end": 15.27908,
+          "score": 1.0
+        },
+        {
+          "text": "три",
+          "start": 15.3794,
+          "end": 15.49979,
+          "score": 1.0
+        },
+        {
+          "text": "это",
+          "start": 16.00139,
+          "end": 16.10172,
+          "score": 0.951
+        },
+        {
+          "text": "двадцать",
+          "start": 16.18197,
+          "end": 16.54313,
+          "score": 0.954
+        },
+        {
+          "text": "один",
+          "start": 16.62339,
+          "end": 16.8441,
+          "score": 1.0
+        }
+      ]
+    },
+    {
+      "id": "result",
+      "text": "А эти два предмета остались. Для ещё одной тройки их мало. Вот он — остаток!",
+      "start": 17.81504,
+      "end": 23.11975,
+      "audio_start": 17.775,
+      "audio_end": 23.4,
+      "words": [
+        {
+          "text": "А",
+          "start": 17.81504,
+          "end": 17.83505,
+          "score": 1.0
+        },
+        {
+          "text": "эти",
+          "start": 17.89511,
+          "end": 18.03523,
+          "score": 1.0
+        },
+        {
+          "text": "два",
+          "start": 18.1153,
+          "end": 18.21539,
+          "score": 1.0
+        },
+        {
+          "text": "предмета",
+          "start": 18.31548,
+          "end": 18.6758,
+          "score": 0.999
+        },
+        {
+          "text": "остались",
+          "start": 18.75587,
+          "end": 19.19626,
+          "score": 1.0
+        },
+        {
+          "text": "Для",
+          "start": 19.69671,
+          "end": 19.7968,
+          "score": 0.906
+        },
+        {
+          "text": "ещё",
+          "start": 19.87687,
+          "end": 20.01699,
+          "score": 0.977
+        },
+        {
+          "text": "одной",
+          "start": 20.1371,
+          "end": 20.33728,
+          "score": 1.0
+        },
+        {
+          "text": "тройки",
+          "start": 20.39733,
+          "end": 20.71762,
+          "score": 1.0
+        },
+        {
+          "text": "их",
+          "start": 20.79769,
+          "end": 20.87776,
+          "score": 1.0
+        },
+        {
+          "text": "мало",
+          "start": 20.95783,
+          "end": 21.17802,
+          "score": 0.998
+        },
+        {
+          "text": "Вот",
+          "start": 21.91868,
+          "end": 22.05881,
+          "score": 1.0
+        },
+        {
+          "text": "он",
+          "start": 22.1589,
+          "end": 22.29902,
+          "score": 0.853
+        },
+        {
+          "text": "остаток",
+          "start": 22.59929,
+          "end": 23.11975,
+          "score": 1.0
+        }
+      ]
+    },
+    {
+      "id": "summary",
+      "text": "Двадцать три — это двадцать один плюс два.",
+      "start": 24.10085,
+      "end": 26.3196,
+      "audio_start": 24.0,
+      "audio_end": 26.6625,
+      "words": [
+        {
+          "text": "Двадцать",
+          "start": 24.10085,
+          "end": 24.44375,
+          "score": 0.983
+        },
+        {
+          "text": "три",
+          "start": 24.50426,
+          "end": 24.62528,
+          "score": 1.0
+        },
+        {
+          "text": "это",
+          "start": 25.06903,
+          "end": 25.19006,
+          "score": 1.0
+        },
+        {
+          "text": "двадцать",
+          "start": 25.27074,
+          "end": 25.63381,
+          "score": 1.0
+        },
+        {
+          "text": "один",
+          "start": 25.69432,
+          "end": 25.85568,
+          "score": 1.0
+        },
+        {
+          "text": "плюс",
+          "start": 25.91619,
+          "end": 26.1179,
+          "score": 0.778
+        },
+        {
+          "text": "два",
+          "start": 26.17841,
+          "end": 26.3196,
+          "score": 1.0
+        }
+      ]
+    }
+  ],
+  "cues": {
+    "question": {
+      "text": "Откуда берётся остаток при делении? Давайте посмотрим.",
+      "start": 0.69019,
+      "end": 4.02624
+    },
+    "question_intro": {
+      "text": "Откуда берётся",
+      "start": 0.69019,
+      "end": 1.43377
+    },
+    "question_remainder": {
+      "text": "остаток",
+      "start": 1.49406,
+      "end": 1.8759
+    },
+    "number": {
+      "text": "Возьмём двадцать три предмета.",
+      "start": 4.81809,
+      "end": 6.12765
+    },
+    "object_count": {
+      "text": "двадцать три",
+      "start": 5.18074,
+      "end": 5.62397
+    },
+    "object_name": {
+      "text": "предмета",
+      "start": 5.70456,
+      "end": 6.12765
+    },
+    "grouping": {
+      "text": "Собираем их в группы по три. В каждую группу кладём ровно три предмета.",
+      "start": 7.23035,
+      "end": 11.4286
+    },
+    "group_action": {
+      "text": "Собираем их в группы по три",
+      "start": 7.23035,
+      "end": 8.61638
+    },
+    "group_size": {
+      "text": "по три",
+      "start": 8.31507,
+      "end": 8.61638
+    },
+    "each_group": {
+      "text": "В каждую группу кладём ровно три предмета",
+      "start": 9.33952,
+      "end": 11.4286
+    },
+    "product": {
+      "text": "Получилось семь полных групп. Семь умножить на три — это двадцать один.",
+      "start": 12.49013,
+      "end": 16.8441
+    },
+    "group_count": {
+      "text": "семь",
+      "start": 13.05193,
+      "end": 13.23251
+    },
+    "group_name": {
+      "text": "полных групп",
+      "start": 13.31277,
+      "end": 13.97489
+    },
+    "product_groups": {
+      "text": "Семь",
+      "start": 14.61695,
+      "end": 14.8176
+    },
+    "product_sign": {
+      "text": "умножить на",
+      "start": 14.85773,
+      "end": 15.27908
+    },
+    "product_size": {
+      "text": "три",
+      "start": 15.3794,
+      "end": 15.49979
+    },
+    "product_equals": {
+      "text": "это",
+      "start": 16.00139,
+      "end": 16.10172
+    },
+    "product_value": {
+      "text": "двадцать один",
+      "start": 16.18197,
+      "end": 16.8441
+    },
+    "result": {
+      "text": "А эти два предмета остались. Для ещё одной тройки их мало. Вот он — остаток!",
+      "start": 17.81504,
+      "end": 23.11975
+    },
+    "remainder_value": {
+      "text": "два",
+      "start": 18.1153,
+      "end": 18.21539
+    },
+    "missing_slot": {
+      "text": "ещё одной тройки",
+      "start": 19.87687,
+      "end": 20.71762
+    },
+    "remainder_name": {
+      "text": "остаток",
+      "start": 22.59929,
+      "end": 23.11975
+    },
+    "summary": {
+      "text": "Двадцать три — это двадцать один плюс два.",
+      "start": 24.10085,
+      "end": 26.3196
+    },
+    "summary_whole": {
+      "text": "Двадцать три",
+      "start": 24.10085,
+      "end": 24.62528
+    },
+    "summary_equals": {
+      "text": "это",
+      "start": 25.06903,
+      "end": 25.19006
+    },
+    "summary_grouped": {
+      "text": "двадцать один",
+      "start": 25.27074,
+      "end": 25.85568
+    },
+    "summary_plus": {
+      "text": "плюс",
+      "start": 25.91619,
+      "end": 26.1179
+    },
+    "summary_remainder": {
+      "text": "два",
+      "start": 26.17841,
+      "end": 26.3196
+    }
+  },
+  "alignment": {
+    "method": "ctc-forced-alignment",
+    "model": "jonatasgrosman/wav2vec2-large-xlsr-53-russian",
+    "revision": "2329100508896c6d9b157019803ab5601e6f3406",
+    "device": "mps",
+    "nominal_frame_seconds": 0.02
+  },
+  "mix": {
+    "peak": 0.9503,
+    "music": {
+      "title": "Inspired",
+      "artist": "Kevin MacLeod",
+      "source": "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1600022",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "source_sha256": "40b1af74145cedac77814d060155ad4658e04efa14d1b649decedc98fbb25f69",
+      "offset": 32.0,
+      "level_db": -19.0,
+      "gain": 0.11850291008002234,
+      "master_gain": 1.0,
+      "changes": "Excerpt, EQ, fades, automatic ducking and mix with narration."
+    }
+  },
+  "warnings": [],
+  "build": {
+    "seconds": 0.255,
+    "segments": [
+      {
+        "id": "question",
+        "synthesis": {
+          "cached": true,
+          "seconds": 0.0
+        },
+        "alignment": {
+          "cached": true,
+          "seconds": 0.0
+        }
+      },
+      {
+        "id": "number",
+        "synthesis": {
+          "cached": true,
+          "seconds": 0.0
+        },
+        "alignment": {
+          "cached": true,
+          "seconds": 0.0
+        }
+      },
+      {
+        "id": "grouping",
+        "synthesis": {
+          "cached": true,
+          "seconds": 0.0
+        },
+        "alignment": {
+          "cached": true,
+          "seconds": 0.0
+        }
+      },
+      {
+        "id": "product",
+        "synthesis": {
+          "cached": true,
+          "seconds": 0.0
+        },
+        "alignment": {
+          "cached": true,
+          "seconds": 0.0
+        }
+      },
+      {
+        "id": "result",
+        "synthesis": {
+          "cached": true,
+          "seconds": 0.0
+        },
+        "alignment": {
+          "cached": true,
+          "seconds": 0.0
+        }
+      },
+      {
+        "id": "summary",
+        "synthesis": {
+          "cached": true,
+          "seconds": 0.0
+        },
+        "alignment": {
+          "cached": true,
+          "seconds": 0.0
+        }
+      }
+    ]
+  }
+}

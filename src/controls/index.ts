@@ -1,6 +1,6 @@
 export { button } from './button.js';
-export type { Icon } from './button.js';
-export { range, choice } from './fields.js';
-export type { RangeOptions } from './fields.js';
-export { player, formatTime } from './player.js';
-export type { PlayerOptions } from './player.js';
+export * from './fields.js';
+export * from './player.js';
+export * from './player-view.js';
+export * from './history.js';
+export * from './svg.js';

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import { writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -5,11 +6,12 @@ import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { renderer } from './render.mjs';
-import { standalone } from './standalone.mjs';
+import { standalone, packDirectory } from './standalone.mjs';
 
 const { values } = parseArgs({
   options: {
-    scene: { type: 'string', default: 'area' },
+    scene: { type: 'string', default: 'area-story' },
+    directory: { type: 'string' },
     format: { type: 'string', default: 'png' },
     theme: { type: 'string' },
     out: { type: 'string' },
@@ -22,8 +24,6 @@ const { values } = parseArgs({
 });
 const { scene, format } = values;
 const theme = values.theme ?? (format === 'html' ? 'auto' : 'light');
-if (!['area', 'remainder', 'sort', 'lc', 'vector', 'transfer', 'materials'].includes(scene))
-  throw new Error('Unknown example');
 if (!['png', 'svg', 'html', 'mp4'].includes(format))
   throw new Error('Format must be png, svg, html or mp4');
 if (!(format === 'html' ? ['auto', 'light', 'dark'] : ['light', 'dark']).includes(theme))
@@ -47,10 +47,13 @@ if (
 const output = values.out ?? `artifacts/${scene}.${format}`;
 await mkdir(dirname(output), { recursive: true });
 if (format === 'html') {
-  await writeFile(output, await standalone(scene, theme));
+  await writeFile(
+    output,
+    values.directory ? await packDirectory(values.directory) : await standalone(scene, theme),
+  );
   console.log(output);
 } else {
-  const render = await renderer({ scene, theme, width });
+  const render = await renderer({ scene, theme, width, directory: values.directory });
   let temporary;
   try {
     if (format === 'png') {
@@ -59,7 +62,7 @@ if (format === 'html') {
     }
     if (format === 'svg') {
       await render.seek(time);
-      const source = await render.page.evaluate(() => window.explainer.exportSVG());
+      const source = await render.svg();
       await writeFile(output, source);
     }
     if (format === 'mp4') {

@@ -1,15 +1,9 @@
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { renderer } from './render.mjs';
-const moments = {
-  area: 48.2,
-  remainder: 21,
-  sort: 0.8,
-  lc: 0.75,
-  vector: 16,
-  transfer: 16,
-  materials: 4,
-};
-for (const [scene, time] of Object.entries(moments)) {
+const catalog = JSON.parse(await readFile('examples/catalog.json', 'utf8'));
+const selected = process.argv.slice(2);
+for (const [scene, { time }] of Object.entries(catalog)) {
+  if (selected.length && !selected.includes(scene)) continue;
   for (const theme of ['light', 'dark']) {
     const render = await renderer({ scene, theme, width: 800, controls: true });
     try {

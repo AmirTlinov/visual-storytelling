@@ -1,7 +1,7 @@
 import { notebook, composition, range, story, interpolate } from '@visual-storytelling/core';
 import { transform } from './model';
 import { drawing } from './drawing';
-import type { Example } from '../types';
+import type { SceneHandle as Example } from '@visual-storytelling/core';
 
 export function mount(parent: HTMLElement): Example {
   const book = notebook(parent, {

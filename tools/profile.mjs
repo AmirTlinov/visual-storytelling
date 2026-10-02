@@ -1,7 +1,8 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { renderer } from './render.mjs';
 const measurements = [];
-for (const scene of ['area', 'remainder', 'sort', 'lc', 'vector', 'transfer', 'materials']) {
+const catalog = JSON.parse(await readFile('examples/catalog.json', 'utf8'));
+for (const scene of Object.keys(catalog)) {
   const render = await renderer({ scene, theme: 'light', width: 960, controls: true });
   try {
     const result = await render.page.evaluate(async () => {
@@ -13,7 +14,12 @@ for (const scene of ['area', 'remainder', 'sort', 'lc', 'vector', 'transfer', 'm
         if (last) intervals.push(timestamp - last);
         last = timestamp;
         const start = performance.now();
-        window.explainer.seek((window.explainer.duration * frame) / 120);
+        const slider = document.querySelector('[data-seek]');
+        if (window.explainer) window.explainer.seek((window.explainer.duration * frame) / 120);
+        else if (slider) {
+          slider.value = String((Number(slider.max) * frame) / 120);
+          slider.dispatchEvent(new Event('input', { bubbles: true }));
+        }
         durations.push(performance.now() - start);
       }
       const percentile = (values, p) =>

@@ -1,0 +1,98 @@
+{
+  "area-story": {
+    "title": "Почему 4 × 5 = 20?",
+    "page": "index.html",
+    "time": 48.2
+  },
+  "remainder-story": {
+    "title": "Откуда берётся остаток",
+    "page": "index.html",
+    "time": 28
+  },
+  "fraction-of-a-set": {
+    "title": "Доля от двенадцати",
+    "page": "index.html",
+    "time": 0
+  },
+  "equation-balance": {
+    "title": "Равновесие уравнения",
+    "page": "index.html",
+    "time": 2
+  },
+  "threshold-neuron": {
+    "title": "Когда нейрон включается",
+    "page": "index.html",
+    "time": 0
+  },
+  "bubble-sort": {
+    "title": "Пузырьковая сортировка",
+    "page": "index.html",
+    "time": 3
+  },
+  "shared-memory": {
+    "title": "Общая память CPU и GPU",
+    "page": "index.html",
+    "time": 2
+  },
+  "explorer-3d": {
+    "title": "Как тензор меняет форму",
+    "page": "index.html",
+    "time": 15
+  },
+  "explorer-svg": {
+    "title": "Сложение перемещений",
+    "page": "index.html",
+    "time": 15
+  },
+  "controls": {
+    "title": "Рисованные элементы управления",
+    "page": "index.html",
+    "time": 0
+  },
+  "logic-gates": {
+    "title": "Логические элементы",
+    "page": "logic-gates.svg",
+    "time": 0,
+    "generator": {
+      "file": "build.py",
+      "runner": "python3"
+    }
+  },
+  "geometric-tensor": {
+    "title": "Геометрия тензора",
+    "page": "index.html",
+    "time": 0,
+    "generator": {
+      "file": "build.mjs",
+      "runner": "node"
+    }
+  },
+  "parameter-cube": {
+    "title": "Параметры BERT-mini",
+    "page": "preview.html",
+    "time": 0,
+    "generator": {
+      "file": "cube.mjs",
+      "runner": "node"
+    }
+  },
+  "lc-oscillator": {
+    "title": "Колебательный LC-контур",
+    "page": "preview.html",
+    "time": 0.75,
+    "generator": {
+      "file": "build.py",
+      "runner": "uv"
+    }
+  },
+  "vector": {
+    "title": "Матрица меняет вектор",
+    "page": "index.html",
+    "time": 16
+  },
+  "materials": {
+    "title": "Инструменты одного почерка",
+    "page": "index.html",
+    "time": 4
+  }
+}

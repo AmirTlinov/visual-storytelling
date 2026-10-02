@@ -4,3 +4,5 @@ export { transport } from './transport.js';
 export type { Transport, TransportOptions, Playback } from './transport.js';
 export { story } from './story.js';
 export type { Story, StoryOptions } from './story.js';
+
+export * from './clock.js';

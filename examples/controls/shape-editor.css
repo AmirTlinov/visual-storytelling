@@ -1,0 +1,14 @@
+.ve-geometry-tools{display:flex;justify-content:center;align-items:center;gap:8px 18px;flex-wrap:wrap;margin:0 0 8px}
+.ve-geometry-tools [data-mode]{font-size:16px;padding:5px 10px}
+.ve-geometry-hint{font:inherit;font-size:14px;color:var(--ve-muted)}
+.ve-geometry-handles{color:var(--ve-ink)}
+.ve-geometry-handle{opacity:0;outline:none;cursor:default;touch-action:none;transition:opacity .1s}
+.ve-geometry-editor[data-near=true] .ve-geometry-handle,.ve-geometry-editor[data-dragging=true] .ve-geometry-handle,.ve-geometry-handle:focus-visible{opacity:1}
+.ve-geometry-handle:focus{outline:none}
+.ve-geometry-handle [data-ring]{opacity:0;pointer-events:none}
+.ve-geometry-handle:hover [data-ring],.ve-geometry-handle:focus-visible [data-ring]{opacity:1}
+.ve-geometry-editor[data-invalid=true] .ve-geometry-handle[data-active=true]{color:var(--ve-orange)}
+.ve-geometry-hit{fill:transparent;stroke:none;pointer-events:all}
+.ve-geometry-handle [data-mark]{pointer-events:none}
+@media(hover:none){.ve-geometry-handle{opacity:1}}
+@media(prefers-reduced-motion:reduce){.ve-geometry-handle{transition:none}}

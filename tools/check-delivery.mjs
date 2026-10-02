@@ -1,108 +1,95 @@
-import { mkdtemp, writeFile, readFile, rm, mkdir } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { resolve, join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { serve } from './site.mjs';
-import { standalone } from './standalone.mjs';
+import { standalone, packDirectory } from './standalone.mjs';
 
 await mkdir('artifacts', { recursive: true });
-const receipt = JSON.parse(
-  execFileSync('npm', ['pack', '--ignore-scripts', '--pack-destination', 'artifacts', '--json'], {
-    encoding: 'utf8',
-  }),
-)[0];
 const consumer = await mkdtemp(join(tmpdir(), 'story-consumer-'));
 let server, browser;
+const run = (file, args, cwd = consumer) =>
+  execFileSync(file, args, { cwd, stdio: 'pipe', maxBuffer: 16 * 1024 * 1024 });
 try {
-  await writeFile(
-    join(consumer, 'package.json'),
-    JSON.stringify({
-      private: true,
-      type: 'module',
-      dependencies: {
-        '@visual-storytelling/core': `file:${resolve('artifacts', receipt.filename)}`,
-      },
-    }),
-  );
-  execFileSync('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], {
-    cwd: consumer,
-    stdio: 'pipe',
-  });
-  const readme = await readFile('README.md', 'utf8');
-  const source = readme.match(/```ts\n([\s\S]*?)\n```/)[1];
-  await writeFile(
-    join(consumer, 'main.ts'),
-    source + "\nexplanation.seek(4); document.body.dataset.ready='true';\n",
-  );
-  await writeFile(
-    join(consumer, 'index.html'),
-    '<!doctype html><html lang="ru"><meta charset="utf-8"><div id="app"></div><script type="module" src="./main.ts"></script></html>',
-  );
-  execFileSync(
-    process.execPath,
-    [
-      resolve('node_modules/typescript/bin/tsc'),
-      '--noEmit',
-      '--strict',
-      '--skipLibCheck',
-      '--target',
-      'ES2023',
-      '--module',
-      'ESNext',
-      '--moduleResolution',
-      'Bundler',
-      'main.ts',
-    ],
-    { cwd: consumer, stdio: 'pipe' },
-  );
-  execFileSync(process.execPath, [resolve('node_modules/vite/bin/vite.js'), 'build'], {
-    cwd: consumer,
-    stdio: 'pipe',
-  });
+  run(process.execPath, [resolve('tools/scene.mjs'), 'new', consumer, '--example', 'area-story']);
+  run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund']);
+  run('npm', ['run', 'build']);
   server = await serve(join(consumer, 'dist'));
   browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 700, height: 600 } });
-  const errors = [];
+  const page = await browser.newPage({ viewport: { width: 700, height: 900 } }),
+    errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(server.url);
-  await page.locator('body[data-ready=true]').waitFor();
-  assert.equal(await page.locator('svg#square').count(), 1);
-  await page.screenshot({ path: 'artifacts/consumer.png' });
-  const offline = resolve('artifacts/area.html');
-  await writeFile(offline, await standalone('area'));
+  await page.locator('[data-square]').first().waitFor({ state: 'attached' });
+  await page.locator('[data-seek]').fill('48.2');
+  await page.screenshot({ path: 'artifacts/consumer.png', fullPage: true });
+  assert.equal(await page.locator('[data-square]').count(), 20);
+  const offline = resolve('artifacts/offline-area.html');
+  await writeFile(offline, await packDirectory(join(consumer, 'dist')));
+  const compact = await packDirectory(join(consumer, 'dist'), 'index.html', { inline: true });
+  assert(Buffer.byteLength(compact) <= 1_000_000);
+  await writeFile('artifacts/inline-area.html', compact);
   await page.context().setOffline(true);
-  await page.goto(pathToFileURL(offline).href);
-  await page.evaluate(() => window.galleryReady);
-  assert.equal(await page.locator('svg#area').count(), 1);
-  await page.emulateMedia({ colorScheme: 'dark' });
-  await page.locator('.vs-notebook[data-theme=dark]').waitFor();
-  assert.equal(
-    await page.locator('.vs-notebook').evaluate((node) => getComputedStyle(node).backgroundColor),
-    'rgba(0, 0, 0, 0)',
+  for (const file of [offline, resolve('artifacts/inline-area.html')]) {
+    await page.goto(pathToFileURL(file).href);
+    await page.locator('[data-play]').waitFor();
+    await page.locator('[data-play]').click();
+    await page.waitForFunction(() => Number(document.querySelector('[data-seek]').value) > 0.15);
+    await page.locator('[data-play]').click();
+    await page.locator('[data-seek]').fill('48.2');
+    await page.emulateMedia({ colorScheme: 'dark' });
+    assert.equal(
+      await page.locator('.ve-scene').evaluate((n) => getComputedStyle(n).backgroundColor),
+      'rgba(0, 0, 0, 0)',
+    );
+  }
+  const lc = resolve('artifacts/offline-lc.html');
+  await writeFile(lc, await standalone('lc-oscillator'));
+  await page.goto(pathToFileURL(lc).href);
+  await page.waitForFunction(() => !document.querySelector('[data-seek]')?.disabled);
+  await page.locator('[data-seek]').fill('0.75');
+  assert(
+    Math.abs(
+      (await page
+        .locator('iframe[data-scene-svg]')
+        .evaluate((o) => o.contentDocument.querySelector('svg').getCurrentTime())) - 0.75,
+    ) < 0.001,
   );
-  await page.emulateMedia({ colorScheme: 'light' });
-  await page.locator('.vs-notebook[data-theme=light]').waitFor();
-  await page.getByRole('button', { name: 'Воспроизвести', exact: true }).click();
-  await page.waitForFunction(() => Number(document.querySelector('.vs-player input').value) > 2.1);
-  await page.getByRole('button', { name: 'Пауза', exact: true }).click();
-  await page.getByRole('slider', { name: 'Позиция рассказа' }).fill('48.2');
-  await page.screenshot({ path: 'artifacts/offline.png', fullPage: true });
+  await page.screenshot({ path: 'artifacts/offline-lc.png', fullPage: true });
+  const three = resolve('artifacts/offline-3d.html');
+  await writeFile(three, await standalone('explorer-3d'));
+  await page.goto(pathToFileURL(three).href);
+  await page.locator('canvas').waitFor();
+  await page.locator('[data-mode=story]').click();
+  await page.locator('[data-seek]').fill('15');
+  assert.equal(await page.locator('canvas').evaluate((c) => c.width > 0 && c.height > 0), true);
   assert.deepEqual(errors, []);
-  console.log(
-    JSON.stringify(
-      {
-        package: receipt.filename,
-        size: receipt.size,
-        consumer: 'built and rendered',
-        offline: 'rendered and played narration without network',
-      },
-      null,
-      2,
-    ),
+  // The same consumer can disable narration without replacing the clock or scene code.
+  await page.context().setOffline(false);
+  const source = join(consumer, 'index.html');
+  await writeFile(
+    source,
+    (await readFile(source, 'utf8')).replace('<audio ', '<audio data-silent="true" '),
   );
+  run('npm', ['run', 'build']);
+  await page.goto(server.url);
+  await page.locator('[data-play]').waitFor();
+  assert.equal(await page.locator('[data-mute]').count(), 0);
+  await page.locator('[data-play]').click();
+  await page.waitForFunction(() => Number(document.querySelector('[data-seek]').value) > 0.15);
+  await page.locator('[data-play]').click();
+  const report = {
+    consumer: 'created, installed, built and rendered',
+    offline: 'narration, compact HTML, LC native SVG seek and 3D work without network',
+    inlineBytes: Buffer.byteLength(compact),
+    silent: 'same clock/player, sound control hidden',
+    errors,
+  };
+  await writeFile('artifacts/delivery.json', JSON.stringify(report, null, 2));
+  console.log(JSON.stringify(report, null, 2));
 } finally {
   await browser?.close();
   await server?.close();

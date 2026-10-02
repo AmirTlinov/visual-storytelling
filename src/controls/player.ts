@@ -1,6 +1,6 @@
 import { html } from '../ink/dom.js';
 import type { Transport } from '../story/transport.js';
-import { button } from './button.js';
+import { PlayerControls } from './player-view.js';
 
 export const formatTime = (seconds: number) =>
   `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
@@ -10,68 +10,65 @@ export interface PlayerOptions {
   onSeek?: (time: number) => void;
   onPlay?: () => void;
 }
+/** The continuous-story adapter uses the same view as audio, steps and native SVG. */
 export function player(parent: HTMLElement, options: PlayerOptions) {
-  const clock = options.transport;
-  const element = html('div', 'vs-player');
-  element.setAttribute('role', 'group');
-  element.setAttribute('aria-label', 'Управление рассказом');
-  const seek = options.onSeek ?? clock.seek;
+  const clock = options.transport,
+    element = html('div', 'vs-player');
+  parent.append(element);
+  const view = PlayerControls.mount(element, {
+    chapters: true,
+    sound: clock.state.hasAudio,
+    max: clock.state.duration,
+    label: 'Позиция рассказа',
+  });
+  const seek = options.onSeek ?? clock.seek,
+    abort = new AbortController(),
+    listen = { signal: abort.signal };
   const stops = [...new Set([0, ...(options.stops ?? []), clock.state.duration])].sort(
     (a, b) => a - b,
   );
-  const play = button(
-    'Воспроизвести',
+  const error = html('p', 've-status');
+  error.setAttribute('role', 'alert');
+  parent.append(error);
+  view.play.addEventListener(
+    'click',
     () => {
       options.onPlay?.();
       void clock.toggle();
     },
-    'play',
+    listen,
   );
-  const previous = button(
-    'Предыдущий шаг',
-    () => seek([...stops].reverse().find((time) => time < clock.state.time - 0.3) ?? 0),
-    'previous',
+  view.back!.addEventListener(
+    'click',
+    () => seek([...stops].reverse().find((t) => t < clock.state.time - 0.3) ?? 0),
+    listen,
   );
-  const next = button(
-    'Следующий шаг',
-    () => seek(stops.find((time) => time > clock.state.time + 0.05) ?? clock.state.duration),
-    'next',
+  view.next!.addEventListener(
+    'click',
+    () => seek(stops.find((t) => t > clock.state.time + 0.05) ?? clock.state.duration),
+    listen,
   );
-  const sound = button('Выключить звук', () => clock.mute(), 'sound');
-  const scrubber = html('input', 'vs-range');
-  scrubber.type = 'range';
-  scrubber.min = '0';
-  scrubber.max = String(clock.state.duration);
-  scrubber.step = '.01';
-  scrubber.setAttribute('aria-label', 'Позиция рассказа');
-  const input = () => seek(scrubber.valueAsNumber);
-  scrubber.addEventListener('input', input);
-  const time = html('span', 'vs-time');
-  time.setAttribute('aria-hidden', 'true');
-  const error = html('p', 'vs-status');
-  error.setAttribute('role', 'alert');
-  element.append(play.element, previous.element, next.element, scrubber, time);
-  if (clock.state.hasAudio) element.append(sound.element);
-  parent.append(element, error);
+  view.seek.addEventListener('input', () => seek(view.seek.valueAsNumber), listen);
+  view.mute?.addEventListener('click', () => clock.mute(), listen);
   const unsubscribe = clock.subscribe((state) => {
-    play.set(state.playing ? 'Пауза' : 'Воспроизвести', state.playing ? 'pause' : 'play');
-    sound.set(state.muted ? 'Включить звук' : 'Выключить звук', state.muted ? 'muted' : 'sound');
-    scrubber.value = String(state.time);
-    scrubber.setAttribute(
-      'aria-valuetext',
-      `${formatTime(state.time)} из ${formatTime(state.duration)}`,
-    );
-    time.textContent = `${formatTime(state.time)} / ${formatTime(state.duration)}`;
+    const stamp = `${formatTime(state.time)} / ${formatTime(state.duration)}`;
+    view.update({
+      value: state.time,
+      paused: !state.playing,
+      ended: state.time >= state.duration,
+      stamp,
+      valueText: stamp,
+      canBack: state.time > 0.01,
+      canNext: state.time < state.duration,
+      muted: state.muted,
+    });
     error.textContent = state.error;
-    previous.element.disabled = state.time < 0.01;
-    next.element.disabled = state.time >= state.duration;
   });
   return {
     element,
     dispose() {
       unsubscribe();
-      for (const control of [play, previous, next, sound]) control.dispose();
-      scrubber.removeEventListener('input', input);
+      abort.abort();
       element.remove();
       error.remove();
     },

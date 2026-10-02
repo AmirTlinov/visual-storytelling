@@ -1,3 +1,5 @@
+import { SilentMedia } from './media.js';
+import { timeline } from './clock.js';
 export interface Playback {
   time: number;
   duration: number;
@@ -10,85 +12,55 @@ export interface TransportOptions {
   duration: number;
   audio?: HTMLAudioElement;
 }
-
-/** Owns time. RAF samples native media time, or monotonic time for silent stories. */
+/** Commands and subscriptions over the single media clock used by narrated scenes. */
 export function transport({ duration, audio }: TransportOptions) {
   if (!(duration > 0) || !Number.isFinite(duration))
     throw new Error('Playback duration must be positive');
-  const listeners = new Set<(state: Playback) => void>();
-  const abort = new AbortController();
-  let time = 0,
-    playing = false,
-    pending = false,
-    frame = 0,
-    origin = 0,
+  const media = audio ?? new SilentMedia(duration),
+    listeners = new Set<(state: Playback) => void>(),
+    abort = new AbortController();
+  let pending = false,
     disposed = false,
-    request = 0;
-  let error: string | null = null;
+    request = 0,
+    error: string | null = null;
   const state = (): Playback => ({
-    time,
+    time: media.currentTime,
     duration,
-    playing: playing || pending,
-    muted: audio?.muted ?? true,
+    playing: pending || !media.paused,
+    muted: media.muted,
     hasAudio: !!audio,
     error,
   });
   const notify = () => {
     for (const listener of listeners) listener(state());
   };
-  const sample = () => {
-    if (playing)
-      time = Math.min(duration, audio ? audio.currentTime : (performance.now() - origin) / 1000);
-  };
-  function tick() {
-    frame = 0;
-    if (!playing || disposed) return;
-    sample();
-    if (time >= duration || audio?.ended) {
-      time = duration;
-      pause();
-      return;
-    }
-    notify();
-    frame = requestAnimationFrame(tick);
-  }
+  const clock = timeline(media, { duration, cues: {}, segments: [] }, notify);
   function pause() {
     request++;
-    sample();
-    playing = false;
     pending = false;
-    if (frame) cancelAnimationFrame(frame);
-    frame = 0;
-    audio?.pause();
-    notify();
+    media.pause();
+    clock.update();
   }
-  function seek(value: number) {
-    if (!Number.isFinite(value)) throw new Error('Seek time must be finite');
-    time = Math.max(0, Math.min(duration, value));
-    origin = performance.now() - time * 1000;
-    if (audio) audio.currentTime = time;
-    notify();
+  function seek(time: number) {
+    if (!Number.isFinite(time)) throw new Error('Seek time must be finite');
+    clock.seek(time);
   }
   async function play() {
-    if (disposed || playing || pending) return;
-    if (time >= duration - 0.02) seek(0);
+    if (disposed || pending || !media.paused) return;
+    if (media.currentTime >= duration - 0.02) seek(0);
     const token = ++request;
     error = null;
     pending = true;
     notify();
     try {
-      if (audio) await audio.play();
+      await media.play();
       if (disposed || token !== request) return;
       pending = false;
-      playing = true;
-      origin = performance.now() - time * 1000;
-      notify();
-      frame = requestAnimationFrame(tick);
+      clock.update();
     } catch (cause) {
-      if (token !== request || disposed) return;
-      error = cause instanceof Error ? cause.message : String(cause);
-      playing = false;
+      if (disposed || token !== request) return;
       pending = false;
+      error = cause instanceof Error ? cause.message : String(cause);
       notify();
     }
   }
@@ -98,15 +70,6 @@ export function transport({ duration, audio }: TransportOptions) {
       () => {
         pause();
         error = 'Не удалось загрузить звук';
-        notify();
-      },
-      { signal: abort.signal },
-    );
-    audio.addEventListener(
-      'ended',
-      () => {
-        pause();
-        time = duration;
         notify();
       },
       { signal: abort.signal },
@@ -130,10 +93,10 @@ export function transport({ duration, audio }: TransportOptions) {
     pause,
     seek,
     toggle() {
-      return playing || pending ? pause() : play();
+      return pending || !media.paused ? pause() : play();
     },
-    mute(value = !audio?.muted) {
-      if (audio) audio.muted = value;
+    mute(value = !media.muted) {
+      media.muted = value;
       notify();
     },
     subscribe(listener: (state: Playback) => void) {
@@ -144,6 +107,7 @@ export function transport({ duration, audio }: TransportOptions) {
     dispose() {
       pause();
       disposed = true;
+      clock.dispose();
       abort.abort();
       listeners.clear();
     },
