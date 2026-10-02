@@ -1,0 +1,148 @@
+{
+  "version": 2,
+  "voice": {
+    "rate": 1.0,
+    "seed": 42
+  },
+  "intro": 0.65,
+  "outro": 1.5,
+  "music": {
+    "track": "inspired",
+    "offset": 32,
+    "level_db": -19
+  },
+  "segments": [
+    {
+      "id": "question",
+      "text": "[curious] Откуда берётся [emphasis] остаток при делении? Давайте посмотрим.",
+      "pause_after": 0.45,
+      "cues": [
+        {
+          "id": "question_intro",
+          "quote": "Откуда берётся"
+        },
+        {
+          "id": "question_remainder",
+          "quote": "остаток"
+        }
+      ]
+    },
+    {
+      "id": "number",
+      "text": "Возьмём [emphasis] двадцать три предмета.",
+      "pause_after": 0.7,
+      "cues": [
+        {
+          "id": "object_count",
+          "quote": "двадцать три"
+        },
+        {
+          "id": "object_name",
+          "quote": "предмета"
+        }
+      ]
+    },
+    {
+      "id": "grouping",
+      "text": "Собираем их в группы по три. В каждую группу кладём ровно три предмета.",
+      "pause_after": 0.7,
+      "cues": [
+        {
+          "id": "group_action",
+          "quote": "Собираем их в группы по три"
+        },
+        {
+          "id": "group_size",
+          "quote": "по три"
+        },
+        {
+          "id": "each_group",
+          "quote": "В каждую группу кладём ровно три предмета"
+        }
+      ]
+    },
+    {
+      "id": "product",
+      "text": "Получилось [emphasis] семь полных групп. Семь умножить на три — это двадцать один.",
+      "pause_after": 0.65,
+      "cues": [
+        {
+          "id": "group_count",
+          "quote": "семь",
+          "occurrence": 1
+        },
+        {
+          "id": "group_name",
+          "quote": "полных групп"
+        },
+        {
+          "id": "product_groups",
+          "quote": "Семь",
+          "occurrence": 2
+        },
+        {
+          "id": "product_sign",
+          "quote": "умножить на"
+        },
+        {
+          "id": "product_size",
+          "quote": "три"
+        },
+        {
+          "id": "product_equals",
+          "quote": "это"
+        },
+        {
+          "id": "product_value",
+          "quote": "двадцать один"
+        }
+      ]
+    },
+    {
+      "id": "result",
+      "text": "[excited] А эти [emphasis] два предмета остались. Для ещё одной тройки их мало. Вот он — остаток!",
+      "pause_after": 0.6,
+      "cues": [
+        {
+          "id": "remainder_value",
+          "quote": "два"
+        },
+        {
+          "id": "missing_slot",
+          "quote": "ещё одной тройки"
+        },
+        {
+          "id": "remainder_name",
+          "quote": "остаток"
+        }
+      ]
+    },
+    {
+      "id": "summary",
+      "text": "Двадцать три — это двадцать один плюс два.",
+      "pause_after": 0.3,
+      "cues": [
+        {
+          "id": "summary_whole",
+          "quote": "Двадцать три"
+        },
+        {
+          "id": "summary_equals",
+          "quote": "это"
+        },
+        {
+          "id": "summary_grouped",
+          "quote": "двадцать один"
+        },
+        {
+          "id": "summary_plus",
+          "quote": "плюс"
+        },
+        {
+          "id": "summary_remainder",
+          "quote": "два"
+        }
+      ]
+    }
+  ]
+}

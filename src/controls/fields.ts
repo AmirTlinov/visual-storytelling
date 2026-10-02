@@ -34,10 +34,6 @@ export function range(options: RangeOptions) {
     input.value = String(value);
     output.value = format(input.valueAsNumber);
     input.setAttribute('aria-valuetext', output.value);
-    input.style.setProperty(
-      '--vs-progress',
-      `${(100 * (input.valueAsNumber - options.min)) / (options.max - options.min)}%`,
-    );
   };
   const change = () => {
     set(input.valueAsNumber);

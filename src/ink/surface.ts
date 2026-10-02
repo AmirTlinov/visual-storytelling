@@ -35,7 +35,7 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
   parent.append(element);
   let width = options.width,
     height = options.height;
-  const drawGrid = (grid: Grid | false = { step: 24 }) => {
+  const drawGrid = (grid: Grid | false = { step: 30 }) => {
     paper.replaceChildren();
     if (!grid) return;
     if (!(grid.step > 0) || !Number.isFinite(grid.step))
@@ -54,11 +54,11 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
         d: parts.join(' '),
         fill: 'none',
         stroke: 'currentColor',
-        'stroke-width': 0.7,
+        'stroke-width': 1,
       }),
     );
   };
-  const resize = (w: number, h: number, grid: Grid | false = options.grid ?? { step: 24 }) => {
+  const resize = (w: number, h: number, grid: Grid | false = options.grid ?? { step: 30 }) => {
     if (![w, h].every((value) => Number.isFinite(value) && value > 0))
       throw new Error('Surface dimensions must be positive');
     width = w;

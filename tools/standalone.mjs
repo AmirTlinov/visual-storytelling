@@ -1,6 +1,6 @@
 import { readFile, readdir } from 'node:fs/promises';
 const mime = { m4a: 'audio/mp4', woff2: 'font/woff2', png: 'image/png', svg: 'image/svg+xml' };
-export async function standalone(scene, theme) {
+export async function standalone(scene, theme = 'auto') {
   let html = await readFile('site/index.html', 'utf8');
   const script = /\s*<script\b[^>]*src="([^"]+)"[^>]*><\/script>/;
   const style = /\s*<link\b[^>]*href="([^"]+\.css)"[^>]*>/;

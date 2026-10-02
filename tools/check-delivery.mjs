@@ -72,11 +72,19 @@ try {
   assert.equal(await page.locator('svg#square').count(), 1);
   await page.screenshot({ path: 'artifacts/consumer.png' });
   const offline = resolve('artifacts/area.html');
-  await writeFile(offline, await standalone('area', 'light'));
+  await writeFile(offline, await standalone('area'));
   await page.context().setOffline(true);
   await page.goto(pathToFileURL(offline).href);
   await page.evaluate(() => window.galleryReady);
   assert.equal(await page.locator('svg#area').count(), 1);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.locator('.vs-notebook[data-theme=dark]').waitFor();
+  assert.equal(
+    await page.locator('.vs-notebook').evaluate((node) => getComputedStyle(node).backgroundColor),
+    'rgba(0, 0, 0, 0)',
+  );
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.locator('.vs-notebook[data-theme=light]').waitFor();
   await page.getByRole('button', { name: 'Воспроизвести', exact: true }).click();
   await page.waitForFunction(() => Number(document.querySelector('.vs-player input').value) > 2.1);
   await page.getByRole('button', { name: 'Пауза', exact: true }).click();

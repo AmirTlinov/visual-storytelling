@@ -1,17 +1,23 @@
 @font-face {
   font-family: Notebook;
+  src: url('./assets/pencil.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: NotebookFallback;
   src: url('./assets/shantell.woff2') format('woff2');
   font-weight: 300 800;
   font-style: normal;
   font-display: block;
 }
 .vs-notebook {
-  font-family: Notebook, cursive;
+  font-family: Notebook, NotebookFallback, cursive;
   color: var(--vs-ink);
   background: transparent;
   max-width: 900px;
   margin: auto;
-  --vs-progress: 0%;
   line-height: 1.5;
 }
 .vs-notebook * {
@@ -36,7 +42,7 @@
   display: block;
   overflow: visible;
   color: var(--vs-ink);
-  font-family: Notebook, cursive;
+  font-family: Notebook, NotebookFallback, cursive;
 }
 .vs-canvas path {
   stroke-linecap: round;
@@ -46,8 +52,8 @@
   opacity: var(--vs-grid-opacity);
   pointer-events: none;
 }
-.vs-marker > path {
-  opacity: var(--vs-marker-opacity);
+.vs-marker {
+  fill: color-mix(in srgb, currentColor var(--vs-wash-strength, 18%), transparent);
 }
 .vs-hatch {
   opacity: 0.68;
@@ -118,11 +124,18 @@
 .vs-button:focus {
   outline: none;
 }
-.vs-button:focus-visible,
-.vs-range:focus-visible {
-  outline: 1.5px dashed currentColor;
-  outline-offset: 3px;
-  border-radius: 8px;
+.vs-button:focus-visible {
+  outline: none;
+}
+.vs-button:focus-visible::before {
+  content: '';
+  position: absolute;
+  left: 25%;
+  right: 25%;
+  bottom: -2px;
+  border-bottom: 1.5px solid var(--vs-pencil);
+  transform: rotate(-2deg);
+  pointer-events: none;
 }
 .vs-icon-button {
   width: 44px;
@@ -181,41 +194,50 @@
   touch-action: pan-y;
   user-select: none;
 }
+/* Shared with the accepted visual-explainer player: quiet rail and one paper thumb. */
 .vs-range::-webkit-slider-runnable-track {
-  height: 2px;
-  border-radius: 50%;
-  background: linear-gradient(
-    to right,
-    currentColor var(--vs-progress),
-    color-mix(in srgb, currentColor 20%, transparent) var(--vs-progress)
-  );
-  transform: rotate(-0.12deg);
+  height: 3px;
+  border: 0;
+  border-top: 1.2px solid var(--vs-pencil);
+  border-radius: 45%;
+  background: transparent;
+}
+.vs-range::-moz-range-track {
+  height: 3px;
+  border: 0;
+  border-top: 1.2px solid var(--vs-pencil);
+  border-radius: 45%;
+  background: transparent;
 }
 .vs-range::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
-  width: 17px;
+  width: 18px;
   height: 18px;
   margin-top: -8px;
-  border: 1.4px solid currentColor;
-  border-radius: 46% 52% 48% 44%;
-  background: light-dark(#fffdf7, #242522);
-}
-.vs-range::-moz-range-track {
-  height: 2px;
-  border-radius: 50%;
-  background: color-mix(in srgb, currentColor 20%, transparent);
-}
-.vs-range::-moz-range-progress {
-  height: 2px;
-  background: currentColor;
+  border: 1.3px solid var(--vs-ink);
+  border-radius: 48% 55% 45% 52%;
+  background: var(--vs-surface);
+  box-shadow: none;
 }
 .vs-range::-moz-range-thumb {
-  width: 16px;
-  height: 17px;
-  border: 1.4px solid currentColor;
-  border-radius: 46% 52% 48% 44%;
-  background: light-dark(#fffdf7, #242522);
+  width: 18px;
+  height: 18px;
+  border: 1.3px solid var(--vs-ink);
+  border-radius: 48% 55% 45% 52%;
+  background: var(--vs-surface);
+  box-shadow: none;
+}
+.vs-range:focus {
+  outline: none;
+}
+.vs-range:focus-visible::-webkit-slider-thumb {
+  outline: 1px dashed var(--vs-pencil);
+  outline-offset: 4px;
+}
+.vs-range:focus-visible::-moz-range-thumb {
+  outline: 1px dashed var(--vs-pencil);
+  outline-offset: 4px;
 }
 .vs-return {
   display: block;

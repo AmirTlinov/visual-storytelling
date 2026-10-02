@@ -7,6 +7,7 @@ import { areaAt } from '../examples/area/model.ts';
 import { comparisons, sortingAt } from '../examples/sort/model.ts';
 import { oscillator } from '../examples/lc/model.ts';
 import { transform } from '../examples/vector/model.ts';
+import { memoryAt } from '../examples/transfer/model.ts';
 
 test('spoken dimensions and paper units follow their own words in either seek direction', () => {
   const script = JSON.parse(
@@ -68,4 +69,14 @@ test('LC energy is conserved and matrix output uses the current inputs', () => {
     assert.ok(Math.abs(state.electric + state.magnetic - 1) < 1e-12);
   }
   assert.deepEqual(transform({ x: 1.5, y: -1, a: -2, b: 0.5 }), { x: -3, y: -0.5 });
+});
+test('shared memory changes only when writes arrive and CPU waits for completion', () => {
+  assert.deepEqual(memoryAt(4).memory, ['—', '—', '—', '—']);
+  assert.deepEqual(memoryAt(6).memory, [3, 5, 7, 9]);
+  assert.deepEqual(memoryAt(16).memory, [3, 5, 7, 9]);
+  assert.deepEqual(memoryAt(18).memory, [6, 10, 14, 18]);
+  assert.equal(memoryAt(19).completed, false);
+  assert.equal(memoryAt(21).completed, true);
+  assert.deepEqual(memoryAt(22).cpu, [3, 5, 7, 9]);
+  assert.deepEqual(memoryAt(24).cpu, [6, 10, 14, 18]);
 });

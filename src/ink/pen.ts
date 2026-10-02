@@ -2,6 +2,7 @@ import rough from 'roughjs';
 import type { Options } from 'roughjs/bin/core.js';
 import { seed, svg } from './dom.js';
 import { strokes } from './strokes.js';
+import { marker } from './marker.js';
 
 export type Point = readonly [number, number];
 export type Fill = 'none' | 'marker' | 'hatch';
@@ -9,6 +10,8 @@ export interface PenStyle {
   fill?: Fill;
   width?: number;
   pencil?: boolean;
+  /** A quiet construction edge can surround a saturated colour wash. */
+  stroke?: 'ink' | 'pencil' | 'currentColor';
 }
 let nextCanvasId = 0;
 export function roundedRect(x: number, y: number, width: number, height: number, radius = 3) {
@@ -31,18 +34,25 @@ export function pen(canvas: SVGSVGElement) {
     const previous = drawings.get(id);
     if (previous && canvas.contains(previous)) throw new Error(`Duplicate drawing id: ${id}`);
     const element = svg('g', { 'data-stroke': id });
+    parent.append(element);
     drawings.set(id, element);
     const options: Options = {
       seed: seed(id),
       roughness: 0.38,
       bowing: 0.6,
-      stroke: 'currentColor',
+      stroke:
+        style.stroke === 'pencil'
+          ? 'var(--vs-pencil)'
+          : style.stroke === 'ink'
+            ? 'var(--vs-ink)'
+            : 'currentColor',
       strokeWidth: style.width ?? 1.65,
       disableMultiStroke: true,
       disableMultiStrokeFill: true,
     };
     const fill = style.fill ?? 'none';
     let fillPaths: SVGPathElement[] = [];
+    let paint = (_progress: number) => {};
     if (fill !== 'none') {
       const clipId = `${canvas.id}-fill-${[...id].map((char) => char.codePointAt(0)!.toString(16)).join('-')}`;
       const clip = svg('clipPath', { id: clipId });
@@ -50,43 +60,56 @@ export function pen(canvas: SVGSVGElement) {
       const definitions = svg('defs');
       definitions.append(clip);
       element.append(definitions);
-      const wash = renderer.path(path, {
-        ...options,
-        stroke: 'none',
-        fill: 'currentColor',
-        fillStyle: 'hachure',
-        hachureAngle: fill === 'marker' ? -90 : -42,
-        hachureGap: fill === 'marker' ? 9 : 6,
-        fillWeight: fill === 'marker' ? 11 : 0.85,
-        roughness: fill === 'marker' ? 0.5 : 0.38,
-      });
-      wash.classList.add(fill === 'marker' ? 'vs-marker' : 'vs-hatch');
-      wash.setAttribute('clip-path', `url(#${clipId})`);
-      // Individual marker passes deepen the pigment at overlaps.
       if (fill === 'marker') {
-        for (const packed of wash.querySelectorAll('path')) {
-          const passes = (packed.getAttribute('d')?.match(/M[^M]+/g) ?? []).map((d) => {
-            const pass = packed.cloneNode(false) as SVGPathElement;
-            pass.setAttribute('d', d);
-            return pass;
-          });
-          packed.replaceWith(...passes);
-        }
+        const geometry = svg('path', { d: path });
+        element.append(geometry);
+        const bounds = geometry.getBBox();
+        geometry.remove();
+        const revealClip = svg('clipPath', { id: `${clipId}-reveal` });
+        const window = svg('rect', {
+          x: bounds.x,
+          y: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
+        });
+        revealClip.append(window);
+        definitions.append(revealClip);
+        const wash = svg('g', { 'clip-path': `url(#${clipId})` });
+        const reveal = svg('g', { 'clip-path': `url(#${clipId}-reveal)` });
+        reveal.append(marker(clipId, bounds.x, bounds.y, bounds.width, bounds.height, seed(id)));
+        wash.append(reveal);
+        element.append(wash);
+        paint = (progress) =>
+          window.setAttribute('width', String(bounds.width * Math.max(0, Math.min(1, progress))));
+      } else {
+        const wash = renderer.path(path, {
+          ...options,
+          stroke: 'none',
+          fill: 'currentColor',
+          fillStyle: 'hachure',
+          hachureAngle: -42,
+          hachureGap: 6,
+          fillWeight: 0.85,
+        });
+        wash.classList.add('vs-hatch');
+        wash.setAttribute('clip-path', `url(#${clipId})`);
+        element.append(wash);
+        fillPaths = [...wash.querySelectorAll('path')];
       }
-      element.append(wash);
-      fillPaths = [...wash.querySelectorAll('path')];
     }
     const outline = renderer.path(path, options);
     outline.setAttribute('stroke-linecap', 'round');
     outline.setAttribute('stroke-linejoin', 'round');
     if (style.pencil) outline.style.opacity = '.42';
     element.append(outline);
-    parent.append(element);
     // Paint order keeps outlines on top; drawing order traces before filling.
     const trace = strokes([...outline.querySelectorAll('path'), ...fillPaths]);
     return {
       element,
-      reveal: trace,
+      reveal(progress: number) {
+        trace(progress);
+        paint(progress);
+      },
       dispose() {
         if (drawings.get(id) === element) drawings.delete(id);
         element.remove();

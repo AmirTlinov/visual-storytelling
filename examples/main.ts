@@ -21,7 +21,7 @@ const catalog = {
     title: 'Остаток',
     mount: remainder,
     description: 'Одни и те же предметы сохраняются при перегруппировке.',
-    preview: 14,
+    preview: 21,
   },
   sort: {
     title: 'Сортировка',
@@ -44,8 +44,8 @@ const catalog = {
   transfer: {
     title: 'Передача',
     mount: transfer,
-    description: 'Отправка, движение и прибытие — части одного действия.',
-    preview: 3.5,
+    description: 'CPU и GPU читают и обновляют один общий буфер.',
+    preview: 16,
   },
   materials: {
     title: 'Инструменты',
@@ -63,7 +63,9 @@ declare global {
   }
 }
 window.galleryReady = (async () => {
-  await document.fonts.load('400 24px Notebook');
+  await Promise.all(
+    ['Notebook', 'NotebookFallback'].map((font) => document.fonts.load(`400 24px ${font}`)),
+  );
   await document.fonts.ready;
   const parent = document.querySelector<HTMLElement>('#scene')!;
   const navigation = document.querySelector<HTMLElement>('#examples')!;

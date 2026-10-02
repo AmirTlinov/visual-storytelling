@@ -9,17 +9,22 @@ export function token(
   view: Surface,
   id: string,
   value: string | number,
-  options: { size?: number; pigment?: Pigment } = {},
+  options: { size?: number; width?: number; pigment?: Pigment } = {},
 ) {
   const mark = object(view.layer, id, options.pigment ?? 'blue');
   const size = options.size ?? 44;
-  const shape = view.pen.rect(mark.content, `${id}:shape`, -size / 2, -size / 2, size, size, {
+  const width = options.width ?? size;
+  const shape = view.pen.rect(mark.content, `${id}:shape`, -width / 2, -size / 2, width, size, {
     fill: 'marker',
   });
   const label = lettering(mark.content, value, { y: size * 0.17, size: size * 0.58 });
+  const wash = shape.element.querySelector<SVGGElement>('.vs-marker')!;
   return {
     ...mark,
     label,
+    highlight(active: boolean) {
+      wash.style.display = active ? '' : 'none';
+    },
     reveal(p: number) {
       shape.reveal(p);
       label.write(p);

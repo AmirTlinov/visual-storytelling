@@ -11,7 +11,7 @@ const { values } = parseArgs({
   options: {
     scene: { type: 'string', default: 'area' },
     format: { type: 'string', default: 'png' },
-    theme: { type: 'string', default: 'light' },
+    theme: { type: 'string' },
     out: { type: 'string' },
     time: { type: 'string', default: '0' },
     width: { type: 'string', default: '960' },
@@ -20,12 +20,14 @@ const { values } = parseArgs({
     to: { type: 'string' },
   },
 });
-const { scene, format, theme } = values;
+const { scene, format } = values;
+const theme = values.theme ?? (format === 'html' ? 'auto' : 'light');
 if (!['area', 'remainder', 'sort', 'lc', 'vector', 'transfer', 'materials'].includes(scene))
   throw new Error('Unknown example');
 if (!['png', 'svg', 'html', 'mp4'].includes(format))
   throw new Error('Format must be png, svg, html or mp4');
-if (!['light', 'dark'].includes(theme)) throw new Error('Choose light or dark theme');
+if (!(format === 'html' ? ['auto', 'light', 'dark'] : ['light', 'dark']).includes(theme))
+  throw new Error('Choose light or dark; interactive HTML also supports auto');
 const width = Number(values.width),
   fps = Number(values.fps),
   from = Number(values.from),

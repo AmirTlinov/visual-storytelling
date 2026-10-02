@@ -7,6 +7,7 @@ export interface LetteringOptions {
   y?: number;
   size?: number;
   anchor?: 'start' | 'middle' | 'end';
+  tabular?: boolean;
 }
 export function lettering(
   parent: SVGElement,
@@ -16,7 +17,6 @@ export function lettering(
   const element = svg('g', { class: 'vs-lettering', role: 'img' });
   parent.append(element);
   const size = options.size ?? 24;
-  const scale = size / 14;
   let value = '',
     width = 0,
     progress = 1;
@@ -31,31 +31,48 @@ export function lettering(
     value = String(next);
     element.replaceChildren();
     element.setAttribute('aria-label', value);
-    let x = 0;
-    for (const char of value) {
+    const measure = svg(
+      'text',
+      {
+        'font-size': size,
+        'font-family': 'Notebook, NotebookFallback, cursive',
+        visibility: 'hidden',
+      },
+      value,
+    );
+    // SVG otherwise collapses repeated spaces and changes its character indices.
+    measure.style.whiteSpace = 'pre';
+    if (options.tabular) measure.style.fontVariantNumeric = 'tabular-nums';
+    const canvas = parent.ownerSVGElement ?? parent;
+    canvas.append(measure);
+    width = measure.getComputedTextLength();
+    for (const [index, char] of [...value].entries()) {
+      if (/\s/.test(char)) continue;
+      const bounds = measure.getExtentOfChar(index);
       const paths = glyphs[char];
-      const advance =
-        char === ' ' ? size * 0.28 : char === '1' || char === 'і' ? size * 0.43 : size * 0.57;
       if (paths) {
-        const letter = svg('g', { transform: `translate(${x} ${-10 * scale}) scale(${scale})` });
+        const letter = svg('g', {
+          transform: `translate(${bounds.x + bounds.width * 0.055} ${-size * 0.82}) scale(${bounds.width / 6.7} ${size * 0.082})`,
+        });
         for (const d of paths)
           letter.append(
             svg('path', {
               d,
               fill: 'none',
               stroke: 'currentColor',
-              'stroke-width': 0.72,
+              'stroke-width': 0.65,
               'stroke-linecap': 'round',
               'stroke-linejoin': 'round',
             }),
           );
         element.append(letter);
       } else if (char !== ' ') {
-        element.append(svg('text', { x, y: 0, 'font-size': size, fill: 'currentColor' }, char));
+        element.append(
+          svg('text', { x: bounds.x, y: 0, 'font-size': size, fill: 'currentColor' }, char),
+        );
       }
-      x += advance;
     }
-    width = Math.max(0, x - size * 0.09);
+    measure.remove();
     position();
     reveal = strokes(element);
     write(progress);

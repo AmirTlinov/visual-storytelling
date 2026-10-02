@@ -1,15 +1,14 @@
 @import '../src/style.css';
 :root {
-  font-family: Notebook, cursive;
+  font-family: Notebook, NotebookFallback, cursive;
   color-scheme: light dark;
-  background: #fffefa;
-  color: #30302e;
+  background: transparent;
+  color: var(--vs-ink);
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
 }
 html[data-theme='dark'] {
-  background: #202320;
-  color: #e8e3da;
+  background: transparent;
   color-scheme: dark;
 }
 * {

@@ -19,7 +19,7 @@ export function formula<K extends string>(
     if (ids.has(term.id)) throw new Error(`Duplicate formula term: ${term.id}`);
     ids.add(term.id);
     const part = object(mark.content, `${id}:${term.id}`, term.pigment);
-    const label = lettering(part.content, term.text, { size, anchor: 'start' });
+    const label = lettering(part.content, term.text, { size, anchor: 'start', tabular: true });
     return { term, part, label };
   });
   const layout = () => {

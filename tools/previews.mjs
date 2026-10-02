@@ -2,11 +2,11 @@ import { writeFile } from 'node:fs/promises';
 import { renderer } from './render.mjs';
 const moments = {
   area: 48.2,
-  remainder: 14,
-  sort: 1.7,
+  remainder: 21,
+  sort: 0.8,
   lc: 0.75,
   vector: 16,
-  transfer: 3.5,
+  transfer: 16,
   materials: 4,
 };
 for (const [scene, time] of Object.entries(moments)) {

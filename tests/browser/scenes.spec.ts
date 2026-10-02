@@ -2,6 +2,26 @@ import { test, expect } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 
 const scenes = ['area', 'remainder', 'sort', 'lc', 'vector', 'transfer', 'materials'];
+function drawingSnapshot(time: number) {
+  window.explainer.seek(time);
+  const clone = window.explainer.svg().cloneNode(true) as SVGSVGElement;
+  for (const node of [clone, ...clone.querySelectorAll<SVGElement>('[style]')]) {
+    const values = [...node.style]
+      .sort()
+      .map(
+        (property) =>
+          [
+            property,
+            node.style.getPropertyValue(property),
+            node.style.getPropertyPriority(property),
+          ] as const,
+      );
+    node.removeAttribute('style');
+    for (const [property, value, priority] of values)
+      node.style.setProperty(property, value, priority);
+  }
+  return { state: window.explainer.snapshot(), drawing: clone.outerHTML };
+}
 test('all scenes reconstruct identical drawings after backwards and forwards seeks', async ({
   page,
 }) => {
@@ -11,18 +31,12 @@ test('all scenes reconstruct identical drawings after backwards and forwards see
     await page.goto(`/?scene=${scene}`);
     await page.evaluate(() => window.galleryReady);
     for (const time of await page.evaluate(() => window.explainer.checkpoints)) {
-      const before = await page.evaluate((time) => {
-        window.explainer.seek(time);
-        return { state: window.explainer.snapshot(), drawing: window.explainer.svg().outerHTML };
-      }, time);
+      const before = await page.evaluate(drawingSnapshot, time);
       await page.evaluate(() => {
         window.explainer.seek(window.explainer.duration);
         window.explainer.seek(0);
       });
-      const after = await page.evaluate((time) => {
-        window.explainer.seek(time);
-        return { state: window.explainer.snapshot(), drawing: window.explainer.svg().outerHTML };
-      }, time);
+      const after = await page.evaluate(drawingSnapshot, time);
       expect(after.state, `${scene} model at ${time}`).toEqual(before.state);
       const original = before.drawing.replaceAll(' style=""', ''),
         restored = after.drawing.replaceAll(' style=""', '');
@@ -84,6 +98,10 @@ test('narrow scenes retain one player row, keyboard focus and theme-aware ink', 
       await page.goto(`/?scene=${scene}&theme=${theme}`);
       await page.evaluate(() => window.galleryReady);
       await page.evaluate(() => window.explainer.seek(window.explainer.checkpoints.at(-1)!));
+      for (const selector of ['html', 'body', '.vs-notebook'])
+        expect(
+          await page.locator(selector).evaluate((node) => getComputedStyle(node).backgroundColor),
+        ).toBe('rgba(0, 0, 0, 0)');
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
         375,
       );
@@ -105,6 +123,46 @@ test('narrow scenes retain one player row, keyboard focus and theme-aware ink', 
         path: `artifacts/previews/${scene}-${theme}-375.png`,
         fullPage: true,
       });
+    }
+});
+test('LC keeps its physical explanation and fractional phase during reduced motion', async ({
+  page,
+}) => {
+  await page.goto('/?scene=lc&t=.75');
+  await page.evaluate(() => window.galleryReady);
+  const electrons = page.locator('[data-object^="electron:"]');
+  await expect(electrons).toHaveCount(24);
+  const initial = await electrons.first().getAttribute('transform');
+  await page.evaluate(() => window.explainer.seek(0.85));
+  expect(await electrons.first().getAttribute('transform')).not.toBe(initial);
+  for (const reduced of [false, true])
+    for (const time of [0.75, 1, 1.4, 2.3, 3, 0]) {
+      const state = await page.evaluate(
+        ({ reduced, time }) => {
+          window.explainer.setReduced(reduced);
+          window.explainer.seek(time);
+          return window.explainer.snapshot() as {
+            charge: number;
+            current: number;
+            electric: number;
+            magnetic: number;
+          };
+        },
+        { reduced, time },
+      );
+      expect(state.charge).toBeCloseTo(Math.cos((Math.PI * time) / 2));
+      expect(
+        Number(await page.locator('[data-plot-point="voltage"]').getAttribute('data-value')),
+      ).toBeCloseTo(state.charge);
+      expect(
+        Number(await page.locator('[data-plot-point="current"]').getAttribute('data-value')),
+      ).toBeCloseTo(state.current);
+      expect(
+        Number(await page.locator('[data-object="energy-C"]').getAttribute('data-fraction')),
+      ).toBeCloseTo(state.electric);
+      expect(
+        Number(await page.locator('[data-object="energy-L"]').getAttribute('data-fraction')),
+      ).toBeCloseTo(state.magnetic);
     }
 });
 test('reduced motion keeps facts and package SVG export is self contained', async ({ page }) => {

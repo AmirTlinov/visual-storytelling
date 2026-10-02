@@ -20,7 +20,10 @@ const properties = [
   'text-anchor',
   'paint-order',
 ] as const;
-const fontURL = new URL('../assets/shantell.woff2', import.meta.url).href;
+const fonts = [
+  { name: 'Notebook', url: new URL('../assets/pencil.woff2', import.meta.url).href },
+  { name: 'NotebookFallback', url: new URL('../assets/shantell.woff2', import.meta.url).href },
+];
 
 /** Resolve the current theme and bundle the font; exported SVG has no runtime dependency. */
 export async function exportSVG(source: SVGSVGElement): Promise<string> {
@@ -37,19 +40,21 @@ export async function exportSVG(source: SVGSVGElement): Promise<string> {
     }
     copy.removeAttribute('class');
   });
-  const response = await fetch(fontURL);
-  if (!response.ok) throw new Error('Could not bundle lettering font');
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
   const definitions = svg('defs');
-  definitions.append(
-    svg(
-      'style',
-      {},
-      `@font-face{font-family:Notebook;src:url(data:font/woff2;base64,${btoa(binary)}) format('woff2')}`,
-    ),
-  );
+  for (const font of fonts) {
+    const response = await fetch(font.url);
+    if (!response.ok) throw new Error('Could not bundle lettering font');
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    definitions.append(
+      svg(
+        'style',
+        {},
+        `@font-face{font-family:${font.name};src:url(data:font/woff2;base64,${btoa(binary)}) format('woff2')}`,
+      ),
+    );
+  }
   clone.prepend(definitions);
   const viewBox = source.viewBox.baseVal;
   clone.setAttribute('width', String(viewBox.width));

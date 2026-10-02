@@ -57,7 +57,6 @@ export function player(parent: HTMLElement, options: PlayerOptions) {
     play.set(state.playing ? 'Пауза' : 'Воспроизвести', state.playing ? 'pause' : 'play');
     sound.set(state.muted ? 'Включить звук' : 'Выключить звук', state.muted ? 'muted' : 'sound');
     scrubber.value = String(state.time);
-    scrubber.style.setProperty('--vs-progress', `${(100 * state.time) / state.duration}%`);
     scrubber.setAttribute(
       'aria-valuetext',
       `${formatTime(state.time)} из ${formatTime(state.duration)}`,
