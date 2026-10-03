@@ -38,6 +38,8 @@ import { Viewport3D, ThreeKit } from '@visual-storytelling/core/three';
 
 Готовые композиции и работающие вызовы — в [examples](examples). Все страницы импортируют этот пакет. Общие владельцы перечислены в [архитектуре](docs/architecture.md), правила сцены — в [контракте автора](docs/authoring.md), визуальный характер — в [PHILOSOPHY.md](PHILOSOPHY.md).
 
+[Физические объекты](docs/physics.md) добавляют SVG и Three.js столкновения, упругие материалы, деформацию и захват. Rapier подключается через отдельные `./physics/2d` и `./physics/3d`; почерк, пигменты, материалы и плеер остаются общими.
+
 ## Экспорт
 
 ```sh

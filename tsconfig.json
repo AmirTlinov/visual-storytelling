@@ -16,7 +16,9 @@
     "paths": {
       "@visual-storytelling/core": ["./src/index.ts"],
       "@visual-storytelling/core/three": ["./src/viewport/index.ts"],
-      "@visual-storytelling/core/*": ["./src/*/index.ts"]
+      "@visual-storytelling/core/*": ["./src/*/index.ts"],
+      "@visual-storytelling/core/physics/2d": ["./src/physics/2d.ts"],
+      "@visual-storytelling/core/physics/3d": ["./src/physics/3d.ts"]
     },
     "allowJs": true
   },

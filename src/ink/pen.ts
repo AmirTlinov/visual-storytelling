@@ -51,12 +51,15 @@ export function pen(canvas: SVGSVGElement) {
       disableMultiStrokeFill: true,
     };
     const fill = style.fill ?? 'none';
+    let shapeClip: SVGPathElement | undefined;
+    let moveWash = (_bounds: { x: number; y: number; width: number; height: number }) => {};
     let fillPaths: SVGPathElement[] = [];
     let paint = (_progress: number) => {};
     if (fill !== 'none') {
       const clipId = `${canvas.id}-fill-${[...id].map((char) => char.codePointAt(0)!.toString(16)).join('-')}`;
       const clip = svg('clipPath', { id: clipId });
-      clip.append(svg('path', { d: path }));
+      shapeClip = svg('path', { d: path });
+      clip.append(shapeClip);
       const definitions = svg('defs');
       definitions.append(clip);
       element.append(definitions);
@@ -81,6 +84,11 @@ export function pen(canvas: SVGSVGElement) {
         element.append(wash);
         paint = (progress) =>
           window.setAttribute('width', String(bounds.width * Math.max(0, Math.min(1, progress))));
+        moveWash = (next) =>
+          reveal.setAttribute(
+            'transform',
+            `translate(${next.x} ${next.y}) scale(${next.width / (bounds.width || 1)} ${next.height / (bounds.height || 1)}) translate(${-bounds.x} ${-bounds.y})`,
+          );
       } else {
         const wash = renderer.path(path, {
           ...options,
@@ -103,9 +111,27 @@ export function pen(canvas: SVGSVGElement) {
     if (style.pencil) outline.style.opacity = '.42';
     element.append(outline);
     // Paint order keeps outlines on top; drawing order traces before filling.
-    const trace = strokes([...outline.querySelectorAll('path'), ...fillPaths]);
+    let trace = strokes([...outline.querySelectorAll('path'), ...fillPaths]);
     return {
       element,
+      /** A moving boundary keeps its seeded pen and marker; callers supply geometric bounds. */
+      update(nextPath: string, bounds?: { x: number; y: number; width: number; height: number }) {
+        if (nextPath === path) return;
+        if (fill === 'hatch')
+          throw new Error('Deforming hatch geometry is not supported; use marker or outline');
+        path = nextPath;
+        shapeClip?.setAttribute('d', path);
+        const next = renderer.path(path, options);
+        const currentPaths = [...outline.querySelectorAll('path')];
+        const nextPaths = [...next.querySelectorAll('path')];
+        if (currentPaths.length === nextPaths.length)
+          currentPaths.forEach((node, i) =>
+            node.setAttribute('d', nextPaths[i]!.getAttribute('d')!),
+          );
+        else outline.replaceChildren(...next.childNodes);
+        trace = strokes([...outline.querySelectorAll('path'), ...fillPaths]);
+        if (bounds) moveWash(bounds);
+      },
       reveal(progress: number) {
         trace(progress);
         paint(progress);

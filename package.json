@@ -44,6 +44,18 @@
     "./three": {
       "types": "./dist/viewport/index.d.ts",
       "import": "./dist/viewport/index.js"
+    },
+    "./physics": {
+      "types": "./dist/physics/index.d.ts",
+      "import": "./dist/physics/index.js"
+    },
+    "./physics/2d": {
+      "types": "./dist/physics/2d.d.ts",
+      "import": "./dist/physics/2d.js"
+    },
+    "./physics/3d": {
+      "types": "./dist/physics/3d.d.ts",
+      "import": "./dist/physics/3d.js"
     }
   },
   "sideEffects": [
@@ -68,6 +80,8 @@
     "test:visual": "node tools/visual-regression.mjs compare site artifacts/migrated"
   },
   "dependencies": {
+    "@dimforge/rapier2d-compat": "0.21.0",
+    "@dimforge/rapier3d-compat": "0.21.0",
     "esbuild": "0.27.5",
     "gsap": "3.15.0",
     "playwright": "1.63.0",

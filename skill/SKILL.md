@@ -18,6 +18,7 @@ description: "Создаёт SVG-схемы, графики, интеракти�
 - Схема или график → редактируемый SVG; [данные и публикация](references/data-plots.md).
 - Исследовать вложенное устройство → [камера, контуры и навигация](references/nested-explorer.md); образцы — компьютер и нейрон.
 - Менять вход и изучать параметры → интерактивная сцена. Для показа в чате используй `$visualize`.
+- Контакт, падение, упругость и смятие 2D/3D-объектов → [физический API](../docs/physics.md). Задавай форму, материал и связи через `Physics2D` / `Physics3D`; используй общие привязки рисунка и `PhysicsPlayer` для времени и захвата.
 - Рассказ с ручным исследованием, SVG или вращаемая 3D-модель → [авторский API и рабочий цикл](references/scene-template.md). Начни с этой справки и одного близкого исходника; остальные справки открывай по конкретной необходимости.
 - Общая просьба «расскажи и покажи», «визуализируй» → рисованный рассказ:
   [оформление и движение](references/motion.md), [Higgs TTS 3 и аудиометки](references/narration.md).
@@ -30,6 +31,7 @@ description: "Создаёт SVG-схемы, графики, интеракти�
 | Рассказ и исследование | [Кадр 3D](previews/explorer-3d/preview.png) · [3D](previews/explorer-3d/index.html) · [Кадр SVG](previews/explorer-svg/preview.png) · [SVG](previews/explorer-svg/index.html) · [Шаблон](references/scene-template.md) | Общий плеер, параметры и темы; вращение 3D, ручное изменение и возврат к рассказу. |
 | Управление сценой | [Кадр](previews/controls/preview.png) · [Сцена](previews/controls/index.html) | Ползунок, число, выбор и переключатели в одном рисованном стиле. |
 | Морфинг и слияние | [Кадр](previews/ink-fusion/preview.png) · [Сцена](previews/ink-fusion/index.html) · [API](examples/ink-fusion/README.md) | `InkFusion` автоматически соединяет контуры букв и фигур с перемычкой поверхностного натяжения. |
+| Физические материалы | [Кадр](previews/physical-objects/preview.png) · [SVG](previews/physical-objects/index.html) · [3D](previews/physical-objects/three.html) · [API](../docs/physics.md) | Общие столкновения, упругость, деформация и захват; исходные почерк, пигменты и материалы сохраняются. |
 | Площадь и измерение | [Кадр](previews/area-story/preview.png) · [Сцена](previews/area-story/index.html) | Принятый рассказ 4 × 5: одна сетка, локальные подписи, отдельные метки слов. |
 | Деление с остатком | [Кадр](previews/remainder-story/preview.png) · [Сцена](previews/remainder-story/index.html) | 23 предмета → семь троек и два оставшихся → формула. |
 | Дробь от множества | [Кадр](previews/fraction-of-a-set/preview.png) · [Сцена](previews/fraction-of-a-set/index.html) | Одни 12 фишек перегруппируются; выбранная доля видна на предметах. |
