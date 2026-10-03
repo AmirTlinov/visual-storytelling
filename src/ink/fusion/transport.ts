@@ -14,6 +14,8 @@ export interface InkRoute {
     glyph: number;
     origin: number;
     same: boolean;
+    /** Complete unchanged contour; excludes generated seeds and absorbed surplus ink. */
+    preserved: boolean;
     word: number;
     originWord: number;
     wordSame: boolean;
@@ -61,7 +63,8 @@ function align(a: InkPoint[], b: InkPoint[]): InkPoint[] {
     cb = center(b),
     n = a.length;
   const closed = (p: InkPoint[]) =>
-    Math.hypot(p[0]![0] - p.at(-1)![0], p[0]![1] - p.at(-1)![1]) < 1.5;
+    p.length > 2 &&
+    Math.hypot(p[0]![0] - p.at(-1)![0], p[0]![1] - p.at(-1)![1]) < Math.min(1.5, length(p) * 0.05);
   const loop = closed(a) && closed(b);
   let best = Infinity,
     result = b;

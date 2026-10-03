@@ -23,7 +23,13 @@ export function inkDetailVisibility(patches: readonly InkPatch[], text: boolean)
     for (const patch of patches) {
       const data = vertices[patch.source]!,
         values = output[patch.source]!;
-      for (const [offset, length] of patch.ranges) {
+      for (const [offset, length, preserved] of patch.ranges) {
+        // A short serif or punctuation mark is still the same ink during travel.
+        // Only changing/absorbed contours can become transient fragments.
+        if (preserved) {
+          values.fill(1, offset / 6, (offset + length) / 6);
+          continue;
+        }
         let left = Infinity,
           right = -Infinity,
           top = Infinity,

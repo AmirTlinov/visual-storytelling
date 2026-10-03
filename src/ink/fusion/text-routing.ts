@@ -260,6 +260,13 @@ export function textRoutes(
             glyph: index,
             origin: original.id,
             same: original.glyph.value === glyph.value,
+            preserved:
+              original.glyph.value === glyph.value &&
+              !original.seed &&
+              route.attachment === undefined &&
+              route.from.every((p, i) =>
+                p.every((value, axis) => Math.abs(value - route.to[i]![axis]!) < 0.01),
+              ),
             word: glyph.word,
             originWord: source[original.id]!.word,
             wordSame:

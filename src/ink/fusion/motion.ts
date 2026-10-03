@@ -21,8 +21,8 @@ export interface InkPatch {
   readonly source: number;
   readonly destination: number;
   readonly target: number;
-  /** Contiguous segment ranges in the source's vertex buffer. */
-  readonly ranges: readonly [offset: number, length: number][];
+  /** Contiguous ranges and whether their original fine detail survives the operation. */
+  readonly ranges: readonly [offset: number, length: number, preserved: boolean][];
 }
 /** One borrowed segment buffer per source: ax, ay, bx, by, radiusA, radiusB. */
 export type InkVertices = Float32Array[];
@@ -68,7 +68,7 @@ export function inkMotion(routes: InkRoute[]) {
   const counts = Array<number>(sourceCount).fill(0);
   const patchMap = new Map<
     string,
-    { source: number; destination: number; target: number; ranges: [number, number][] }
+    { source: number; destination: number; target: number; ranges: [number, number, boolean][] }
   >();
   // x, y and translation weight for each source. Local vectors have weight zero.
   function mean(items: InkRoute[], point: (r: InkRoute) => readonly number[], translate = false) {
@@ -132,7 +132,7 @@ export function inkMotion(routes: InkRoute[]) {
           target: route.text?.word ?? route.destination,
           ranges: [],
         });
-      patchMap.get(key)!.ranges.push([offset, length]);
+      patchMap.get(key)!.ranges.push([offset, length, route.text?.preserved ?? false]);
       const center = route.from.reduce(
         (sum, p) => [sum[0]! + p[0] / n, sum[1]! + p[1] / n],
         [0, 0],

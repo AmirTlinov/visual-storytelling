@@ -4,7 +4,7 @@ import { build } from 'esbuild';
 const bundle = await build({
   stdin: {
     contents:
-      "export * from './src/ink/fusion/text-routing.ts';export * from './src/ink/fusion/motion.ts'",
+      "export * from './src/ink/fusion/text-routing.ts';export * from './src/ink/fusion/motion.ts';export * from './src/ink/fusion/detail.ts'",
     resolveDir: process.cwd(),
   },
   bundle: true,
@@ -12,7 +12,7 @@ const bundle = await build({
   format: 'esm',
   write: false,
 });
-const { orderedPairs, textRoutes, inkMotion } = await import(
+const { orderedPairs, textRoutes, inkMotion, inkDetailVisibility } = await import(
   `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`
 );
 
@@ -50,6 +50,90 @@ function block(value) {
     text: { words, glyphs },
   };
 }
+
+test('unchanged handwriting retains short serifs and punctuation throughout travel and reverse seek', () => {
+  const shape = block('1.');
+  shape.paths[0] = [
+    [-3, -18, 1],
+    [0, -22, 1],
+    [0, 20, 1],
+  ];
+  shape.text.glyphs[0].paths.push(shape.paths.length);
+  shape.paths.push([
+    [-3, 20, 1],
+    [3, 20, 1],
+  ]);
+  shape.paths[1] = [
+    [14, 20, 1],
+    [14.1, 20, 1],
+  ];
+  const motion = inkMotion(textRoutes([shape], [shape]));
+  const details = inkDetailVisibility(motion.patches, true);
+  const sources = [{ x: -20, y: 30, scale: 0.8 }];
+  const targets = [{ x: 40, y: -20, scale: 1.3, rotation: 0.4 }];
+  for (const progress of [0, 0.04, 0.2, 0.5, 0.8, 0.99, 1, 0.5, 0]) {
+    const geometry = motion(sources, targets, progress);
+    for (const pixel of [0.3, 1, 2])
+      assert.ok(details(geometry, progress, pixel).every((values) => values.every((v) => v === 1)));
+  }
+});
+
+test('repeated punctuation preserves its owner while generated and absorbed remnants stay filtered', () => {
+  const dot = block('.');
+  dot.paths[0] = [
+    [0, 0, 1],
+    [0.1, 0, 1],
+  ];
+  for (const [inputs, outputs] of [
+    [[dot], [dot, dot]],
+    [[dot, dot], [dot]],
+  ]) {
+    const motion = inkMotion(textRoutes(inputs, outputs));
+    const details = inkDetailVisibility(motion.patches, true);
+    const geometry = motion(
+      inputs.map((_, i) => ({ x: i * 50, y: 0 })),
+      outputs.map((_, i) => ({ x: i * 50, y: 0 })),
+      0.4,
+    );
+    const opacity = details(geometry, 0.4, 1).flatMap((values) => Array.from(values));
+    assert.ok(opacity.includes(1), 'The original dot stays legible');
+    assert.ok(opacity.includes(0), 'Generated or absorbed tiny remnants are still suppressed');
+  }
+});
+
+test('the same character with changed contour geometry still filters deformation fragments', () => {
+  const source = block('1');
+  source.paths[0] = [
+    [-2, 0, 1],
+    [2, 0, 1],
+  ];
+  for (const paths of [
+    [
+      [
+        [0, -2, 1],
+        [0, 2, 1],
+      ],
+    ],
+    [
+      [
+        [-2, 1, 1],
+        [-1, 1, 1],
+      ],
+      [
+        [1, -1, 1],
+        [2, -1, 1],
+      ],
+    ],
+  ]) {
+    const target = block('1');
+    target.paths = paths;
+    target.text.glyphs[0].paths = paths.map((_, i) => i);
+    const motion = inkMotion(textRoutes([source], [target]));
+    const details = inkDetailVisibility(motion.patches, true);
+    const geometry = motion([{ x: 0, y: 0 }], [{ x: 0, y: 0 }], 0.4);
+    assert.ok(details(geometry, 0.4, 1).every((values) => values.every((v) => v === 0)));
+  }
+});
 
 test('word alignment retains exact anchors and reading order through replacements', () => {
   const source = ['свет', 'раскрывает', 'форму', 'тень', 'даёт', 'глубину'];

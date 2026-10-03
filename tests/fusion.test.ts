@@ -17,9 +17,9 @@ test('moving text suppresses unreadable fragments while endpoints and non-text s
       destination: 0,
       target: 0,
       ranges: [
-        [0, 6],
-        [6, 6],
-      ] as [number, number][],
+        [0, 6, false],
+        [6, 6, false],
+      ] as [number, number, boolean][],
     },
   ];
   const details = inkDetailVisibility(patches, true);
@@ -50,6 +50,27 @@ test('distance masks retain thin ink and have finite, symmetric exterior distanc
   assert.equal(d[12 * width + 16], 0.5);
   assert.equal(d[12 * width + 7], d[12 * width + 23]);
   assert.ok(d[0]! > 12);
+});
+
+test('short open strokes retain both endpoints instead of being aligned as closed loops', () => {
+  const paths: InkPath[] = [
+    [
+      [0, 0, 1],
+      [0.1, 0, 1],
+    ],
+    [
+      [0, 0, 1],
+      [0, 3, 1],
+      [1, 3, 1],
+      [1, 0, 1],
+    ],
+  ];
+  for (const path of paths) {
+    const route = inkRoutes([[path]], [[path]])[0]!;
+    assert.deepEqual(route.from[0], path[0]);
+    assert.deepEqual(route.from.at(-1), path.at(-1));
+    assert.deepEqual(route.from, route.to);
+  }
 });
 
 test('transport covers every original and final stroke without an intermediate shape', () => {
