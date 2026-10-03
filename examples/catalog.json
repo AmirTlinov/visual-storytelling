@@ -2,12 +2,14 @@
   "area-story": {
     "title": "Почему 4 × 5 = 20?",
     "page": "index.html",
-    "time": 48.2
+    "time": 48.2,
+    "checkpoints": [0, 4.3, 6.3, 18.4, 32, 48.2, 59]
   },
   "remainder-story": {
     "title": "Откуда берётся остаток",
     "page": "index.html",
-    "time": 28
+    "time": 28,
+    "checkpoints": [0, 8, 18, 28, 40]
   },
   "fraction-of-a-set": {
     "title": "Доля от двенадцати",
@@ -17,7 +19,8 @@
   "equation-balance": {
     "title": "Равновесие уравнения",
     "page": "index.html",
-    "time": 2
+    "time": 2,
+    "checkpoints": [0, 2, 4]
   },
   "threshold-neuron": {
     "title": "Когда нейрон включается",
@@ -27,22 +30,26 @@
   "bubble-sort": {
     "title": "Пузырьковая сортировка",
     "page": "index.html",
-    "time": 3
+    "time": 3,
+    "checkpoints": [0, 3, 9]
   },
   "shared-memory": {
     "title": "Общая память CPU и GPU",
     "page": "index.html",
-    "time": 2
+    "time": 2,
+    "checkpoints": [0, 2, 5]
   },
   "explorer-3d": {
     "title": "Как тензор меняет форму",
     "page": "index.html",
-    "time": 15
+    "time": 15,
+    "checkpoints": [0, 8, 15]
   },
   "explorer-svg": {
     "title": "Сложение перемещений",
     "page": "index.html",
-    "time": 15
+    "time": 15,
+    "checkpoints": [0, 8, 15]
   },
   "controls": {
     "title": "Рисованные элементы управления",
@@ -83,17 +90,20 @@
     "generator": {
       "file": "build.py",
       "runner": "uv"
-    }
+    },
+    "checkpoints": [0, 0.75, 1.5, 2.25]
   },
   "vector": {
     "title": "Матрица меняет вектор",
     "page": "index.html",
-    "time": 16
+    "time": 16,
+    "checkpoints": [0, 8, 16]
   },
   "materials": {
     "title": "Инструменты одного почерка",
     "page": "index.html",
-    "time": 4
+    "time": 4,
+    "checkpoints": [0, 2, 4]
   },
   "computer-explorer": {
     "title": "Внутри компьютера",

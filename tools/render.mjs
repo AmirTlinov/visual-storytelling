@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { serve } from './site.mjs';
+import { openScene } from './open-scene.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 export async function renderer({ scene, theme, width = 960, controls = false, directory }) {
   const catalog = JSON.parse(await readFile(resolve(root, 'examples/catalog.json'), 'utf8'));
@@ -18,16 +19,7 @@ export async function renderer({ scene, theme, width = 960, controls = false, di
     });
     const file = directory ? 'index.html' : `${scene}/${catalog[scene].page}`,
       url = `${server.url}/${file}`;
-    if (file.endsWith('.svg'))
-      await page.setContent(
-        `<html style="color-scheme:light dark"><body style="margin:0"><main class="ve-scene" style="width:100%"><object type="image/svg+xml" data="${url}" style="width:100%;height:1500px"></object></main></body></html>`,
-      );
-    else await page.goto(url);
-    await page.waitForFunction(
-      () =>
-        document.querySelector('svg,canvas') ||
-        document.querySelector('object')?.contentDocument?.documentElement?.tagName === 'svg',
-    );
+    await openScene(page, url);
     await page.evaluate(async () => {
       await window.galleryReady;
       await document.fonts.ready;

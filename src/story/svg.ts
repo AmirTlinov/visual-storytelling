@@ -76,6 +76,7 @@ function mount(root: HTMLElement, { duration }: { duration: number }) {
       abort.abort();
       cancelAnimationFrame(frame);
       svg?.pauseAnimations();
+      controls.dispose();
     },
   };
 }

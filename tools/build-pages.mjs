@@ -2,13 +2,8 @@ import { build } from 'esbuild';
 import { readdir, readFile, writeFile, mkdir, cp } from 'node:fs/promises';
 import { resolve, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sourceAliases } from './source-package.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
-const alias = {
-  '@visual-storytelling/core/export': resolve(root, 'src/export/index.ts'),
-  '@visual-storytelling/core/three': resolve(root, 'src/viewport/index.ts'),
-  '@visual-storytelling/core/style.css': resolve(root, 'src/style.css'),
-  '@visual-storytelling/core': resolve(root, 'src/index.ts'),
-};
 export async function buildPage(source, target, { sourcePackage = false } = {}) {
   let html = await readFile(source, 'utf8');
   const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
@@ -26,7 +21,7 @@ export async function buildPage(source, target, { sourcePackage = false } = {}) 
   const out = resolve(target, name);
   await mkdir(target, { recursive: true });
   if (code.trim()) {
-    await build({
+    const result = await build({
       stdin: {
         contents: code,
         resolveDir: dirname(source),
@@ -37,13 +32,17 @@ export async function buildPage(source, target, { sourcePackage = false } = {}) 
       bundle: true,
       format: 'iife',
       target: 'es2022',
-      ...(sourcePackage ? { alias } : {}),
+      ...(sourcePackage ? { alias: sourceAliases } : {}),
       loader: { '.woff2': 'dataurl', '.wav': 'dataurl', '.m4a': 'dataurl' },
       legalComments: 'inline',
+      metafile: true,
     });
-    html = html
-      .replace('</head>', `<link rel="stylesheet" href="${name.replace(/\.js$/, '.css')}"></head>`)
-      .replace('</body>', `<script src="${name}"></script></body>`);
+    if (Object.values(result.metafile.outputs).some((output) => output.cssBundle))
+      html = html.replace(
+        '</head>',
+        `<link rel="stylesheet" href="${name.replace(/\.js$/, '.css')}"></head>`,
+      );
+    html = html.replace('</body>', `<script src="${name}"></script></body>`);
   }
   await writeFile(resolve(target, source.split('/').pop()), html);
 }

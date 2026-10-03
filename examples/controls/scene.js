@@ -2,7 +2,7 @@ import { SketchControls, SceneShell, SceneHistory, rough } from '@visual-storyte
 import { SketchShapes } from './shapes.js';
 import { ShapeModel } from './shape-model.js';
 import { ShapeEditor } from './shape-editor.js';
-(async () => {
+window.galleryReady = (async () => {
   await document.fonts.ready;
   const root = document.getElementById('ve-scene');
   const initial = {width: 5, count: 4, shape: 'rect', labels: true, grid: true, color: 'blue'};

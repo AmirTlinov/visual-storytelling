@@ -91,19 +91,23 @@ Preview поддерживает byte-range запросы для перемот
 Импортируй помощник пакета и метки, затем дождись шрифта:
 
 ```js
-import { SketchMotion } from '@visual-storytelling/core';
+import { SketchMotion, SketchPlayer } from '@visual-storytelling/core';
 import timing from './timeline.json' with {type: 'json'};
 await document.fonts.ready;
-const {timeline, write, draw} = SketchMotion;
-const player = timeline(audio, timing, (time, clock) => {
-  write(answerText, clock.progress('answer', time));
-  draw(underline, clock.progress('answer', time, -.1, .25));
+const {write, draw} = SketchMotion;
+const player = SketchPlayer.mount(root, {
+  audio, timing,
+  render(time, clock) {
+    write(answerText, clock.progress('answer', time));
+    draw(underline, clock.progress('answer', time, -.1, .25));
+  }
 });
-// В обработчике пользовательского нажатия:
-await audio.play();
+// Пуск, пауза и звук подключены к общему управлению в [data-player].
 // Перемотка работает в обе стороны, меняя всю сцену:
 player.seekCue('answer');
 ```
+
+`player.dispose()` вызывается при удалении сцены и останавливает озвучку.
 
 Каждый кадр вычисляй как `render(audio.currentTime)`: показываемые элементы,
 камера, штрихи и значения должны восстанавливаться при перемотке. Таймеры,

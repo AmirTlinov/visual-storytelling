@@ -2,26 +2,21 @@ import { chromium } from 'playwright';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { serve } from './site.mjs';
+import { openScene } from './open-scene.mjs';
 
-export const scenes = {
-  'area-story': ['index.html', [0, 4.3, 6.3, 18.4, 32, 48.2, 59]],
-  'remainder-story': ['index.html', [0, 8, 18, 28, 40]],
-  'fraction-of-a-set': ['index.html', [0]],
-  'equation-balance': ['index.html', [0, 2, 4]],
-  'threshold-neuron': ['index.html', [0]],
-  'bubble-sort': ['index.html', [0, 3, 9]],
-  'shared-memory': ['index.html', [0, 2, 5]],
-  'explorer-3d': ['index.html', [0, 8, 15]],
-  'explorer-svg': ['index.html', [0, 8, 15]],
-  controls: ['index.html', [0]],
-  'logic-gates': ['logic-gates.svg', [0]],
-  'geometric-tensor': ['index.html', [0]],
-  'parameter-cube': ['preview.html', [0]],
-  'lc-oscillator': ['preview.html', [0, 0.75, 1.5, 2.25]],
-};
+const catalog = JSON.parse(
+  await readFile(new URL('../examples/catalog.json', import.meta.url), 'utf8'),
+);
+const scenes = Object.fromEntries(
+  Object.entries(catalog).map(([id, item]) => [
+    id,
+    [item.page, item.checkpoints ?? [...new Set([0, item.time])]],
+  ]),
+);
 
-export async function settle(page, time) {
+async function settle(page, time) {
   await page.evaluate(async () => {
+    await window.galleryReady;
     await document.fonts.ready;
     for (const audio of document.querySelectorAll('audio')) audio.pause();
     for (const svg of document.querySelectorAll('svg')) svg.pauseAnimations?.();
@@ -51,14 +46,20 @@ export async function settle(page, time) {
       }
     }
   }, time);
-  await page.waitForTimeout(160);
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
 }
 
 const [
   mode = 'capture',
-  directory = 'artifacts/reference/skill',
+  directory = 'site',
   output = 'artifacts/reference/pixels',
+  reference = 'artifacts/reference/pixels',
 ] = process.argv.slice(2);
+if (!['capture', 'compare'].includes(mode)) throw new Error('Choose capture or compare');
+if (mode === 'compare' && resolve(output) === resolve(reference))
+  throw new Error('Comparison output must differ from its reference');
 const server = await serve(directory),
   browser = await chromium.launch();
 const report = [];
@@ -76,14 +77,8 @@ try {
         const page = await context.newPage(),
           errors = [];
         page.on('pageerror', (error) => errors.push(error.message));
-        const base = directory.endsWith('/skill') ? 'examples/' : '';
-        const url = `${server.url}/${base}${scene}/${file}`;
-        if (file.endsWith('.svg'))
-          await page.setContent(
-            `<html style="color-scheme:light dark"><body style="margin:0"><object data="${url}" type="image/svg+xml" style="width:100%;height:1500px"></object></body></html>`,
-          );
-        else await page.goto(url);
-        await page.waitForTimeout(400);
+        const url = `${server.url}/${scene}/${file}`;
+        await openScene(page, url);
         for (const time of times) {
           await settle(page, time);
           const name = `${scene}-${width}-${theme}-${time}.png`,
@@ -94,7 +89,7 @@ try {
           const item = { scene, width, theme, time, errors: [...errors] };
           if (mode === 'compare') {
             const { PNG } = await import('pngjs');
-            const a = PNG.sync.read(await readFile(resolve('artifacts/reference/pixels', name)));
+            const a = PNG.sync.read(await readFile(resolve(reference, name)));
             const b = PNG.sync.read(await readFile(path));
             let pixels = 0;
             if (a.width !== b.width || a.height !== b.height) pixels = -1;

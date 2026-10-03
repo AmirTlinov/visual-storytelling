@@ -93,14 +93,6 @@ class Projection:
 
 def serve(engine):
     class Handler(SimpleHTTPRequestHandler):
-        def translate_path(self, path):
-            if path.startswith('/assets/'):
-                assets = ROOT.parents[1] / 'assets'
-                candidate = (assets / path.removeprefix('/assets/')).resolve()
-                if candidate.is_relative_to(assets.resolve()):
-                    return str(candidate)
-            return super().translate_path(path)
-
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=str(ROOT / "dist" if (ROOT / "package.json").exists() else ROOT.parents[1] / "site" / "parameter-cube"), **kwargs)
 

@@ -13,7 +13,12 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "types": ["vite/client", "node"],
-    "paths": { "@visual-storytelling/core": ["./src/index.ts"] }
+    "paths": {
+      "@visual-storytelling/core": ["./src/index.ts"],
+      "@visual-storytelling/core/three": ["./src/viewport/index.ts"],
+      "@visual-storytelling/core/*": ["./src/*/index.ts"]
+    },
+    "allowJs": true
   },
   "include": ["src", "examples", "tests", "vite.config.ts", "playwright.config.ts"]
 }

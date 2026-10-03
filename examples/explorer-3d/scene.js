@@ -2,7 +2,7 @@ import { SceneShell } from '@visual-storytelling/core';
 import { ThreeKit, Viewport3D } from '@visual-storytelling/core/three';
 import narrationTiming from './timeline.json' with { type: 'json' };
 /* Replace this subject file; reuse the shell, player and 3D surface unchanged. */
-(async () => {
+window.galleryReady = (async () => {
   await document.fonts.ready;
   const root = document.getElementById('ve-scene'), T = ThreeKit;
   let view, symbolic = false, rendered;
@@ -50,8 +50,8 @@ import narrationTiming from './timeline.json' with { type: 'json' };
     notation.textContent = symbolic ? `T = diag(${values.x.toFixed(2)}, ${values.y.toFixed(2)}, ${values.z.toFixed(2)})` : '';
     view.invalidate();
   }
-  const timing = narrationTiming || {duration: 20, segments: [{start: 0, text: 'Сфера'}, {start: 4, text: 'Растяжение'}, {start: 9, text: 'Сжатие'}, {start: 14, text: 'Исследование'}], cues: {stretch_action: {start: 4, end: 7}, compress_action: {start: 9, end: 12}}};
-  const story = shell.attachStory({audio: narrationTiming ? root.querySelector('[data-audio]') : null, timing,
+  const timing = narrationTiming;
+  const story = shell.attachStory({audio: root.querySelector('[data-audio]'), timing,
     render(time, cues, reduced) {
       const phase = id => {const p = cues.progress(id, time); return reduced ? Number(time >= cues.cue(id).start) : p * p * (3 - 2 * p);};
       const values = {x: 1 + phase('stretch_action'), y: 1 - .5 * phase('compress_action'), z: 1};
@@ -59,7 +59,6 @@ import narrationTiming from './timeline.json' with { type: 'json' };
     }
   });
   render(shell.parameters);
-  document.fonts.ready.then(() => view.invalidate());
   // Intentional public handle for capture/export and embedding; no second clock.
   root.scene = {shell, view, story, dispose() {view.dispose(); shell.dispose();}};
-})().catch(error => {const root = document.getElementById('ve-scene'); const message = document.createElement('p'); message.setAttribute('role', 'alert'); message.textContent = `Не удалось открыть сцену: ${error.message}`; root.append(message); console.error(error);});
+})().catch(error => {const root = document.getElementById('ve-scene'); const message = document.createElement('p'); message.setAttribute('role', 'alert'); message.textContent = `Не удалось открыть сцену: ${error.message}`; root.append(message); throw error;});

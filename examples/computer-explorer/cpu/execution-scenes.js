@@ -1,4 +1,3 @@
-import { register } from '../drawing/catalog-symbols.js';
 import { P, R, repeat, G, C } from '../drawing/symbols.js';
 import { computeScene } from './structure-scenes.js';
 

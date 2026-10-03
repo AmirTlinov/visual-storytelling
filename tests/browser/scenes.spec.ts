@@ -164,3 +164,53 @@ test('LC player owns native SVG time, including reverse seek and reduced motion'
     expect(state.time).toBeCloseTo(time, 2);
   }
 });
+
+for (const name of ['area-story', 'remainder-story'])
+  test(`${name}: removing a playing scene releases its audio and controls`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await ready(page, `/${name}/index.html`);
+    await page.locator('[data-play]').click();
+    await expect
+      .poll(() => page.locator('audio').evaluate((a: HTMLAudioElement) => a.paused))
+      .toBe(false);
+    expect(
+      await page.evaluate(() => {
+        const root = document.querySelector('.ve-scene') as HTMLElement & {
+          scene: { dispose(): void };
+        };
+        const audio = root.querySelector('audio')!;
+        root.scene.dispose();
+        return audio.paused;
+      }),
+    ).toBe(true);
+    await page.setViewportSize({ width: 500, height: 800 });
+    await expect(page.locator('.ve-scene')).toBeEmpty();
+    expect(errors).toEqual([]);
+  });
+
+test('audio: a second click cancels pending playback without reporting an error', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    HTMLMediaElement.prototype.play = function () {
+      return new Promise((_resolve, reject) => {
+        this.addEventListener(
+          'cancel-play',
+          () => reject(new DOMException('Interrupted', 'AbortError')),
+          { once: true },
+        );
+      });
+    };
+    HTMLMediaElement.prototype.pause = function () {
+      this.dispatchEvent(new Event('cancel-play'));
+    };
+  });
+  await ready(page, '/area-story/index.html');
+  const button = page.locator('[data-play]');
+  await button.click();
+  await expect(button).toHaveAttribute('aria-label', 'Пауза');
+  await button.click();
+  await expect(button).toHaveAttribute('aria-label', 'Воспроизвести');
+  await expect(page.locator('[data-caption]')).toHaveAttribute('role', 'status');
+});

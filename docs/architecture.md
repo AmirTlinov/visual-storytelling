@@ -7,7 +7,7 @@
 | Палитра, почерк, сетка, поля | `src/styles/`, `src/assets/`, `src/ink/`                                                                                     |
 | Контуры, заливки, письмо     | `SketchInk`, `SketchMotion`; Rough.js строит геометрию, GSAP интерполирует позы                                              |
 | Измерение и размещение SVG   | `SvgLayout`; `composition` перестраивает поверхность при изменении ширины                                                    |
-| Часы                         | `story/clock.ts` читает медиавремя; `SilentMedia` предоставляет монотонное время тихой сцены                                 |
+| Часы                         | `story/clock.ts` читает медиавремя; `transport` владеет пуском, паузой и звуком; `SilentMedia` задаёт тихое время                                 |
 | Плеер                        | `PlayerControls` владеет разметкой и иконками; SketchPlayer, StepPlayer, SmilPlayer адаптируют разные источники времени      |
 | Рассказ и ручной ввод        | `SceneShell`; `notebook` подключает к той же оболочке типизированный `Story`                                                 |
 | Параметры и история          | `SketchControls`, `SceneHistory`; предметные ограничения остаются в сцене                                                    |

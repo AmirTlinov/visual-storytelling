@@ -1,7 +1,7 @@
 import { SvgLayout, SceneShell } from '@visual-storytelling/core';
 import narrationTiming from './timeline.json' with { type: 'json' };
 /* The shell is shared with explorer-3d; this file owns only the SVG subject. */
-(async () => {
+window.galleryReady = (async () => {
   await document.fonts.ready;
   const root = document.getElementById('ve-scene'), {element, place, box} = SvgLayout;
   let pose = {x: 3, y: 2, result: 1}, size = {width: 0, height: 0};
@@ -54,8 +54,8 @@ import narrationTiming from './timeline.json' with { type: 'json' };
     originLabel.style.visibility = Math.hypot(pose.x, pose.y) < .15 ? 'visible' : 'hidden';
   }
   const tip = document.createElement('p'); tip.textContent = 'Одна клетка — один шаг'; shell.actions.append(tip);
-  const timing = narrationTiming || {duration: 16, segments: [{start: 0, text: 'Начальная точка'}, {start: 3, text: 'Три шага вправо'}, {start: 7, text: 'Два шага вверх'}, {start: 11, text: 'Итоговое перемещение'}], cues: {move_x: {start: 3, end: 5}, move_y: {start: 7, end: 9}, result_arrow: {start: 11, end: 13}}};
-  const story = shell.attachStory({audio: narrationTiming ? root.querySelector('[data-audio]') : null, timing,
+  const timing = narrationTiming;
+  const story = shell.attachStory({audio: root.querySelector('[data-audio]'), timing,
     render(time, cues, reduced) {
       const phase = id => reduced ? Number(time >= cues.cue(id).start) : cues.progress(id, time);
       const values = {x: 3 * phase('move_x'), y: 2 * phase('move_y')}; shell.setParameters(values); render({...values, result: phase('result_arrow')});

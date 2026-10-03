@@ -107,7 +107,7 @@ function mount(
     dispose() {
       stop();
       abort.abort();
-      view.element.replaceChildren();
+      view.dispose();
     },
     get index() {
       return index;

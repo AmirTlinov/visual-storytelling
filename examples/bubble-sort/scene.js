@@ -107,7 +107,7 @@ import { StepPlayer, widgetState } from '@visual-storytelling/core';
           <desc id="bs-desc">${state.message}. Массив: ${state.array.join(', ')}.</desc>
           <text x="${width / 2}" y="25" text-anchor="middle">${state.kind === 'done' ? 'Числа по возрастанию' : 'Большее — вправо'}</text>
           <path class="bs-line" d="M ${centers[0]} 43 Q ${width / 2} 42 ${centers[4]} 43 M ${centers[4] - 7} 39 L ${centers[4]} 43 L ${centers[4] - 7} 47"/>`;
-    state.array.forEach((value, i) => {
+    state.array.forEach((_, i) => {
       const active = state.pair.includes(i);
       const sorted = i > state.end;
       const fill = active
@@ -205,7 +205,7 @@ import { StepPlayer, widgetState } from '@visual-storytelling/core';
   controller = StepPlayer.mount(root, {
     count: steps.length,
     initial: index,
-    render: (target, previous, animate) => moveTo(target, animate),
+    render: (target, _previous, animate) => moveTo(target, animate),
   });
   mounted = true;
   root.scene = {

@@ -58,7 +58,8 @@ export async function packDirectory(directory, page = 'index.html', { inline = f
     }
   html = html.replace(
     /<style>([\s\S]*?)<\/style>/g,
-    (_, css) => `<style>${css.replace(/\bobject\b/g, 'iframe[data-scene-svg]')}</style>`,
+    (_, css) =>
+      `<style>${css.replace(/(?<![-\w])object(?![-\w])/g, 'iframe[data-scene-svg]')}</style>`,
   );
   const notices = [];
   for (const path of [

@@ -1,5 +1,5 @@
 import { SilentMedia } from './media.js';
-import { timeline } from './clock.js';
+import { timeline, type MediaClock, type Timing } from './clock.js';
 export interface Playback {
   time: number;
   duration: number;
@@ -10,10 +10,11 @@ export interface Playback {
 }
 export interface TransportOptions {
   duration: number;
-  audio?: HTMLAudioElement;
+  audio?: MediaClock;
+  cues?: Timing['cues'];
 }
 /** Commands and subscriptions over the single media clock used by narrated scenes. */
-export function transport({ duration, audio }: TransportOptions) {
+export function transport({ duration, audio, cues = {} }: TransportOptions) {
   if (!(duration > 0) || !Number.isFinite(duration))
     throw new Error('Playback duration must be positive');
   const media = audio ?? new SilentMedia(duration),
@@ -28,13 +29,13 @@ export function transport({ duration, audio }: TransportOptions) {
     duration,
     playing: pending || !media.paused,
     muted: media.muted,
-    hasAudio: !!audio,
+    hasAudio: !(media instanceof SilentMedia),
     error,
   });
   const notify = () => {
     for (const listener of listeners) listener(state());
   };
-  const clock = timeline(media, { duration, cues: {}, segments: [] }, notify);
+  const clock = timeline(media, { duration, cues, segments: [] }, notify);
   function pause() {
     request++;
     pending = false;
@@ -77,7 +78,11 @@ export function transport({ duration, audio }: TransportOptions) {
     audio.addEventListener(
       'loadedmetadata',
       () => {
-        if (Math.abs(audio.duration - duration) > 0.25) {
+        if (
+          'duration' in audio &&
+          typeof audio.duration === 'number' &&
+          Math.abs(audio.duration - duration) > 0.25
+        ) {
           error = 'Длительность звука и меток различается';
           notify();
         }
@@ -85,7 +90,9 @@ export function transport({ duration, audio }: TransportOptions) {
       { signal: abort.signal },
     );
   }
+  media.addEventListener('volumechange', notify, { signal: abort.signal });
   return {
+    clock,
     get state() {
       return state();
     },
@@ -105,11 +112,14 @@ export function transport({ duration, audio }: TransportOptions) {
       return () => listeners.delete(listener);
     },
     dispose() {
-      pause();
+      if (disposed) return;
       disposed = true;
+      request++;
+      pending = false;
       clock.dispose();
       abort.abort();
       listeners.clear();
+      media.pause();
     },
   };
 }

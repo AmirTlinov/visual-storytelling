@@ -110,6 +110,21 @@ function mount(
     }
   }
   update({ value: 0, paused: true, stamp: '' });
-  return { element, play, back, next, seek, time, mute, update };
+  return {
+    element,
+    play,
+    back,
+    next,
+    seek,
+    time,
+    mute,
+    update,
+    dispose() {
+      element.replaceChildren();
+      element.classList.remove('ve-player');
+      for (const attribute of ['role', 'aria-label', 'data-seekable'])
+        element.removeAttribute(attribute);
+    },
+  };
 }
 export const PlayerControls = { mount };

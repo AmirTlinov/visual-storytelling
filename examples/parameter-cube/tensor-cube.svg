@@ -97,7 +97,7 @@ svg:focus,[tabindex]:focus{outline:none}
 </g>
 <script><![CDATA[
 (() => {
-  // dist/ink/marks.js
+  // ../../dist/ink/marks.js
   var n = (value) => +value.toFixed(3);
   function inkShape(points, seed = 0, bend = 0.9) {
     return points.map(([x, y], index) => {

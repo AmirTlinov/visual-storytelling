@@ -69,6 +69,7 @@ export function player(parent: HTMLElement, options: PlayerOptions) {
     dispose() {
       unsubscribe();
       abort.abort();
+      view.dispose();
       element.remove();
       error.remove();
     },

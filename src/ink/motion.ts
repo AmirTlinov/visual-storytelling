@@ -1,4 +1,3 @@
-import { timeline, progress } from '../story/clock.js';
 interface PathInk {
   length: number;
   tip: SVGCircleElement;
@@ -11,7 +10,7 @@ interface TextInk {
   total: number;
 }
 import { glyphs as SketchPencil } from './glyphs.js';
-/* Seekable pen strokes and a single audio clock. Scene composition stays in JS. */
+/* Seekable pen strokes. Scene composition and playback belong to their own owners. */
 
 const NS = 'http://www.w3.org/2000/svg',
   paths = new WeakMap<SVGPathElement, PathInk>(),
@@ -149,12 +148,9 @@ function resetText(text: SVGTextElement) {
   }
 }
 export const SketchMotion = {
-  clamp,
-  progress,
   draw,
   trace,
   write,
   writeSequence,
   resetText,
-  timeline,
 };

@@ -16,12 +16,32 @@ const run = (file, args, cwd = consumer) =>
 try {
   run(process.execPath, [resolve('tools/scene.mjs'), 'new', consumer, '--example', 'area-story']);
   run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund']);
+  await writeFile(
+    join(consumer, 'api.html'),
+    `<!doctype html><html><head><meta charset="utf-8"></head><body><script type="module">
+    import * as core from '@visual-storytelling/core';
+    import * as ink from '@visual-storytelling/core/ink';
+    import * as story from '@visual-storytelling/core/story';
+    import * as controls from '@visual-storytelling/core/controls';
+    import * as recipes from '@visual-storytelling/core/recipes';
+    import * as output from '@visual-storytelling/core/export';
+    import {Viewport3D} from '@visual-storytelling/core/three';
+    window.publicAPI = [
+      core.SketchMotion === ink.SketchMotion, core.SketchPlayer === story.SketchPlayer,
+      core.PlayerControls === controls.PlayerControls, core.vector === recipes.vector,
+      core.exportSVG === output.exportSVG, typeof Viewport3D.mount === 'function'
+    ];
+  </script></body></html>`,
+  );
   run('npm', ['run', 'build']);
   server = await serve(join(consumer, 'dist'));
   browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 700, height: 900 } }),
     errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto(server.url + '/api.html');
+  assert.deepEqual(await page.evaluate(() => window.publicAPI), Array(6).fill(true));
+  assert.equal(await page.locator('link[rel="stylesheet"]').count(), 0);
   await page.goto(server.url);
   await page.locator('[data-square]').first().waitFor({ state: 'attached' });
   await page.locator('[data-seek]').fill('48.2');

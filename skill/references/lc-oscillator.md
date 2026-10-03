@@ -1,6 +1,6 @@
 # LC-контур: модель и сборка
 
-![LC-контур в фазе 0.75 секунды](../previews/lc-oscillator/preview-075.png)
+![LC-контур в фазе 0.75 секунды](../previews/lc-oscillator/preview.png)
 
 [Анимированный SVG](../previews/lc-oscillator/LC-oscillator.svg) ·
 [Генератор](../examples/lc-oscillator/build.py) ·

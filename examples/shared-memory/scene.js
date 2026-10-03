@@ -286,7 +286,7 @@ import { StepPlayer, widgetState } from '@visual-storytelling/core';
   controller = StepPlayer.mount(root, {
     count: phases.length,
     initial: index,
-    render: (target, previous, animate) => moveTo(target, animate),
+    render: (target, _previous, animate) => moveTo(target, animate),
   });
   mounted = true;
   root.scene = {

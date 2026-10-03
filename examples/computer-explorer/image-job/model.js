@@ -1,4 +1,3 @@
-import { ram } from '../drawing/symbols.js';
 
 // A 32-byte window of an NVMe read, projected onto the small NAND geometry.
 // Command ordering: https://spdk.io/doc/nvme_spec.html

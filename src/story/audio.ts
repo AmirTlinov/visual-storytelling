@@ -8,7 +8,8 @@ export interface AudioStoryOptions {
   sound?: boolean;
 }
 import { PlayerControls } from '../controls/player-view.js';
-import { SketchMotion } from '../ink/motion.js';
+import { formatTime } from '../controls/player.js';
+import { transport } from './transport.js';
 /* Audio is the only playback clock. The scene receives time; it owns its model. */
 
 function mount(
@@ -42,14 +43,15 @@ function mount(
       listeners.push(() => node.removeEventListener(event, action));
     }
   };
-  const format = (seconds: number) =>
-    `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
-  const clock = SketchMotion.timeline(audio, timing, (t, cues) => {
-    render(t, cues, reduced.matches);
-    const stamp = `${format(t)} / ${format(timing.duration)}`;
+  const playback = transport({ audio, duration: timing.duration, cues: timing.cues });
+  const { clock } = playback;
+  const unsubscribe = playback.subscribe((state) => {
+    const t = state.time;
+    render(t, clock, reduced.matches);
+    const stamp = `${formatTime(t)} / ${formatTime(timing.duration)}`;
     view.update({
       value: t,
-      paused: audio.paused,
+      paused: !state.playing,
       ended: audio.ended,
       stamp,
       valueText: stamp,
@@ -61,26 +63,15 @@ function mount(
       0,
       chapters.findLastIndex((chapter) => t >= chapter.time),
     );
-    if (current !== stage) {
+    if (state.error) setCaption(state.error, true);
+    else if (current !== stage || caption?.getAttribute('role') === 'alert') {
       stage = current;
       setCaption(chapters[stage]?.label || '');
     }
   });
   on(seek, 'input', () => clock.seek(Number(seek.value)));
-  on(play, 'click', async () => {
-    if (!audio.paused) {
-      audio.pause();
-      return;
-    }
-    if (audio.ended || audio.currentTime >= timing.duration - 0.03) clock.seek(0);
-    try {
-      await audio.play();
-    } catch (error) {
-      setCaption(
-        `Не удалось включить звук: ${error instanceof Error ? error.message : String(error)}`,
-        true,
-      );
-    }
+  on(play, 'click', () => {
+    void playback.toggle();
   });
   on(back, 'click', () =>
     clock.seek(
@@ -92,20 +83,16 @@ function mount(
       chapters.find((chapter) => chapter.time > audio.currentTime + 0.05)?.time ?? timing.duration,
     ),
   );
-  on(mute, 'click', () => {
-    audio.muted = !audio.muted;
-  });
-  on(audio, 'volumechange', () => clock.update());
-  on(audio, 'error', () =>
-    setCaption('Аудио недоступно. Собери narration.json командой sketch-audio build.', true),
-  );
+  on(mute, 'click', () => playback.mute());
   on(reduced, 'change', () => clock.update());
   clock.update();
   return {
     ...clock,
     dispose() {
-      clock.dispose();
+      unsubscribe();
+      playback.dispose();
       listeners.forEach((remove) => remove());
+      view.dispose();
     },
   };
 }

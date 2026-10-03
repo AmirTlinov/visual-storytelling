@@ -118,6 +118,7 @@ function mount(
       timing,
       render,
       stops,
+      sound = Boolean(audio),
     }: Omit<AudioStoryOptions, 'audio'> & { audio: HTMLAudioElement | null }) {
       player?.dispose();
       transition = undefined;
@@ -131,7 +132,7 @@ function mount(
         audio: activeMedia,
         timing,
         stops,
-        sound: Boolean(audio),
+        sound,
         render: (t, cues, reduced) => {
           if (mode === 'story') render(t, cues, reduced);
         },

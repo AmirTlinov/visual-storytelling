@@ -6,3 +6,8 @@ export { story } from './story.js';
 export type { Story, StoryOptions } from './story.js';
 
 export * from './clock.js';
+export * from './audio.js';
+export * from './steps.js';
+export * from './svg.js';
+export * from './media.js';
+export * from './simulation.js';

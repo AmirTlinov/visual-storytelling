@@ -91,7 +91,8 @@ function mount(element: HTMLElement, model: SimulationOptions) {
       pause(false);
       disposed = true;
       abort.abort();
-      element.replaceChildren();
+      view.dispose();
+      delete element.dataset.playing;
     },
   };
 }
