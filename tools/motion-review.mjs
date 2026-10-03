@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, realpath, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join, dirname, extname, basename } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -21,6 +21,12 @@ async function videoFrames(input, from, count) {
         '-loglevel',
         'info',
         '-copyts',
+        '-seek_timestamp',
+        '1',
+        '-ss',
+        String(from),
+        // Discard by absolute PTS below, including containers with non-zero start_time.
+        '-noaccurate_seek',
         '-i',
         input,
         '-map',
@@ -59,40 +65,107 @@ async function videoFrames(input, from, count) {
 export async function reviewMotion({
   input,
   out,
-  from = 0,
+  from,
   frames = 12,
   fps,
   width = 960,
   theme = 'light',
   reduced = false,
   crop,
+  cue,
+  threshold,
+  maxSize,
 }) {
-  if (!Number.isFinite(from) || from < 0 || !Number.isInteger(frames) || frames < 2 || frames > 32)
+  const started = performance.now();
+  if (
+    (from !== undefined && (!Number.isFinite(from) || from < 0)) ||
+    !Number.isInteger(frames) ||
+    frames < 2 ||
+    frames > 32
+  )
     throw new Error('Choose --from >= 0 and --frames between 2 and 32');
-  input = resolve(input);
+  input = await realpath(input);
   out = resolve(out);
-  if (input === out) throw new Error('Review output must be separate from its input');
+  // Resolve an existing ancestor too, so an output symlink cannot hide a collision.
+  async function canonical(path) {
+    try {
+      return await realpath(path);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      return join(await canonical(dirname(path)), basename(path));
+    }
+  }
+  out = await canonical(out);
+  const outputs = new Set(
+    await Promise.all(
+      ['index.html', 'motion.png', 'motion.json'].map((name) => canonical(join(out, name))),
+    ),
+  );
+  const protect = (path) => {
+    if (path === out || outputs.has(path))
+      throw new Error(
+        'Review output would overwrite its input; choose a separate output directory',
+      );
+  };
+  protect(input);
   let capture;
   try {
     let samples, source;
-    if ((await stat(input)).isDirectory()) {
+    const isDirectory = (await stat(input)).isDirectory();
+    if (isDirectory || ['.html', '.htm', '.svg'].includes(extname(input).toLowerCase())) {
+      if (!isDirectory && dirname(input) === out)
+        throw new Error('Scene review needs a separate output directory');
       fps ??= 60;
       if (!Number.isFinite(fps) || fps < 1 || fps > 240)
         throw new Error('Scene --fps must be between 1 and 240');
-      capture = await renderer({ directory: input, width, theme });
+      capture = await renderer({
+        directory: isDirectory ? input : dirname(input),
+        entry: isDirectory ? 'index.html' : basename(input),
+        width,
+        theme,
+        reduced,
+      });
       if (!capture.info.seekable)
         throw new Error(
           'This scene has no seekable timeline; review a recording of the interaction',
         );
-      await capture.page.emulateMedia({ reducedMotion: reduced ? 'reduce' : 'no-preference' });
+      let selectedCue;
+      if (cue) {
+        const review = await capture.capture.evaluate((scene) => scene.review());
+        selectedCue = review.cues.find((item) => item.id === cue);
+        if (!selectedCue)
+          throw new Error(
+            `Unknown motion cue: ${cue}. Available: ${review.cues.map((item) => item.id).join(', ')}`,
+          );
+        from ??= Math.max(
+          selectedCue.start,
+          (selectedCue.start + selectedCue.end - (frames - 1) / fps) / 2,
+        );
+      }
+      from ??= 0;
+      const end = selectedCue
+        ? Math.min(selectedCue.end, capture.info.duration)
+        : capture.info.duration;
       samples = [];
-      for (let i = 0; i < frames && from + i / fps <= capture.info.duration; i++) {
+      for (let i = 0; i < frames && from + i / fps <= end + 1e-9; i++) {
         const time = from + i / fps;
         await capture.seek(time);
         samples.push({ time, png: await capture.png() });
       }
-      source = { kind: 'scene-seek', path: input, fps, theme, reduced };
+      source = {
+        kind: 'scene-seek',
+        path: input,
+        duration: capture.info.duration,
+        fps,
+        theme,
+        reduced,
+        ...(selectedCue
+          ? { cue: { id: cue, start: selectedCue.start, end: selectedCue.end } }
+          : {}),
+      };
     } else {
+      from ??= 0;
+      if (cue) throw new Error('--cue applies to scenes; choose recording time with --from');
       if (fps !== undefined)
         throw new Error(
           '--fps applies to scene sampling; recordings and manifests keep their own times',
@@ -111,6 +184,10 @@ export async function reviewMotion({
             throw new Error(
               'Manifest needs PNG file paths and strictly increasing times in seconds',
             );
+        const paths = await Promise.all(
+          manifest.frames.map((frame) => realpath(resolve(dirname(input), frame.file))),
+        );
+        paths.forEach(protect);
         samples = await Promise.all(
           manifest.frames
             .filter((f) => f.time >= from)
@@ -126,13 +203,28 @@ export async function reviewMotion({
         source = { kind: 'video', path: input };
       }
     }
+    if (samples.length < 2)
+      throw new Error(
+        'This window contains fewer than two frames; choose an earlier --from or a longer cue',
+      );
+    const captured = performance.now();
     const report = {
-      ...analyzeMotionFrames(samples, { crop }),
+      ...(await analyzeMotionFrames(samples, { crop, threshold, maxSize })),
       title: basename(input),
       source,
-      sampling: 'consecutive',
+      sampling: source.kind === 'frame-manifest' ? 'provided-order' : 'consecutive',
     };
-    return await writeMotionReport(report, out, { context: capture?.page.context() });
+    const analyzed = performance.now();
+    const result = await writeMotionReport(report, out, { context: capture?.page.context() });
+    return {
+      ...result,
+      timingMs: {
+        capture: Math.round(captured - started),
+        analysis: Math.round(analyzed - captured),
+        report: Math.round(performance.now() - analyzed),
+        total: Math.round(performance.now() - started),
+      },
+    };
   } finally {
     await capture?.close();
   }

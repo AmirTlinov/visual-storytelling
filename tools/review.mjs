@@ -131,10 +131,9 @@ export async function reviewScene({
   const output = resolve(out);
   if (output === resolve(directory))
     throw new Error('Review output must be separate from the scene');
-  const capture = await renderer({ directory, theme, width });
+  const capture = await renderer({ directory, theme, width, reduced });
   const inspect = () => capture.capture.evaluate((scene) => scene.review());
   try {
-    await capture.page.emulateMedia({ reducedMotion: reduced ? 'reduce' : 'no-preference' });
     const initial = await inspect();
     for (const id of cues)
       if (!initial.cues.some((cue) => cue.id === id)) throw new Error(`Unknown review cue: ${id}`);
@@ -167,12 +166,12 @@ export async function reviewScene({
       let motion, motionImage;
       if (frames.length >= 2 && cue.kind === 'action') {
         motion = {
-          ...analyzeMotionFrames(
+          ...(await analyzeMotionFrames(
             frames.map((frame) => ({
               time: frame.time,
               png: Buffer.from(frame.image.split(',')[1], 'base64'),
             })),
-          ),
+          )),
           title: cue.action ?? cue.id,
           source: { kind: 'scene-seek', path: resolve(directory) },
           sampling: 'cue-checkpoints',

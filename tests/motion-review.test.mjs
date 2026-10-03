@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { PNG } from 'pngjs';
-import { analyzeMotionFrames } from '../tools/motion-frames.mjs';
+import { analyzeMotionFrames, parseCrop } from '../tools/motion-frames.mjs';
 import { reviewMotion } from '../tools/motion-review.mjs';
 
 function square(x, { flash = false, height = 40 } = {}) {
@@ -22,10 +22,12 @@ function square(x, { flash = false, height = 40 } = {}) {
   return PNG.sync.write(image);
 }
 
-test('motion pixels retain a hold, its catch-up jump and irregular frame times', () => {
+test('motion pixels retain a hold, its catch-up jump and irregular frame times', async () => {
   const positions = [2, 6, 10, 10, 10, 22, 26, 30];
   const times = [0, 0.02, 0.04, 0.06, 0.12, 0.14, 0.16, 0.18];
-  const result = analyzeMotionFrames(positions.map((x, i) => ({ time: times[i], png: square(x) })));
+  const result = await analyzeMotionFrames(
+    positions.map((x, i) => ({ time: times[i], png: square(x) })),
+  );
   assert.equal(result.frames.length, 8);
   assert(result.motionBounds.x <= 2 && result.motionBounds.x + result.motionBounds.width >= 38);
   assert.deepEqual(
@@ -39,7 +41,7 @@ test('motion pixels retain a hold, its catch-up jump and irregular frame times',
   assert.equal(result.intervals[3].dtMs, 60);
   assert(result.intervals[4].changedPercent > result.intervals[0].changedPercent);
   assert.equal(result.intervals[2].changedPercent, 0);
-  const smooth = analyzeMotionFrames(
+  const smooth = await analyzeMotionFrames(
     positions.map((_, i) => ({ time: times[i], png: square(2 + i * 4) })),
   );
   assert(
@@ -54,23 +56,24 @@ test('motion pixels retain a hold, its catch-up jump and irregular frame times',
   assert(overlay.data[last] > overlay.data[last + 2], 'late contour must be orange');
 });
 
-test('crop ignores outside changes, preserves scale and rejects invalid evidence', () => {
+test('crop ignores outside changes, preserves scale and rejects invalid evidence', async () => {
   const samples = [
     { time: 0, png: square(8) },
     { time: 0.02, png: square(8, { flash: true, height: 60 }) },
   ];
-  const whole = analyzeMotionFrames(samples);
+  const whole = await analyzeMotionFrames(samples);
   assert.equal(whole.height, 60);
   assert.equal(whole.sizeChanged, true);
+  assert.equal(whole.suggestedCrop, null);
   assert(whole.intervals[0].changedPercent > 0);
-  const crop = analyzeMotionFrames(samples, { crop: { x: 0, y: 8, width: 30, height: 20 } });
+  const crop = await analyzeMotionFrames(samples, { crop: { x: 0, y: 8, width: 30, height: 20 } });
   assert.equal(crop.intervals[0].duplicate, true);
   assert.equal(crop.width, 30);
-  assert.throws(
+  await assert.rejects(
     () => analyzeMotionFrames(samples, { crop: { x: 70, y: 0, width: 20, height: 10 } }),
     /fit inside/,
   );
-  assert.throws(() => analyzeMotionFrames([samples[0], samples[0]]), /strictly increasing/);
+  await assert.rejects(() => analyzeMotionFrames([samples[0], samples[0]]), /strictly increasing/);
 });
 
 test('PNG manifest and VFR video produce the same ordered evidence without removing duplicates', async () => {
@@ -151,6 +154,47 @@ test('PNG manifest and VFR video produce the same ordered evidence without remov
       window.frames.map((f) => f.time),
       [0.16, 0.2],
     );
+
+    const offsetVideo = join(directory, 'offset.mkv');
+    execFileSync('ffmpeg', [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-itsoffset',
+      '5',
+      '-i',
+      video,
+      '-c',
+      'copy',
+      offsetVideo,
+    ]);
+    const offsetResult = await reviewMotion({
+      input: offsetVideo,
+      out: join(directory, 'offset-review'),
+      from: 5.1,
+      frames: 2,
+    });
+    const offset = JSON.parse(await readFile(offsetResult.data, 'utf8'));
+    assert.deepEqual(
+      offset.frames.map((f) => f.time),
+      [5.16, 5.2],
+    );
+    const collision = join(directory, 'motion.json');
+    await writeFile(collision, JSON.stringify({ frames }));
+    await assert.rejects(reviewMotion({ input: collision, out: directory }), /overwrite/);
+    const imageCollision = join(directory, 'motion.png');
+    await writeFile(imageCollision, square(2));
+    const sourceManifest = join(directory, 'frames.json');
+    await writeFile(
+      sourceManifest,
+      JSON.stringify({
+        frames: [
+          { file: 'motion.png', time: 0 },
+          { file: 'frame-1.png', time: 0.04 },
+        ],
+      }),
+    );
+    await assert.rejects(reviewMotion({ input: sourceManifest, out: directory }), /overwrite/);
     await assert.rejects(
       reviewMotion({ input: video, out: join(directory, 'invalid'), fps: 30 }),
       /keep their own times/,
@@ -166,7 +210,8 @@ test('scene motion uses the existing seek owner and labels its clock as model ti
     await writeFile(
       join(directory, 'index.html'),
       `<!doctype html><main class="ve-scene"><svg width="200" height="100"><circle cx="20" cy="50" r="10"/></svg></main><script>
-      document.querySelector('main').scene = {duration:1, pause(){}, seek(t){document.querySelector('circle').setAttribute('cx', 20 + 100 * t)}};
+      const reducedAtStartup = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      document.querySelector('main').scene = {duration:1, pause(){}, seek(t){document.querySelector('circle').setAttribute('cx', reducedAtStartup ? 20 : 20 + 100 * t)}, review(){return {cues:[{id:'move',start:0.4,end:0.6}]}}};
       </script>`,
     );
     const result = await reviewMotion({
@@ -184,7 +229,99 @@ test('scene motion uses the existing seek owner and labels its clock as model ti
     );
     assert(report.intervals.every((v) => v.changedPercent > 0));
     assert((await readFile(result.path, 'utf8')).includes('время модели'));
+    const selected = await reviewMotion({
+      input: join(directory, 'index.html'),
+      out: join(directory, 'cue-review'),
+      cue: 'move',
+      frames: 4,
+      fps: 50,
+    });
+    assert.equal(selected.source.cue.id, 'move');
+    assert(Math.abs(selected.window.from - 0.47) < 1e-9);
+    assert(Math.abs(selected.window.to - 0.53) < 1e-9);
+    assert(selected.timingMs.total > selected.timingMs.analysis);
+    const reducedResult = await reviewMotion({
+      input: directory,
+      out: join(directory, 'reduced-review'),
+      from: 0.2,
+      frames: 3,
+      reduced: true,
+    });
+    assert.equal(reducedResult.repeatedIntervals, 2);
+    assert(reducedResult.notes.some((note) => note.includes('No change above threshold')));
+    const svg = join(directory, 'animated.svg');
+    await writeFile(
+      svg,
+      `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100"><circle cx="20" cy="50" r="10"/><script><![CDATA[
+      window.explainer = {duration:1,pause(){},seek(t){document.querySelector('circle').setAttribute('cx',20+100*t)}};
+    ]]></script></svg>`,
+    );
+    const vectorResult = await reviewMotion({
+      input: svg,
+      out: join(directory, 'svg-review'),
+      from: 0.2,
+      frames: 3,
+    });
+    assert.equal(vectorResult.source.kind, 'scene-seek');
+    assert.equal(vectorResult.repeatedIntervals, 0);
+    await assert.rejects(
+      reviewMotion({ input: join(directory, 'index.html'), out: directory }),
+      /overwrite|separate/,
+    );
+    await assert.rejects(
+      reviewMotion({ input: directory, out: join(directory, 'late'), from: 2 }),
+      /fewer than two/,
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('alpha motion survives any sprite colour; hidden RGB noise is ignored', async () => {
+  for (const value of [0, 229, 255]) {
+    const frames = [5, 20].map((x, i) => {
+      const image = new PNG({ width: 40, height: 30 });
+      // Different invisible RGB is irrelevant to displayed motion.
+      for (let p = 0; p < 1200; p++) image.data.fill(i * 50, p * 4, p * 4 + 3);
+      for (let y = 10; y < 20; y++)
+        for (let px = x; px < x + 8; px++) {
+          const p = (y * 40 + px) * 4;
+          image.data.fill(value, p, p + 3);
+          image.data[p + 3] = 255;
+        }
+      return { time: i / 60, png: PNG.sync.write(image) };
+    });
+    const report = await analyzeMotionFrames(frames);
+    assert(report.hasTransparency);
+    assert(report.motionBounds);
+    assert(!report.intervals[0].duplicate);
+    assert.equal(report.intervals[0].changedPercent, (160 / 1200) * 100);
+  }
+  const a = new PNG({ width: 10, height: 10 }),
+    b = new PNG({ width: 10, height: 10 });
+  for (let p = 0; p < 100; p++) b.data.fill(100, p * 4, p * 4 + 3);
+  const hidden = await analyzeMotionFrames([
+    { time: 0, png: PNG.sync.write(a) },
+    { time: 0.02, png: PNG.sync.write(b) },
+  ]);
+  assert(hidden.intervals[0].duplicate);
+});
+
+test('bounded overview retains native ROI coordinates and a source-resolution escape', async () => {
+  const frames = [
+    { time: 0, png: square(8) },
+    { time: 0.02, png: square(12) },
+  ];
+  const overview = await analyzeMotionFrames(frames, { maxSize: 40 });
+  assert.equal(overview.width, 40);
+  assert.equal(overview.height, 20);
+  assert.equal(overview.scale, 0.5);
+  assert(overview.suggestedCrop.x <= 8);
+  assert(overview.suggestedCrop.x + overview.suggestedCrop.width >= 20);
+  const detail = await analyzeMotionFrames(frames, { crop: overview.suggestedCrop, maxSize: 0 });
+  assert.equal(detail.scale, 1);
+  assert(detail.intervals[0].changedPercent > 0);
+  assert.throws(() => parseCrop(',,20,20'), /source pixels/);
+  await assert.rejects(analyzeMotionFrames(frames, { maxSize: -1 }), /max-size/);
+  await assert.rejects(analyzeMotionFrames(frames, { threshold: NaN }), /threshold/);
 });

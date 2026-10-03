@@ -6,7 +6,15 @@ import { resolve } from 'node:path';
 import { serve } from './site.mjs';
 import { openScene, seekScene } from './open-scene.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
-export async function renderer({ scene, theme, width = 960, controls = false, directory }) {
+export async function renderer({
+  scene,
+  theme,
+  width = 960,
+  controls = false,
+  directory,
+  entry = 'index.html',
+  reduced = false,
+}) {
   const catalog = JSON.parse(await readFile(resolve(root, 'examples/catalog.json'), 'utf8'));
   if (!directory && !catalog[scene]) throw new Error('Unknown example');
   const server = await serve(directory ?? resolve(root, 'site'));
@@ -24,6 +32,7 @@ export async function renderer({ scene, theme, width = 960, controls = false, di
       viewport: { width, height: 1200 },
       deviceScaleFactor: 1,
       colorScheme: theme,
+      reducedMotion: reduced ? 'reduce' : 'no-preference',
     });
     const page = await context.newPage();
     const errors = [];
@@ -40,8 +49,8 @@ export async function renderer({ scene, theme, width = 960, controls = false, di
         previous.lastTime = time;
       } else messages.set(key, { ...entry, lastTime: time, count: 1 });
     });
-    const file = directory ? 'index.html' : `${scene}/${catalog[scene].page}`,
-      url = `${server.url}/${file}`;
+    const file = directory ? entry : `${scene}/${catalog[scene].page}`,
+      url = `${server.url}/${file.split('/').map(encodeURIComponent).join('/')}`;
     const capture = await openScene(page, url);
     await capture.evaluate((scene) => scene.pause());
     if (!controls)

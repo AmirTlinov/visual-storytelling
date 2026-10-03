@@ -12,6 +12,7 @@
 
 | [Three.js](https://github.com/mrdoob/three.js) | 0.186.1, WebGL, OrbitControls и GLTFLoader | MIT, лицензия в установленном пакете. |
 | [Rapier](https://github.com/dimforge/rapier.js) | 0.21.0, отдельные `rapier2d-compat` / `rapier3d-compat`, столкновения и мягкие тела в WASM | Apache-2.0, лицензии в установленных пакетах. |
+| [Sharp](https://sharp.pixelplumbing.com) | 0.35.5, декодирование, масштаб и PNG для проверки движения | Apache-2.0, лицензия в установленном пакете. |
 | [esbuild](https://github.com/evanw/esbuild) | 0.27.5, сборка страниц | MIT. |
 
 Зависимости разработки закреплены в `package-lock.json`. Пакет помечен `private`; публичная публикация в этой версии не выполняется.

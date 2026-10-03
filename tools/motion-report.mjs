@@ -10,6 +10,38 @@ const escape = (text) =>
   );
 const color = (i, count) => `rgb(${frameColor(i, count).join(',')})`;
 
+function summary(report) {
+  const intervals = report.intervals;
+  return {
+    window: { from: report.frames[0].time, to: report.frames.at(-1).time },
+    analysis: {
+      width: report.width,
+      height: report.height,
+      scale: report.scale,
+      threshold: report.threshold,
+    },
+    repeatedIntervals: intervals.filter((v) => v.duplicate).length,
+    dtMs: {
+      min: Math.min(...intervals.map((v) => v.dtMs)),
+      max: Math.max(...intervals.map((v) => v.dtMs)),
+    },
+    suggestedCrop: report.suggestedCrop,
+    notes: [
+      ...(!report.motionBounds
+        ? [
+            'No change above threshold in this window. Check its timing, use a crop at --max-size 0, or lower --threshold.',
+          ]
+        : []),
+      ...(report.scale < 1
+        ? ['Overview is downscaled. Inspect small details with --crop x,y,w,h --max-size 0.']
+        : []),
+      ...(report.source.kind === 'scene-seek'
+        ? ['Model time: use a real playback recording to inspect presentation cadence.']
+        : []),
+    ],
+  };
+}
+
 function bars(intervals, key, label, unit) {
   const max = Math.max(Number.EPSILON, ...intervals.map((v) => v[key]));
   const step = 560 / intervals.length;
@@ -30,8 +62,8 @@ function bars(intervals, key, label, unit) {
 export function motionMarkup(report, { includeFrames = true } = {}) {
   const { frames, intervals } = report;
   const bounds = report.motionBounds ?? { x: 0, y: 0, width: report.width, height: report.height };
-  const map = (image, label) =>
-    `<svg class="motion-map" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}" role="img" aria-label="${label}"><title>${label}</title><image href="${image}" width="${report.width}" height="${report.height}"/></svg>`;
+  const map = (image, label, className = 'motion-map') =>
+    `<svg class="${className}" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}" role="img" aria-label="${label}"><title>${label}</title><image href="${image}" width="${report.width}" height="${report.height}"/></svg>`;
   const labels = {
     'scene-seek': 'Перемотка сцены · время модели',
     video: 'Видео · исходные временные метки PTS',
@@ -45,23 +77,27 @@ export function motionMarkup(report, { includeFrames = true } = {}) {
   .motion-sheet figure{margin:0}.motion-sheet .motion-map{display:block;width:100%;height:300px;object-fit:contain;background:white;border:1px solid #d9e0df}
   .motion-sheet svg{display:block;width:100%;background:white}.motion-sheet svg text{fill:#3c525d;font-family:Arial,sans-serif}
   .motion-sheet .motion-strip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-top:18px}
-  .motion-sheet .motion-strip img{display:block;width:100%;height:108px;object-fit:contain;background:white;border:2px solid var(--frame-color)}
+  .motion-sheet .motion-strip svg{display:block;width:100%;height:116px;border:2px solid var(--frame-color)}
+  .motion-sheet .motion-strip svg,.motion-sheet .motion-context img{background:repeating-conic-gradient(#dedede 0% 25%,#f4f4f4 0% 50%) 0 0/16px 16px}
+  .motion-sheet .motion-context{display:flex;align-items:center;gap:16px;margin:14px 0}.motion-sheet .motion-context img{width:170px;height:90px;object-fit:contain;border:1px solid #d9e0df;flex-shrink:0}
   .motion-sheet figcaption{font-size:13px;margin-top:5px}.motion-sheet .motion-legend{display:flex;justify-content:space-between;gap:6px;margin:8px 0;font-size:13px}
   @media(max-width:650px){.motion-sheet{padding:16px}.motion-sheet .motion-panels{grid-template-columns:1fr}.motion-sheet .motion-strip{grid-template-columns:repeat(3,minmax(0,1fr))}}
   </style>
   <h2>${escape(report.title ?? 'Движение в соседних кадрах')}</h2>
-  <p>${labels[report.source.kind]} · ${frames.length} кадров · ${frames[0].time.toFixed(3)}–${frames.at(-1).time.toFixed(3)} с${report.sampling === 'cue-checkpoints' ? ' · обзорные состояния перехода' : ' · последовательные кадры'}</p>
+  <p>${labels[report.source.kind]} · ${frames.length} кадров · ${frames[0].time.toFixed(3)}–${frames.at(-1).time.toFixed(3)} с${report.sampling === 'cue-checkpoints' ? ' · обзорные состояния перехода' : report.sampling === 'provided-order' ? ' · порядок из manifest' : ' · последовательные кадры'}${report.source.cue ? ` · метка ${escape(report.source.cue.id)} (${report.source.cue.start.toFixed(3)}–${report.source.cue.end.toFixed(3)} с)` : ''}</p>
   <p>${report.source.kind === 'scene-seek' ? 'Δt задано перемоткой: этот отчёт показывает форму перехода. Ритм живого интерфейса проверяется по записи воспроизведения.' : 'Δt относится к источнику. Частота и пропуски самой записи ограничивают наблюдаемый ритм.'}</p>
-  ${report.sizeChanged ? '<p>Размеры кадров различаются; сохранены масштаб и привязка к левому верхнему углу, свободная область заполнена белым.</p>' : ''}
-  ${report.crop ? `<p>Область: ${report.crop.x}, ${report.crop.y} · ${report.width} × ${report.height} px.</p>` : ''}
+  ${report.sizeChanged ? '<p>Размеры кадров различаются; общий масштаб, привязка к левому верхнему углу и прозрачное дополнение.</p>' : ''}
+  <p>Анализ: ${report.width} × ${report.height} px · ${(report.scale * 100).toFixed(1)}% исходного масштаба${report.crop ? ` · исходная область ${report.crop.x},${report.crop.y},${report.crop.width},${report.crop.height}` : ''}${report.hasTransparency ? ' · цвет с учётом прозрачности и альфа-канал' : ''}.</p>
+  ${report.scale < 1 ? `<p>Для тонких линий и малых сдвигов: <code>--max-size 0${report.suggestedCrop ? ` --crop ${Object.values(report.suggestedCrop).join(',')}` : ''}</code>.</p>` : ''}
+  ${!report.motionBounds ? '<p>В этом окне нет изменений выше порога. Проверьте время действия, область и порог; неподвижный фрагмент сам по себе не оценивает всю анимацию.</p>' : ''}
   <div class="motion-panels">
     <figure><h3>Наложение изменяющихся контуров</h3>${map(report.overlay, 'Контуры кадров: синий в начале, оранжевый в конце')}<div class="motion-legend"><span style="color:${color(0, frames.length)}">1 · раньше</span><span>цвет → порядок</span><span style="color:${color(frames.length - 1, frames.length)}">${frames.length} · позже</span></div></figure>
-    <figure><h3>Максимальная разность соседних кадров</h3>${map(report.difference, 'Карта межкадровых изменений')}<figcaption>Область движения приближена; порог шума ${report.threshold}/255.</figcaption></figure>
+    <figure><h3>Максимальная разность соседних кадров</h3>${map(report.difference, 'Карта межкадровых изменений')}<figcaption>${report.motionBounds ? 'Общая область изменений приближена во всех кадрах' : 'Показана вся область'}; порог ${report.threshold}/255.</figcaption></figure>
     <figure><h3>Изменившиеся пиксели, % области</h3>${bars(intervals, 'changedPercent', 'Доля изменившихся пикселей', '%')}</figure>
     <figure><h3>Интервал между кадрами, мс</h3>${bars(intervals, 'dtMs', 'Интервал между кадрами', ' ms')}</figure>
   </div>
-  <p>Точных повторов соседнего кадра: ${intervals.filter((v) => v.duplicate).length}. Изменение пикселей зависит от движения, формы и цвета; сопоставьте его с замыслом, камерой и монтажом.</p>
-  ${includeFrames ? `<div class="motion-strip">${frames.map((frame, i) => `<figure style="--frame-color:${color(i, frames.length)}"><img src="${frame.image}" alt="Кадр ${i + 1}"><figcaption>${i + 1} · ${frame.time.toFixed(3)} с</figcaption></figure>`).join('')}</div>` : ''}
+  <p>Повторов соседнего кадра в масштабе анализа: ${intervals.filter((v) => v.duplicate).length}. Пиксельная разность зависит от движения, формы и цвета; сопоставьте её с замыслом, камерой и монтажом.</p>
+  ${includeFrames ? `<div class="motion-context"><img src="${frames[0].image}" alt="Контекст первого кадра"><p>Контекст первого кадра. Ниже — последовательность в общей области изменений.</p></div><div class="motion-strip">${frames.map((frame, i) => `<figure style="--frame-color:${color(i, frames.length)}">${map(frame.image, `Кадр ${i + 1}`, 'motion-frame')}<figcaption>${i + 1} · ${frame.time.toFixed(3)} с</figcaption></figure>`).join('')}</div>` : ''}
   </section>`;
 }
 
@@ -91,5 +127,6 @@ export async function writeMotionReport(report, out, { context } = {}) {
     data: join(out, 'motion.json'),
     frames: report.frames.length,
     source: report.source,
+    ...summary(report),
   };
 }

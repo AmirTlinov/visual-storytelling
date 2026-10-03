@@ -28,6 +28,8 @@ const { values, positionals } = parseArgs({
     frames: { type: 'string' },
     fps: { type: 'string' },
     crop: { type: 'string' },
+    threshold: { type: 'string' },
+    'max-size': { type: 'string' },
   },
 });
 const [command, directory = '.'] = positionals,
@@ -42,12 +44,14 @@ visual-story audio DIRECTORY                  voice + aligned cues from narratio
 visual-story preview DIST [--port 8793]        serve an existing build
 visual-story review DIST --out review [--cue ID] [--width 375] [--theme dark] [--reduced]
 visual-story review INPUT --motion --out review [--from SECONDS] [--frames 12] [--crop x,y,w,h]
-                       INPUT: scene directory, video, or PNG manifest; scene-only --fps 60
+                       INPUT: scene directory/HTML/SVG, video, or PNG manifest
+                       scene: --cue ID (centered window), --fps 60; detail: --max-size 0 --threshold 8
 visual-story pack DIST --out artifacts/story.html [--inline]
 visual-story generate DIRECTORY --example NAME
 
 Authoring API: ${join(root, 'skill/references/scene-template.md')}
-Narration format: ${join(root, 'skill/references/narration.md')}`;
+Narration format: ${join(root, 'skill/references/narration.md')}
+Motion review: ${join(root, 'skill/references/motion.md')}`;
 if (values.help || command === 'help' || !command) console.log(help);
 else if (command === 'examples') {
   for (const [name, entry] of Object.entries(catalog))
@@ -194,11 +198,18 @@ else if (command === 'examples') {
     throw new Error('Review needs --theme light|dark and --width at least 240');
   if (
     !values.motion &&
-    [values.from, values.frames, values.fps, values.crop].some((v) => v !== undefined)
+    [
+      values.from,
+      values.frames,
+      values.fps,
+      values.crop,
+      values.threshold,
+      values['max-size'],
+    ].some((v) => v !== undefined)
   )
-    throw new Error('--from, --frames, --fps and --crop require --motion');
-  if (values.motion && values.cue?.length)
-    throw new Error('Use --from to select a motion window; --cue selects the story overview');
+    throw new Error('Frame analysis options require --motion');
+  if (values.motion && values.cue?.length > 1)
+    throw new Error('Choose one --cue for a motion window');
   const { reviewMotion } = await import('./motion-review.mjs');
   const { parseCrop } = await import('./motion-frames.mjs');
   console.log(
@@ -207,10 +218,13 @@ else if (command === 'examples') {
         ? await reviewMotion({
             input: destination,
             out: values.out ?? 'review',
-            from: Number(values.from ?? 0),
+            from: values.from === undefined ? undefined : Number(values.from),
             frames: Number(values.frames ?? 12),
             fps: values.fps === undefined ? undefined : Number(values.fps),
             crop: parseCrop(values.crop),
+            threshold: values.threshold === undefined ? undefined : Number(values.threshold),
+            maxSize: values['max-size'] === undefined ? undefined : Number(values['max-size']),
+            cue: values.cue?.[0],
             theme,
             width,
             reduced: values.reduced,

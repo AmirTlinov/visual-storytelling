@@ -1,4 +1,4 @@
-import { PNG } from 'pngjs';
+import sharp from 'sharp';
 
 export function frameColor(index, count) {
   const t = count > 1 ? index / (count - 1) : 0;
@@ -14,7 +14,7 @@ export function frameColor(index, count) {
 
 export function parseCrop(value) {
   if (value === undefined) return undefined;
-  const parts = value.split(',').map(Number);
+  const parts = value.split(',').map((part) => (part.trim() ? Number(part) : NaN));
   if (
     parts.length !== 4 ||
     !parts.every(Number.isInteger) ||
@@ -27,63 +27,96 @@ export function parseCrop(value) {
   return { x, y, width, height };
 }
 
-const imageURL = (image) => `data:image/png;base64,${PNG.sync.write(image).toString('base64')}`;
+const imageURL = async ({ data, width, height }) =>
+  `data:image/png;base64,${(
+    await sharp(data, { raw: { width, height, channels: 4 } })
+      .png({ compressionLevel: 3 })
+      .toBuffer()
+  ).toString('base64')}`;
 
-/** Compare displayed pixels in one fixed coordinate system. Never deduplicate or retime. */
-export function analyzeMotionFrames(samples, { crop, threshold = 8 } = {}) {
+/** Compare one fixed coordinate system. Never deduplicate or retime. */
+export async function analyzeMotionFrames(samples, { crop, threshold = 8, maxSize = 960 } = {}) {
   if (samples.length < 2 || samples.length > 32) throw new Error('Motion review needs 2–32 frames');
   if (!Number.isFinite(threshold) || threshold < 0 || threshold > 255)
     throw new Error('Pixel threshold must be between 0 and 255');
+  if (!Number.isInteger(maxSize) || maxSize < 0)
+    throw new Error('--max-size must be a positive integer, or 0 for source resolution');
   for (let i = 0; i < samples.length; i++)
     if (!Number.isFinite(samples[i].time) || (i && samples[i].time <= samples[i - 1].time))
       throw new Error('Frame times must be finite and strictly increasing, in seconds');
-  const decoded = samples.map(({ png }) => PNG.sync.read(png));
-  const sizes = decoded.map(({ width, height }) => ({ width, height }));
-  const width = crop?.width ?? Math.max(...sizes.map((s) => s.width));
-  const height = crop?.height ?? Math.max(...sizes.map((s) => s.height));
-  if (width * height > 16_000_000) throw new Error('Choose a crop smaller than 16 megapixels');
+  const sizes = await Promise.all(
+    samples.map(async ({ png }) => {
+      const { width, height } = await sharp(png).metadata();
+      return { width, height };
+    }),
+  );
+  const sourceWidth = crop?.width ?? Math.max(...sizes.map((s) => s.width));
+  const sourceHeight = crop?.height ?? Math.max(...sizes.map((s) => s.height));
   if (
     crop &&
     (!Object.values(crop).every(Number.isInteger) ||
       crop.x < 0 ||
       crop.y < 0 ||
-      width <= 0 ||
-      height <= 0 ||
-      sizes.some((s) => crop.x + width > s.width || crop.y + height > s.height))
+      sourceWidth <= 0 ||
+      sourceHeight <= 0 ||
+      sizes.some((s) => crop.x + sourceWidth > s.width || crop.y + sourceHeight > s.height))
   )
     throw new Error('Crop must fit inside every source frame');
+  const scale = maxSize ? Math.min(1, maxSize / Math.max(sourceWidth, sourceHeight)) : 1;
+  const width = Math.max(1, Math.round(sourceWidth * scale));
+  const height = Math.max(1, Math.round(sourceHeight * scale));
   const pixels = width * height;
-  const frames = decoded.map((source) => {
-    const target = new PNG({ width, height });
-    target.data.fill(255);
-    for (let y = 0; y < (crop ? height : source.height); y++)
-      for (let x = 0; x < (crop ? width : source.width); x++) {
-        const s = ((y + (crop?.y ?? 0)) * source.width + x + (crop?.x ?? 0)) * 4;
-        const d = (y * width + x) * 4,
-          alpha = source.data[s + 3] / 255;
-        for (let c = 0; c < 3; c++)
-          target.data[d + c] = Math.round(source.data[s + c] * alpha + 255 * (1 - alpha));
-      }
-    return target;
-  });
+  if (pixels > 16_000_000 || pixels * samples.length > 160_000_000)
+    throw new Error('Analysis is too large; use --crop or --max-size 960');
+  const frames = [],
+    images = [];
+  let hasTransparency = false;
+  // Decode one source at a time; retain only the bounded analysis rasters.
+  for (let i = 0; i < samples.length; i++) {
+    let pipeline = sharp(samples[i].png).toColourspace('srgb').ensureAlpha();
+    if (crop)
+      pipeline = pipeline.extract({
+        left: crop.x,
+        top: crop.y,
+        width: sourceWidth,
+        height: sourceHeight,
+      });
+    const w = crop ? width : Math.max(1, Math.round(sizes[i].width * scale));
+    const h = crop ? height : Math.max(1, Math.round(sizes[i].height * scale));
+    pipeline = pipeline.resize(w, h, { fit: 'fill' });
+    if (w < width || h < height)
+      pipeline = pipeline.extend({
+        right: width - w,
+        bottom: height - h,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      });
+    const data = await pipeline.raw().toBuffer();
+    images.push(await imageURL({ data, width, height }));
+    // Invisible RGB contributes nothing; alpha remains a comparison channel.
+    for (let p = 0; p < pixels; p++) {
+      const alpha = data[p * 4 + 3];
+      if (alpha === 255) continue;
+      hasTransparency = true;
+      for (let c = 0; c < 3; c++) data[p * 4 + c] = Math.round((data[p * 4 + c] * alpha) / 255);
+    }
+    frames.push({ data });
+  }
   const active = new Uint8Array(pixels),
     peak = new Uint8Array(pixels);
   let left = width,
     right = -1,
     top = height,
     bottom = -1;
-  // Temporal range finds gradual changes too; a static background stays quiet.
-  for (let p = 0; p < pixels; p++) {
-    for (let c = 0; c < 3; c++) {
-      let low = 255,
-        high = 0;
-      for (const frame of frames) {
-        const value = frame.data[p * 4 + c];
-        low = Math.min(low, value);
-        high = Math.max(high, value);
-      }
-      if (high - low > threshold) active[p] = 1;
+  // Temporal range also finds gradual changes; static pixels stay quiet.
+  const low = Uint8Array.from(frames[0].data),
+    high = Uint8Array.from(low);
+  for (const { data } of frames.slice(1))
+    for (let i = 0; i < data.length; i++) {
+      if (data[i] < low[i]) low[i] = data[i];
+      if (data[i] > high[i]) high[i] = data[i];
     }
+  for (let p = 0; p < pixels; p++) {
+    for (let c = 0; c < 4; c++) if (high[p * 4 + c] - low[p * 4 + c] > threshold) active[p] = 1;
     if (active[p]) {
       const x = p % width,
         y = Math.floor(p / width);
@@ -109,7 +142,7 @@ export function analyzeMotionFrames(samples, { crop, threshold = 8 } = {}) {
       absolute = 0;
     for (let p = 0; p < pixels; p++) {
       let difference = 0;
-      for (let c = 0; c < 3; c++) {
+      for (let c = 0; c < 4; c++) {
         const delta = Math.abs(frames[i].data[p * 4 + c] - frames[i - 1].data[p * 4 + c]);
         absolute += delta;
         difference = Math.max(difference, delta);
@@ -122,15 +155,16 @@ export function analyzeMotionFrames(samples, { crop, threshold = 8 } = {}) {
       to: i,
       dtMs: (samples[i].time - samples[i - 1].time) * 1000,
       changedPercent: (changed * 100) / pixels,
-      meanAbsoluteDelta: absolute / (pixels * 3),
+      meanAbsoluteDelta: absolute / (pixels * 4),
       duplicate: absolute === 0,
     });
   }
-  const overlay = new PNG({ width, height }),
-    difference = new PNG({ width, height });
+  const overlay = { width, height, data: Buffer.alloc(pixels * 4) },
+    difference = { width, height, data: Buffer.alloc(pixels * 4) };
   for (let p = 0; p < pixels; p++) {
     const gray =
-      (frames[0].data[p * 4] + frames[0].data[p * 4 + 1] + frames[0].data[p * 4 + 2]) / 3;
+      (frames[0].data[p * 4] + frames[0].data[p * 4 + 1] + frames[0].data[p * 4 + 2]) / 3 +
+      229 * (1 - frames[0].data[p * 4 + 3] / 255);
     for (let c = 0; c < 3; c++) {
       overlay.data[p * 4 + c] = Math.round(255 * 0.82 + gray * 0.18);
       const strength = peak[p] > threshold ? Math.sqrt(peak[p] / 255) : 0;
@@ -152,7 +186,7 @@ export function analyzeMotionFrames(samples, { crop, threshold = 8 } = {}) {
           y + 1 < height ? p + width : p,
           y ? p - width : p,
         ])
-          for (let c = 0; c < 3; c++)
+          for (let c = 0; c < 4; c++)
             edge = Math.max(edge, Math.abs(data[p * 4 + c] - data[next * 4 + c]));
         if (edge <= threshold) continue;
         const alpha = 0.3 + (0.6 * edge) / 255;
@@ -162,21 +196,49 @@ export function analyzeMotionFrames(samples, { crop, threshold = 8 } = {}) {
           );
       }
   }
+  let suggestedCrop = motionBounds
+    ? {
+        x: (crop?.x ?? 0) + Math.floor((motionBounds.x * sourceWidth) / width),
+        y: (crop?.y ?? 0) + Math.floor((motionBounds.y * sourceHeight) / height),
+        width: Math.min(
+          sourceWidth - Math.floor((motionBounds.x * sourceWidth) / width),
+          Math.ceil((motionBounds.width * sourceWidth) / width),
+        ),
+        height: Math.min(
+          sourceHeight - Math.floor((motionBounds.y * sourceHeight) / height),
+          Math.ceil((motionBounds.height * sourceHeight) / height),
+        ),
+      }
+    : null;
+  if (
+    suggestedCrop &&
+    sizes.some(
+      (size) =>
+        suggestedCrop.x + suggestedCrop.width > size.width ||
+        suggestedCrop.y + suggestedCrop.height > size.height,
+    )
+  )
+    suggestedCrop = null;
   return {
     width,
     height,
     crop: crop ?? null,
     threshold,
+    scale,
+    sourceWidth,
+    sourceHeight,
+    hasTransparency,
     motionBounds,
+    suggestedCrop,
     sizeChanged: sizes.some((s) => s.width !== sizes[0].width || s.height !== sizes[0].height),
     frames: frames.map((frame, i) => ({
       time: samples[i].time,
       sourceSize: sizes[i],
-      image: imageURL(frame),
+      image: images[i],
     })),
     intervals,
-    overlay: imageURL(overlay),
-    difference: imageURL(difference),
+    overlay: await imageURL(overlay),
+    difference: await imageURL(difference),
   };
 }
 

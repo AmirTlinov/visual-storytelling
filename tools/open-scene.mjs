@@ -29,7 +29,11 @@ export async function openScene(page, url) {
   });
   // This adapter calls the scene's owners; it never introduces another playback clock.
   return page.evaluateHandle(() => {
-    const handles = () => [window.explainer, document.querySelector('.ve-scene')?.scene];
+    const handles = () =>
+      documents().flatMap((doc) => [
+        doc.defaultView?.explainer,
+        doc.querySelector('.ve-scene')?.scene,
+      ]);
     const owner = (method) => handles().find((handle) => typeof handle?.[method] === 'function');
     const documents = () => [
       document,
@@ -37,7 +41,10 @@ export async function openScene(page, url) {
         .map((element) => element.contentDocument)
         .filter(Boolean),
     ];
-    const slider = () => document.querySelector('[data-seek]:not([hidden])');
+    const slider = () =>
+      documents()
+        .map((doc) => doc.querySelector('[data-seek]:not([hidden])'))
+        .find(Boolean);
     function pause() {
       owner('pause')?.pause();
       for (const doc of documents()) {
@@ -67,7 +74,9 @@ export async function openScene(page, url) {
         const handle = owner('seek');
         if (handle) handle.seek(time);
         else {
-          const button = document.querySelector('[data-mode=story]');
+          const button = documents()
+            .map((doc) => doc.querySelector('[data-mode=story]'))
+            .find(Boolean);
           if (button && !button.hidden) button.click();
           const input = slider();
           if (input) {
