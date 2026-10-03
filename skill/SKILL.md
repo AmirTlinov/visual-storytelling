@@ -38,7 +38,7 @@ description: "Создаёт SVG-схемы, графики, интеракти�
 | Алгоритм | [Кадр](../examples/bubble-sort/preview.png) · [Сцена](../examples/bubble-sort/index.html) | Сравнение у пары → перемещение тех же чисел → следующая пара. |
 | Вложенное устройство | [Кадр](../examples/computer-explorer/preview.png) · [Компьютер](../examples/computer-explorer/index.html) · [Нейрон](../examples/neuron-explorer/index.html) | Целое → деталь, выделение по контуру, жесты, один владелец данных на всех уровнях. |
 | Передача данных | [Кадр](../examples/shared-memory/preview.png) · [Сцена](../examples/shared-memory/index.html) | Путь и направление передачи видны; получатель обновляется при прибытии. |
-| Сопоставление вариантов | [Кадр](../examples/logic-gates/preview.png) · [SVG](../examples/logic-gates/logic-gates.svg) | Одинаковые символы и порядок входов в восьми таблицах истинности. |
+| Сопоставление вариантов | [Кадр](../examples/logic-gates/preview.png) · [Генератор SVG](../examples/logic-gates/build.py) | Одинаковые символы и порядок входов в восьми таблицах истинности. |
 
 Это поддерживаемые примеры: рисованные рассказы и подробные инженерные SVG компьютера. Все интерактивы используют один пакет и запускаются
 через [сборку сцены](references/scene-authoring.md). Плееры, поля и повторяющиеся выделения бери у [общих владельцев](references/scene-authoring.md#где-что-находится); новый тип времени подключай адаптером к существующему плееру.

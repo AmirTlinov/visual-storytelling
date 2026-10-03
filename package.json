@@ -1,18 +1,13 @@
 {
   "name": "@visual-storytelling/core",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "description": "Carefully hand-drawn, deterministic visual explanations.",
   "files": [
     "dist",
-    "src/assets/shantell-OFL.txt",
-    "examples",
     "tools",
-    "skill",
-    "docs",
     "README.md",
-    "PHILOSOPHY.md",
     "THIRD_PARTY.md"
   ],
   "exports": {
@@ -63,7 +58,7 @@
     "./examples/**"
   ],
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 8793 --strictPort",
+    "dev": "node tools/dev-gallery.mjs",
     "build": "node tools/build.mjs",
     "check": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.ts tests/*.test.mjs",
@@ -76,7 +71,6 @@
     "profile": "node tools/profile.mjs",
     "format": "prettier --write src examples tools tests *.ts *.json README.md PHILOSOPHY.md AGENTS.md THIRD_PARTY.md docs",
     "prepack": "npm run build",
-    "generate": "node tools/generate.mjs",
     "test:visual": "node tools/visual-regression.mjs compare site artifacts/migrated"
   },
   "dependencies": {
@@ -84,6 +78,7 @@
     "@dimforge/rapier3d-compat": "0.21.0",
     "esbuild": "0.27.5",
     "gsap": "3.15.0",
+    "parse5": "8.0.1",
     "playwright": "1.63.0",
     "roughjs": "4.6.6",
     "sharp": "0.35.5",
@@ -95,8 +90,7 @@
     "@types/three": "0.183.1",
     "pngjs": "7.0.0",
     "prettier": "3.6.2",
-    "typescript": "5.9.3",
-    "vite": "8.3.2"
+    "typescript": "5.9.3"
   },
   "engines": {
     "node": ">=22.18"

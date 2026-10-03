@@ -40,8 +40,13 @@ test('nested scene assets and data scripts survive building, serving and offline
     );
     await put('assets/device,alt.svg', await readFile(join(source, 'assets/device.svg')));
     await put(
+      'assets/nested.svg',
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><image href="device.svg" width="20" height="20"/></svg>',
+    );
+    await put('styles/imported.css', '.imported{background-image:url(../assets/nested.svg)}');
+    await put(
       'styles/scene.css',
-      ':root{color-scheme:light dark}.ve-scene{color:light-dark(black,white);background-image:url(../assets/dot.png);--mask:url(#local)}',
+      '@import "./imported.css"; :root{color-scheme:light dark}.ve-scene{color:light-dark(black,white);background-image:url(../assets/dot.png);--mask:url(#local)}',
     );
     await put(
       'entry.js',
@@ -54,6 +59,11 @@ test('nested scene assets and data scripts survive building, serving and offline
         ../assets/device,alt.svg 1x,
         data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="red"/></svg>').toString('base64')} 2x
       "><img id="variant" src="../assets/dot.png"></picture><video poster=" ../assets/device.svg "></video><object data='../assets/device.svg' type='image/svg+xml' style='width:70px;height:90px'></object></main>
+      <style>#inline-style{background-image:url('../assets/device.svg')}</style>
+      <div id="inline-style" style="width:20px;height:20px"></div>
+      <div id="attribute-style" style="width:20px;height:20px;background-image:url('../assets/device.svg')"></div>
+      <div class="imported" style="width:20px;height:20px"></div>
+      <svg id="inline-svg" xmlns="http://www.w3.org/2000/svg" width="20" height="20"><image href="../assets/nested.svg" width="20" height="20"/></svg>
       <script id="data" type="application/json">{"answer":42}</script><script type='module' src='../entry.js'></script>
       <audio data-silent="true" data-src="unused-narration.wav" src="unused-voice.wav"><source src="unused-music.mp3"></audio>
       </body></html>`,
@@ -74,7 +84,9 @@ test('nested scene assets and data scripts survive building, serving and offline
     browser = await chromium.launch();
     const context = await browser.newContext({ colorScheme: 'light', offline: true });
     const page = await context.newPage(),
-      errors = [];
+      errors = [],
+      failed = [];
+    page.on('requestfailed', (request) => failed.push(request.url()));
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto(pathToFileURL(file).href);
     assert.deepEqual(await page.evaluate(() => window.payload), { answer: 42 });
@@ -92,6 +104,24 @@ test('nested scene assets and data scripts survive building, serving and offline
     assert.equal(scene.theme, 'dark');
     assert(scene.image.includes('data:image/png'));
     assert.equal(scene.width, 1);
+    for (const selector of ['#inline-style', '#attribute-style', '.imported'])
+      assert(
+        (
+          await page.locator(selector).evaluate((e) => getComputedStyle(e).backgroundImage)
+        ).includes('data:image/svg+xml'),
+      );
+    assert(
+      (await page.locator('#inline-svg image').getAttribute('href')).startsWith(
+        'data:image/svg+xml',
+      ),
+    );
+    const { PNG } = await import('pngjs');
+    for (const selector of ['#inline-style', '#attribute-style', '.imported', '#inline-svg']) {
+      const picture = PNG.sync.read(await page.locator(selector).screenshot());
+      const center =
+        (Math.floor(picture.height / 2) * picture.width + Math.floor(picture.width / 2)) * 4;
+      assert.deepEqual([...picture.data.subarray(center, center + 4)], [255, 0, 0, 255], selector);
+    }
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.waitForFunction(() => {
       const image = document.querySelector('#variant');
@@ -117,6 +147,9 @@ test('nested scene assets and data scripts survive building, serving and offline
       'dark',
     );
     assert.deepEqual(errors, []);
+    assert.deepEqual(failed, []);
+    await put('unsupported.html', '<svg><use href="assets/device.svg#shape"/></svg>');
+    await assert.rejects(packDirectory(source, 'unsupported.html'), /Inline external SVG <use>/);
   } finally {
     await browser?.close();
     await server?.close();

@@ -1,0 +1,6 @@
+{
+  "generator": {
+    "file": "build.mjs",
+    "runner": "node"
+  }
+}

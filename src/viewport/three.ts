@@ -7,6 +7,7 @@ type MaterialInk = string | ((palette: Palette) => Color);
 import { projectedLabels, type LabelInsets } from './labels.js';
 import { shotPose, type ShotTransition3D } from './shots.js';
 import * as ThreeKit from './engine.js';
+import { orbitControls, orbitHelp } from './orbit.js';
 /* Camera, GPU resources and projected labels belong to this surface. */
 
 function mount(
@@ -28,15 +29,14 @@ function mount(
   const canvas = renderer.domElement;
   canvas.tabIndex = 0;
   canvas.setAttribute('role', 'img');
-  canvas.setAttribute(
-    'aria-label',
-    `${label}. Левая кнопка и стрелки — вращение; средняя кнопка, Shift и левая кнопка или Shift и стрелки — перенос; колесо и плюс или минус — масштаб; Home — исходный вид.`,
-  );
+  canvas.setAttribute('aria-label', `${label}. ${orbitHelp}`);
   stage.prepend(canvas);
-  const controls = new T.OrbitControls(camera, canvas);
-  controls.enableDamping = false;
-  controls.enablePan = true;
-  controls.mouseButtons.MIDDLE = T.MOUSE.PAN;
+  const orbit = orbitControls(camera, canvas, {
+    reset,
+    changed: () => invalidate(),
+    started: () => started(),
+  });
+  const { controls } = orbit;
   const abort = new AbortController(),
     listen = { signal: abort.signal };
   const labels = projectedLabels(stage, camera, scene, ink, release, invalidate, labelInsets);
@@ -69,13 +69,10 @@ function mount(
   function invalidate() {
     if (!pending && !disposed) pending = requestAnimationFrame(render);
   }
-  const changed = () => invalidate(),
-    started = () => {
-      following = false;
-      onInteract();
-    };
-  controls.addEventListener('change', changed);
-  controls.addEventListener('start', started);
+  const started = () => {
+    following = false;
+    onInteract();
+  };
   const sample = document.createElement('span');
   sample.hidden = true;
   stage.append(sample);
@@ -199,46 +196,6 @@ function mount(
     controls.update();
     invalidate();
   }
-  canvas.addEventListener(
-    'keydown',
-    (event) => {
-      const keys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', '+', '=', '-', '_', 'Home'];
-      if (!keys.includes(event.key)) return;
-      event.preventDefault();
-      started();
-      if (event.key === 'Home') {
-        reset();
-        return;
-      }
-      const offset = camera.position.clone().sub(controls.target),
-        sphere = new T.Spherical().setFromVector3(offset);
-      if (event.key === '+' || event.key === '=') offset.multiplyScalar(0.9);
-      else if (event.key === '-' || event.key === '_') offset.multiplyScalar(1.1);
-      else if (event.shiftKey) {
-        const move = new T.Vector3()
-          .setFromMatrixColumn(
-            camera.matrix,
-            ['ArrowLeft', 'ArrowRight'].includes(event.key) ? 0 : 1,
-          )
-          .multiplyScalar(
-            offset.length() * 0.04 * (['ArrowLeft', 'ArrowDown'].includes(event.key) ? -1 : 1),
-          );
-        controls.target.add(move);
-      } else {
-        if (event.key === 'ArrowLeft') sphere.theta -= 0.12;
-        if (event.key === 'ArrowRight') sphere.theta += 0.12;
-        if (event.key === 'ArrowUp') sphere.phi -= 0.12;
-        if (event.key === 'ArrowDown') sphere.phi += 0.12;
-        sphere.makeSafe();
-        offset.setFromSpherical(sphere);
-      }
-      offset.clampLength(controls.minDistance, controls.maxDistance);
-      camera.position.copy(controls.target).add(offset);
-      controls.update();
-      invalidate();
-    },
-    listen,
-  );
   function release(target?: ThreeKit.Object3D) {
     const geometries = new Set<ThreeKit.BufferGeometry>(),
       mats = new Set<Material>(),
@@ -338,9 +295,7 @@ function mount(
       removals.clear();
       cancelAnimationFrame(pending);
       abort.abort();
-      controls.removeEventListener('change', changed);
-      controls.removeEventListener('start', started);
-      controls.dispose();
+      orbit.dispose();
       sizeObserver.disconnect();
       themeObserver.disconnect();
       labels.dispose();

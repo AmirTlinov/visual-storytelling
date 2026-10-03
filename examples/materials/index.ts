@@ -106,21 +106,12 @@ export function mount(parent: HTMLElement): Example {
     },
   );
   book.parameters.append(colour.element);
-  book.attach(controller);
-  return {
-    duration: 5,
+  book.onDispose(colour.dispose);
+  book.onDispose(layout.dispose);
+  return Object.assign(book.attach(controller), {
     checkpoints: [1, 2, 4],
-    seek: controller.seek,
-    pause: controller.player.pause,
     setTheme: book.theme,
-    setReduced: controller.setReduced,
     svg: () => layout.current.view.element,
     snapshot: () => ({ progress: controller.values.progress, pigment }),
-    review: controller.sheet.review,
-    dispose() {
-      colour.dispose();
-      book.dispose();
-      layout.dispose();
-    },
-  };
+  });
 }

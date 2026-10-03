@@ -102,7 +102,7 @@ window.galleryReady = (async () => {
 освобождает рассказ, камеру и callbacks `shell.onDispose`: добавляй туда наблюдатели,
 подписки и движение предмета. `controller.subscribe((mode, values) => …)` сразу сообщает
 состояние и возвращает функцию отписки; `controller.onSeek(time => …)` сообщает целевое время до рендера.
-`notebook` использует ту же оболочку для типизированных примеров; см. [вектор](../../examples/vector/index.ts).
+`notebook.attach(controller)` возвращает тот же `SceneHandle`, опубликованный в `root.scene`; `notebook.onDispose` регистрирует очистку у оболочки — см. [вектор](../../examples/vector/index.ts).
 
 ## Рассказ → самостоятельный опыт → восстановление
 

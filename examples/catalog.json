@@ -65,38 +65,22 @@
   "logic-gates": {
     "title": "Логические элементы",
     "page": "logic-gates.svg",
-    "time": 0,
-    "generator": {
-      "file": "build.py",
-      "runner": "python3"
-    }
+    "time": 0
   },
   "geometric-tensor": {
     "title": "Геометрия тензора",
     "page": "index.html",
-    "time": 0,
-    "generator": {
-      "file": "build.mjs",
-      "runner": "node"
-    }
+    "time": 0
   },
   "parameter-cube": {
     "title": "Параметры BERT-mini",
     "page": "preview.html",
-    "time": 0,
-    "generator": {
-      "file": "cube.mjs",
-      "runner": "node"
-    }
+    "time": 0
   },
   "lc-oscillator": {
     "title": "Колебательный LC-контур",
     "page": "preview.html",
     "time": 0.75,
-    "generator": {
-      "file": "build.py",
-      "runner": "uv"
-    },
     "checkpoints": [0, 0.75, 1.5, 2.25]
   },
   "vector": {

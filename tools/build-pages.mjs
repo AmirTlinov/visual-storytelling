@@ -4,13 +4,14 @@ import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sourceAliases } from './source-package.mjs';
 import { sceneAsset } from './assets.mjs';
+import { generateScene } from './generate-scene.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 export async function buildPage(
   source,
   target,
-  { sourcePackage = false, tsconfig, cdn = false } = {},
+  { sourcePackage = false, tsconfig, cdn = false, html: suppliedHTML } = {},
 ) {
-  let html = await readFile(source, 'utf8');
+  let html = suppliedHTML ?? (await readFile(source, 'utf8'));
   const attribute = (attrs, name) =>
     new RegExp(`\\b${name}\\s*=\\s*(["'])(.*?)\\1`, 'i').exec(attrs)?.[2];
   const scriptPattern = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
@@ -116,6 +117,7 @@ export async function buildScene(source, target, options = {}) {
     'review',
     'package.json',
     'package-lock.json',
+    'scene.json',
   ]);
   async function visit(directory, output) {
     const entries = await readdir(directory, { withFileTypes: true });
@@ -132,14 +134,15 @@ export async function buildScene(source, target, options = {}) {
     for (const entry of entries)
       if (entry.isFile() && entry.name.endsWith('.html'))
         await buildPage(resolve(directory, entry.name), output, options);
+    await generateScene(directory, output);
   }
   await visit(source, target);
 }
 
-export async function buildPages() {
+export async function buildPages(target = resolve(root, 'site')) {
   const catalog = JSON.parse(await readFile(resolve(root, 'examples/catalog.json'), 'utf8'));
   for (const name of Object.keys(catalog))
-    await buildScene(resolve(root, 'examples', name), resolve(root, 'site', name), {
+    await buildScene(resolve(root, 'examples', name), resolve(target, name), {
       sourcePackage: true,
     });
 }

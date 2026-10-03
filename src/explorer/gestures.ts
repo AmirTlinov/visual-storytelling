@@ -140,7 +140,8 @@ export class SvgGestures {
       this.suppressClickUntil = 0;
       return;
     }
-    if (event.button > 0 || this.camera.travel) return;
+    if (event.button > 1 || this.camera.travel) return;
+    if (event.button === 1) event.preventDefault();
     if (this.pointers.size === 0) this.suppressClickUntil = 0;
     this.camera.cancel();
     this.pointers.set(event.pointerId, this.local(event));

@@ -150,20 +150,3 @@ export function download(content: string | Blob, name: string, type = 'image/svg
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-
-import type { Theme } from '../ink/palette.js';
-import type { CueReview } from '../story/cues.js';
-export interface SceneHandle {
-  duration: number;
-  checkpoints: readonly number[];
-  audioURL?: string;
-  seek(time: number): void;
-  pause(): void;
-  setTheme(value: Theme): void;
-  setReduced(value: boolean): void;
-  svg(): SVGSVGElement;
-  snapshot(): unknown;
-  review?(): CueReview;
-  exportSVG?(): Promise<string>;
-  dispose(): void;
-}

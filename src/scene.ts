@@ -3,6 +3,8 @@ import { chapterHeading } from './story/chapters.js';
 import { loadFonts } from './ink/fonts.js';
 import { player as statePlayer } from './controls/player.js';
 import type { MediaClock } from './story/clock.js';
+import type { SceneHandle } from './scene-handle.js';
+export type { SceneHandle } from './scene-handle.js';
 export interface SceneOptions {
   title: string;
   paper?: boolean;
@@ -208,24 +210,24 @@ function mount(
       chapters.update(controller.currentTime, exploration === 'view' || next === 'story');
     });
     setMode('story');
-    Object.assign(root, {
-      scene: {
-        play: () => {
-          preparePlayback();
-          return controller.player.play();
-        },
-        seek: controller.seek,
-        pause: controller.pause,
-        review: controller.review,
-        duration: controller.duration,
-        get currentTime() {
-          return controller.currentTime;
-        },
-        snapshot: () => controller.values,
-        setReduced: controller.setReduced,
-        dispose,
+    const handle: SceneHandle = {
+      play: () => {
+        preparePlayback();
+        return controller.player.play();
       },
-    });
+      seek: controller.seek,
+      pause: controller.pause,
+      review: controller.review,
+      duration: controller.duration,
+      get currentTime() {
+        return controller.currentTime;
+      },
+      snapshot: () => controller.values,
+      setReduced: controller.setReduced,
+      dispose,
+    };
+    Object.assign(root, { scene: handle });
+    return handle;
     function preparePlayback() {
       if (controller.currentTime >= controller.duration - 0.02) view?.reset();
       if (exploration === 'model') setMode('story');

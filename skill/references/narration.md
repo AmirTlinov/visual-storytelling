@@ -186,7 +186,7 @@ visual-story review dist --out review-narrow --cue copy --width 375 --theme dark
 Каждое действие получает цветное наложение, карту разностей и PNG в `motion-NNN/`:
 открой его и сопоставь следы с отдельными кадрами. Это обзорные состояния метки;
 [короткая последовательность `--motion`](motion.md#проверка) показывает соседние кадры.
-`SceneShell.attachStory` публикует `seek`, `pause`, `review` и `snapshot` в `root.scene`. При самостоятельной разметке выставь эти методы на `window.explainer` или `root.scene`: `review: player.review`, для `story` — `review: controller.review`.
+`SceneShell.attachStory` публикует единый `SceneHandle` в `root.scene`; дополнительные ресурсы регистрируй через `shell.onDispose`, предметный снимок задавай в `root.scene.snapshot`. При самостоятельной разметке источник отчёта — `controller.review`.
 Инструменты вызывают методы сцены; общий плеер и native SVG служат адаптерами
 для примеров без собственного `seek`. Статичной сцене фиктивная перемотка не нужна.
 Обращения к `frame.progress/has/finished/reveal` учитываются в отчёте.

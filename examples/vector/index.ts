@@ -77,20 +77,11 @@ export function mount(parent: HTMLElement): Example {
     }),
     render: (state) => layout.current.render(state),
   });
-  book.attach(controller);
-  return {
-    duration: 18,
+  book.onDispose(layout.dispose);
+  return Object.assign(book.attach(controller), {
     checkpoints: [0, 5, 10, 16],
-    seek: controller.seek,
-    pause: controller.player.pause,
     setTheme: book.theme,
-    setReduced: controller.setReduced,
     svg: () => layout.current.view.element,
     snapshot: () => ({ input: controller.values, output: transform(controller.values) }),
-    review: controller.sheet.review,
-    dispose() {
-      book.dispose();
-      layout.dispose();
-    },
-  };
+  });
 }

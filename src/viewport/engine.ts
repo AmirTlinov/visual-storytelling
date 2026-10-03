@@ -3,6 +3,7 @@ export {
   Group,
   Object3D,
   PerspectiveCamera,
+  OrthographicCamera,
   WebGLRenderer,
   Color,
   Vector2,

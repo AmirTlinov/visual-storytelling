@@ -16,8 +16,15 @@ const run = (file, args, cwd = consumer) =>
 try {
   run(process.execPath, [resolve('tools/scene.mjs'), 'new', consumer, '--example', 'area-story']);
   run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund']);
-  const skill = join(consumer, 'node_modules/@visual-storytelling/core/skill');
-  const cli = join(skill, '../tools/scene.mjs');
+  const runtime = join(consumer, 'node_modules/@visual-storytelling/core');
+  const skill = resolve('skill');
+  const cli = join(runtime, 'tools/scene.mjs');
+  for (const name of ['examples', 'skill', 'src'])
+    await assert.rejects(access(join(runtime, name)), { code: 'ENOENT' });
+  const packed = JSON.parse(
+    run('npm', ['pack', '--dry-run', '--ignore-scripts', '--json'], runtime),
+  )[0];
+  assert(packed.size < 5_000_000, `Runtime archive grew to ${packed.size} bytes`);
   const signature = run(process.execPath, [cli, 'api', 'Viewport3D']).toString();
   assert.match(signature, /@visual-storytelling\/core\/three/);
   assert.match(signature, /ShotTransition3D/);
@@ -32,9 +39,9 @@ try {
   for (const name of ['surface', 'object', 'lettering'])
     assert.match(batch, new RegExp(`declare function ${name}\\(`));
   assert.equal([...batch.matchAll(/^Declaration:/gm)].length, 3);
-  const api = JSON.parse(await readFile(join(skill, '../dist/api.json'), 'utf8'));
+  const api = JSON.parse(await readFile(join(runtime, 'dist/api.json'), 'utf8'));
   for (const file of new Set(Object.values(api.modules).flatMap(Object.values)))
-    await access(join(skill, '../dist', file));
+    await access(join(runtime, 'dist', file));
   assert.match(run(process.execPath, [cli, 'api', './story']).toString(), /StoryOptions/);
   assert.throws(() => run(process.execPath, [cli, 'api', 'Viewport']), /Viewport3D/);
   assert.throws(() => run(process.execPath, [cli, 'api', 'surface', 'Viewport']), /Viewport3D/);
@@ -151,6 +158,19 @@ try {
   await page.locator('[data-seek]').fill('15');
   assert.equal(await page.locator('canvas').evaluate((c) => c.width > 0 && c.height > 0), true);
   assert.deepEqual(errors, []);
+  // A generated scene uses its installed library on every build, without source SVG copies.
+  const generated = join(consumer, 'generated');
+  await mkdir(generated);
+  const { cp } = await import('node:fs/promises');
+  await cp(resolve('examples/logic-gates'), generated, { recursive: true });
+  run(process.execPath, [cli, 'build', generated]);
+  await assert.rejects(access(join(generated, 'logic-gates.svg')), { code: 'ENOENT' });
+  const generatedFile = join(generated, 'dist/logic-gates.svg');
+  assert((await readFile(generatedFile, 'utf8')).includes('--ve-red-wash'));
+  const ink = join(runtime, 'dist/styles/ink.css');
+  await writeFile(ink, (await readFile(ink, 'utf8')) + '\n:root{--generation-probe:73}');
+  run(process.execPath, [cli, 'build', generated]);
+  assert((await readFile(generatedFile, 'utf8')).includes('--generation-probe:73'));
   // The same consumer can disable narration without replacing the clock or scene code.
   await page.context().setOffline(false);
   const source = join(consumer, 'index.html');
@@ -167,6 +187,9 @@ try {
   await page.locator('[data-play]').click();
   const report = {
     consumer: 'created, installed, built and rendered',
+    runtimeBytes: packed.size,
+    generation:
+      'build regenerates SVG with the installed styles; no source SVG or template catalog in the runtime',
     review:
       'installed CLI captures frames and plays the real narrated transition offline; end and close pause it',
     offline: 'narration, compact HTML, LC native SVG seek and 3D work without network',

@@ -111,25 +111,43 @@ test('typed stories use the same shell and preserve model state through mode cha
   page,
 }) => {
   await ready(page, '/vector/index.html');
-  await page.waitForFunction(() => !!window.explainer);
-  await page.evaluate(() => window.explainer.seek(10));
-  const original = await page.evaluate(() => window.explainer.snapshot());
+  await page.waitForFunction(() => !!document.querySelector<HTMLElement>('.ve-scene')!.scene!);
+  await page.evaluate(() => document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek(10));
+  const original = await page.evaluate(() =>
+    document.querySelector<HTMLElement>('.ve-scene')!.scene!.snapshot(),
+  );
   await page.locator('[data-mode=explore]').click();
   await page.getByRole('slider', { name: 'Масштаб x', exact: true }).fill('-1.4');
-  expect(await page.evaluate(() => window.explainer.snapshot())).toMatchObject({
+  expect(
+    await page.evaluate(() => document.querySelector<HTMLElement>('.ve-scene')!.scene!.snapshot()),
+  ).toMatchObject({
     input: { a: -1.4 },
   });
   await page.locator('[data-mode=story]').click();
-  expect(await page.evaluate(() => window.explainer.snapshot())).toEqual(original);
+  expect(
+    await page.evaluate(() => document.querySelector<HTMLElement>('.ve-scene')!.scene!.snapshot()),
+  ).toEqual(original);
   for (const time of [0, 5, 10, 16]) {
-    await page.evaluate((t) => window.explainer.seek(t), time);
-    const state = await page.evaluate(() => window.explainer.snapshot());
+    await page.evaluate(
+      (t) => document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek(t),
+      time,
+    );
+    const state = await page.evaluate(() =>
+      document.querySelector<HTMLElement>('.ve-scene')!.scene!.snapshot(),
+    );
     await page.evaluate(() => {
-      window.explainer.seek(18);
-      window.explainer.seek(0);
+      document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek(18);
+      document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek(0);
     });
-    await page.evaluate((t) => window.explainer.seek(t), time);
-    expect(await page.evaluate(() => window.explainer.snapshot())).toEqual(state);
+    await page.evaluate(
+      (t) => document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek(t),
+      time,
+    );
+    expect(
+      await page.evaluate(() =>
+        document.querySelector<HTMLElement>('.ve-scene')!.scene!.snapshot(),
+      ),
+    ).toEqual(state);
   }
 });
 test('controls preserve pointer targets, keyboard editing and undo/redo', async ({ page }) => {
@@ -158,7 +176,10 @@ test('vector: intermediate displayed products distinguish approximation from equ
     [16, '='],
     [13, '≈'],
   ] as const) {
-    await page.evaluate((time) => window.explainer.seek(time), time);
+    await page.evaluate(
+      (time) => document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek(time),
+      time,
+    );
     await expect(relation).toHaveAttribute('aria-label', sign);
   }
 });

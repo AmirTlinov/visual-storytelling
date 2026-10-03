@@ -24,6 +24,8 @@ export function notebook(
   shell.fields.hidden = false;
   if (options.subtitle)
     element.querySelector('h1')!.after(html('p', 'vs-subtitle', options.subtitle));
+  shell.onDispose(appearance.dispose);
+  shell.onDispose(() => element.remove());
   return {
     element,
     stage: shell.stage,
@@ -31,12 +33,9 @@ export function notebook(
     footer: element.querySelector<HTMLElement>('[data-player]')!,
     theme: appearance.set,
     attach<P, K extends string>(story: Story<P, K>) {
-      shell.attachController(story);
+      return shell.attachController(story);
     },
-    dispose() {
-      shell.dispose();
-      appearance.dispose();
-      element.remove();
-    },
+    onDispose: shell.onDispose,
+    dispose: shell.dispose,
   };
 }

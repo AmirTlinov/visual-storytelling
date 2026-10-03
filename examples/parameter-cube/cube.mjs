@@ -1,11 +1,12 @@
-import {svgRange, fitSvgControls} from '@visual-storytelling/core/controls';
+import { resolve } from 'node:path';
+import {svgRange} from '@visual-storytelling/core/controls';
 import {execFileSync} from 'node:child_process';
 import {readFile,writeFile} from 'node:fs/promises';
 import {SketchInk} from '@visual-storytelling/core/ink';
-import {build} from 'esbuild';
+import { pathToFileURL } from 'node:url';
 const {inkShape, inkBox, markerDefs, markerMarkup} = SketchInk;
-const bundledInk = await build({stdin:{contents:`import {SketchInk} from ${JSON.stringify(`${process.env.VISUAL_STORY_TOOLS ?? new URL('../../tools',import.meta.url).pathname}/../dist/ink/marks.js`)};globalThis.SketchInk=SketchInk;`,resolveDir:new URL('./',import.meta.url).pathname},bundle:true,format:'iife',write:false,target:'es2022'});
-const inkRuntime = bundledInk.outputFiles[0].text;
+const {svgRuntime}=await import(pathToFileURL(`${process.env.VISUAL_STORY_TOOLS ?? new URL('../../tools',import.meta.url).pathname}/svg-runtime.mjs`));
+const sharedRuntime=await svgRuntime({'/ink':['SketchInk'],'/three':['SvgOrbit'],'/controls':['fitSvgControls']});
 const initial=JSON.parse(await readFile(new URL('projection.json',import.meta.url),'utf8'));
 if(initial.model!=='prajjwal1/bert-mini'||initial.total_heads!==4)throw Error('Generate the BERT-mini snapshot with projection.py --snapshot first.');
 const parameters=initial.parameters;
@@ -70,13 +71,13 @@ const runtime=String.raw`
 (()=>{
   'use strict';
   const root=document.querySelector('svg.ve-scene'),byID=id=>document.getElementById(id);
+  const lifetime=new AbortController(),listen={signal:lifetime.signal};
   const stage=byID('stage'),slider=byID('layers-input'),notation=byID('notation'),tokens=byID('tokens');
   let data=${JSON.stringify(initial).replace(/</g,'\\u003c')};
   const parameters=data.parameters;
-  let {spread,yaw,pitch,selected,token}=${JSON.stringify(start)},pending=0,drag=null;
+  let {spread,yaw,pitch,selected,token}=${JSON.stringify(start)},pending=0;
   let displayedSelection=selected;
   const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
-  const point=e=>{const p=root.createSVGPoint();p.x=e.clientX;p.y=e.clientY;return p.matrixTransform(root.getScreenCTM().inverse());};
   const attr=(node,name,value)=>{const v=String(value);if(node.getAttribute(name)!==v)node.setAttribute(name,v)};
   const text=(id,value)=>{const node=byID(id);if(node.textContent!==value)node.textContent=value};
   const views=['cells','mirror'].map((id,i)=>{
@@ -138,7 +139,7 @@ const runtime=String.raw`
     }
     fitSvgControls(root);
   }
-  addEventListener('resize',()=>{tokens.innerHTML=tokenMarkup(data,token);updateVectors();layout();});layout();
+  addEventListener('resize',()=>{tokens.innerHTML=tokenMarkup(data,token);updateVectors();layout();},listen);layout();
   function invalidate(){if(!pending)pending=requestAnimationFrame(draw)}
   function setSpread(value){spread=clamp(value,0,1);invalidate()}
   window.getProjection=()=>data;
@@ -151,56 +152,39 @@ const runtime=String.raw`
     // New text owns only activations. It does not touch cube geometry,
     // camera, coefficients, color scale, matrix nodes or selection.
   };
-  root.addEventListener('pointerdown',()=>root.classList.add('pointer-input'),true);
-  root.addEventListener('keydown',()=>root.classList.remove('pointer-input'),true);
-  stage.addEventListener('pointerdown',e=>{
-    if(e.button!==0||drag)return;
-    e.preventDefault();stage.focus({preventScroll:true});stage.setPointerCapture(e.pointerId);
-    const p=point(e);drag={id:e.pointerId,x:p.x,y:p.y,yaw,pitch,moved:false,cell:e.target.dataset.cell};
+  root.addEventListener('pointerdown',()=>root.classList.add('pointer-input'),{...listen,capture:true});
+  root.addEventListener('keydown',()=>root.classList.remove('pointer-input'),{...listen,capture:true});
+  const orbit=SvgOrbit.mount(root,stage,byID('orbit-world'),{
+    yaw,pitch,pitchLimits:[-1.25,1.25],changed(pose){yaw=pose.yaw;pitch=pose.pitch;invalidate();},
+    select(target){const cell=target.closest('[data-cell]');if(cell){selected=cell.dataset.cell;invalidate();}}
   });
-  slider.addEventListener('input',()=>setSpread(slider.valueAsNumber));
-  root.addEventListener('pointermove',e=>{
-    if(!drag||e.pointerId!==drag.id)return;
-    const p=point(e);
-    if(drag.moved||Math.hypot(p.x-drag.x,p.y-drag.y)>3){
-      drag.moved=true;stage.classList.add('dragging');yaw=drag.yaw+(p.x-drag.x)*.008;
-      pitch=clamp(drag.pitch-(p.y-drag.y)*.008,-1.25,1.25);invalidate();
-    }
-  });
-  function release(e){
-    if(!drag||e.pointerId!==drag.id)return;
-    if(e.type==='pointerup'&&!drag.moved&&drag.cell){selected=drag.cell;invalidate()}
-    drag=null;stage.classList.remove('dragging');
-  }
-  for(const event of ['pointerup','pointercancel','lostpointercapture'])root.addEventListener(event,release);
+  slider.addEventListener('input',()=>setSpread(slider.valueAsNumber),listen);
+  root.scene={snapshot:()=>({selected,token,spread,view:orbit.pose}),dispose(){lifetime.abort();orbit.dispose();cancelAnimationFrame(pending);delete root.scene;delete window.getProjection;delete window.setPending;delete window.setProjection;}};
   notation.addEventListener('click',e=>{
     const entry=e.target.closest('[data-cell]');if(!entry)return;
     selected=entry.dataset.cell;notation.focus({preventScroll:true});invalidate();
-  });
+  },listen);
   notation.addEventListener('keydown',e=>{
     const moves={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[1,-1],ArrowRight:[1,1],PageUp:[2,-1],PageDown:[2,1]};
     const move=moves[e.key];if(!move)return;e.preventDefault();
     const indices=selected.split('-').map(Number);indices[move[0]]=clamp(indices[move[0]]+move[1],0,3);
     selected=indices.join('-');invalidate();
-  });
+  },listen);
   tokens.addEventListener('click',e=>{
     const item=e.target.closest('[data-token]');if(!item)return;
     token=Number(item.dataset.token);tokens.focus({preventScroll:true});updateVectors();
-  });
+  },listen);
   tokens.addEventListener('keydown',e=>{
     if(e.key==='ArrowLeft')token=Math.max(0,token-1);else if(e.key==='ArrowRight')token=Math.min(data.tokens.length-1,token+1);
     else if(e.key==='Home')token=0;else if(e.key==='End')token=data.tokens.length-1;else return;
     e.preventDefault();updateVectors();
-  });
+  },listen);
   stage.addEventListener('keydown',e=>{
-    if(e.key==='ArrowLeft')yaw-=.1;else if(e.key==='ArrowRight')yaw+=.1;
-    else if(e.key==='ArrowUp')pitch=clamp(pitch+.1,-1.25,1.25);else if(e.key==='ArrowDown')pitch=clamp(pitch-.1,-1.25,1.25);
-    else if(e.key==='Home'){yaw=-.64;pitch=-.48;}
-    else if(['i','j','h'].includes(e.key.toLowerCase())){
+    if(['i','j','h'].includes(e.key.toLowerCase())){
       const axis='ijh'.indexOf(e.key.toLowerCase()),indices=selected.split('-').map(Number);
       indices[axis]=(indices[axis]+(e.shiftKey?3:1))%4;selected=indices.join('-');
     } else return;e.preventDefault();invalidate();
-  });
+  },listen);
 })();`;
 const height=1770,limit=parameters.color_limit;
 const svg=`<?xml version="1.0" encoding="UTF-8"?>
@@ -228,11 +212,11 @@ svg:focus,[tabindex]:focus{outline:none}
 <text id="heading" x="64" y="60" class="heading">Параметры W<tspan dy="7" font-size="23">Q</tspan></text>
 <text id="component" x="1036" y="60" text-anchor="end" aria-live="polite" aria-label="${componentLabel(start.selected,parameters)}">W<tspan dy="6" font-size="17">Q</tspan><tspan id="component-value" dy="-6">${componentLabel(start.selected,parameters).slice(3)}</tspan></text>
 <text id="shape-note" x="64" y="108" font-size="21">Фрагмент 4 × 4 × 4 · полная форма 256 × 64 × 4</text>
-<g id="stage" tabindex="0" role="group" aria-label="Постоянный фрагмент параметров W_Q. Перетаскивание или стрелки — вращение. Нажатие — выбор коэффициента.">
+<g id="stage" tabindex="0" role="group" aria-label="Постоянный фрагмент параметров W_Q. Нажатие — выбор коэффициента.">
 <rect x="42" y="150" width="1016" height="512" fill="transparent"/><path id="stage-focus" d="M525 658 Q550 660 575 658" class="focus-ring" stroke-linecap="round"/>
-<g id="cells" transform="translate(-255 0)">${geometryMarkup(parameters,start,false)}</g>
+<g id="orbit-world"><g id="cells" transform="translate(-255 0)">${geometryMarkup(parameters,start,false)}</g>
 <g id="mirror" transform="translate(255 0)" pointer-events="none" aria-hidden="true">${geometryMarkup(parameters,start,true)}</g>
-</g>
+</g></g>
 <text id="layers-label" x="295" y="694" font-size="21" text-anchor="middle">Головы</text>
 ${svgRange({id:'layers', x:118, y:709, width:354, value:0, label:'Раздвинуть фрагменты четырёх голов'})}
 <g id="color-key"><text x="805" y="694" text-anchor="middle" font-size="21">Коэффициент</text>
@@ -248,12 +232,14 @@ ${svgRange({id:'layers', x:118, y:709, width:354, value:0, label:'Раздвин
 <text id="projection-note" x="550" y="1430" text-anchor="middle" font-size="21">Расчёт использует все 256 компонент и смещение b; показаны первые четыре.</text>
 </g>
 <script><![CDATA[
-${inkRuntime}
+${sharedRuntime}
+const {SvgOrbit,SketchInk,fitSvgControls}=VisualStory;
 const {inkShape, inkBox} = SketchInk;
-${[escapeXML,weightColor,fitSvgControls,componentLabel,cubeScene,geometryMarkup,matricesMarkup,tokenMarkup,vectorMarkup].map(fn=>fn.toString()).join('\n')}
+${[escapeXML,weightColor,componentLabel,cubeScene,geometryMarkup,matricesMarkup,tokenMarkup,vectorMarkup].map(fn=>fn.toString()).join('\n')}
 ${runtime}
 ]]></script>
 </svg>`;
-await writeFile(new URL('tensor-cube.svg',import.meta.url),svg);
-execFileSync('python3', [`${process.env.VISUAL_STORY_TOOLS ?? new URL('../../tools',import.meta.url).pathname}/svg_style.py`, new URL('tensor-cube.svg', import.meta.url).pathname]);
+const output = resolve(process.env.VISUAL_STORY_OUTPUT ?? new URL('.',import.meta.url).pathname, 'tensor-cube.svg');
+await writeFile(output,svg);
+execFileSync('python3', [`${process.env.VISUAL_STORY_TOOLS ?? new URL('../../tools',import.meta.url).pathname}/svg_style.py`, output]);
 console.log('Created tensor-cube.svg: fixed W_Q parameters and live activations.');

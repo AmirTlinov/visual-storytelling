@@ -24,8 +24,7 @@ test('rendered review detects a frozen operation and unused cue, permits a readi
             move: {start: 4, end: 5, action: 'Move the circle to its destination'},
           }});
           const circle = document.querySelector('circle');
-          window.explainer = {duration: 5};
-          document.querySelector('.ve-scene').scene = {
+          document.querySelector('.ve-scene').scene = {duration: 5,
             seek(t) {
               const frame = sheet.at(t);
               frame.progress('frozen');

@@ -8,8 +8,8 @@ async function ready(page, name = 'computer-explorer/index.html') {
     await document.fonts.ready;
   });
 }
-const state = (page) => page.evaluate(() => window.explainer.snapshot());
-const restore = (page, saved) => page.evaluate((saved) => window.explainer.restore(saved), saved);
+const state = (page) => page.evaluate(() => document.querySelector('.ve-scene').scene.snapshot());
+const restore = (page, saved) => page.evaluate((saved) => document.querySelector('.ve-scene').scene.restore(saved), saved);
 const idle = (page) =>
   page.waitForFunction(
     () => document.querySelector('#computer-explorer').dataset.moving === 'false',
@@ -90,7 +90,7 @@ test('computer: player completes without redrawing the static board, saves, paus
   const paused = await state(page);
   await page.waitForTimeout(180);
   expect(await state(page)).toEqual(paused);
-  await page.evaluate(() => window.explainer.home());
+  await page.evaluate(() => document.querySelector('.ve-scene').scene.home());
   await page.locator('[data-job-play]').click();
   await page.waitForFunction(
     () => document.querySelector('.image-job').dataset.phase === 'done',
@@ -105,7 +105,7 @@ test('computer: player completes without redrawing the static board, saves, paus
   await page.evaluate(() => window.galleryReady);
   expect((await state(page)).imageJob.phase).toBe('done');
   await page.locator('[data-job-play]').click();
-  await page.evaluate(() => window.explainer.dispose());
+  await page.evaluate(() => document.querySelector('.ve-scene').scene.dispose());
   const disposed = await state(page);
   await page.waitForTimeout(220);
   await page.evaluate(() =>
@@ -146,7 +146,7 @@ test('computer: rapid navigation, touch, contour focus, wheel position and archi
   ).toBeGreaterThan(0);
   await page.setViewportSize({ width: 375, height: 900 });
   await expect(page.locator('[data-hit-key="capacitor"]')).toBeFocused();
-  await page.evaluate(() => window.explainer.home());
+  await page.evaluate(() => document.querySelector('.ve-scene').scene.home());
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.locator('[data-hit-key="gpu"]').click();
   await page.locator('[data-architecture="unified"]').click();
@@ -268,7 +268,7 @@ test('computer catalog keeps all figures, internal views and portable SVG export
       }
     }
   }
-  const svg = await page.evaluate(() => window.explainer.exportSVG());
+  const svg = await page.evaluate(() => document.querySelector('.ve-scene').scene.exportSVG());
   expect(svg).toContain('<svg');
   expect(svg).not.toContain('var(--');
   expect(errors).toEqual([]);

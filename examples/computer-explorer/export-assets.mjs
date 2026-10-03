@@ -25,7 +25,7 @@ try {
     await page.locator(`[data-kind="${part.id}"]`).click();
     for (const inside of part.action ? [false, true] : [false]) {
       if (inside) await page.locator('.parts-view').click();
-      const svg = await page.evaluate(() => window.explainer.exportSVG());
+      const svg = await page.evaluate(() => document.querySelector('.ve-scene').scene.exportSVG());
       const name = part.id + (inside ? '-inside' : '');
       await writeFile(resolve(directory, 'svg', name + '.svg'), svg + '\n');
       exports.push({ name, svg, title: part.name, inside });

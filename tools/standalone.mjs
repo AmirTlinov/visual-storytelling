@@ -3,25 +3,8 @@ import { tmpdir } from 'node:os';
 import { resolve, dirname, extname, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { transform } from 'esbuild';
-import { mediaType } from './assets.mjs';
-
-// A URL may contain commas (notably data:). Only the candidate separator is removed.
-async function inlineSrcset(value, embed) {
-  const candidates = [];
-  let rest = value;
-  while ((rest = rest.replace(/^[\s,]+/, ''))) {
-    const url = /^\S+/.exec(rest)[0];
-    rest = rest.slice(url.length);
-    if (url.endsWith(',')) {
-      candidates.push(await embed(url.replace(/,+$/, '')));
-      continue;
-    }
-    const descriptor = /^[^,]*/.exec(rest)[0];
-    rest = rest.slice(descriptor.length);
-    candidates.push(`${await embed(url)}${descriptor.trim() ? ` ${descriptor.trim()}` : ''}`);
-  }
-  return candidates.join(', ');
-}
+import { inlineResources } from './inline-resources.mjs';
+import { readCatalog } from './catalog.mjs';
 
 async function inlineAudio(file, bitrate) {
   const directory = await mkdtemp(join(tmpdir(), 'visual-story-audio-'));
@@ -53,22 +36,10 @@ export async function packDirectory(
 ) {
   if (!['auto', 'light', 'dark'].includes(theme)) throw new Error('Choose auto, light or dark');
   const root = resolve(directory);
-  const local = (url, base = dirname(resolve(root, page))) => {
-    if (/^(?:[a-z][\w+.-]*:|\/\/)/i.test(url))
-      throw new Error(`Cannot bundle remote resource: ${url}`);
-    const path = decodeURIComponent(url.split(/[?#]/)[0]);
-    const p = path.startsWith('/') ? resolve(root, '.' + path) : resolve(base, path);
-    if (!p.startsWith(root + '/'))
-      throw new Error('A standalone scene may only embed its own resources');
-    return p;
-  };
-  const data = async (url, base) => {
-    url = url.trim();
-    if (/^data:/i.test(url) || url.startsWith('#')) return url;
-    const file = local(url, base);
-    const fragment = url.includes('#') ? url.slice(url.indexOf('#')) : '';
-    return `data:${mediaType(file)};base64,${(await readFile(file)).toString('base64')}${fragment}`;
-  };
+  const resources = inlineResources(root);
+  const base = dirname(resolve(root, page));
+  const local = (url) => resources.local(url, base);
+  const data = (url) => resources.data(url, base);
   let html = await readFile(join(root, page), 'utf8');
   // A silent draft keeps its media hook, without shipping the sample's unused recording.
   html = html.replace(
@@ -80,16 +51,7 @@ export async function packDirectory(
   );
   if (page.endsWith('.svg'))
     html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}body>svg{display:block;width:100%;height:auto}</style></head><body>${html.replace(/<\?xml[^>]*>/, '')}</body></html>`;
-  for (const match of [
-    ...html.matchAll(/<link\b[^>]*\shref=(["'])([^"']+\.css(?:[?#][^"']*)?)\1[^>]*>/gi),
-  ]) {
-    const cssFile = local(match[2]);
-    let css = await readFile(cssFile, 'utf8');
-    for (const asset of [...css.matchAll(/url\(["']?([^"')]+)["']?\)/g)])
-      if (!asset[1].startsWith('data:') && !asset[1].startsWith('#'))
-        css = css.replace(asset[0], `url('${await data(asset[1], dirname(cssFile))}')`);
-    html = html.replace(match[0], () => `<style>${css}</style>`);
-  }
+  html = await resources.markup(html, base);
   for (const match of [
     ...html.matchAll(/<script\b([^>]*?)\ssrc=(["'])([^"']+)\2[^>]*>\s*<\/script>/gi),
   ]) {
@@ -99,23 +61,6 @@ export async function packDirectory(
       match[0],
       () => `<script ${match[1]}>${code.replaceAll('</script', '<\\/script')}</script>`,
     );
-  }
-  for (const match of html.matchAll(
-    /<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>|<(?:img|source|video)\b[^>]*>/gi,
-  )) {
-    if (match[1]) continue;
-    let tag = match[0];
-    for (const attribute of tag.matchAll(/\s(src|srcset|poster)\s*=\s*(["'])([\s\S]*?)\2/gi)) {
-      const value =
-        attribute[1].toLowerCase() === 'srcset'
-          ? await inlineSrcset(attribute[3], data)
-          : await data(attribute[3]);
-      tag = tag.replace(
-        attribute[0],
-        () => ` ${attribute[1]}=${attribute[2]}${value}${attribute[2]}`,
-      );
-    }
-    html = html.replace(match[0], () => tag);
   }
   const escape = (value) =>
     value
@@ -127,7 +72,11 @@ export async function packDirectory(
     ...html.matchAll(/<object\b([^>]*?)\sdata=(["'])([^"']+)\2([^>]*)>\s*<\/object>/gi),
   ])
     if (!match[3].startsWith('data:')) {
-      const svg = (await readFile(local(match[3]), 'utf8')).replace(/<\?xml[^>]*>/, '');
+      const file = local(match[3]);
+      const svg = await resources.markup(
+        (await readFile(file, 'utf8')).replace(/<\?xml[^>]*>/, ''),
+        dirname(file),
+      );
       const document = `<!doctype html><html style="color-scheme:${theme === 'auto' ? 'light dark' : theme}"><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}body>svg{display:block;width:100%;height:100%}${theme === 'auto' ? '' : `:root,.ve-scene{color-scheme:${theme}!important}`}</style></head><body>${svg}</body></html>`;
       const attrs = (match[1] + match[4]).replace(/\btype=(["'])[^"']*\1/i, '');
       const styled = /\bstyle=["']/i.test(attrs)
@@ -193,9 +142,7 @@ export async function packDirectory(
   }
 }
 export async function standalone(scene, theme = 'auto') {
-  const catalog = JSON.parse(
-    await readFile(new URL('../examples/catalog.json', import.meta.url), 'utf8'),
-  );
+  const catalog = await readCatalog();
   if (!catalog[scene]) throw new Error('Unknown scene');
   return packDirectory(
     new URL(`../site/${scene}/`, import.meta.url).pathname,

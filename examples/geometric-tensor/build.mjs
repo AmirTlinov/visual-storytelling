@@ -1,8 +1,13 @@
-import {svgRange, fitSvgControls} from '@visual-storytelling/core/controls';
+import { resolve } from 'node:path';
+import {svgRange} from '@visual-storytelling/core/controls';
 import {execFileSync} from 'node:child_process';
 import {writeFile} from 'node:fs/promises';
 
 // One geometry implementation creates both the saved SVG and its live updates.
+import { pathToFileURL } from 'node:url';
+const { svgRuntime } = await import(pathToFileURL(`${process.env.VISUAL_STORY_TOOLS ?? new URL('../../tools',import.meta.url).pathname}/svg-runtime.mjs`));
+const sharedRuntime = await svgRuntime({'/three':['SvgOrbit'], '/controls':['fitSvgControls']});
+
 function tensorScene(t,yaw,pitch) {
   const c=Math.cos(yaw),s=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);
   const rotate=([x,y,z])=>[c*x+s*z,cp*y+sp*(-s*x+c*z),-sp*y+cp*(-s*x+c*z)];
@@ -89,12 +94,12 @@ const script=String.raw`
 (()=>{
   'use strict';
   const root=document.querySelector('svg.ve-scene'),byID=id=>document.getElementById(id);
+  const lifetime=new AbortController(),listen={signal:lifetime.signal};
   const viewport=byID('viewport'),slider=byID('tensor-control-input');
-  root.addEventListener('pointerdown',()=>root.classList.add('pointer-input'),true);
-  root.addEventListener('keydown',()=>root.classList.remove('pointer-input'),true);
-  let t=1,yaw=.58,pitch=.34,pending=0,drag=null;
+  root.addEventListener('pointerdown',()=>root.classList.add('pointer-input'),{...listen,capture:true});
+  root.addEventListener('keydown',()=>root.classList.remove('pointer-input'),{...listen,capture:true});
+  let t=1,yaw=.58,pitch=.34,pending=0;
   const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
-  const point=event=>{const p=root.createSVGPoint();p.x=event.clientX;p.y=event.clientY;return p.matrixTransform(root.getScreenCTM().inverse());};
   const format=x=>x.toFixed(2);
   const nodes=new Map(Array.from(byID('geometry').querySelectorAll('[id]'),node=>[node.id,node]));
   function draw(){
@@ -126,32 +131,14 @@ const script=String.raw`
     byID('viewport-focus').setAttribute('d',narrow?'M250 1056Q275 1058 300 1056':'M525 596Q550 598 575 596');
     fitSvgControls(root);
   }
-  addEventListener('resize',layout);layout();
+  addEventListener('resize',layout,listen);layout();
   function invalidate(){if(!pending)pending=requestAnimationFrame(draw);}
   function setT(value){t=clamp(value,0,1);invalidate();}
-  slider.addEventListener('input',()=>setT(slider.valueAsNumber));
-  viewport.addEventListener('pointerdown',event=>{
-    if(event.button!==0||drag)return;
-    event.preventDefault();viewport.focus();viewport.setPointerCapture(event.pointerId);
-    const p=point(event);drag={id:event.pointerId,x:p.x,y:p.y,yaw,pitch};
-    viewport.classList.add('dragging');
+  slider.addEventListener('input',()=>setT(slider.valueAsNumber),listen);
+  const orbit=SvgOrbit.mount(root,viewport,byID('orbit-world'),{
+    yaw,pitch,pitchLimits:[-.75,.75],changed(pose){yaw=pose.yaw;pitch=pose.pitch;invalidate();}
   });
-  root.addEventListener('pointermove',event=>{
-    if(!drag||event.pointerId!==drag.id)return;
-    const p=point(event);
-    yaw=drag.yaw+(p.x-drag.x)*.008;pitch=clamp(drag.pitch-(p.y-drag.y)*.008,-.75,.75);invalidate();
-  });
-  function release(event){if(drag&&event.pointerId===drag.id){drag=null;viewport.classList.remove('dragging');}}
-  for(const type of ['pointerup','pointercancel','lostpointercapture'])root.addEventListener(type,release);
-  viewport.addEventListener('keydown',event=>{
-    if(event.key==='ArrowLeft')yaw-=.1;
-    else if(event.key==='ArrowRight')yaw+=.1;
-    else if(event.key==='ArrowUp')pitch=clamp(pitch+.1,-.75,.75);
-    else if(event.key==='ArrowDown')pitch=clamp(pitch-.1,-.75,.75);
-    else if(event.key==='Home'){yaw=.58;pitch=.34;}
-    else return;
-    event.preventDefault();invalidate();
-  });
+  root.scene={snapshot:()=>({t,view:orbit.pose}),dispose(){lifetime.abort();orbit.dispose();cancelAnimationFrame(pending);delete root.scene;}};
 })();`;
 
 const svg=`<?xml version="1.0" encoding="UTF-8"?>
@@ -180,24 +167,26 @@ const svg=`<?xml version="1.0" encoding="UTF-8"?>
   <path d="M748 32 H737 V123 H748 M922 32 H933 V123 H922" fill="none" stroke="var(--ve-pencil)" stroke-width="1.4"/>
   ${matrix}
 </g>
-<g id="viewport" tabindex="0" role="group" aria-label="Объёмная сцена. Перетаскивание или стрелки вращают оба объекта, Home возвращает исходный вид.">
+<g id="viewport" tabindex="0" role="group" aria-label="Объёмная сцена: единичная сфера и её образ.">
   <rect x="35" y="153" width="1030" height="427" fill="transparent"/>
   <path id="viewport-focus" d="M525 596Q550 598 575 596" class="focus-ring" stroke-linecap="round"/>
-  <g id="geometry">${geometry}</g>
+  <g id="orbit-world"><g id="geometry">${geometry}</g>
   <g id="mapping" fill="none" stroke="var(--ve-pencil)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M470 353 H558 l-8 -6 m8 6 -8 6"/></g>
   <text id="mapping-label" x="514" y="328" text-anchor="middle" font-size="26" font-family="inherit" font-style="italic">T</text>
-</g>
 <text id="sphere-label" x="250" y="570" class="label">Единичная сфера</text>
 <text id="tensor-label" x="775" y="570" class="label">Образ сферы</text>
+</g></g>
 <text id="control-label" x="550" y="637" font-size="21" text-anchor="middle">Преобразование</text>
 ${svgRange({id:'tensor-control', x:373, y:652, width:354, value:1, label:'Преобразование от единичного тензора до T'})}
 
 <script><![CDATA[
-${fitSvgControls.toString()}
+${sharedRuntime}
+const {SvgOrbit,fitSvgControls}=VisualStory;
 ${tensorScene.toString()}
 ${script}
 ]]></script>
 </svg>`;
-await writeFile(new URL('geometric-tensor.svg',import.meta.url),svg);
-execFileSync('python3', [`${process.env.VISUAL_STORY_TOOLS ?? new URL('../../tools',import.meta.url).pathname}/svg_style.py`, new URL('geometric-tensor.svg', import.meta.url).pathname]);
+const output = resolve(process.env.VISUAL_STORY_OUTPUT ?? new URL('.',import.meta.url).pathname, 'geometric-tensor.svg');
+await writeFile(output,svg);
+execFileSync('python3', [`${process.env.VISUAL_STORY_TOOLS ?? new URL('../../tools',import.meta.url).pathname}/svg_style.py`, output]);
 console.log('Created geometric-tensor.svg');

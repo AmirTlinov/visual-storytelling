@@ -30,10 +30,7 @@ export async function openScene(page, url) {
   // This adapter calls the scene's owners; it never introduces another playback clock.
   return page.evaluateHandle(() => {
     const handles = () =>
-      documents().flatMap((doc) => [
-        doc.defaultView?.explainer,
-        doc.querySelector('.ve-scene')?.scene,
-      ]);
+      documents().map((doc) => doc.querySelector('.ve-scene')?.scene);
     const owner = (method) => handles().find((handle) => typeof handle?.[method] === 'function');
     const documents = () => [
       document,
@@ -94,7 +91,7 @@ export async function openScene(page, url) {
         const handle = owner('review');
         if (!handle)
           throw new Error(
-            'Expose review: player.review or controller.sheet.review on the scene handle',
+            'Attach the story with SceneShell.attachStory, or expose controller.review on root.scene',
           );
         return handle.review();
       },

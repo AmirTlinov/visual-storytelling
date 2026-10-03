@@ -1,10 +1,10 @@
 import { chromium } from 'playwright';
 import { build } from 'esbuild';
-import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { serve } from './site.mjs';
 import { openScene, seekScene } from './open-scene.mjs';
+import { readCatalog } from './catalog.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 export async function renderer({
   scene,
@@ -15,7 +15,7 @@ export async function renderer({
   entry = 'index.html',
   reduced = false,
 }) {
-  const catalog = JSON.parse(await readFile(resolve(root, 'examples/catalog.json'), 'utf8'));
+  const catalog = directory ? undefined : await readCatalog();
   if (!directory && !catalog[scene]) throw new Error('Unknown example');
   const server = await serve(directory ?? resolve(root, 'site'));
   let browser;

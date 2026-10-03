@@ -193,9 +193,8 @@ export async function reviewScene({
     let sceneHTML;
     const playable = await capture.page.evaluate(
       () =>
-        [window.explainer, document.querySelector('.ve-scene')?.scene].some(
-          (handle) => typeof handle?.play === 'function',
-        ) || Boolean(document.querySelector('[data-play]')),
+        typeof document.querySelector('.ve-scene')?.scene?.play === 'function' ||
+        Boolean(document.querySelector('[data-play]')),
     );
     let playbackWarning;
     if (playable) {

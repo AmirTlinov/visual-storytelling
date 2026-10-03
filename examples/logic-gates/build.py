@@ -39,4 +39,4 @@ svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="904" height="1130" viewB
 <title id="title">Логические элементы</title><desc id="desc">Восемь элементов, их условные обозначения и таблицы истинности. В каждой паре справа инверсия левого элемента; кружок у выхода означает инверсию. Порядок входов во всех таблицах одинаков.</desc>
 <style>text{font-family:inherit;fill:var(--ve-ink);font-size:23px}.heading{font-size:34px}.gate-name{font-size:27px}.note{font-size:18px;fill:var(--ve-muted)}.active{fill:var(--ve-accent)}.gate-name{fill:var(--ve-accent)}.wire.gate-body{fill:var(--ve-wash);stroke:var(--ve-accent)}.wire{fill:none;stroke:var(--ve-ink);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.rule{fill:none;stroke:var(--ve-pencil);stroke-width:1}</style>
 '''+text(452,43,'Логические элементы','heading')+'\n'.join(parts)+'</svg>'
-(HERE/'logic-gates.svg').write_text(themed(svg))
+(Path(os.environ.get('VISUAL_STORY_OUTPUT', HERE))/'logic-gates.svg').write_text(themed(svg))

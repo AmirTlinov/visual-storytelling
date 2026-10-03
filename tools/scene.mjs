@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { buildScene } from './build-pages.mjs';
 import { serve } from './site.mjs';
 import { packDirectory } from './standalone.mjs';
+import { readCatalog } from './catalog.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -34,10 +35,8 @@ const { values, positionals } = parseArgs({
 });
 const [command, directory = '.'] = positionals,
   destination = resolve(directory);
-const catalog = JSON.parse(await readFile(join(root, 'examples/catalog.json'), 'utf8'));
-const help = `visual-story new DIRECTORY --example NAME [--no-audio]
-visual-story examples                         list supported starting points
-visual-story api [NAME ... | ./SUBPATH]       public names or exact shipped declarations
+const catalog = await readCatalog({ optional: true });
+const help = `${catalog ? 'visual-story new DIRECTORY --example NAME [--no-audio]\nvisual-story examples                         list supported starting points\n' : ''}visual-story api [NAME ... | ./SUBPATH]       public names or exact shipped declarations
 visual-story dev DIRECTORY [--port 8793]       rebuild + reload at the current story time
 visual-story build DIRECTORY [--cdn]          build dist/; CDN mode loads pinned Rapier remotely
 visual-story audio DIRECTORY                  voice + aligned cues from narration.json
@@ -47,19 +46,18 @@ visual-story review INPUT --motion --out review [--from SECONDS] [--frames 12] [
                        INPUT: scene directory/HTML/SVG, video, or PNG manifest
                        scene: --cue ID (centered window), --fps 60; detail: --max-size 0 --threshold 8
 visual-story pack DIST --out artifacts/story.html [--inline]
-visual-story generate DIRECTORY --example NAME
 
-Authoring API: ${join(root, 'skill/references/scene-template.md')}
-Narration format: ${join(root, 'skill/references/narration.md')}
-Motion review: ${join(root, 'skill/references/motion.md')}`;
+${catalog ? `Authoring: ${join(root, 'skill/SKILL.md')}` : 'Authoring templates: use the installed visual-explainer skill workspace.'}`;
 if (values.help || command === 'help' || !command) console.log(help);
 else if (command === 'examples') {
+  if (!catalog) await readCatalog();
   for (const [name, entry] of Object.entries(catalog))
     console.log(`${name.padEnd(22)} ${entry.title}`);
 } else if (command === 'api') {
   const { describeAPI } = await import('./api.mjs');
   console.log(await describeAPI(root, ...positionals.slice(1)));
 } else if (command === 'new') {
+  if (!catalog) await readCatalog();
   if (values.audio && values['no-audio']) throw new Error('Choose either --audio or --no-audio');
   if (!catalog[values.example])
     throw new Error(`Choose an example: ${Object.keys(catalog).join(', ')}`);
@@ -74,7 +72,9 @@ else if (command === 'examples') {
     if (
       (name.startsWith('preview') && name.endsWith('.png')) ||
       name === '__pycache__' ||
-      name === '.venv'
+      name === '.venv' ||
+      ['voice.wav', 'music.wav'].includes(name) ||
+      (values['no-audio'] && name === 'audio.wav')
     )
       continue;
     await cp(join(source, name), join(destination, name), { recursive: true });
@@ -113,9 +113,6 @@ else if (command === 'examples') {
         type: 'module',
         scripts: {
           build: 'visual-story build .',
-          ...(catalog[values.example].generator
-            ? { generate: `visual-story generate . --example ${values.example}` }
-            : {}),
           dev: 'visual-story dev .',
           preview: 'visual-story preview dist',
           pack: 'visual-story pack dist --out artifacts/story.html',
@@ -156,16 +153,6 @@ else if (command === 'examples') {
       const file = join(destination, name);
       await writeFile(file, (await readFile(file, 'utf8')).replace(/ data-silent="true"/g, ''));
     }
-} else if (command === 'generate') {
-  const generator = catalog[values.example]?.generator;
-  if (!generator) throw new Error('This example has no separate SVG generator');
-  const args =
-    generator.runner === 'uv' ? ['run', '--python', '3.12', generator.file] : [generator.file];
-  execFileSync(generator.runner, args, {
-    cwd: destination,
-    env: { ...process.env, VISUAL_STORY_TOOLS: join(root, 'tools') },
-    stdio: 'inherit',
-  });
 } else if (command === 'build') {
   const output = values.out ? resolve(values.out) : join(destination, 'dist');
   if (output === destination)

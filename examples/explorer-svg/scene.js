@@ -4,6 +4,7 @@ import {
   surface,
   ViewportSVG,
   widgetState,
+  vector,
 } from '@visual-storytelling/core';
 import narrationTiming from './timeline.json' with { type: 'json' };
 /* The shell is shared with explorer-3d; this file owns only the SVG subject. */
@@ -38,36 +39,9 @@ window.galleryReady = (async () => {
     world = drawing.layer;
   const camera = ViewportSVG.mount(svg);
   shell.attachView(camera);
-  function arrow(tone) {
-    const group = element('g', {
-      fill: 'none',
-      stroke: `var(--ve-${tone})`,
-      'stroke-width': 2,
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-    });
-    const path = element('path'),
-      head = element('path');
-    group.append(path, head);
-    world.append(group);
-    return {
-      group,
-      draw(a, b, amount = 1) {
-        const p = [a[0] + (b[0] - a[0]) * amount, a[1] + (b[1] - a[1]) * amount],
-          angle = Math.atan2(p[1] - a[1], p[0] - a[0]);
-        group.style.visibility = Math.hypot(p[0] - a[0], p[1] - a[1]) < 2 ? 'hidden' : 'visible';
-        path.setAttribute('d', `M${a} L${p}`);
-        head.setAttribute(
-          'd',
-          `M${p[0] - 9 * Math.cos(angle - 0.45)},${p[1] - 9 * Math.sin(angle - 0.45)} L${p} L${p[0] - 9 * Math.cos(angle + 0.45)},${p[1] - 9 * Math.sin(angle + 0.45)}`,
-        );
-      },
-    };
-  }
-  const horizontal = arrow('blue'),
-    vertical = arrow('orange'),
-    result = arrow('purple');
-  result.group.setAttribute('stroke-width', '2.5');
+  const horizontal = vector(drawing, 'horizontal', 'blue'),
+    vertical = vector(drawing, 'vertical', 'orange'),
+    result = vector(drawing, 'result', 'purple', 2.5);
   const start = element('circle', { r: 3.5, fill: 'var(--ve-ink)' }),
     end = element('circle', { r: 3.5, fill: 'var(--ve-purple)' });
   world.append(start, end);
@@ -105,9 +79,9 @@ window.galleryReady = (async () => {
       a = [o[0] + pose.x * unit, o[1]],
       b = [a[0], o[1] - pose.y * unit];
     if (resized) drawing.resize(w, h, { step: unit, x: o[0], y: o[1] });
-    horizontal.draw(o, a);
-    vertical.draw(a, b);
-    result.draw(o, b, pose.result);
+    horizontal.set(o, a);
+    vertical.set(a, b);
+    result.set(o, [o[0] + (b[0] - o[0]) * pose.result, o[1] + (b[1] - o[1]) * pose.result]);
     start.setAttribute('cx', o[0]);
     start.setAttribute('cy', o[1]);
     end.setAttribute('cx', b[0]);

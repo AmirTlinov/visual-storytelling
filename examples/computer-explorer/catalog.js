@@ -166,7 +166,7 @@ async function exportFigure() {
   svg.style.height = `${height}px`;
   return new XMLSerializer().serializeToString(svg);
 }
-root.scene = window.explainer = {
+root.scene = {
   svg: () => hero,
   exportSVG: exportFigure,
   snapshot: () => ({ ...state }),

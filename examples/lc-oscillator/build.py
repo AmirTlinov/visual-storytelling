@@ -374,7 +374,7 @@ text(svg, "Фрагмент поля в продольном сечении · �
      x=360, y=1024, text_anchor="middle", font_size=14, **{"class": "note"})
 
 ET.indent(svg, space="  ")
-target = HERE / "LC-oscillator.svg"
+target = Path(os.environ.get("VISUAL_STORY_OUTPUT", HERE)) / "LC-oscillator.svg"
 target.write_text(themed(ET.tostring(svg, encoding="unicode")))
 print(f"Wrote {target} ({target.stat().st_size:,} bytes)")
 assert np.max(np.abs(V*V + I*I - 1)) < 1e-12

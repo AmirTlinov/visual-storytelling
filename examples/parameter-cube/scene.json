@@ -1,0 +1,6 @@
+{
+  "generator": {
+    "file": "cube.mjs",
+    "runner": "node"
+  }
+}

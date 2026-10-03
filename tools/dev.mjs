@@ -11,7 +11,7 @@ let handle;
 addEventListener('load', async () => { try {
   await window.galleryReady;
   await document.fonts.ready;
-  handle = window.explainer ?? document.querySelector('.ve-scene')?.scene;
+  handle = document.querySelector('.ve-scene')?.scene;
   const query = new URLSearchParams(location.search);
   const stored = sessionStorage.getItem(key);
   sessionStorage.removeItem(key);
@@ -43,9 +43,13 @@ function showError(message) {
 </script>`;
 
 /** Reuse the production builder; publish only a complete successful revision. */
-export async function develop(directory, port = 8793, buildOptions = {}) {
+export async function develop(
+  directory,
+  port = 8793,
+  { build: builder = buildScene, watch: extraWatch = [], output, ...buildOptions } = {},
+) {
   const source = resolve(directory),
-    destination = join(source, 'dist');
+    destination = output ? resolve(output) : join(source, 'dist');
   const clients = new Set();
   let hasBuild = existsSync(join(destination, 'index.html'));
   let closed = false,
@@ -65,7 +69,7 @@ export async function develop(directory, port = 8793, buildOptions = {}) {
         dirty = false;
         const staging = await mkdtemp(join(source, '.visual-story-build-'));
         try {
-          await buildScene(source, staging, buildOptions);
+          await builder(source, staging, buildOptions);
           await rm(destination, { recursive: true, force: true });
           await rename(staging, destination);
           hasBuild = true;
@@ -113,17 +117,20 @@ export async function develop(directory, port = 8793, buildOptions = {}) {
     },
   });
   const ignored = new Set(['node_modules', 'dist', 'site', 'artifacts', 'review', '__pycache__']);
-  const watcher = watch(source, { recursive: true }, (_event, name) => {
-    if (!name || name.split(sep).some((part) => part.startsWith('.') || ignored.has(part))) return;
-    clearTimeout(timer);
-    timer = setTimeout(() => void rebuild(), 120);
-  });
+  const watchers = [source, ...extraWatch].map((directory) =>
+    watch(directory, { recursive: true }, (_event, name) => {
+      if (!name || name.split(sep).some((part) => part.startsWith('.') || ignored.has(part)))
+        return;
+      clearTimeout(timer);
+      timer = setTimeout(() => void rebuild(), 120);
+    }),
+  );
   return {
     url: server.url,
     async close() {
       closed = true;
       clearTimeout(timer);
-      watcher.close();
+      for (const watcher of watchers) watcher.close();
       await running;
       for (const response of clients) response.end();
       await server.close();
