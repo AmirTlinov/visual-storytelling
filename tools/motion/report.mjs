@@ -4,6 +4,7 @@ import { chromium } from 'playwright';
 import { fileURLToPath } from 'node:url';
 import { frameColor, motionData } from './frames.mjs';
 import { diagnosticsMarkup, playbackMarkup, orderedInsights } from './diagnostics.mjs';
+import { photometryMarkup } from './photometry-markup.mjs';
 
 const escape = (text) =>
   String(text).replace(
@@ -28,6 +29,33 @@ function summary(report) {
       max: Math.max(...intervals.map((v) => v.dtMs)),
     },
     suggestedCrop: report.suggestedCrop,
+    ...(report.photometry?.status === 'available'
+      ? {
+          photometry: {
+            status: 'available',
+            frames: report.photometry.points.length,
+            roi: report.photometry.roi,
+            kymograph: Object.fromEntries(
+              ['axis', 'position', 'thickness', 'automatic', 'gapColumns'].map((key) => [
+                key,
+                report.photometry.kymograph[key],
+              ]),
+            ),
+            ranges: report.photometry.ranges,
+            spectrum:
+              report.photometry.spectrum.status === 'available'
+                ? {
+                    status: 'available',
+                    region: report.photometry.spectrum.region,
+                    frequencyHz: report.photometry.spectrum.frequencyHz,
+                    binSpacingHz: report.photometry.spectrum.binSpacingHz,
+                  }
+                : report.photometry.spectrum,
+          },
+        }
+      : report.photometry
+        ? { photometry: report.photometry }
+        : {}),
     notes: [
       ...(!report.motionBounds
         ? [
@@ -109,6 +137,7 @@ export function motionMarkup(report, { includeFrames = true } = {}) {
     <figure><h3>${report.source.sparse ? 'Интервал меток захвата' : 'Интервал между кадрами'}, мс</h3>${bars(intervals, 'dtMs', 'Интервал исходных временных меток', ' ms')}</figure>
   </div>
   <p>Повторов соседнего кадра в масштабе анализа: ${intervals.filter((v) => v.duplicate).length}. Пиксельная разность зависит от движения, формы и цвета; сопоставьте её с замыслом, камерой и монтажом.</p>
+  ${photometryMarkup(report)}
   ${includeFrames ? `<div class="motion-context"><img src="${frames[0].image}" alt="Контекст первого кадра"><p>Контекст первого кадра. Ниже — последовательность в общей области изменений.</p></div><div class="motion-strip">${frames.map((frame, i) => `<figure style="--frame-color:${color(i, frames.length)}">${map(frame.image, `Кадр ${i + 1}`, 'motion-frame')}<figcaption>${i + 1} · ${frame.time.toFixed(3)} с</figcaption></figure>`).join('')}</div>` : ''}
   </section>`;
 }
@@ -117,6 +146,7 @@ export async function assertMotionOutput(out) {
   const files = [
     'index.html',
     'motion.png',
+    'photometry.png',
     'motion.json',
     'replay.json',
     'telemetry.json',
@@ -187,6 +217,8 @@ export async function writeMotionReport(report, out, { context } = {}) {
       await Promise.all([...document.images].map((image) => image.decode()));
     });
     await page.locator('.motion-sheet').screenshot({ path: join(out, 'motion.png') });
+    if (report.photometry?.status === 'available')
+      await page.locator('.motion-photometry').screenshot({ path: join(out, 'photometry.png') });
   } finally {
     await page?.close();
     await browser?.close();
@@ -194,6 +226,9 @@ export async function writeMotionReport(report, out, { context } = {}) {
   return {
     path: join(out, 'index.html'),
     image: join(out, 'motion.png'),
+    ...(report.photometry?.status === 'available'
+      ? { photometryImage: join(out, 'photometry.png') }
+      : {}),
     data: join(out, 'motion.json'),
     preview: `${cli} preview ${quote(out)} --port 0`,
     ...(report.captureManifest

@@ -1,21 +1,49 @@
 import sharp from 'sharp';
+import { photometryCollector } from './photometry.mjs';
 
 const percentile = (values, p) =>
   values.length ? [...values].sort((a, b) => a - b)[Math.floor((values.length - 1) * p)] : 0;
 
 /** A bounded scan of every captured frame chooses detail windows without dropping evidence. */
-export async function scanTimeline(samples, threshold = 8) {
+export async function scanTimeline(samples, threshold = 8, options = {}) {
+  if (samples.length < 2) throw new Error('Timeline scan needs at least two frames');
+  for (let i = 0; i < samples.length; i++)
+    if (!Number.isFinite(samples[i].time) || (i && samples[i].time <= samples[i - 1].time))
+      throw new Error('Frame times must be finite and strictly increasing, in seconds');
+  const photometry = photometryCollector(options);
   const intervals = [],
     signals = [];
   let previous,
     previous2,
+    previousSize,
     previousDelta = 0;
   for (const [i, sample] of samples.entries()) {
-    const { data, info } = await sharp(sample.png)
-      .resize(240, 160, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    const original = await sharp(sample.png).metadata();
+    // Resize in linear light, then share the bounded sRGB raster with both analyzers.
+    let pipeline = sharp(sample.png).pipelineColourspace('scrgb').toColourspace('srgb');
+    if (options.crop) {
+      const { x: left, y: top, width, height } = options.crop;
+      if (
+        ![left, top, width, height].every(Number.isInteger) ||
+        left < 0 ||
+        top < 0 ||
+        width < 1 ||
+        height < 1 ||
+        left + width > original.width ||
+        top + height > original.height
+      )
+        throw new Error('Crop must fit inside every source frame');
+      pipeline = pipeline.extract({ left, top, width, height });
+    }
+    const { data: pixels, info } = await pipeline
+      .resize(240, 160, { fit: 'inside', withoutEnlargement: true })
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });
+    photometry.add(pixels, info.width, info.height, sample.time, original);
+    const data = Buffer.alloc(240 * 160 * 4);
+    for (let y = 0; y < info.height; y++)
+      pixels.copy(data, y * 240 * 4, y * info.width * 4, (y + 1) * info.width * 4);
     for (let p = 0; p < data.length; p += 4)
       for (let c = 0; c < 3; c++) data[p + c] = Math.round((data[p + c] * data[p + 3]) / 255);
     if (previous) {
@@ -32,13 +60,15 @@ export async function scanTimeline(samples, threshold = 8) {
         }
         if (peak > threshold) changed++;
       }
-      const delta = absolute / data.length;
+      const comparedPixels =
+        Math.max(info.width, previousSize.width) * Math.max(info.height, previousSize.height);
+      const delta = absolute / (comparedPixels * 4);
       intervals.push({
         from: i - 1,
         to: i,
         time: sample.time,
         dtMs: (sample.time - samples[i - 1].time) * 1000,
-        changedPercent: (100 * changed) / (info.width * info.height),
+        changedPercent: (100 * changed) / comparedPixels,
         meanDelta: delta,
         duplicate: absolute === 0,
       });
@@ -46,7 +76,7 @@ export async function scanTimeline(samples, threshold = 8) {
         previous2 &&
         previousDelta > 2 &&
         delta > 2 &&
-        back / data.length < Math.min(previousDelta, delta) * 0.18
+        back / (comparedPixels * 4) < Math.min(previousDelta, delta) * 0.18
       )
         signals.push({
           kind: 'brief-reversal',
@@ -59,6 +89,7 @@ export async function scanTimeline(samples, threshold = 8) {
     }
     previous2 = previous;
     previous = data;
+    previousSize = info;
   }
   const dt = intervals.map((v) => v.dtMs),
     typical = percentile(dt, 0.5);
@@ -81,6 +112,7 @@ export async function scanTimeline(samples, threshold = 8) {
     duplicateIntervals: intervals.filter((v) => v.duplicate).length,
     longestHoldMs: longestHold * 1000,
     captureIntervalMs: { p50: typical, p95: percentile(dt, 0.95), max: Math.max(0, ...dt) },
+    photometry: await photometry.finish(),
   };
 }
 

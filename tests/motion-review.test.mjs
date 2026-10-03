@@ -72,6 +72,7 @@ test('managed output symlinks are refused before any source frame is overwritten
       'analysis/000.png',
       'index.html',
       'motion.png',
+      'photometry.png',
       'motion.json',
       'replay.json',
       'telemetry.json',
@@ -444,4 +445,123 @@ test('bounded overview retains native ROI coordinates and a source-resolution es
   assert.throws(() => parseCrop(',,20,20'), /source pixels/);
   await assert.rejects(analyzeMotionFrames(frames, { maxSize: -1 }), /max-size/);
   await assert.rejects(analyzeMotionFrames(frames, { threshold: NaN }), /threshold/);
+});
+
+test('CLI scans a plain PNG manifest interval and exports complete photometry and help through pipes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'motion-photometry-cli-'));
+  try {
+    const frames = [];
+    for (let i = 0; i < 96; i++) {
+      const image = new PNG({ width: 16, height: 8 });
+      const y = 0.45 + 0.2 * Math.sin((2 * Math.PI * 4 * i) / 32);
+      const gray = Math.round(255 * (1.055 * y ** (1 / 2.4) - 0.055));
+      for (let p = 0; p < image.data.length; p += 4) image.data.set([gray, gray, gray, 255], p);
+      const file = `${i}.png`;
+      await writeFile(join(directory, file), PNG.sync.write(image));
+      frames.push({ file, time: i / 32 });
+    }
+    const manifest = join(directory, 'frames.json'),
+      out = join(directory, 'report');
+    await writeFile(manifest, JSON.stringify({ frames }));
+    const result = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          'tools/scene.mjs',
+          'review',
+          manifest,
+          '--motion',
+          '--from',
+          '.5',
+          '--seconds',
+          '2',
+          '--crop',
+          '0,0,16,8',
+          '--slice',
+          'x,4,3',
+          '--out',
+          out,
+        ],
+        { encoding: 'utf8' },
+      ),
+    );
+    assert.equal(result.frames, 12);
+    assert.equal(result.photometry.frames, 65);
+    assert.equal(result.photometry.spectrum.frequencyHz, 4);
+    assert.equal(result.photometry.kymograph.automatic, false);
+    assert.equal((await readFile(result.photometryImage)).subarray(1, 4).toString(), 'PNG');
+    const text = await readFile(result.data, 'utf8'),
+      data = JSON.parse(text);
+    assert.equal(data.photometry.reference.time, 0.5);
+    assert.equal(data.photometry.points.at(-1).time, 2.5);
+    assert.equal(result.photometry.ranges.alpha[0], 100);
+    const returns = data.timeline.signals.filter((entry) => entry.kind === 'brief-reversal');
+    assert(returns.length > 3);
+    assert.equal(
+      result.insights.filter((entry) => entry.kind === 'repeated-appearance-return').length,
+      1,
+    );
+    assert.equal(
+      result.insights.find((entry) => entry.kind === 'repeated-appearance-return').count,
+      returns.length,
+    );
+    assert(!text.includes('data:image/'), 'numeric output must not embed rasters');
+    const html = await readFile(result.path, 'utf8');
+    assert(html.includes('Кимограмма'));
+    assert(html.includes('R=G=B'));
+    assert(
+      !html.includes('Фиолетовая штриховка'),
+      'complete data must not be described as missing',
+    );
+    const help = execFileSync(process.execPath, ['tools/scene.mjs', 'review', '--help'], {
+      encoding: 'utf8',
+    });
+    assert(help.includes('--slice x,Y,THICKNESS'));
+    assert(help.trimEnd().endsWith('SCENE --cue ID --out REPORT'));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('saved transparent frames retain their photometry background on offline reanalysis', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'motion-photometry-background-'));
+  try {
+    const image = new PNG({ width: 4, height: 4 });
+    for (let p = 0; p < image.data.length; p += 4) image.data.set([255, 255, 255, 128], p);
+    await writeFile(join(directory, 'frame.png'), PNG.sync.write(image));
+    const manifest = join(directory, 'frames.json');
+    await writeFile(
+      manifest,
+      JSON.stringify({
+        frames: [
+          { file: 'frame.png', time: 0 },
+          { file: 'frame.png', time: 0.1 },
+        ],
+      }),
+    );
+    const original = await reviewMotion({
+      input: manifest,
+      out: join(directory, 'original'),
+      seconds: 0.1,
+      theme: 'dark',
+    });
+    const capture = JSON.parse(await readFile(original.captureManifest, 'utf8'));
+    assert.equal(capture.source.theme, 'dark');
+    const replay = await reviewMotion({
+      input: original.captureManifest,
+      out: join(directory, 'replay'),
+    });
+    const before = JSON.parse(await readFile(original.data, 'utf8')).photometry;
+    const after = JSON.parse(await readFile(replay.data, 'utf8')).photometry;
+    assert.equal(before.background, 'black');
+    assert.equal(after.background, 'black');
+    assert.deepEqual(after.points, before.points);
+    assert.deepEqual(after.ranges, before.ranges);
+    assert(
+      before.ranges.luminance[0] < 100,
+      'transparent white must be composited on the black matte',
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

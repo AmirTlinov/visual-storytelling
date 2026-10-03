@@ -26,6 +26,7 @@ export async function reviewMotion({
   baseline,
   loop = false,
   seconds,
+  slice,
 }) {
   const started = performance.now();
   if (
@@ -182,21 +183,26 @@ export async function reviewMotion({
           manifest.frames.map((frame) => realpath(resolve(dirname(input), frame.file))),
         );
         paths.forEach(protect);
-        scan = Boolean(manifest.source);
-        if (scan && manifest.frames.length > 600)
+        scan = Boolean(manifest.source) || seconds !== undefined;
+        const inputFrames = scan
+          ? seconds === undefined
+            ? manifest.frames
+            : manifest.frames.filter(
+                (f) => f.time >= (from ?? 0) && f.time <= (from ?? 0) + seconds,
+              )
+          : manifest.frames.filter((f) => f.time >= (from ?? 0)).slice(0, frames);
+        if (scan && inputFrames.length > 600)
           throw new Error('Saved capture exceeds 600 frames; choose a shorter manifest');
         samples = await Promise.all(
-          (scan
-            ? manifest.frames
-            : manifest.frames.filter((f) => f.time >= (from ?? 0)).slice(0, frames)
-          ).map(async (f) => ({
+          inputFrames.map(async (f) => ({
             ...f,
             png: await readFile(resolve(dirname(input), f.file)),
           })),
         );
-        source = scan
+        source = manifest.source
           ? { ...manifest.source, importedFrom: input }
           : { kind: 'frame-manifest', path: input };
+        source.theme ??= theme;
         if (scan) {
           if (manifest.telemetry) {
             protect(await realpath(resolve(dirname(input), manifest.telemetry)));
@@ -209,7 +215,7 @@ export async function reviewMotion({
       } else {
         scan = seconds !== undefined;
         samples = await videoFrames(input, from ?? 0, scan ? 600 : frames, seconds);
-        source = { kind: 'video', path: input };
+        source = { kind: 'video', path: input, theme };
         if (scan) {
           if (samples.length === 600)
             source.warning = 'Analysis reached 600 frames; shorten --seconds for full coverage.';
@@ -222,12 +228,18 @@ export async function reviewMotion({
         'This window contains fewer than two frames; choose an earlier --from or a longer cue',
       );
     const captured = performance.now();
-    const timeline = scan ? await scanTimeline(samples, threshold) : undefined;
+    const scanned = await scanTimeline(samples, threshold, {
+      crop,
+      slice,
+      source: { ...source, theme: source.theme ?? theme },
+    });
+    const { photometry, ...timelineData } = scanned;
+    const timeline = scan ? timelineData : undefined;
     const runtime = telemetry ? summarizeRuntime(telemetry, source.viewport) : undefined;
     const selected = scan
       ? selectDetail(samples, {
           count: frames,
-          from: source.kind === 'video' && seconds ? undefined : from,
+          from: seconds ? undefined : from,
           timeline,
           telemetry,
           runtime,
@@ -249,6 +261,7 @@ export async function reviewMotion({
           ? 'provided-order'
           : 'consecutive',
       timeline,
+      photometry,
       runtime,
       overview,
       captureManifest,

@@ -14,6 +14,7 @@ if (
   (reviewArgs.some((arg) =>
     [
       '--motion',
+      '--slice',
       '--capture',
       '--click',
       '--scenario',
@@ -29,7 +30,12 @@ if (
     reviewArgs.some((arg) => /^https?:\/\//.test(arg)))
 ) {
   const { runMotionCLI } = await import('./motion/cli.mjs');
-  process.exit(await runMotionCLI(reviewArgs));
+  const code = await runMotionCLI(reviewArgs);
+  // Agents read pipes: flush the complete JSON/help before an explicit exit.
+  await Promise.all(
+    [process.stdout, process.stderr].map((stream) => new Promise((done) => stream.write('', done))),
+  );
+  process.exit(code);
 }
 const root = fileURLToPath(new URL('../', import.meta.url));
 const { values, positionals } = parseArgs({

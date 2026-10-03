@@ -8,23 +8,56 @@ export function orderedInsights(report) {
   const from = report.frames[0].time,
     to = report.frames.at(-1).time;
   const inside = (item) => Number.isFinite(item.time) && item.time >= from && item.time <= to;
-  return [...(report.runtime?.insights ?? []), ...(report.timeline?.signals ?? [])].sort(
+  let signals = report.timeline?.signals ?? [];
+  const returns = signals.filter((item) => item.kind === 'brief-reversal');
+  if (returns.length > 3)
+    signals = [
+      ...signals.filter((item) => item.kind !== 'brief-reversal'),
+      {
+        ...(returns.find(inside) ?? returns[0]),
+        kind: 'repeated-appearance-return',
+        count: returns.length,
+        detail: `Appearance changes and returns ${returns.length} times across the recording. This can be an intended pulse; inspect the brightness graph and frames. Individual times remain in motion.json.`,
+      },
+    ];
+  return [...(report.runtime?.insights ?? []), ...signals].sort(
     (a, b) =>
       Number(b.kind === 'action-error') - Number(a.kind === 'action-error') ||
       Number(inside(b)) - Number(inside(a)),
   );
 }
-function graph(points, key, title, markers = []) {
+export function graph(points, key, title, markers = [], options = {}) {
   if (points.length < 2) return '';
+  const series = Array.isArray(key) ? key : [{ key, color: '#367a74' }];
   const start = points[0].time,
     end = points.at(-1).time;
-  const min = Math.min(0, ...points.map((p) => p[key] ?? 0));
-  const max = Math.max(0.0001, ...points.map((p) => p[key] ?? 0));
+  const values = points.flatMap((p) => series.map((s) => p[s.key] ?? 0));
+  const min = options.min ?? Math.min(...(options.zero === false ? values : [0, ...values]));
+  const max = Math.max(min + 0.0001, options.max ?? Math.max(...values));
+  const tickNumber = (v) => Number(v).toFixed(max - min < 1 ? 3 : 1);
   const x = (t) => 20 + (560 * (t - start)) / (end - start || 1);
   const y = (v) => 90 - (65 * (v - min)) / (max - min);
-  const path = points
-    .map((p, i) => `${i ? 'L' : 'M'}${x(p.time).toFixed(2)},${y(p[key] ?? 0).toFixed(2)}`)
-    .join(' ');
+  const paths = series
+    .map((s) => {
+      const path = points
+        .map(
+          (p, i) =>
+            `${i && (!options.maxGap || p.time - points[i - 1].time <= options.maxGap) ? 'L' : 'M'}${x(p.time).toFixed(2)},${y(p[s.key] ?? 0).toFixed(2)}`,
+        )
+        .join(' ');
+      const isolated = options.maxGap
+        ? points
+            .map((p, i) =>
+              (!i || p.time - points[i - 1].time > options.maxGap) &&
+              (i === points.length - 1 || points[i + 1].time - p.time > options.maxGap)
+                ? `<circle cx="${x(p.time)}" cy="${y(p[s.key] ?? 0)}" r="2" fill="${s.color}"/>`
+                : '',
+            )
+            .join('')
+        : '';
+      return `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="2"/>${isolated}`;
+    })
+    .join('');
   const timeTicks = [0, 0.25, 0.5, 0.75, 1]
     .map((fraction) => {
       const t = start + (end - start) * fraction;
@@ -38,7 +71,14 @@ function graph(points, key, title, markers = []) {
         : '',
     )
     .join('');
-  return `<figure><h3>${escapeText(title)}</h3><svg viewBox="0 0 600 146"><line x1="20" x2="580" y1="${y(0)}" y2="${y(0)}" stroke="#ccc"/>${ticks}<path d="${path}" fill="none" stroke="#367a74" stroke-width="2"/>${timeTicks}<text x="20" y="137" font-size="12">min ${number(min)}</text><text x="580" y="137" text-anchor="end" font-size="12">max ${number(max)}</text></svg></figure>`;
+  const legend = series
+    .map((s, i) =>
+      s.label
+        ? `<text x="${155 + i * 88}" y="137" style="fill:${s.color}" font-size="12">${escapeText(s.label)}</text>`
+        : '',
+    )
+    .join('');
+  return `<figure><h3>${escapeText(title)}</h3><svg viewBox="0 0 600 146" role="img" aria-label="${escapeText(title)}"><line x1="20" x2="580" y1="${y(min)}" y2="${y(min)}" stroke="#ccc"/>${ticks}${paths}${timeTicks}<text x="20" y="137" font-size="12">min ${tickNumber(min)}</text>${legend}<text x="580" y="137" text-anchor="end" font-size="12">max ${tickNumber(max)}</text></svg>${options.caption ? `<figcaption>${escapeText(options.caption)}</figcaption>` : ''}</figure>`;
 }
 export function diagnosticsMarkup(report) {
   const { timeline, runtime, comparison } = report;

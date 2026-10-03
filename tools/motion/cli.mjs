@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve, dirname, join } from 'node:path';
 import { reviewMotion } from './review.mjs';
 import { parseCrop } from './frames.mjs';
+import { parseSlice } from './photometry.mjs';
 
 const help = `Motion review — capture, inspect, repeat
 
@@ -14,6 +15,7 @@ visual-story review recording.mp4 --motion --from 1.2 --frames 16 --out REPORT
 visual-story review recording.mp4 --motion --from 1.2 --seconds 3 --out REPORT
 visual-story review scene-dir --motion --cue ACTION --out REPORT
 visual-story review frames.json --motion --out REPORT
+visual-story review frames.json --motion --seconds 3 --out REPORT
 visual-story review --windows
 visual-story review --window ID --seconds 3 --out REPORT
 
@@ -24,8 +26,12 @@ Capture: --capture (ordinary HTML), --scenario FILE, --click SELECTOR (repeatabl
   --target CSS (repeatable, up to 12), --seconds 2 (after actions), --ready SELECTOR,
   --width 960 --height 720, --theme light|dark, --reduced, --headed,
   --cdp ENDPOINT (reuse an existing matching tab, preserve browser and login).
-Analysis: --from SECONDS, --frames 12 (2–32), --crop x,y,w,h,
+Analysis: --from SECONDS, --seconds N (full video/PNG interval),
+  --frames 12 (2–32 detail frames; photometry covers the full interval), --crop x,y,w,h,
   --max-size 960 (0 = original pixels), --threshold 8, --loop, --baseline REPORT.
+  --slice x,Y,THICKNESS or y,X,THICKNESS chooses a kymograph strip in source pixels.
+Brightness, RGB, saturation, region map and kymograph are automatic. STFT needs
+  >=64 regularly timed frames, >=1 second and repeated brightness changes.
 Scene only: --cue ID, --fps 60. Recordings retain their timestamps.
 --doctor reports dependencies. --out defaults to a fresh artifacts/motion-* directory.
 
@@ -65,6 +71,7 @@ export async function runMotionCLI(args) {
         from: { type: 'string' },
         frames: { type: 'string' },
         crop: { type: 'string' },
+        slice: { type: 'string' },
         'max-size': { type: 'string' },
         threshold: { type: 'string' },
         loop: { type: 'boolean' },
@@ -169,6 +176,7 @@ export async function runMotionCLI(args) {
       frames: numeric('frames'),
       fps: numeric('fps'),
       crop: parseCrop(v.crop),
+      slice: parseSlice(v.slice),
       threshold: numeric('threshold'),
       maxSize: numeric('max-size'),
       cue: v.cue,
