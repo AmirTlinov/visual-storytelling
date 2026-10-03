@@ -66,6 +66,11 @@ npm run test:delivery   # отдельный потребитель пакета
 `--cue group_action` выбирает конкретный переход; `--width 375 --theme dark --reduced` проверяет другой режим.
 Сценарий хранит `action` или осмысленное `hold` на метке; подключение — в [озвучке](skill/references/narration.md#проверка), построение понимания — в [раскадровке](skill/references/visual-storytelling.md).
 
+Для движения: `node tools/scene.mjs review site/ink-fusion --motion --from .8 --frames 16 --out artifacts/motion`.
+Открой `artifacts/motion/motion.png`: цветные следы, межкадровые разности, времена и исходные кадры собраны на одном листе.
+Тот же режим принимает видео или JSON со списком PNG; `--crop` выбирает область. Видео сохраняет PTS и повторы; перемотка сцены показывает время модели.
+Обычный `review` добавляет такие листы для обзорных состояний действий. [Команды и чтение отчёта](skill/references/motion.md#проверка).
+
 При изменении общего рисунка сохрани исходные кадры до правки: `node tools/visual-regression.mjs capture site artifacts/reference/pixels`, затем сравни сборку через `npm run test:visual`. `VISUAL_SCENES=area-story,vector` ограничивает проверку затронутыми примерами; обе темы и две ширины сохраняются. Отчёт в `artifacts/migrated/report.json` сообщает все различия, а просмотр помогает оценить их смысл.
 
 Экспорт, превью, отчёт переходов и сравнение кадров используют `tools/open-scene.mjs`: он дожидается готовности, останавливает сцену и обращается к её `seek()`. `npm run profile` измеряет перематываемые сцены; для симуляций и статичных схем нужен конкретный сценарий взаимодействия. Проверки CTC и монтажа лежат в `tests/audio/test_pipeline.py` и запускаются отдельно в подготовленном окружении `sketch-audio`.

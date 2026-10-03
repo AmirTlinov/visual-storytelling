@@ -23,6 +23,11 @@ const { values, positionals } = parseArgs({
     theme: { type: 'string' },
     width: { type: 'string', default: '960' },
     reduced: { type: 'boolean', default: false },
+    motion: { type: 'boolean', default: false },
+    from: { type: 'string' },
+    frames: { type: 'string' },
+    fps: { type: 'string' },
+    crop: { type: 'string' },
   },
 });
 const [command, directory = '.'] = positionals,
@@ -35,6 +40,8 @@ visual-story build DIRECTORY [--cdn]          build dist/; CDN mode loads pinned
 visual-story audio DIRECTORY                  voice + aligned cues from narration.json
 visual-story preview DIST [--port 8793]        serve an existing build
 visual-story review DIST --out review [--cue ID] [--width 375] [--theme dark] [--reduced]
+visual-story review INPUT --motion --out review [--from SECONDS] [--frames 12] [--crop x,y,w,h]
+                       INPUT: scene directory, video, or PNG manifest; scene-only --fps 60
 visual-story pack DIST --out artifacts/story.html [--inline]
 visual-story generate DIRECTORY --example NAME
 
@@ -181,16 +188,37 @@ else if (command === 'examples') {
   const theme = values.theme ?? 'light';
   if (!['light', 'dark'].includes(theme) || !Number.isInteger(width) || width < 240)
     throw new Error('Review needs --theme light|dark and --width at least 240');
+  if (
+    !values.motion &&
+    [values.from, values.frames, values.fps, values.crop].some((v) => v !== undefined)
+  )
+    throw new Error('--from, --frames, --fps and --crop require --motion');
+  if (values.motion && values.cue?.length)
+    throw new Error('Use --from to select a motion window; --cue selects the story overview');
+  const { reviewMotion } = await import('./motion-review.mjs');
+  const { parseCrop } = await import('./motion-frames.mjs');
   console.log(
     JSON.stringify(
-      await reviewScene({
-        directory: destination,
-        out: values.out ?? 'review',
-        cues: values.cue,
-        theme,
-        width,
-        reduced: values.reduced,
-      }),
+      values.motion
+        ? await reviewMotion({
+            input: destination,
+            out: values.out ?? 'review',
+            from: Number(values.from ?? 0),
+            frames: Number(values.frames ?? 12),
+            fps: values.fps === undefined ? undefined : Number(values.fps),
+            crop: parseCrop(values.crop),
+            theme,
+            width,
+            reduced: values.reduced,
+          })
+        : await reviewScene({
+            directory: destination,
+            out: values.out ?? 'review',
+            cues: values.cue,
+            theme,
+            width,
+            reduced: values.reduced,
+          }),
       null,
       2,
     ),

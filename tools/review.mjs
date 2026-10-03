@@ -2,6 +2,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { renderer } from './render.mjs';
+import { analyzeMotionFrames, motionData } from './motion-frames.mjs';
+import { motionMarkup, writeMotionReport } from './motion-report.mjs';
 
 const escape = (text) =>
   String(text ?? '').replace(
@@ -78,7 +80,7 @@ dialog button{float:right;font:inherit;margin-bottom:8px}dialog p{margin:0 80px 
 figcaption,summary{font-size:13px}pre{white-space:pre-wrap;font-size:12px}li{margin:5px 0}a{color:LinkText}code{overflow-wrap:anywhere}
 </style></head><body><h1>Разбор переходов</h1>
 <p>Реплика → видимое действие → результат. Откройте кадр для деталей; сравните промежуточные числа и сохранность объектов.
-Стоп-кадры дополняют просмотр со звуком: они не проверяют интонацию, плавность или понятность зрителю.</p>
+Наложения показывают форму переходов по перемотке; ритм живого воспроизведения проверяйте по записи через <code>review --motion</code>.</p>
 <p>${escape(report.theme)} · ${report.width}px · метки: ${report.cues.length} · ${report.reduced ? 'уменьшенное' : 'обычное'} движение</p>
 ${warnings ? `<ul>${warnings}</ul>` : '<p>Пропущенных описаний и непрочитанных меток в выбранных переходах не обнаружено.</p>'}
 ${report.unmarked.length ? `<h2>Реплики вне размеченных действий</h2><p>Интервалы от секунды без action/hold. Сверьте появление нового факта со словами; спокойный кадр может быть уместным.</p>${report.unmarked.map((gap) => `<section><h2>${escape(gap.title ?? gap.chapter)} · ${gap.start.toFixed(2)}–${gap.end.toFixed(2)} с</h2><blockquote>${escape(gap.text)}</blockquote>${framesHTML(gap.frames, gap.chapter)}</section>`).join('')}` : ''}
@@ -92,6 +94,7 @@ ${report.cues
 <p>${cue.kind === 'hold' ? 'Остановка' : 'Действие'}: ${escape(cue.action ?? cue.hold ?? 'описание отсутствует')}</p>
 ${cue.context ? `<details><summary>Вся реплика</summary><p>${escape(cue.context)}</p></details>` : ''}
 <p>Метка ${cue.referenced ? 'прочитана кодом сцены' : 'не прочитана через Frame'}${cue.unchanged ? '; все снятые кадры одинаковы' : ''}.</p>
+${cue.motion ? `${motionMarkup(cue.motion, { includeFrames: false })}<p><a href="${cue.motionImage}">Открыть наложение, дельты и кадры одним PNG</a></p>` : ''}
 ${framesHTML(cue.frames, cue.id, cue)}</section>`,
   )
   .join('')}
@@ -153,9 +156,28 @@ export async function reviewScene({
       for (const time of reviewTimes(cue, initial.duration)) {
         frames.push(await sample(time));
       }
+      let motion, motionImage;
+      if (frames.length >= 2 && cue.kind === 'action') {
+        motion = {
+          ...analyzeMotionFrames(
+            frames.map((frame) => ({
+              time: frame.time,
+              png: Buffer.from(frame.image.split(',')[1], 'base64'),
+            })),
+          ),
+          title: cue.action ?? cue.id,
+          source: { kind: 'scene-seek', path: resolve(directory) },
+          sampling: 'cue-checkpoints',
+        };
+        const folder = `motion-${String(sampled.length + 1).padStart(3, '0')}`;
+        await writeMotionReport(motion, join(output, folder), { context: capture.page.context() });
+        motionImage = `${folder}/motion.png`;
+      }
       sampled.push({
         id: cue.id,
         frames,
+        motion,
+        motionImage,
         unchanged: new Set(frames.map((frame) => frame.digest)).size === 1,
       });
     }
@@ -214,6 +236,7 @@ export async function reviewScene({
           ...report,
           cues: report.cues.map((cue) => ({
             ...cue,
+            motion: cue.motion ? motionData(cue.motion) : undefined,
             frames: cue.frames.map(({ image, ...frame }) => frame),
           })),
           unmarked: report.unmarked.map((gap) => ({

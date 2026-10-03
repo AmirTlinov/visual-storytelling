@@ -73,6 +73,11 @@ test('rendered review detects a frozen operation and unused cue, permits a readi
     assert.equal(moving.unchanged, false);
     assert.equal(moving.frames[0].state.x, 50);
     assert.equal(moving.frames.at(-1).state.x, 80);
+    assert.equal(moving.motion.source.kind, 'scene-seek');
+    assert.equal(moving.motion.sampling, 'cue-checkpoints');
+    assert(moving.motion.intervals.some((interval) => interval.changedPercent > 0));
+    assert(!JSON.stringify(report).includes('base64'));
+    assert((await readFile(join(out, moving.motionImage))).length > 1000);
     assert.equal(report.cues.at(-1).frames.at(-1).time, 5);
     assert(!result.warnings.some((warning) => warning.startsWith('move:')));
     assert(result.warnings.some((warning) => warning.includes('Line geometry has too few points')));
