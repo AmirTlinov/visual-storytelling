@@ -27,13 +27,13 @@ test('3D annotations stay readable, attached and non-intercepting during orbit a
         const view = Viewport3D.mount(shell.stage), group = new T.Group();
         const cube = new T.Mesh(new T.BoxGeometry(1,1,1), view.ink(new T.MeshBasicMaterial(), 'blue-wash'));
         const anchor = new T.Object3D(); anchor.position.y = 1.3;
-        group.add(cube, anchor); view.setObject(group);
+        cube.add(anchor); group.add(cube); view.setObject(group);
         view.shot({target: new T.Box3(new T.Vector3(-2,-2,-2), new T.Vector3(2,2,2)), direction:[0,0,1]});
         const number = view.label('−12.34', cube, {face:['front','back']});
-        const formula = view.label('ReLU: x < 0 → 0', cube, {tone:'purple', side:'top', frame:{padding:[15,8]}});
+        const formula = view.label('ReLU: x < 0 → 0', anchor, {tone:'purple', frame:{padding:[15,8]}});
         const cover = new T.Mesh(new T.BoxGeometry(1.1,1.1,.05), view.ink(new T.MeshBasicMaterial(), 'orange'));
         cover.position.z = .4; cover.visible = false; group.add(cover);
-        window.lab = {view, group, cube, cover, number, formula};
+        window.lab = {view, group, cube, anchor, cover, number, formula, T};
       })();
     `,
     );
@@ -82,12 +82,56 @@ test('3D annotations stay readable, attached and non-intercepting during orbit a
         attachments,
       );
     }
+    // A readable annotation must project the same local point throughout vertical orbit.
+    // Screen-space extrema drift even when the supporting object itself is stationary.
+    await page.evaluate(() => {
+      lab.group.rotation.set(0, 0.6, 0);
+      lab.group.position.set(0.4, -0.2, 0.3);
+      lab.cube.rotation.z = 0.15;
+      lab.cube.scale.setScalar(1.2);
+    });
+    for (const direction of [1, -1]) {
+      for (let step = 0; step <= 16; step++) {
+        const elevation = direction * (-1.3 + (2.6 * step) / 16);
+        await page.evaluate((elevation) => {
+          lab.view.camera.position.set(
+            7 * Math.cos(elevation),
+            12 * Math.sin(elevation),
+            10 * Math.cos(elevation),
+          );
+          lab.view.controls.target.set(0, 0, 0);
+          lab.view.controls.update();
+        }, elevation);
+        await page.evaluate(
+          () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
+        );
+        const drift = await page.evaluate(() => {
+          const point = lab.anchor.getWorldPosition(new lab.T.Vector3()).project(lab.view.camera),
+            stage = lab.formula.element.closest('.ve-stage').getBoundingClientRect(),
+            frame = lab.formula.element.parentElement.getBoundingClientRect();
+          return {
+            hidden: lab.formula.element.hidden,
+            pixels: Math.hypot(
+              frame.x + frame.width / 2 - stage.x - ((point.x + 1) * stage.width) / 2,
+              frame.y + frame.height / 2 - stage.y - ((1 - point.y) * stage.height) / 2,
+            ),
+          };
+        });
+        assert.equal(drift.hidden, false);
+        assert(
+          drift.pixels < 0.1,
+          `Annotation left its local anchor at elevation ${elevation}: ${drift.pixels}px`,
+        );
+      }
+    }
     // Compare actual glyph pixels with an unobstructed reference at the film's depth range.
     // Internal visibility flags cannot detect a supporting face erasing parts of the ink.
     await page.evaluate(() => {
       lab.view.camera.near = 0.01;
       lab.view.camera.far = 1000;
       lab.view.camera.updateProjectionMatrix();
+      lab.group.position.set(0, 0, 0);
+      lab.cube.rotation.set(0, 0, 0);
       lab.cube.scale.setScalar(0.5);
       lab.formula.show(false);
     });

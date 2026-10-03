@@ -8,9 +8,6 @@ export interface LabelOptions extends SurfaceOptions {
   offset?: [number, number];
   size?: number;
   frame?: LabelFrame;
-  /** A stable side of the projected object, with no collision-driven reassignment. */
-  side?: 'top' | 'bottom' | 'left' | 'right';
-  gap?: number;
 }
 export interface LabelInsets {
   top?: number;
@@ -74,28 +71,10 @@ export function projectedLabels(
         a.hidden(true);
         return [];
       }
-      let bounds;
-      if (options.side && typeof item.anchor !== 'function') {
-        const box = new T.Box3().setFromObject(item.anchor);
-        if (!box.isEmpty()) {
-          const points = [box.min.x, box.max.x].flatMap((x) =>
-            [box.min.y, box.max.y].flatMap((y) =>
-              [box.min.z, box.max.z].map((z) => new T.Vector3(x, y, z).project(camera)),
-            ),
-          );
-          bounds = {
-            left: Math.min(...points.map((p) => ((p.x + 1) * width) / 2)),
-            right: Math.max(...points.map((p) => ((p.x + 1) * width) / 2)),
-            top: Math.min(...points.map((p) => ((1 - p.y) * height) / 2)),
-            bottom: Math.max(...points.map((p) => ((1 - p.y) * height) / 2)),
-          };
-        }
-      }
       const offset = options.offset ?? [0, 0];
       return [
         {
           item,
-          bounds,
           x: ((p.x + 1) * width) / 2 + offset[0],
           y: ((1 - p.y) * height) / 2 + offset[1],
         },
@@ -110,20 +89,9 @@ export function projectedLabels(
       ),
     }));
     for (const measurement of measured) {
-      let { x, y } = measurement;
-      const { item, size, bounds } = measurement;
+      const { x, y, item, size } = measurement;
       const [w, h] = size as [number, number],
         a = item.annotation;
-      if (bounds) {
-        const gap = item.options.gap ?? 12,
-          side = item.options.side;
-        x = (bounds.left + bounds.right) / 2;
-        y = (bounds.top + bounds.bottom) / 2;
-        if (side === 'top') y = bounds.top - h / 2 - gap;
-        if (side === 'bottom') y = bounds.bottom + h / 2 + gap;
-        if (side === 'left') x = bounds.left - w / 2 - gap;
-        if (side === 'right') x = bounds.right + w / 2 + gap;
-      }
       a.place(x, y, w, h);
       // Fade at UI edges without clamping a label away from its owner.
       const room = Math.min(
