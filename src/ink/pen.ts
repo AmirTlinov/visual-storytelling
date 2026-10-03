@@ -134,6 +134,7 @@ export function pen(canvas: SVGSVGElement) {
         if (bounds) moveWash(bounds);
       },
       reveal(progress: number) {
+        if (revealed === progress) return;
         revealed = progress;
         trace(progress);
         paint(progress);

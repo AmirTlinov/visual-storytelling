@@ -91,6 +91,7 @@ window.galleryReady = (async () => {
 `move(dx,dy)` — относительное движение, `show(bool)` — общую видимость предмета и подписи.
 Высоту SVG в оболочке задаёт соотношение `surface.resize(width, height)`; она следует композиции при изменении ширины.
 `pen` возвращает `reveal(p)` и `dispose()`, `lettering` — `text(value)` и `write(p)`.
+Передавай текущее состояние в каждом кадре: `surface.resize`, `reveal`, `text` и `write` сами пропускают неизменившиеся значения.
 Параметры расширений доступны тем же `api`: `SketchControls`, `pen`, `StoryOptions`.
 
 Для заголовка с выбором главы добавь короткое `title` нужным сегментам `narration.json`.

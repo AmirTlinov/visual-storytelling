@@ -29,21 +29,25 @@ export function lettering(
   element.append(label);
   let value = '',
     width = 0,
-    progress = 1;
-  const position = () =>
-    element.setAttribute(
-      'transform',
-      `translate(${(options.x ?? 0) - (options.anchor === 'start' ? 0 : options.anchor === 'end' ? width : width / 2)} ${options.y ?? 0})`,
-    );
+    progress = 1,
+    written = false;
+  const position = () => {
+    const transform = `translate(${(options.x ?? 0) - (options.anchor === 'start' ? 0 : options.anchor === 'end' ? width : width / 2)} ${options.y ?? 0})`;
+    if (element.getAttribute('transform') !== transform)
+      element.setAttribute('transform', transform);
+  };
   const write = (amount: number) => {
+    if (written && amount === progress) return;
     progress = amount;
     if ([...value].every((c) => /\s/.test(c) || glyphs[c])) SketchMotion.write(label, amount);
     else label.style.opacity = amount >= 1 ? '1' : '0';
     element.style.visibility = amount > 0 ? '' : 'hidden';
+    written = true;
   };
   const text = (next: string | number) => {
-    if (String(next) === value && label.textContent) return;
+    if (String(next) === value && element.hasAttribute('aria-label')) return;
     SketchMotion.resetText(label);
+    written = false;
     value = String(next);
     label.textContent = value;
     element.setAttribute('aria-label', value);

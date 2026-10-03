@@ -35,13 +35,19 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
   const layer = svg('g', { 'data-camera-world': '', 'data-camera-transform': '' });
   element.append(paper, layer);
   parent.append(element);
-  let width = options.width,
-    height = options.height;
+  let width = 0,
+    height = 0,
+    gridSignature = '';
   const drawGrid = (grid: Grid | false = { step: 30 }) => {
+    if (grid && (!(grid.step > 0) || !Number.isFinite(grid.step)))
+      throw new Error('Grid step must be positive');
+    const signature = grid
+      ? [width, height, grid.step, grid.x ?? 0, grid.y ?? 0].join(',')
+      : 'none';
+    if (signature === gridSignature) return;
+    gridSignature = signature;
     paper.replaceChildren();
     if (!grid) return;
-    if (!(grid.step > 0) || !Number.isFinite(grid.step))
-      throw new Error('Grid step must be positive');
     const parts: string[] = [];
     for (let x = (grid.x ?? 0) % grid.step; x <= width; x += grid.step) {
       const bow = ((seed(`${options.id}:v:${x}`) % 13) - 6) / 12;
@@ -63,13 +69,15 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
   const resize = (w: number, h: number, grid: Grid | false = options.grid ?? { step: 30 }) => {
     if (![w, h].every((value) => Number.isFinite(value) && value > 0))
       throw new Error('Surface dimensions must be positive');
-    width = w;
-    height = h;
-    element.setAttribute('viewBox', `0 0 ${w} ${h}`);
-    element.style.aspectRatio = `${w} / ${h}`;
+    if (w !== width || h !== height) {
+      width = w;
+      height = h;
+      element.setAttribute('viewBox', `0 0 ${w} ${h}`);
+      element.style.aspectRatio = `${w} / ${h}`;
+    }
     drawGrid(grid);
   };
-  resize(width, height);
+  resize(options.width, options.height);
   return {
     element,
     layer,
