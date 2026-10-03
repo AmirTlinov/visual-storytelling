@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { sourceAliases } from './source-package.mjs';
 import { sceneAsset } from './assets.mjs';
 import { generateScene } from './generate-scene.mjs';
+import { buildOutput } from './build-output.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 export async function buildPage(
   source,
@@ -98,7 +99,6 @@ export async function buildPage(
 export async function buildScene(source, target, options = {}) {
   source = resolve(source);
   target = resolve(target);
-  if (source === target) throw new Error('The build output must be separate from scene sources');
   // A copied scene owns its imports. Never inherit unrelated ancestor workspace aliases.
   const tsconfig = resolve(source, 'tsconfig.json');
   options = {
@@ -136,7 +136,7 @@ export async function buildScene(source, target, options = {}) {
         await buildPage(resolve(directory, entry.name), output, options);
     await generateScene(directory, output);
   }
-  await visit(source, target);
+  await buildOutput(source, target, (output) => visit(source, output));
 }
 
 export async function buildPages(target = resolve(root, 'site')) {

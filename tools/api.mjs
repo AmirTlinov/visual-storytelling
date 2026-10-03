@@ -2,12 +2,14 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 /** Derive discovery from the declarations shipped to the consumer. */
-export async function buildAPI(root) {
+export async function buildAPI(root, output) {
   const { default: ts } = await import('typescript');
   const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
   const entries = Object.entries(pkg.exports).filter(([, entry]) => entry.types);
+  const declarationPath = (types) =>
+    resolve(output, relative(join(root, 'dist'), resolve(root, types)));
   const program = ts.createProgram(
-    entries.map(([, entry]) => resolve(root, entry.types)),
+    entries.map(([, entry]) => declarationPath(entry.types)),
     {
       module: ts.ModuleKind.NodeNext,
       moduleResolution: ts.ModuleResolutionKind.NodeNext,
@@ -15,10 +17,9 @@ export async function buildAPI(root) {
     },
   );
   const checker = program.getTypeChecker();
-  const output = resolve(root, 'dist');
   const modules = {};
   for (const [entry, { types }] of entries) {
-    const source = program.getSourceFile(resolve(root, types));
+    const source = program.getSourceFile(declarationPath(types));
     const module = checker.getSymbolAtLocation(source);
     const symbols = {};
     for (const exported of checker.getExportsOfModule(module)) {

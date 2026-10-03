@@ -1,5 +1,4 @@
 import { existsSync, watch } from 'node:fs';
-import { mkdtemp, rm, rename } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { buildScene } from './build-pages.mjs';
 import { serve } from './site.mjs';
@@ -67,11 +66,8 @@ export async function develop(
     running = (async () => {
       while (dirty && !closed) {
         dirty = false;
-        const staging = await mkdtemp(join(source, '.visual-story-build-'));
         try {
-          await builder(source, staging, buildOptions);
-          await rm(destination, { recursive: true, force: true });
-          await rename(staging, destination);
+          await builder(source, destination, buildOptions);
           hasBuild = true;
           buildError = undefined;
           broadcast('built', null);
@@ -79,8 +75,6 @@ export async function develop(
           buildError = error.message;
           broadcast('build-error', error.message);
           console.error(error.message);
-        } finally {
-          await rm(staging, { recursive: true, force: true });
         }
       }
     })().finally(() => {

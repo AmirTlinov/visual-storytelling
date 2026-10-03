@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readFile, lstat, readdir } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, lstat, readdir, rm } from 'node:fs/promises';
 import { join, dirname, relative } from 'node:path';
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'node:url';
@@ -6,6 +6,7 @@ import { motionData } from './frames.mjs';
 import { escapeText as escape, playbackMarkup } from './diagnostics.mjs';
 import { orderedInsights, reviewFocus } from './focus.mjs';
 import { motionMarkup } from './report-view.mjs';
+import { startupFailureReason } from './doctor.mjs';
 export { motionMarkup } from './report-view.mjs';
 
 function summary(report) {
@@ -128,41 +129,56 @@ export async function writeMotionReport(report, out, { context } = {}) {
         .join('/'),
     }));
   }
-  const main = motionMarkup(report, { playback: true });
-  const document = (body) =>
-    `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.title ?? 'Проверка движения')}</title><body style="margin:0;background:#fbfaf6">${body}</body></html>`;
-  const html = document(
-    main +
-      `<section class="motion-sheet">${playbackMarkup(playback, { unsynchronized: report.source.domSynchronized === false })}</section>`,
-  );
-  await writeFile(join(out, 'index.html'), html);
   const focus = reviewFocus(report);
-  const data = { ...motionData(report), focus };
-  if (data.captureManifest) data.captureManifest = relative(out, data.captureManifest);
-  if (data.replayPath) data.replayPath = relative(out, data.replayPath);
-  await writeFile(join(out, 'motion.json'), JSON.stringify(data, null, 2) + '\n');
-  const browser = context ? undefined : await chromium.launch();
-  let page;
+  // A previous run's covers must never stand in for previews that could not be rendered.
+  await Promise.all(
+    ['motion.png', 'frames.png', 'photometry.png'].map((file) =>
+      rm(join(out, file), { force: true }),
+    ),
+  );
+  let browser, page;
+  report.previews = { available: true };
+  if (!context) {
+    try {
+      browser = await chromium.launch({ timeout: 5000 });
+    } catch (error) {
+      report.previews = { available: false, reason: startupFailureReason(error) };
+    }
+  }
   try {
-    page = context ? await context.newPage() : await browser.newPage();
-    await page.setViewportSize({ width: 1320, height: 1000 });
-    await page.setContent(document(main));
-    await page.evaluate(async () => {
-      await document.fonts.ready;
-      await Promise.all([...document.images].map((image) => image.decode()));
-    });
-    await page.locator('.motion-summary').screenshot({ path: join(out, 'motion.png') });
-    const framesPanel = page.locator('.motion-frame-evidence');
-    await framesPanel.evaluate((element) => {
-      element.closest('details').open = true;
-    });
-    await framesPanel.screenshot({ path: join(out, 'frames.png') });
-    if (report.photometry?.status === 'available') {
-      const photoPanel = page.locator('.motion-photometry');
-      await photoPanel.evaluate((element) => {
+    const main = motionMarkup(report, { playback: true });
+    const document = (body) =>
+      `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.title ?? 'Проверка движения')}</title><body style="margin:0;background:#fbfaf6">${body}</body></html>`;
+    const html = document(
+      main +
+        `<section class="motion-sheet">${playbackMarkup(playback, { unsynchronized: report.source.domSynchronized === false })}</section>`,
+    );
+    await writeFile(join(out, 'index.html'), html);
+    const data = { ...motionData(report), focus };
+    if (data.captureManifest) data.captureManifest = relative(out, data.captureManifest);
+    if (data.replayPath) data.replayPath = relative(out, data.replayPath);
+    await writeFile(join(out, 'motion.json'), JSON.stringify(data, null, 2) + '\n');
+    if (report.previews.available) {
+      page = context ? await context.newPage() : await browser.newPage();
+      await page.setViewportSize({ width: 1320, height: 1000 });
+      await page.setContent(document(main));
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+        await Promise.all([...document.images].map((image) => image.decode()));
+      });
+      await page.locator('.motion-summary').screenshot({ path: join(out, 'motion.png') });
+      const framesPanel = page.locator('.motion-frame-evidence');
+      await framesPanel.evaluate((element) => {
         element.closest('details').open = true;
       });
-      await photoPanel.screenshot({ path: join(out, 'photometry.png') });
+      await framesPanel.screenshot({ path: join(out, 'frames.png') });
+      if (report.photometry?.status === 'available') {
+        const photoPanel = page.locator('.motion-photometry');
+        await photoPanel.evaluate((element) => {
+          element.closest('details').open = true;
+        });
+        await photoPanel.screenshot({ path: join(out, 'photometry.png') });
+      }
     }
   } finally {
     await page?.close();
@@ -170,14 +186,19 @@ export async function writeMotionReport(report, out, { context } = {}) {
   }
   return {
     path: join(out, 'index.html'),
-    image: join(out, 'motion.png'),
     focus,
-    framesImage: join(out, 'frames.png'),
-    ...(report.photometry?.status === 'available'
-      ? { photometryImage: join(out, 'photometry.png') }
-      : {}),
+    previews: report.previews,
+    ...(report.previews.available
+      ? {
+          image: join(out, 'motion.png'),
+          framesImage: join(out, 'frames.png'),
+          ...(report.photometry?.status === 'available'
+            ? { photometryImage: join(out, 'photometry.png') }
+            : {}),
+          preview: `${cli} preview ${quote(out)} --port 0`,
+        }
+      : { framesDirectory: join(out, 'analysis') }),
     data: join(out, 'motion.json'),
-    preview: `${cli} preview ${quote(out)} --port 0`,
     ...(report.captureManifest
       ? {
           captureManifest: report.captureManifest,

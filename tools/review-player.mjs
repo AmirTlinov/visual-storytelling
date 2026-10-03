@@ -23,14 +23,18 @@ export function installReviewPlayer() {
               doc = frame.contentDocument;
             await win.galleryReady;
             await doc.fonts.ready;
-            const candidates = [win.explainer, doc.querySelector('.ve-scene')?.scene];
-            handle = candidates.find((value) => typeof value?.seek === 'function');
-            if (!handle) throw new Error('У сцены отсутствует seek().');
-            const play = candidates.find((value) => typeof value?.play === 'function');
-            const button = doc.querySelector('[data-play]');
-            if (!play && !button) throw new Error('У сцены отсутствует воспроизведение.');
-            handle.pause?.();
-            resolve(() => (play ? play.play() : button.click()));
+            handle = doc.querySelector('.ve-scene')?.scene;
+            if (
+              !['seek', 'play', 'pause'].every(
+                (method) => typeof handle?.[method] === 'function',
+              ) ||
+              !Number.isFinite(handle.currentTime)
+            )
+              throw new Error(
+                'root.scene должен предоставлять seek(), play(), pause() и currentTime.',
+              );
+            handle.pause();
+            resolve(() => handle.play());
           } catch (error) {
             reject(error);
           }
@@ -69,8 +73,7 @@ export function installReviewPlayer() {
       status.textContent = 'Сверьте слова, движение и результат; сцену можно поворачивать.';
       const watch = () => {
         if (request !== token) return;
-        const slider = frame.contentDocument.querySelector('[data-seek]');
-        const time = handle.currentTime ?? Number(slider?.value);
+        const time = handle.currentTime;
         if (time >= end) {
           stop();
           handle.seek(end);

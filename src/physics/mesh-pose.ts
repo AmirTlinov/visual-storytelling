@@ -26,7 +26,16 @@ export function meshPose(mesh: Mesh) {
       mesh.matrixWorldNeedsUpdate = true;
     },
     dispose() {
-      mesh.matrixAutoUpdate = automatic;
+      const composed = new Matrix4().compose(mesh.position, mesh.quaternion, mesh.scale);
+      // A stretched ancestor can leave shear that position/quaternion/scale cannot retain.
+      mesh.matrixAutoUpdate =
+        automatic &&
+        mesh.matrix.elements.every((value, index) => {
+          const candidate = composed.elements[index]!;
+          return (
+            Math.abs(value - candidate) <= 1e-10 * Math.max(1, Math.abs(value), Math.abs(candidate))
+          );
+        });
     },
   };
 }

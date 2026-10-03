@@ -231,12 +231,12 @@ export async function analyzeMotionFrames(samples, { crop, threshold = 8, maxSiz
     motionBounds,
     suggestedCrop,
     sizeChanged: sizes.some((s) => s.width !== sizes[0].width || s.height !== sizes[0].height),
-    frames: frames.map((frame, i) => ({
-      time: samples[i].time,
+    frames: samples.map((sample, i) => ({
+      time: sample.time,
       ...Object.fromEntries(
         ['capture', 'receivedTime', 'uncertaintyMs', 'pixelTimeUncertaintyMs']
-          .filter((key) => key in samples[i])
-          .map((key) => [key, samples[i][key]]),
+          .filter((key) => key in sample)
+          .map((key) => [key, sample[key]]),
       ),
       sourceSize: sizes[i],
       image: images[i],

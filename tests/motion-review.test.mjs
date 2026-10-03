@@ -1,14 +1,93 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, rm, mkdir, symlink } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, mkdir, symlink, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { PNG } from 'pngjs';
 import { analyzeMotionFrames, parseCrop } from '../tools/motion/frames.mjs';
 import { reviewMotion } from '../tools/motion/review.mjs';
 import { compareMotion } from '../tools/motion/comparison.mjs';
 import { writeMotionReport } from '../tools/motion/report.mjs';
+
+test('offline CLI analysis keeps evidence when Chromium is unavailable and removes stale previews', async () => {
+  const directory = await realpath(await mkdtemp(join(tmpdir(), 'motion-without-browser-')));
+  try {
+    const out = join(directory, 'report');
+    const browsers = join(directory, 'empty-browsers');
+    await mkdir(out);
+    await mkdir(browsers);
+    const samples = [
+      { time: 0, png: square(4) },
+      { time: 0.04, png: square(12) },
+    ];
+    for (const [i, sample] of samples.entries())
+      await writeFile(join(directory, `${i}.png`), sample.png);
+    const manifest = join(directory, 'frames.json');
+    await writeFile(
+      manifest,
+      JSON.stringify({
+        frames: samples.map(({ time }, i) => ({ time, file: `${i}.png` })),
+      }),
+    );
+    const covers = ['motion.png', 'frames.png', 'photometry.png'];
+    for (const file of covers) await writeFile(join(out, file), samples[0].png);
+    const result = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          fileURLToPath(new URL('../tools/scene.mjs', import.meta.url)),
+          'review',
+          manifest,
+          '--motion',
+          '--out',
+          out,
+        ],
+        {
+          env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: browsers },
+          encoding: 'utf8',
+          timeout: 20000,
+        },
+      ),
+    );
+    assert.equal(result.previews.available, false);
+    assert.match(result.previews.reason, /executable doesn't exist/i);
+    assert.equal(result.framesDirectory, join(out, 'analysis'));
+    for (const key of ['image', 'framesImage', 'photometryImage'])
+      assert.equal(key in result, false);
+    for (const file of covers) await assert.rejects(readFile(join(out, file)), { code: 'ENOENT' });
+    const saved = JSON.parse(await readFile(result.data, 'utf8'));
+    assert.deepEqual(saved.previews, result.previews);
+    assert.deepEqual(
+      saved.frames.map(({ time }) => time),
+      [0, 0.04],
+    );
+    assert.ok(saved.intervals[0].changedPercent > 0);
+    for (const frame of saved.frames)
+      assert.equal(PNG.sync.read(await readFile(join(out, frame.file))).width, 80);
+    const html = await readFile(result.path, 'utf8');
+    assert.match(html, /motion\.json/);
+    assert.doesNotMatch(html, /href="\.\/frames\.png"/);
+    for (const [i, sample] of samples.entries())
+      assert.deepEqual(await readFile(join(directory, `${i}.png`)), sample.png);
+
+    // A render failure after obtaining a context must still fail instead of claiming a fallback.
+    const report = { ...(await analyzeMotionFrames(samples)), source: { kind: 'frame-manifest' } };
+    await assert.rejects(
+      writeMotionReport(report, join(directory, 'render-failure'), {
+        context: {
+          newPage() {
+            throw new Error('Render context failed');
+          },
+        },
+      }),
+      /Render context failed/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('replays and linked capture folders cannot overwrite their source evidence', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'motion-source-protection-'));

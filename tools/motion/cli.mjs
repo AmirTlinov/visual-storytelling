@@ -4,6 +4,7 @@ import { resolve, dirname, join } from 'node:path';
 import { reviewMotion } from './review.mjs';
 import { parseCrop } from './frames.mjs';
 import { parseSlice } from './photometry.mjs';
+import { startupFailureReason, offlineReviewHint } from './doctor.mjs';
 
 const help = `Motion review — capture, inspect, repeat
 
@@ -35,7 +36,10 @@ Analysis: --from SECONDS, --seconds N (full video/PNG interval),
 Brightness, RGB, saturation, region map and kymograph are automatic. STFT needs
   >=64 regularly timed frames, >=1 second and repeated brightness changes.
 Scene only: --cue ID, --fps 60. Recordings retain their timestamps.
---doctor reports dependencies. --out defaults to a fresh artifacts/motion-* directory.
+--doctor probes Chromium launch, localhost listen and dependencies.
+If live capture is unavailable, analyze saved PNG manifests or videos with --motion.
+Without Chromium, HTML/JSON and analysis/*.png are saved; previews.available is false.
+--out defaults to a fresh artifacts/motion-* directory.
 
 Scenario JSON (paths relative to the scenario file):
 {"actions":[{"type":"click","selector":"#open"},{"type":"wait","ms":120},
@@ -192,10 +196,17 @@ export async function runMotionCLI(args) {
     console.log(JSON.stringify(result, null, 2));
     return result.insights?.some((entry) => entry.kind === 'action-error') ? 2 : 0;
   } catch (error) {
+    const browserFailure = /^browserType\.launch:/.test(error.message);
+    const listenDenied =
+      (error.syscall === 'listen' && ['EPERM', 'EACCES'].includes(error.code)) ||
+      /listen (?:EPERM|EACCES)\b/.test(error.message);
     console.error(
       JSON.stringify(
         {
-          error: error.message,
+          error: browserFailure
+            ? `Chromium unavailable: ${startupFailureReason(error)}`
+            : error.message,
+          ...(browserFailure || listenDenied ? { hint: offlineReviewHint } : {}),
           help: 'visual-story review --help',
           elapsedMs: Math.round(performance.now() - started),
         },

@@ -221,7 +221,12 @@ for (const name of ['area-story', 'remainder-story'])
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await ready(page, `/${name}/index.html`);
-    await page.locator('[data-play]').click();
+    await page.evaluate(async () => {
+      const scene = document.querySelector<HTMLElement>('.ve-scene')!.scene!;
+      scene.seek(1);
+      if (scene.currentTime !== 1 || !scene.snapshot()) throw new Error('Incomplete scene handle');
+      await scene.play();
+    });
     await expect
       .poll(() => page.locator('audio').evaluate((a: HTMLAudioElement) => a.paused))
       .toBe(false);
@@ -231,8 +236,10 @@ for (const name of ['area-story', 'remainder-story'])
           scene: { dispose(): void };
         };
         const audio = root.querySelector('audio')!;
-        root.scene.dispose();
-        return audio.paused;
+        const scene = root.scene;
+        scene.dispose();
+        scene.dispose();
+        return audio.paused && !root.scene;
       }),
     ).toBe(true);
     await page.setViewportSize({ width: 500, height: 800 });

@@ -293,6 +293,11 @@ window.galleryReady = (async () => {
     { signal: abort.signal },
   );
   root.scene = {
+    duration: clock.state.duration,
+    get currentTime() {
+      return clock.state.time;
+    },
+    play: clock.play,
     seek: (time) => {
       clock.pause();
       clock.seek(time);
@@ -307,6 +312,7 @@ window.galleryReady = (async () => {
       physics: view.stats,
     }),
     dispose() {
+      if (disposed) return;
       disposed = true;
       clearTimeout(timer);
       cancelAnimationFrame(layoutFrame);
@@ -320,6 +326,7 @@ window.galleryReady = (async () => {
       cases.dispose();
       persistence.dispose();
       view.dispose();
+      delete root.scene;
     },
   };
   if ((!restored || saved?.privateContent?.motionRevision !== motionRevision) && !reduced.matches)

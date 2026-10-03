@@ -2,10 +2,99 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { chromium } from 'playwright';
+import { build } from 'esbuild';
 import { PNG } from 'pngjs';
 import { develop } from '../tools/dev.mjs';
+
+test('replacing a 3D subject retains shared resources and their theme until final disposal', async () => {
+  const bundle = await build({
+    stdin: {
+      contents:
+        "import { Viewport3D } from './src/viewport/three.ts'; import * as T from './src/viewport/engine.ts'; window.mount3D = Viewport3D.mount; window.Kit = T;",
+      resolveDir: resolve('.'),
+      loader: 'ts',
+    },
+    bundle: true,
+    write: false,
+    format: 'iife',
+    platform: 'browser',
+  });
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent(
+      '<div id="host" style="width:400px;height:300px;--ve-surface:white;--ve-ink:black;--ve-blue:#0000ff"></div>',
+    );
+    await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    await page.evaluate(() => {
+      const T = Kit;
+      window.resourceCounts = {};
+      const watch = (name, resource) => {
+        resourceCounts[name] = 0;
+        resource.addEventListener('dispose', () => resourceCounts[name]++);
+        return resource;
+      };
+      const texture = (name) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext('2d');
+        context.fillStyle = 'white';
+        context.fillRect(0, 0, 1, 1);
+        return watch(name, new T.CanvasTexture(canvas));
+      };
+      window.view = mount3D(document.querySelector('#host'));
+      const geometry = watch('sharedGeometry', new T.BoxGeometry());
+      const sharedTexture = texture('sharedTexture'),
+        otherTexture = texture('otherTexture');
+      window.material = watch(
+        'sharedMaterial',
+        view.ink(new T.MeshBasicMaterial({ map: sharedTexture }), 'blue'),
+      );
+      const oldGeometry = watch('oldGeometry', new T.SphereGeometry());
+      const oldMaterial = watch(
+        'oldMaterial',
+        view.ink(new T.MeshBasicMaterial({ map: otherTexture })),
+      );
+      const old = new T.Group();
+      old.add(new T.Mesh(geometry, material), new T.Mesh(oldGeometry, oldMaterial));
+      view.setObject(old);
+      // This texture remains in use outside the replaced subject, through another material.
+      view.scene.add(
+        new T.Mesh(new T.PlaneGeometry(), new T.MeshBasicMaterial({ map: otherTexture })),
+      );
+      const next = new T.Mesh(geometry, material);
+      view.setObject(next);
+      // Wrapping the current subject does not remove it or its resources.
+      const wrapper = new T.Group();
+      wrapper.add(next);
+      view.setObject(wrapper);
+      document.querySelector('#host').style.setProperty('--ve-blue', '#00ff00');
+    });
+    await page.waitForFunction(() => view.palette.blue.getHexString() === '00ff00');
+    assert.equal(await page.evaluate(() => material.color.getHexString()), '00ff00');
+    assert.deepEqual(await page.evaluate(() => resourceCounts), {
+      sharedGeometry: 0,
+      sharedTexture: 0,
+      otherTexture: 0,
+      sharedMaterial: 0,
+      oldGeometry: 1,
+      oldMaterial: 1,
+    });
+    const releases = await page.evaluate(() => {
+      view.dispose();
+      view.dispose();
+      return resourceCounts;
+    });
+    assert(
+      Object.values(releases).every((count) => count === 1),
+      JSON.stringify(releases),
+    );
+  } finally {
+    await browser.close();
+  }
+});
 
 test('3D annotations stay readable, attached and non-intercepting during orbit and pan', async () => {
   const source = await mkdtemp(join(tmpdir(), 'story-annotations-'));

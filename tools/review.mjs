@@ -21,7 +21,7 @@ const escape = (text) =>
   );
 
 /** Review samples are derived from the actual word intervals, never a second timeline. */
-export function reviewTimes(cue, duration) {
+function reviewTimes(cue, duration) {
   const span = cue.end - cue.start;
   return [
     ...new Set([

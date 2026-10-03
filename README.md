@@ -55,6 +55,7 @@ PNG/MP4 используют Chromium, MP4 также требует FFmpeg. `--
 ## Проверка и навык
 
 ```sh
+npm run build          # свежие dist/ и site/ для проверок
 npm run check
 npm test
 npm run test:tools      # сценарий озвучки и структура SVG, без загрузки моделей

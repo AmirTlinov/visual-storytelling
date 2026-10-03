@@ -110,7 +110,7 @@ export function observeBrowser({ targets }) {
       });
     }
   }
-  function tick(t) {
+  function tick() {
     if (!active) return;
     // Callback execution can lag behind the rAF frame timestamp under main-thread load.
     const observed = performance.now();

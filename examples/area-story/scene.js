@@ -429,15 +429,23 @@ window.galleryReady = (async () => {
   });
   root.scene = {
     duration: timing.duration,
+    get currentTime() {
+      return player.currentTime;
+    },
+    play: player.player.play,
     seek: player.seek,
     pause: player.pause,
+    setReduced: player.setReduced,
+    snapshot: () => ({ ...model, time: player.currentTime, formulas }),
     review: player.review,
     dispose() {
+      if (abort.signal.aborted) return;
       abort.abort();
       ui.dispose();
       player.dispose();
       measured.dispose();
       root.replaceChildren();
+      delete root.scene;
     },
   };
 })().catch((error) => {

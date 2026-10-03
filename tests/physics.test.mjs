@@ -155,8 +155,62 @@ test('a rigid pose preserves world-space vertices inside a rotated, stretched pa
       .add(position);
     assert.ok(vertex.applyMatrix4(mesh.matrixWorld).distanceTo(expected) < 1e-10);
   }
+  const displayed = Array.from({ length: vertices.count }, (_, i) =>
+    new Vector3().fromBufferAttribute(vertices, i).applyMatrix4(mesh.matrixWorld),
+  );
   pose.dispose();
+  mesh.updateWorldMatrix(true, false);
+  assert.equal(
+    mesh.matrixAutoUpdate,
+    false,
+    'retain the exact sheared pose after releasing physics',
+  );
+  for (let i = 0; i < vertices.count; i++)
+    assert.ok(
+      new Vector3()
+        .fromBufferAttribute(vertices, i)
+        .applyMatrix4(mesh.matrixWorld)
+        .distanceTo(displayed[i]) < 1e-10,
+    );
+  mesh.geometry.dispose();
+  mesh.material.dispose();
+});
+
+test('releasing a decomposable rigid pose preserves the pose and restores authored controls', () => {
+  const parent = new Group(),
+    mesh = new Mesh(new BoxGeometry(1, 2, 3));
+  parent.scale.setScalar(2);
+  parent.rotation.set(0.2, 0.4, 0.1);
+  mesh.rotation.set(0.3, 0.7, 0.2);
+  parent.add(mesh);
+  const pose = meshPose(mesh);
+  pose.update(new Vector3(4, 5, 6), new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), 0.9));
+  mesh.updateWorldMatrix(true, false);
+  const vertices = mesh.geometry.getAttribute('position');
+  const displayed = Array.from({ length: vertices.count }, (_, i) =>
+    new Vector3().fromBufferAttribute(vertices, i).applyMatrix4(mesh.matrixWorld),
+  );
+  pose.dispose();
+  mesh.updateWorldMatrix(true, false);
   assert.equal(mesh.matrixAutoUpdate, true);
+  for (let i = 0; i < vertices.count; i++)
+    assert.ok(
+      new Vector3()
+        .fromBufferAttribute(vertices, i)
+        .applyMatrix4(mesh.matrixWorld)
+        .distanceTo(displayed[i]) < 1e-10,
+    );
+  mesh.position.x += 1;
+  mesh.updateWorldMatrix(true, false);
+  assert.ok(
+    Math.abs(
+      new Vector3()
+        .fromBufferAttribute(vertices, 0)
+        .applyMatrix4(mesh.matrixWorld)
+        .distanceTo(displayed[0]) - 2,
+    ) < 1e-10,
+    'ordinary authored movement remains active after releasing physics',
+  );
   mesh.geometry.dispose();
   mesh.material.dispose();
 });

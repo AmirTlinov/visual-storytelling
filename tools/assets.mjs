@@ -1,7 +1,7 @@
 import { extname } from 'node:path';
 
 /** Resource types shared by scene building, the local server and offline packaging. */
-export const mediaTypes = {
+const mediaTypes = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript',
   '.css': 'text/css',

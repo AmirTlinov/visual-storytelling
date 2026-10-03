@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { readFile, writeFile, mkdir, readdir, cp, rm, access } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, cp, access } from 'node:fs/promises';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -177,9 +177,6 @@ else if (command === 'examples') {
     }
 } else if (command === 'build') {
   const output = values.out ? resolve(values.out) : join(destination, 'dist');
-  if (output === destination)
-    throw new Error('The build output must be separate from scene sources');
-  if (!values.out) await rm(output, { recursive: true, force: true });
   await buildScene(destination, output, { cdn: values.cdn });
   console.log(output);
 } else if (command === 'dev') {

@@ -1,13 +1,133 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, cp, symlink, readdir } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 import { buildScene } from '../tools/build-pages.mjs';
 import { packDirectory } from '../tools/standalone.mjs';
 import { serve } from '../tools/site.mjs';
+
+test('CLI scene builds preserve the prior delivery on failure and remove stale assets on success', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'story-scene-build-'));
+  const source = join(directory, 'source');
+  const cli = fileURLToPath(new URL('../tools/scene.mjs', import.meta.url));
+  const run = (...args) => promisify(execFile)(process.execPath, [cli, 'build', source, ...args]);
+  try {
+    await mkdir(source);
+    const html =
+      '<!doctype html><html><head></head><body><script type="module">window.answer = 42;</script></body></html>';
+    await writeFile(join(source, 'index.html'), html);
+    await writeFile(join(source, 'old.json'), '{}');
+    await run();
+    const before = await readFile(join(source, 'dist/index.js'), 'utf8');
+    await writeFile(
+      join(source, 'index.html'),
+      html.replace('window.answer = 42;', 'import "./missing.js";'),
+    );
+    await assert.rejects(run());
+    assert.equal(await readFile(join(source, 'dist/index.js'), 'utf8'), before);
+    await writeFile(join(source, 'index.html'), html);
+    await rm(join(source, 'old.json'));
+    await run();
+    await assert.rejects(readFile(join(source, 'dist/old.json')), { code: 'ENOENT' });
+    await assert.rejects(run('--out', directory), /must not contain scene sources/);
+    await symlink(directory, join(directory, 'alias'), 'dir');
+    await assert.rejects(
+      promisify(execFile)(process.execPath, [
+        cli,
+        'build',
+        join(directory, 'alias/source'),
+        '--out',
+        directory,
+      ]),
+      /must not contain scene sources/,
+    );
+    assert.equal(await readFile(join(source, 'index.html'), 'utf8'), html);
+    assert.equal(
+      (await readdir(source)).some((name) => name.startsWith('.visual-story-build-')),
+      false,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('a failed package build preserves the last complete delivery', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'story-package-build-'));
+  const root = fileURLToPath(new URL('../', import.meta.url));
+  const run = () =>
+    promisify(execFile)(process.execPath, ['tools/build-package.mjs'], { cwd: directory });
+  try {
+    for (const folder of ['tools', 'src/assets', 'src/styles'])
+      await mkdir(join(directory, folder), { recursive: true });
+    for (const file of ['build-package.mjs', 'api.mjs', 'build-output.mjs'])
+      await cp(join(root, 'tools', file), join(directory, 'tools', file));
+    await symlink(join(root, 'node_modules'), join(directory, 'node_modules'), 'dir');
+    const put = (name, data) => writeFile(join(directory, name), data);
+    await put(
+      'package.json',
+      JSON.stringify({
+        name: 'package-build-fixture',
+        type: 'module',
+        exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' } },
+      }),
+    );
+    await put(
+      'tsconfig.build.json',
+      JSON.stringify({
+        compilerOptions: {
+          target: 'ES2022',
+          module: 'NodeNext',
+          moduleResolution: 'NodeNext',
+          rootDir: 'src',
+          outDir: 'dist',
+          declaration: true,
+          strict: true,
+          types: [],
+        },
+        include: ['src'],
+      }),
+    );
+    await put('src/index.ts', 'export const answer: number = 42;');
+    await put('src/assets/voice.wav', 'source asset');
+    await put('src/styles/theme.css', ':root { color: black; }');
+    await put('src/style.css', '@import "./styles/theme.css";');
+    await run();
+    const files = [
+      'index.js',
+      'index.d.ts',
+      'api.json',
+      'style.css',
+      'styles/theme.css',
+      'assets/voice.wav',
+    ];
+    const before = await Promise.all(
+      files.map((file) => readFile(join(directory, 'dist', file), 'utf8')),
+    );
+    assert.deepEqual(JSON.parse(before[2]).modules, { '.': { answer: 'index.d.ts' } });
+    await put('src/index.ts', 'export const answer: number = "invalid";');
+    await assert.rejects(run());
+    assert.deepEqual(
+      await Promise.all(files.map((file) => readFile(join(directory, 'dist', file), 'utf8'))),
+      before,
+    );
+    assert.equal(
+      (await readdir(directory)).some((name) => name.startsWith('.visual-story-build-')),
+      false,
+    );
+    await put('dist/obsolete.js', 'old output');
+    await put('src/index.ts', 'export const answer: number = 43;');
+    await run();
+    assert.match(await readFile(join(directory, 'dist/index.js'), 'utf8'), /43/);
+    await assert.rejects(readFile(join(directory, 'dist/obsolete.js')), { code: 'ENOENT' });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('nested scene assets and data scripts survive building, serving and offline packaging', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'story-package-'));

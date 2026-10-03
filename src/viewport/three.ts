@@ -198,24 +198,40 @@ function mount(
     controls.update();
     invalidate();
   }
-  function release(target?: ThreeKit.Object3D) {
+  function resources(target?: ThreeKit.Object3D, exclude?: ThreeKit.Object3D) {
     const geometries = new Set<ThreeKit.BufferGeometry>(),
       mats = new Set<Material>(),
       textures = new Set<Texture>();
-    target?.traverse((node) => {
+    const collect = (node: ThreeKit.Object3D) => {
+      if (node === exclude) return;
       const n = node as ThreeKit.Mesh;
       if (n.geometry) geometries.add(n.geometry);
       for (const m of Array.isArray(n.material) ? n.material : n.material ? [n.material] : [])
         mats.add(m);
-    });
-    for (const m of mats) {
+      // A scene background or environment can also retain a material's texture.
+      for (const value of Object.values(node))
+        if (value && typeof value === 'object' && 'isTexture' in value && value.isTexture)
+          textures.add(value as Texture);
+      node.children.forEach(collect);
+    };
+    if (target) collect(target);
+    for (const m of mats)
       for (const value of Object.values(m))
         if (value && typeof value === 'object' && 'isTexture' in value && value.isTexture)
           textures.add(value as Texture);
+    return { geometries, mats, textures };
+  }
+  function release(target?: ThreeKit.Object3D) {
+    const removed = resources(target),
+      retained = resources(scene, target);
+    for (const m of removed.mats) {
+      if (retained.mats.has(m)) continue;
       materials.delete(m as ColorMaterial);
       m.dispose();
     }
-    for (const value of [...textures, ...geometries]) value.dispose();
+    for (const texture of removed.textures) if (!retained.textures.has(texture)) texture.dispose();
+    for (const geometry of removed.geometries)
+      if (!retained.geometries.has(geometry)) geometry.dispose();
   }
   canvas.addEventListener(
     'webglcontextlost',
@@ -252,14 +268,17 @@ function mount(
     setObject(next: ThreeKit.Object3D, { fitView = true } = {}) {
       if (object === next) return;
       next.removeFromParent();
-      if (object) {
+      scene.add(next);
+      let retained = false;
+      for (let node = object; node; node = node.parent ?? undefined)
+        if (node === next) retained = true;
+      if (object && !retained) {
         labels.dispose(object);
         for (const remove of [...removals]) remove(object);
-        scene.remove(object);
+        object.removeFromParent();
         release(object);
       }
       object = next;
-      scene.add(next);
       if (fitView) fit(next);
       invalidate();
     },

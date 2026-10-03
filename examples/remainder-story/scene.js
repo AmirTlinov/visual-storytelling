@@ -250,17 +250,27 @@ window.galleryReady = (async () => {
       segments: stops.map(({ time, label }) => ({ start: time, text: label })),
     },
   });
+  let disposed = false;
   root.scene = {
     duration: timing.duration,
+    get currentTime() {
+      return player.currentTime;
+    },
+    play: player.player.play,
     seek: player.seek,
     pause: player.pause,
+    setReduced: player.setReduced,
+    snapshot: () => ({ count, divisor, groupsCount, remainder, time: player.currentTime }),
     review: player.review,
     dispose() {
+      if (disposed) return;
+      disposed = true;
       ui.dispose();
       player.dispose();
       measured.dispose();
       animation?.kill();
       root.replaceChildren();
+      delete root.scene;
     },
   };
 })().catch((error) => {

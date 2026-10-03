@@ -122,6 +122,7 @@ function mount(svg: SVGSVGElement, { onInteract = () => {} } = {}) {
   );
   camera.syncViewport();
   const observer = new ResizeObserver(() => {
+    if (!camera.size.w || !camera.size.h) return;
     const old = camera.viewportSize,
       pose = camera.matrix;
     camera.syncViewport();
