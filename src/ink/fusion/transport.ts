@@ -4,6 +4,19 @@ export type InkPath = readonly InkPoint[];
 export interface InkRoute {
   source: 0 | 1;
   target: number;
+  origin: number;
+  text?: {
+    from: readonly [number, number];
+    to: readonly [number, number];
+    glyph: number;
+    origin: number;
+    same: boolean;
+    word: number;
+    originWord: number;
+    wordSame: boolean;
+    fromWord: readonly [number, number];
+    toWord: readonly [number, number];
+  };
   from: InkPoint[];
   to: InkPoint[];
 }
@@ -81,6 +94,7 @@ export function inkRoutes(
   first: readonly InkPath[],
   second: readonly InkPath[],
   target: readonly InkPath[],
+  local = false,
 ): InkRoute[] {
   const source = [
     ...first.map((path) => ({ path, source: 0 as const })),
@@ -93,7 +107,7 @@ export function inkRoutes(
   // Normalize each word into its own half of the destination. This preserves reading order.
   function extent(paths: readonly InkPath[]) {
     const xs = paths.flatMap((path) => path.map((p) => p[0]));
-    return [Math.min(...xs), Math.max(...xs)] as const;
+    return xs.length ? ([Math.min(...xs), Math.max(...xs)] as const) : ([0, 1] as const);
   }
   const bounds = [extent(first), extent(second)],
     final = extent(target);
@@ -112,7 +126,10 @@ export function inkRoutes(
             (a[k]![1] - centers[i]![1] - b[k]![1] + destinations[j]![1]) ** 2) /
           12;
       return (
-        (rank - destinationRank) ** 2 * 40000 +
+        (local
+          ? (centers[i]![0] - destinations[j]![0]) ** 2 +
+            (centers[i]![1] - destinations[j]![1]) ** 2
+          : (rank - destinationRank) ** 2 * 40000) +
         shape +
         Math.log((length(path) + 3) / (length(to) + 3)) ** 2 * 180
       );
@@ -231,6 +248,6 @@ export function inkRoutes(
   return pairs.map(([i, j]) => {
     const b = resample(target[j]!, counts[j]!),
       a = align(b, resample(pieces.get(`${i}:${j}`)!, counts[j]!));
-    return { source: source[i]!.source, target: j, from: a, to: b };
+    return { source: source[i]!.source, origin: i, target: j, from: a, to: b };
   });
 }

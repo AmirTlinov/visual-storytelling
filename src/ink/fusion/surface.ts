@@ -1,5 +1,8 @@
-import { fusionShape, fusionText, type FusionShape, type FusionPose } from './shape.js';
-import { inkRoutes, type InkRoute, type InkPoint } from './transport.js';
+import { fusionShape, type FusionShape, type FusionPose } from './shape.js';
+import { fusionText } from './text.js';
+import { textRoutes } from './text-routing.js';
+import { inkRoutes } from './transport.js';
+import { inkMotion, textProgress } from './motion.js';
 import { fusionFragment, fusionVertex, strokeFragment, strokeVertex } from './shader.js';
 
 export interface FusionFrame {
@@ -19,7 +22,7 @@ export interface FusionOptions {
 
 /** A demand-rendered ink surface. Correspondences belong here; time belongs to the caller. */
 export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) {
-  const width = options.width ?? 840,
+  let width = options.width ?? 840,
     height = options.height ?? 300;
   if (!(width > 0 && height > 0) || !Number.isFinite(width + height))
     throw new Error('Fusion scene dimensions must be positive and finite');
@@ -45,9 +48,10 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
   let disposed = false,
     lost = false,
     previous: FusionFrame | undefined;
-  let routes: InkRoute[] = [],
-    receivers: InkRoute[][] = [],
-    ink = [0, 0, 0];
+  let motion: ReturnType<typeof inkMotion> | undefined,
+    ink = [0, 0, 0],
+    textScale = 1,
+    textShapes = false;
   let stroke: WebGLProgram, fusion: WebGLProgram;
   let quad: WebGLBuffer, segments: WebGLBuffer;
   let strokeVAO: WebGLVertexArrayObject, fusionVAO: WebGLVertexArrayObject;
@@ -55,7 +59,6 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
   let floatingFields = false;
   let surfaceWidth = 0,
     surfaceHeight = 0;
-  let vertices: [Float32Array, Float32Array] = [new Float32Array(), new Float32Array()];
   let strokeUniforms: Record<string, WebGLUniformLocation | null>,
     fusionUniforms: Record<string, WebGLUniformLocation | null>;
   function program(vertex: string, fragment: string) {
@@ -156,20 +159,10 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
         throw new Error('Could not allocate ink surface');
     });
   }
-  function transformed(point: InkPoint, pose: FusionPose): InkPoint {
-    const s = pose.scale ?? 1,
-      c = Math.cos(pose.rotation ?? 0),
-      n = Math.sin(pose.rotation ?? 0);
-    return [
-      pose.x + (point[0] * c - point[1] * n) * s,
-      pose.y + (point[0] * n + point[1] * c) * s,
-      point[2] * s,
-    ];
-  }
   function render(frame: FusionFrame) {
     if (disposed) return;
     previous = frame;
-    if (lost || !routes.length) return;
+    if (lost || !motion) return;
     const target = frame.target ?? { x: 0, y: 0 };
     if (
       [...frame.sources, target].some(
@@ -181,42 +174,10 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
     if (!Number.isFinite((frame.morph ?? 0) + (frame.tension ?? 28)))
       throw new Error('Fusion progress and tension must be finite');
     const morph = Math.max(0, Math.min(1, frame.morph ?? 0));
-    const tension = Math.max(0, Math.min(64, frame.tension ?? 28)) * (1 - morph) ** 2;
+    const settled = textShapes ? textProgress(morph) : morph;
+    const tension = Math.max(0, Math.min(64, frame.tension ?? 28)) * textScale * (1 - settled) ** 2;
     const band = Math.max(8, tension + 2);
-    const cursor = [0, 0];
-    // Strokes sharing a destination become one continuous receiver curve during
-    // arrival. They do not travel as several overprinted copies until the last frame.
-    const capture = Math.min(1, morph / 0.65);
-    const gather = capture * capture * (3 - 2 * capture);
-    for (const group of receivers) {
-      const last: (InkPoint | undefined)[] = group.map(() => undefined);
-      for (let i = 0; i < group[0]!.from.length; i++) {
-        const origins = group.map((r) => transformed(r.from[i]!, frame.sources[r.source]));
-        const meanX = origins.reduce((sum, p) => sum + p[0], 0) / origins.length;
-        const meanY = origins.reduce((sum, p) => sum + p[1], 0) / origins.length;
-        const b = transformed(group[0]!.to[i]!, target);
-        for (let r = 0; r < group.length; r++) {
-          const route = group[r]!,
-            a = origins[r]!;
-          const ax = a[0] + (meanX - a[0]) * gather,
-            ay = a[1] + (meanY - a[1]) * gather;
-          const point: InkPoint = [
-            ax + (b[0] - ax) * morph,
-            ay + (b[1] - ay) * morph,
-            a[2] + (b[2] - a[2]) * morph,
-          ];
-          const previousPoint = last[r];
-          if (previousPoint) {
-            vertices[route.source].set(
-              [previousPoint[0], previousPoint[1], point[0], point[1], previousPoint[2], point[2]],
-              cursor[route.source],
-            );
-            cursor[route.source]! += 6;
-          }
-          last[r] = point;
-        }
-      }
-    }
+    const vertices = motion(frame.sources, target, morph);
     const bounds = parent.getBoundingClientRect(),
       ratio = Math.min(devicePixelRatio || 1, 2);
     resize(
@@ -237,7 +198,7 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
       gl!.clear(gl!.COLOR_BUFFER_BIT);
       gl!.bindBuffer(gl!.ARRAY_BUFFER, segments);
       gl!.bufferData(gl!.ARRAY_BUFFER, vertices[i]!, gl!.DYNAMIC_DRAW);
-      gl!.drawArraysInstanced(gl!.TRIANGLES, 0, 6, cursor[i]! / 6);
+      gl!.drawArraysInstanced(gl!.TRIANGLES, 0, 6, vertices[i]!.length / 6);
     }
     gl!.disable(gl!.BLEND);
     gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
@@ -299,16 +260,28 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
   return {
     canvas,
     setShapes(first: FusionShape, second: FusionShape, target: FusionShape) {
-      routes = inkRoutes(first.paths, second.paths, target.paths);
-      receivers = target.paths.map((_, i) => routes.filter((route) => route.target === i));
-      vertices = [0, 1].map(
-        (source) =>
-          new Float32Array(
-            routes
-              .filter((r) => r.source === source)
-              .reduce((n, r) => n + (r.from.length - 1) * 6, 0),
-          ),
-      ) as [Float32Array, Float32Array];
+      const allText = first.text && second.text && target.text;
+      textShapes = Boolean(allText);
+      motion = inkMotion(
+        allText
+          ? textRoutes(first, second, target)
+          : inkRoutes(first.paths, second.paths, target.paths),
+      );
+      textScale = allText
+        ? Math.min(
+            1,
+            ...[first, second, target].flatMap((shape) =>
+              shape.text!.glyphs.map((g) => g.size / 126),
+            ),
+          )
+        : 1;
+    },
+    setSize(w: number, h: number) {
+      if (!(w > 0 && h > 0) || !Number.isFinite(w + h))
+        throw new Error('Fusion scene dimensions must be positive and finite');
+      width = w;
+      height = h;
+      redraw();
     },
     render,
     dispose() {
@@ -327,7 +300,7 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
       gl!.deleteVertexArray(fusionVAO);
       gl!.deleteProgram(stroke);
       gl!.deleteProgram(fusion);
-      routes = [];
+      motion = undefined;
       previous = undefined;
       canvas.remove();
       probe.remove();

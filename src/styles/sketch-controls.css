@@ -43,3 +43,5 @@
 .ve-scene .ve-choices input:focus-visible+span::after{filter:drop-shadow(0 4px var(--ve-pencil))}
 .ve-scene .ve-control:has(input:disabled){opacity:.45}
 @media(prefers-reduced-motion:reduce){.ve-scene .ve-control-toggle input::after{transition:none}}
+
+.ve-scene .ve-control textarea{width:100%;min-height:90px;padding:6px 0;border:0;background:transparent;color:var(--ve-ink);font:inherit;line-height:1.4;resize:vertical;outline-offset:4px}

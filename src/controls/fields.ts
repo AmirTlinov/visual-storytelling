@@ -2,7 +2,16 @@ export type ControlValue = string | number | boolean;
 export interface ControlParameter {
   key?: string;
   label: string;
-  type?: 'range' | 'number' | 'text' | 'stepper' | 'toggle' | 'checkbox' | 'select' | 'choice';
+  type?:
+    | 'range'
+    | 'number'
+    | 'text'
+    | 'textarea'
+    | 'stepper'
+    | 'toggle'
+    | 'checkbox'
+    | 'select'
+    | 'choice';
   value: ControlValue;
   min?: number;
   max?: number;
@@ -25,7 +34,7 @@ const make = <K extends keyof HTMLElementTagNameMap>(
   return el;
 };
 let serial = 0;
-const inkField = (input: HTMLInputElement) => {
+const inkField = (input: HTMLInputElement | HTMLTextAreaElement) => {
   const wrapper = make('span', { class: 've-field' });
   wrapper.append(input);
   return wrapper;
@@ -247,6 +256,7 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
   );
   let value = p.value;
   let inputs: HTMLInputElement[] = [],
+    textarea: HTMLTextAreaElement | undefined,
     output: HTMLOutputElement | undefined,
     select: ReturnType<typeof selectControl> | undefined;
   element.append(title);
@@ -277,6 +287,10 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
   } else if (type === 'select') {
     select = selectControl(p, title, emit, listen);
     element.append(select.element);
+  } else if (type === 'textarea') {
+    textarea = make('textarea', { rows: 3, 'aria-label': p.label, spellcheck: 'false' });
+    textarea.addEventListener('input', () => emit(textarea!.value), listen);
+    element.append(inkField(textarea));
   } else if (type === 'text') {
     const input = make('input', {
       type: 'text',
@@ -344,6 +358,10 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
   } else throw new Error(`Unknown control type: ${type}`);
   function update() {
     select?.setValue(value);
+    if (textarea) {
+      textarea.value = String(value);
+      textarea.disabled = Boolean(p.disabled);
+    }
     for (const input of inputs) {
       if (type === 'choice') input.checked = input.value === String(value);
       else if (type === 'toggle' || type === 'checkbox') input.checked = Boolean(value);

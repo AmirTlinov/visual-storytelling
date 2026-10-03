@@ -18,10 +18,22 @@ window.galleryReady = (async () => {
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
   const clock = transport({ duration: 4 });
   const view = InkFusion.mount(stage, { width: 840, height: 300, color: 'var(--ve-blue)' });
-  let words = ['свет', 'тень', 'объём'],
+  const presets = {
+    words: ['свет', 'тень', 'объём'],
+    sentences: ['Свет раскрывает форму.', 'Тень придаёт глубину.', 'Свет и тень создают объём.'],
+    paragraphs: [
+      'Свет очерчивает форму.\nМы видим границы предмета.',
+      'Тень показывает глубину.\nМы чувствуем расстояние.',
+      'Свет и тень создают объём.\nФорма и глубина складываются\nв единый образ.',
+    ],
+  };
+  let words = [...presets.words],
     scenario = 'words',
     tension = 36;
   let shapes,
+    layout,
+    sceneWidth = 0,
+    layoutFrame = 0,
     ready = false,
     timer = 0,
     disposed = false;
@@ -32,12 +44,12 @@ window.galleryReady = (async () => {
   };
   const persistence = widgetState('ink-fusion', restore);
   const fields = ['Первый текст', 'Второй текст', 'Третий текст'].map((label, i) => {
-    const field = SketchControls.field({ type: 'text', label, value: words[i] }, () => {
+    const field = SketchControls.field({ type: 'textarea', label, value: words[i] }, () => {
       clock.pause();
       clearTimeout(timer);
       timer = setTimeout(changeTexts, 160);
     });
-    field.element.querySelector('input').maxLength = 32;
+    field.element.querySelector('textarea').maxLength = 2000;
     root.querySelector('.fusion-inputs').append(field.element);
     return field;
   });
@@ -65,6 +77,8 @@ window.galleryReady = (async () => {
       value: scenario,
       options: [
         { value: 'words', label: 'Слова' },
+        { value: 'sentences', label: 'Предложения' },
+        { value: 'paragraphs', label: 'Абзацы' },
         { value: 'letters', label: 'Буквы' },
         { value: 'drops', label: 'Капли' },
       ],
@@ -74,6 +88,10 @@ window.galleryReady = (async () => {
       timer = 0;
       clock.pause();
       scenario = String(value);
+      if (presets[scenario]) {
+        words = [...presets[scenario]];
+        fields.forEach((field, i) => field.setValue(words[i]));
+      }
       rebuild();
       clock.seek(0);
       save();
@@ -86,7 +104,7 @@ window.galleryReady = (async () => {
     if (!ready || disposed) return;
     persistence.save({
       modelContent: { type: 'ink-fusion', texts: words, tension, example: scenario },
-      privateContent: { time: clock.state.time, motionRevision: 2 },
+      privateContent: { time: clock.state.time, motionRevision: 3 },
     });
   }
   function changeTexts() {
@@ -94,8 +112,10 @@ window.galleryReady = (async () => {
     const next = fields.map((field) => String(field.value).trim());
     if (next.some((text) => !text)) return;
     words = next;
-    scenario = 'words';
-    cases.setValue(scenario);
+    if (!presets[scenario]) {
+      scenario = 'words';
+      cases.setValue(scenario);
+    }
     rebuild();
     clock.seek(0);
     save();
@@ -107,6 +127,9 @@ window.galleryReady = (async () => {
     }
   }
   function rebuild() {
+    sceneWidth = Math.max(240, stage.getBoundingClientRect().width);
+    const block =
+      Boolean(presets[scenario]) && words.some((text) => /\s/.test(text) || text.length > 14);
     if (scenario === 'drops') {
       const drop = (radius) =>
         InkFusion.shape(radius * 2 + 112, radius * 2 + 112, (context) => {
@@ -118,16 +141,56 @@ window.galleryReady = (async () => {
       equation.textContent = 'две капли → одна';
     } else {
       const text = scenario === 'letters' ? ['о', 'о', 'ю'] : words;
-      const size = scenario === 'letters' ? 220 : 126;
+      const size =
+        scenario === 'letters'
+          ? Math.min(180, sceneWidth * 0.28)
+          : block
+            ? sceneWidth < 480
+              ? 25
+              : 30
+            : Math.min(96, sceneWidth * 0.17);
       shapes = text.map((word, i) =>
-        InkFusion.text(word, { size: i === 2 ? size * 1.22 : size, maxWidth: i === 2 ? 610 : 285 }),
+        InkFusion.text(word, {
+          size: i === 2 && !block ? size * 1.15 : size,
+          maxWidth: block || i === 2 ? sceneWidth - 36 : (sceneWidth - 84) / 2,
+          align: block ? 'left' : 'center',
+        }),
       );
-      equation.textContent = `${text[0]} + ${text[1]} → ${text[2]}`;
+      equation.textContent = block ? 'Два текста → один' : `${text[0]} + ${text[1]} → ${text[2]}`;
     }
-    view.canvas.setAttribute('aria-label', equation.textContent);
+    view.canvas.setAttribute(
+      'aria-label',
+      scenario === 'drops' || scenario === 'letters'
+        ? equation.textContent
+        : `${words[0]} + ${words[1]} → ${words[2]}`,
+    );
+    const gap = block ? 68 : 64;
+    layout = block
+      ? {
+          sources: [
+            { x: 0, y: -(shapes[1].bounds.height + gap) / 2 },
+            { x: 0, y: (shapes[0].bounds.height + gap) / 2 },
+          ],
+          block: true,
+          height:
+            Math.max(
+              shapes[0].bounds.height + shapes[1].bounds.height + gap,
+              shapes[2].bounds.height,
+            ) + 64,
+        }
+      : {
+          sources: [
+            { x: -(shapes[1].bounds.width + gap) / 2, y: 0 },
+            { x: (shapes[0].bounds.width + gap) / 2, y: 0 },
+          ],
+          block: false,
+          height: Math.max(215, ...shapes.map((shape) => shape.bounds.height + 100)),
+        };
+    stage.style.height = `${layout.height}px`;
+    view.setSize(sceneWidth, layout.height);
     view.setShapes(...shapes);
     fields.forEach((field) => {
-      field.element.hidden = scenario !== 'words';
+      field.element.hidden = !presets[scenario];
     });
     render(clock.state.time);
   }
@@ -135,13 +198,11 @@ window.galleryReady = (async () => {
     if (!shapes || disposed) return;
     const t = time / clock.state.duration;
     const approach = smooth(0.08, 0.34, t);
-    const a = -(shapes[0].bounds.width / 2 + 66 - 62 * approach);
-    const b = shapes[1].bounds.width / 2 + 66 - 62 * approach;
     view.render({
-      sources: [
-        { x: a, y: 0 },
-        { x: b, y: 0 },
-      ],
+      sources: layout.sources.map((pose, i) => ({
+        x: pose.x + (layout.block ? 0 : (i ? -1 : 1) * 24 * approach),
+        y: pose.y + (layout.block ? (i ? -1 : 1) * 24 * approach : 0),
+      })),
       target: { x: 0, y: 0 },
       tension,
       morph: 1 - (1 - smooth(0.24, 0.67, t)) ** 3,
@@ -156,9 +217,10 @@ window.galleryReady = (async () => {
       model.texts.length === 3 &&
       model.texts.every((text) => typeof text === 'string' && text.trim())
     )
-      words = model.texts.map((text) => text.slice(0, 32));
+      words = model.texts.map((text) => text.slice(0, 2000));
     if (Number.isFinite(model?.tension)) tension = Math.max(0, Math.min(64, model.tension));
-    if (['words', 'letters', 'drops'].includes(model?.example)) scenario = model.example;
+    if (['words', 'sentences', 'paragraphs', 'letters', 'drops'].includes(model?.example))
+      scenario = model.example;
     clearTimeout(timer);
     timer = 0;
     clock.pause();
@@ -167,7 +229,7 @@ window.galleryReady = (async () => {
     cases.setValue(scenario);
     rebuild();
     if (
-      snapshot.privateContent?.motionRevision === 2 &&
+      snapshot.privateContent?.motionRevision === 3 &&
       Number.isFinite(snapshot.privateContent?.time)
     )
       clock.seek(snapshot.privateContent.time);
@@ -185,6 +247,14 @@ window.galleryReady = (async () => {
       save();
     },
   });
+  const responsive = new ResizeObserver(() => {
+    if (disposed || Math.abs(stage.getBoundingClientRect().width - sceneWidth) < 1) return;
+    cancelAnimationFrame(layoutFrame);
+    layoutFrame = requestAnimationFrame(() => {
+      if (ready && !disposed) rebuild();
+    });
+  });
+  responsive.observe(stage);
   let wasPlaying = false;
   const unsubscribe = clock.subscribe((state) => {
     render(state.time);
@@ -222,6 +292,8 @@ window.galleryReady = (async () => {
     dispose() {
       disposed = true;
       clearTimeout(timer);
+      cancelAnimationFrame(layoutFrame);
+      responsive.disconnect();
       abort.abort();
       unsubscribe();
       controls.dispose();
@@ -233,7 +305,7 @@ window.galleryReady = (async () => {
       view.dispose();
     },
   };
-  if ((!restored || saved?.privateContent?.motionRevision !== 2) && !reduced.matches)
+  if ((!restored || saved?.privateContent?.motionRevision !== 3) && !reduced.matches)
     void clock.play();
 })().catch((error) => {
   document.querySelector('.fusion-error').textContent = error.message;
