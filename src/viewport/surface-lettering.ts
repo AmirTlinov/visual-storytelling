@@ -45,6 +45,10 @@ export function surfaceLettering(
       transparent: true,
       depthWrite: false,
       alphaTest: 0.02,
+      // Separate ink from its supporting face in depth-buffer units at every camera distance.
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -4,
     }),
     options.tone ?? 'ink',
   );

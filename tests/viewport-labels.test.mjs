@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
+import { PNG } from 'pngjs';
 import { develop } from '../tools/dev.mjs';
 
 test('3D annotations stay readable, attached and non-intercepting during orbit and pan', async () => {
@@ -30,7 +31,9 @@ test('3D annotations stay readable, attached and non-intercepting during orbit a
         view.shot({target: new T.Box3(new T.Vector3(-2,-2,-2), new T.Vector3(2,2,2)), direction:[0,0,1]});
         const number = view.label('−12.34', cube, {face:['front','back']});
         const formula = view.label('ReLU: x < 0 → 0', cube, {tone:'purple', side:'top', frame:{padding:[15,8]}});
-        window.lab = {view, group, number, formula};
+        const cover = new T.Mesh(new T.BoxGeometry(1.1,1.1,.05), view.ink(new T.MeshBasicMaterial(), 'orange'));
+        cover.position.z = .4; cover.visible = false; group.add(cover);
+        window.lab = {view, group, cube, cover, number, formula};
       })();
     `,
     );
@@ -79,6 +82,62 @@ test('3D annotations stay readable, attached and non-intercepting during orbit a
         attachments,
       );
     }
+    // Compare actual glyph pixels with an unobstructed reference at the film's depth range.
+    // Internal visibility flags cannot detect a supporting face erasing parts of the ink.
+    await page.evaluate(() => {
+      lab.view.camera.near = 0.01;
+      lab.view.camera.far = 1000;
+      lab.view.camera.updateProjectionMatrix();
+      lab.cube.scale.setScalar(0.5);
+      lab.formula.show(false);
+    });
+    async function letteringPixels(depthTest) {
+      await page.evaluate((depthTest) => {
+        for (const plane of lab.number.object.children) plane.material.depthTest = depthTest;
+        lab.view.invalidate();
+      }, depthTest);
+      await page.evaluate(
+        () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
+      );
+      return PNG.sync.read(await page.locator('canvas').screenshot()).data;
+    }
+    for (const distance of [17, 30, 50]) {
+      for (const angle of [0.35, 0.65, 2.6]) {
+        await page.evaluate(
+          ({ distance, angle }) => {
+            lab.group.rotation.set(0.2, angle, 0);
+            lab.view.camera.position.set(0, 0, distance);
+            lab.view.controls.target.set(0, 0, 0);
+            lab.view.controls.update();
+          },
+          { distance, angle },
+        );
+        const actual = await letteringPixels(true),
+          reference = await letteringPixels(false);
+        assert(
+          actual.equals(reference),
+          `Ink lost against its own face: distance ${distance}, angle ${angle}`,
+        );
+      }
+    }
+    // A genuinely closer object must still cover the inscription.
+    await page.evaluate(() => {
+      lab.group.rotation.set(0, 0, 0);
+      lab.view.camera.position.set(0, 0, 17);
+      lab.view.controls.update();
+      lab.cover.visible = true;
+    });
+    const covered = await letteringPixels(true);
+    await page.evaluate(() => lab.number.show(false));
+    assert(
+      covered.equals(await letteringPixels(true)),
+      'Ink must remain hidden behind the covering object',
+    );
+    await page.evaluate(() => {
+      lab.number.show(true);
+      lab.formula.show(true);
+      lab.cover.visible = false;
+    });
     await page.evaluate(() => {
       lab.group.visible = false;
       lab.view.invalidate();
