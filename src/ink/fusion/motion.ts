@@ -1,29 +1,26 @@
 import type { FusionPose } from './shape.js';
-import type { InkPoint, InkRoute } from './transport.js';
+import type { InkRoute } from './transport.js';
 
-const smooth = (value: number) => {
-  const t = Math.max(0, Math.min(1, value));
-  return t * t * (3 - 2 * t);
-};
-function transformed(point: InkPoint, pose: FusionPose): InkPoint {
-  const scale = pose.scale ?? 1,
-    c = Math.cos(pose.rotation ?? 0),
-    s = Math.sin(pose.rotation ?? 0);
-  return [
-    pose.x + (point[0] * c - point[1] * s) * scale,
-    pose.y + (point[0] * s + point[1] * c) * scale,
-    point[2] * scale,
-  ];
+export interface InkPatch {
+  readonly source: 0 | 1;
+  /** Contiguous segment ranges in the source's vertex buffer. */
+  readonly ranges: readonly [offset: number, length: number][];
 }
-function mean(points: readonly InkPoint[]): InkPoint {
-  return [
-    points.reduce((s, p) => s + p[0], 0) / points.length,
-    points.reduce((s, p) => s + p[1], 0) / points.length,
-    0,
-  ];
-}
+export type InkVertices = [Float32Array, Float32Array];
 
-/** Glyph motion owns placement; its pen strokes only change inside that glyph. */
+type Pose = { c: number; s: number; x: number; y: number; scale: number };
+const pose = (): Pose => ({ c: 1, s: 0, x: 0, y: 0, scale: 1 });
+function update(out: Pose, input: FusionPose) {
+  out.scale = input.scale ?? 1;
+  out.c = Math.cos(input.rotation ?? 0) * out.scale;
+  out.s = Math.sin(input.rotation ?? 0) * out.scale;
+  out.x = input.x;
+  out.y = input.y;
+}
+const x = (p: Pose, a: number, b: number) => p.c * a - p.s * b;
+const y = (p: Pose, a: number, b: number) => p.s * a + p.c * b;
+
+/** Compile correspondence once. Sampling reuses buffers and transforms each pose once. */
 export function inkMotion(routes: InkRoute[]) {
   const groups = new Map<number, InkRoute[]>(),
     glyphs = new Map<number, InkRoute[]>(),
@@ -31,120 +28,174 @@ export function inkMotion(routes: InkRoute[]) {
   for (const route of routes) {
     if (!groups.has(route.target)) groups.set(route.target, []);
     groups.get(route.target)!.push(route);
-    if (route.text) {
-      if (!glyphs.has(route.text.glyph)) glyphs.set(route.text.glyph, []);
-      if (!words.has(route.text.word)) words.set(route.text.word, []);
-      const wordItems = words.get(route.text.word)!;
-      if (!wordItems.some((r) => r.text!.originWord === route.text!.originWord))
-        wordItems.push(route);
-      const items = glyphs.get(route.text.glyph)!;
-      if (!items.some((r) => r.text!.origin === route.text!.origin)) items.push(route);
+    if (!route.text) continue;
+    for (const [map, id, origin] of [
+      [glyphs, route.text.glyph, 'origin'],
+      [words, route.text.word, 'originWord'],
+    ] as const) {
+      if (!map.has(id)) map.set(id, []);
+      const items = map.get(id)!;
+      if (!items.some((r) => r.text![origin] === route.text![origin])) items.push(route);
     }
   }
-  const vertices = [0, 1].map(
-    (source) =>
-      new Float32Array(
-        routes.filter((r) => r.source === source).reduce((n, r) => n + (r.from.length - 1) * 6, 0),
-      ),
-  ) as [Float32Array, Float32Array];
-  return (sources: readonly [FusionPose, FusionPose], target: FusionPose, morph: number) => {
-    const cursor = [0, 0],
-      carriers = new Map<number, InkPoint>(),
-      wordCarriers = new Map<number, InkPoint>();
-    for (const [id, items] of glyphs) {
-      const same = items.filter((r) => r.text!.same),
-        selected = same.length ? same : items;
-      carriers.set(
-        id,
-        mean(
-          selected.map((r) =>
-            (() => {
-              const a = transformed([...r.text!.from, 0], sources[r.source]),
-                w = transformed([...r.text!.fromWord, 0], sources[r.source]);
-              return [a[0] - w[0], a[1] - w[1], 0] as InkPoint;
-            })(),
-          ),
-        ),
-      );
+  const vertices: InkVertices = [new Float32Array(0), new Float32Array(0)];
+  const counts: [number, number] = [0, 0],
+    patches: InkPatch[] = [];
+  const patchMap = new Map<string, { source: 0 | 1; ranges: [number, number][] }>();
+  // x, y and translation weight for each source. Local vectors have weight zero.
+  function mean(items: InkRoute[], point: (r: InkRoute) => readonly number[], translate = false) {
+    const result = new Float64Array(6);
+    for (const r of items) {
+      const p = point(r),
+        at = r.source * 3;
+      result[at]! += p[0]! / items.length;
+      result[at + 1]! += p[1]! / items.length;
+      result[at + 2]! += translate ? 1 / items.length : 0;
     }
-    for (const [id, items] of words) {
-      const same = items.filter((r) => r.text!.wordSame),
-        selected = same.length ? same : items;
-      wordCarriers.set(
-        id,
-        mean(selected.map((r) => transformed([...r.text!.fromWord, 0], sources[r.source]))),
+    return result;
+  }
+  const carriers = new Map<number, Float64Array>(),
+    wordCarriers = new Map<number, Float64Array>();
+  for (const [id, items] of glyphs) {
+    const same = items.filter((r) => r.text!.same);
+    carriers.set(
+      id,
+      mean(same.length ? same : items, (r) => [
+        r.text!.from[0] - r.text!.fromWord[0],
+        r.text!.from[1] - r.text!.fromWord[1],
+      ]),
+    );
+  }
+  for (const [id, items] of words) {
+    const same = items.filter((r) => r.text!.wordSame);
+    wordCarriers.set(
+      id,
+      mean(same.length ? same : items, (r) => r.text!.fromWord, true),
+    );
+  }
+  const compiled = [...groups.values()].map((group) => {
+    const text = group[0]!.text,
+      n = group[0]!.from.length;
+    const preferred = group.filter((r) => r.text?.same);
+    const selected = preferred.length ? preferred : group;
+    const common = new Float64Array(n * 6),
+      current = new Float64Array(n * 2);
+    for (let i = 0; i < n; i++) {
+      const m = mean(
+        selected,
+        (r) =>
+          text ? [r.from[i]![0] - r.text!.from[0], r.from[i]![1] - r.text!.from[1]] : r.from[i]!,
+        !text,
       );
+      const carrier = text ? carriers.get(text.glyph)! : undefined;
+      for (let j = 0; j < 6; j++) common[i * 6 + j] = m[j]! + (carrier?.[j] ?? 0);
     }
-    for (const group of groups.values()) {
-      const last: (InkPoint | undefined)[] = group.map(() => undefined);
-      const text = group[0]!.text;
-      const gather = smooth(morph / 0.65);
-      const shapeProgress = text ? gather : morph;
-      const placement = morph;
-      const anchors = text
-        ? group.map((r) => transformed([...r.text!.from, 0], sources[r.source]))
-        : [];
-      const finalAnchor = text ? transformed([...text.to, 0], target) : undefined;
-      for (let i = 0; i < group[0]!.from.length; i++) {
-        const origins = group.map((r) => transformed(r.from[i]!, sources[r.source]));
-        const locals = text
-          ? origins.map((p, j): InkPoint => [p[0] - anchors[j]![0], p[1] - anchors[j]![1], p[2]])
-          : origins;
-        const preferred = group.flatMap((r, j) => (r.text?.same ? [locals[j]!] : []));
-        const common = mean(preferred.length ? preferred : locals);
-        const b = transformed(group[0]!.to[i]!, target);
-        for (let r = 0; r < group.length; r++) {
-          const route = group[r]!,
-            a = origins[r]!;
-          let x: number, y: number;
-          if (text) {
-            const anchor = anchors[r]!,
-              carrier = carriers.get(text.glyph)!;
-            const wordAnchor = transformed([...route.text!.fromWord, 0], sources[route.source]);
-            const finalWord = transformed([...text.toWord, 0], target),
-              wordCarrier = wordCarriers.get(text.word)!;
-            const wx = wordAnchor[0] + (wordCarrier[0] - wordAnchor[0]) * gather,
-              wy = wordAnchor[1] + (wordCarrier[1] - wordAnchor[1]) * gather;
-            const ax = anchor[0] - wordAnchor[0],
-              ay = anchor[1] - wordAnchor[1];
-            const cx = ax + (carrier[0] - ax) * gather,
-              cy = ay + (carrier[1] - ay) * gather;
-            const local = locals[r]!,
-              lx = local[0] + (common[0] - local[0]) * gather,
-              ly = local[1] + (common[1] - local[1]) * gather;
-            x =
-              wx +
-              (finalWord[0] - wx) * placement +
-              cx +
-              (finalAnchor![0] - finalWord[0] - cx) * shapeProgress +
-              lx +
-              (b[0] - finalAnchor![0] - lx) * shapeProgress;
-            y =
-              wy +
-              (finalWord[1] - wy) * placement +
-              cy +
-              (finalAnchor![1] - finalWord[1] - cy) * shapeProgress +
-              ly +
-              (b[1] - finalAnchor![1] - ly) * shapeProgress;
-          } else {
-            const ax = a[0] + (common[0] - a[0]) * gather,
-              ay = a[1] + (common[1] - a[1]) * gather;
-            x = ax + (b[0] - ax) * morph;
-            y = ay + (b[1] - ay) * morph;
+    const inputs = group.map((route) => {
+      const offset = counts[route.source]!,
+        length = (route.from.length - 1) * 6;
+      counts[route.source]! += length;
+      const key = route.text
+        ? `${route.source}:${route.text.originWord}:${route.text.word}`
+        : `${route.source}`;
+      if (!patchMap.has(key)) patchMap.set(key, { source: route.source, ranges: [] });
+      patchMap.get(key)!.ranges.push([offset, length]);
+      return { route, offset };
+    });
+    return {
+      inputs,
+      common,
+      current,
+      n,
+      text,
+      word: text ? wordCarriers.get(text.word)! : undefined,
+      to: group[0]!.to,
+    };
+  });
+  patches.push(...patchMap.values());
+  vertices[0] = new Float32Array(counts[0]);
+  vertices[1] = new Float32Array(counts[1]);
+  const poses = [pose(), pose()] as const,
+    destination = pose();
+  function transformedMean(values: Float64Array, at: number, out: Float64Array, offset: number) {
+    const a = poses[0],
+      b = poses[1];
+    out[offset] =
+      x(a, values[at]!, values[at + 1]!) +
+      a.x * values[at + 2]! +
+      x(b, values[at + 3]!, values[at + 4]!) +
+      b.x * values[at + 5]!;
+    out[offset + 1] =
+      y(a, values[at]!, values[at + 1]!) +
+      a.y * values[at + 2]! +
+      y(b, values[at + 3]!, values[at + 4]!) +
+      b.y * values[at + 5]!;
+  }
+  const word = new Float64Array(2);
+  function sample(sources: readonly [FusionPose, FusionPose], target: FusionPose, morph: number) {
+    update(poses[0], sources[0]);
+    update(poses[1], sources[1]);
+    update(destination, target);
+    const phase = Math.max(0, Math.min(1, morph / 0.65));
+    const gather = phase * phase * (3 - 2 * phase);
+    for (const group of compiled) {
+      const s = group.text ? gather : morph;
+      for (let i = 0; i < group.n; i++) transformedMean(group.common, i * 6, group.current, i * 2);
+      let wx = 0,
+        wy = 0,
+        tx = 0,
+        ty = 0;
+      if (group.text) {
+        transformedMean(group.word!, 0, word, 0);
+        wx = word[0]! * (1 - morph) * gather;
+        wy = word[1]! * (1 - morph) * gather;
+        tx = (x(destination, ...group.text.toWord) + destination.x) * (morph - s);
+        ty = (y(destination, ...group.text.toWord) + destination.y) * (morph - s);
+      }
+      const own = (1 - s) * (1 - gather),
+        shared = (1 - s) * gather;
+      for (const { route, offset } of group.inputs) {
+        const p = poses[route.source],
+          buffer = vertices[route.source];
+        let dx = 0,
+          dy = 0;
+        if (group.text) {
+          const weight = (s - morph) * (1 - gather);
+          dx = wx + tx + (x(p, ...route.text!.fromWord) + p.x) * weight;
+          dy = wy + ty + (y(p, ...route.text!.fromWord) + p.y) * weight;
+        }
+        let previousX = 0,
+          previousY = 0,
+          previousRadius = 0,
+          at = offset;
+        for (let i = 0; i < group.n; i++) {
+          const a = route.from[i]!,
+            b = group.to[i]!;
+          const px =
+            dx +
+            own * (x(p, a[0], a[1]) + p.x) +
+            shared * group.current[i * 2]! +
+            s * (x(destination, b[0], b[1]) + destination.x);
+          const py =
+            dy +
+            own * (y(p, a[0], a[1]) + p.y) +
+            shared * group.current[i * 2 + 1]! +
+            s * (y(destination, b[0], b[1]) + destination.y);
+          const radius = a[2] * p.scale * (1 - s) + b[2] * destination.scale * s;
+          if (i) {
+            buffer[at++] = previousX;
+            buffer[at++] = previousY;
+            buffer[at++] = px;
+            buffer[at++] = py;
+            buffer[at++] = previousRadius;
+            buffer[at++] = radius;
           }
-          const point: InkPoint = [x, y, a[2] + (b[2] - a[2]) * shapeProgress],
-            previous = last[r];
-          if (previous) {
-            vertices[route.source].set(
-              [previous[0], previous[1], point[0], point[1], previous[2], point[2]],
-              cursor[route.source],
-            );
-            cursor[route.source]! += 6;
-          }
-          last[r] = point;
+          previousX = px;
+          previousY = py;
+          previousRadius = radius;
         }
       }
     }
     return vertices;
-  };
+  }
+  return Object.assign(sample, { patches });
 }

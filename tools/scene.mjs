@@ -18,6 +18,7 @@ const { values, positionals } = parseArgs({
     'no-audio': { type: 'boolean', default: false },
     audio: { type: 'boolean', default: false },
     inline: { type: 'boolean', default: false },
+    cdn: { type: 'boolean', default: false },
     cue: { type: 'string', multiple: true },
     theme: { type: 'string' },
     width: { type: 'string', default: '960' },
@@ -30,7 +31,7 @@ const catalog = JSON.parse(await readFile(join(root, 'examples/catalog.json'), '
 const help = `visual-story new DIRECTORY --example NAME [--no-audio]
 visual-story examples                         list supported starting points
 visual-story dev DIRECTORY [--port 8793]       rebuild + reload at the current story time
-visual-story build DIRECTORY                  build dist/
+visual-story build DIRECTORY [--cdn]          build dist/; CDN mode loads pinned Rapier remotely
 visual-story audio DIRECTORY                  voice + aligned cues from narration.json
 visual-story preview DIST [--port 8793]        serve an existing build
 visual-story review DIST --out review [--cue ID] [--width 375] [--theme dark] [--reduced]
@@ -155,7 +156,7 @@ else if (command === 'examples') {
   if (output === destination)
     throw new Error('The build output must be separate from scene sources');
   if (!values.out) await rm(output, { recursive: true, force: true });
-  await buildScene(destination, output);
+  await buildScene(destination, output, { cdn: values.cdn });
   console.log(output);
 } else if (command === 'dev') {
   const { develop } = await import('./dev.mjs');

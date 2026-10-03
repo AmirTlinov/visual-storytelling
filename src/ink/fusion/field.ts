@@ -1,10 +1,3 @@
-/** Negative inside. The rounded union creates a neck before two ink surfaces touch. */
-export function tensionUnion(a: number, b: number, radius: number): number {
-  if (radius <= 0) return Math.min(a, b);
-  const neck = Math.max(radius - Math.abs(a - b), 0) / radius;
-  return Math.min(a, b) - neck * neck * radius * 0.25;
-}
-
 /** Exact Euclidean distance to foreground/background on a coverage mask. */
 export function signedDistance(alpha: Uint8Array, width: number, height: number): Float32Array {
   if (alpha.length !== width * height) throw new Error('Mask dimensions do not match coverage');

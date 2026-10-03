@@ -5,7 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { sourceAliases } from './source-package.mjs';
 import { sceneAsset } from './assets.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
-export async function buildPage(source, target, { sourcePackage = false, tsconfig } = {}) {
+export async function buildPage(
+  source,
+  target,
+  { sourcePackage = false, tsconfig, cdn = false } = {},
+) {
   let html = await readFile(source, 'utf8');
   const attribute = (attrs, name) =>
     new RegExp(`\\b${name}\\s*=\\s*(["'])(.*?)\\1`, 'i').exec(attrs)?.[2];
@@ -27,6 +31,9 @@ export async function buildPage(source, target, { sourcePackage = false, tsconfi
   const out = resolve(target, name);
   await mkdir(target, { recursive: true });
   if (code.trim()) {
+    const dependencies = cdn
+      ? JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')).dependencies
+      : undefined;
     const result = await build({
       stdin: {
         contents: code,
@@ -36,10 +43,23 @@ export async function buildPage(source, target, { sourcePackage = false, tsconfi
       },
       outfile: out,
       bundle: true,
-      format: 'iife',
+      format: cdn ? 'esm' : 'iife',
       target: 'es2022',
       ...(tsconfig ? { tsconfig } : { tsconfigRaw: { compilerOptions: {} } }),
       ...(sourcePackage ? { alias: sourceAliases } : {}),
+      plugins: cdn
+        ? [
+            {
+              name: 'rapier-cdn',
+              setup(build) {
+                build.onResolve({ filter: /^@dimforge\/rapier[23]d-compat$/ }, ({ path }) => ({
+                  path: `https://cdn.jsdelivr.net/npm/${path}@${dependencies[path]}/dist/rapier.mjs`,
+                  external: true,
+                }));
+              },
+            },
+          ]
+        : [],
       loader: Object.fromEntries(
         [
           '.woff2',
@@ -65,7 +85,10 @@ export async function buildPage(source, target, { sourcePackage = false, tsconfi
         '</head>',
         `<link rel="stylesheet" href="${name.replace(/\.js$/, '.css')}"></head>`,
       );
-    html = html.replace('</body>', `<script src="${name}"></script></body>`);
+    html = html.replace(
+      '</body>',
+      `<script${cdn ? ' type="module"' : ''} src="${name}"></script></body>`,
+    );
   }
   await writeFile(resolve(target, basename(source)), html);
 }

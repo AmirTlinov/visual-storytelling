@@ -2,7 +2,7 @@ import { fusionShape, type FusionShape, type FusionPose } from './shape.js';
 import { fusionText } from './text.js';
 import { textRoutes } from './text-routing.js';
 import { inkRoutes } from './transport.js';
-import { inkMotion } from './motion.js';
+import { inkMotion, type InkVertices } from './motion.js';
 import { fusionFragment, fusionVertex, strokeFragment, strokeVertex } from './shader.js';
 
 export interface FusionFrame {
@@ -47,7 +47,9 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
   const abort = new AbortController();
   let disposed = false,
     lost = false,
-    previous: FusionFrame | undefined;
+    previous: FusionFrame | undefined,
+    previousVertices: InkVertices | undefined;
+  let bounds = parent.getBoundingClientRect();
   let motion: ReturnType<typeof inkMotion> | undefined,
     ink = [0, 0, 0],
     textScale = 1;
@@ -144,11 +146,11 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
       gl!.texImage2D(
         gl!.TEXTURE_2D,
         0,
-        floatingFields ? gl!.RGBA16F : gl!.RGBA8,
+        floatingFields ? gl!.R16F : gl!.R8,
         w,
         h,
         0,
-        gl!.RGBA,
+        gl!.RED,
         floatingFields ? gl!.HALF_FLOAT : gl!.UNSIGNED_BYTE,
         null,
       );
@@ -158,9 +160,10 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
         throw new Error('Could not allocate ink surface');
     });
   }
-  function render(frame: FusionFrame) {
+  function render(frame: FusionFrame, deformed?: InkVertices) {
     if (disposed) return;
     previous = frame;
+    previousVertices = deformed;
     if (lost || !motion) return;
     const target = frame.target ?? { x: 0, y: 0 };
     if (
@@ -175,9 +178,8 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
     const morph = Math.max(0, Math.min(1, frame.morph ?? 0));
     const tension = Math.max(0, Math.min(64, frame.tension ?? 28)) * textScale * (1 - morph) ** 2;
     const band = Math.max(8, tension + 2);
-    const vertices = motion(frame.sources, target, morph);
-    const bounds = parent.getBoundingClientRect(),
-      ratio = Math.min(devicePixelRatio || 1, 2);
+    const vertices = deformed ?? motion(frame.sources, target, morph);
+    const ratio = Math.min(devicePixelRatio || 1, 2);
     resize(
       Math.max(1, Math.round(bounds.width * ratio)),
       Math.max(1, Math.round(bounds.height * ratio)),
@@ -214,7 +216,7 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
     gl!.drawArrays(gl!.TRIANGLES, 0, 6);
   }
   const redraw = () => {
-    if (previous) render(previous);
+    if (previous) render(previous, previousVertices);
   };
   function theme() {
     colorContext.clearRect(0, 0, 1, 1);
@@ -226,7 +228,10 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
   }
   setup();
   theme();
-  const observer = new ResizeObserver(redraw);
+  const observer = new ResizeObserver(() => {
+    bounds = parent.getBoundingClientRect();
+    redraw();
+  });
   observer.observe(parent);
   const appearance = new MutationObserver(theme);
   for (const node of [document.documentElement, parent.closest('.ve-scene')])
@@ -272,12 +277,16 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
             ),
           )
         : 1;
+      previous = undefined;
+      previousVertices = undefined;
+      return motion;
     },
     setSize(w: number, h: number) {
       if (!(w > 0 && h > 0) || !Number.isFinite(w + h))
         throw new Error('Fusion scene dimensions must be positive and finite');
       width = w;
       height = h;
+      bounds = parent.getBoundingClientRect();
       redraw();
     },
     render,
@@ -299,6 +308,7 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
       gl!.deleteProgram(fusion);
       motion = undefined;
       previous = undefined;
+      previousVertices = undefined;
       canvas.remove();
       probe.remove();
     },

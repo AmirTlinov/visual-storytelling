@@ -7,7 +7,6 @@ export interface InkRoute {
   origin: number;
   text?: {
     from: readonly [number, number];
-    to: readonly [number, number];
     glyph: number;
     origin: number;
     same: boolean;

@@ -5,6 +5,7 @@ import {
   player,
   widgetState,
 } from '@visual-storytelling/core';
+import { Physics2D } from '@visual-storytelling/core/physics/2d';
 import '@visual-storytelling/core/style.css';
 import './style.css';
 
@@ -17,7 +18,13 @@ window.galleryReady = (async () => {
   const abort = new AbortController();
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
   const clock = transport({ duration: 4 });
-  const view = InkFusion.mount(stage, { width: 840, height: 300, color: 'var(--ve-blue)' });
+  const view = await Physics2D.fusion(stage, {
+    width: 840,
+    height: 300,
+    color: 'var(--ve-blue)',
+    duration: clock.state.duration,
+    frame: poseAt,
+  });
   const presets = {
     words: ['свет', 'тень', 'объём'],
     sentences: ['Свет раскрывает форму.', 'Тень придаёт глубину.', 'Свет и тень создают объём.'],
@@ -92,8 +99,8 @@ window.galleryReady = (async () => {
         words = [...presets[scenario]];
         fields.forEach((field, i) => field.setValue(words[i]));
       }
-      rebuild();
       clock.seek(0);
+      rebuild();
       save();
       if (!reduced.matches) void clock.play();
     },
@@ -104,7 +111,7 @@ window.galleryReady = (async () => {
     if (!ready || disposed) return;
     persistence.save({
       modelContent: { type: 'ink-fusion', texts: words, tension, example: scenario },
-      privateContent: { time: clock.state.time, motionRevision: 4 },
+      privateContent: { time: clock.state.time, motionRevision: 5 },
     });
   }
   function changeTexts() {
@@ -116,8 +123,8 @@ window.galleryReady = (async () => {
       scenario = 'words';
       cases.setValue(scenario);
     }
-    rebuild();
     clock.seek(0);
+    rebuild();
     save();
   }
   function flush() {
@@ -194,11 +201,10 @@ window.galleryReady = (async () => {
     });
     render(clock.state.time);
   }
-  function render(time) {
-    if (!shapes || disposed) return;
+  function poseAt(time) {
     const t = time / clock.state.duration;
     const approach = smooth(0.03, 0.2, t);
-    view.render({
+    return {
       sources: layout.sources.map((pose, i) => ({
         x: pose.x + (layout.block ? 0 : (i ? -1 : 1) * 24 * approach),
         y: pose.y + (layout.block ? (i ? -1 : 1) * 24 * approach : 0),
@@ -206,7 +212,11 @@ window.galleryReady = (async () => {
       target: { x: 0, y: 0 },
       tension,
       morph: 1 - (1 - smooth(0.04, 0.9, t)) ** 2,
-    });
+    };
+  }
+  function render(time) {
+    if (!shapes || disposed) return;
+    view.render(time);
   }
   function restore(snapshot) {
     if (!ready || disposed) return;
@@ -229,7 +239,7 @@ window.galleryReady = (async () => {
     cases.setValue(scenario);
     rebuild();
     if (
-      snapshot.privateContent?.motionRevision === 4 &&
+      snapshot.privateContent?.motionRevision === 5 &&
       Number.isFinite(snapshot.privateContent?.time)
     )
       clock.seek(snapshot.privateContent.time);
@@ -288,7 +298,13 @@ window.galleryReady = (async () => {
     },
     pause: clock.pause,
     review: () => ({ duration: 4, cues: [] }),
-    snapshot: () => ({ texts: words, scenario, tension, time: clock.state.time }),
+    snapshot: () => ({
+      texts: words,
+      scenario,
+      tension,
+      time: clock.state.time,
+      physics: view.stats,
+    }),
     dispose() {
       disposed = true;
       clearTimeout(timer);
@@ -305,7 +321,7 @@ window.galleryReady = (async () => {
       view.dispose();
     },
   };
-  if ((!restored || saved?.privateContent?.motionRevision !== 4) && !reduced.matches)
+  if ((!restored || saved?.privateContent?.motionRevision !== 5) && !reduced.matches)
     void clock.play();
 })().catch((error) => {
   document.querySelector('.fusion-error').textContent = error.message;

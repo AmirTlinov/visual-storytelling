@@ -192,7 +192,6 @@ export function textRoutes(
         to: route.to.map((p) => expand(p, glyph)),
         text: {
           from: original.glyph.center,
-          to: glyph.center,
           glyph: index,
           origin: original.id,
           same: original.glyph.value === glyph.value,

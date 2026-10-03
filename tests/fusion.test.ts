@@ -1,16 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { tensionUnion, signedDistance } from '../src/ink/fusion/field.ts';
+import { signedDistance } from '../src/ink/fusion/field.ts';
 import { inkRoutes, type InkPath } from '../src/ink/fusion/transport.ts';
 import { medialPaths } from '../src/ink/fusion/skeleton.ts';
-
-test('contact makes a neck across empty space without changing distant ink', () => {
-  assert.equal(tensionUnion(10, 10, 0), 10);
-  assert.ok(tensionUnion(10, 10, 48) < 0);
-  assert.equal(tensionUnion(-3, 80, 48), -3);
-  assert.ok(tensionUnion(30, 30, 48) > 0);
-  assert.equal(tensionUnion(4, 7, 32), tensionUnion(7, 4, 32));
-});
 
 test('distance masks retain thin ink and have finite, symmetric exterior distances', () => {
   const width = 31,
