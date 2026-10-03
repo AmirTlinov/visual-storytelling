@@ -5,6 +5,7 @@ import { serve } from '../site.mjs';
 import { observeBrowser } from './browser-observer.mjs';
 import { runScenario, validateScenario } from './scenario.mjs';
 import { saveCapture } from './media.mjs';
+import { setTimeout as delay } from 'node:timers/promises';
 
 export async function captureBrowser(options, out) {
   const scenario = validateScenario(options);
@@ -111,21 +112,21 @@ export async function captureBrowser(options, out) {
       const { value, ...description } = step;
       steps.push({ ...description, epoch });
     };
+    const controller = new AbortController();
+    const deadline = performance.now() + 45000;
+    timer = setTimeout(
+      () => controller.abort(new Error('Capture exceeded 45 seconds; shorten the scenario')),
+      45000,
+    );
     try {
-      await Promise.race([
-        (async () => {
-          await runScenario(page, scenario.actions, stamp);
-          await page.waitForTimeout(scenario.seconds * 1000);
-        })(),
-        new Promise((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error('Capture exceeded 45 seconds; shorten the scenario')),
-            45000,
-          );
-        }),
-      ]);
+      // Await cancellation: no delayed action may continue after capture has stopped.
+      await runScenario(page, scenario.actions, stamp, {
+        signal: controller.signal,
+        deadline,
+      });
+      await delay(scenario.seconds * 1000, undefined, { signal: controller.signal });
     } catch (failure) {
-      error = failure.message;
+      error = controller.signal.aborted ? controller.signal.reason.message : failure.message;
     }
     clearTimeout(timer);
     stopping = true;

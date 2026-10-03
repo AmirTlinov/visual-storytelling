@@ -1,12 +1,123 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, mkdir, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { PNG } from 'pngjs';
 import { analyzeMotionFrames, parseCrop } from '../tools/motion/frames.mjs';
 import { reviewMotion } from '../tools/motion/review.mjs';
+import { compareMotion } from '../tools/motion/comparison.mjs';
+import { writeMotionReport } from '../tools/motion/report.mjs';
+
+test('replays and linked capture folders cannot overwrite their source evidence', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'motion-source-protection-'));
+  try {
+    const source = join(directory, 'source');
+    const out = join(directory, 'report');
+    await mkdir(source);
+    await mkdir(out);
+    const png = square(4);
+    await writeFile(join(source, '0000.png'), png);
+    await writeFile(join(source, '0001.png'), square(8));
+    const manifest = join(source, 'frames.json');
+    await writeFile(
+      manifest,
+      JSON.stringify({
+        source: { kind: 'frame-manifest', path: manifest },
+        frames: [
+          { file: '0000.png', time: 0 },
+          { file: '0001.png', time: 0.02 },
+        ],
+      }),
+    );
+    await symlink(source, join(out, 'capture'));
+    await assert.rejects(reviewMotion({ input: manifest, out }), /overwrite/);
+    assert.deepEqual(await readFile(join(source, '0000.png')), png);
+    await rm(join(out, 'capture'));
+
+    const html = '<!doctype html><button>Keep source</button>';
+    const page = join(out, 'index.html');
+    await writeFile(page, html);
+    const replay = join(directory, 'replay.json');
+    await writeFile(replay, JSON.stringify({ kind: 'motion-capture', url: page }));
+    await assert.rejects(reviewMotion({ input: replay, out }), /overwrite/);
+    assert.equal(await readFile(page, 'utf8'), html);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('managed output symlinks are refused before any source frame is overwritten', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'motion-output-links-'));
+  try {
+    const a = square(4),
+      b = square(8);
+    await writeFile(join(directory, 'a.png'), a);
+    await writeFile(join(directory, 'b.png'), b);
+    const manifest = join(directory, 'frames.json');
+    await writeFile(
+      manifest,
+      JSON.stringify({
+        source: { kind: 'frame-manifest', path: manifest },
+        frames: [
+          { file: 'a.png', time: 0 },
+          { file: 'b.png', time: 0.02 },
+        ],
+      }),
+    );
+    for (const leaf of [
+      'capture/0000.png',
+      'capture/frames.json',
+      'analysis/000.png',
+      'index.html',
+      'motion.png',
+      'motion.json',
+      'replay.json',
+      'telemetry.json',
+      'recording.mp4',
+      'capture',
+      'analysis',
+    ]) {
+      const out = join(directory, `report-${leaf.replaceAll('/', '-')}`);
+      const path = join(out, leaf);
+      await mkdir(join(path, '..'), { recursive: true });
+      await symlink(join(directory, 'b.png'), path);
+      await assert.rejects(reviewMotion({ input: manifest, out }), /overwrite symbolic link/);
+      assert.deepEqual(await readFile(join(directory, 'b.png')), b, `${leaf} changed the source`);
+    }
+    // Narrated reviews enter the report writer directly and follow the same rule.
+    const out = join(directory, 'direct-report');
+    await mkdir(join(out, 'analysis'), { recursive: true });
+    await symlink(join(directory, 'b.png'), join(out, 'analysis', '000.png'));
+    await assert.rejects(writeMotionReport({}, out), /overwrite symbolic link/);
+    assert.deepEqual(await readFile(join(directory, 'b.png')), b);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('baseline comparison rejects different source sizes hidden by downscaling', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'motion-baseline-size-'));
+  try {
+    const current = await analyzeMotionFrames(
+      [
+        { time: 0, png: square(4) },
+        { time: 0.02, png: square(8) },
+      ],
+      { maxSize: 40 },
+    );
+    current.source = { kind: 'frame-manifest' };
+    const previous = { ...current, sourceWidth: 160, sourceHeight: 80, scale: 0.25 };
+    const file = join(directory, 'motion.json');
+    await writeFile(file, JSON.stringify(previous));
+    const comparison = await compareMotion(current, file);
+    assert.match(comparison.warning, /Source size/);
+    assert.equal(comparison.pairs.length, 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 function square(x, { flash = false, height = 40 } = {}) {
   const image = new PNG({ width: 80, height });

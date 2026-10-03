@@ -4,11 +4,95 @@ import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { chromium } from 'playwright';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { serve } from '../tools/site.mjs';
 import { reviewMotion } from '../tools/motion/review.mjs';
-import { validateScenario } from '../tools/motion/scenario.mjs';
+import { validateScenario, runScenario } from '../tools/motion/scenario.mjs';
 
 const read = async (path) => JSON.parse(await readFile(path, 'utf8'));
+const run = promisify(execFile);
+
+test('CLI overrides the scenario URL and retains a private action failure amid page errors', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'motion-cli-'));
+  const server = await serve(directory);
+  try {
+    await writeFile(
+      join(directory, 'index.html'),
+      '<!doctype html><button id="open" onclick="for(let i=0;i<12;i++)console.error(`Page error ${i}`)">Open</button><div id="panel">Ready</div>',
+    );
+    const flow = join(directory, 'flow.json');
+    await writeFile(
+      flow,
+      JSON.stringify({
+        url: `${server.url}/wrong-page`,
+        actions: [
+          { type: 'click', selector: '#open' },
+          { type: 'fill', selector: '#panel', env: 'MOTION_PRIVATE_TEST_VALUE' },
+        ],
+        seconds: 0.1,
+      }),
+    );
+    const out = join(directory, 'report');
+    const secret = 'private-test-"value"\\line';
+    let result;
+    try {
+      await run(
+        process.execPath,
+        ['tools/scene.mjs', 'review', server.url, '--scenario', flow, '--out', out],
+        { env: { ...process.env, MOTION_PRIVATE_TEST_VALUE: secret } },
+      );
+      assert.fail('The failed fill must return status 2');
+    } catch (error) {
+      assert.equal(error.code, 2);
+      result = JSON.parse(error.stdout);
+    }
+    assert.equal(result.source.path, server.url);
+    assert.equal(result.insights[0].kind, 'action-error');
+    assert.match(result.insights[0].detail, /not an <input>/);
+    for (const file of ['index.html', 'motion.json', 'telemetry.json', 'replay.json']) {
+      const text = await readFile(join(out, file), 'utf8');
+      assert(!text.includes('private-test-'), `fill value leaked into ${file}`);
+    }
+  } finally {
+    await server.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('cancelling a scenario interrupts waits and prevents later repeated input', async () => {
+  for (const repeat of [false, true]) {
+    const controller = new AbortController();
+    let clicks = 0;
+    const page = {
+      locator: () => ({
+        waitFor: async () => {},
+        scrollIntoViewIfNeeded: async () => {},
+        boundingBox: async () => ({ x: 0, y: 0, width: 10, height: 10 }),
+        click: async () => clicks++,
+      }),
+      mouse: { click: async () => clicks++ },
+    };
+    const actions = repeat
+      ? [{ type: 'click', selector: '#button', repeat: 2, intervalMs: 5000 }]
+      : [
+          { type: 'wait', ms: 5000 },
+          { type: 'click', selector: '#button' },
+        ];
+    const timer = setTimeout(() => controller.abort(new Error('Capture deadline')), 25);
+    const started = performance.now();
+    try {
+      await assert.rejects(
+        runScenario(page, actions, async () => {}, { signal: controller.signal }),
+        /Capture deadline/,
+      );
+      assert(performance.now() - started < 1000, 'the cancelled timer must settle promptly');
+      assert.equal(clicks, repeat ? 1 : 0);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+});
 
 test('browser records repeated input, attributes a stall and blink, replays and compares saved evidence', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'motion-browser-'));

@@ -9,7 +9,9 @@ export function orderedInsights(report) {
     to = report.frames.at(-1).time;
   const inside = (item) => Number.isFinite(item.time) && item.time >= from && item.time <= to;
   return [...(report.runtime?.insights ?? []), ...(report.timeline?.signals ?? [])].sort(
-    (a, b) => Number(inside(b)) - Number(inside(a)),
+    (a, b) =>
+      Number(b.kind === 'action-error') - Number(a.kind === 'action-error') ||
+      Number(inside(b)) - Number(inside(a)),
   );
 }
 function graph(points, key, title, markers = []) {

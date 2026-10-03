@@ -2,7 +2,7 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import { resolve, join, dirname, extname, basename } from 'node:path';
 import { renderer } from '../render.mjs';
 import { analyzeMotionFrames } from './frames.mjs';
-import { writeMotionReport } from './report.mjs';
+import { assertMotionOutput, writeMotionReport } from './report.mjs';
 import { videoFrames, saveCapture } from './media.mjs';
 import { captureBrowser } from './browser.mjs';
 import { scanTimeline, selectDetail, overviewSamples } from './timeline.mjs';
@@ -46,7 +46,7 @@ export async function reviewMotion({
   const isURL = /^https?:\/\//i.test(input);
   if (!isURL && !native) {
     input = await realpath(input);
-    if (extname(input) === '.json') {
+    if (extname(input).toLowerCase() === '.json') {
       manifest = JSON.parse(await readFile(input, 'utf8'));
       if (manifest.kind === 'motion-capture') replay = manifest;
     }
@@ -62,24 +62,13 @@ export async function reviewMotion({
     }
   }
   out = await canonical(out);
-  const outputs = new Set(
-    await Promise.all(
-      [
-        'index.html',
-        'motion.png',
-        'motion.json',
-        'replay.json',
-        'telemetry.json',
-        'recording.mp4',
-      ].map((name) => canonical(join(out, name))),
-    ),
-  );
+  const layout = await assertMotionOutput(out);
+  const outputs = new Set(layout.files);
   const protect = (path) => {
     if (
       path === out ||
       outputs.has(path) ||
-      path.startsWith(join(out, 'capture') + '/') ||
-      path.startsWith(join(out, 'analysis') + '/')
+      layout.folders.some((folder) => path === folder || path.startsWith(folder + '/'))
     )
       throw new Error(
         'Review output would overwrite its input; choose a separate output directory',
@@ -107,10 +96,14 @@ export async function reviewMotion({
         throw new Error('--cue and --fps apply only to seekable scenes');
       if (!isURL && isDirectory && input === out)
         throw new Error('Capture output must be separate from source');
-      const recorded = await captureBrowser(
-        { ...replay, url: replay?.url ?? input, ...captureOptions },
-        out,
-      );
+      const options = { ...replay, url: replay?.url ?? input, ...captureOptions };
+      if (!/^https?:\/\//i.test(options.url)) {
+        options.url = await realpath(options.url);
+        protect(options.url);
+        if ((await stat(options.url)).isDirectory())
+          protect(await canonical(join(options.url, 'index.html')));
+      }
+      const recorded = await captureBrowser(options, out);
       ({ samples, source, telemetry, captureManifest } = recorded);
       replayPath = join(out, 'replay.json');
     } else if (isDirectory || ['.html', '.htm', '.svg'].includes(extname(input).toLowerCase())) {
@@ -205,10 +198,12 @@ export async function reviewMotion({
           ? { ...manifest.source, importedFrom: input }
           : { kind: 'frame-manifest', path: input };
         if (scan) {
-          if (manifest.telemetry)
+          if (manifest.telemetry) {
+            protect(await realpath(resolve(dirname(input), manifest.telemetry)));
             telemetry = JSON.parse(
               await readFile(resolve(dirname(input), manifest.telemetry), 'utf8'),
             );
+          }
           captureManifest = await saveCapture(samples, source, out, telemetry);
         }
       } else {

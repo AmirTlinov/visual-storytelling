@@ -14,12 +14,17 @@ export async function compareMotion(report, baseline) {
   if (
     previous.width !== report.width ||
     previous.height !== report.height ||
+    previous.sourceWidth !== report.sourceWidth ||
+    previous.sourceHeight !== report.sourceHeight ||
+    ['width', 'height', 'deviceScaleFactor'].some(
+      (key) => previous.source.viewport?.[key] !== report.source.viewport?.[key],
+    ) ||
     JSON.stringify(previous.crop) !== JSON.stringify(report.crop)
   )
     return {
       ...result,
       warning:
-        'Analysis size or crop differs. Repeat both captures with the same viewport, crop and max-size.',
+        'Source size, viewport or crop differs. Repeat both captures with the same viewport, crop and max-size.',
     };
   for (const key of ['theme', 'reduced'])
     if (previous.source[key] !== report.source[key])

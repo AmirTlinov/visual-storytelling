@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, lstat, readdir } from 'node:fs/promises';
 import { join, dirname, relative } from 'node:path';
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'node:url';
@@ -113,7 +113,39 @@ export function motionMarkup(report, { includeFrames = true } = {}) {
   </section>`;
 }
 
+export async function assertMotionOutput(out) {
+  const files = [
+    'index.html',
+    'motion.png',
+    'motion.json',
+    'replay.json',
+    'telemetry.json',
+    'recording.mp4',
+  ].map((name) => join(out, name));
+  const folders = ['capture', 'analysis'].map((name) => join(out, name));
+  const rejectLink = (path) => {
+    throw new Error(
+      `Motion review refuses to overwrite symbolic link ${path}; choose a fresh output directory`,
+    );
+  };
+  for (const path of [...files, ...folders]) {
+    let entry;
+    try {
+      entry = await lstat(path);
+    } catch (error) {
+      if (error.code === 'ENOENT') continue;
+      throw error;
+    }
+    if (entry.isSymbolicLink()) rejectLink(path);
+    if (folders.includes(path) && entry.isDirectory())
+      for (const child of await readdir(path, { withFileTypes: true }))
+        if (child.isSymbolicLink()) rejectLink(join(path, child.name));
+  }
+  return { files, folders };
+}
+
 export async function writeMotionReport(report, out, { context } = {}) {
+  await assertMotionOutput(out);
   const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
   const cli = `node ${quote(fileURLToPath(new URL('../scene.mjs', import.meta.url)))}`;
   await mkdir(out, { recursive: true });

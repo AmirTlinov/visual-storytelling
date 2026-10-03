@@ -99,6 +99,9 @@ JSON с абсолютными путями, окном, масштабом, н�
  {"type":"click","selector":"#close"}],"targets":["#panel"],"seconds":2}
 ```
 
+Явный адрес в команде имеет приоритет над `url` сценария: один flow можно проверить
+на другой версии сайта.
+
 Действия: `click`, `dblclick`, `hover`, `fill` (`value` либо имя переменной окружения
 в `env`), `press` (`key`), `scroll` (`x`/`y`), `drag` (`selector`/`to`), `wait` (`ms`).
 Элемент выбирается через `selector` либо `role` + `name`. `targets` — CSS-селекторы;

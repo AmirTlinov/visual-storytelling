@@ -104,7 +104,7 @@ export async function runMotionCLI(args) {
       throw new Error('--theme must be light or dark');
     const numeric = (key) => (v[key] === undefined ? undefined : Number(v[key]));
     let replayInput = false;
-    if (input?.endsWith('.json') && !v.scenario) {
+    if (/\.json$/i.test(input ?? '') && !/^https?:\/\//i.test(input) && !v.scenario) {
       const parsed = JSON.parse(await readFile(input, 'utf8'));
       replayInput = parsed.kind === 'motion-capture';
     }
@@ -146,6 +146,7 @@ export async function runMotionCLI(args) {
     const capture = captureRequested
       ? {
           ...scenario,
+          ...(positionals[0] && scenario ? { url: positionals[0] } : {}),
           ...overrides,
           ...(v.click
             ? {

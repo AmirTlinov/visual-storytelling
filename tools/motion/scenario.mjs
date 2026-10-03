@@ -1,3 +1,5 @@
+import { setTimeout as delay } from 'node:timers/promises';
+
 const actions = new Set(['click', 'dblclick', 'hover', 'fill', 'press', 'scroll', 'drag', 'wait']);
 
 export function validateScenario(value) {
@@ -66,67 +68,82 @@ export function validateScenario(value) {
   };
 }
 
-export async function runScenario(page, steps, onStep) {
+export async function runScenario(page, steps, onStep, { signal, deadline = Infinity } = {}) {
+  const actionOptions = () => ({
+    timeout: Math.max(1, Math.min(5000, deadline - performance.now())),
+  });
   for (const [index, step] of steps.entries()) {
+    signal?.throwIfAborted();
     const locator = step.role
       ? page.getByRole(step.role, { name: step.name, exact: true })
       : step.selector
         ? page.locator(step.selector)
         : undefined;
     await onStep({ index, ...step, phase: 'start' });
+    let filledValue;
     try {
+      signal?.throwIfAborted();
       switch (step.type) {
         case 'click':
-          if (!step.repeat) await locator.click({ timeout: 5000, noWaitAfter: true });
+          if (!step.repeat) await locator.click({ ...actionOptions(), noWaitAfter: true });
           else {
-            await locator.waitFor({ state: 'visible', timeout: 5000 });
-            await locator.scrollIntoViewIfNeeded({ timeout: 5000 });
-            const box = await locator.boundingBox();
+            await locator.waitFor({ state: 'visible', ...actionOptions() });
+            signal?.throwIfAborted();
+            await locator.scrollIntoViewIfNeeded(actionOptions());
+            signal?.throwIfAborted();
+            const box = await locator.boundingBox(actionOptions());
             if (!box) throw new Error('Repeated click target has no visible box');
             const started = performance.now();
             // Repeated input at one pointer location; readiness checks run once.
             for (let n = 0; n < step.repeat; n++) {
-              const delay = started + n * step.intervalMs - performance.now();
-              if (delay > 0) await new Promise((done) => setTimeout(done, delay));
+              const pause = started + n * step.intervalMs - performance.now();
+              if (pause > 0) await delay(pause, undefined, { signal });
+              signal?.throwIfAborted();
               await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
             }
           }
           break;
         case 'dblclick':
-          await locator.dblclick({ timeout: 5000, noWaitAfter: true });
+          await locator.dblclick({ ...actionOptions(), noWaitAfter: true });
           break;
         case 'hover':
-          await locator.hover({ timeout: 5000 });
+          await locator.hover(actionOptions());
           break;
         case 'fill':
-          await locator.fill(
-            step.env
-              ? (process.env[step.env] ??
-                  (() => {
-                    throw new Error(`Environment variable ${step.env} is missing`);
-                  })())
-              : step.value,
-            { timeout: 5000 },
-          );
+          filledValue = step.env ? process.env[step.env] : step.value;
+          if (filledValue === undefined)
+            throw new Error(`Environment variable ${step.env} is missing`);
+          await locator.fill(filledValue, actionOptions());
           break;
         case 'press':
-          await (locator ?? page.keyboard).press(step.key, { timeout: 5000 });
+          await (locator ?? page.keyboard).press(step.key, actionOptions());
           break;
         case 'scroll':
-          if (locator) await locator.hover({ timeout: 5000 });
+          if (locator) await locator.hover(actionOptions());
+          signal?.throwIfAborted();
           await page.mouse.wheel(step.x ?? 0, step.y ?? 0);
           break;
         case 'drag':
-          await locator.dragTo(page.locator(step.to), { timeout: 5000 });
+          await locator.dragTo(page.locator(step.to), actionOptions());
           break;
         case 'wait':
-          await page.waitForTimeout(step.ms);
+          await delay(step.ms, undefined, { signal });
           break;
       }
+      signal?.throwIfAborted();
       await onStep({ index, ...step, phase: 'end' });
     } catch (error) {
+      if (signal?.aborted) throw signal.reason;
+      // Playwright's call log prints fill values, including values resolved from env.
+      let detail = error.message;
+      if (step.type === 'fill') {
+        detail = detail.split('Call log:')[0].trim();
+        if (filledValue)
+          for (const value of [filledValue, JSON.stringify(filledValue).slice(1, -1)])
+            detail = detail.replaceAll(value, '[redacted]');
+      }
       throw new Error(
-        `Action ${index + 1} (${step.type} ${step.selector ?? step.name ?? ''}): ${error.message}`,
+        `Action ${index + 1} (${step.type} ${step.selector ?? step.name ?? ''}): ${detail}`,
       );
     }
   }
