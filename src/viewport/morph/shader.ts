@@ -57,8 +57,8 @@ vec3 normalAt(vec3 p, float e) {
   return normalize(vec3(field(p+vec3(e,0,0))-field(p-vec3(e,0,0)),
     field(p+vec3(0,e,0))-field(p-vec3(0,e,0)), field(p+vec3(0,0,e))-field(p-vec3(0,0,e))));
 }
-// A small fixed pixel footprint makes creases and silhouettes stable during motion.
-// Each sample traces the same field; no temporal history or changing topology is involved.
+// Return the normal of the actual visible surface, including zero coverage for a miss.
+// The caller compares subpixel hits instead of probing inside the blended volume.
 vec4 trace(vec3 direction, vec3 dx, vec3 dy, out float depth) {
   depth = 1.;
   float pixelAngle = max(length(dx),length(dy));
@@ -79,39 +79,48 @@ vec4 trace(vec3 direction, vec3 dx, vec3 dy, out float depth) {
   if(!hit) return vec4(0.);
   vec3 point = rayOrigin + direction * t;
   float pixel = max(.00001,pixelAngle*t);
-  vec3 n = normalAt(point, pixel * .2);
-  // Compare along the visible tangent plane: sampling inside the volume would
-  // mistake the union's internal distance branches for visible creases.
-  vec3 tangentX = (dx-n*dot(n,dx))*t;
-  vec3 tangentY = (dy-n*dot(n,dy))*t;
-  float edge = max(length(normalAt(point+tangentX,pixel*.7)-normalAt(point-tangentX,pixel*.7)),
-                   length(normalAt(point+tangentY,pixel*.7)-normalAt(point-tangentY,pixel*.7)));
-  float crease = smoothstep(.12,.9,edge);
-  float facing = dot(n,direction);
-  float silhouette = 1. - smoothstep(0.,1.,facing*facing/max(edge,.00001));
-  float stroke = .5 * max(crease,silhouette);
-  vec3 w = abs(n);
-  float wash = dot(w,vec3(n.x > 0. ? .88 : 1.,n.y > 0. ? .82 : 1.,n.z > 0. ? .93 : .85)) / (w.x+w.y+w.z);
-  vec3 color = mix(mix(paper,pigment,.65*wash),ink,stroke);
+  vec3 n = normalAt(point, pixel * .5);
   vec4 clip = clipMatrix * vec4(point,1.);
   depth = clip.z / clip.w * .5 + .5;
-  return vec4(color,1.);
+  return vec4(n,1.);
+}
+vec3 shade(vec3 n, float edge) {
+  float crease = smoothstep(.2,1.4,edge);
+  float stroke = .5 * crease;
+  vec3 w = abs(n);
+  float wash = dot(w,vec3(n.x > 0. ? .88 : 1.,n.y > 0. ? .82 : 1.,n.z > 0. ? .93 : .85)) / max(w.x+w.y+w.z,.00001);
+  return mix(mix(paper,pigment,.65*wash),ink,stroke);
 }
 void main() {
   vec3 direction = normalize(rayExit-rayOrigin);
   vec3 dx = dFdx(direction), dy = dFdy(direction);
   vec4 color = vec4(0.);
   float depth = 1.;
-  for(int i=0;i<4;i++) {
-    vec2 offset = i==0 ? vec2(-.125,-.375) : i==1 ? vec2(.375,-.125) :
-                  i==2 ? vec2(.125,.375) : vec2(-.375,.125);
+  vec4 surfaces[8];
+  for(int i=0;i<8;i++) {
+    vec2 offset = i==0 ? vec2(-.5,-.5) : i==1 ? vec2(.5,-.5) :
+                  i==2 ? vec2(.5,.5) : i==3 ? vec2(-.5,.5) :
+                  i==4 ? vec2(-.125,-.375) : i==5 ? vec2(.375,-.125) :
+                  i==6 ? vec2(.125,.375) : vec2(-.375,.125);
     float sampleDepth;
-    color += trace(normalize(direction+dx*offset.x+dy*offset.y),dx,dy,sampleDepth);
+    vec3 sampleDirection = normalize(direction+dx*offset.x+dy*offset.y);
+    surfaces[i] = trace(sampleDirection,dx,dy,sampleDepth);
     depth = min(depth,sampleDepth);
   }
+  // Corner samples cover the full pixel footprint so a thin edge cannot fall
+  // between sample footprints. Only visible hits define a crease: no derivative
+  // quad steps, internal field branches or dark halos at grazing concave joins.
+  float edge = 0.;
+  for(int i=0;i<4;i++) {
+    int next = (i+1)%4;
+    edge = max(edge, length(surfaces[i].xyz-surfaces[next].xyz)*surfaces[i].a*surfaces[next].a);
+  }
+  // Interior rotated samples carry the fill; corner samples retain a continuous
+  // thin crease and contribute a small amount to antialiasing the silhouette.
+  for(int i=0;i<8;i++) color += vec4(shade(surfaces[i].xyz,edge)*surfaces[i].a,surfaces[i].a) * (i<4 ? .05 : .2);
   if(color.a == 0.) discard;
-  vec3 wash = mix(color.rgb/color.a,ink,.5*(1.-color.a*.25));
-  gl_FragColor = vec4(wash,color.a*.25);
+  vec3 wash = mix(color.rgb/color.a,ink,.5*(1.-color.a));
+  gl_FragColor = vec4(wash,color.a);
   gl_FragDepth = depth;
   #include <colorspace_fragment>
 }
