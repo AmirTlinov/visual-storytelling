@@ -2,8 +2,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { renderer } from './render.mjs';
-import { analyzeMotionFrames, motionData } from './motion-frames.mjs';
-import { motionMarkup, writeMotionReport } from './motion-report.mjs';
+import { analyzeMotionFrames, motionData } from './motion/frames.mjs';
+import { motionMarkup, writeMotionReport } from './motion/report.mjs';
 import { packDirectory } from './standalone.mjs';
 import { installReviewPlayer } from './review-player.mjs';
 

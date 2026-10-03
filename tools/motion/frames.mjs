@@ -233,6 +233,11 @@ export async function analyzeMotionFrames(samples, { crop, threshold = 8, maxSiz
     sizeChanged: sizes.some((s) => s.width !== sizes[0].width || s.height !== sizes[0].height),
     frames: frames.map((frame, i) => ({
       time: samples[i].time,
+      ...Object.fromEntries(
+        ['capture', 'receivedTime', 'uncertaintyMs', 'pixelTimeUncertaintyMs']
+          .filter((key) => key in samples[i])
+          .map((key) => [key, samples[i][key]]),
+      ),
       sourceSize: sizes[i],
       image: images[i],
     })),
@@ -242,6 +247,15 @@ export async function analyzeMotionFrames(samples, { crop, threshold = 8, maxSiz
   };
 }
 
-export function motionData({ overlay, difference, frames, ...report }) {
-  return { ...report, frames: frames.map(({ image, ...frame }) => frame) };
+export function motionData(report) {
+  // PNGs live in HTML and analysis files; nested comparisons never inflate the JSON.
+  const omit = new Set([
+    'overlay',
+    'difference',
+    'image',
+    'images',
+    'baselineImage',
+    'currentImage',
+  ]);
+  return JSON.parse(JSON.stringify(report, (key, value) => (omit.has(key) ? undefined : value)));
 }

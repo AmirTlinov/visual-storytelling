@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { PNG } from 'pngjs';
-import { analyzeMotionFrames, parseCrop } from '../tools/motion-frames.mjs';
-import { reviewMotion } from '../tools/motion-review.mjs';
+import { analyzeMotionFrames, parseCrop } from '../tools/motion/frames.mjs';
+import { reviewMotion } from '../tools/motion/review.mjs';
 
 function square(x, { flash = false, height = 40 } = {}) {
   const image = new PNG({ width: 80, height });
@@ -179,6 +179,15 @@ test('PNG manifest and VFR video produce the same ordered evidence without remov
       offset.frames.map((f) => f.time),
       [5.16, 5.2],
     );
+    const scannedOffset = await reviewMotion({
+      input: offsetVideo,
+      out: join(directory, 'offset-scan'),
+      from: 5.1,
+      seconds: 0.15,
+    });
+    assert.equal(scannedOffset.recording.frames, 3);
+    assert.equal(scannedOffset.recording.from, 5.16);
+    assert.equal(scannedOffset.recording.to, 5.24);
     const collision = join(directory, 'motion.json');
     await writeFile(collision, JSON.stringify({ frames }));
     await assert.rejects(reviewMotion({ input: collision, out: directory }), /overwrite/);

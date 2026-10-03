@@ -68,10 +68,10 @@ npm run test:delivery   # отдельный потребитель пакета
 `--cue group_action` выбирает конкретный переход; `--width 375 --theme dark --reduced` проверяет другой режим.
 Сценарий хранит `action` или осмысленное `hold` на метке; подключение — в [озвучке](skill/references/narration.md#проверка), построение понимания — в [раскадровке](skill/references/visual-storytelling.md).
 
-Для движения: `node tools/scene.mjs review site/ink-fusion --motion --from .8 --frames 16 --out artifacts/motion`.
-Открой `artifacts/motion/motion.png`: цветные следы, межкадровые разности, времена и приближённая последовательность собраны на одном листе.
+Для живого интерфейса: `node tools/scene.mjs review http://localhost:3000 --click '#open' --target '#panel'`.
+Команда возвращает PNG с наложением кадров, временные графики, HTML-плеер и сохранённый сценарий. Поддерживаются обычный HTML, сцены, видео, PNG и окна macOS; `review --help` показывает маршруты, `--doctor` проверяет зависимости.
 Тот же режим принимает видео или JSON со списком PNG; `--crop` выбирает область. Видео сохраняет PTS и повторы; перемотка сцены показывает время модели.
-Для окна по метке есть `--motion --cue ID`, для мелких деталей — `--crop x,y,w,h --max-size 0`. Обычный `review` добавляет такие листы для обзорных состояний действий. [Команды и чтение отчёта](skill/references/motion.md#проверка).
+Для окна по метке есть `--motion --cue ID`, для мелких деталей — `--crop x,y,w,h --max-size 0`, для сравнения версий — `--baseline REPORT`. Сохранённые кадры можно пересмотреть без нового захвата. [Команды и чтение отчёта](skill/references/motion.md#проверка).
 
 При изменении общего рисунка сохрани исходные кадры до правки: `node tools/visual-regression.mjs capture site artifacts/reference/pixels`, затем сравни сборку через `npm run test:visual`. `VISUAL_SCENES=area-story,vector` ограничивает проверку затронутыми примерами; обе темы и две ширины сохраняются. Отчёт в `artifacts/migrated/report.json` сообщает все различия, а просмотр помогает оценить их смысл.
 
