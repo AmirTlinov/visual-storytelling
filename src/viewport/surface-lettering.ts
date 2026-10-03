@@ -37,9 +37,13 @@ export function surfaceLettering(
   else anchor.add(group);
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d')!;
-  const texture = new T.CanvasTexture(canvas);
-  texture.colorSpace = T.SRGBColorSpace;
-  texture.anisotropy = 4;
+  function createTexture() {
+    const texture = new T.CanvasTexture(canvas);
+    texture.colorSpace = T.SRGBColorSpace;
+    texture.anisotropy = 4;
+    return texture;
+  }
+  let texture = createTexture();
   const material = ink(
     new T.MeshBasicMaterial({
       map: texture,
@@ -87,8 +91,14 @@ export function surfaceLettering(
   const font = getComputedStyle(stage).fontFamily;
   function draw(value: string) {
     context.font = `112px ${font}`;
-    canvas.width = Math.max(32, Math.ceil(context.measureText(value).width + 16));
-    canvas.height = 160;
+    const width = Math.max(32, Math.ceil(context.measureText(value).width + 16));
+    if (canvas.width !== width || canvas.height !== 160) {
+      // GPU texture storage cannot resize: replace it along with the canvas bounds.
+      texture.dispose();
+      canvas.width = width;
+      canvas.height = 160;
+      material.map = texture = createTexture();
+    }
     context.font = `112px ${font}`;
     const aspect = canvas.width / canvas.height;
     planes.forEach((plane, index) => {

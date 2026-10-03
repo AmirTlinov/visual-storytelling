@@ -164,6 +164,27 @@ test('3D annotations stay readable, attached and non-intercepting during orbit a
         );
       }
     }
+    // Replacing a value must replace its GPU pixels, including when the inscription
+    // grows or shrinks. A newly created label is the reference for the same value.
+    await page.evaluate(() => {
+      lab.view.camera.position.set(0, 0, 17);
+      lab.view.controls.update();
+      lab.group.rotation.set(0.2, 0.65, 0);
+    });
+    for (const value of ['3', '1', '−1', '−12.34', '0', '3']) {
+      await page.evaluate((value) => lab.number.set(value), value);
+      const updated = await letteringPixels(true);
+      await page.evaluate((value) => {
+        lab.number.show(false);
+        lab.reference = lab.view.label(value, lab.cube, { face: ['front', 'back'] });
+      }, value);
+      const fresh = await letteringPixels(true);
+      assert(updated.equals(fresh), `Updated inscription ${value} differs from a fresh one`);
+      await page.evaluate(() => {
+        lab.reference.remove();
+        lab.number.show(true);
+      });
+    }
     // A genuinely closer object must still cover the inscription.
     await page.evaluate(() => {
       lab.group.rotation.set(0, 0, 0);
