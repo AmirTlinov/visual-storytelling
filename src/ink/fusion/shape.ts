@@ -1,11 +1,12 @@
 import { signedDistance } from './field.js';
+import { glyphs } from '../glyphs.js';
+import { medialPaths } from './skeleton.js';
+import type { InkPath, InkPoint } from './transport.js';
 
 export interface FusionShape {
   readonly width: number;
   readonly height: number;
-  readonly pixelsWide: number;
-  readonly pixelsHigh: number;
-  readonly distance: Float32Array;
+  readonly paths: readonly InkPath[];
   readonly bounds: { width: number; height: number };
 }
 export interface FusionPose {
@@ -16,11 +17,12 @@ export interface FusionPose {
 }
 
 /** Any painted silhouette can participate: letters, SVG paths, images or geometry. */
-export function fusionShape(
+function createShape(
   width: number,
   height: number,
   paint: (context: CanvasRenderingContext2D) => void,
   resolution = 2,
+  paths?: readonly InkPath[],
 ): FusionShape {
   if (!(width > 0 && height > 0 && resolution > 0) || !Number.isFinite(width + height + resolution))
     throw new Error('Fusion shape dimensions must be positive and finite');
@@ -53,11 +55,25 @@ export function fusionShape(
   return {
     width,
     height,
-    pixelsWide: canvas.width,
-    pixelsHigh: canvas.height,
-    distance: signedDistance(alpha, canvas.width, canvas.height).map((d) => d / resolution),
+    paths:
+      paths ??
+      medialPaths(
+        signedDistance(alpha, canvas.width, canvas.height).map((d) => d / resolution),
+        canvas.width,
+        canvas.height,
+        1 / resolution,
+      ),
     bounds: { width: (x1 - x0 + 1) / resolution, height: (y1 - y0 + 1) / resolution },
   };
+}
+
+export function fusionShape(
+  width: number,
+  height: number,
+  paint: (context: CanvasRenderingContext2D) => void,
+  resolution = 2,
+): FusionShape {
+  return createShape(width, height, paint, resolution);
 }
 
 /** Call after the chosen font has loaded. No glyph-specific animation data is needed. */
@@ -75,40 +91,52 @@ export function fusionText(
   const height = Math.ceil(
     metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent + 112,
   );
-  return fusionShape(width, height, (ctx) => {
-    ctx.font = context.font;
-    ctx.fillText(text, 56 + metrics.actualBoundingBoxLeft, 56 + metrics.actualBoundingBoxAscent);
-  });
-}
-
-export function sampleShape(shape: FusionShape, pose: FusionPose, x: number, y: number): number {
-  const scale = pose.scale ?? 1,
-    angle = pose.rotation ?? 0;
-  const dx = (x - pose.x) / scale,
-    dy = (y - pose.y) / scale;
-  const localX = dx * Math.cos(angle) + dy * Math.sin(angle);
-  const localY = dy * Math.cos(angle) - dx * Math.sin(angle);
-  const u = (localX / shape.width + 0.5) * shape.pixelsWide - 0.5;
-  const v = (localY / shape.height + 0.5) * shape.pixelsHigh - 0.5;
-  const cx = Math.max(0, Math.min(shape.pixelsWide - 1, u)),
-    cy = Math.max(0, Math.min(shape.pixelsHigh - 1, v));
-  const ix = Math.floor(cx),
-    iy = Math.floor(cy),
-    fx = cx - ix,
-    fy = cy - iy;
-  const get = (px: number, py: number) =>
-    shape.distance[
-      Math.min(py, shape.pixelsHigh - 1) * shape.pixelsWide + Math.min(px, shape.pixelsWide - 1)
-    ]!;
-  const top = get(ix, iy) * (1 - fx) + get(ix + 1, iy) * fx;
-  const bottom = get(ix, iy + 1) * (1 - fx) + get(ix + 1, iy + 1) * fx;
-  return (
-    (top * (1 - fy) +
-      bottom * fy +
-      Math.hypot(
-        Math.max(Math.abs(localX) - shape.width / 2, 0),
-        Math.max(Math.abs(localY) - shape.height / 2, 0),
-      )) *
-    scale
+  let paths: InkPath[] | undefined;
+  if (
+    font.startsWith('SketchPencil') &&
+    [...text].every((char) => /\s/.test(char) || glyphs[char])
+  ) {
+    paths = [];
+    let cursor = 56 + metrics.actualBoundingBoxLeft - width / 2;
+    const baseline = 56 + metrics.actualBoundingBoxAscent - height / 2;
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    for (const char of text) {
+      const advance = context.measureText(char).width,
+        sx = advance / 6.7,
+        sy = size * 0.082;
+      for (const d of glyphs[char] ?? []) {
+        path.setAttribute('d', d);
+        const length = path.getTotalLength(),
+          count = Math.max(2, Math.ceil((length * Math.max(sx, sy)) / 1.5));
+        paths.push(
+          Array.from({ length: count }, (_, i): InkPoint => {
+            const at = (length * i) / (count - 1),
+              point = path.getPointAtLength(at);
+            const before = path.getPointAtLength(Math.max(0, at - 0.01)),
+              after = path.getPointAtLength(Math.min(length, at + 0.01));
+            const tx = (after.x - before.x) * sx,
+              ty = (after.y - before.y) * sy,
+              norm = Math.hypot(tx, ty) || 1;
+            const radius = 0.325 * Math.hypot((sx * ty) / norm, (sy * tx) / norm);
+            return [
+              cursor + advance * 0.055 + point.x * sx,
+              baseline + (point.y - 10) * sy,
+              radius,
+            ];
+          }),
+        );
+      }
+      cursor += advance;
+    }
+  }
+  return createShape(
+    width,
+    height,
+    (ctx) => {
+      ctx.font = context.font;
+      ctx.fillText(text, 56 + metrics.actualBoundingBoxLeft, 56 + metrics.actualBoundingBoxAscent);
+    },
+    2,
+    paths,
   );
 }

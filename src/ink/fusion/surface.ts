@@ -1,19 +1,13 @@
-import { areaThresholds, tensionUnion, relaxField, relaxationAt } from './field.js';
-import {
-  fusionShape,
-  fusionText,
-  sampleShape,
-  type FusionShape,
-  type FusionPose,
-} from './shape.js';
-import { fusionFragment, fusionVertex } from './shader.js';
+import { fusionShape, fusionText, type FusionShape, type FusionPose } from './shape.js';
+import { inkRoutes, type InkRoute, type InkPoint } from './transport.js';
+import { fusionFragment, fusionVertex, strokeFragment, strokeVertex } from './shader.js';
 
 export interface FusionFrame {
   sources: readonly [FusionPose, FusionPose];
   target?: FusionPose;
-  /** 0: contacting source silhouettes; 1: the exact destination silhouette. */
+  /** Direct transport from the input strokes (0) to the result strokes (1). */
   morph?: number;
-  /** Interaction distance in scene units. Zero gives a hard union. */
+  /** Local contact distance in scene units. Zero gives a hard union. */
   tension?: number;
 }
 export interface FusionOptions {
@@ -23,7 +17,7 @@ export interface FusionOptions {
   label?: string;
 }
 
-/** A demand-rendered implicit ink surface. The caller owns poses and time. */
+/** A demand-rendered ink surface. Correspondences belong here; time belongs to the caller. */
 export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) {
   const width = options.width ?? 840,
     height = options.height ?? 300;
@@ -34,14 +28,14 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
   canvas.setAttribute('role', 'img');
   canvas.setAttribute('aria-label', options.label ?? 'Слияние рисованных форм');
   parent.append(canvas);
-  const gl = canvas.getContext('webgl', {
+  const gl = canvas.getContext('webgl2', {
     alpha: true,
     antialias: false,
     premultipliedAlpha: false,
   });
   if (!gl) {
     canvas.remove();
-    throw new Error('Для слияния чернил требуется WebGL');
+    throw new Error('Для слияния чернил требуется WebGL 2');
   }
   const probe = document.createElement('span');
   probe.style.cssText = `position:absolute;visibility:hidden;pointer-events:none;color:${options.color ?? 'var(--ve-ink)'}`;
@@ -49,161 +43,215 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
   const colorContext = document.createElement('canvas').getContext('2d')!;
   const abort = new AbortController();
   let disposed = false,
-    lost = false;
-  let program: WebGLProgram, buffer: WebGLBuffer;
-  let locations: Record<string, WebGLUniformLocation | null>;
-  let textures: WebGLTexture[] = [];
-  let shapes: readonly [FusionShape, FusionShape, FusionShape] | undefined;
-  let previous: FusionFrame | undefined,
-    thresholdKey = '';
-  let thresholds: Float32Array = new Float32Array(49);
-  let ink = [0, 0, 0];
-
-  function setup() {
-    const shaders = [
-      [gl!.VERTEX_SHADER, fusionVertex],
-      [gl!.FRAGMENT_SHADER, fusionFragment],
-    ] as const;
-    program = gl!.createProgram()!;
-    for (const [type, source] of shaders) {
+    lost = false,
+    previous: FusionFrame | undefined;
+  let routes: InkRoute[] = [],
+    receivers: InkRoute[][] = [],
+    ink = [0, 0, 0];
+  let stroke: WebGLProgram, fusion: WebGLProgram;
+  let quad: WebGLBuffer, segments: WebGLBuffer;
+  let strokeVAO: WebGLVertexArrayObject, fusionVAO: WebGLVertexArrayObject;
+  let fields: { texture: WebGLTexture; buffer: WebGLFramebuffer }[] = [];
+  let floatingFields = false;
+  let surfaceWidth = 0,
+    surfaceHeight = 0;
+  let vertices: [Float32Array, Float32Array] = [new Float32Array(), new Float32Array()];
+  let strokeUniforms: Record<string, WebGLUniformLocation | null>,
+    fusionUniforms: Record<string, WebGLUniformLocation | null>;
+  function program(vertex: string, fragment: string) {
+    const result = gl!.createProgram()!;
+    for (const [type, source] of [
+      [gl!.VERTEX_SHADER, vertex],
+      [gl!.FRAGMENT_SHADER, fragment],
+    ] as const) {
       const shader = gl!.createShader(type)!;
       gl!.shaderSource(shader, source);
       gl!.compileShader(shader);
       if (!gl!.getShaderParameter(shader, gl!.COMPILE_STATUS)) {
         const message = gl!.getShaderInfoLog(shader);
         gl!.deleteShader(shader);
-        gl!.deleteProgram(program);
+        gl!.deleteProgram(result);
         throw new Error(message ?? 'Could not compile ink fusion');
       }
-      gl!.attachShader(program, shader);
+      gl!.attachShader(result, shader);
       gl!.deleteShader(shader);
     }
-    gl!.linkProgram(program);
-    if (!gl!.getProgramParameter(program, gl!.LINK_STATUS))
-      throw new Error(gl!.getProgramInfoLog(program) ?? 'Could not link ink fusion');
-    gl!.useProgram(program);
-    buffer = gl!.createBuffer()!;
-    gl!.bindBuffer(gl!.ARRAY_BUFFER, buffer);
+    gl!.linkProgram(result);
+    if (!gl!.getProgramParameter(result, gl!.LINK_STATUS))
+      throw new Error(gl!.getProgramInfoLog(result) ?? 'Could not link ink fusion');
+    return result;
+  }
+  function setup() {
+    floatingFields = Boolean(gl!.getExtension('EXT_color_buffer_float'));
+    stroke = program(strokeVertex, strokeFragment);
+    fusion = program(fusionVertex, fusionFragment);
+    quad = gl!.createBuffer()!;
+    segments = gl!.createBuffer()!;
+    gl!.bindBuffer(gl!.ARRAY_BUFFER, quad);
     gl!.bufferData(
       gl!.ARRAY_BUFFER,
-      new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+      new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]),
       gl!.STATIC_DRAW,
     );
-    const attribute = gl!.getAttribLocation(program, 'position');
-    gl!.enableVertexAttribArray(attribute);
-    gl!.vertexAttribPointer(attribute, 2, gl!.FLOAT, false, 0, 0);
-    locations = Object.fromEntries(
-      [
-        'resolution',
-        'world',
-        'ink',
-        'tension',
-        'morph',
-        'level',
-        'relaxation',
-        'sizes[0]',
-        'poses[0]',
-      ].map((name) => [name, gl!.getUniformLocation(program, name)]),
-    );
-    textures = ['first', 'second', 'target', 'relaxedFirst', 'relaxedTarget'].map((name, i) => {
-      gl!.uniform1i(gl!.getUniformLocation(program, name), i);
-      return gl!.createTexture()!;
+    function vao(p: WebGLProgram) {
+      const result = gl!.createVertexArray()!;
+      gl!.bindVertexArray(result);
+      gl!.bindBuffer(gl!.ARRAY_BUFFER, quad);
+      const corner = gl!.getAttribLocation(p, 'corner');
+      gl!.enableVertexAttribArray(corner);
+      gl!.vertexAttribPointer(corner, 2, gl!.FLOAT, false, 0, 0);
+      return result;
+    }
+    fusionVAO = vao(fusion);
+    strokeVAO = vao(stroke);
+    gl!.bindBuffer(gl!.ARRAY_BUFFER, segments);
+    for (const [name, size, offset] of [
+      ['ends', 4, 0],
+      ['radii', 2, 16],
+    ] as const) {
+      const at = gl!.getAttribLocation(stroke, name);
+      gl!.enableVertexAttribArray(at);
+      gl!.vertexAttribPointer(at, size, gl!.FLOAT, false, 24, offset);
+      gl!.vertexAttribDivisor(at, 1);
+    }
+    const uniforms = (p: WebGLProgram, names: string[]) =>
+      Object.fromEntries(names.map((name) => [name, gl!.getUniformLocation(p, name)]));
+    strokeUniforms = uniforms(stroke, ['resolution', 'world', 'band']);
+    fusionUniforms = uniforms(fusion, ['resolution', 'world', 'band', 'tension', 'ink']);
+    gl!.useProgram(fusion);
+    gl!.uniform1i(gl!.getUniformLocation(fusion, 'first'), 0);
+    gl!.uniform1i(gl!.getUniformLocation(fusion, 'second'), 1);
+    fields = [0, 1].map(() => ({
+      texture: gl!.createTexture()!,
+      buffer: gl!.createFramebuffer()!,
+    }));
+    surfaceWidth = 0;
+    surfaceHeight = 0;
+  }
+  function resize(w: number, h: number) {
+    if (w === surfaceWidth && h === surfaceHeight) return;
+    surfaceWidth = canvas.width = w;
+    surfaceHeight = canvas.height = h;
+    gl!.viewport(0, 0, w, h);
+    fields.forEach(({ texture, buffer }) => {
+      gl!.bindTexture(gl!.TEXTURE_2D, texture);
+      gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_WRAP_S, gl!.CLAMP_TO_EDGE);
+      gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_WRAP_T, gl!.CLAMP_TO_EDGE);
+      gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_MIN_FILTER, gl!.LINEAR);
+      gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_MAG_FILTER, gl!.LINEAR);
+      gl!.texImage2D(
+        gl!.TEXTURE_2D,
+        0,
+        floatingFields ? gl!.RGBA16F : gl!.RGBA8,
+        w,
+        h,
+        0,
+        gl!.RGBA,
+        floatingFields ? gl!.HALF_FLOAT : gl!.UNSIGNED_BYTE,
+        null,
+      );
+      gl!.bindFramebuffer(gl!.FRAMEBUFFER, buffer);
+      gl!.framebufferTexture2D(gl!.FRAMEBUFFER, gl!.COLOR_ATTACHMENT0, gl!.TEXTURE_2D, texture, 0);
+      if (gl!.checkFramebufferStatus(gl!.FRAMEBUFFER) !== gl!.FRAMEBUFFER_COMPLETE)
+        throw new Error('Could not allocate ink surface');
     });
-    for (let i = 3; i < 5; i++) uploadField(i, new Float32Array(1), 1, 1);
   }
-  function uploadField(i: number, distances: Float32Array, w: number, h: number) {
-    const packed = new Uint8Array(distances.length * 4);
-    distances.forEach((distance, j) => {
-      const value = Math.round(Math.max(0, Math.min(1, distance / 512 + 0.5)) * 65535);
-      packed[j * 4] = value >> 8;
-      packed[j * 4 + 1] = value & 255;
-      packed[j * 4 + 3] = 255;
-    });
-    gl!.activeTexture(gl!.TEXTURE0 + i);
-    gl!.bindTexture(gl!.TEXTURE_2D, textures[i]!);
-    gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_WRAP_S, gl!.CLAMP_TO_EDGE);
-    gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_WRAP_T, gl!.CLAMP_TO_EDGE);
-    gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_MIN_FILTER, gl!.LINEAR);
-    gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_MAG_FILTER, gl!.LINEAR);
-    gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA, w, h, 0, gl!.RGBA, gl!.UNSIGNED_BYTE, packed);
-  }
-  function upload() {
-    if (!shapes || disposed || lost) return;
-    shapes.forEach((shape, i) =>
-      uploadField(i, shape.distance, shape.pixelsWide, shape.pixelsHigh),
-    );
-    gl!.uniform2fv(
-      locations['sizes[0]']!,
-      shapes.flatMap((shape) => [shape.width, shape.height]),
-    );
-  }
-  function prepare(frame: FusionFrame, poses: readonly FusionPose[], tension: number) {
-    const key = JSON.stringify([poses, tension]);
-    if (key === thresholdKey || !shapes || !(frame.morph! > 0 && frame.morph! < 1)) return;
-    // A compact quadrature computes the required ink area once per transition.
-    const columns = Math.ceil(width / 1.5),
-      rows = Math.ceil(height / 1.5);
-    const from = new Float32Array(columns * rows),
-      to = new Float32Array(from.length);
-    for (let y = 0; y < rows; y++)
-      for (let x = 0; x < columns; x++) {
-        const px = ((x + 0.5) / columns) * width - width / 2;
-        const py = ((y + 0.5) / rows) * height - height / 2;
-        const a = sampleShape(shapes[0], poses[0]!, px, py),
-          b = sampleShape(shapes[1], poses[1]!, px, py);
-        from[y * columns + x] = tensionUnion(a, b, tension);
-        to[y * columns + x] = sampleShape(shapes[2], poses[2]!, px, py);
-      }
-    const relaxed = [relaxField(from, columns, 5), relaxField(to, columns, 5)] as const;
-    thresholds = areaThresholds(from, to, 49, relaxed);
-    uploadField(3, relaxed[0], columns, rows);
-    uploadField(4, relaxed[1], columns, rows);
-    thresholdKey = key;
+  function transformed(point: InkPoint, pose: FusionPose): InkPoint {
+    const s = pose.scale ?? 1,
+      c = Math.cos(pose.rotation ?? 0),
+      n = Math.sin(pose.rotation ?? 0);
+    return [
+      pose.x + (point[0] * c - point[1] * n) * s,
+      pose.y + (point[0] * n + point[1] * c) * s,
+      point[2] * s,
+    ];
   }
   function render(frame: FusionFrame) {
+    if (disposed) return;
     previous = frame;
-    if (disposed || lost || !shapes) return;
-    const poses = [...frame.sources, frame.target ?? { x: 0, y: 0 }];
+    if (lost || !routes.length) return;
+    const target = frame.target ?? { x: 0, y: 0 };
     if (
-      poses.some(
-        (pose) =>
-          !Number.isFinite(pose.x + pose.y + (pose.rotation ?? 0) + (pose.scale ?? 1)) ||
-          !((pose.scale ?? 1) > 0),
+      [...frame.sources, target].some(
+        (p) =>
+          !Number.isFinite(p.x + p.y + (p.scale ?? 1) + (p.rotation ?? 0)) || (p.scale ?? 1) <= 0,
       )
     )
       throw new Error('Fusion poses need finite coordinates and positive scales');
     if (!Number.isFinite((frame.morph ?? 0) + (frame.tension ?? 28)))
       throw new Error('Fusion progress and tension must be finite');
     const morph = Math.max(0, Math.min(1, frame.morph ?? 0));
-    const tension = Math.max(0, frame.tension ?? 28);
-    prepare(frame, poses, tension);
-    const at = morph * (thresholds.length - 1),
-      index = Math.floor(at);
-    const level =
-      morph === 0 || morph === 1
-        ? 0
-        : thresholds[index]! * (1 - (at - index)) +
-          thresholds[Math.min(index + 1, thresholds.length - 1)]! * (at - index);
+    const tension = Math.max(0, Math.min(64, frame.tension ?? 28)) * (1 - morph) ** 2;
+    const band = Math.max(8, tension + 2);
+    const cursor = [0, 0];
+    // Strokes sharing a destination become one continuous receiver curve during
+    // arrival. They do not travel as several overprinted copies until the last frame.
+    const capture = Math.min(1, morph / 0.65);
+    const gather = capture * capture * (3 - 2 * capture);
+    for (const group of receivers) {
+      const last: (InkPoint | undefined)[] = group.map(() => undefined);
+      for (let i = 0; i < group[0]!.from.length; i++) {
+        const origins = group.map((r) => transformed(r.from[i]!, frame.sources[r.source]));
+        const meanX = origins.reduce((sum, p) => sum + p[0], 0) / origins.length;
+        const meanY = origins.reduce((sum, p) => sum + p[1], 0) / origins.length;
+        const b = transformed(group[0]!.to[i]!, target);
+        for (let r = 0; r < group.length; r++) {
+          const route = group[r]!,
+            a = origins[r]!;
+          const ax = a[0] + (meanX - a[0]) * gather,
+            ay = a[1] + (meanY - a[1]) * gather;
+          const point: InkPoint = [
+            ax + (b[0] - ax) * morph,
+            ay + (b[1] - ay) * morph,
+            a[2] + (b[2] - a[2]) * morph,
+          ];
+          const previousPoint = last[r];
+          if (previousPoint) {
+            vertices[route.source].set(
+              [previousPoint[0], previousPoint[1], point[0], point[1], previousPoint[2], point[2]],
+              cursor[route.source],
+            );
+            cursor[route.source]! += 6;
+          }
+          last[r] = point;
+        }
+      }
+    }
     const bounds = parent.getBoundingClientRect(),
       ratio = Math.min(devicePixelRatio || 1, 2);
-    const w = Math.max(1, Math.round(bounds.width * ratio)),
-      h = Math.max(1, Math.round(bounds.height * ratio));
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
-      gl!.viewport(0, 0, w, h);
-    }
-    gl!.uniform2f(locations.resolution!, w, h);
-    gl!.uniform2f(locations.world!, width, height);
-    gl!.uniform3fv(locations.ink!, ink);
-    gl!.uniform1f(locations.morph!, morph);
-    gl!.uniform1f(locations.tension!, tension);
-    gl!.uniform1f(locations.level!, level);
-    gl!.uniform1f(locations.relaxation!, relaxationAt(morph));
-    gl!.uniform4fv(
-      locations['poses[0]']!,
-      poses.flatMap((pose) => [pose.x, pose.y, pose.scale ?? 1, pose.rotation ?? 0]),
+    resize(
+      Math.max(1, Math.round(bounds.width * ratio)),
+      Math.max(1, Math.round(bounds.height * ratio)),
     );
+    gl!.useProgram(stroke);
+    gl!.bindVertexArray(strokeVAO);
+    gl!.uniform2f(strokeUniforms.resolution!, surfaceWidth, surfaceHeight);
+    gl!.uniform2f(strokeUniforms.world!, width, height);
+    gl!.uniform1f(strokeUniforms.band!, band);
+    gl!.enable(gl!.BLEND);
+    gl!.blendEquation(gl!.MIN);
+    gl!.blendFunc(gl!.ONE, gl!.ONE);
+    for (let i = 0; i < 2; i++) {
+      gl!.bindFramebuffer(gl!.FRAMEBUFFER, fields[i]!.buffer);
+      gl!.clearColor(1, 1, 1, 1);
+      gl!.clear(gl!.COLOR_BUFFER_BIT);
+      gl!.bindBuffer(gl!.ARRAY_BUFFER, segments);
+      gl!.bufferData(gl!.ARRAY_BUFFER, vertices[i]!, gl!.DYNAMIC_DRAW);
+      gl!.drawArraysInstanced(gl!.TRIANGLES, 0, 6, cursor[i]! / 6);
+    }
+    gl!.disable(gl!.BLEND);
+    gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
+    gl!.useProgram(fusion);
+    gl!.bindVertexArray(fusionVAO);
+    fields.forEach(({ texture }, i) => {
+      gl!.activeTexture(gl!.TEXTURE0 + i);
+      gl!.bindTexture(gl!.TEXTURE_2D, texture);
+    });
+    gl!.uniform2f(fusionUniforms.resolution!, surfaceWidth, surfaceHeight);
+    gl!.uniform2f(fusionUniforms.world!, width, height);
+    gl!.uniform1f(fusionUniforms.band!, band);
+    gl!.uniform1f(fusionUniforms.tension!, tension);
+    gl!.uniform3fv(fusionUniforms.ink!, ink);
     gl!.drawArrays(gl!.TRIANGLES, 0, 6);
   }
   const redraw = () => {
@@ -219,19 +267,15 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
   }
   setup();
   theme();
-  const resize = new ResizeObserver(redraw);
-  resize.observe(parent);
+  const observer = new ResizeObserver(redraw);
+  observer.observe(parent);
   const appearance = new MutationObserver(theme);
-  appearance.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['style', 'class', 'data-theme'],
-  });
-  const scene = parent.closest('.ve-scene');
-  if (scene)
-    appearance.observe(scene, {
-      attributes: true,
-      attributeFilter: ['style', 'class', 'data-theme'],
-    });
+  for (const node of [document.documentElement, parent.closest('.ve-scene')])
+    if (node)
+      appearance.observe(node, {
+        attributes: true,
+        attributeFilter: ['style', 'class', 'data-theme'],
+      });
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', theme, {
     signal: abort.signal,
   });
@@ -247,9 +291,7 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
     'webglcontextrestored',
     () => {
       lost = false;
-      thresholdKey = '';
       setup();
-      upload();
       redraw();
     },
     { signal: abort.signal },
@@ -257,29 +299,35 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
   return {
     canvas,
     setShapes(first: FusionShape, second: FusionShape, target: FusionShape) {
-      shapes = [first, second, target];
-      thresholdKey = '';
-      upload();
-    },
-    /** Warm the area correction before playback; use the poses at the start of morphing. */
-    prepare(frame: FusionFrame) {
-      prepare(
-        { ...frame, morph: 0.5 },
-        [...frame.sources, frame.target ?? { x: 0, y: 0 }],
-        frame.tension ?? 28,
-      );
+      routes = inkRoutes(first.paths, second.paths, target.paths);
+      receivers = target.paths.map((_, i) => routes.filter((route) => route.target === i));
+      vertices = [0, 1].map(
+        (source) =>
+          new Float32Array(
+            routes
+              .filter((r) => r.source === source)
+              .reduce((n, r) => n + (r.from.length - 1) * 6, 0),
+          ),
+      ) as [Float32Array, Float32Array];
     },
     render,
     dispose() {
       if (disposed) return;
       disposed = true;
       abort.abort();
-      resize.disconnect();
+      observer.disconnect();
       appearance.disconnect();
-      textures.forEach((texture) => gl!.deleteTexture(texture));
-      gl!.deleteBuffer(buffer);
-      gl!.deleteProgram(program);
-      shapes = undefined;
+      fields.forEach(({ texture, buffer }) => {
+        gl!.deleteTexture(texture);
+        gl!.deleteFramebuffer(buffer);
+      });
+      gl!.deleteBuffer(quad);
+      gl!.deleteBuffer(segments);
+      gl!.deleteVertexArray(strokeVAO);
+      gl!.deleteVertexArray(fusionVAO);
+      gl!.deleteProgram(stroke);
+      gl!.deleteProgram(fusion);
+      routes = [];
       previous = undefined;
       canvas.remove();
       probe.remove();

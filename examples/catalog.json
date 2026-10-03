@@ -59,8 +59,8 @@
   "ink-fusion": {
     "title": "Живые чернила",
     "page": "index.html",
-    "time": 3.5,
-    "checkpoints": [0, 3, 3.5, 4.5, 7.5, 9, 12]
+    "time": 1.5,
+    "checkpoints": [0, 0.9, 1.2, 1.5, 1.7, 2.7, 4]
   },
   "logic-gates": {
     "title": "Логические элементы",

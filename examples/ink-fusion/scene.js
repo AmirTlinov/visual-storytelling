@@ -16,7 +16,7 @@ window.galleryReady = (async () => {
   const equation = root.querySelector('.fusion-equation');
   const abort = new AbortController();
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-  const clock = transport({ duration: 12 });
+  const clock = transport({ duration: 4 });
   const view = InkFusion.mount(stage, { width: 840, height: 300, color: 'var(--ve-blue)' });
   let words = ['свет', 'тень', 'объём'],
     scenario = 'words',
@@ -29,13 +29,6 @@ window.galleryReady = (async () => {
   const smooth = (a, b, value) => {
     const t = clamp((value - a) / (b - a));
     return t * t * (3 - 2 * t);
-  };
-  const centered = {
-    sources: [
-      { x: 0, y: 0 },
-      { x: 0, y: 0 },
-    ],
-    target: { x: 0, y: 0 },
   };
   const persistence = widgetState('ink-fusion', restore);
   const fields = ['Первый текст', 'Второй текст', 'Третий текст'].map((label, i) => {
@@ -60,7 +53,6 @@ window.galleryReady = (async () => {
     (value) => {
       clock.pause();
       tension = Number(value);
-      view.prepare({ ...centered, tension });
       render(clock.state.time);
       save();
     },
@@ -94,7 +86,7 @@ window.galleryReady = (async () => {
     if (!ready || disposed) return;
     persistence.save({
       modelContent: { type: 'ink-fusion', texts: words, tension, example: scenario },
-      privateContent: { time: clock.state.time },
+      privateContent: { time: clock.state.time, motionRevision: 2 },
     });
   }
   function changeTexts() {
@@ -134,7 +126,6 @@ window.galleryReady = (async () => {
     }
     view.canvas.setAttribute('aria-label', equation.textContent);
     view.setShapes(...shapes);
-    view.prepare({ ...centered, tension });
     fields.forEach((field) => {
       field.element.hidden = scenario !== 'words';
     });
@@ -143,9 +134,9 @@ window.galleryReady = (async () => {
   function render(time) {
     if (!shapes || disposed) return;
     const t = time / clock.state.duration;
-    const approach = smooth(0.08, 0.62, t);
-    const a = -(shapes[0].bounds.width / 2 + 66) * (1 - approach);
-    const b = (shapes[1].bounds.width / 2 + 66) * (1 - approach);
+    const approach = smooth(0.08, 0.34, t);
+    const a = -(shapes[0].bounds.width / 2 + 66 - 62 * approach);
+    const b = shapes[1].bounds.width / 2 + 66 - 62 * approach;
     view.render({
       sources: [
         { x: a, y: 0 },
@@ -153,7 +144,7 @@ window.galleryReady = (async () => {
       ],
       target: { x: 0, y: 0 },
       tension,
-      morph: smooth(0.68, 0.94, t),
+      morph: 1 - (1 - smooth(0.24, 0.67, t)) ** 3,
     });
   }
   function restore(snapshot) {
@@ -175,12 +166,17 @@ window.galleryReady = (async () => {
     strength.setValue(tension);
     cases.setValue(scenario);
     rebuild();
-    if (Number.isFinite(snapshot.privateContent?.time)) clock.seek(snapshot.privateContent.time);
+    if (
+      snapshot.privateContent?.motionRevision === 2 &&
+      Number.isFinite(snapshot.privateContent?.time)
+    )
+      clock.seek(snapshot.privateContent.time);
+    else clock.seek(0);
     return true;
   }
   const controls = player(root.querySelector('.fusion-player'), {
     transport: clock,
-    stops: [0, 3.5, 7.5, 12],
+    stops: [0, 1, 1.7, 4],
     onPlay: flush,
     onSeek: (time) => {
       flush();
@@ -221,7 +217,7 @@ window.galleryReady = (async () => {
       clock.seek(time);
     },
     pause: clock.pause,
-    review: () => ({ duration: 12, cues: [] }),
+    review: () => ({ duration: 4, cues: [] }),
     snapshot: () => ({ texts: words, scenario, tension, time: clock.state.time }),
     dispose() {
       disposed = true;
@@ -237,7 +233,8 @@ window.galleryReady = (async () => {
       view.dispose();
     },
   };
-  if (!restored && !reduced.matches) void clock.play();
+  if ((!restored || saved?.privateContent?.motionRevision !== 2) && !reduced.matches)
+    void clock.play();
 })().catch((error) => {
   document.querySelector('.fusion-error').textContent = error.message;
   throw error;

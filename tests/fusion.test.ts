@@ -1,12 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  tensionUnion,
-  signedDistance,
-  areaThresholds,
-  relaxField,
-  relaxationAt,
-} from '../src/ink/fusion/field.ts';
+import { tensionUnion, signedDistance } from '../src/ink/fusion/field.ts';
+import { inkRoutes, type InkPath } from '../src/ink/fusion/transport.ts';
+import { medialPaths } from '../src/ink/fusion/skeleton.ts';
 
 test('contact makes a neck across empty space without changing distant ink', () => {
   assert.equal(tensionUnion(10, 10, 0), 10);
@@ -29,37 +25,47 @@ test('distance masks retain thin ink and have finite, symmetric exterior distanc
   assert.ok(d[0]! > 12);
 });
 
-test('topology changes preserve interpolated ink area through surface relaxation', () => {
-  const width = 140,
-    height = 80;
-  const from = new Float32Array(width * height),
-    to = new Float32Array(from.length);
-  for (let y = 0; y < height; y++)
-    for (let x = 0; x < width; x++) {
-      const px = x - width / 2,
-        py = y - height / 2;
-      from[y * width + x] = Math.abs(Math.hypot(px, py) - 24) - 1.5;
-      to[y * width + x] = Math.min(Math.hypot(px - 15, py), Math.hypot(px + 15, py)) - 8;
+test('transport covers every original and final stroke without an intermediate shape', () => {
+  const stroke = (x: number, y: number, length: number): InkPath => [
+    [x, y, 2],
+    [x + length, y, 2],
+  ];
+  const first = [stroke(-20, 0, 12), stroke(20, 0, 8)];
+  const second = [stroke(-10, 0, 8), stroke(15, 0, 15)];
+  const target = [stroke(-30, 0, 20), stroke(30, 0, 20)];
+  for (const [a, b, result] of [
+    [first, second, target],
+    [target.slice(0, 1), target.slice(1), [...first, ...second]],
+  ] as const) {
+    const routes = inkRoutes(a, b, result);
+    assert.equal(routes.length, Math.max(a.length + b.length, result.length));
+    for (const [group, paths] of [a, b].entries())
+      for (const path of paths) {
+        const ends = routes
+          .filter((r) => r.source === group)
+          .flatMap((r) => [r.from[0]![0], r.from.at(-1)![0]]);
+        assert.ok(ends.some((x) => Math.abs(x - path[0]![0]) < 0.001));
+        assert.ok(ends.some((x) => Math.abs(x - path.at(-1)![0]) < 0.001));
+      }
+    for (const path of result)
+      assert.ok(routes.some((r) => Math.min(r.to[0]![0], r.to.at(-1)![0]) === path[0]![0]));
+    for (const route of routes) {
+      assert.equal(route.from.length, route.to.length);
+      assert.ok([...route.from, ...route.to].flat().every(Number.isFinite));
     }
-  const softened = [relaxField(from, width, 4), relaxField(to, width, 4)] as const;
-  const levels = areaThresholds(from, to, 49, softened);
-  const areaA = from.filter((d) => d <= 0).length,
-    areaB = to.filter((d) => d <= 0).length;
-  assert.equal(levels[0], 0);
-  assert.equal(levels[48], 0);
-  for (const index of [6, 12, 24, 36, 42]) {
-    const t = index / 48,
-      relaxation = relaxationAt(t);
-    const expected = areaA * (1 - t) + areaB * t;
-    let pixels = 0;
-    for (let i = 0; i < from.length; i++) {
-      const raw = from[i]! * (1 - t) + to[i]! * t;
-      const smooth = softened[0][i]! * (1 - t) + softened[1][i]! * t;
-      if (raw * (1 - relaxation) + smooth * relaxation <= levels[index]!) pixels++;
-    }
-    assert.ok(
-      Math.abs(pixels - expected) / expected < 0.03,
-      `Ink area drift at ${t}: ${pixels} vs ${expected}`,
+  }
+});
+
+test('a painted drop retains its radius in the medial representation', () => {
+  for (const width of [64, 65]) {
+    const radius = 20;
+    const mask = Uint8Array.from({ length: width * width }, (_, i) =>
+      Math.hypot((i % width) - 32, Math.floor(i / width) - 32) < radius ? 255 : 0,
     );
+    const paths = medialPaths(signedDistance(mask, width, width), width, width, 1);
+    const points = paths.flat();
+    assert.ok(points.length > 0);
+    assert.ok(Math.abs(Math.max(...points.map((p) => p[2])) - radius) < 1);
+    assert.ok(points.every((p) => Math.hypot(p[0], p[1]) < 2));
   }
 });
