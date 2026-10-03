@@ -27,7 +27,7 @@ window.galleryReady = (async () => {
   });
   shell.attachView(view);
   const bounds = new T.Box3(new T.Vector3(-2.5, -1.35, -1.35), new T.Vector3(2.5, 1.35, 1.35));
-  const morph = VolumeMorph.mount(view, { bounds, resolution: 48, pigment: 'blue' });
+  const morph = VolumeMorph.mount(view, { bounds, pigment: 'blue' });
   const cube = VolumeMorph.box([1.15, 1.15, 0.97]);
   const sphere = VolumeMorph.sphere(0.69);
   const shapes = [
@@ -93,7 +93,7 @@ window.galleryReady = (async () => {
   root.scene.snapshot = () => ({
     ...baseSnapshot(),
     ...current,
-    triangles: morph.triangles,
+    renderer: 'gpu-field',
     form: cases[current.index].id,
   });
   Object.assign(root.scene, { view, story });

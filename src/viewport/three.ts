@@ -253,8 +253,8 @@ function mount(
       if (object === next) return;
       next.removeFromParent();
       if (object) {
-        for (const remove of [...removals]) remove(object);
         labels.dispose(object);
+        for (const remove of [...removals]) remove(object);
         scene.remove(object);
         release(object);
       }

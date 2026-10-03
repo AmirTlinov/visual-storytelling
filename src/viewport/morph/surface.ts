@@ -1,39 +1,38 @@
 import {
   BackSide,
   Box3,
+  BoxGeometry,
   Color,
+  CustomBlending,
   Group,
+  Matrix4,
   Mesh,
-  MeshBasicMaterial,
-  LineBasicMaterial,
-  LineSegments,
-  Sphere,
+  OneFactor,
+  OneMinusSrcAlphaFactor,
+  ShaderMaterial,
+  SrcAlphaFactor,
   Vector3,
   type Object3D,
 } from 'three';
-import { volumeContour } from './contour.js';
 import type { Viewport3D } from '../three.js';
 import {
   volumeBox,
   volumeCapsule,
   volumeField,
   volumeSphere,
-  type VolumeField,
   type VolumeFrame,
+  type VolumeShape,
 } from './field.js';
+import { vertexShader, fragmentShader } from './shader.js';
 
 export interface VolumeMorphOptions {
-  /** Fixed sampling bounds, including all poses and the contact bridge. */
+  /** Finite local bounds enclosing the forms, every pose and the contact blend. */
   bounds: Box3;
-  resolution?: number;
   pigment?: string;
 }
 
-/** The story supplies deterministic frames; this component owns their surface and ink. */
+/** One field, one visible surface and one ink layer; the story only supplies its state. */
 function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOptions) {
-  const resolution = options.resolution ?? 56;
-  if (!Number.isInteger(resolution) || resolution < 16 || resolution > 128)
-    throw new Error('Volume resolution must be an integer between 16 and 128');
   const size = options.bounds.getSize(new Vector3()),
     center = options.bounds.getCenter(new Vector3());
   if (
@@ -41,58 +40,64 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
     !Number.isFinite(center.length())
   )
     throw new Error('Volume bounds must be finite and non-empty');
-  const pigment = options.pigment ?? 'blue';
-  const paper = { value: new Color() };
+  const pigment = new Color(),
+    paper = new Color(),
+    ink = new Color();
+  const uniforms = {
+    kinds: { value: new Int32Array(2) },
+    parameters: { value: new Float32Array(8) },
+    transforms: { value: new Float32Array(32) },
+    scales: { value: new Float32Array(2) },
+    planes: { value: new Float32Array(24) },
+    planeCount: { value: 0 },
+    morph: { value: 0 },
+    tension: { value: 0 },
+    boundsMin: { value: options.bounds.min.clone() },
+    boundsMax: { value: options.bounds.max.clone() },
+    rayOrigin: { value: new Vector3() },
+    clipMatrix: { value: new Matrix4() },
+    paper: { value: paper },
+    pigment: { value: pigment },
+    ink: { value: ink },
+  };
   const material = view.ink(
-    new MeshBasicMaterial({ polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }),
+    Object.assign(
+      new ShaderMaterial({
+        uniforms,
+        defines: { SHAPE_COUNT: 2 },
+        vertexShader,
+        fragmentShader,
+        side: BackSide,
+        // Keep the field in the opaque pass, before transparent surface lettering.
+        // Only the subpixel silhouette has partial coverage.
+        blending: CustomBlending,
+        blendSrc: SrcAlphaFactor,
+        blendDst: OneMinusSrcAlphaFactor,
+        blendSrcAlpha: OneFactor,
+        blendDstAlpha: OneMinusSrcAlphaFactor,
+        depthWrite: true,
+      }),
+      { color: pigment },
+    ),
     (palette) => {
-      paper.value.copy(palette.surface!);
-      return palette[pigment]!;
+      paper.copy(palette.surface!);
+      ink.copy(palette.ink!);
+      return palette[options.pigment ?? 'blue']!;
     },
   );
-  // Fixed pigment washes on each face, matching the numbered teaching cubes.
-  // The face color stays with the object when the camera moves.
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.volumePaper = paper;
-    shader.vertexShader = 'varying vec3 volumeNormal;\n' + shader.vertexShader;
-    shader.vertexShader = shader.vertexShader.replace(
-      '#include <begin_vertex>',
-      '#include <begin_vertex>\nvolumeNormal = normal;',
-    );
-    shader.fragmentShader =
-      'uniform vec3 volumePaper; varying vec3 volumeNormal;\n' + shader.fragmentShader;
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <color_fragment>',
-      `#include <color_fragment>
-       vec3 n = normalize(volumeNormal), w = abs(n);
-       float wash = dot(w, vec3(n.x > 0. ? .88 : 1., n.y > 0. ? .82 : 1., n.z > 0. ? .93 : .85)) / (w.x + w.y + w.z);
-       diffuseColor.rgb = mix(volumePaper, diffuseColor.rgb, .65 * wash);`,
-    );
+  const geometry = new BoxGeometry(size.x, size.y, size.z).translate(center.x, center.y, center.z);
+  const mesh = new Mesh(geometry, material),
+    object = new Group();
+  mesh.visible = false;
+  object.add(mesh);
+  const inverseWorld = new Matrix4();
+  mesh.onBeforeRender = (_renderer, _scene, camera) => {
+    inverseWorld.copy(mesh.matrixWorld).invert();
+    uniforms.rayOrigin.value.setFromMatrixPosition(camera.matrixWorld).applyMatrix4(inverseWorld);
+    uniforms.clipMatrix.value
+      .multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+      .multiply(mesh.matrixWorld);
   };
-  const contour = volumeContour(options.bounds.min.toArray(), size.toArray(), resolution);
-  contour.geometry.boundingBox = options.bounds.clone();
-  contour.geometry.boundingSphere = new Sphere(center, size.length() * 0.5);
-  contour.outline.boundingBox = contour.geometry.boundingBox;
-  contour.outline.boundingSphere = contour.geometry.boundingSphere;
-  const mesh = new Mesh(contour.geometry, material);
-  const outlineMaterial = view.ink(
-    new MeshBasicMaterial({ side: BackSide, transparent: true, opacity: 0.45 }),
-    'ink',
-  );
-  outlineMaterial.onBeforeCompile = (shader) => {
-    shader.vertexShader = shader.vertexShader.replace(
-      '#include <begin_vertex>',
-      '#include <begin_vertex>\ntransformed += normalize(normal) * .006;',
-    );
-  };
-  const outline = new Mesh(mesh.geometry, outlineMaterial);
-  const edgeMaterial = view.ink(
-    new LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.5 }),
-    'ink',
-  );
-  const creases = new LineSegments(contour.outline, edgeMaterial);
-  const object = new Group();
-  object.add(mesh, outline, creases);
   let field: ReturnType<typeof volumeField> | undefined,
     previous = '',
     disposed = false;
@@ -100,11 +105,8 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
     if (disposed) return;
     disposed = true;
     object.removeFromParent();
-    mesh.geometry.dispose();
-    contour.outline.dispose();
-    edgeMaterial.dispose();
+    geometry.dispose();
     material.dispose();
-    outlineMaterial.dispose();
     unbind();
     offRemove();
     field = undefined;
@@ -119,9 +121,19 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
   });
   return {
     object,
-    setShapes(sources: readonly VolumeField[], target: VolumeField) {
+    setShapes(sources: readonly VolumeShape[], target: VolumeShape) {
       if (disposed) throw new Error('Volume morph has been disposed');
       field = volumeField(sources, target);
+      uniforms.kinds.value = field.kinds;
+      uniforms.parameters.value = field.parameters;
+      uniforms.transforms.value = field.transforms;
+      uniforms.scales.value = field.scales;
+      uniforms.planes.value = field.planes;
+      if (material.defines.SHAPE_COUNT !== sources.length + 1) {
+        material.defines.SHAPE_COUNT = sources.length + 1;
+        material.needsUpdate = true;
+      }
+      mesh.visible = false;
       previous = '';
     },
     render(frame: VolumeFrame) {
@@ -129,16 +141,16 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
       const key = JSON.stringify(frame);
       if (key === previous) return;
       field.update(frame);
-      contour.update(field.distance);
+      uniforms.morph.value = field.morph;
+      uniforms.tension.value = field.tension;
+      uniforms.planeCount.value = field.planeCount;
+      mesh.visible = true;
       previous = key;
       view.invalidate();
-    },
-    get triangles() {
-      return mesh.geometry.drawRange.count / 3;
     },
     dispose,
   };
 }
 
 export const VolumeMorph = { mount, box: volumeBox, sphere: volumeSphere, capsule: volumeCapsule };
-export type { VolumeField, VolumeFrame, VolumePose, VolumePoint } from './field.js';
+export type { VolumeShape, VolumeFrame, VolumePose, VolumePoint } from './field.js';

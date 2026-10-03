@@ -26,11 +26,13 @@ export function shapeFrame(index, progress) {
   const p = Math.max(0, Math.min(1, progress));
   if (index === 0) return { sources: [{}], morph: ease(p), tension: 0 };
   const approach = ease(p / 0.3),
+    contact = ease((p - 0.3) / 0.18),
     morph = ease((p - 0.3) / 0.7);
-  const distance = 1.55 - 0.84 * approach - 0.16 * morph;
+  // Approach preserves the rigid sources. Morphing starts when their faces meet.
+  const distance = 1.55 - 0.975 * approach - 0.025 * contact;
   return {
     sources: [{ position: [-distance, 0, 0] }, { position: [distance, 0, 0] }],
     morph,
-    tension: 0.62 * ease((p - 0.28) / 0.2),
+    tension: (index === 1 ? 0.12 : 0.6) * contact,
   };
 }

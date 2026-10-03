@@ -2,7 +2,7 @@ export * as ThreeKit from './engine.js';
 export { VolumeMorph } from './morph/surface.js';
 export type {
   VolumeMorphOptions,
-  VolumeField,
+  VolumeShape,
   VolumeFrame,
   VolumePose,
   VolumePoint,
