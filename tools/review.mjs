@@ -94,13 +94,14 @@ ${report.cues
   .map(
     (
       cue,
+      index,
     ) => `<section><h2><code>${escape(cue.id)}</code> · ${cue.start.toFixed(2)}–${cue.end.toFixed(2)} с</h2>
 <blockquote>«${escape(cue.text ?? cue.quote ?? cue.context)}»</blockquote>
 <p>${cue.kind === 'hold' ? 'Остановка' : 'Действие'}: ${escape(cue.action ?? cue.hold ?? 'описание отсутствует')}</p>
 ${sceneHTML ? `<button type="button" data-play-cue data-title="${escape(cue.id)}" data-start="${Math.max(0, cue.start - 0.5)}" data-end="${Math.min(report.duration, cue.end + 0.7)}">Проиграть переход</button>` : ''}
 ${cue.context ? `<details><summary>Вся реплика</summary><p>${escape(cue.context)}</p></details>` : ''}
 <p>Метка ${cue.referenced ? 'прочитана кодом сцены' : 'не прочитана через Frame'}${cue.unchanged ? '; все снятые кадры одинаковы' : ''}.</p>
-${cue.motion ? `${motionMarkup(cue.motion, { includeFrames: false })}<p><a href="${cue.motionImage}">Открыть наложение, дельты и кадры одним PNG</a></p>` : ''}
+${cue.motion ? `${motionMarkup(cue.motion, { includeFrames: false, idPrefix: `cue-motion-${index}`, artifactBase: cue.motionImage.slice(0, cue.motionImage.lastIndexOf('/')) })}<p><a href="${cue.motionImage}">Открыть краткий обзор PNG</a></p>` : ''}
 ${framesHTML(cue.frames, cue.id, cue)}</section>`,
   )
   .join('')}

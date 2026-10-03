@@ -157,10 +157,50 @@ test('browser records repeated input, attributes a stall and blink, replays and 
     const browser = await chromium.launch();
     const reports = await serve(directory);
     try {
-      const page = await browser.newPage({ viewport: { width: 375, height: 800 } });
+      const page = await browser.newPage({ viewport: { width: 1320, height: 900 } });
       await page.goto(`${reports.url}/offline/index.html`);
-      await page.locator('.motion-play summary').click();
-      const slider = page.locator('.motion-play input');
+      assert.equal(await page.locator('.motion-detail[open]').count(), 0);
+      assert((await page.locator('.motion-summary').boundingBox()).height < 1100);
+      await page.locator('.motion-nav a[href="#motion-runtime"]').click();
+      assert.notEqual(await page.locator('#motion-runtime').getAttribute('open'), null);
+      assert.equal(
+        await page.locator('#motion-runtime .motion-observation-list > li').count(),
+        imported.runtime.insights.length + imported.timeline.signals.length,
+        'the complete observations survive the compact overview',
+      );
+      const jump = page.locator('#motion-runtime [data-motion-time][data-clock="browser"]').first();
+      const requested = Number(await jump.getAttribute('data-motion-time'));
+      await jump.click();
+      const nearest = captures.frames.reduce((best, frame) =>
+        Math.abs(frame.time - requested) < Math.abs(best.time - requested) ? frame : best,
+      );
+      assert.notEqual(await page.locator('.motion-play').getAttribute('open'), null);
+      assert.equal(
+        await page.locator('.motion-play input[type=range]').inputValue(),
+        String(nearest.time),
+      );
+      assert.match(
+        await page.locator('.motion-seek-note').innerText(),
+        /Синхронизация DOM и пикселей не подтверждена/,
+      );
+      const beforeStep = await page.locator('.motion-play img').getAttribute('src');
+      await page.locator('.motion-play [data-next]').click();
+      assert.notEqual(await page.locator('.motion-play img').getAttribute('src'), beforeStep);
+      await page.locator('.motion-play [data-previous]').click();
+      assert.equal(await page.locator('.motion-play img').getAttribute('src'), beforeStep);
+      await page.goto(`${reports.url}/offline/index.html#motion-photometry`);
+      await page.waitForFunction(() => document.querySelector('#motion-photometry').open);
+      await page.setViewportSize({ width: 375, height: 800 });
+      assert(
+        await page.locator('.motion-context img').isVisible(),
+        'mobile retains source context',
+      );
+      for (const summary of await page.locator('.motion-detail > summary').all())
+        if (!(await summary.evaluate((element) => element.parentElement.open)))
+          await summary.click();
+      if ((await page.locator('.motion-play').getAttribute('open')) === null)
+        await page.locator('.motion-play summary').click();
+      const slider = page.locator('.motion-play input[type=range]');
       const maximum = await slider.getAttribute('max');
       await slider.focus();
       await slider.press('End');
@@ -177,7 +217,7 @@ test('browser records repeated input, attributes a stall and blink, replays and 
           captures.frames.at(-1).file,
         ),
       );
-      await page.locator('.motion-play button').click();
+      await page.locator('.motion-play [data-play]').click();
       await page.waitForTimeout(100);
       assert(Number(await slider.inputValue()) < Number(maximum));
       assert(

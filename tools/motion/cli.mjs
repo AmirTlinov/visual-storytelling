@@ -19,8 +19,10 @@ visual-story review frames.json --motion --seconds 3 --out REPORT
 visual-story review --windows
 visual-story review --window ID --seconds 3 --out REPORT
 
-Open the returned image (motion.png). index.html plays saved frames; motion.json
-contains observations. Browser reports also save replay.json and capture/frames.json.
+Start with image (motion.png) and focus: a compact overview and up to 3 observation groups.
+Open framesImage for all detail frames/deltas, photometryImage for brightness/colour.
+index.html opens linked evidence sections and plays saved frames; data (motion.json)
+retains all observations. Browser reports also save replay.json and capture/frames.json.
 
 Capture: --capture (ordinary HTML), --scenario FILE, --click SELECTOR (repeatable),
   --target CSS (repeatable, up to 12), --seconds 2 (after actions), --ready SELECTOR,

@@ -9,14 +9,14 @@ const ticks = (from, to, y = 190) =>
     )
     .join('');
 
-function kymographMarkup(photo) {
+export function kymographMarkup(photo) {
   const k = photo.kymograph;
-  return `<figure><h3>Кимограмма · время →, координата ${k.axis.toUpperCase()} ↓</h3>
+  return `<figure class="photo-kymograph"><h3>Кимограмма · весь интервал ${fixed(photo.from, 3)}–${fixed(photo.to, 3)} с</h3>
   <svg viewBox="0 0 600 202" role="img" aria-label="Кимограмма движения">
   <image href="${k.image}" x="50" y="10" width="530" height="158" preserveAspectRatio="none"/>
   <text x="45" y="20" text-anchor="end" font-size="11">${fixed(k.from, 0)}</text>
   <text x="45" y="168" text-anchor="end" font-size="11">${fixed(k.to, 0)} px</text>${ticks(photo.from, photo.to)}
-  </svg><figcaption>Центр полосы ${k.axis === 'x' ? 'y' : 'x'}=${fixed(k.position)} px, толщина ${fixed(k.thickness)} px${k.automatic ? ' · выбрана по изменениям яркости' : ''}.${k.gapColumns ? ' Фиолетовая штриховка — участки без кадров.' : ''}</figcaption></figure>`;
+  </svg><figcaption>Время →, ${k.axis.toUpperCase()} ↓. Центр полосы ${k.axis === 'x' ? 'y' : 'x'}=${fixed(k.position)} px, толщина ${fixed(k.thickness)} px${k.automatic ? ' · выбрана по изменениям яркости' : ''}.${k.gapColumns ? ' Фиолетовая штриховка — участки без кадров.' : ''}</figcaption></figure>`;
 }
 
 function regionMarkup(photo, frame) {
@@ -77,14 +77,14 @@ function spectrumMarkup(spectrum) {
       }),
     )
     .join('');
-  return `<figure class="photo-spectrum"><h3>Спектрограмма яркости · ${escapeText(spectrum.region)}</h3><svg viewBox="0 0 600 202" role="img" aria-label="Спектрограмма яркости">${rects}${frequencyTicks}${ticks(from, to)}</svg><figcaption>Кандидат ${fixed(spectrum.frequencyHz, 2)} Гц · шаг частот ${fixed(spectrum.binSpacingHz, 2)} Гц · окно Hann ${fixed(spectrum.windowSeconds, 2)} с. Цвет: −50…0 dB относительно максимума.</figcaption><p class="photo-note">${escapeText(spectrum.note)}</p></figure>`;
+  return `<figure class="photo-spectrum"><h3>Спектрограмма яркости · ${escapeText(spectrum.region)}</h3><svg viewBox="0 0 600 202" role="img" aria-label="Спектрограмма яркости">${rects}${frequencyTicks}${ticks(from, to)}</svg><figcaption>Кандидат ≈${Number(fixed(spectrum.frequencyHz, 2))} Гц · шаг сетки ${fixed(spectrum.binSpacingHz, 2)} Гц · окно Hann ${fixed(spectrum.windowSeconds, 2)} с. Шаг сетки не задаёт погрешность частоты. Цвет: −50…0 dB относительно максимума.</figcaption><p class="photo-note">${escapeText(spectrum.note)}</p></figure>`;
 }
 
 export function photometryMarkup(report) {
   const photo = report.photometry;
   if (!photo) return '';
   if (photo.status !== 'available')
-    return `<p>Яркость и кимограмма: ${escapeText(photo.reason)}</p>`;
+    return `<div class="motion-detail-body"><p>Яркость и кимограмма: ${escapeText(photo.reason)}</p></div>`;
   const intervals = photo.points
     .slice(1)
     .map((p, i) => p.time - photo.points[i].time)
@@ -103,14 +103,16 @@ export function photometryMarkup(report) {
   const saturation = [
     { key: 'saturation', label: 'S', color: '#9364a1' },
     { key: 'alpha', label: 'α', color: '#6f7c87' },
-  ];
+  ].filter(({ key }) => photo.ranges[key][1] - photo.ranges[key][0] > 1e-6);
   const range = (key) => photo.ranges[key].map((v) => fixed(v, 2)).join('–');
   const colorCaption = neutral
     ? `R=G=B: ${range('red')}`
     : `R: ${range('red')} · G: ${range('green')} · B: ${range('blue')}`;
-  return `<section class="motion-photometry"><style>.motion-photometry{border-top:1px solid #ccd5d4;margin:18px 0;padding:16px;background:#fbfaf6}.motion-photometry figcaption,.photo-note{font-size:12px;line-height:1.45;color:#50646d}.photo-region-layout{display:grid;grid-template-columns:minmax(90px,1fr) minmax(0,3fr);gap:12px;align-items:center}.photo-region-layout svg{width:100%;max-height:180px}.photo-regions{margin:10px 0}.photo-spectrum{max-width:900px}</style>
+  return `<section class="motion-photometry">
   <h3>Яркость и цвет во времени · кадров: ${photo.points.length}</h3>
-  <p class="photo-note">Фиксированная область (${photo.roi.x}, ${photo.roi.y}, ${photo.roi.width}×${photo.roi.height} px), анализ ${photo.raster.width}×${photo.raster.height}. Y — относительная яркость linear sRGB; прозрачность наложена на ${photo.background === 'white' ? 'белый' : 'чёрный'} фон. Изменения области могут быть вызваны движением объекта и сменой фона.</p>
-  <div class="motion-panels">${graph(photo.points, 'luminance', 'Яркость Y, % · масштаб по данным', [], { ...options, zero: false })}${graph(photo.points, rgb, 'Средний цвет sRGB, 0–255', [], { ...options, min: 0, max: 255, caption: colorCaption })}${graph(photo.points, saturation, 'Насыщенность среднего цвета S и альфа α, %', [], { ...options, min: 0, max: 100, caption: `S: ${range('saturation')}% · α: ${range('alpha')}%` })}${kymographMarkup(photo)}</div>
-  ${regionMarkup(photo, photo.reference)}${spectrumMarkup(photo.spectrum)}</section>`;
+  <p class="photo-note">Интервал ${fixed(photo.from, 3)}–${fixed(photo.to, 3)} с · фиксированная область ${photo.roi.x},${photo.roi.y},${photo.roi.width},${photo.roi.height}. Движение через область тоже меняет её яркость и цвет.</p>
+  <div class="motion-panels">${graph(photo.points, 'luminance', 'Яркость Y, % · масштаб по данным', [], { ...options, zero: false })}${kymographMarkup(photo)}</div>
+  ${regionMarkup(photo, photo.reference)}${spectrumMarkup(photo.spectrum)}
+  <div class="motion-panels">${graph(photo.points, rgb, 'Средний цвет sRGB · шкала по данным', [], { ...options, zero: false, caption: colorCaption })}${saturation.length ? graph(photo.points, saturation, `${saturation.length === 2 ? 'Насыщенность S и прозрачность α' : saturation[0].key === 'saturation' ? 'Насыщенность S' : 'Прозрачность α'}, % · шкала по данным`, [], { ...options, zero: false, caption: `S: ${range('saturation')}% · α: ${range('alpha')}%` }) : `<p class="photo-constants">Постоянны на всём интервале<br>S: ${range('saturation')}% · α: ${range('alpha')}%</p>`}</div>
+  <details class="photo-method"><summary>Метод измерения</summary><p>Y — относительная яркость linear sRGB; альфа наложена на ${photo.background === 'white' ? 'белый' : 'чёрный'} фон. Анализ ${photo.raster.width}×${photo.raster.height} px. RGB — среднее линейного цвета, кодированное в sRGB; S — насыщенность HSV этого среднего. Полные точки и диапазоны — в motion.json.</p></details></section>`;
 }

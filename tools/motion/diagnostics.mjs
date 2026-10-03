@@ -1,31 +1,11 @@
+import { observationTitle, observationDetail } from './focus.mjs';
+
 export const escapeText = (value) =>
   String(value).replace(
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
   );
 const number = (v) => Number(v ?? 0).toFixed(1);
-export function orderedInsights(report) {
-  const from = report.frames[0].time,
-    to = report.frames.at(-1).time;
-  const inside = (item) => Number.isFinite(item.time) && item.time >= from && item.time <= to;
-  let signals = report.timeline?.signals ?? [];
-  const returns = signals.filter((item) => item.kind === 'brief-reversal');
-  if (returns.length > 3)
-    signals = [
-      ...signals.filter((item) => item.kind !== 'brief-reversal'),
-      {
-        ...(returns.find(inside) ?? returns[0]),
-        kind: 'repeated-appearance-return',
-        count: returns.length,
-        detail: `Appearance changes and returns ${returns.length} times across the recording. This can be an intended pulse; inspect the brightness graph and frames. Individual times remain in motion.json.`,
-      },
-    ];
-  return [...(report.runtime?.insights ?? []), ...signals].sort(
-    (a, b) =>
-      Number(b.kind === 'action-error') - Number(a.kind === 'action-error') ||
-      Number(inside(b)) - Number(inside(a)),
-  );
-}
 export function graph(points, key, title, markers = [], options = {}) {
   if (points.length < 2) return '';
   const series = Array.isArray(key) ? key : [{ key, color: '#367a74' }];
@@ -80,74 +60,105 @@ export function graph(points, key, title, markers = [], options = {}) {
     .join('');
   return `<figure><h3>${escapeText(title)}</h3><svg viewBox="0 0 600 146" role="img" aria-label="${escapeText(title)}"><line x1="20" x2="580" y1="${y(min)}" y2="${y(min)}" stroke="#ccc"/>${ticks}${paths}${timeTicks}<text x="20" y="137" font-size="12">min ${tickNumber(min)}</text>${legend}<text x="580" y="137" text-anchor="end" font-size="12">max ${tickNumber(max)}</text></svg>${options.caption ? `<figcaption>${escapeText(options.caption)}</figcaption>` : ''}</figure>`;
 }
-export function diagnosticsMarkup(report) {
-  const { timeline, runtime, comparison } = report;
-  const insights = orderedInsights(report);
-  return `<style>.motion-observations{padding:12px 16px;background:#f0f4f0;border-left:3px solid #478879;margin:14px 0}.motion-observations ul{margin:8px 0;padding-left:20px}.motion-overview{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.motion-overview img{width:100%;height:95px;object-fit:contain;background:#e8e8e8}.motion-pair{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.motion-pair img{width:100%;height:130px;object-fit:contain}.motion-sheet details{margin:12px 0}.motion-sheet button{padding:6px 12px}.motion-playback{width:100%;max-height:600px;object-fit:contain;background:#e8e8e8}</style>
-  ${timeline ? `<div class="motion-observations"><b>Запись в отчёте: ${timeline.from.toFixed(3)}–${timeline.to.toFixed(3)} с · ${timeline.frames} снимков</b><p>Ниже выбран подробный фрагмент. Обзор и временная шкала охватывают сохранённые кадры.</p>${report.source.sparse ? '<p>Метки CDP относятся к захвату. Синхронизация пикселей и DOM не подтверждена; погрешность времени показа неизвестна. Скорость DOM и интервалы захвата показаны отдельно.</p>' : ''}</div>` : ''}
-  ${
-    insights.length
-      ? `<div class="motion-observations"><b>Моменты для просмотра · сначала выбранное окно</b><ul>${insights
-          .slice(0, 5)
-          .map(
-            (item) =>
-              `<li>${Number.isFinite(item.time) ? `${item.time.toFixed(3)} с · ` : ''}${Number.isFinite(item.time) && (item.time < report.frames[0].time || item.time > report.frames.at(-1).time) ? '[вне выбранного окна] ' : ''}${escapeText(item.kind)}${item.evidence ? ` (${escapeText(item.evidence)})` : ''}${item.target ? ` · ${escapeText(item.target)}` : ''}: ${escapeText(item.detail)}</li>`,
-          )
-          .join(
-            '',
-          )}</ul>${insights.length > 5 ? `<p>Всего ${insights.length}; остальные — в motion.json.</p>` : ''}</div>`
-      : ''
-  }
+export function observationsMarkup(report, { playerId } = {}) {
+  const { runtime, timeline } = report;
+  const signals = [...(runtime?.insights ?? []), ...(timeline?.signals ?? [])];
+  const rows = runtime
+    ? [
+        [
+          'Интервал rAF: p95 / максимум',
+          `${number(runtime.mainThreadIntervalMs.p95)} / ${number(runtime.mainThreadIntervalMs.max)} мс`,
+        ],
+        ['Долгие кадры основного потока', runtime.longFrameCount],
+        [
+          'Длительность взаимодействия, максимум',
+          runtime.maxInteractionMs === null
+            ? 'Event Timing не зарегистрировал взаимодействий'
+            : `${number(runtime.maxInteractionMs)} мс`,
+        ],
+        [
+          'Интервалы между click',
+          runtime.clickIntervalsMs?.length
+            ? `${runtime.clickIntervalsMs.map(number).join(', ')} мс`
+            : 'Нет повторных click',
+        ],
+      ]
+    : [];
+  return `<div class="motion-detail-body">
   ${runtime?.warning ? `<p>${escapeText(runtime.warning)}</p>` : ''}
-  ${runtime ? `<p>Основной поток браузера: интервал rAF p95 ${number(runtime.mainThreadIntervalMs.p95)} мс, максимум ${number(runtime.mainThreadIntervalMs.max)} мс; длительных кадров ${runtime.longFrameCount}; ${runtime.maxInteractionMs === null ? 'нет взаимодействий, измеренных Event Timing' : `максимальная длительность измеренного взаимодействия ${number(runtime.maxInteractionMs)} мс`}. Это наблюдения браузера, отдельные от кадров записи.</p>` : ''}
-  ${runtime?.clickIntervalsMs?.length ? `<p>Фактические интервалы click: ${runtime.clickIntervalsMs.map(number).join(', ')} мс. Пауза wait отсчитывается между шагами; ожидание готовности элемента добавляется отдельно.</p>` : ''}
-  <div class="motion-panels">${timeline ? graph(timeline.intervals, 'changedPercent', 'Изменения на всей записи, % уменьшенного кадра') : ''}${
+  ${rows.length ? `<table class="motion-data-table"><tbody>${rows.map(([key, value]) => `<tr><th scope="row">${key}</th><td>${value}</td></tr>`).join('')}</tbody></table><p>Наблюдения браузера. Метки DOM и пикселей могут различаться; пауза wait и фактический интервал click показаны отдельно.</p>` : ''}
+  <div class="motion-panels">${timeline ? graph(timeline.intervals, 'changedPercent', 'Вся запись · изменившиеся пиксели, %') : ''}${
     runtime?.trajectories
-      .slice(0, 2)
       .map((track) => {
         const axis =
           Math.max(...track.points.map((p) => Math.abs(p.dx))) >=
           Math.max(...track.points.map((p) => Math.abs(p.dy)))
-            ? 'X'
-            : 'Y';
+            ? 'x'
+            : 'y';
         return graph(
           track.points,
-          axis.toLowerCase(),
-          `${track.selector} · позиция центра ${axis}, CSS px (DOM)`,
+          axis,
+          `${track.selector} · центр ${axis.toUpperCase()}, CSS px (DOM)`,
           runtime.clickTimes,
+          { zero: false },
         );
       })
       .join('') ?? ''
   }</div>
-  ${report.overview ? `<h3>Обзор всей записи · выбранные состояния</h3><div class="motion-overview">${report.overview.frames.map((frame) => `<figure><img src="${frame.image}" alt="Обзор ${frame.time.toFixed(3)} секунд"><figcaption>${frame.time.toFixed(3)} с</figcaption></figure>`).join('')}</div>` : ''}
-  ${report.loop ? `<details open><summary>Стык: изменение ${report.loop.changedPercent.toFixed(2)}% пикселей</summary><p>Сопоставление последнего и первого состояний. Направление и скорость на стыке проверяются по соседним кадрам через границу цикла.</p><div class="motion-pair">${report.loop.images.map((src, i) => `<figure><img src="${src}" alt="${i ? 'Начало' : 'Конец'}"><figcaption>${i ? 'Начало' : 'Конец'}</figcaption></figure>`).join('')}</div></details>` : ''}
-  ${
-    comparison
-      ? `<details open><summary>Сравнение с предыдущей проверкой</summary>${comparison.notes?.map((note) => `<p>${escapeText(note)}</p>`).join('') ?? ''}${
-          comparison.warning
-            ? `<p>${escapeText(comparison.warning)}</p>`
-            : comparison.pairs
-                .map(
-                  (pair) =>
-                    `<p>${pair.action ? `От click ${pair.action}` : 'От начала'} ${pair.relativeTime.toFixed(3)} с · изменилось ${pair.changedPercent.toFixed(2)}% · расстояние меток захвата ${number(pair.timestampDistanceMs)} мс</p><div class="motion-pair">${[
-                      ['Раньше', pair.baselineImage],
-                      ['Сейчас', pair.currentImage],
-                      ['Разность', pair.difference],
-                    ]
-                      .map(
-                        ([label, src]) =>
-                          `<figure><img src="${src}" alt="${label}"><figcaption>${label}</figcaption></figure>`,
-                      )
-                      .join('')}</div>`,
-                )
-                .join('')
-        }</details>`
-      : ''
-  }`;
+  <h3 style="margin-top:24px">Все наблюдения · ${signals.length}</h3>
+  ${signals.length ? `<ol class="motion-observation-list">${signals.map((item) => `<li><b>${Number.isFinite(item.time) ? `${timeControl(item.time, playerId, (runtime?.insights ?? []).includes(item) ? 'browser' : 'recording')} · ` : ''}${escapeText(observationTitle(item.kind))}</b>${item.target ? ` · <code>${escapeText(item.target)}</code>` : ''}<p>${escapeText(observationDetail(item))}</p><details><summary>Исходные поля</summary><pre>${escapeText(JSON.stringify(item, null, 2))}</pre></details></li>`).join('')}</ol>` : '<p>Автоматических наблюдений нет. Оцените кадры и наложение по замыслу движения.</p>'}
+  </div>`;
 }
 
-export function playbackMarkup(frames) {
+export function comparisonMarkup(comparison) {
+  return `<div class="motion-detail-body">${comparison.notes?.map((note) => `<p>${escapeText(note)}</p>`).join('') ?? ''}${
+    comparison.warning
+      ? `<p>${escapeText(comparison.warning)}</p>`
+      : comparison.pairs
+          .map(
+            (pair) =>
+              `<p>${pair.action ? `От click ${pair.action}` : 'От начала'} ${pair.relativeTime.toFixed(3)} с · изменилось ${pair.changedPercent.toFixed(2)}% · расстояние меток захвата ${number(pair.timestampDistanceMs)} мс</p><div class="motion-pair">${[
+                ['Раньше', pair.baselineImage],
+                ['Сейчас', pair.currentImage],
+                ['Разность', pair.difference],
+              ]
+                .map(
+                  ([label, src]) =>
+                    `<figure><img src="${src}" alt="${label}"><figcaption>${label}</figcaption></figure>`,
+                )
+                .join('')}</div>`,
+          )
+          .join('')
+  }</div>`;
+}
+
+export function timeControl(time, playerId, clock = 'recording') {
+  const label = `${time.toFixed(3)} с`;
+  return playerId
+    ? `<button class="motion-time" type="button" data-motion-time="${time}" data-motion-player="${escapeText(playerId)}" data-clock="${clock}" title="Перейти к ближайшей метке записи">${label}</button>`
+    : label;
+}
+
+export function playbackMarkup(frames, { id = 'motion-playback', unsynchronized = false } = {}) {
   if (!frames?.length) return '';
   const data = JSON.stringify(frames).replace(/</g, '\\u003c');
-  return `<details class="motion-play"><summary>Воспроизвести сохранённые кадры</summary><img class="motion-playback" alt="Запись"><p><button type="button">Воспроизвести</button> <input aria-label="Время записи" type="range" min="${frames[0].time}" max="${frames.at(-1).time}" step="any" value="${frames[0].time}"> <output></output></p></details><script>(()=>{const root=document.querySelector('.motion-play'),frames=${data},image=root.querySelector('img'),slider=root.querySelector('input'),button=root.querySelector('button'),output=root.querySelector('output');let playing=false,started=0,base=0;function show(t){let i=frames.findLastIndex(f=>f.time<=t+1e-9);image.src=frames[Math.max(0,i)].image;slider.value=t;output.textContent=Number(t).toFixed(3)+' с';}function tick(now){if(!playing)return;const t=Math.min(Number(slider.max),base+(now-started)/1000);show(t);if(t>=Number(slider.max)){playing=false;button.textContent='Воспроизвести';}else requestAnimationFrame(tick);}button.onclick=()=>{playing=!playing;button.textContent=playing?'Пауза':'Воспроизвести';if(playing){base=Number(slider.value);if(base>=Number(slider.max))base=Number(slider.min);started=performance.now();requestAnimationFrame(tick);}};slider.oninput=()=>{playing=false;button.textContent='Воспроизвести';show(Number(slider.value));};root.ontoggle=()=>{if(!root.open){playing=false;button.textContent='Воспроизвести';}};show(frames[0].time);})();</script>`;
+  return `<details class="motion-play" id="${escapeText(id)}"><summary>Сохранённая запись · кадров: ${frames.length} · ${frames[0].time.toFixed(3)}–${frames.at(-1).time.toFixed(3)} с</summary>
+  <img class="motion-playback" alt="Запись">
+  <div class="motion-play-controls"><button type="button" data-play>Воспроизвести</button><button type="button" data-previous aria-label="Предыдущий кадр">← кадр</button><button type="button" data-next aria-label="Следующий кадр">кадр →</button><label>Время, с <input type="number" step="any" aria-label="Перейти ко времени, секунды" min="${frames[0].time}" max="${frames.at(-1).time}"></label></div>
+  <p><input type="range" aria-label="Время записи" min="${frames[0].time}" max="${frames.at(-1).time}" step="any" value="${frames[0].time}"><output></output></p>
+  <p class="motion-frame-position"></p><p class="motion-seek-note" role="status"></p>
+  </details><script>(()=>{
+  const root=document.getElementById(${JSON.stringify(id)}),frames=${data},image=root.querySelector('img'),slider=root.querySelector('input[type=range]'),time=root.querySelector('input[type=number]'),button=root.querySelector('[data-play]'),previous=root.querySelector('[data-previous]'),next=root.querySelector('[data-next]'),output=root.querySelector('output'),position=root.querySelector('.motion-frame-position'),note=root.querySelector('.motion-seek-note');
+  let playing=false,started=0,base=0,pending,index=-1;
+  const clamp=t=>Math.max(frames[0].time,Math.min(frames.at(-1).time,t));
+  function show(t){t=clamp(t);const selected=Math.max(0,frames.findLastIndex(f=>f.time<=t+1e-9));if(selected!==index){index=selected;image.src=frames[index].image}slider.value=t;time.value=Number(t.toFixed(6));output.textContent=t.toFixed(3)+' с';position.textContent='Кадр '+(index+1)+' / '+frames.length+' · метка '+frames[index].time.toFixed(6)+' с';previous.disabled=index===0;next.disabled=index===frames.length-1}
+  function stop(){playing=false;cancelAnimationFrame(pending);button.textContent='Воспроизвести'}
+  function tick(now){if(!playing)return;const t=clamp(base+(now-started)/1000);show(t);if(t>=frames.at(-1).time)stop();else pending=requestAnimationFrame(tick)}
+  button.onclick=()=>{if(playing){stop();return}stop();note.textContent='';playing=true;button.textContent='Пауза';base=Number(slider.value);if(base>=frames.at(-1).time)base=frames[0].time;started=performance.now();show(base);pending=requestAnimationFrame(tick)};
+  slider.oninput=()=>{stop();note.textContent='';show(Number(slider.value))};
+  time.onchange=()=>{stop();note.textContent='';if(Number.isFinite(time.valueAsNumber))show(time.valueAsNumber)};
+  for(const [control,delta] of [[previous,-1],[next,1]])control.onclick=()=>{stop();note.textContent='';show(frames[Math.max(0,Math.min(frames.length-1,index+delta))].time)};
+  root.addEventListener('motionseek',e=>{const requested=Number(e.detail.time);if(!Number.isFinite(requested))return;stop();const nearest=frames.reduce((best,f)=>Math.abs(f.time-requested)<Math.abs(best.time-requested)?f:best);show(nearest.time);note.textContent='Запрошено '+requested.toFixed(6)+' с; ближайшая метка записи '+nearest.time.toFixed(6)+' с.'+(e.detail.clock==='browser'&&${Boolean(unsynchronized)}?' Синхронизация DOM и пикселей не подтверждена.':'');time.focus({preventScroll:true})});
+  root.ontoggle=()=>{if(!root.open)stop()};show(frames[0].time);
+  })();</script>`;
 }
