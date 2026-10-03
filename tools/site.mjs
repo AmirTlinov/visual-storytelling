@@ -7,6 +7,7 @@ const types = {
   '.css': 'text/css',
   '.woff2': 'font/woff2',
   '.m4a': 'audio/mp4',
+  '.mp4': 'video/mp4',
   '.wav': 'audio/wav',
   '.webm': 'audio/webm',
   '.json': 'application/json',
