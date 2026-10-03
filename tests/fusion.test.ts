@@ -147,7 +147,7 @@ test('symmetric loops keep their source order when becoming a stem and a loop', 
         loop(20),
       ],
     ],
-    true,
+    { local: true },
   );
   assert.ok(routes.filter((r) => r.target === 0).every((r) => r.source === 0));
   assert.ok(routes.filter((r) => r.target === 2).every((r) => r.source === 1));

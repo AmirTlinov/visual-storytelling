@@ -23,10 +23,10 @@ export function inkDetailVisibility(patches: readonly InkPatch[], text: boolean)
     for (const patch of patches) {
       const data = vertices[patch.source]!,
         values = output[patch.source]!;
-      for (const [offset, length, preserved] of patch.ranges) {
-        // A short serif or punctuation mark is still the same ink during travel.
-        // Only changing/absorbed contours can become transient fragments.
-        if (preserved) {
+      for (const [offset, length, established] of patch.ranges) {
+        // Each original stroke supplies a distinct result span. Its short details
+        // must not blink while bending; only generated seeds can be transient specks.
+        if (established) {
           values.fill(1, offset / 6, (offset + length) / 6);
           continue;
         }

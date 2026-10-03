@@ -237,46 +237,35 @@ export function textRoutes(
         records.filter((record) => record.owner === owner).map((record) => record.path),
       ),
       [local],
-      true,
-    ).flatMap((route) => {
+      { local: true, partitionTargets: true },
+    ).map((route) => {
       const original = records[route.origin]!;
-      // A seed carries no original ink. If it did not acquire a final contour,
-      // transporting it would add a free-floating dot with nothing to build.
-      if (original.seed && route.attachment !== undefined) return [];
       const expand = (p: InkPoint, glyph: FusionGlyph): InkPoint => [
         (p[0] * glyph.size) / 100 + glyph.center[0],
         (p[1] * glyph.size) / 100 + glyph.center[1],
         (p[2] * glyph.size) / 100,
       ];
-      return [
-        {
-          ...route,
-          destination: destination.owner,
-          target: destination.pathOffset + glyph.paths[route.target]!,
-          from: route.from.map((p) => expand(p, original.glyph)),
-          to: route.to.map((p) => expand(p, glyph)),
-          text: {
-            from: original.glyph.center,
-            glyph: index,
-            origin: original.id,
-            same: original.glyph.value === glyph.value,
-            preserved:
-              original.glyph.value === glyph.value &&
-              !original.seed &&
-              route.attachment === undefined &&
-              route.from.every((p, i) =>
-                p.every((value, axis) => Math.abs(value - route.to[i]![axis]!) < 0.01),
-              ),
-            word: glyph.word,
-            originWord: source[original.id]!.word,
-            wordSame:
-              normalize(sourceWords[source[original.id]!.word]!.value) ===
-              normalize(targetWords[glyph.word]!.value),
-            fromWord: fromWords[source[original.id]!.word]!,
-            toWord: toWords[glyph.word]!,
-          },
+      return {
+        ...route,
+        destination: destination.owner,
+        target: destination.pathOffset + glyph.paths[route.target]!,
+        from: route.from.map((p) => expand(p, original.glyph)),
+        to: route.to.map((p) => expand(p, glyph)),
+        text: {
+          from: original.glyph.center,
+          glyph: index,
+          origin: original.id,
+          same: original.glyph.value === glyph.value,
+          established: !original.seed,
+          word: glyph.word,
+          originWord: source[original.id]!.word,
+          wordSame:
+            normalize(sourceWords[source[original.id]!.word]!.value) ===
+            normalize(targetWords[glyph.word]!.value),
+          fromWord: fromWords[source[original.id]!.word]!,
+          toWord: toWords[glyph.word]!,
         },
-      ];
+      };
     });
   });
 }

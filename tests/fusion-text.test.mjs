@@ -51,6 +51,29 @@ function block(value) {
   };
 }
 
+const pathLength = (path) =>
+  path.slice(1).reduce((sum, p, i) => sum + Math.hypot(p[0] - path[i][0], p[1] - path[i][1]), 0);
+function assertSharedContours(routes, outputs) {
+  outputs.forEach((shape, destination) => {
+    const incoming = routes.filter((route) => route.destination === destination);
+    const supplied = incoming.reduce((sum, route) => sum + pathLength(route.to), 0);
+    const wanted = shape.paths.reduce((sum, path) => sum + pathLength(path), 0);
+    assert.ok(
+      // Resampling slightly shortens curves, especially at a pointed join.
+      Math.abs(supplied - wanted) < Math.max(0.001, wanted * 0.02),
+      'The result is covered once, without a complete duplicate contour',
+    );
+    for (const path of shape.paths)
+      for (const point of [path[0], path.at(-1)])
+        assert.ok(
+          incoming.some((r) =>
+            r.to.some((p) => Math.hypot(p[0] - point[0], p[1] - point[1]) < 1e-5),
+          ),
+        );
+  });
+  assert.ok(routes.every((route) => route.attachment === undefined));
+}
+
 test('unchanged handwriting retains short serifs and punctuation throughout travel and reverse seek', () => {
   const shape = block('1.');
   shape.paths[0] = [
@@ -78,7 +101,7 @@ test('unchanged handwriting retains short serifs and punctuation throughout trav
   }
 });
 
-test('repeated punctuation preserves its owner while generated and absorbed remnants stay filtered', () => {
+test('original punctuation stays visible while newly generated tiny marks wait for growth', () => {
   const dot = block('.');
   dot.paths[0] = [
     [0, 0, 1],
@@ -97,11 +120,17 @@ test('repeated punctuation preserves its owner while generated and absorbed remn
     );
     const opacity = details(geometry, 0.4, 1).flatMap((values) => Array.from(values));
     assert.ok(opacity.includes(1), 'The original dot stays legible');
-    assert.ok(opacity.includes(0), 'Generated or absorbed tiny remnants are still suppressed');
+    if (outputs.length > inputs.length)
+      assert.ok(opacity.includes(0), 'Generated tiny marks are still suppressed');
+    else
+      assert.ok(
+        opacity.every((v) => v === 1),
+        'Both original marks participate without fading',
+      );
   }
 });
 
-test('the same character with changed contour geometry still filters deformation fragments', () => {
+test('bending and dividing original fine strokes keeps their ink throughout the operation', () => {
   const source = block('1');
   source.paths[0] = [
     [-2, 0, 1],
@@ -131,7 +160,7 @@ test('the same character with changed contour geometry still filters deformation
     const motion = inkMotion(textRoutes([source], [target]));
     const details = inkDetailVisibility(motion.patches, true);
     const geometry = motion([{ x: 0, y: 0 }], [{ x: 0, y: 0 }], 0.4);
-    assert.ok(details(geometry, 0.4, 1).every((values) => values.every((v) => v === 0)));
+    assert.ok(details(geometry, 0.4, 1).every((values) => values.every((v) => v === 1)));
   }
 });
 
@@ -197,6 +226,68 @@ test('a new word shares its letters between both sources without duplicate copie
   }
 });
 
+test('one plus two builds disjoint portions of three and reaches one connected contour', () => {
+  const one = block('1'),
+    two = block('2'),
+    three = block('3');
+  one.paths = [
+    [
+      [-3, -14, 1],
+      [0, -20, 1],
+      [0, 20, 1],
+    ],
+    [
+      [-5, 20, 1],
+      [5, 20, 1],
+    ],
+  ];
+  one.text.glyphs[0].paths = [0, 1];
+  two.paths = [
+    [
+      [-5, -15, 1],
+      [8, -20, 1],
+      [12, -10, 1],
+      [-5, 20, 1],
+      [10, 20, 1],
+    ],
+  ];
+  three.paths = [
+    Array.from({ length: 81 }, (_, i) => {
+      const y = i / 2 - 20;
+      return [10 * Math.sin((Math.PI * (i % 40)) / 40), y, 1];
+    }),
+  ];
+  const routes = textRoutes([one, two], [three]);
+  assertSharedContours(routes, [three]);
+  const wanted = pathLength(three.paths[0]);
+  assert.ok(
+    routes.every((r) => pathLength(r.to) < wanted * 0.8),
+    'No incoming digit produces a whole three underneath the other digit',
+  );
+  const motion = inkMotion(routes),
+    details = inkDetailVisibility(motion.patches, true);
+  const sources = [
+      { x: -40, y: 0 },
+      { x: 40, y: 0 },
+    ],
+    targets = [{ x: 0, y: 0 }];
+  const middle = motion(sources, targets, 0.4).map((v) => v.slice());
+  assert.ok(
+    details(middle, 0.4, 1).every((v) => v.every((a) => a === 1)),
+    'The foot is real source ink',
+  );
+  const collected = motion(sources, targets, 0.7);
+  const length = collected.reduce((sum, data) => {
+    for (let i = 0; i < data.length; i += 6)
+      sum += Math.hypot(data[i + 2] - data[i], data[i + 3] - data[i + 1]);
+    return sum;
+  }, 0);
+  const supplied = routes.reduce((sum, route) => sum + pathLength(route.to), 0);
+  assert.ok(Math.abs(length - supplied) < 1e-4, 'Collection leaves no extra coiled digit');
+  motion(sources, targets, 1);
+  assert.deepEqual(motion(sources, targets, 0.4), middle);
+});
+
 test('new letters have no travelling seeds that supply neither original nor final ink', () => {
   const first = block('а'),
     second = block('б'),
@@ -215,11 +306,7 @@ test('new letters have no travelling seeds that supply neither original nor fina
   const collapsed = (path) => path.every((p) => p[0] === path[0][0] && p[1] === path[0][1]);
   assert.ok(routes.some((route) => collapsed(route.from) && !collapsed(route.to)));
   assert.ok(routes.every((route) => !(collapsed(route.from) && collapsed(route.to))));
-  for (let path = 0; path < target.paths.length; path++)
-    assert.equal(
-      routes.filter((route) => route.target === path && route.attachment === undefined).length,
-      1,
-    );
+  assertSharedContours(routes, [target]);
 });
 
 test('preserved words have their original supplier instead of echoes from the other sentence', () => {
@@ -310,16 +397,11 @@ test('one word splits into three independently posed destinations and seeks back
   assert.throws(() => sample(sources, targets.slice(0, 2), 0.5), /shape counts/);
 });
 
-test('many text shapes keep unique target strokes and the occurrence order of repeated words', () => {
+test('many text shapes share target contours once and keep the occurrence order of repeated words', () => {
   const inputs = [block('свет'), block('свет'), block('тень')];
   const outputs = [block('свет'), block('свет и тень')];
   const routes = textRoutes(inputs, outputs);
-  const targetPaths = outputs.reduce((sum, shape) => sum + shape.paths.length, 0);
-  for (let target = 0; target < targetPaths; target++)
-    assert.equal(
-      routes.filter((route) => route.target === target && route.attachment === undefined).length,
-      1,
-    );
+  assertSharedContours(routes, outputs);
   assert.ok(routes.filter((route) => route.text.word === 0).every((route) => route.source === 0));
   assert.ok(routes.filter((route) => route.text.word === 1).every((route) => route.source === 1));
   assert.ok(routes.filter((route) => route.text.word === 3).every((route) => route.source === 2));

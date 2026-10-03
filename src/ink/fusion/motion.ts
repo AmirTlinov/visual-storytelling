@@ -21,8 +21,8 @@ export interface InkPatch {
   readonly source: number;
   readonly destination: number;
   readonly target: number;
-  /** Contiguous ranges and whether their original fine detail survives the operation. */
-  readonly ranges: readonly [offset: number, length: number, preserved: boolean][];
+  /** Contiguous ranges and whether they carry established ink rather than a growing seed. */
+  readonly ranges: readonly [offset: number, length: number, established: boolean][];
 }
 /** One borrowed segment buffer per source: ax, ay, bx, by, radiusA, radiusB. */
 export type InkVertices = Float32Array[];
@@ -46,12 +46,13 @@ export function inkGather(morph: number) {
 
 /** Compile correspondence once. Sampling reuses buffers and transforms each pose once. */
 export function inkMotion(routes: InkRoute[]) {
-  const groups = new Map<number, InkRoute[]>(),
+  const groups = new Map<string, InkRoute[]>(),
     glyphs = new Map<number, InkRoute[]>(),
     words = new Map<number, InkRoute[]>();
   for (const route of routes) {
-    if (!groups.has(route.target)) groups.set(route.target, []);
-    groups.get(route.target)!.push(route);
+    const contour = `${route.target}:${route.part ?? 'whole'}`;
+    if (!groups.has(contour)) groups.set(contour, []);
+    groups.get(contour)!.push(route);
     if (!route.text) continue;
     for (const [map, id, origin] of [
       [glyphs, route.text.glyph, 'origin'],
@@ -70,6 +71,15 @@ export function inkMotion(routes: InkRoute[]) {
     string,
     { source: number; destination: number; target: number; ranges: [number, number, boolean][] }
   >();
+  type End = {
+    source: number;
+    offset: number;
+    points: number;
+    end: number;
+    dx: number;
+    dy: number;
+  };
+  const seams = new Map<string, End[]>();
   // x, y and translation weight for each source. Local vectors have weight zero.
   function mean(items: InkRoute[], point: (r: InkRoute) => readonly number[], translate = false) {
     const result = new Float64Array(stride);
@@ -132,7 +142,19 @@ export function inkMotion(routes: InkRoute[]) {
           target: route.text?.word ?? route.destination,
           ranges: [],
         });
-      patchMap.get(key)!.ranges.push([offset, length, route.text?.preserved ?? false]);
+      patchMap.get(key)!.ranges.push([offset, length, route.text?.established ?? false]);
+      if (route.part !== undefined)
+        for (const end of [0, route.to.length - 1]) {
+          const point = route.to[end]!;
+          const key = `${route.destination}:${route.target}:${point
+            .slice(0, 2)
+            .map((v) => Math.round(v * 1e5))
+            .join(',')}`;
+          if (!seams.has(key)) seams.set(key, []);
+          seams
+            .get(key)!
+            .push({ source: route.source, offset, points: route.to.length, end, dx: 0, dy: 0 });
+        }
       const center = route.from.reduce(
         (sum, p) => [sum[0]! + p[0] / n, sum[1]! + p[1] / n],
         [0, 0],
@@ -155,6 +177,9 @@ export function inkMotion(routes: InkRoute[]) {
   });
   const patches: InkPatch[] = [...patchMap.values()];
   const vertices: InkVertices = counts.map((count) => new Float32Array(count));
+  const joins = [...seams.values()].filter(
+    (ends) => new Set(ends.map((end) => `${end.source}:${end.offset}`)).size > 1,
+  );
   const poses = Array.from({ length: sourceCount }, pose),
     destinations = Array.from({ length: targetCount }, pose);
   function transformedMean(values: Float64Array, at: number, out: Float64Array, offset: number) {
@@ -276,6 +301,37 @@ export function inkMotion(routes: InkRoute[]) {
         }
       }
     }
+    // Destination spans meet as one pen line. Move a short neighbourhood with
+    // each endpoint so contact does not leave a fork or a sharp isolated tip.
+    const joined = gather;
+    for (const ends of joins) {
+      let cx = 0,
+        cy = 0;
+      for (const end of ends) {
+        const data = vertices[end.source]!;
+        const at = end.offset + (end.end ? (end.points - 2) * 6 + 2 : 0);
+        cx += data[at]! / ends.length;
+        cy += data[at + 1]! / ends.length;
+      }
+      for (const end of ends) {
+        const data = vertices[end.source]!;
+        const at = end.offset + (end.end ? (end.points - 2) * 6 + 2 : 0);
+        end.dx = (cx - data[at]!) * joined;
+        end.dy = (cy - data[at + 1]!) * joined;
+      }
+    }
+    for (const ends of joins)
+      for (const end of ends) {
+        const data = vertices[end.source]!,
+          reach = Math.max(1, (end.points - 1) * 0.35);
+        for (let segment = 0; segment < end.points - 1; segment++)
+          for (let side = 0; side < 2; side++) {
+            const weight = Math.max(0, 1 - Math.abs(segment + side - end.end) / reach) ** 2;
+            const at = end.offset + segment * 6 + side * 2;
+            data[at]! += end.dx * weight;
+            data[at + 1]! += end.dy * weight;
+          }
+      }
     return vertices;
   }
   return Object.assign(sample, { patches, sourceCount, targetCount });

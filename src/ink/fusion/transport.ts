@@ -7,6 +7,8 @@ export interface InkRoute {
   destination: number;
   target: number;
   origin: number;
+  /** A disjoint part of a shared destination contour. */
+  part?: number;
   /** Surplus ink joins this sample of the target's sole owning stroke. */
   attachment?: number;
   text?: {
@@ -14,8 +16,8 @@ export interface InkRoute {
     glyph: number;
     origin: number;
     same: boolean;
-    /** Complete unchanged contour; excludes generated seeds and absorbed surplus ink. */
-    preserved: boolean;
+    /** Original ink with its own destination span; generated seeds wait until readable. */
+    established: boolean;
     word: number;
     originWord: number;
     wordSame: boolean;
@@ -57,6 +59,31 @@ function resample(path: InkPath, count: number): InkPoint[] {
   });
 }
 
+/** Partition arc length without duplicating or dropping the original contour. */
+function sections(path: InkPath, weights: number[]): InkPath[] {
+  if (weights.length === 1) return [path];
+  const samples = resample(path, Math.max(2, Math.ceil(length(path) / 0.75)));
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  const at = (fraction: number): InkPoint => {
+    const f = Math.max(0, Math.min(samples.length - 1, fraction * (samples.length - 1))),
+      index = Math.floor(f),
+      t = f - index;
+    const a = samples[index]!,
+      b = samples[Math.min(index + 1, samples.length - 1)]!;
+    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  };
+  let start = 0;
+  return weights.map((weight) => {
+    const end = start + weight / total;
+    const section: InkPoint[] = [at(start)];
+    for (let i = Math.floor(start * (samples.length - 1)) + 1; i < end * (samples.length - 1); i++)
+      section.push(samples[i]!);
+    section.push(at(end));
+    start = end;
+    return section;
+  });
+}
+
 /** Choose direction (and loop seam) before interpolation, avoiding twisting strokes. */
 function align(a: InkPoint[], b: InkPoint[]): InkPoint[] {
   const ca = center(a),
@@ -95,11 +122,11 @@ function align(a: InkPoint[], b: InkPoint[]): InkPoint[] {
   return result;
 }
 
-/** Minimum-cost assignment. Every target gets ink; surplus strokes merge into a target. */
+/** Minimum-cost correspondence: text shares destination spans; filled masks absorb surplus ink. */
 export function inkRoutes(
   inputs: readonly (readonly InkPath[])[],
   outputs: readonly (readonly InkPath[])[],
-  local = false,
+  { local = false, partitionTargets = false }: { local?: boolean; partitionTargets?: boolean } = {},
 ): InkRoute[] {
   const source = inputs.flatMap((paths, source) => paths.map((path) => ({ path, source })));
   const destinations = outputs.flatMap((paths, destination) =>
@@ -225,53 +252,56 @@ export function inkRoutes(
           center(target[a]!)[0] - center(target[b]!)[0] ||
           center(target[a]!)[1] - center(target[b]!)[1],
       );
-    if (destinations.length === 1) {
-      pieces.set(`${i}:${destinations[0]}`, path);
-      return;
-    }
-    const samples = resample(path, Math.max(2, Math.ceil(length(path) / 0.75)));
     const weights = destinations.map((j) => Math.max(3, length(target[j]!)));
-    const total = weights.reduce((sum, weight) => sum + weight, 0);
-    let start = 0;
-    const at = (fraction: number): InkPoint => {
-      const f = Math.max(0, Math.min(samples.length - 1, fraction * (samples.length - 1))),
-        index = Math.floor(f),
-        t = f - index;
-      const a = samples[index]!,
-        b = samples[Math.min(index + 1, samples.length - 1)]!;
-      return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-    };
-    destinations.forEach((j, k) => {
-      const end = start + weights[k]! / total;
-      const section: InkPoint[] = [at(start)];
-      for (
-        let sample = Math.floor(start * (samples.length - 1)) + 1;
-        sample < end * (samples.length - 1);
-        sample++
-      )
-        section.push(samples[sample]!);
-      section.push(at(end));
-      pieces.set(`${i}:${j}`, section);
-      start = end;
-    });
+    sections(path, weights).forEach((section, k) => pieces.set(`${i}:${destinations[k]}`, section));
   });
-  const counts = target.map((to, j) =>
-    Math.max(
-      2,
-      Math.ceil(
+  const receiving = new Map<string, InkPath>();
+  if (partitionTargets)
+    target.forEach((path, j) => {
+      const stations = resample(path, 64);
+      const nearest = (i: number) => {
+        const c = center(pieces.get(`${i}:${j}`)!);
+        let best = 0;
+        for (let k = 1; k < stations.length; k++)
+          if (
+            Math.hypot(stations[k]![0] - c[0], stations[k]![1] - c[1]) <
+            Math.hypot(stations[best]![0] - c[0], stations[best]![1] - c[1])
+          )
+            best = k;
+        return best;
+      };
+      const suppliers = pairs
+        .filter(([, to]) => to === j)
+        .map(([i]) => i)
+        .sort((a, b) => nearest(a) - nearest(b) || centers[a]![0] - centers[b]![0] || a - b);
+      const weights = suppliers.map((i) => Math.max(3, length(pieces.get(`${i}:${j}`)!)));
+      sections(path, weights).forEach((section, k) =>
+        receiving.set(`${suppliers[k]}:${j}`, section),
+      );
+    });
+  const counts = partitionTargets
+    ? []
+    : target.map((to, j) =>
         Math.max(
-          length(to),
-          ...pairs
-            .filter(([, index]) => index === j)
-            .map(([i]) => length(pieces.get(`${i}:${j}`)!)),
-        ) / 2.5,
-      ),
-    ),
-  );
+          2,
+          Math.ceil(
+            Math.max(
+              length(to),
+              ...pairs
+                .filter(([, index]) => index === j)
+                .map(([i]) => length(pieces.get(`${i}:${j}`)!)),
+            ) / 2.5,
+          ),
+        ),
+      );
   return pairs.map(([i, j]) => {
-    const b = resample(target[j]!, counts[j]!),
-      a = align(b, resample(pieces.get(`${i}:${j}`)!, counts[j]!));
-    if (owners.get(j) !== i) {
+    const into = receiving.get(`${i}:${j}`) ?? target[j]!;
+    const count = partitionTargets
+      ? Math.max(2, Math.ceil(Math.max(length(into), length(pieces.get(`${i}:${j}`)!)) / 2.5))
+      : counts[j]!;
+    const b = resample(into, count),
+      a = align(b, resample(pieces.get(`${i}:${j}`)!, count));
+    if (!partitionTargets && owners.get(j) !== i) {
       // A second complete target would produce a displaced copy of the letter.
       // Feed surplus ink into the nearest point of the one owning contour.
       const c = center(a);
@@ -297,6 +327,7 @@ export function inkRoutes(
       destination: destinations[j]!.destination,
       origin: i,
       target: j,
+      ...(partitionTargets ? { part: i } : {}),
       from: a,
       to: b,
     };
