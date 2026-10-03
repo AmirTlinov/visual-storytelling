@@ -90,6 +90,12 @@ export async function openScene(page, url) {
         return handle.review();
       },
       snapshot: () => owner('snapshot')?.snapshot(),
+      diagnostics: () =>
+        documents().flatMap((doc) =>
+          [...doc.querySelectorAll('[data-layout-error]')].map((element) =>
+            element.getAttribute('data-layout-error'),
+          ),
+        ),
       async exportSVG() {
         const handle = owner('exportSVG');
         if (handle) return handle.exportSVG();

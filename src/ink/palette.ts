@@ -2,15 +2,19 @@
 export const pigments = {
   ink: 'ink',
   blue: 'blue',
-  ochre: 'orange',
+  orange: 'orange',
   purple: 'purple',
   green: 'green',
   red: 'red',
-  straw: 'yellow',
+  yellow: 'yellow',
 } as const;
 export type Pigment = keyof typeof pigments;
 export type Theme = 'auto' | 'light' | 'dark';
-export const color = (pigment: Pigment) => `var(--ve-${pigments[pigment]})`;
+export function color(pigment: Pigment) {
+  if (!Object.hasOwn(pigments, pigment))
+    throw new Error(`Unknown pigment: ${pigment}. Choose ${Object.keys(pigments).join(', ')}`);
+  return `var(--ve-${pigment})`;
+}
 export function theme(root: HTMLElement | SVGElement, initial: Theme = 'auto') {
   const media = matchMedia('(prefers-color-scheme: dark)');
   let selection = initial;

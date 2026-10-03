@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { TensorData, formatNumber } from '../dist/math/tensor-data.js';
 import { operationState } from '../dist/math/operation.js';
 import { connector, crosses, inflate, rectInPolygon } from '../dist/layout/geometry.js';
-import { framePose } from '../dist/viewport/camera.js';
+import { shotPose } from '../dist/viewport/shots.js';
 import { transfer } from '../dist/math/transfer.js';
 import * as T from '../dist/viewport/engine.js';
 
@@ -46,13 +46,12 @@ test('a transferred value clears a neighbouring solid and retains its exact dest
 test('framing handles a top-down view and preserves reserved annotation space', () => {
   const object = new T.Mesh(new T.BoxGeometry(5, 3, 2)),
     camera = new T.PerspectiveCamera(36, 375 / 700, 0.01, 1000);
-  const pose = framePose(camera, 375, 700, {
+  const pose = shotPose(camera, 375, 700, {
     target: object,
     direction: [0, 1, 0],
-    inset: { top: 90, bottom: 70, left: 25, right: 25 },
+    insets: { top: 90, bottom: 70, left: 25, right: 25 },
   });
   camera.position.copy(pose.position);
-  camera.up.copy(pose.up);
   camera.lookAt(pose.target);
   camera.updateMatrixWorld();
   for (const x of [-2.5, 2.5])
@@ -63,7 +62,7 @@ test('framing handles a top-down view and preserves reserved annotation space', 
           py = ((1 - p.y) * 700) / 2;
         assert.ok(px >= 25 && px <= 350 && py >= 90 && py <= 630);
       }
-  assert.throws(() => framePose(camera, 375, 700, { target: object, direction: [0, 0, 0] }));
+  assert.throws(() => shotPose(camera, 375, 700, { target: object, direction: [0, 0, 0] }));
 });
 test('a result becomes available on arrival and reverse seeking restores the same partial sum', () => {
   const a = [2, -3, 4],

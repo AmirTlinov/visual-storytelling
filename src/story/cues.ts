@@ -14,6 +14,8 @@ export interface Cue {
 export interface Chapter extends Cue {
   id: string;
   text: string;
+  /** Short navigable heading; text remains the spoken paragraph. */
+  title?: string;
 }
 export interface Script<K extends string = string> {
   duration: number;
@@ -82,7 +84,10 @@ export function cueSheet<K extends string>(script: Script<K>) {
   }
   function get(id: K): Cue {
     const cue = script.cues[id];
-    if (!cue) throw new Error(`Unknown cue: ${id}`);
+    if (!cue)
+      throw new Error(
+        `Unknown cue: ${id}. Available: ${Object.keys(script.cues).slice(0, 12).join(', ')}${Object.keys(script.cues).length > 12 ? ', … (see script.cues)' : ''}`,
+      );
     referenced.add(id);
     return cue;
   }

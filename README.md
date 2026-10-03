@@ -1,6 +1,6 @@
 # Visual Storytelling
 
-TypeScript-библиотека аккуратных рисованных объяснений и единая основа навыка `visual-explainer`. Вариант **0.5.0-spatial.0** добавляет тензоры, перенос значений, читаемые подписи на гранях, обход препятствий и сценарную камеру; галерея содержит 20 примеров.
+TypeScript-библиотека аккуратных рисованных объяснений и единая основа навыка `visual-explainer`. Версия **0.6.0** добавляет измеряемые тензоры, срезы и наглядные вычисления: общие владельцы размещают числа, обходят препятствия и ведут камеру по рассказу. Голос продолжает идти при ручном осмотре; авторский dev-сервер сохраняет место рассказа при правке.
 
 ## Запуск
 
@@ -8,7 +8,7 @@ TypeScript-библиотека аккуратных рисованных объ
 
 ```sh
 npm ci
-npm run build           # dist/ — пакет; site/ — галерея из 20 примеров
+npm run build           # dist/ — пакет; site/ — галерея примеров
 npm run preview         # http://127.0.0.1:8793
 ```
 
@@ -36,12 +36,9 @@ import { SceneShell, SketchMotion, SvgLayout } from '@visual-storytelling/core';
 import { Viewport3D, ThreeKit } from '@visual-storytelling/core/three';
 ```
 
-Готовые композиции и работающие вызовы — в [examples](examples). Все страницы импортируют этот пакет. Общие владельцы перечислены в [архитектуре](docs/architecture.md), правила сцены — в [контракте автора](docs/authoring.md), визуальный характер — в [PHILOSOPHY.md](PHILOSOPHY.md).
+[Объёмные данные и действия](skill/references/spatial-math.md): начни с `math-workbench` или `tensor-slices`, чтобы задавать данные и действия без ручного размещения каждой подписи.
 
-[Объёмная математика](skill/references/spatial-math.md): `TensorData`, `TensorView`,
-`vectorOperation`, `tensorSlice` и `cameraTrack`. [Действия](examples/math-workbench)
-показывают сложение смещений, масштабирование и фильтр изображения;
-[срез](examples/tensor-slices) сохраняет адреса и значения многомерных данных.
+Готовые композиции и работающие вызовы — в [examples](examples). Все страницы импортируют этот пакет. Общие владельцы перечислены в [архитектуре](docs/architecture.md), правила сцены — в [контракте автора](docs/authoring.md), визуальный характер — в [PHILOSOPHY.md](PHILOSOPHY.md).
 
 ## Экспорт
 

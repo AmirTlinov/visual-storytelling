@@ -12,6 +12,7 @@ import {
   type Point2,
 } from '../layout/geometry.js';
 
+export type Face = 'front' | 'back' | 'left' | 'right' | 'top' | 'bottom';
 export interface FaceAnchor {
   object: T.Object3D;
   /** Ordered corners in the object's local coordinates. */
@@ -25,7 +26,7 @@ export interface LabelOptions {
   offset?: [number, number];
   visible?: () => boolean;
   priority?: () => number;
-  face?: FaceAnchor;
+  face?: FaceAnchor | Face;
   occlude?: boolean;
   wrap?: () => number;
   /** Grammar-bearing symbols retain their authored place in an expression. */
@@ -42,14 +43,66 @@ const visible = (object: T.Object3D) => {
   for (let o: T.Object3D | null = object; o; o = o.parent) if (!o.visible) return false;
   return true;
 };
+type ResolvedOptions = Omit<LabelOptions, 'face'> & { face?: FaceAnchor };
 type Item = {
   id: string;
   element: HTMLSpanElement;
   leader: SVGPathElement;
   point: () => T.Vector3;
-  options: LabelOptions;
+  options: ResolvedOptions;
+  text?: () => string;
   measured?: { key: string; sizes: Map<number, { width: number; height: number }> };
 };
+
+function meshFace(object: T.Object3D | undefined, face: Face): FaceAnchor {
+  if (!(object instanceof T.Mesh)) throw new Error('A named face label needs a Mesh anchor');
+  return {
+    object,
+    corners() {
+      if (!object.geometry.boundingBox) object.geometry.computeBoundingBox();
+      const { min: a, max: b } = object.geometry.boundingBox!;
+      const faces = {
+        front: [
+          [a.x, a.y, b.z],
+          [b.x, a.y, b.z],
+          [b.x, b.y, b.z],
+          [a.x, b.y, b.z],
+        ],
+        back: [
+          [b.x, a.y, a.z],
+          [a.x, a.y, a.z],
+          [a.x, b.y, a.z],
+          [b.x, b.y, a.z],
+        ],
+        right: [
+          [b.x, a.y, b.z],
+          [b.x, a.y, a.z],
+          [b.x, b.y, a.z],
+          [b.x, b.y, b.z],
+        ],
+        left: [
+          [a.x, a.y, a.z],
+          [a.x, a.y, b.z],
+          [a.x, b.y, b.z],
+          [a.x, b.y, a.z],
+        ],
+        top: [
+          [a.x, b.y, b.z],
+          [b.x, b.y, b.z],
+          [b.x, b.y, a.z],
+          [a.x, b.y, a.z],
+        ],
+        bottom: [
+          [a.x, a.y, a.z],
+          [b.x, a.y, a.z],
+          [b.x, a.y, b.z],
+          [a.x, a.y, b.z],
+        ],
+      };
+      return faces[face].map((p) => new T.Vector3(p[0], p[1], p[2]));
+    },
+  };
+}
 
 /** Sole owner of world-to-screen lettering, face containment and callout placement. */
 export class ProjectedLabels {
@@ -74,10 +127,28 @@ export class ProjectedLabels {
     this.overlay.setAttribute('aria-hidden', 'true');
     stage.append(this.overlay);
   }
-  add(text: string, point: () => T.Vector3, options: LabelOptions = {}) {
+  add(
+    text: string | (() => string),
+    point: () => T.Vector3,
+    supplied: LabelOptions = {},
+    anchor?: T.Object3D,
+  ) {
+    const face =
+      typeof supplied.face === 'string' ? meshFace(anchor, supplied.face) : supplied.face;
+    const options: ResolvedOptions = { ...supplied, face, occlude: supplied.occlude ?? !!face };
+    if (face)
+      point = () => {
+        face.object.updateWorldMatrix(true, false);
+        const corners = face.corners();
+        return face.object.localToWorld(
+          corners
+            .reduce((sum, p) => sum.add(p), new T.Vector3())
+            .multiplyScalar(1 / corners.length),
+        );
+      };
     const element = document.createElement('span');
     element.className = 've-label';
-    element.textContent = text;
+    element.textContent = typeof text === 'function' ? text() : text;
     element.dataset.tone = options.tone ?? 'ink';
     element.dataset.label = options.id ?? `label-${++this.serial}`;
     const leader = svg('path');
@@ -86,7 +157,14 @@ export class ProjectedLabels {
     leader.setAttribute('stroke-width', '1');
     this.stage.append(element);
     this.overlay.append(leader);
-    const item: Item = { id: element.dataset.label!, element, leader, point, options };
+    const item: Item = {
+      id: element.dataset.label!,
+      element,
+      leader,
+      point,
+      options,
+      text: typeof text === 'function' ? text : undefined,
+    };
     this.items.add(item);
     this.invalidate();
     return {
@@ -164,6 +242,11 @@ export class ProjectedLabels {
     for (const item of items) {
       const { element, options, leader } = item;
       leader.style.display = 'none';
+      delete element.dataset.layoutError;
+      if (item.text) {
+        const next = item.text();
+        if (element.textContent !== next) element.textContent = next;
+      }
       const hide = () => {
         element.hidden = true;
         element.dataset.placement = 'hidden';
@@ -212,7 +295,7 @@ export class ProjectedLabels {
       element.classList.toggle('ve-face-label', !!polygon);
       element.classList.remove('ve-label-callout');
       const preferred = options.size ?? 18,
-        min = options.minSize ?? preferred;
+        min = options.minSize ?? Math.min(preferred, 16);
       const key = `${element.textContent}|${element.style.maxWidth}`;
       if (item.measured?.key !== key) item.measured = { key, sizes: new Map() };
       const measure = (size: number) => {
@@ -313,6 +396,7 @@ export class ProjectedLabels {
       if (!chosen) {
         hide();
         this.issues.push({ id: item.id, text: element.textContent ?? '', reason: 'no-space' });
+        element.dataset.layoutError = `No readable space for label "${element.textContent}". Widen this shot or show fewer labels.`;
         continue;
       }
       element.style.fontSize = `${chosenSize}px`;

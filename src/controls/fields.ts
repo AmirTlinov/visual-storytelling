@@ -2,7 +2,7 @@ export type ControlValue = string | number | boolean;
 export interface ControlParameter {
   key?: string;
   label: string;
-  type?: 'range' | 'number' | 'stepper' | 'toggle' | 'checkbox' | 'select' | 'choice';
+  type?: 'range' | 'number' | 'text' | 'stepper' | 'toggle' | 'checkbox' | 'select' | 'choice';
   value: ControlValue;
   min?: number;
   max?: number;
@@ -281,6 +281,16 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
   } else if (type === 'select') {
     select = selectControl(p, title, emit, listen);
     element.append(select.element);
+  } else if (type === 'text') {
+    const input = make('input', {
+      type: 'text',
+      'aria-label': p.label,
+      autocomplete: 'off',
+      spellcheck: 'false',
+    });
+    inputs = [input];
+    input.addEventListener('input', () => emit(input.value), listen);
+    element.append(inkField(input));
   } else if (type === 'range' || type === 'number' || type === 'stepper') {
     const input = make('input', {
       type: type === 'range' ? 'range' : 'number',
@@ -344,7 +354,7 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
       else input.value = String(value);
       input.disabled = Boolean(p.disabled);
     }
-    if (output) output.textContent = p.format ? p.format(value) : Number(value).toFixed(2);
+    if (output) output.textContent = p.format ? p.format(value) : String(value);
     if (type === 'stepper') {
       const buttons = element.querySelectorAll('button');
       buttons[0]!.disabled = Boolean(p.disabled) || Number(value) <= (p.min ?? -Infinity);
@@ -432,7 +442,7 @@ export function choice<T extends string>(
       options: options.map((o) => ({
         value: o.value,
         label: o.label,
-        color: o.pigment === 'ochre' ? 'orange' : o.pigment === 'straw' ? 'yellow' : o.pigment,
+        color: o.pigment,
       })),
     },
     (value) => onInput(value as T),

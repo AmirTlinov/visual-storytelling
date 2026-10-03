@@ -1,7 +1,8 @@
-import type { Story } from './story/story.js';
+import { story, type Story, type StoryOptions } from './story/story.js';
+import { chapterHeading } from './story/chapters.js';
+import { loadFonts } from './ink/fonts.js';
 import { player as statePlayer } from './controls/player.js';
 import type { MediaClock } from './story/clock.js';
-import type { AudioStoryOptions } from './story/audio.js';
 export interface SceneOptions {
   title: string;
   paper?: boolean;
@@ -12,8 +13,6 @@ export interface SceneOptions {
   exploration?: 'model' | 'view';
 }
 import { SketchControls, type ControlParameter, type ControlValue } from './controls/fields.js';
-import { resolveMedia } from './story/media.js';
-import { SketchPlayer } from './story/audio.js';
 /* Shared presentation shell. Subject state and rendering stay in scene.js. */
 
 const node = <K extends keyof HTMLElementTagNameMap>(
@@ -28,11 +27,21 @@ const node = <K extends keyof HTMLElementTagNameMap>(
 };
 function mount(
   root: HTMLElement,
-  { title, paper = true, parameters = [], onInput = () => {}, onMode = () => {}, exploration = 'model' }: SceneOptions,
+  {
+    title,
+    paper = true,
+    parameters = [],
+    onInput = () => {},
+    onMode = () => {},
+    exploration = 'model',
+  }: SceneOptions,
 ) {
   const abort = new AbortController(),
     options = { signal: abort.signal };
   const values = Object.fromEntries(parameters.map((p) => [p.key, p.value]));
+  let inputStory: ((key: string, value: ControlValue) => void) | undefined;
+  let view: { reset(): void; dispose(): void } | undefined;
+  let resetView: HTMLButtonElement | undefined;
   const heading = node('h1', {}, title),
     modes = node('div', { class: 'modes', role: 'group', 'aria-label': 'Режим сцены' });
   const storyButton = node(
@@ -57,6 +66,7 @@ function mount(
       setMode('explore');
       values[p.key] = value;
       refresh();
+      inputStory?.(p.key, value);
       onInput({ ...values });
     });
     fields.append(control.element);
@@ -66,13 +76,14 @@ function mount(
     controls = node('div', { 'data-player': '', hidden: '' });
   const caption = node('p', { class: 'caption sr-only', 'data-caption': '', role: 'status' }),
     status = node('p', { class: 've-status', role: 'alert' });
-  root.append(heading, modes, stage, fields, actions, controls, caption, status);
+  root.append(heading, modes, actions, stage, fields, controls, caption, status);
   let transition: ((mode: 'story' | 'explore') => void) | undefined;
   let mode: 'story' | 'explore' = 'explore';
   let media: Pick<MediaClock, 'pause'> | undefined,
-    player: { seek(time: number): void; update(): void; dispose(): void } | undefined;
+    player: { update(): void; dispose(): void } | undefined;
   function refresh() {
-    for (const [key, control] of inputs) control.setValue(values[key]!);
+    for (const [key, control] of inputs)
+      if (control.value !== values[key]) control.setValue(values[key]!);
   }
   function setMode(next: 'story' | 'explore') {
     if (next === mode || (next === 'story' && !player)) return;
@@ -115,83 +126,119 @@ function mount(
         refresh();
       }
     },
-    attachStory({
-      audio,
-      timing,
-      render,
-      stops,
-      sound = Boolean(audio),
-    }: Omit<AudioStoryOptions, 'audio'> & { audio: HTMLAudioElement | null }) {
-      player?.dispose();
-      transition = undefined;
-      media?.pause();
-      const activeMedia = resolveMedia(audio, timing.duration);
-      media = activeMedia;
-      if (audio?.dataset.src && !audio.getAttribute('src')) audio.src = audio.dataset.src;
-      storyButton.hidden = false;
-      modes.hidden = false;
-      const mounted = SketchPlayer.mount(root, {
-        audio: activeMedia,
-        timing,
-        stops,
-        sound,
-        render: (t, cues, reduced) => {
-          if (mode === 'story' || exploration === 'view') render(t, cues, reduced);
-        },
-      });
-      player = mounted;
-      return {
-        review: mounted.review,
-        seek: (time: number) => {
-          if (exploration === 'model') setMode('story');
-          player!.seek(time);
-        },
-        pause: () => activeMedia.pause(),
-        get currentTime() {
-          return activeMedia.currentTime;
-        },
-      };
+    attachStory<P, K extends string>(options: StoryOptions<P, K>) {
+      const controller = story(options);
+      try {
+        attachController(controller);
+      } catch (error) {
+        controller.dispose();
+        throw error;
+      }
+      return controller;
     },
-    attachController<P, K extends string>(controller: Story<P, K>) {
-      player?.dispose();
-      media?.pause();
-      media = { pause: controller.player.pause };
-      transition = (next) => {
-        if (controller.mode !== next) {
-          if (next === 'explore') controller.explore(controller.values);
-          else controller.resume();
-        }
-      };
-      const ui = statePlayer(controls, {
-        transport: controller.player,
-        stops: controller.sheet.script.segments?.map((s) => s.start),
-        onSeek: (t) => {
-          setMode('story');
-          controller.seek(t);
-        },
-        onPlay: () => setMode('story'),
-      });
-      let unsubscribe = () => {};
-      player = {
-        seek: controller.seek,
-        update: () => controller.resume(),
-        dispose() {
-          unsubscribe();
-          ui.dispose();
-          controller.dispose();
-        },
-      };
-      storyButton.hidden = false;
-      modes.hidden = false;
-      unsubscribe = controller.subscribe((next) => setMode(next));
+    attachController,
+    /** View gestures keep media running; seeking restores the authored shot. */
+    attachView(next: { reset(): void; dispose(): void }) {
+      if (view === next) return;
+      view?.dispose();
+      view = next;
+      if (!resetView) {
+        resetView = SketchControls.action('Вернуть ракурс', () => view?.reset());
+        resetView.classList.add('ve-camera-reset');
+        modes.after(resetView);
+      }
     },
-    dispose() {
-      media?.pause();
-      player?.dispose();
-      abort.abort();
-      for (const control of inputs.values()) control.dispose();
-      root.replaceChildren();
-    },
+    dispose,
   };
+
+  function attachController<P, K extends string>(controller: Story<P, K>) {
+    for (const { key } of parameters) {
+      if (
+        !controller.values ||
+        typeof controller.values !== 'object' ||
+        !(key in controller.values)
+      )
+        throw new Error(`Scene "${title}": parameter "${key}" is missing from stateAt()`);
+    }
+    player?.dispose();
+    media?.pause();
+    media = { pause: controller.player.pause };
+    transition = (next) => {
+      if (exploration === 'model' && controller.mode !== next) {
+        if (next === 'explore') controller.explore(controller.values);
+        else controller.resume();
+      }
+    };
+    const ui = statePlayer(controls, {
+      transport: controller.player,
+      stops: controller.sheet.script.segments?.map((s) => s.start),
+      onSeek: controller.seek,
+      onPlay: () => {
+        if (controller.currentTime >= controller.duration - 0.02) view?.reset();
+        if (exploration === 'model') setMode('story');
+        else controller.resume();
+      },
+    });
+    inputStory = (key, value) => controller.explore({ ...controller.values, [key]: value });
+    const chapters = chapterHeading(
+      heading,
+      controller.sheet.script.segments ?? [],
+      controller.seek,
+    );
+    const stopSeeking = controller.onSeek(() => {
+      view?.reset();
+      setMode('story');
+    });
+    let unsubscribe = () => {};
+    player = {
+      update: () => controller.resume(),
+      dispose() {
+        unsubscribe();
+        ui.dispose();
+        chapters.dispose();
+        stopSeeking();
+        controller.dispose();
+      },
+    };
+    storyButton.hidden = false;
+    modes.hidden = false;
+    unsubscribe = controller.subscribe((next, state) => {
+      if (exploration === 'model') setMode(next);
+      for (const { key } of parameters) values[key] = (state as Record<string, ControlValue>)[key]!;
+      refresh();
+      chapters.update(controller.currentTime);
+      const spoken =
+        controller.sheet.script.segments?.findLast(
+          (segment) => segment.start <= controller.currentTime,
+        )?.text ?? '';
+      if (caption.textContent !== spoken) caption.textContent = spoken;
+    });
+    setMode('story');
+    Object.assign(root, {
+      scene: {
+        seek: controller.seek,
+        pause: controller.pause,
+        review: controller.review,
+        duration: controller.duration,
+        get currentTime() {
+          return controller.currentTime;
+        },
+        snapshot: () => controller.values,
+        setReduced: controller.setReduced,
+        dispose,
+      },
+    });
+  }
+
+  function dispose() {
+    media?.pause();
+    player?.dispose();
+    view?.dispose();
+    abort.abort();
+    for (const control of inputs.values()) control.dispose();
+    root.replaceChildren();
+    inputStory = undefined;
+    Reflect.deleteProperty(root, 'scene');
+  }
 }
-export const SceneShell = { mount };
+export const SceneShell = { mount, ready: loadFonts };

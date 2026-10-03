@@ -1,7 +1,7 @@
 import { SceneShell, SketchControls } from '@visual-storytelling/core';
 import { Viewport3D, vectorOperation, cameraTrack } from '@visual-storytelling/core/three';
 window.galleryReady = (async () => {
-  await document.fonts.ready;
+  await SceneShell.ready();
   const root = document.querySelector('#ve-scene');
   let camera, story, operation;
   const shell = SceneShell.mount(root, {
@@ -68,14 +68,29 @@ window.galleryReady = (async () => {
     });
     story = shell.attachStory({
       audio: null,
-      timing,
-      render(time, cues, reduced) {
-        operation.render(cues.progress('compute', time), reduced);
-        camera.render(time, reduced);
+      script: timing,
+      stateAt: (frame) => frame.progress('compute'),
+      render(progress, frame) {
+        operation.render(progress, frame.reduced);
+        camera.render(frame.time, frame.reduced);
       },
     });
     shell.setMode('story');
     story.seek(0);
+    Object.assign(root.scene, {
+      snapshot: () => ({
+        ...operation.snapshot(),
+        following: camera.following,
+        readability: view.inspect(),
+      }),
+      shell,
+      view,
+      dispose() {
+        operation.dispose();
+        shell.dispose();
+      },
+    });
+    window.explainer = root.scene;
   }
   const picker = SketchControls.field(
     {
@@ -90,29 +105,16 @@ window.galleryReady = (async () => {
     },
     choose,
   );
-  const reset = SketchControls.action('Вернуть ракурс', () => {
-    shell.setMode('story');
-    camera.resume(story.currentTime);
-  });
-  shell.actions.append(picker.element, reset);
-  choose('add');
-  root.scene = {
-    seek: (t) => story.seek(t),
-    pause: () => story.pause(),
-    review: () => story.review(),
-    snapshot: () => ({
-      ...operation.snapshot(),
-      following: camera.following,
-      readability: view.inspect(),
-    }),
-    shell,
-    view,
-    dispose() {
-      camera.dispose();
-      operation.dispose();
-      view.dispose();
-      shell.dispose();
+  shell.attachView({
+    reset: () => {
+      shell.setMode('story');
+      camera.resume(story.currentTime);
     },
-  };
-  window.explainer = root.scene;
+    dispose: () => {
+      camera.dispose();
+      view.dispose();
+    },
+  });
+  shell.actions.append(picker.element);
+  choose('add');
 })();

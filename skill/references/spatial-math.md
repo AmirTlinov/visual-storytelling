@@ -18,9 +18,9 @@ const action = vectorOperation(view, {
 });
 view.setObject(action.group, { fitView: false });
 const camera = cameraTrack(view, { target: action.framing, direction: [0.12, 0.08, 1] });
-// В существующем render(time, cues, reduced):
-action.render(cues.progress('combine', time), reduced);
-camera.render(time, reduced);
+// В Story.render(state, frame):
+action.render(frame.progress('combine'), frame.reduced);
+camera.render(frame.time, frame.reduced);
 ```
 
 | Задача                                                        | Общий владелец                                                                                                                                                                                                                                            |

@@ -11,6 +11,6 @@
 | Рассказы о площади и остатке                                | Принятые пользователем реплики, голос и метки из `consistent-gallery/{area,remainder}` | Исходный WAV и акустические метки сохранены без перекодирования.                              |
 
 | [Three.js](https://github.com/mrdoob/three.js) | 0.186.1, WebGL, OrbitControls и GLTFLoader | MIT, лицензия в установленном пакете. |
-| [esbuild](https://github.com/evanw/esbuild) | 0.27.4, сборка страниц | MIT. |
+| [esbuild](https://github.com/evanw/esbuild) | 0.27.5, сборка страниц | MIT. |
 
 Зависимости разработки закреплены в `package-lock.json`. Пакет помечен `private`; публичная публикация в этой версии не выполняется.

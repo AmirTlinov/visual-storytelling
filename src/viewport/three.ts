@@ -2,9 +2,11 @@ import type { Material, Texture, Color } from 'three';
 type Palette = Record<string, Color>;
 type ColorMaterial = Material & { color: Color };
 type MaterialInk = string | ((palette: Palette) => Color);
-import * as ThreeKit from './engine.js';
 import { ProjectedLabels, type LabelOptions } from './labels.js';
 import { ProjectedConnections, type ConnectionOptions } from './connections.js';
+import { loadFonts } from '../ink/fonts.js';
+import { shotPose, type ShotTransition3D } from './shots.js';
+import * as ThreeKit from './engine.js';
 /* Camera, GPU resources and projected labels belong to this surface. */
 
 function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объёмная сцена' } = {}) {
@@ -29,15 +31,24 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
   controls.enablePan = true;
   const abort = new AbortController(),
     listen = { signal: abort.signal };
+  const labels = new ProjectedLabels(stage, camera, scene, invalidate);
+  const connections = new ProjectedConnections(
+    stage,
+    camera,
+    () => labels.boxes,
+    () => labels.objects,
+    invalidate,
+  );
+  const resizes = new Set<() => void>();
   const materials = new Map<ColorMaterial, MaterialInk>(),
     palette: Palette = {};
-  const interactions = new Set<() => void>(),
-    resizes = new Set<() => void>();
   let pending = 0,
     disposed = false,
     afterRender = () => {};
   let object: ThreeKit.Object3D | undefined,
     home: { position: ThreeKit.Vector3; target: ThreeKit.Vector3 } | undefined;
+  let following = true,
+    lastShot: ShotTransition3D | undefined;
   const hemisphere = new T.HemisphereLight(0xffffff, 0xb8c1c8, 2.4),
     light = new T.DirectionalLight(0xffffff, 2.2);
   light.position.set(-3, 5, 7);
@@ -46,25 +57,17 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
     pending = 0;
     if (disposed) return;
     renderer.render(scene, camera);
-    lettering.render();
+    labels.render();
     connections.render();
     afterRender();
   }
   function invalidate() {
     if (!pending && !disposed) pending = requestAnimationFrame(render);
   }
-  const lettering = new ProjectedLabels(stage, camera, scene, invalidate);
-  const connections = new ProjectedConnections(
-    stage,
-    camera,
-    () => lettering.boxes,
-    () => lettering.objects,
-    invalidate,
-  );
   const changed = () => invalidate(),
     started = () => {
+      following = false;
       onInteract();
-      for (const callback of interactions) callback();
     };
   controls.addEventListener('change', changed);
   controls.addEventListener('start', started);
@@ -127,6 +130,7 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
     camera.updateProjectionMatrix();
     renderer.setSize(width, height, false);
     for (const callback of resizes) callback();
+    if (following && lastShot) shot(lastShot);
     invalidate();
   }
   const sizeObserver = new ResizeObserver(resize);
@@ -162,12 +166,29 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
     invalidate();
   }
   function reset() {
+    following = true;
+    if (lastShot) return shot(lastShot);
     if (home) {
       camera.position.copy(home.position);
       controls.target.copy(home.target);
       controls.update();
       invalidate();
     }
+  }
+  function shot(options: ShotTransition3D) {
+    lastShot = options;
+    if (!following || !stage.clientWidth || !stage.clientHeight) return;
+    const pose = shotPose(camera, stage.clientWidth, stage.clientHeight, {
+      ...options,
+      reduced: options.reduced ?? matchMedia('(prefers-reduced-motion: reduce)').matches,
+    });
+    camera.position.copy(pose.position);
+    controls.target.copy(pose.target);
+    camera.near = pose.near;
+    camera.far = pose.far;
+    camera.updateProjectionMatrix();
+    controls.update();
+    invalidate();
   }
   canvas.addEventListener(
     'keydown',
@@ -246,16 +267,21 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
   );
   resize();
   theme();
-  const ready = Promise.all(
-    ['SketchPencil', 'SketchShantell'].map((name) =>
-      document.fonts.load(`20px ${name}`, '−0.123456789 сумма'),
-    ),
-  ).then(() => {
-    invalidate();
-  });
   return {
-    ready,
     stage,
+    ready: loadFonts().then(invalidate),
+    release,
+    avoid: (object: ThreeKit.Object3D) => labels.avoid(object),
+    inspect: () => ({ ...labels.inspect(), connections: connections.inspect() }),
+    connect: (from: ThreeKit.Object3D, to: ThreeKit.Object3D, options: ConnectionOptions = {}) =>
+      connections.add(from, to, options),
+    onResize(callback: () => void) {
+      resizes.add(callback);
+      return () => resizes.delete(callback);
+    },
+    explore() {
+      following = false;
+    },
     scene,
     camera,
     controls,
@@ -265,7 +291,10 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
     invalidate,
     fit,
     reset,
-    release,
+    shot,
+    get following() {
+      return following;
+    },
     setObject(next: ThreeKit.Object3D, { fitView = true } = {}) {
       if (object === next) return;
       if (object) {
@@ -277,24 +306,16 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
       if (fitView) fit(next);
       invalidate();
     },
-    label(text: string, point: () => ThreeKit.Vector3, options: LabelOptions = {}) {
-      return lettering.add(text, point, options);
-    },
-    avoid: (object: ThreeKit.Object3D) => lettering.avoid(object),
-    inspect: () => ({ ...lettering.inspect(), connections: connections.inspect() }),
-    connect: (from: ThreeKit.Object3D, to: ThreeKit.Object3D, options: ConnectionOptions = {}) =>
-      connections.add(from, to, options),
-    onInteract(callback: () => void) {
-      interactions.add(callback);
-      return () => {
-        interactions.delete(callback);
-      };
-    },
-    onResize(callback: () => void) {
-      resizes.add(callback);
-      return () => {
-        resizes.delete(callback);
-      };
+    label(
+      text: string | (() => string),
+      anchor: ThreeKit.Object3D | (() => ThreeKit.Vector3),
+      options: LabelOptions = {},
+    ) {
+      const point =
+        typeof anchor === 'function'
+          ? anchor
+          : () => new T.Box3().setFromObject(anchor).getCenter(new T.Vector3());
+      return labels.add(text, point, options, typeof anchor === 'function' ? undefined : anchor);
     },
     async loadGLB(source: string | ArrayBuffer) {
       const loader = new T.GLTFLoader();
@@ -318,9 +339,8 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
       themeObserver.disconnect();
       release(object);
       renderer.dispose();
-      lettering.dispose();
+      labels.dispose();
       connections.dispose();
-      interactions.clear();
       resizes.clear();
       canvas.remove();
       sample.remove();
@@ -329,4 +349,4 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
 }
 export const Viewport3D = { mount };
 
-export type Viewport = ReturnType<typeof Viewport3D.mount>;
+export type Viewport = ReturnType<typeof mount>;

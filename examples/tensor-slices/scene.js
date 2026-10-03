@@ -1,4 +1,4 @@
-import { SceneShell, SketchControls } from '@visual-storytelling/core';
+import { SceneShell } from '@visual-storytelling/core';
 import {
   Viewport3D,
   ThreeKit as T,
@@ -8,7 +8,7 @@ import {
   cameraTrack,
 } from '@visual-storytelling/core/three';
 window.galleryReady = (async () => {
-  await document.fonts.ready;
+  await SceneShell.ready();
   const root = document.querySelector('#ve-scene');
   let camera, story;
   const shell = SceneShell.mount(root, {
@@ -62,25 +62,28 @@ window.galleryReady = (async () => {
   ]);
   story = shell.attachStory({
     audio: null,
-    timing,
-    render(time, cues, reduced) {
-      whole.reveal(cues.progress('reveal', time));
-      slice.render(cues.progress('slice', time), reduced);
-      camera.render(time, reduced);
+    script: timing,
+    stateAt: (frame) => ({ reveal: frame.progress('reveal'), slice: frame.progress('slice') }),
+    render(state, frame) {
+      whole.reveal(state.reveal);
+      slice.render(state.slice, frame.reduced);
+      camera.render(frame.time, frame.reduced);
       view.invalidate();
     },
   });
-  const reset = SketchControls.action('Вернуть ракурс', () => {
-    shell.setMode('story');
-    camera.resume(story.currentTime);
+  shell.attachView({
+    reset: () => {
+      shell.setMode('story');
+      camera.resume(story.currentTime);
+    },
+    dispose: () => {
+      camera.dispose();
+      view.dispose();
+    },
   });
-  shell.actions.append(reset);
   shell.setMode('story');
   story.seek(0);
-  root.scene = {
-    seek: story.seek,
-    pause: story.pause,
-    review: story.review,
+  Object.assign(root.scene, {
     snapshot: () => ({
       values: slice.result.values,
       readability: view.inspect(),
@@ -89,12 +92,10 @@ window.galleryReady = (async () => {
     view,
     shell,
     dispose() {
-      camera.dispose();
       whole.dispose();
       slice.dispose();
-      view.dispose();
       shell.dispose();
     },
-  };
+  });
   window.explainer = root.scene;
 })();

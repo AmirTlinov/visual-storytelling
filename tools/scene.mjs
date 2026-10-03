@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { readFile, writeFile, mkdir, readdir, cp, rm } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
+import { readFile, writeFile, mkdir, readdir, cp, rm, access } from 'node:fs/promises';
+import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { buildScene } from './build-pages.mjs';
@@ -12,6 +12,7 @@ const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     example: { type: 'string', default: 'area-story' },
+    help: { type: 'boolean', short: 'h' },
     out: { type: 'string' },
     port: { type: 'string', default: '8793' },
     'no-audio': { type: 'boolean', default: false },
@@ -26,7 +27,23 @@ const { values, positionals } = parseArgs({
 const [command, directory = '.'] = positionals,
   destination = resolve(directory);
 const catalog = JSON.parse(await readFile(join(root, 'examples/catalog.json'), 'utf8'));
-if (command === 'new') {
+const help = `visual-story new DIRECTORY --example NAME [--no-audio]
+visual-story examples                         list supported starting points
+visual-story dev DIRECTORY [--port 8793]       rebuild + reload at the current story time
+visual-story build DIRECTORY                  build dist/
+visual-story audio DIRECTORY                  voice + aligned cues from narration.json
+visual-story preview DIST [--port 8793]        serve an existing build
+visual-story review DIST --out review [--cue ID] [--width 375] [--theme dark] [--reduced]
+visual-story pack DIST --out artifacts/story.html [--inline]
+visual-story generate DIRECTORY --example NAME
+
+Authoring API: ${join(root, 'skill/references/scene-template.md')}
+Narration format: ${join(root, 'skill/references/narration.md')}`;
+if (values.help || command === 'help' || !command) console.log(help);
+else if (command === 'examples') {
+  for (const [name, entry] of Object.entries(catalog))
+    console.log(`${name.padEnd(22)} ${entry.title}`);
+} else if (command === 'new') {
   if (values.audio && values['no-audio']) throw new Error('Choose either --audio or --no-audio');
   if (!catalog[values.example])
     throw new Error(`Choose an example: ${Object.keys(catalog).join(', ')}`);
@@ -56,6 +73,15 @@ if (command === 'new') {
       );
   }
   // Each scene records an immutable packed dependency rather than a mutable workspace link.
+  if (
+    await access(join(root, 'src/index.ts')).then(
+      () => true,
+      () => false,
+    )
+  ) {
+    const { buildPackage } = await import('./build-package.mjs');
+    await buildPackage();
+  }
   const receipt = JSON.parse(
     execFileSync('npm', ['pack', '--ignore-scripts', '--pack-destination', destination, '--json'], {
       cwd: root,
@@ -74,8 +100,9 @@ if (command === 'new') {
           ...(catalog[values.example].generator
             ? { generate: `visual-story generate . --example ${values.example}` }
             : {}),
-          dev: 'visual-story preview dist',
-          pack: 'visual-story pack dist --out story.html',
+          dev: 'visual-story dev .',
+          preview: 'visual-story preview dist',
+          pack: 'visual-story pack dist --out artifacts/story.html',
           audio: 'visual-story audio .',
           export: 'visual-story-export --directory dist',
           review: 'visual-story review dist --out artifacts/review',
@@ -130,6 +157,15 @@ if (command === 'new') {
   if (!values.out) await rm(output, { recursive: true, force: true });
   await buildScene(destination, output);
   console.log(output);
+} else if (command === 'dev') {
+  const { develop } = await import('./dev.mjs');
+  const server = await develop(destination, Number(values.port));
+  console.log(server.url);
+  for (const signal of ['SIGINT', 'SIGTERM'])
+    process.once(signal, async () => {
+      await server.close();
+      process.exit(0);
+    });
 } else if (command === 'preview') {
   const server = await serve(destination, Number(values.port));
   console.log(server.url);
@@ -160,6 +196,7 @@ if (command === 'new') {
   );
 } else if (command === 'pack') {
   const output = resolve(values.out ?? 'story.html');
+  await mkdir(dirname(output), { recursive: true });
   await writeFile(
     output,
     await packDirectory(destination, 'index.html', {
@@ -168,7 +205,4 @@ if (command === 'new') {
     }),
   );
   console.log(output);
-} else
-  console.log(
-    'visual-story new DIRECTORY --example NAME | generate DIRECTORY --example NAME | build DIRECTORY | preview DIRECTORY | pack DIST --out story.html | review DIST --out review [--cue ID] [--theme dark] [--width 375] [--reduced]',
-  );
+} else throw new Error(`Unknown command: ${command}\n${help}`);

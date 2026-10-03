@@ -28,6 +28,7 @@ class NarrationCues(unittest.TestCase):
                 cues = {}
                 for segment, aligned in zip(script['segments'], timeline['segments'], strict=True):
                     self.assertEqual(segment['spoken'], aligned['text'])
+                    self.assertEqual(segment.get('title'), aligned.get('title'))
                     cues.update(timed_cues(segment, aligned['words']))
                 self.assertEqual(timeline['cues'], cues)
                 for key in ('audio', 'voice', 'music'):

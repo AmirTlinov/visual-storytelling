@@ -29,8 +29,8 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
     svg('title', { id: `${options.id}-title` }, options.title),
     svg('desc', { id: `${options.id}-desc` }, options.description),
   );
-  const paper = svg('g', { 'aria-hidden': 'true', class: 'vs-grid' });
-  const layer = svg('g');
+  const paper = svg('g', { 'aria-hidden': 'true', class: 'vs-grid', 'data-camera-transform': '' });
+  const layer = svg('g', { 'data-camera-world': '', 'data-camera-transform': '' });
   element.append(paper, layer);
   parent.append(element);
   let width = options.width,

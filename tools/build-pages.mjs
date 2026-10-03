@@ -1,11 +1,11 @@
 import { build } from 'esbuild';
-import { readdir, readFile, writeFile, mkdir, cp } from 'node:fs/promises';
+import { readdir, readFile, writeFile, mkdir, cp, access } from 'node:fs/promises';
 import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sourceAliases } from './source-package.mjs';
 import { sceneAsset } from './assets.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
-export async function buildPage(source, target, { sourcePackage = false } = {}) {
+export async function buildPage(source, target, { sourcePackage = false, tsconfig } = {}) {
   let html = await readFile(source, 'utf8');
   const attribute = (attrs, name) =>
     new RegExp(`\\b${name}\\s*=\\s*(["'])(.*?)\\1`, 'i').exec(attrs)?.[2];
@@ -38,6 +38,7 @@ export async function buildPage(source, target, { sourcePackage = false } = {}) 
       bundle: true,
       format: 'iife',
       target: 'es2022',
+      ...(tsconfig ? { tsconfig } : { tsconfigRaw: { compilerOptions: {} } }),
       ...(sourcePackage ? { alias: sourceAliases } : {}),
       loader: Object.fromEntries(
         [
@@ -74,6 +75,15 @@ export async function buildScene(source, target, options = {}) {
   source = resolve(source);
   target = resolve(target);
   if (source === target) throw new Error('The build output must be separate from scene sources');
+  // A copied scene owns its imports. Never inherit unrelated ancestor workspace aliases.
+  const tsconfig = resolve(source, 'tsconfig.json');
+  options = {
+    ...options,
+    tsconfig: await access(tsconfig).then(
+      () => tsconfig,
+      () => undefined,
+    ),
+  };
   const ignored = new Set([
     'node_modules',
     '__pycache__',

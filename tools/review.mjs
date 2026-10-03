@@ -112,10 +112,12 @@ export async function reviewScene({
       for (const time of reviewTimes(cue, initial.duration)) {
         await capture.seek(time);
         const state = await capture.capture.evaluate((scene) => scene.snapshot());
+        const diagnostics = await capture.capture.evaluate((scene) => scene.diagnostics());
         const png = await capture.png();
         frames.push({
           time,
           state,
+          diagnostics,
           image: `data:image/png;base64,${png.toString('base64')}`,
           digest: createHash('sha256').update(png).digest('hex'),
         });
@@ -150,6 +152,8 @@ export async function reviewScene({
       warnings: errors.map((error) => `Ошибка сцены: ${error}`),
     };
     for (const cue of report.cues) {
+      for (const message of new Set(cue.frames.flatMap((frame) => frame.diagnostics)))
+        report.warnings.push(`${cue.id}: ${message}`);
       if (cue.kind === 'unassigned')
         report.warnings.push(`${cue.id}: опишите видимое действие или осмысленную остановку.`);
       if (!cue.referenced && cue.kind !== 'hold' && cue.kind !== 'chapter')

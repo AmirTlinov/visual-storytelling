@@ -1,110 +1,126 @@
-# Оболочка рассказа и исследования
+# Рассказ с исследованием
 
-Создай сцену из каталога навыка:
+Начни с ближайшего готового рисунка; общая оболочка уже подключена:
 
 ```sh
-node scripts/scene.mjs new /absolute/output/scene --example explorer-3d
-# SVG с тем же плеером:
-node scripts/scene.mjs new /absolute/output/scene-svg --example explorer-svg
-# Каталог полей и редактирования геометрии:
-node scripts/scene.mjs new /absolute/output/controls --example controls
+node scripts/scene.mjs new /absolute/output/story --example explorer-svg --no-audio
+# Для вращаемого объёма: --example explorer-3d
+cd /absolute/output/story
+npm install
+npm run dev
 ```
 
-Далее `npm install`, `npm run build`, `npm run dev` в созданной папке. `explorer-3d` показывает действие диагонального тензора на сферу; `explorer-svg` складывает перемещения на измерительной сетке. Оба содержат готовый голос; `--no-audio` включает тихий таймлайн, `npm run audio` пересобирает реплики и возвращает звук. Рассказ запускается действием пользователя.
+`dev` пересобирает исходник при правке и возвращает страницу к текущему времени на паузе.
+При ошибке остаётся последняя рабочая сборка с сообщением. `?cue=move_x` или `?t=8`
+открывает конкретное место. `npm run build` создаёт `dist/`; `npm run preview` показывает
+готовую сборку. `npm run pack` сохраняет автономный `artifacts/story.html`.
 
-## Менять содержание
+Меняй `narration.json` (реплики и действия), `scene.js` (модель и рисунок).
+`npm run audio` создаёт голос и `timeline.json`, затем убирает тихий режим.
+Сначала закончи один смысловой шаг с настоящим голосом; затем разворачивай рассказ.
+[Формат реплик и меток](narration.md) нужен при подготовке озвучки.
 
-Оставь общую оболочку и перепиши `scene.js`: предметные объекты, параметры,
-`render(values)` и отображение времени рассказа в значения модели. Реплики и
-смысловые метки находятся в `narration.json`; после изменения собери его снова.
-Параметры описываются `{key, label, type?, min, max, step, value, format?}`.
-Готовые типы: `range` (по умолчанию), `number`, `stepper`, `toggle`, `checkbox`,
-`select`, `choice`; последние два принимают `options: [{value, label}]`.
-У `choice` необязательный `color: 'blue' | 'orange' | 'purple' | 'green'` окрашивает подпись и подчёркивание в соответствующий цвет палитры с учётом темы.
-`select` раскрывает общее рисованное меню с клавиатурным выбором, поиском по первым буквам и закрытием по Escape или клику снаружи.
-Они используют `SketchControls.field`, который можно размещать и вне оболочки;
-`SketchControls.action(label, onClick, options?)` создаёт общую рисованную кнопку.
-См. [живой каталог](../previews/controls/index.html): все элементы меняют один рисунок.
-Его `shapes.js` содержит десять базовых фигур и размещает фишки внутри выпуклого или вогнутого контура; `shape-model.js` хранит геометрию в сантиметрах, а `shape-editor.js`/`.css` по умолчанию дают независимое перемещение вершин с неподвижными соседями, отдельный режим «Размер целиком», стрелки, Shift для пропорций, Alt для точного шага и Escape для отмены жеста.
-`SceneHistory` из пакета хранит общую историю геометрии и параметров: ⌘/Ctrl+Z отменяет, ⇧⌘/Ctrl+Z или Ctrl+Y повторяет; перетаскивание и удержание стрелки образуют одно действие, новая правка очищает ветку повтора.
+## Один путь от времени к рисунку
 
 ```js
-import { SceneShell } from '@visual-storytelling/core';
+import { SceneShell, surface, object, lettering, ViewportSVG } from '@visual-storytelling/core';
 import '@visual-storytelling/core/style.css';
+import timing from './timeline.json' with {type: 'json'};
 
-const shell = SceneShell.mount(root, {
-  title: 'Моя сцена',
-  parameters: [{key: 'length', label: 'Длина', min: 1, max: 5, step: .1, value: 2}],
-  onInput: values => render(values)
-});
-// Помести SVG, Canvas или WebGL-поверхность в shell.stage.
-// shell.actions — место для предметных действий; shell.status — ошибка/статус.
-const story = shell.attachStory({audio, timing, render(time, cues, reduced) {
-  const values = stateAt(time, cues, reduced);
-  shell.setParameters(values);
-  render(values);
-}});
-root.scene = {seek: story.seek, pause: story.pause, review: story.review, dispose: shell.dispose};
+window.galleryReady = (async () => {
+  await SceneShell.ready(); // Запрашивает шрифты до измерения пустой сцены.
+  const root = document.querySelector('.ve-scene');
+  const shell = SceneShell.mount(root, {
+    title: 'Заголовок', paper: false,
+    parameters: [{key: 'x', label: 'Положение', min: 0, max: 100, value: 0}]
+  });
+  const drawing = surface(shell.stage, {
+    id: 'path', width: 360, height: 320,
+    title: 'Движение предмета', description: 'Предмет перемещается вправо по измерительной сетке.'
+  });
+  const mark = object(drawing.layer, 'moving', 'blue');
+  drawing.pen.rect(mark.content, 'tile', -20, -20, 40, 40, {fill: 'marker'});
+  const value = lettering(mark.content, '0', {y: 7, size: 20, maxWidth: 30});
+  const camera = ViewportSVG.mount(drawing.element);
+  shell.attachView(camera);
+  const overview = {target: {x: 0, y: 0, w: 360, h: 320}, padding: 20};
+  const controller = shell.attachStory({
+    audio: root.querySelector('[data-audio]'), script: timing,
+    stateAt: frame => ({x: 100 * frame.progress('move_x')}),
+    render(state) {
+      mark.at(70 + state.x, 150);
+      value.text(Math.round(state.x));
+      camera.shot(overview);
+    }
+  });
+  // Дополнительное предметное действие использует controller.explore({...controller.values, x: 50}).
+  // root.scene уже содержит seek, pause, review, snapshot, currentTime и dispose.
+})();
 ```
 
-`stateAt` вычисляет весь кадр для произвольного времени, включая обратную перемотку;
-названия и интервалы действий берутся из меток слов. `render` одинаков для ручного
-ввода и рассказа. При исследовании модели (по умолчанию) «Исследовать» сохраняет
-значения и останавливает голос; «Рассказ» восстанавливает состояние текущего времени.
-Для исследования только ракурса задай `exploration: 'view'` в `SceneShell.mount`: голос,
-плеер и вычисления продолжаются, а `onMode` переключает лишь ручную и сценарную камеру.
-Для перетаскивания предметов вызывай `shell.setMode('explore')` при начале жеста;
-затем обновляй модель и `shell.setParameters(values)`.
-При `audio: null` тот же плеер использует `SilentMedia(timing.duration)`.
+Поля автоматически читают одноимённые ключи `stateAt` и меняют их через `story.explore`.
+Ключ параметра должен существовать в состоянии. Голос останавливается при изменении
+модели; «Рассказ» восстанавливает пример текущего времени. Тот же `render(state, frame, mode)`
+обслуживает оба режима. `frame.progress(id)` — действие, `reveal(id)` — декоративное письмо,
+`finished(id)` — момент получения результата. Вычисляй весь кадр, включая скрываемые части.
 
-## Трёхмерная поверхность
+Для заголовка с выбором главы добавь короткое `title` нужным сегментам `narration.json`.
+Оболочка использует их готовое время; отдельный словарь глав и обработчики плеера не нужны.
+Пигменты `ink/blue/orange/purple/green/red/yellow` совпадают в рисующих API и CSS.
+`root.scene.snapshot` можно заменить предметным снимком для отчёта. При удалении сцены
+`shell.dispose()` освобождает прикреплённые рассказ и камеру; свои наблюдатели освобождает сцена.
+`notebook` использует ту же оболочку для типизированных примеров; см. [вектор](../examples/vector/index.ts).
+
+## Сценарная камера и ручной осмотр
+
+В `render` передай камере **объект или группу, контекст и ход перехода**:
 
 ```js
-import { Viewport3D, ThreeKit } from '@visual-storytelling/core/three';
-
-const view = Viewport3D.mount(shell.stage, {
-  label: 'Название и краткое описание модели',
-  onInteract: () => shell.setMode('explore')
-});
-await view.ready;       // Почерк загружен до измерения подписей.
-const model = new ThreeKit.Mesh(
-  new ThreeKit.BoxGeometry(1, 1, 1),
-  view.ink(new ThreeKit.MeshStandardMaterial(), 'blue')
-);
-view.setObject(model);  // Одна группа может содержать все части предмета.
-view.label('Вершина', () => model.localToWorld(new ThreeKit.Vector3(.5, .5, .5)));
-view.invalidate();     // После изменения модели; камера перерисовывается сама.
+camera.shot({target: [mark], padding: 36, from: overview, progress: frame.progress('focus')});
 ```
 
-Для готовой модели: `const gltf = await view.loadGLB(urlOrArrayBuffer)` и
-`view.setObject(gltf.scene)`. Обычный самодостаточный GLB поддержан сразу;
-для сжатых Draco/KTX2-ресурсов нужны соответствующие декодеры. Цвета материалов
-модели сохраняются; `view.ink(material, 'blue')` связывает выбранный материал с темой,
-а `'blue-wash'` даёт ту же мягкую заливку, что и в SVG; для рисованной поверхности используй `MeshBasicMaterial`.
-`view.fit()` подбирает вид после изменения габаритов, `view.reset()` возвращает его.
-Колесо/жест — приближение, перетаскивание — вращение, правая кнопка/два пальца — перенос;
-стрелки, `+`/`−`, `Shift`+стрелки и `Home` доступны с клавиатуры.
-Для числовых массивов используй [общие тензоры и операции](spatial-math.md): они связывают
-значение с гранью, размещают выноски и передают результат при завершении действия.
-`view.inspect()` показывает неразмещённые подписи и соединения без свободного пути.
+SVG-камера измеряет предметы вместе с подписями. Для сравнения величин сохраняй общую
+шкалу: используй неизменные границы `overview`, чтобы увеличение данных не вызывало
+автоматическое отдаление. Камера прибывает до объясняемого действия, удерживает его
+результат и возвращает деталь в целое. Направление композиции определяется механизмом.
 
-## Владельцы и проверка
+`attachView` добавляет «Вернуть ракурс» под переключателями и восстанавливает сценарную
+камеру при перемотке. Жесты и клавиатура доступны во время голоса; ручной ракурс сохраняется
+до возврата или перемотки. Камера получает время от рассказа, своих таймеров не заводит.
+Для самостоятельно реализованного ракурса доступен `exploration: 'view'` с `onMode`.
 
-Карта общих владельцев — в [сборке сцены](scene-authoring.md#где-что-находится). `scene.js` содержит предметное содержание; пакет владеет оболочкой, управлением, временем и 3D.
+## 3D
 
-Тетрадная сетка включена по умолчанию, подложка прозрачна; `paper: false` оставляет
-чистую поверхность хоста. Цвета берутся из `ink.css`; измерительный SVG согласует
-шаг и начало сетки со своей геометрией. Матрицы перестраивай в меньшее число
-колонок, сохраняя зазор между полными числами; плотность не должна уменьшать шрифт.
-Импорт `@visual-storytelling/core/style.css` включает тот же шрифт: рисунок, формулы, управление и 3D-подписи используют один почерк.
-Клик и перетаскивание не оставляют системных рамок или выделения; клавиатурный фокус обозначается небольшим рисованным штрихом у активного элемента.
-WebGL рисует по изменению,
-поэтому статичная сцена на паузе не держит непрерывный цикл. При удалении сцены
-вызывай `view.dispose()` и `shell.dispose()`; свой `ResizeObserver` отключает его владелец.
-`root.scene` в примерах предоставляет эти объекты и общий `dispose()` для встраивания.
+```js
+import { Viewport3D, ThreeKit as T } from '@visual-storytelling/core/three';
+const view = Viewport3D.mount(shell.stage, {label: 'Объём и его размеры'});
+shell.attachView(view);
+const cube = new T.Mesh(new T.BoxGeometry(1, 1, 1), view.ink(new T.MeshBasicMaterial(), 'blue-wash'));
+view.setObject(cube);
+view.label(() => '3.14', cube, {face: 'front', tone: 'blue'});
+// В render: view.shot({target: cube, direction: [0,0,1], padding: 36, from: overview3d, progress: frame.progress('focus')});
+```
 
-Проверь полный рассказ, паузу, перемотку назад и переход рассказ → ручное действие →
-рассказ; затем крайние параметры, узкую ширину, обе темы и клавиатуру. Для 3D добавь
-вращение/сброс камеры; для собственной модели проверь её реальные размеры и подписи.
-`npm run pack` упаковывает оба формата с локальными зависимостями и голосом;
-большие модели сохраняй редактируемой папкой и открывай в браузере.
+`shot` имеет тот же смысл, `direction` — направление от цели к камере; целью также может
+быть группа объектов или неизменный `T.Box3`. Дополнительные мировые точки подписей —
+`anchors: [{position, padding: [halfWidth, halfHeight]}]`, занятое управление —
+`insets: {top, right, bottom, left}` в пикселях.
+
+`view.label(textOrFunction, anchor, options)` владеет текстом и его проекцией.
+Якорь — объект или функция мировой точки. `face` выбирает
+грань Mesh: `front/back/left/right/top/bottom`; обратная грань скрыта, слишком тесная
+получает разборчивую выноску. `size/minSize` ограничивают размер письма. Подпись обновляется
+при `view.invalidate()`, который вызывай после изменения модели. `shot` делает это сам.
+`loadGLB(urlOrBuffer)` загружает обычный самодостаточный GLB; Draco/KTX2 требуют декодеров.
+
+Для соединения рядов и арифметики используй общие `arrangeTensorRows`, `calculateTensorColumns` и `deliverTensorCells`: движущийся результат сам становится конечной ячейкой. `readableFrame` учитывает геометрию, экранные подписи и область заголовка/плеера; контракт и пример вызова находятся в [движении тензоров](../../docs/tensor-motion.md).
+
+## Проверить результат
+
+`npm run review -- --cue move_x` сопоставляет реплику, действие и промежуточные кадры.
+Отчёт также указывает подписи, которым не хватило места при минимальном размере.
+Проверь паузу, обратную перемотку, ручной ракурс при голосе, изменение модели и возврат;
+для нового рисунка — 375 px, обе темы и reduced motion. Открой итоговый автономный HTML.
+Принятый визуальный характер — [здесь](motion.md), общие владельцы — в [карте](scene-authoring.md#где-что-находится).
+
+Для объёмных данных используй [общие тензоры, действия и камеру](spatial-math.md); примеры `math-workbench` и `tensor-slices` используют тот же `Story`, `SceneShell` и `Viewport3D`.

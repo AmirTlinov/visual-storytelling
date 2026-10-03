@@ -1,4 +1,4 @@
-import { notebook, composition, range, story, interpolate } from '@visual-storytelling/core';
+import { notebook, composition, story, interpolate } from '@visual-storytelling/core';
 import { transform } from './model';
 import { drawing } from './drawing';
 import type { SceneHandle as Example } from '@visual-storytelling/core';
@@ -7,6 +7,19 @@ export function mount(parent: HTMLElement): Example {
   const book = notebook(parent, {
     title: 'Матрица меняет вектор',
     subtitle: 'Два коэффициента — два независимых масштаба.',
+    parameters: [
+      { key: 'a', label: 'Масштаб x' },
+      { key: 'b', label: 'Масштаб y' },
+      { key: 'x', label: 'Вход x' },
+      { key: 'y', label: 'Вход y' },
+    ].map((parameter) => ({
+      ...parameter,
+      min: -1.8,
+      max: 1.8,
+      step: 0.05,
+      value: 1,
+      format: (value) => Number(value).toFixed(2),
+    })),
   });
   const layout = composition(
     book.stage,
@@ -64,29 +77,6 @@ export function mount(parent: HTMLElement): Example {
     }),
     render: (state) => layout.current.render(state),
   });
-  const fields = (
-    [
-      { key: 'a', label: 'Масштаб x' },
-      { key: 'b', label: 'Масштаб y' },
-      { key: 'x', label: 'Вход x' },
-      { key: 'y', label: 'Вход y' },
-    ] as const
-  ).map(({ key, label }) => ({
-    key,
-    control: range({
-      label,
-      min: -1.8,
-      max: 1.8,
-      step: 0.05,
-      value: controller.values[key],
-      format: (value) => value.toFixed(2),
-      onInput: (value) => controller.explore({ ...controller.values, [key]: value }),
-    }),
-  }));
-  for (const { control } of fields) book.parameters.append(control.element);
-  const unsubscribe = controller.subscribe((_, state) => {
-    for (const { key, control } of fields) control.set(state[key]);
-  });
   book.attach(controller);
   return {
     duration: 18,
@@ -99,8 +89,6 @@ export function mount(parent: HTMLElement): Example {
     snapshot: () => ({ input: controller.values, output: transform(controller.values) }),
     review: controller.sheet.review,
     dispose() {
-      unsubscribe();
-      fields.forEach(({ control }) => control.dispose());
       book.dispose();
       layout.dispose();
     },
