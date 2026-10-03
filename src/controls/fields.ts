@@ -2,7 +2,7 @@ export type ControlValue = string | number | boolean;
 export interface ControlParameter {
   key?: string;
   label: string;
-  type?: 'range' | 'number' | 'stepper' | 'toggle' | 'checkbox' | 'select' | 'choice';
+  type?: 'range' | 'number' | 'text' | 'stepper' | 'toggle' | 'checkbox' | 'select' | 'choice';
   value: ControlValue;
   min?: number;
   max?: number;
@@ -277,6 +277,16 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
   } else if (type === 'select') {
     select = selectControl(p, title, emit, listen);
     element.append(select.element);
+  } else if (type === 'text') {
+    const input = make('input', {
+      type: 'text',
+      'aria-label': p.label,
+      autocomplete: 'off',
+      spellcheck: 'false',
+    });
+    inputs = [input];
+    input.addEventListener('input', () => emit(input.value), listen);
+    element.append(inkField(input));
   } else if (type === 'range' || type === 'number' || type === 'stepper') {
     const input = make('input', {
       type: type === 'range' ? 'range' : 'number',

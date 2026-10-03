@@ -29,6 +29,7 @@ description: "Создаёт SVG-схемы, графики, интеракти�
 | --- | --- | --- |
 | Рассказ и исследование | [Кадр 3D](previews/explorer-3d/preview.png) · [3D](previews/explorer-3d/index.html) · [Кадр SVG](previews/explorer-svg/preview.png) · [SVG](previews/explorer-svg/index.html) · [Шаблон](references/scene-template.md) | Общий плеер, параметры и темы; вращение 3D, ручное изменение и возврат к рассказу. |
 | Управление сценой | [Кадр](previews/controls/preview.png) · [Сцена](previews/controls/index.html) | Ползунок, число, выбор и переключатели в одном рисованном стиле. |
+| Морфинг и слияние | [Кадр](previews/ink-fusion/preview.png) · [Сцена](previews/ink-fusion/index.html) · [API](examples/ink-fusion/README.md) | `InkFusion` автоматически соединяет контуры букв и фигур с перемычкой поверхностного натяжения. |
 | Площадь и измерение | [Кадр](previews/area-story/preview.png) · [Сцена](previews/area-story/index.html) | Принятый рассказ 4 × 5: одна сетка, локальные подписи, отдельные метки слов. |
 | Деление с остатком | [Кадр](previews/remainder-story/preview.png) · [Сцена](previews/remainder-story/index.html) | 23 предмета → семь троек и два оставшихся → формула. |
 | Дробь от множества | [Кадр](previews/fraction-of-a-set/preview.png) · [Сцена](previews/fraction-of-a-set/index.html) | Одни 12 фишек перегруппируются; выбранная доля видна на предметах. |

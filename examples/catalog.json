@@ -56,6 +56,12 @@
     "page": "index.html",
     "time": 0
   },
+  "ink-fusion": {
+    "title": "Живые чернила",
+    "page": "index.html",
+    "time": 3.5,
+    "checkpoints": [0, 3, 3.5, 4.5, 7.5, 9, 12]
+  },
   "logic-gates": {
     "title": "Логические элементы",
     "page": "logic-gates.svg",
