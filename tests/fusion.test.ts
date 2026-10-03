@@ -3,6 +3,40 @@ import assert from 'node:assert/strict';
 import { signedDistance } from '../src/ink/fusion/field.ts';
 import { inkRoutes, type InkPath } from '../src/ink/fusion/transport.ts';
 import { medialPaths } from '../src/ink/fusion/skeleton.ts';
+import { inkDetailVisibility } from '../src/ink/fusion/detail.ts';
+
+test('moving text suppresses unreadable fragments while endpoints and non-text shapes stay exact', () => {
+  const geometry: [Float32Array, Float32Array] = [
+    new Float32Array([0, 0, 1, 0, 0.6, 0.6, 10, 0, 30, 0, 0.6, 0.6]),
+    new Float32Array(0),
+  ];
+  const original = geometry[0].slice();
+  const patches = [
+    {
+      source: 0 as const,
+      target: 0,
+      ranges: [
+        [0, 6],
+        [6, 6],
+      ] as [number, number][],
+    },
+  ];
+  const details = inkDetailVisibility(patches, true);
+  assert.deepEqual(Array.from(details(geometry, 0.4, 1)[0]!), [0, 1]);
+  assert.deepEqual(Array.from(details(geometry, 0, 1)[0]!), [1, 1]);
+  assert.deepEqual(Array.from(details(geometry, 1, 1)[0]!), [1, 1]);
+  assert.deepEqual(Array.from(inkDetailVisibility(patches, false)(geometry, 0.4, 1)[0]!), [1, 1]);
+  assert.deepEqual(geometry[0], original, 'Rendering must not alter geometry or Rapier history');
+  // A detail crosses the readability threshold continuously rather than popping in.
+  let previous = 0;
+  for (let width = 1; width <= 14; width += 0.1) {
+    geometry[0][2] = width;
+    const visible = details(geometry, 0.4, 1)[0]![0]!;
+    assert.ok(visible >= previous && visible - previous < 0.06);
+    previous = visible;
+  }
+  assert.equal(previous, 1);
+});
 
 test('distance masks retain thin ink and have finite, symmetric exterior distances', () => {
   const width = 31,

@@ -3,6 +3,7 @@ import { fusionText } from './text.js';
 import { textRoutes } from './text-routing.js';
 import { inkRoutes } from './transport.js';
 import { inkMotion, type InkVertices } from './motion.js';
+import { inkDetailVisibility } from './detail.js';
 import { fusionFragment, fusionVertex, strokeFragment, strokeVertex } from './shader.js';
 
 export interface FusionFrame {
@@ -51,10 +52,12 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
     previousVertices: InkVertices | undefined;
   let bounds = parent.getBoundingClientRect();
   let motion: ReturnType<typeof inkMotion> | undefined,
+    details: ReturnType<typeof inkDetailVisibility> | undefined,
     ink = [0, 0, 0],
+    textDetails = false,
     textScale = 1;
   let stroke: WebGLProgram, fusion: WebGLProgram;
-  let quad: WebGLBuffer, segments: WebGLBuffer;
+  let quad: WebGLBuffer, segments: WebGLBuffer, visibility: WebGLBuffer;
   let strokeVAO: WebGLVertexArrayObject, fusionVAO: WebGLVertexArrayObject;
   let fields: { texture: WebGLTexture; buffer: WebGLFramebuffer }[] = [];
   let floatingFields = false;
@@ -91,6 +94,7 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
     fusion = program(fusionVertex, fusionFragment);
     quad = gl!.createBuffer()!;
     segments = gl!.createBuffer()!;
+    visibility = gl!.createBuffer()!;
     gl!.bindBuffer(gl!.ARRAY_BUFFER, quad);
     gl!.bufferData(
       gl!.ARRAY_BUFFER,
@@ -118,10 +122,15 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
       gl!.vertexAttribPointer(at, size, gl!.FLOAT, false, 24, offset);
       gl!.vertexAttribDivisor(at, 1);
     }
+    gl!.bindBuffer(gl!.ARRAY_BUFFER, visibility);
+    const detail = gl!.getAttribLocation(stroke, 'detailVisibility');
+    gl!.enableVertexAttribArray(detail);
+    gl!.vertexAttribPointer(detail, 1, gl!.FLOAT, false, 4, 0);
+    gl!.vertexAttribDivisor(detail, 1);
     const uniforms = (p: WebGLProgram, names: string[]) =>
       Object.fromEntries(names.map((name) => [name, gl!.getUniformLocation(p, name)]));
     strokeUniforms = uniforms(stroke, ['resolution', 'world', 'band']);
-    fusionUniforms = uniforms(fusion, ['resolution', 'world', 'band', 'tension', 'ink']);
+    fusionUniforms = uniforms(fusion, ['resolution', 'world', 'band', 'tension', 'ink', 'details']);
     gl!.useProgram(fusion);
     gl!.uniform1i(gl!.getUniformLocation(fusion, 'first'), 0);
     gl!.uniform1i(gl!.getUniformLocation(fusion, 'second'), 1);
@@ -146,11 +155,11 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
       gl!.texImage2D(
         gl!.TEXTURE_2D,
         0,
-        floatingFields ? gl!.R16F : gl!.R8,
+        floatingFields ? gl!.RG16F : gl!.RG8,
         w,
         h,
         0,
-        gl!.RED,
+        gl!.RG,
         floatingFields ? gl!.HALF_FLOAT : gl!.UNSIGNED_BYTE,
         null,
       );
@@ -179,6 +188,11 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
     const tension = Math.max(0, Math.min(64, frame.tension ?? 28)) * textScale * (1 - morph) ** 2;
     const band = Math.max(8, tension + 2);
     const vertices = deformed ?? motion(frame.sources, target, morph);
+    const detail = details!(
+      vertices,
+      morph,
+      Math.max(width / Math.max(1, bounds.width), height / Math.max(1, bounds.height)),
+    );
     const ratio = Math.min(devicePixelRatio || 1, 2);
     resize(
       Math.max(1, Math.round(bounds.width * ratio)),
@@ -198,6 +212,8 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
       gl!.clear(gl!.COLOR_BUFFER_BIT);
       gl!.bindBuffer(gl!.ARRAY_BUFFER, segments);
       gl!.bufferData(gl!.ARRAY_BUFFER, vertices[i]!, gl!.DYNAMIC_DRAW);
+      gl!.bindBuffer(gl!.ARRAY_BUFFER, visibility);
+      gl!.bufferData(gl!.ARRAY_BUFFER, detail[i]!, gl!.DYNAMIC_DRAW);
       gl!.drawArraysInstanced(gl!.TRIANGLES, 0, 6, vertices[i]!.length / 6);
     }
     gl!.disable(gl!.BLEND);
@@ -213,6 +229,7 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
     gl!.uniform1f(fusionUniforms.band!, band);
     gl!.uniform1f(fusionUniforms.tension!, tension);
     gl!.uniform3fv(fusionUniforms.ink!, ink);
+    gl!.uniform1i(fusionUniforms.details!, textDetails && morph > 0 && morph < 1 ? 1 : 0);
     gl!.drawArrays(gl!.TRIANGLES, 0, 6);
   }
   const redraw = () => {
@@ -269,6 +286,8 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
           ? textRoutes(first, second, target)
           : inkRoutes(first.paths, second.paths, target.paths),
       );
+      details = inkDetailVisibility(motion.patches, Boolean(allText));
+      textDetails = Boolean(allText);
       textScale = allText
         ? Math.min(
             1,
@@ -302,11 +321,13 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
       });
       gl!.deleteBuffer(quad);
       gl!.deleteBuffer(segments);
+      gl!.deleteBuffer(visibility);
       gl!.deleteVertexArray(strokeVAO);
       gl!.deleteVertexArray(fusionVAO);
       gl!.deleteProgram(stroke);
       gl!.deleteProgram(fusion);
       motion = undefined;
+      details = undefined;
       previous = undefined;
       previousVertices = undefined;
       canvas.remove();
