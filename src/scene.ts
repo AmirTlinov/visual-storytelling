@@ -8,6 +8,8 @@ export interface SceneOptions {
   parameters?: (ControlParameter & { key: string })[];
   onInput?: (values: Record<string, ControlValue>) => void;
   onMode?: (mode: 'story' | 'explore') => void;
+  /** View-only exploration leaves narration and model time running. */
+  exploration?: 'model' | 'view';
 }
 import { SketchControls, type ControlParameter, type ControlValue } from './controls/fields.js';
 import { resolveMedia } from './story/media.js';
@@ -26,7 +28,7 @@ const node = <K extends keyof HTMLElementTagNameMap>(
 };
 function mount(
   root: HTMLElement,
-  { title, paper = true, parameters = [], onInput = () => {}, onMode = () => {} }: SceneOptions,
+  { title, paper = true, parameters = [], onInput = () => {}, onMode = () => {}, exploration = 'model' }: SceneOptions,
 ) {
   const abort = new AbortController(),
     options = { signal: abort.signal };
@@ -76,8 +78,8 @@ function mount(
     if (next === mode || (next === 'story' && !player)) return;
     mode = next;
     transition?.(next);
-    media?.pause();
-    controls.hidden = mode !== 'story';
+    if (exploration === 'model') media?.pause();
+    controls.hidden = exploration === 'model' && mode !== 'story';
     fields.hidden = mode === 'story' || !fields.childElementCount;
     storyButton.setAttribute('aria-pressed', String(mode === 'story'));
     exploreButton.setAttribute('aria-pressed', String(mode === 'explore'));
@@ -134,14 +136,14 @@ function mount(
         stops,
         sound,
         render: (t, cues, reduced) => {
-          if (mode === 'story') render(t, cues, reduced);
+          if (mode === 'story' || exploration === 'view') render(t, cues, reduced);
         },
       });
       player = mounted;
       return {
         review: mounted.review,
         seek: (time: number) => {
-          setMode('story');
+          if (exploration === 'model') setMode('story');
           player!.seek(time);
         },
         pause: () => activeMedia.pause(),
