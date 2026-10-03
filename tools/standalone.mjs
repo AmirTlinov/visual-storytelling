@@ -1,8 +1,32 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { resolve, dirname, extname, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { transform } from 'esbuild';
 import { mediaType } from './assets.mjs';
+
+async function inlineAudio(file, bitrate) {
+  const directory = await mkdtemp(join(tmpdir(), 'visual-story-audio-'));
+  try {
+    const output = join(directory, 'narration.webm');
+    // A seekable output lets the muxer finalize duration and cue indexes.
+    execFileSync('ffmpeg', [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-i',
+      file,
+      '-c:a',
+      'libopus',
+      '-b:a',
+      bitrate,
+      output,
+    ]);
+    return `data:audio/webm;base64,${(await readFile(output)).toString('base64')}`;
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
 /** Inline a built scene. Compression is opt-in for the chat surface; files preserve the original audio. */
 export async function packDirectory(
   directory,
@@ -104,7 +128,7 @@ export async function packDirectory(
       if (!match[2].startsWith('data:')) {
         const url =
           bitrate && extname(match[2]) === '.wav'
-            ? `data:audio/webm;base64,${execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', local(match[2]), '-c:a', 'libopus', '-b:a', bitrate, '-f', 'webm', 'pipe:1'], { maxBuffer: 64 * 1024 * 1024 }).toString('base64')}`
+            ? await inlineAudio(local(match[2]), bitrate)
             : await data(match[2]);
         result = result.replace(match[0], match[0].replace(match[2], url));
       }
