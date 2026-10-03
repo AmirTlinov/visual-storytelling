@@ -8,8 +8,9 @@ export function chapterHeading(
   seek: (time: number) => void,
 ) {
   const named = chapters.filter((chapter) => chapter.title).sort((a, b) => a.start - b.start);
-  if (!named.length) return { update(_time: number) {}, dispose() {} };
+  if (!named.length) return { update(_time: number, _active = true) {}, dispose() {} };
   const original = heading.textContent;
+  const subject = document.createTextNode('');
   const field = SketchControls.field(
     {
       label: 'Глава',
@@ -20,9 +21,12 @@ export function chapterHeading(
     (index) => seek(named[Number(index)]!.start),
   );
   heading.classList.add('ve-chapter-heading');
-  heading.replaceChildren(field.element);
+  heading.replaceChildren(subject, field.element);
   return {
-    update(time: number) {
+    update(time: number, active = true) {
+      field.element.hidden = !active;
+      subject.textContent = active ? '' : original;
+      heading.classList.toggle('ve-chapter-heading', active);
       const index = Math.max(
         0,
         named.findLastIndex((chapter) => chapter.start <= time),

@@ -9,7 +9,7 @@ export function token(
   view: Surface,
   id: string,
   value: string | number,
-  options: { size?: number; width?: number; pigment?: Pigment } = {},
+  options: { size?: number; width?: number; minSize?: number; pigment?: Pigment } = {},
 ) {
   const mark = object(view.layer, id, options.pigment ?? 'blue');
   const size = options.size ?? 44;
@@ -17,7 +17,13 @@ export function token(
   const shape = view.pen.rect(mark.content, `${id}:shape`, -width / 2, -size / 2, width, size, {
     fill: 'marker',
   });
-  const label = lettering(mark.content, value, { y: size * 0.17, size: size * 0.58 });
+  const label = lettering(mark.content, value, {
+    y: size * 0.17,
+    size: size * 0.58,
+    maxWidth: width - 12,
+    minSize: options.minSize,
+    tabular: true,
+  });
   const wash = shape.element.querySelector<SVGGElement>('.ve-marker')!;
   return {
     ...mark,

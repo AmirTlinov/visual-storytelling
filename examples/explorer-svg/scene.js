@@ -1,4 +1,10 @@
-import { SvgLayout, SceneShell, surface, ViewportSVG } from '@visual-storytelling/core';
+import {
+  SvgLayout,
+  SceneShell,
+  surface,
+  ViewportSVG,
+  widgetState,
+} from '@visual-storytelling/core';
 import narrationTiming from './timeline.json' with { type: 'json' };
 /* The shell is shared with explorer-3d; this file owns only the SVG subject. */
 window.galleryReady = (async () => {
@@ -14,6 +20,9 @@ window.galleryReady = (async () => {
       { key: 'x', label: 'По горизонтали', min: -3, max: 3, step: 0.5, value: 3 },
       { key: 'y', label: 'По вертикали', min: -3, max: 3, step: 0.5, value: 2 },
     ],
+    onInput({ x, y }) {
+      saved.save({ privateContent: { version: 1, time: story.currentTime, x, y } });
+    },
   });
   shell.stage.style.height = '380px';
   const drawing = surface(shell.stage, {
@@ -91,12 +100,11 @@ window.galleryReady = (async () => {
     if (!w || !h) return;
     const resized = size.width !== w || size.height !== h;
     size = { width: w, height: h };
-    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
     const unit = Math.min((w - 135) / 6, (h - 120) / 6),
       o = [w / 2, h / 2],
       a = [o[0] + pose.x * unit, o[1]],
       b = [a[0], o[1] - pose.y * unit];
-    if (resized) drawing.grid({ step: unit, x: o[0], y: o[1] });
+    if (resized) drawing.resize(w, h, { step: unit, x: o[0], y: o[1] });
     horizontal.draw(o, a);
     vertical.draw(a, b);
     result.draw(o, b, pose.result);
@@ -177,13 +185,29 @@ window.galleryReady = (async () => {
   });
   const observer = new ResizeObserver(() => story.update());
   observer.observe(shell.stage);
+  shell.onDispose(() => observer.disconnect());
+  shell.onDispose(() => drawing.dispose());
+  function restore(snapshot) {
+    const value = snapshot?.privateContent;
+    if (
+      value?.version !== 1 ||
+      !Number.isFinite(value.time) ||
+      value.time < 0 ||
+      value.time > story.duration ||
+      ![value.x, value.y].every(
+        (n) => Number.isFinite(n) && Math.abs(n) <= 3 && Number.isInteger(n * 2),
+      )
+    )
+      return;
+    story.seek(value.time);
+    story.explore({ x: value.x, y: value.y, result: 1 });
+  }
+  const saved = widgetState('displacements', restore);
+  restore(saved.read());
+  shell.onDispose(saved.dispose);
   Object.assign(root.scene, {
     shell,
     story,
     camera,
-    dispose() {
-      observer.disconnect();
-      shell.dispose();
-    },
   });
 })();

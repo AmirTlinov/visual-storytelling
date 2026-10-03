@@ -86,6 +86,21 @@ test('shell changes mode, pauses the voice and restores the story after manual i
   const field = page.getByRole('slider', { name: 'По горизонтали' });
   await field.fill('-2');
   await expect(field).toHaveValue('-2');
+  await page.reload();
+  await page.evaluate(() => window.galleryReady);
+  await expect(page.locator('#ve-scene')).toHaveAttribute('data-scene-mode', 'explore');
+  await expect(field).toHaveValue('-2');
+  for (const width of [375, 960]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await expect
+      .poll(() =>
+        page.locator('#displacements').evaluate((svg) => {
+          const grid = svg.querySelector('.vs-grid') as SVGGraphicsElement;
+          return Math.abs(grid.getBBox().width - svg.parentElement!.clientWidth);
+        }),
+      )
+      .toBeLessThan(1);
+  }
   await page.locator('[data-mode=story]').click();
   await expect(page.locator('#ve-scene')).toHaveAttribute('data-scene-mode', 'story');
   await page.locator('[data-seek]').fill('15');

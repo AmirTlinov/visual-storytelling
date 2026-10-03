@@ -3,14 +3,14 @@
 Из каталога навыка:
 
 ```sh
-node scripts/scene.mjs new /absolute/output/my-story --example area-story
+node ../tools/scene.mjs new /absolute/output/my-story --example explorer-svg
 cd /absolute/output/my-story
 npm install
 npm run build
 npm run dev
 ```
 
-Каталог должен быть пустым. Примеры и их генераторы перечислены в [каталоге](../examples/catalog.json); выбирай по [таблице образцов](../SKILL.md#образцы).
+Каталог должен быть пустым. Примеры и их генераторы перечислены в [каталоге](../../examples/catalog.json); выбирай по [таблице образцов](../SKILL.md#образцы).
 
 Сцена получает предметные исходники, готовые данные и версионированный tarball `@visual-storytelling/core`; `npm install` создаёт lockfile. Меняй содержание в этой папке. `npm run build` собирает `dist/`, `npm run dev` следит за исходником, пересобирает его и возвращает страницу к текущему времени; `npm run preview` показывает готовую сборку с перемоткой звука. Библиотека устанавливается зависимостью; её исходники и стили в сцену не копируются.
 
@@ -24,9 +24,14 @@ npm run dev
 `examples/ИМЯ/scene.js` или предметный генератор хранит модель, композицию и сценарий.
 Пакет владеет общими материалами, временем, управлением и поверхностями.
 
+Основной маршрут — `SceneShell.attachStory` из [законченного шаблона](scene-template.md).
+Для собственной SVG-разметки принятых рассказов «Площадь» и «Остаток» `story` подключается
+к общему `player`; `SmilPlayer` управляет временем встроенного SVG,
+`StepPlayer` — дискретными шагами. Они используют общие часы и управление.
+
 ```js
 import '@visual-storytelling/core/style.css';
-import { SketchInk, SketchMotion, SketchPlayer, SvgLayout } from '@visual-storytelling/core';
+import { SceneShell, SketchInk, SketchMotion, SvgLayout } from '@visual-storytelling/core';
 import timing from './timeline.json' with {type: 'json'};
 ```
 
@@ -73,6 +78,7 @@ along(weight, route, {at: .5, offset: -18});
 Для перехода на новый ввод останови прежнее движение его владельца:
 
 ```js
+import { gsap } from '@visual-storytelling/core';
 gsap.killTweensOf(pose);
 gsap.to(pose, {x: target.x, y: target.y, duration: .35,
   overwrite: true, onUpdate: render});
@@ -81,8 +87,9 @@ gsap.to(pose, {x: target.x, y: target.y, duration: .35,
 При ручном вводе reduced-motion сразу выставляет выбранную позу. В рассказе
 сохраняй время смысловых событий; сокращай только декоративное движение через
 `frame.reveal()`. Для непрерывных поз можно создать
-`gsap.timeline({paused: true})`. В `SketchPlayer.mount(...).render` вызывай
-`animation.time(t, false)`: аудио задаёт `t`, GSAP рассчитывает позу.
+`gsap.timeline({paused: true})`. В `shell.attachStory(...).render` вызывай
+`animation.time(frame.time, false)`: рассказ задаёт время, GSAP рассчитывает позу.
+Освобождай её через `shell.onDispose(() => animation.kill())`.
 Метки слов, письмо и восстановление кадра описаны в [озвучке](narration.md#метки-и-js).
 `write(text, p)` создаёт штрихи в соседней группе, оставляя исходный `<text>`
 для измерения. Для общего скрытия или движения оберни надпись в `<g>` и меняй

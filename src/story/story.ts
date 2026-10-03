@@ -18,13 +18,25 @@ export function story<P, K extends string>(options: StoryOptions<P, K>) {
     audio: options.audio ? resolveMedia(options.audio, options.script.duration) : undefined,
   });
   let forcedReduced: boolean | undefined;
+  let changing = false;
   const listeners = new Set<(mode: 'story' | 'explore', values: P) => void>();
   const seeks = new Set<(time: number) => void>();
   function update() {
+    if (changing) return;
     const frame = sheet.at(player.state.time, forcedReduced ?? media.matches);
     if (mode === 'story') values = options.stateAt(frame);
     options.render(values, frame, mode);
     for (const listener of listeners) listener(mode, values);
+  }
+  // Media commands can synchronously emit several events. Publish one complete state.
+  function change(command: () => void) {
+    changing = true;
+    try {
+      command();
+    } finally {
+      changing = false;
+    }
+    update();
   }
   let unsubscribe: () => void;
   try {
@@ -51,10 +63,11 @@ export function story<P, K extends string>(options: StoryOptions<P, K>) {
       return mode;
     },
     explore(next: P) {
-      player.pause();
-      mode = 'explore';
-      values = next;
-      update();
+      change(() => {
+        mode = 'explore';
+        values = next;
+        player.pause();
+      });
     },
     resume() {
       mode = 'story';
@@ -62,9 +75,11 @@ export function story<P, K extends string>(options: StoryOptions<P, K>) {
     },
     seek(time: number) {
       if (!Number.isFinite(time)) throw new Error('Story time must be finite');
-      for (const listener of seeks) listener(time);
-      mode = 'story';
-      player.seek(time);
+      change(() => {
+        mode = 'story';
+        for (const listener of seeks) listener(time);
+        player.seek(time);
+      });
     },
     setReduced(value?: boolean) {
       forcedReduced = value;

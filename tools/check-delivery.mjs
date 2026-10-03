@@ -1,6 +1,6 @@
-import { mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, mkdir, readdir, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
@@ -16,6 +16,19 @@ const run = (file, args, cwd = consumer) =>
 try {
   run(process.execPath, [resolve('tools/scene.mjs'), 'new', consumer, '--example', 'area-story']);
   run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund']);
+  const skill = join(consumer, 'node_modules/@visual-storytelling/core/skill');
+  for (const file of [
+    join(skill, 'SKILL.md'),
+    ...(await readdir(join(skill, 'references')))
+      .filter((name) => name.endsWith('.md'))
+      .map((name) => join(skill, 'references', name)),
+  ]) {
+    for (const [, link] of (await readFile(file, 'utf8')).matchAll(/\]\(([^)]+)\)/g)) {
+      if (/^(?:[a-z][\w+.-]*:|#)/i.test(link)) continue;
+      await access(resolve(dirname(file), decodeURIComponent(link.split('#')[0])));
+    }
+  }
+  await access(join(skill, '../tools/scene.mjs'));
   await writeFile(
     join(consumer, 'api.html'),
     `<!doctype html><html><head><meta charset="utf-8"></head><body><script type="module">
@@ -27,7 +40,7 @@ try {
     import * as output from '@visual-storytelling/core/export';
     import {Viewport3D} from '@visual-storytelling/core/three';
     window.publicAPI = [
-      core.SketchMotion === ink.SketchMotion, core.SketchPlayer === story.SketchPlayer,
+      core.SketchMotion === ink.SketchMotion, typeof core.story === 'function' && core.story === story.story,
       core.PlayerControls === controls.PlayerControls, core.vector === recipes.vector,
       core.exportSVG === output.exportSVG, typeof Viewport3D.mount === 'function'
     ];

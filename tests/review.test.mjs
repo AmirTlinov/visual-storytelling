@@ -4,7 +4,7 @@ import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { build } from 'esbuild';
-import { reviewScene } from '../tools/review.mjs';
+import { reviewScene, unmarkedIntervals } from '../tools/review.mjs';
 import { renderer } from '../tools/render.mjs';
 
 test('rendered review detects a frozen operation and unused cue, permits a reading hold', async () => {
@@ -15,7 +15,8 @@ test('rendered review detects a frozen operation and unused cue, permits a readi
       stdin: {
         resolveDir: resolve('.'),
         contents: `import { cueSheet } from './dist/story/cues.js';
-          const sheet = cueSheet({duration: 5, cues: {
+          console.warn('Line geometry has too few points');
+          const sheet = cueSheet({duration: 5, segments:[{id:'lesson',start:0,end:5,text:'Explain each change'}], cues: {
             frozen: {start: 0, end: 1, action: 'Move the circle', text: '<em>copy</em>'},
             missing: {start: 1, end: 2, action: 'Reveal the result'},
             read: {start: 2, end: 3, hold: 'Compare the values'},
@@ -74,6 +75,14 @@ test('rendered review detects a frozen operation and unused cue, permits a readi
     assert.equal(moving.frames.at(-1).state.x, 80);
     assert.equal(report.cues.at(-1).frames.at(-1).time, 5);
     assert(!result.warnings.some((warning) => warning.startsWith('move:')));
+    assert(result.warnings.some((warning) => warning.includes('Line geometry has too few points')));
+    assert.equal(
+      report.messages.find((message) => message.text.includes('too few points')).time,
+      0,
+    );
+    assert.equal(report.unmarked.length, 1);
+    assert.deepEqual([report.unmarked[0].start, report.unmarked[0].end], [3, 4]);
+    assert.equal(report.unmarked[0].frames.length, 2);
     const html = await readFile(result.path, 'utf8');
     assert(html.includes('&lt;em&gt;copy&lt;/em&gt;'));
     assert(html.includes('<dialog'));
@@ -86,4 +95,23 @@ test('rendered review detects a frozen operation and unused cue, permits a readi
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('unmarked narration uses the union of overlapping actions and reading holds', () => {
+  const report = {
+    segments: [{ id: 'chapter', start: 0, end: 10, text: 'An explanation' }],
+    cues: [
+      { kind: 'chapter', start: 0, end: 10 },
+      { kind: 'action', start: 1, end: 3 },
+      { kind: 'hold', start: 2, end: 6 },
+      { kind: 'action', start: 8, end: 9.5 },
+    ],
+  };
+  assert.deepEqual(
+    unmarkedIntervals(report).map(({ start, end }) => [start, end]),
+    [
+      [0, 1],
+      [6, 8],
+    ],
+  );
 });

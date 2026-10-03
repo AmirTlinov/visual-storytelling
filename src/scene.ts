@@ -38,6 +38,7 @@ function mount(
 ) {
   const abort = new AbortController(),
     options = { signal: abort.signal };
+  const cleanups = new Set<() => void>();
   const values = Object.fromEntries(parameters.map((p) => [p.key, p.value]));
   let inputStory: ((key: string, value: ControlValue) => void) | undefined;
   let view: { reset(): void; dispose(): void } | undefined;
@@ -63,10 +64,10 @@ function mount(
   const inputs = new Map<string, ReturnType<typeof SketchControls.field>>();
   for (const p of parameters) {
     const control = SketchControls.field(p, (value) => {
-      setMode('explore');
       values[p.key] = value;
+      if (inputStory) inputStory(p.key, value);
+      else setMode('explore');
       refresh();
-      inputStory?.(p.key, value);
       onInput({ ...values });
     });
     fields.append(control.element);
@@ -79,8 +80,7 @@ function mount(
   root.append(heading, modes, actions, stage, fields, controls, caption, status);
   let transition: ((mode: 'story' | 'explore') => void) | undefined;
   let mode: 'story' | 'explore' = 'explore';
-  let media: Pick<MediaClock, 'pause'> | undefined,
-    player: { update(): void; dispose(): void } | undefined;
+  let media: Pick<MediaClock, 'pause'> | undefined, player: { dispose(): void } | undefined;
   function refresh() {
     for (const [key, control] of inputs)
       if (control.value !== values[key]) control.setValue(values[key]!);
@@ -89,14 +89,12 @@ function mount(
     if (next === mode || (next === 'story' && !player)) return;
     mode = next;
     transition?.(next);
-    if (exploration === 'model') media?.pause();
     controls.hidden = exploration === 'model' && mode !== 'story';
     fields.hidden = mode === 'story' || !fields.childElementCount;
     storyButton.setAttribute('aria-pressed', String(mode === 'story'));
     exploreButton.setAttribute('aria-pressed', String(mode === 'explore'));
     root.dataset.sceneMode = mode;
     onMode(mode);
-    if (mode === 'story') player?.update();
   }
   storyButton.addEventListener('click', () => setMode('story'), options);
   exploreButton.addEventListener('click', () => setMode('explore'), options);
@@ -137,6 +135,12 @@ function mount(
       return controller;
     },
     attachController,
+    /** Register subject-owned observers, animations and subscriptions for removal. */
+    onDispose(cleanup: () => void) {
+      if (abort.signal.aborted) cleanup();
+      else cleanups.add(cleanup);
+      return () => cleanups.delete(cleanup);
+    },
     /** View gestures keep media running; seeking restores the authored shot. */
     attachView(next: { reset(): void; dispose(): void }) {
       if (view === next) return;
@@ -192,7 +196,6 @@ function mount(
     });
     let unsubscribe = () => {};
     player = {
-      update: () => controller.resume(),
       dispose() {
         unsubscribe();
         ui.dispose();
@@ -207,7 +210,7 @@ function mount(
       if (exploration === 'model') setMode(next);
       for (const { key } of parameters) values[key] = (state as Record<string, ControlValue>)[key]!;
       refresh();
-      chapters.update(controller.currentTime);
+      chapters.update(controller.currentTime, exploration === 'view' || next === 'story');
     });
     setMode('story');
     Object.assign(root, {
@@ -227,10 +230,12 @@ function mount(
   }
 
   function dispose() {
-    media?.pause();
+    if (abort.signal.aborted) return;
+    abort.abort();
+    for (const cleanup of cleanups) cleanup();
+    cleanups.clear();
     player?.dispose();
     view?.dispose();
-    abort.abort();
     for (const control of inputs.values()) control.dispose();
     root.replaceChildren();
     inputStory = undefined;

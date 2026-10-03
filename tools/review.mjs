@@ -30,6 +30,40 @@ export function reviewTimes(cue, duration) {
   ];
 }
 
+/** Show narration that has no authored action/hold; no semantic judgment or second clock. */
+export function unmarkedIntervals(review, minimum = 1) {
+  const marked = review.cues.filter((cue) => cue.kind === 'action' || cue.kind === 'hold');
+  return review.segments.flatMap((segment) => {
+    let cursor = segment.start;
+    const gaps = [];
+    for (const cue of marked
+      .filter((cue) => cue.end > segment.start && cue.start < segment.end)
+      .sort((a, b) => a.start - b.start)) {
+      if (cue.start - cursor >= minimum) gaps.push({ start: cursor, end: cue.start });
+      cursor = Math.max(cursor, Math.min(segment.end, cue.end));
+    }
+    if (segment.end - cursor >= minimum) gaps.push({ start: cursor, end: segment.end });
+    return gaps.map((gap) => ({
+      ...gap,
+      chapter: segment.id,
+      title: segment.title,
+      text: segment.text,
+    }));
+  });
+}
+
+function framesHTML(frames, label, interval) {
+  return `<div class="frames">${frames
+    .map(
+      (
+        frame,
+      ) => `<figure><button class="frame" type="button"><img src="${frame.image}" alt="${escape(label)}: ${frame.time.toFixed(3)} с" loading="lazy"></button>
+<figcaption>${frame.time.toFixed(3)} с${interval ? (frame.time < interval.start ? ' · до' : frame.time > interval.end ? ' · после' : '') : ''}</figcaption>
+${frame.state !== undefined ? `<details><summary>Состояние модели</summary><pre>${escape(JSON.stringify(frame.state, null, 2))}</pre></details>` : ''}</figure>`,
+    )
+    .join('')}</div>`;
+}
+
 function html(report) {
   const warnings = report.warnings.map((warning) => `<li>${escape(warning)}</li>`).join('');
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
@@ -47,6 +81,8 @@ figcaption,summary{font-size:13px}pre{white-space:pre-wrap;font-size:12px}li{mar
 Стоп-кадры дополняют просмотр со звуком: они не проверяют интонацию, плавность или понятность зрителю.</p>
 <p>${escape(report.theme)} · ${report.width}px · метки: ${report.cues.length} · ${report.reduced ? 'уменьшенное' : 'обычное'} движение</p>
 ${warnings ? `<ul>${warnings}</ul>` : '<p>Пропущенных описаний и непрочитанных меток в выбранных переходах не обнаружено.</p>'}
+${report.unmarked.length ? `<h2>Реплики вне размеченных действий</h2><p>Интервалы от секунды без action/hold. Сверьте появление нового факта со словами; спокойный кадр может быть уместным.</p>${report.unmarked.map((gap) => `<section><h2>${escape(gap.title ?? gap.chapter)} · ${gap.start.toFixed(2)}–${gap.end.toFixed(2)} с</h2><blockquote>${escape(gap.text)}</blockquote>${framesHTML(gap.frames, gap.chapter)}</section>`).join('')}` : ''}
+${report.messages.length ? `<details><summary>Сообщения рендера (${report.messages.length})</summary><ul>${report.messages.map((message) => `<li>${message.time.toFixed(2)} с · ${escape(message.type)}: ${escape(message.text)}<br><code>${escape(message.url)}:${(message.lineNumber ?? 0) + 1}</code> · ${message.count} раз</li>`).join('')}</ul></details>` : ''}
 ${report.cues
   .map(
     (
@@ -55,16 +91,8 @@ ${report.cues
 <blockquote>«${escape(cue.text ?? cue.quote ?? cue.context)}»</blockquote>
 <p>${cue.kind === 'hold' ? 'Остановка' : 'Действие'}: ${escape(cue.action ?? cue.hold ?? 'описание отсутствует')}</p>
 ${cue.context ? `<details><summary>Вся реплика</summary><p>${escape(cue.context)}</p></details>` : ''}
-<p>Метка ${cue.referenced ? 'прочитана кодом сцены' : 'не прочитана через cueSheet/clock'}${cue.unchanged ? '; все снятые кадры одинаковы' : ''}.</p>
-<div class="frames">${cue.frames
-      .map(
-        (
-          frame,
-        ) => `<figure><button class="frame" type="button"><img src="${frame.image}" alt="${escape(cue.id)}: ${frame.time.toFixed(3)} с" loading="lazy"></button>
-<figcaption>${frame.time.toFixed(3)} с${frame.time < cue.start ? ' · до' : frame.time > cue.end ? ' · после' : ''}</figcaption>
-${frame.state !== undefined ? `<details><summary>Состояние модели</summary><pre>${escape(JSON.stringify(frame.state, null, 2))}</pre></details>` : ''}</figure>`,
-      )
-      .join('')}</div></section>`,
+<p>Метка ${cue.referenced ? 'прочитана кодом сцены' : 'не прочитана через Frame'}${cue.unchanged ? '; все снятые кадры одинаковы' : ''}.</p>
+${framesHTML(cue.frames, cue.id, cue)}</section>`,
   )
   .join('')}
 <dialog aria-labelledby="frame-title"><button type="button" autofocus>Закрыть</button><p id="frame-title"></p><img alt=""></dialog>
@@ -93,8 +121,6 @@ export async function reviewScene({
   if (output === resolve(directory))
     throw new Error('Review output must be separate from the scene');
   const capture = await renderer({ directory, theme, width });
-  const errors = [];
-  capture.page.on('pageerror', (error) => errors.push(error.message));
   const inspect = () => capture.capture.evaluate((scene) => scene.review());
   try {
     await capture.page.emulateMedia({ reducedMotion: reduced ? 'reduce' : 'no-preference' });
@@ -104,23 +130,28 @@ export async function reviewScene({
     const selected = initial.cues.filter((cue) =>
       cues.length ? cues.includes(cue.id) : cue.kind !== 'chapter',
     );
-    if (!selected.length) throw new Error('No action cues to review');
+    const unmarked = cues.length ? [] : unmarkedIntervals(initial);
+    if (!selected.length && !unmarked.length)
+      throw new Error('No action cues or narration to review');
     await mkdir(output, { recursive: true });
     const sampled = [];
+    async function sample(time) {
+      await capture.seek(time);
+      const state = await capture.capture.evaluate((scene) => scene.snapshot());
+      const diagnostics = await capture.capture.evaluate((scene) => scene.diagnostics());
+      const png = await capture.png();
+      return {
+        time,
+        state,
+        diagnostics,
+        image: `data:image/png;base64,${png.toString('base64')}`,
+        digest: createHash('sha256').update(png).digest('hex'),
+      };
+    }
     for (const cue of selected) {
       const frames = [];
       for (const time of reviewTimes(cue, initial.duration)) {
-        await capture.seek(time);
-        const state = await capture.capture.evaluate((scene) => scene.snapshot());
-        const diagnostics = await capture.capture.evaluate((scene) => scene.diagnostics());
-        const png = await capture.png();
-        frames.push({
-          time,
-          state,
-          diagnostics,
-          image: `data:image/png;base64,${png.toString('base64')}`,
-          digest: createHash('sha256').update(png).digest('hex'),
-        });
+        frames.push(await sample(time));
       }
       sampled.push({
         id: cue.id,
@@ -128,12 +159,15 @@ export async function reviewScene({
         unchanged: new Set(frames.map((frame) => frame.digest)).size === 1,
       });
     }
+    for (const gap of unmarked) gap.frames = [await sample(gap.start), await sample(gap.end)];
     const inspected = await inspect();
     const report = {
       duration: initial.duration,
       width,
       theme,
       reduced,
+      unmarked,
+      messages: capture.messages,
       cues: sampled.map((sample) => {
         const cue = inspected.cues.find((cue) => cue.id === sample.id);
         return {
@@ -149,7 +183,10 @@ export async function reviewScene({
             .join(' '),
         };
       }),
-      warnings: errors.map((error) => `Ошибка сцены: ${error}`),
+      warnings: capture.messages
+        // Chromium's screenshot readback is reported, but is not a scene defect.
+        .filter((message) => !/GL Driver Message.*GPU stall due to ReadPixels/.test(message.text))
+        .map((message) => `${message.time.toFixed(2)} с: ${message.text}`),
     };
     for (const cue of report.cues) {
       for (const message of new Set(cue.frames.flatMap((frame) => frame.diagnostics)))
@@ -163,6 +200,11 @@ export async function reviewScene({
           `${cue.id}: кадры одинаковы до, внутри и после действия; проверьте его время и видимость.`,
         );
     }
+    for (const gap of report.unmarked)
+      for (const message of new Set(gap.frames.flatMap((frame) => frame.diagnostics)))
+        report.warnings.push(
+          `${gap.chapter} · ${gap.start.toFixed(2)}–${gap.end.toFixed(2)} с: ${message}`,
+        );
     // Images live in the self-contained HTML; the small JSON keeps times and model snapshots.
     await writeFile(join(output, 'index.html'), html(report));
     await writeFile(
@@ -174,6 +216,10 @@ export async function reviewScene({
             ...cue,
             frames: cue.frames.map(({ image, ...frame }) => frame),
           })),
+          unmarked: report.unmarked.map((gap) => ({
+            ...gap,
+            frames: gap.frames.map(({ image, ...frame }) => frame),
+          })),
         },
         null,
         2,
@@ -182,6 +228,8 @@ export async function reviewScene({
     return {
       path: join(output, 'index.html'),
       cues: report.cues.length,
+      unmarkedIntervals: report.unmarked.length,
+      rendererMessages: report.messages.length,
       warnings: report.warnings,
     };
   } finally {

@@ -41,14 +41,10 @@ export function plot(view: Surface, id: string, options: PlotOptions) {
   if (o.yLabel) lettering(axes.content, o.yLabel, { x: zero[0] + 14, y: o.y - 9, size: 17 });
   for (const tick of o.xTicks ?? []) {
     const [x] = point(tick.value, 0);
-    view.pen.line(
-      axes.content,
-      `${id}:xtick:${tick.value}`,
-      [x, o.y + o.height + 4],
-      [x, o.y + o.height + 10],
-      { width: 1 },
-    );
-    lettering(axes.content, tick.label, { x, y: o.y + o.height + 29, size: 17 });
+    view.pen.line(axes.content, `${id}:xtick:${tick.value}`, [x, zero[1] - 3], [x, zero[1] + 3], {
+      width: 1,
+    });
+    lettering(axes.content, tick.label, { x, y: zero[1] + 25, size: 17 });
   }
   for (const tick of o.yTicks ?? []) {
     const [, y] = point(0, tick.value);

@@ -1,10 +1,10 @@
 # Исследование устройства
 
-Примеры: [компьютер](../previews/computer-explorer/index.html) и [нейрон](../previews/neuron-explorer/index.html).
+Примеры: [компьютер](../../examples/computer-explorer/index.html) и [нейрон](../../examples/neuron-explorer/index.html).
 Исходники — `examples/computer-explorer/` и `examples/neuron-explorer/` библиотеки.
 
 ```sh
-node scripts/scene.mjs new /absolute/output/my-device --example computer-explorer
+node ../tools/scene.mjs new /absolute/output/my-device --example computer-explorer
 cd /absolute/output/my-device
 npm install
 npm run build

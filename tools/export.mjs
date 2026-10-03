@@ -17,18 +17,22 @@ const { values } = parseArgs({
     out: { type: 'string' },
     time: { type: 'string', default: '0' },
     width: { type: 'string', default: '960' },
+    height: { type: 'string' },
     fps: { type: 'string', default: '30' },
     from: { type: 'string', default: '0' },
     to: { type: 'string' },
   },
 });
 const { scene, format } = values;
+if (values.height !== undefined && format !== 'mp4')
+  throw new Error('--height sets the MP4 frame. PNG captures the complete scene at --width.');
 const theme = values.theme ?? (format === 'html' ? 'auto' : 'light');
 if (!['png', 'svg', 'html', 'mp4'].includes(format))
   throw new Error('Format must be png, svg, html or mp4');
 if (!(format === 'html' ? ['auto', 'light', 'dark'] : ['light', 'dark']).includes(theme))
   throw new Error('Choose light or dark; interactive HTML also supports auto');
 const width = Number(values.width),
+  height = values.height === undefined ? undefined : Number(values.height),
   fps = Number(values.fps),
   from = Number(values.from),
   time = Number(values.time);
@@ -36,6 +40,7 @@ if (
   !Number.isInteger(width) ||
   width < 320 ||
   width > 3840 ||
+  (height !== undefined && (!Number.isInteger(height) || height < 240 || height > 3840)) ||
   !Number.isInteger(fps) ||
   fps < 1 ||
   fps > 60 ||
@@ -76,6 +81,11 @@ if (format === 'html') {
         from >= render.info.duration
       )
         throw new Error('Invalid video interval');
+      await render.seek(from);
+      const firstFrame = await render.png();
+      const even = (value) => Math.ceil(value / 2) * 2;
+      const frameWidth = even(firstFrame.readUInt32BE(16)),
+        frameHeight = even(height ?? firstFrame.readUInt32BE(20));
       temporary = await mkdtemp(join(tmpdir(), 'visual-storytelling-'));
       const audioFile = join(temporary, 'voice.m4a');
       if (render.info.audioURL) {
@@ -114,7 +124,7 @@ if (format === 'html') {
         '-t',
         String(end - from),
         '-vf',
-        'pad=ceil(iw/2)*2:ceil(ih/2)*2',
+        `scale=${frameWidth}:${frameHeight}:force_original_aspect_ratio=decrease:eval=frame,pad=${frameWidth}:${frameHeight}:(ow-iw)/2:(oh-ih)/2:color=${theme === 'light' ? 'white' : 'black'}:eval=frame,setsar=1`,
         '-c:v',
         'libx264',
         '-preset',
@@ -139,8 +149,8 @@ if (format === 'html') {
       try {
         const count = Math.ceil((end - from) * fps);
         for (let i = 0; i < count; i++) {
-          await render.seek(from + i / fps);
-          const pixels = await render.png();
+          if (i) await render.seek(from + i / fps);
+          const pixels = i ? await render.png() : firstFrame;
           if (failed) throw failed;
           if (!encoder.stdin.write(pixels)) await once(encoder.stdin, 'drain');
           if (i % fps === 0) console.log(`${i + 1}/${count} frames`);

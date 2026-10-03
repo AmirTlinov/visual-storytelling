@@ -2,7 +2,7 @@
 
 Сцены и их предметную логику автор пишет свободно в JS. `sketch-audio` отвечает
 за голос, акустическое выравнивание текста, паузы и музыкальный микс.
-Код инструмента находится в `scripts/`; модели, окружение и кэш — вне скилла,
+Код инструмента находится в `../tools/`; модели, окружение и кэш — вне скилла,
 в `~/.cache/sketch-visualization` (можно задать `SKETCH_AUDIO_CACHE`).
 
 ## Запуск
@@ -10,12 +10,12 @@
 ```sh
 sketch-audio doctor
 sketch-audio build narration.json --out ./audio
-node scripts/scene.mjs preview ./scene/dist
+node ../tools/scene.mjs preview ./scene/dist
 ```
 
-Если команды нет в PATH, используй `scripts/sketch-audio` из этого скилла.
-Для нового Mac с Apple Silicon: `scripts/sketch-audio setup`. Нужны `uv`, Python 3.12 и FFmpeg;
-Python-зависимости зафиксированы в `scripts/uv.lock`. Setup один раз загружает
+Если команды нет в PATH, используй `../tools/sketch-audio` из этого скилла.
+Для нового Mac с Apple Silicon: `../tools/sketch-audio setup`. Нужны `uv`, Python 3.12 и FFmpeg;
+Python-зависимости зафиксированы в `../tools/uv.lock`. Setup один раз загружает
 Higgs TTS 3 BF16 (около 9.3 GB), русский выравниватель (около 1.3 GB)
 и пример музыки. Принятый мужской образец уже входит в скилл:
 `dist/assets/audio/narrator-male.wav` в библиотеке; повторно создавать голос не нужно.
@@ -27,7 +27,7 @@ Higgs TTS 3 BF16 (около 9.3 GB), русский выравниватель 
 Подгоняй реплику и паузы под объясняемое действие. Если при сборке обнаружился
 смысловой разрыв, вернись к сцене и пересобери затронутую фразу.
 
-Перенеси готовые реплики в формат [рабочего сценария](../examples/remainder-story/narration.json).
+Перенеси готовые реплики в формат [рабочего сценария](../../examples/remainder-story/narration.json).
 Входные поля:
 
 - `version: 3`, `intro`, `outro` — секунды до/после речи.
@@ -91,28 +91,25 @@ Preview поддерживает byte-range запросы для перемот
 - `cues[id]`: `text`, `start`, `end`, авторские `action`/`hold` — сегменты и цитаты.
 - `duration`, имена аудиофайлов, сведения о сборке, музыке и `warnings`.
 
-Импортируй помощник пакета и метки, затем дождись шрифта:
+Подключи метки в `shell.attachStory` из [авторского шаблона](scene-template.md):
 
 ```js
-import { SketchMotion, SketchPlayer } from '@visual-storytelling/core';
-import timing from './timeline.json' with {type: 'json'};
-await document.fonts.ready;
-const {write, draw} = SketchMotion;
-const player = SketchPlayer.mount(root, {
-  audio, timing,
-  render(time, clock, reduced) {
-    const frame = clock.at(time, reduced);
-    write(answerText, frame.reveal('answer'));
-    draw(underline, frame.reveal('answer'));
-  }
+const controller = shell.attachStory({
+  audio,
+  script: timing,
+  stateAt: () => ({ answer: result }),
+  render(state, frame) {
+    answer.text(state.answer);
+    answer.write(frame.reveal('answer'));
+    SketchMotion.draw(underline, frame.reveal('answer'));
+  },
 });
-// Пуск, пауза и звук подключены к общему управлению в [data-player].
-// Перемотка работает в обе стороны, меняя всю сцену:
-player.seekCue('answer');
-root.scene = { seek: player.seek, pause: player.pause, review: player.review, dispose: player.dispose };
+controller.seek(timing.cues.answer.start);
 ```
 
-`player.dispose()` вызывается при удалении сцены и останавливает озвучку.
+Оболочка подключает плеер, главы, `root.scene` для экспорта и общий `dispose`.
+Название главы формулирует текущий вопрос. Итог, подпись и формула получают собственные
+метки: показ абзаца целиком в начале главы может выдать следующий вывод раньше голоса.
 
 Каждый кадр вычисляй как `render(audio.currentTime)`: показываемые элементы,
 камера, штрихи и значения должны восстанавливаться при перемотке. Таймеры,
@@ -127,10 +124,10 @@ root.scene = { seek: player.seek, pause: player.pause, review: player.review, di
 размеров, слагаемых, знаков и ответа используй отдельные `cues` и `write`:
 
 ```js
-write(heightLabel, clock.progress('height_value', time)); // «четыре сантиметра»
-write(widthLabel, clock.progress('width_value', time));   // «пять сантиметров»
-write(productSign, clock.progress('multiply_sign', time)); // «умножить на»
-write(resultLabel, clock.progress('product_result', time)); // «двадцать»
+write(heightLabel, frame.reveal('height_value')); // «четыре сантиметра»
+write(widthLabel, frame.reveal('width_value'));   // «пять сантиметров»
+write(productSign, frame.reveal('multiply_sign')); // «умножить на»
+write(resultLabel, frame.reveal('product_result')); // «двадцать»
 ```
 
 Метка абзаца подходит для навигации по главам. Вывод нового факта начинается
@@ -138,14 +135,12 @@ write(resultLabel, clock.progress('product_result', time)); // «двадцат�
 Разбиение общей длительности по длине надписей не учитывает речь.
 Действие над несколькими предметами можно распределить внутри метки своего
 глагола: например, добавить три ряда за «добавим ещё три таких ряда».
-`clock.at(time, reduced)` использует тот же `Frame`, что и типизированный `story`:
-`progress(id)` — ход операции, `has(id)` — начало, `finished(id)` — завершение;
+`render` получает `Frame` текущего аудиовремени: `progress(id)` — ход операции, `has(id)` — начало, `finished(id)` — завершение;
 `reveal(id)` сокращает декоративное рисование при reduced motion. При копировании
 значение получателя меняется по `finished`, даже если движение отключено:
 
 ```js
-const frame = clock.at(time, reduced);
-transferDrawing.render(frame.progress('copy'), reduced);
+transferDrawing.render(frame.progress('copy'), frame.reduced);
 receiver.set(frame.finished('copy') ? sourceValue : previousValue);
 ```
 
@@ -189,10 +184,12 @@ visual-story review dist --out review-narrow --cue copy --width 375 --theme dark
 `SceneShell.attachStory` публикует `seek`, `pause`, `review` и `snapshot` в `root.scene`. При самостоятельной разметке выставь эти методы на `window.explainer` или `root.scene`: `review: player.review`, для `story` — `review: controller.review`.
 Инструменты вызывают методы сцены; общий плеер и native SVG служат адаптерами
 для примеров без собственного `seek`. Статичной сцене фиктивная перемотка не нужна.
-Читай метки через `clock.cue`, `clock.at` или `sheet.at`, чтобы учитывались обращения.
+Обращения к `frame.progress/has/finished/reveal` учитываются в отчёте.
 
-Отчёт отмечает метки без описания, непрочитанные метки, действия с одинаковыми
-кадрами и измеренные проблемы размещения подписей. `hold` допускает неподвижность. Обращение к метке само по себе не доказывает
+Отчёт отмечает непрочитанные или неописанные метки, одинаковые кадры действия,
+нехватку места у подписей и предупреждения рендера. Полный отчёт отдельно показывает
+реплики с интервалами от секунды без `action/hold`: сверь их кадры со словами,
+особенно первый видимый вывод. Такой интервал может быть уместной паузой; решает просмотр. `hold` допускает неподвижность. Обращение к метке само по себе не доказывает
 правильность показа: сопоставь видимое действие с репликой, проверь промежуточные
 равенства и происхождение результата. Отчёт дополняет полный просмотр со звуком
 и проверку перемотки; смена камеры или подписи может скрывать неподвижный механизм.
@@ -206,7 +203,7 @@ visual-story review dist --out review-narrow --cue copy --width 375 --theme dark
 Бэкэнд: [Higgs TTS 3 BF16](https://huggingface.co/bosonai/higgs-tts-3-4b)
 через MLX Audio на GPU Apple Silicon;
 [русский Wav2Vec2](https://huggingface.co/jonatasgrosman/wav2vec2-large-xlsr-53-russian)
-создаёт метки. Ревизии обеих моделей закреплены в `scripts/audio/resources.py`.
+создаёт метки. Ревизии обеих моделей закреплены в `../tools/audio/resources.py`.
 Выравниватель использует MPS, когда доступен; `--device cpu` меняет только его устройство.
 `timeline.json` сохраняет модель, ревизию, версию MLX Audio и хеш образца голоса.
 `CREDITS.txt` всегда содержит атрибуцию Boson AI. Лицензия Higgs допускает

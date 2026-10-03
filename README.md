@@ -17,7 +17,7 @@ npm run preview         # http://127.0.0.1:8793
 ## Создание сцены
 
 ```sh
-node tools/scene.mjs new /absolute/output/my-story --example area-story
+node tools/scene.mjs new /absolute/output/my-story --example explorer-svg
 cd /absolute/output/my-story
 npm install
 npm run build
@@ -49,7 +49,7 @@ npm run export -- --scene lc-oscillator --format png --time .75 --theme dark
 npm run export -- --scene area-story --format mp4 --fps 30 --width 960
 ```
 
-PNG/MP4 используют Chromium, MP4 также требует FFmpeg. `--from` и `--to` выбирают отрезок; видео получает соответствующую часть исходного звука. SVG сохраняет прозрачность; самодостаточный HTML работает офлайн и следует теме интерфейса. Для отдельной сцены: `npm run export -- --format png --time 4` или `npm run pack`. Упаковка для чата: `npm run pack -- --inline`; большой результат остаётся файлом для браузера.
+PNG/MP4 используют Chromium, MP4 также требует FFmpeg. `--from` и `--to` выбирают отрезок; видео получает соответствующую часть исходного звука. Размер видео постоянен: кадры вписываются с сохранением пропорций, `--height` задаёт высоту вместо высоты первого кадра. SVG сохраняет прозрачность; самодостаточный HTML работает офлайн и следует теме интерфейса. Для отдельной сцены: `npm run export -- --format png --time 4` или `npm run pack`. Упаковка для чата: `npm run pack -- --inline`; большой результат остаётся файлом для браузера.
 
 ## Проверка и навык
 
@@ -70,6 +70,6 @@ npm run test:delivery   # отдельный потребитель пакета
 
 Экспорт, превью, отчёт переходов и сравнение кадров используют `tools/open-scene.mjs`: он дожидается готовности, останавливает сцену и обращается к её `seek()`. `npm run profile` измеряет перематываемые сцены; для симуляций и статичных схем нужен конкретный сценарий взаимодействия. Проверки CTC и монтажа лежат в `tests/audio/test_pipeline.py` и запускаются отдельно в подготовленном окружении `sketch-audio`.
 
-[skill/SKILL.md](skill/SKILL.md) содержит действующий навык. Его `scripts` ссылается на `tools`, `examples` — на исходники, `previews` — на собранный `site`; исходники находятся в корневом `examples`. После изменения пакета пересобери страницы. Устанавливай навык ссылкой на `skill/`, сохраняя один источник инструкций и исполнения. Источники и лицензии — [THIRD_PARTY.md](THIRD_PARTY.md).
+[skill/SKILL.md](skill/SKILL.md) содержит действующий навык и ссылается прямо на `tools`, `examples` и `docs`: ссылки сохраняются после установки npm-пакета. PNG лежат рядом с исходниками; работающая галерея собирается в `site/`. После изменения пакета пересобери страницы. Устанавливай навык ссылкой на `skill/`, сохраняя один источник инструкций и исполнения. Источники и лицензии — [THIRD_PARTY.md](THIRD_PARTY.md).
 
 [Computer Explorer](examples/computer-explorer) связывает SSD, RAM, CPU, GPU и LCD и раскрывает оборудование до ячеек и транзисторов. [Контракт исследования](skill/references/nested-explorer.md) описывает общие камеру, жесты, контуры и симуляцию; [нейрон](examples/neuron-explorer) использует их с другой моделью и рисованным оформлением.

@@ -1,4 +1,5 @@
 import type { Material, Texture, Color } from 'three';
+import { pigments } from '../ink/palette.js';
 type Palette = Record<string, Color>;
 type ColorMaterial = Material & { color: Color };
 type MaterialInk = string | ((palette: Palette) => Color);
@@ -82,19 +83,12 @@ function mount(
     sample.style.color = 'var(--ve-surface)';
     const surfaceColor = getComputedStyle(sample).color;
     for (const key of [
-      'ink',
       'surface',
       'muted',
-      'blue',
-      'green',
-      'purple',
-      'orange',
-      'red',
       'pencil',
-      'blue-wash',
-      'green-wash',
-      'purple-wash',
-      'orange-wash',
+      ...Object.keys(pigments).flatMap((key) =>
+        key === 'ink' ? [key] : [key, `${key}-wash`, `${key}-soft`],
+      ),
     ]) {
       sample.style.color = `var(--ve-${key})`;
       // Composite the same CSS wash on paper before Three converts it to linear RGB.
@@ -106,14 +100,20 @@ function mount(
       const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
       palette[key] = new T.Color(`rgb(${r},${g},${b})`);
     }
-    for (const [material, color] of materials)
-      material.color.copy(typeof color === 'function' ? color(palette) : palette[color]!);
+    for (const [material, color] of materials) material.color.copy(materialColor(color));
     invalidate();
   }
+  function materialColor(color: MaterialInk) {
+    const value = typeof color === 'function' ? color(palette) : palette[color];
+    if (!value)
+      throw new Error(
+        `Unknown 3D pigment: ${String(color)}. Choose ${Object.keys(palette).join(', ')}`,
+      );
+    return value;
+  }
   function ink<M extends ColorMaterial>(material: M, color: MaterialInk = 'ink') {
+    if (palette.ink) material.color.copy(materialColor(color));
     materials.set(material, color);
-    if (palette.ink)
-      material.color.copy(typeof color === 'function' ? color(palette) : palette[color]!);
     return material;
   }
   function resize() {
@@ -147,6 +147,8 @@ function mount(
   window.addEventListener('openai:set_globals', theme, listen);
   function fit(target = object) {
     if (!target) return;
+    lastShot = undefined;
+    following = true;
     target.updateMatrixWorld(true);
     const bounds = new T.Box3().setFromObject(target),
       sphere = bounds.getBoundingSphere(new T.Sphere());
@@ -187,6 +189,9 @@ function mount(
     controls.target.copy(pose.target);
     camera.near = pose.near;
     camera.far = pose.far;
+    // Orbit limits follow the subject of this shot, including a tiny part of a large scene.
+    controls.minDistance = pose.radius * 0.7;
+    controls.maxDistance = Math.max(pose.radius * 30, pose.position.distanceTo(pose.target) * 4);
     camera.updateProjectionMatrix();
     controls.update();
     invalidate();

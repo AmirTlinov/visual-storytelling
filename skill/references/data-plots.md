@@ -43,9 +43,9 @@ Matplotlib и SciencePlots, когда они дают нужную типогр
    её через `plt.close(fig)`. Исходный код остаётся редактируемым владельцем, а
    SVG становится переносимым результатом.
 7. Добавь к корню SVG доступные `<title>` и `<desc>` через
-   `scripts/add_svg_accessibility.py`. Название называет фигуру, описание
+   `../tools/add_svg_accessibility.py`. Название называет фигуру, описание
    раскрывает показанные величины, сравнение и главный видимый результат.
-8. Проверь SVG через `scripts/render_svg.py`, затем рассмотри целый график,
+8. Проверь SVG через `../tools/render_svg.py`, затем рассмотри целый график,
    уменьшенный размер публикации и полный масштаб. В целевом размере должны
    читаться подписи, единицы, различия рядов и интервалы неопределённости.
 
@@ -81,10 +81,10 @@ def render_measurements(
 
 ```bash
 SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/visual-explainer"
-python3 "$SKILL_DIR/scripts/add_svg_accessibility.py" plot.svg \
+python3 "$SKILL_DIR/../tools/add_svg_accessibility.py" plot.svg \
   --title "Амплитуда во времени" \
   --description "Четыре измерения амплитуды с вертикальными интервалами погрешности. Наибольшее значение наблюдается при трёх секундах."
-python3 "$SKILL_DIR/scripts/render_svg.py" plot.svg --output plot.png
+python3 "$SKILL_DIR/../tools/render_svg.py" plot.svg --output plot.png
 ```
 
 Список стилей читается слева направо: каждый следующий стиль уточняет уже

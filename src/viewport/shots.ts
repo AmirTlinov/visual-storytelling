@@ -118,6 +118,7 @@ export function shotPose(
   return {
     target,
     position: target.clone().addScaledVector(direction, distance),
+    radius: Math.exp(Math.log(from.radius) * (1 - t) + Math.log(to.radius) * t),
     near: Math.min(from.radius, to.radius) / 100,
     far: distance + radius * 100,
   };

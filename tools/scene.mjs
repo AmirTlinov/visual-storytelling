@@ -11,7 +11,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
-    example: { type: 'string', default: 'area-story' },
+    example: { type: 'string', default: 'explorer-svg' },
     help: { type: 'boolean', short: 'h' },
     out: { type: 'string' },
     port: { type: 'string', default: '8793' },

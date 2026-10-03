@@ -5,6 +5,24 @@ import { execFileSync } from 'node:child_process';
 import { transform } from 'esbuild';
 import { mediaType } from './assets.mjs';
 
+// A URL may contain commas (notably data:). Only the candidate separator is removed.
+async function inlineSrcset(value, embed) {
+  const candidates = [];
+  let rest = value;
+  while ((rest = rest.replace(/^[\s,]+/, ''))) {
+    const url = /^\S+/.exec(rest)[0];
+    rest = rest.slice(url.length);
+    if (url.endsWith(',')) {
+      candidates.push(await embed(url.replace(/,+$/, '')));
+      continue;
+    }
+    const descriptor = /^[^,]*/.exec(rest)[0];
+    rest = rest.slice(descriptor.length);
+    candidates.push(`${await embed(url)}${descriptor.trim() ? ` ${descriptor.trim()}` : ''}`);
+  }
+  return candidates.join(', ');
+}
+
 async function inlineAudio(file, bitrate) {
   const directory = await mkdtemp(join(tmpdir(), 'visual-story-audio-'));
   try {
@@ -45,11 +63,21 @@ export async function packDirectory(
     return p;
   };
   const data = async (url, base) => {
+    url = url.trim();
+    if (/^data:/i.test(url) || url.startsWith('#')) return url;
     const file = local(url, base);
     const fragment = url.includes('#') ? url.slice(url.indexOf('#')) : '';
     return `data:${mediaType(file)};base64,${(await readFile(file)).toString('base64')}${fragment}`;
   };
   let html = await readFile(join(root, page), 'utf8');
+  // A silent draft keeps its media hook, without shipping the sample's unused recording.
+  html = html.replace(
+    /<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>|<audio\b([^>]*)>[\s\S]*?<\/audio\s*>/gi,
+    (markup, raw, attrs) => {
+      if (raw || !/\bdata-silent\s*=\s*(["'])true\1/i.test(attrs)) return markup;
+      return `<audio${attrs.replace(/\s(?:data-)?src\s*=\s*(["'])[\s\S]*?\1/gi, '')}></audio>`;
+    },
+  );
   if (page.endsWith('.svg'))
     html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}body>svg{display:block;width:100%;height:auto}</style></head><body>${html.replace(/<\?xml[^>]*>/, '')}</body></html>`;
   for (const match of [
@@ -72,11 +100,23 @@ export async function packDirectory(
       () => `<script ${match[1]}>${code.replaceAll('</script', '<\\/script')}</script>`,
     );
   }
-  for (const match of [
-    ...html.matchAll(/<(?:img|source|video)\b[^>]*\ssrc=(["'])([^"']+)\1[^>]*>/gi),
-  ])
-    if (!match[2].startsWith('data:'))
-      html = html.replace(match[0], match[0].replace(match[2], await data(match[2])));
+  for (const match of html.matchAll(
+    /<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>|<(?:img|source|video)\b[^>]*>/gi,
+  )) {
+    if (match[1]) continue;
+    let tag = match[0];
+    for (const attribute of tag.matchAll(/\s(src|srcset|poster)\s*=\s*(["'])([\s\S]*?)\2/gi)) {
+      const value =
+        attribute[1].toLowerCase() === 'srcset'
+          ? await inlineSrcset(attribute[3], data)
+          : await data(attribute[3]);
+      tag = tag.replace(
+        attribute[0],
+        () => ` ${attribute[1]}=${attribute[2]}${value}${attribute[2]}`,
+      );
+    }
+    html = html.replace(match[0], () => tag);
+  }
   const escape = (value) =>
     value
       .replaceAll('&', '&amp;')

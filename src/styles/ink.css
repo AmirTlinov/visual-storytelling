@@ -13,6 +13,8 @@
   --ve-orange-wash:color-mix(in srgb,var(--ve-orange) 18%,transparent);--ve-orange-soft:color-mix(in srgb,var(--ve-orange) 34%,transparent);
   --ve-purple-wash:color-mix(in srgb,var(--ve-purple) 18%,transparent);--ve-purple-soft:color-mix(in srgb,var(--ve-purple) 34%,transparent);
   --ve-green-wash:color-mix(in srgb,var(--ve-green) 18%,transparent);--ve-green-soft:color-mix(in srgb,var(--ve-green) 34%,transparent);
+  --ve-red-wash:color-mix(in srgb,var(--ve-red) 18%,transparent);--ve-red-soft:color-mix(in srgb,var(--ve-red) 34%,transparent);
+  --ve-yellow-wash:color-mix(in srgb,var(--ve-yellow) 18%,transparent);--ve-yellow-soft:color-mix(in srgb,var(--ve-yellow) 34%,transparent);
   --ve-accent:var(--ve-blue);
   --ve-soft:color-mix(in srgb,var(--ve-accent) 34%,transparent);
   --ve-wash:color-mix(in srgb,var(--ve-accent) 18%,transparent);

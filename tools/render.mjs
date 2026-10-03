@@ -26,7 +26,19 @@ export async function renderer({ scene, theme, width = 960, controls = false, di
       colorScheme: theme,
     });
     const errors = [];
+    const messages = new Map();
+    let time = 0;
     page.on('pageerror', (error) => errors.push(error.message));
+    page.on('console', (message) => {
+      if (!['warning', 'error'].includes(message.type())) return;
+      const entry = { type: message.type(), text: message.text(), ...message.location(), time };
+      const key = JSON.stringify([entry.type, entry.text, entry.url, entry.lineNumber]);
+      const previous = messages.get(key);
+      if (previous) {
+        previous.count++;
+        previous.lastTime = time;
+      } else messages.set(key, { ...entry, lastTime: time, count: 1 });
+    });
     const file = directory ? 'index.html' : `${scene}/${catalog[scene].page}`,
       url = `${server.url}/${file}`;
     const capture = await openScene(page, url);
@@ -61,7 +73,8 @@ export async function renderer({ scene, theme, width = 960, controls = false, di
     });
     await page.addScriptTag({ content: exporter.outputFiles[0].text });
     const info = await capture.evaluate((scene) => scene.info());
-    const seek = async (time) => {
+    const seek = async (next) => {
+      time = next;
       await seekScene(capture, time);
       if (errors.length) throw new Error(`Scene failed: ${errors.join('; ')}`);
     };
@@ -71,6 +84,9 @@ export async function renderer({ scene, theme, width = 960, controls = false, di
       capture,
       url: server.url,
       info,
+      get messages() {
+        return [...messages.values()];
+      },
       seek,
       async png() {
         const main = page.locator('.ve-scene').first();
