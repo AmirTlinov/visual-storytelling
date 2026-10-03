@@ -45,6 +45,13 @@ test('transport covers every original and final stroke without an intermediate s
       assert.equal(route.from.length, route.to.length);
       assert.ok([...route.from, ...route.to].flat().every(Number.isFinite));
     }
+    for (let target = 0; target < result.length; target++) {
+      const incoming = routes.filter((route) => route.target === target);
+      const owners = incoming.filter((route) => route.attachment === undefined);
+      assert.equal(owners.length, 1, 'A final stroke must have exactly one complete contour');
+      for (const donor of incoming.filter((route) => route.attachment !== undefined))
+        for (const point of donor.to) assert.deepEqual(point, owners[0]!.to[donor.attachment!]);
+    }
   }
 });
 

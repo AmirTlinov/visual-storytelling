@@ -5,6 +5,8 @@ export interface InkRoute {
   source: 0 | 1;
   target: number;
   origin: number;
+  /** Surplus ink joins this sample of the target's sole owning stroke. */
+  attachment?: number;
   text?: {
     from: readonly [number, number];
     glyph: number;
@@ -184,13 +186,16 @@ export function inkRoutes(
     } while (j0);
   }
   const pairs: [number, number][] = [];
+  const owners = new Map<number, number>();
   for (let j = 1; j <= m; j++) {
     let i = p[j]! - 1;
     if (i < 0) {
       i = 0;
       for (let k = 1; k < n; k++) if (price(k, j - 1) < price(i, j - 1)) i = k;
     }
-    pairs.push(transpose ? [i, j - 1] : [j - 1, i]);
+    const pair: [number, number] = transpose ? [i, j - 1] : [j - 1, i];
+    pairs.push(pair);
+    if (transpose || p[j]) owners.set(pair[1], pair[0]);
   }
   // When one original supplies several final strokes, divide its arc length.
   // Reusing the whole path would sprout duplicate loops before they could settle.
@@ -250,6 +255,26 @@ export function inkRoutes(
   return pairs.map(([i, j]) => {
     const b = resample(target[j]!, counts[j]!),
       a = align(b, resample(pieces.get(`${i}:${j}`)!, counts[j]!));
+    if (owners.get(j) !== i) {
+      // A second complete target would produce a displaced copy of the letter.
+      // Feed surplus ink into the nearest point of the one owning contour.
+      const c = center(a);
+      let attachment = 0;
+      for (let k = 1; k < b.length; k++)
+        if (
+          Math.hypot(b[k]![0] - c[0], b[k]![1] - c[1]) <
+          Math.hypot(b[attachment]![0] - c[0], b[attachment]![1] - c[1])
+        )
+          attachment = k;
+      return {
+        source: source[i]!.source,
+        origin: i,
+        target: j,
+        attachment,
+        from: a,
+        to: b.map(() => b[attachment]!),
+      };
+    }
     return { source: source[i]!.source, origin: i, target: j, from: a, to: b };
   });
 }

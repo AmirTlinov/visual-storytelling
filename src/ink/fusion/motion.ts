@@ -82,8 +82,7 @@ export function inkMotion(routes: InkRoute[]) {
   const compiled = [...groups.values()].map((group) => {
     const text = group[0]!.text,
       n = group[0]!.from.length;
-    const preferred = group.filter((r) => r.text?.same);
-    const selected = preferred.length ? preferred : group;
+    const selected = group.filter((r) => r.attachment === undefined);
     const common = new Float64Array(n * 6),
       current = new Float64Array(n * 2);
     for (let i = 0; i < n; i++) {
@@ -115,7 +114,6 @@ export function inkMotion(routes: InkRoute[]) {
       n,
       text,
       word: text ? wordCarriers.get(text.word)! : undefined,
-      to: group[0]!.to,
     };
   });
   patches.push(...patchMap.values());
@@ -175,16 +173,17 @@ export function inkMotion(routes: InkRoute[]) {
           at = offset;
         for (let i = 0; i < group.n; i++) {
           const a = route.from[i]!,
-            b = group.to[i]!;
+            b = route.to[i]!,
+            commonIndex = (route.attachment ?? i) * 2;
           const px =
             dx +
             own * (x(p, a[0], a[1]) + p.x) +
-            shared * group.current[i * 2]! +
+            shared * group.current[commonIndex]! +
             s * (x(destination, b[0], b[1]) + destination.x);
           const py =
             dy +
             own * (y(p, a[0], a[1]) + p.y) +
-            shared * group.current[i * 2 + 1]! +
+            shared * group.current[commonIndex + 1]! +
             s * (y(destination, b[0], b[1]) + destination.y);
           const radius = a[2] * p.scale * (1 - s) + b[2] * destination.scale * s;
           if (i) {

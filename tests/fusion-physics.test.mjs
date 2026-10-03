@@ -22,7 +22,8 @@ test('Rapier deforms ink, preserves endpoints and reuses deterministic history o
     [10, -15, 2],
     [20, 12, 2],
   ];
-  const motion = inkMotion(inkRoutes([path], [path], [path]));
+  const routes = inkRoutes([path], [path], [path]);
+  const motion = inkMotion(routes);
   const frame = (time) => ({
     sources: [
       { x: -120, y: 0 },
@@ -48,12 +49,18 @@ test('Rapier deforms ink, preserves endpoints and reuses deterministic history o
     const guide = flatten(motion(frame(0).sources, { x: 0, y: 0 }, 0.3));
     const deformation = Math.max(...middle.map((v, i) => Math.abs(v - guide[i])));
     assert.ok(deformation > 0.001 && deformation < 10, `elastic displacement: ${deformation}`);
-    const joined = track.sample(1.4);
-    assert.deepEqual(
-      joined[0],
-      joined[1],
-      'Rapier must not reopen coincident strokes after fusion',
-    );
+    const owner = routes.find((route) => route.attachment === undefined);
+    const donor = routes.find((route) => route.attachment !== undefined);
+    // Check the contact throughout settling, not equality of two complete copies.
+    for (const time of [1.4, 1.6, 1.8, 1.95]) {
+      const joined = track.sample(time);
+      const index = donor.attachment;
+      const last = index === owner.to.length - 1;
+      const at = last ? (index - 1) * 6 + 2 : index * 6;
+      const dx = joined[owner.source][at] - joined[donor.source][0];
+      const dy = joined[owner.source][at + 1] - joined[donor.source][1];
+      assert.ok(Math.hypot(dx, dy) < 0.001, 'Rapier must keep the absorbed ink on its owner');
+    }
     const end = flatten(track.sample(2));
     assert.deepEqual(end, flatten(motion(frame(0).sources, { x: 0, y: 0 }, 1)));
     const steps = track.stats.steps;
