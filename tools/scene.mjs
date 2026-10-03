@@ -77,7 +77,9 @@ else if (command === 'examples') {
     console.log(`${name.padEnd(22)} ${entry.title}`);
 } else if (command === 'api') {
   const { describeAPI } = await import('./api.mjs');
-  console.log(await describeAPI(root, ...positionals.slice(1)));
+  const { text, missing } = await describeAPI(root, ...positionals.slice(1));
+  console.log(text);
+  if (missing.length) process.exitCode = 1;
 } else if (command === 'new') {
   if (!catalog) await readCatalog();
   if (values.audio && values['no-audio']) throw new Error('Choose either --audio or --no-audio');

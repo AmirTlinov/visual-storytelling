@@ -55,10 +55,13 @@ export async function describeAPI(root, ...queries) {
       .map(([entry, symbols]) => `${importName(entry)}\n  ${Object.keys(symbols).join(', ')}`)
       .join('\n\n');
   if (!queries.length)
-    return (
-      listing(Object.entries(modules)) + '\n\nInspect a signature: visual-story api SceneShell'
-    );
+    return {
+      text:
+        listing(Object.entries(modules)) + '\n\nInspect a signature: visual-story api SceneShell',
+      missing: [],
+    };
   const blocks = [],
+    missing = [],
     declarations = new Map();
   for (const query of new Set(queries)) {
     if (modules[query]) {
@@ -74,9 +77,10 @@ export async function describeAPI(root, ...queries) {
       const candidates = [...new Set(Object.values(modules).flatMap(Object.keys))].filter(
         (symbol) => symbol.toLowerCase().includes(query.toLowerCase()),
       );
-      throw new Error(
+      missing.push(
         `No public symbol "${query}". ${candidates.length ? `Matches: ${candidates.join(', ')}.` : 'Run visual-story api to list the public API.'}`,
       );
+      continue;
     }
     for (const { entry, file } of matches) {
       if (!declarations.has(file)) declarations.set(file, new Set());
@@ -89,5 +93,5 @@ export async function describeAPI(root, ...queries) {
       `${[...imports].join(' | ')}\nDeclaration: ${path}\n\n${await readFile(path, 'utf8')}`,
     );
   }
-  return blocks.join('\n\n');
+  return { text: [...blocks, ...missing].join('\n\n'), missing };
 }
