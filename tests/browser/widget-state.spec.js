@@ -82,7 +82,7 @@ test('neuron: a delayed host echo preserves the current camera transition', asyn
   expect(await page.locator('[data-child-scene]').count()).toBe(0);
 });
 
-const legacyScenes = [
+const editableScenes = [
   {
     name: 'fraction-of-a-set',
     act: async (page) => {
@@ -120,7 +120,7 @@ const legacyScenes = [
     restoredValue: '3x = 6',
   },
 ];
-for (const scene of legacyScenes)
+for (const scene of editableScenes)
   test(`${scene.name}: rapid input survives reversed echoes, restore and removal`, async ({
     page,
   }) => {

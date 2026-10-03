@@ -68,7 +68,16 @@ export function mount(parent: HTMLElement): Example {
   }
   const layout = composition(book.stage, draw, () => controller.update());
   const controller = story({
-    script: { duration: 5, cues: { draw: { start: 0.3, end: 4 } } },
+    script: {
+      duration: 5,
+      cues: {
+        draw: {
+          start: 0.3,
+          end: 4,
+          action: 'Один контур последовательно раскрывается ручкой, маркером и штриховкой.',
+        },
+      },
+    },
     stateAt: (frame) => frame.reveal('draw'),
     render: (value) => layout.current.render(value),
   });
@@ -107,6 +116,7 @@ export function mount(parent: HTMLElement): Example {
     setReduced: controller.setReduced,
     svg: () => layout.current.view.element,
     snapshot: () => ({ progress: controller.values, pigment }),
+    review: controller.sheet.review,
     dispose() {
       unsubscribe();
       colour.dispose();

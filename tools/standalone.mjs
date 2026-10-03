@@ -2,58 +2,76 @@ import { readFile } from 'node:fs/promises';
 import { resolve, dirname, extname, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { transform } from 'esbuild';
-const mime = {
-  '.wav': 'audio/wav',
-  '.m4a': 'audio/mp4',
-  '.woff2': 'font/woff2',
-  '.png': 'image/png',
-  '.svg': 'image/svg+xml',
-  '.webm': 'audio/webm',
-};
+import { mediaType } from './assets.mjs';
 /** Inline a built scene. Compression is opt-in for the chat surface; files preserve the original audio. */
-export async function packDirectory(directory, page = 'index.html', { inline = false } = {}) {
+export async function packDirectory(
+  directory,
+  page = 'index.html',
+  { inline = false, theme = 'auto' } = {},
+) {
+  if (!['auto', 'light', 'dark'].includes(theme)) throw new Error('Choose auto, light or dark');
   const root = resolve(directory);
-  const local = (url) => {
-    const p = resolve(root, url);
+  const local = (url, base = dirname(resolve(root, page))) => {
+    if (/^(?:[a-z][\w+.-]*:|\/\/)/i.test(url))
+      throw new Error(`Cannot bundle remote resource: ${url}`);
+    const path = decodeURIComponent(url.split(/[?#]/)[0]);
+    const p = path.startsWith('/') ? resolve(root, '.' + path) : resolve(base, path);
     if (!p.startsWith(root + '/'))
       throw new Error('A standalone scene may only embed its own resources');
     return p;
   };
-  const data = async (url) =>
-    `data:${mime[extname(url)] ?? 'application/octet-stream'};base64,${(await readFile(local(url))).toString('base64')}`;
+  const data = async (url, base) => {
+    const file = local(url, base);
+    const fragment = url.includes('#') ? url.slice(url.indexOf('#')) : '';
+    return `data:${mediaType(file)};base64,${(await readFile(file)).toString('base64')}${fragment}`;
+  };
   let html = await readFile(join(root, page), 'utf8');
-  for (const match of [...html.matchAll(/<link\b[^>]*href="([^"]+\.css)"[^>]*>/g)]) {
-    let css = await readFile(local(match[1]), 'utf8');
+  if (page.endsWith('.svg'))
+    html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}body>svg{display:block;width:100%;height:auto}</style></head><body>${html.replace(/<\?xml[^>]*>/, '')}</body></html>`;
+  for (const match of [
+    ...html.matchAll(/<link\b[^>]*\shref=(["'])([^"']+\.css(?:[?#][^"']*)?)\1[^>]*>/gi),
+  ]) {
+    const cssFile = local(match[2]);
+    let css = await readFile(cssFile, 'utf8');
     for (const asset of [...css.matchAll(/url\(["']?([^"')]+)["']?\)/g)])
-      if (!asset[1].startsWith('data:'))
-        css = css.replace(asset[0], `url('${await data(join(dirname(match[1]), asset[1]))}')`);
+      if (!asset[1].startsWith('data:') && !asset[1].startsWith('#'))
+        css = css.replace(asset[0], `url('${await data(asset[1], dirname(cssFile))}')`);
     html = html.replace(match[0], `<style>${css}</style>`);
   }
-  for (const match of [...html.matchAll(/<script\b([^>]*)src="([^"]+)"[^>]*><\/script>/g)]) {
-    let code = await readFile(local(match[2]), 'utf8');
+  for (const match of [
+    ...html.matchAll(/<script\b([^>]*?)\ssrc=(["'])([^"']+)\2[^>]*>\s*<\/script>/gi),
+  ]) {
+    let code = await readFile(local(match[3]), 'utf8');
     if (inline) code = (await transform(code, { minify: true, legalComments: 'inline' })).code;
     html = html.replace(
       match[0],
       `<script ${match[1]}>${code.replaceAll('</script', '<\\/script')}</script>`,
     );
   }
-  for (const match of [...html.matchAll(/<img\b[^>]*\bsrc="([^"]+)"[^>]*>/g)])
-    if (!match[1].startsWith('data:'))
-      html = html.replace(match[0], match[0].replace(match[1], await data(match[1])));
+  for (const match of [
+    ...html.matchAll(/<(?:img|source|video)\b[^>]*\ssrc=(["'])([^"']+)\1[^>]*>/gi),
+  ])
+    if (!match[2].startsWith('data:'))
+      html = html.replace(match[0], match[0].replace(match[2], await data(match[2])));
   const escape = (value) =>
     value
       .replaceAll('&', '&amp;')
       .replaceAll('"', '&quot;')
       .replaceAll('<', '&lt;')
       .replaceAll('>', '&gt;');
-  for (const match of [...html.matchAll(/<object\b([^>]*?)\bdata="([^"]+)"([^>]*)><\/object>/g)])
-    if (!match[2].startsWith('data:')) {
-      const svg = (await readFile(local(match[2]), 'utf8')).replace(/<\?xml[^>]*>/, '');
-      const document = `<!doctype html><html style="color-scheme:light dark"><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}body>svg{display:block;width:100%;height:100%}</style></head><body>${svg}</body></html>`;
-      const attrs = (match[1] + match[3]).replace(/type="[^"]*"/, '');
+  for (const match of [
+    ...html.matchAll(/<object\b([^>]*?)\sdata=(["'])([^"']+)\2([^>]*)>\s*<\/object>/gi),
+  ])
+    if (!match[3].startsWith('data:')) {
+      const svg = (await readFile(local(match[3]), 'utf8')).replace(/<\?xml[^>]*>/, '');
+      const document = `<!doctype html><html style="color-scheme:${theme === 'auto' ? 'light dark' : theme}"><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}body>svg{display:block;width:100%;height:100%}${theme === 'auto' ? '' : `:root,.ve-scene{color-scheme:${theme}!important}`}</style></head><body>${svg}</body></html>`;
+      const attrs = (match[1] + match[4]).replace(/\btype=(["'])[^"']*\1/i, '');
+      const styled = /\bstyle=["']/i.test(attrs)
+        ? attrs.replace(/\bstyle=(["'])/i, 'style=$1border:0;')
+        : attrs + ' style="border:0"';
       html = html.replace(
         match[0],
-        `<iframe data-scene-svg ${attrs} srcdoc="${escape(document)}" style="border:0"></iframe>`,
+        `<iframe data-scene-svg ${styled} srcdoc="${escape(document)}"></iframe>`,
       );
     }
   html = html.replace(
@@ -61,6 +79,11 @@ export async function packDirectory(directory, page = 'index.html', { inline = f
     (_, css) =>
       `<style>${css.replace(/(?<![-\w])object(?![-\w])/g, 'iframe[data-scene-svg]')}</style>`,
   );
+  if (theme !== 'auto')
+    html = html.replace(
+      '</head>',
+      `<style>:root,.ve-scene{color-scheme:${theme}!important}</style></head>`,
+    );
   const notices = [];
   for (const path of [
     join(root, 'CREDITS.txt'),
@@ -74,7 +97,7 @@ export async function packDirectory(directory, page = 'index.html', { inline = f
     }
   }
   html += '\n<!--\n' + notices.join('\n\n').replaceAll('--', '—') + '\n-->\n';
-  const audio = [...html.matchAll(/<audio\b[^>]*\b(src|data-src)="([^"]+)"[^>]*>/g)];
+  const audio = [...html.matchAll(/<audio\b[^>]*\s(?:src|data-src)=(["'])([^"']+)\1[^>]*>/gi)];
   for (const bitrate of inline ? ['40k', '32k', '24k'] : [null]) {
     let result = html;
     for (const match of audio)
@@ -110,11 +133,9 @@ export async function standalone(scene, theme = 'auto') {
     await readFile(new URL('../examples/catalog.json', import.meta.url), 'utf8'),
   );
   if (!catalog[scene]) throw new Error('Unknown scene');
-  let html = await packDirectory(resolve('site', scene), catalog[scene].page);
-  if (theme !== 'auto')
-    html = html.replace(
-      '</head>',
-      `<style>:root,svg.ve-scene{color-scheme:${theme}}</style></head>`,
-    );
-  return html;
+  return packDirectory(
+    new URL(`../site/${scene}/`, import.meta.url).pathname,
+    catalog[scene].page,
+    { theme },
+  );
 }

@@ -167,15 +167,10 @@ async function exportFigure() {
   return new XMLSerializer().serializeToString(svg);
 }
 root.scene = window.explainer = {
-  duration: 0,
-  checkpoints: [0],
-  pause() {},
-  seek() {},
   svg: () => hero,
   exportSVG: exportFigure,
   snapshot: () => ({ ...state }),
   setTheme: (value) => appearance.set(value),
-  setReduced() {},
   dispose() {
     observer.disconnect();
     abort.abort();

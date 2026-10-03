@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { build } from 'esbuild';
 import { reviewScene } from '../tools/review.mjs';
+import { renderer } from '../tools/render.mjs';
 
 test('rendered review detects a frozen operation and unused cue, permits a reading hold', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'story-review-'));
@@ -14,14 +15,24 @@ test('rendered review detects a frozen operation and unused cue, permits a readi
       stdin: {
         resolveDir: resolve('.'),
         contents: `import { cueSheet } from './dist/story/cues.js';
-          const sheet = cueSheet({duration: 4, cues: {
+          const sheet = cueSheet({duration: 5, cues: {
             frozen: {start: 0, end: 1, action: 'Move the circle', text: '<em>copy</em>'},
             missing: {start: 1, end: 2, action: 'Reveal the result'},
             read: {start: 2, end: 3, hold: 'Compare the values'},
             unassigned: {start: 3, end: 4},
+            move: {start: 4, end: 5, action: 'Move the circle to its destination'},
           }});
-          window.explainer = { duration: 4, pause() {},
-            seek(t) { sheet.at(t).progress('frozen'); }, review: sheet.review };
+          const circle = document.querySelector('circle');
+          window.explainer = {duration: 5};
+          document.querySelector('.ve-scene').scene = {
+            seek(t) {
+              const frame = sheet.at(t);
+              frame.progress('frozen');
+              circle.setAttribute('cx', 50 + 30 * frame.progress('move'));
+            },
+            snapshot: () => ({x: circle.cx.baseVal.value}),
+            review: sheet.review,
+          };
         `,
       },
       outfile: join(directory, 'index.js'),
@@ -53,11 +64,21 @@ test('rendered review detects a frozen operation and unused cue, permits a readi
     );
     assert(!result.warnings.some((warning) => warning.startsWith('read:')));
     assert.equal(report.cues[0].frames[0].time, 0);
-    assert.equal(report.cues.at(-1).frames.at(-1).time, 4);
+    const moving = report.cues.find((cue) => cue.id === 'move');
+    assert.equal(moving.unchanged, false);
+    assert.equal(moving.frames[0].state.x, 50);
+    assert.equal(moving.frames.at(-1).state.x, 80);
+    assert.equal(report.cues.at(-1).frames.at(-1).time, 5);
+    assert(!result.warnings.some((warning) => warning.startsWith('move:')));
     const html = await readFile(result.path, 'utf8');
     assert(html.includes('&lt;em&gt;copy&lt;/em&gt;'));
     assert(html.includes('<dialog'));
     assert(!html.includes('<em>copy</em>'));
+    await writeFile(
+      join(directory, 'index.html'),
+      '<main class="ve-scene"><svg></svg></main><script>throw new Error("broken scene setup")</script>',
+    );
+    await assert.rejects(renderer({ directory, theme: 'light' }), /broken scene setup/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -1,23 +1,29 @@
 import { build } from 'esbuild';
 import { readdir, readFile, writeFile, mkdir, cp } from 'node:fs/promises';
-import { resolve, dirname, extname } from 'node:path';
+import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sourceAliases } from './source-package.mjs';
+import { sceneAsset } from './assets.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 export async function buildPage(source, target, { sourcePackage = false } = {}) {
   let html = await readFile(source, 'utf8');
-  const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
-  let code = scripts
+  const attribute = (attrs, name) =>
+    new RegExp(`\\b${name}\\s*=\\s*(["'])(.*?)\\1`, 'i').exec(attrs)?.[2];
+  const scriptPattern = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+  const scripts = [...html.matchAll(scriptPattern)].filter(([, attrs]) =>
+    ['', 'module', 'text/javascript', 'application/javascript'].includes(
+      attribute(attrs, 'type') ?? '',
+    ),
+  );
+  const code = scripts
     .map(([, attrs, body]) => {
-      const src = /\bsrc="([^"]+)"/.exec(attrs)?.[1];
+      const src = attribute(attrs, 'src');
       return src ? `import ${JSON.stringify(resolve(dirname(source), src))};` : body;
     })
     .join('\n');
-  html = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '');
-  const name = source
-    .split('/')
-    .pop()
-    .replace(/\.html$/, '.js');
+  const bundled = new Set(scripts.map(([markup]) => markup));
+  html = html.replace(scriptPattern, (markup) => (bundled.has(markup) ? '' : markup));
+  const name = basename(source).replace(/\.html$/, '.js');
   const out = resolve(target, name);
   await mkdir(target, { recursive: true });
   if (code.trim()) {
@@ -33,7 +39,23 @@ export async function buildPage(source, target, { sourcePackage = false } = {}) 
       format: 'iife',
       target: 'es2022',
       ...(sourcePackage ? { alias: sourceAliases } : {}),
-      loader: { '.woff2': 'dataurl', '.wav': 'dataurl', '.m4a': 'dataurl' },
+      loader: Object.fromEntries(
+        [
+          '.woff2',
+          '.woff',
+          '.ttf',
+          '.wav',
+          '.m4a',
+          '.mp3',
+          '.png',
+          '.jpg',
+          '.jpeg',
+          '.webp',
+          '.gif',
+          '.avif',
+          '.glb',
+        ].map((extension) => [extension, 'dataurl']),
+      ),
       legalComments: 'inline',
       metafile: true,
     });
@@ -44,26 +66,48 @@ export async function buildPage(source, target, { sourcePackage = false } = {}) 
       );
     html = html.replace('</body>', `<script src="${name}"></script></body>`);
   }
-  await writeFile(resolve(target, source.split('/').pop()), html);
+  await writeFile(resolve(target, basename(source)), html);
 }
-export async function buildPages() {
-  const entries = await readdir(resolve(root, 'examples'), { withFileTypes: true });
-  for (const entry of entries)
-    if (entry.isDirectory()) {
-      const dir = resolve(root, 'examples', entry.name),
-        dest = resolve(root, 'site', entry.name);
-      const files = await readdir(dir);
-      if (!files.some((x) => x.endsWith('.html')) && !files.some((x) => x.endsWith('.svg')))
-        continue;
-      await mkdir(dest, { recursive: true });
-      for (const name of files) {
-        if (name.endsWith('.html'))
-          await buildPage(resolve(dir, name), dest, { sourcePackage: true });
-        else if (
-          ['.svg', '.png', '.wav', '.m4a', '.json', '.css', '.glb', '.txt'].includes(extname(name))
-        )
-          await cp(resolve(dir, name), resolve(dest, name));
+
+/** Both the gallery and copied projects build the same source tree. */
+export async function buildScene(source, target, options = {}) {
+  source = resolve(source);
+  target = resolve(target);
+  if (source === target) throw new Error('The build output must be separate from scene sources');
+  const ignored = new Set([
+    'node_modules',
+    '__pycache__',
+    'dist',
+    'site',
+    'artifacts',
+    'review',
+    'package.json',
+    'package-lock.json',
+  ]);
+  async function visit(directory, output) {
+    const entries = await readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
+      const from = resolve(directory, entry.name),
+        to = resolve(output, entry.name);
+      if (entry.name.startsWith('.') || ignored.has(entry.name) || from === target) continue;
+      if (entry.isDirectory()) await visit(from, to);
+      else if (entry.isFile() && sceneAsset(entry.name)) {
+        await mkdir(output, { recursive: true });
+        await cp(from, to);
       }
     }
+    for (const entry of entries)
+      if (entry.isFile() && entry.name.endsWith('.html'))
+        await buildPage(resolve(directory, entry.name), output, options);
+  }
+  await visit(source, target);
+}
+
+export async function buildPages() {
+  const catalog = JSON.parse(await readFile(resolve(root, 'examples/catalog.json'), 'utf8'));
+  for (const name of Object.keys(catalog))
+    await buildScene(resolve(root, 'examples', name), resolve(root, 'site', name), {
+      sourcePackage: true,
+    });
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) await buildPages();

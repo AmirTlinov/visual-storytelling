@@ -55,6 +55,7 @@
     "build": "node tools/build.mjs",
     "check": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.ts tests/*.test.mjs",
+    "test:tools": "python3 -m unittest discover -s tests -p 'test_*.py'",
     "test:browser": "playwright test",
     "test:delivery": "node tools/check-delivery.mjs",
     "preview": "node tools/scene.mjs preview site --port 8793",

@@ -8,13 +8,14 @@ import numpy as np
 
 from alignment import Aligner
 from mixing import mix
-from resources import ALIGN_REPO, ALIGN_REVISION, SPEECH_CREDIT
+from resources import ALIGN_REPO, ALIGN_REVISION, SPEECH_CREDIT, digest
 from script import read_script, timed_cues
 from speech import SAMPLE_RATE, Speaker
 
 
 def build_audio(script_path, output, device):
     started = time.perf_counter()
+    source_digest = digest(json.loads(script_path.read_text()))
     spec = read_script(script_path)
     speaker = Speaker(spec["voice"])
     aligner = Aligner(device)
@@ -55,6 +56,7 @@ def build_audio(script_path, output, device):
         credits.write_text(SPEECH_CREDIT + ("\n" + music_credit if music_credit else ""))
         timeline = {
             "version": 1, "sample_rate": SAMPLE_RATE, "duration": len(voice) / SAMPLE_RATE,
+            "source_sha256": source_digest,
             "audio": "audio.wav", "voice": "voice.wav", "music": "music.wav" if spec.get("music") else None,
             "voice_settings": spec["voice"], "synthesis": speaker.identity,
             "segments": segments, "cues": cues,
@@ -65,6 +67,8 @@ def build_audio(script_path, output, device):
         }
         (staging / "timeline.json").write_text(json.dumps(timeline, ensure_ascii=False, indent=2) + "\n")
         (staging / "narration.txt").write_text("\n\n".join(s["spoken"] for s in spec["segments"]) + "\n")
+        if digest(json.loads(script_path.read_text())) != source_digest:
+            raise RuntimeError("Narration changed during the build; rerun with the current script")
         output.mkdir(parents=True, exist_ok=True)
         # Own only these output names; keep user-authored JS and illustrations.
         for name in ("audio.wav", "voice.wav", "music.wav", "CREDITS.txt", "timeline.json", "narration.txt"):

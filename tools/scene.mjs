@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { readFile, writeFile, mkdir, readdir, cp, stat, rm } from 'node:fs/promises';
-import { resolve, join, extname } from 'node:path';
+import { readFile, writeFile, mkdir, readdir, cp, rm } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { buildPage } from './build-pages.mjs';
+import { buildScene } from './build-pages.mjs';
 import { serve } from './site.mjs';
 import { packDirectory } from './standalone.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -18,7 +18,7 @@ const { values, positionals } = parseArgs({
     audio: { type: 'boolean', default: false },
     inline: { type: 'boolean', default: false },
     cue: { type: 'string', multiple: true },
-    theme: { type: 'string', default: 'light' },
+    theme: { type: 'string' },
     width: { type: 'string', default: '960' },
     reduced: { type: 'boolean', default: false },
   },
@@ -27,6 +27,7 @@ const [command, directory = '.'] = positionals,
   destination = resolve(directory);
 const catalog = JSON.parse(await readFile(join(root, 'examples/catalog.json'), 'utf8'));
 if (command === 'new') {
+  if (values.audio && values['no-audio']) throw new Error('Choose either --audio or --no-audio');
   if (!catalog[values.example])
     throw new Error(`Choose an example: ${Object.keys(catalog).join(', ')}`);
   try {
@@ -77,7 +78,7 @@ if (command === 'new') {
           pack: 'visual-story pack dist --out story.html',
           audio: 'visual-story audio .',
           export: 'visual-story-export --directory dist',
-          review: 'visual-story review dist --out review',
+          review: 'visual-story review dist --out artifacts/review',
         },
         dependencies: { '@visual-storytelling/core': `file:./${receipt.filename}` },
       },
@@ -127,18 +128,7 @@ if (command === 'new') {
   if (output === destination)
     throw new Error('The build output must be separate from scene sources');
   if (!values.out) await rm(output, { recursive: true, force: true });
-  await mkdir(output, { recursive: true });
-  for (const name of await readdir(destination)) {
-    const path = join(destination, name);
-    if (!(await stat(path)).isFile()) continue;
-    if (name.endsWith('.html')) await buildPage(path, output);
-    else if (
-      ['.svg', '.css', '.wav', '.m4a', '.png', '.json', '.glb', '.txt'].includes(extname(name)) &&
-      name !== 'package.json' &&
-      name !== 'package-lock.json'
-    )
-      await cp(path, join(output, name));
-  }
+  await buildScene(destination, output);
   console.log(output);
 } else if (command === 'preview') {
   const server = await serve(destination, Number(values.port));
@@ -151,7 +141,8 @@ if (command === 'new') {
 } else if (command === 'review') {
   const { reviewScene } = await import('./review.mjs');
   const width = Number(values.width);
-  if (!['light', 'dark'].includes(values.theme) || !Number.isInteger(width) || width < 240)
+  const theme = values.theme ?? 'light';
+  if (!['light', 'dark'].includes(theme) || !Number.isInteger(width) || width < 240)
     throw new Error('Review needs --theme light|dark and --width at least 240');
   console.log(
     JSON.stringify(
@@ -159,7 +150,7 @@ if (command === 'new') {
         directory: destination,
         out: values.out ?? 'review',
         cues: values.cue,
-        theme: values.theme,
+        theme,
         width,
         reduced: values.reduced,
       }),
@@ -171,7 +162,10 @@ if (command === 'new') {
   const output = resolve(values.out ?? 'story.html');
   await writeFile(
     output,
-    await packDirectory(destination, 'index.html', { inline: values.inline }),
+    await packDirectory(destination, 'index.html', {
+      inline: values.inline,
+      theme: values.theme ?? 'auto',
+    }),
   );
   console.log(output);
 } else

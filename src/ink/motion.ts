@@ -10,12 +10,11 @@ interface TextInk {
   total: number;
 }
 import { glyphs as SketchPencil } from './glyphs.js';
+import { SVG_NS as NS, clamp } from './dom.js';
 /* Seekable pen strokes. Scene composition and playback belong to their own owners. */
 
-const NS = 'http://www.w3.org/2000/svg',
-  paths = new WeakMap<SVGPathElement, PathInk>(),
+const paths = new WeakMap<SVGPathElement, PathInk>(),
   lettering = new WeakMap<SVGTextElement, TextInk>();
-const clamp = (x: number) => Math.min(1, Math.max(0, x));
 function geometry(path: SVGPathElement) {
   const signature = path.getAttribute('d');
   if (paths.has(path) && paths.get(path)!.signature !== signature) {

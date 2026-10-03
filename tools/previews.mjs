@@ -8,10 +8,10 @@ for (const [scene, { time }] of Object.entries(catalog)) {
     const render = await renderer({ scene, theme, width: 800, controls: true });
     try {
       await render.seek(time);
-      await writeFile(
-        `examples/${scene}/preview${theme === 'dark' ? '-dark' : ''}.png`,
-        await render.png(),
-      );
+      const name = `preview${theme === 'dark' ? '-dark' : ''}.png`,
+        pixels = await render.png();
+      await writeFile(`examples/${scene}/${name}`, pixels);
+      await writeFile(`site/${scene}/${name}`, pixels);
     } finally {
       await render.close();
     }

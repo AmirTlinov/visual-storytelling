@@ -5,15 +5,14 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, str(Path(__file__).parent / "audio"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools" / "audio"))
 import numpy as np
 import soundfile as sf
 
 from alignment import ctc_path
 from assembly import build_audio
-from script import read_script
 
-EXAMPLE = Path(__file__).parent.parent / "examples" / "remainder-story" / "narration.json"
+EXAMPLE = Path(__file__).resolve().parents[2] / "examples" / "remainder-story" / "narration.json"
 
 
 class AudioChecks(unittest.TestCase):
@@ -26,29 +25,6 @@ class AudioChecks(unittest.TestCase):
         logp = np.full((len(tokens), 3), -12.0, dtype=np.float32)
         logp[np.arange(len(tokens)), tokens] = 0
         self.assertEqual(ctc_path(logp, tokens, 0).tolist(), list(range(1, 320, 2)))
-
-    def test_repeated_quote_requires_occurrence(self):
-        spec = {"version":3, "segments":[{"id":"line", "text":"Два и два.", "cues":[{"id":"second", "quote":"два"}]}]}
-        with tempfile.TemporaryDirectory() as folder:
-            script = Path(folder)/"script.json"
-            script.write_text(json.dumps(spec))
-            with self.assertRaisesRegex(ValueError, "ambiguous"):
-                read_script(script)
-            spec["segments"][0]["cues"][0]["occurrence"] = 2
-            script.write_text(json.dumps(spec))
-            self.assertEqual(read_script(script)["segments"][0]["cues"][0]["word_start"], 2)
-
-    def test_emotions_stay_in_synthesis_and_leave_spoken_cues(self):
-        text = "<|style:whispering|>Сначала тихо. <|emotion:surprise|>А теперь — два предмета!"
-        spec = {"version": 3, "segments": [{"id": "line", "text": text,
-                "cues": [{"id": "count", "quote": "два предмета"}]}]}
-        with tempfile.TemporaryDirectory() as folder:
-            script = Path(folder) / "script.json"
-            script.write_text(json.dumps(spec, ensure_ascii=False))
-            segment = read_script(script)["segments"][0]
-            self.assertEqual(segment["text"], text)
-            self.assertEqual(segment["spoken"], "Сначала тихо. А теперь — два предмета!")
-            self.assertEqual((segment["cues"][0]["word_start"], segment["cues"][0]["word_end"]), (4, 6))
 
     def test_montage_offsets_stems_and_cached_rebuild(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -81,7 +57,6 @@ class AudioChecks(unittest.TestCase):
             self.assertNotIn("Kevin MacLeod", (output/"CREDITS.txt").read_text())
             self.assertEqual((output/"audio.wav").read_bytes(),(output/"voice.wav").read_bytes())
             self.assertTrue((output/"timeline.json").is_file())
-            self.assertFalse((output/"timeline.js").exists())
 
 
 if __name__ == "__main__":

@@ -49,7 +49,9 @@ await mkdir(dirname(output), { recursive: true });
 if (format === 'html') {
   await writeFile(
     output,
-    values.directory ? await packDirectory(values.directory) : await standalone(scene, theme),
+    values.directory
+      ? await packDirectory(values.directory, 'index.html', { theme })
+      : await standalone(scene, theme),
   );
   console.log(output);
 } else {

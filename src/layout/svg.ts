@@ -1,3 +1,5 @@
+import { svg as element } from '../ink/dom.js';
+
 interface Point {
   x: number;
   y: number;
@@ -11,19 +13,6 @@ interface Bounds extends Point {
 
 /* Geometry is measured in the parent SVG's coordinates. Layout owns outer groups;
    animate an inner group so placement and motion never compete for a transform. */
-
-const NS = 'http://www.w3.org/2000/svg';
-
-function element<K extends keyof SVGElementTagNameMap>(
-  tag: K,
-  attributes: Record<string, string | number> = {},
-  text?: string,
-) {
-  const node = document.createElementNS(NS, tag);
-  for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, String(value));
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
 
 function box(node: SVGGraphicsElement, space: SVGGraphicsElement = node.ownerSVGElement!) {
   const b = node.getBBox();

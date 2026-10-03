@@ -93,6 +93,7 @@ function mount(
   clock.update();
   return {
     ...clock,
+    pause: playback.pause,
     dispose() {
       unsubscribe();
       playback.dispose();

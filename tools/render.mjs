@@ -4,30 +4,33 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { serve } from './site.mjs';
-import { openScene } from './open-scene.mjs';
+import { openScene, seekScene } from './open-scene.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 export async function renderer({ scene, theme, width = 960, controls = false, directory }) {
   const catalog = JSON.parse(await readFile(resolve(root, 'examples/catalog.json'), 'utf8'));
   if (!directory && !catalog[scene]) throw new Error('Unknown example');
-  const server = await serve(directory ?? resolve(root, 'site')),
-    browser = await chromium.launch();
+  const server = await serve(directory ?? resolve(root, 'site'));
+  let browser;
+  const close = async () => {
+    try {
+      await browser?.close();
+    } finally {
+      await server.close();
+    }
+  };
   try {
+    browser = await chromium.launch();
     const page = await browser.newPage({
       viewport: { width, height: 1200 },
       deviceScaleFactor: 1,
       colorScheme: theme,
     });
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
     const file = directory ? 'index.html' : `${scene}/${catalog[scene].page}`,
       url = `${server.url}/${file}`;
-    await openScene(page, url);
-    await page.evaluate(async () => {
-      await window.galleryReady;
-      await document.fonts.ready;
-      for (const object of document.querySelectorAll('object'))
-        await object.contentDocument?.fonts.ready;
-      window.explainer?.pause();
-      for (const audio of document.querySelectorAll('audio')) audio.pause();
-    });
+    const capture = await openScene(page, url);
+    await capture.evaluate((scene) => scene.pause());
     if (!controls)
       await page.evaluate(() => {
         const drawing = document.querySelector('svg.canvas,svg.vs-canvas');
@@ -57,42 +60,15 @@ export async function renderer({ scene, theme, width = 960, controls = false, di
       loader: { '.woff2': 'dataurl' },
     });
     await page.addScriptTag({ content: exporter.outputFiles[0].text });
-    const info = await page.evaluate(() => ({
-      duration:
-        window.explainer?.duration ?? Number(document.querySelector('[data-seek]')?.max ?? 0),
-      audioURL: document.querySelector('audio:not([data-silent=true])')?.src,
-      checkpoints: window.explainer?.checkpoints ?? [0],
-    }));
+    const info = await capture.evaluate((scene) => scene.info());
     const seek = async (time) => {
-      await page.evaluate((time) => {
-        if (window.explainer) {
-          window.explainer.pause();
-          window.explainer.seek(time);
-          return;
-        }
-        const button = document.querySelector('[data-mode=story]');
-        if (button && !button.hidden) button.click();
-        const seek = document.querySelector('[data-seek]');
-        if (seek) {
-          seek.value = String(time);
-          seek.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        for (const svg of [
-          document.querySelector('svg.canvas'),
-          ...[...document.querySelectorAll('object')].map(
-            (o) => o.contentDocument?.documentElement,
-          ),
-        ])
-          if (svg?.setCurrentTime) {
-            svg.pauseAnimations();
-            svg.setCurrentTime(time);
-          }
-      }, time);
-      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve())));
+      await seekScene(capture, time);
+      if (errors.length) throw new Error(`Scene failed: ${errors.join('; ')}`);
     };
     await seek(0);
     return {
       page,
+      capture,
       url: server.url,
       info,
       seek,
@@ -100,25 +76,11 @@ export async function renderer({ scene, theme, width = 960, controls = false, di
         const main = page.locator('.ve-scene').first();
         return (await main.count()) ? main.screenshot() : page.screenshot({ fullPage: true });
       },
-      async svg() {
-        return page.evaluate(() => {
-          if (document.querySelector('canvas'))
-            throw new Error('Use PNG, HTML or MP4 for a 3D surface');
-          const svg =
-            document.querySelector('svg.canvas,svg.vs-canvas') ??
-            document.querySelector('object')?.contentDocument?.documentElement;
-          if (!svg) throw new Error('No SVG surface');
-          return window.VisualExport.exportSVG(svg);
-        });
-      },
-      async close() {
-        await browser.close();
-        await server.close();
-      },
+      svg: () => capture.evaluate((scene) => scene.exportSVG()),
+      close,
     };
   } catch (error) {
-    await browser.close();
-    await server.close();
+    await close();
     throw error;
   }
 }

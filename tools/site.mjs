@@ -1,19 +1,7 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { resolve, extname, sep } from 'node:path';
-const types = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript',
-  '.css': 'text/css',
-  '.woff2': 'font/woff2',
-  '.m4a': 'audio/mp4',
-  '.mp4': 'video/mp4',
-  '.wav': 'audio/wav',
-  '.webm': 'audio/webm',
-  '.json': 'application/json',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-};
+import { resolve, sep } from 'node:path';
+import { mediaType } from './assets.mjs';
 export async function serve(directory = 'site', port = 0) {
   const root = resolve(directory);
   const server = createServer(async (req, res) => {
@@ -25,7 +13,7 @@ export async function serve(directory = 'site', port = 0) {
         return;
       }
       const bytes = await readFile(file);
-      res.setHeader('Content-Type', types[extname(file)] ?? 'application/octet-stream');
+      res.setHeader('Content-Type', mediaType(file));
       res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Cache-Control', 'no-store');
       const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range ?? '');

@@ -2,7 +2,7 @@ import { chromium } from 'playwright';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { serve } from './site.mjs';
-import { openScene } from './open-scene.mjs';
+import { openScene, seekScene } from './open-scene.mjs';
 
 const catalog = JSON.parse(
   await readFile(new URL('../examples/catalog.json', import.meta.url), 'utf8'),
@@ -14,43 +14,6 @@ const scenes = Object.fromEntries(
   ]),
 );
 
-async function settle(page, time) {
-  await page.evaluate(async () => {
-    await window.galleryReady;
-    await document.fonts.ready;
-    for (const audio of document.querySelectorAll('audio')) audio.pause();
-    for (const svg of document.querySelectorAll('svg')) svg.pauseAnimations?.();
-    for (const object of document.querySelectorAll('object')) {
-      const doc = object.contentDocument;
-      if (doc) {
-        await doc.fonts.ready;
-        doc.documentElement.pauseAnimations?.();
-      }
-    }
-  });
-  if (await page.locator('[data-mode=story]').isVisible())
-    await page.locator('[data-mode=story]').click();
-  await page.evaluate((time) => {
-    const slider = document.querySelector('[data-seek]');
-    if (slider) {
-      slider.value = String(time);
-      slider.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-    for (const svg of document.querySelectorAll('svg'))
-      if (svg.setCurrentTime) svg.setCurrentTime(time);
-    for (const object of document.querySelectorAll('object')) {
-      const svg = object.contentDocument?.documentElement;
-      if (svg?.setCurrentTime) {
-        svg.pauseAnimations();
-        svg.setCurrentTime(time);
-      }
-    }
-  }, time);
-  await page.evaluate(
-    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
-  );
-}
-
 const [
   mode = 'capture',
   directory = 'site',
@@ -60,10 +23,11 @@ const [
 if (!['capture', 'compare'].includes(mode)) throw new Error('Choose capture or compare');
 if (mode === 'compare' && resolve(output) === resolve(reference))
   throw new Error('Comparison output must differ from its reference');
-const server = await serve(directory),
-  browser = await chromium.launch();
+const server = await serve(directory);
+let browser;
 const report = [];
 try {
+  browser = await chromium.launch();
   for (const width of [960, 375])
     for (const theme of ['light', 'dark']) {
       const context = await browser.newContext({
@@ -78,9 +42,9 @@ try {
           errors = [];
         page.on('pageerror', (error) => errors.push(error.message));
         const url = `${server.url}/${scene}/${file}`;
-        await openScene(page, url);
+        const capture = await openScene(page, url);
         for (const time of times) {
-          await settle(page, time);
+          await seekScene(capture, time);
           const name = `${scene}-${width}-${theme}-${time}.png`,
             path = resolve(output, name);
           await mkdir(output, { recursive: true });
@@ -120,6 +84,9 @@ try {
     ),
   );
 } finally {
-  await browser.close();
-  await server.close();
+  try {
+    await browser?.close();
+  } finally {
+    await server.close();
+  }
 }

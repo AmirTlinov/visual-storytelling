@@ -491,16 +491,11 @@ export function mountComputer(root) {
   observer.observe(viewport);
 
   return {
-    duration: 0,
-    checkpoints: [0],
     snapshot,
     restore: (state) => restore({ privateContent: { computerExplorer: state } }),
     pause() {
       clock.pause(false);
       jobControls.pause(false);
-    },
-    seek() {
-      this.pause();
     },
     svg: () => svg,
     setTheme: (value) => appearance.set(value),

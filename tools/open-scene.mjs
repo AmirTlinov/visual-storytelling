@@ -17,12 +17,99 @@ export async function openScene(page, url) {
   await page.waitForFunction(
     () =>
       document.querySelector('svg,canvas') ||
-      document.querySelector('object')?.contentDocument?.querySelector('svg'),
+      [...document.querySelectorAll('object,iframe[data-scene-svg]')].some((element) =>
+        element.contentDocument?.querySelector('svg'),
+      ),
   );
   await page.evaluate(async () => {
     await window.galleryReady;
     await document.fonts.ready;
-    for (const object of document.querySelectorAll('object'))
+    for (const object of document.querySelectorAll('object,iframe[data-scene-svg]'))
       await object.contentDocument?.fonts.ready;
   });
+  // This adapter calls the scene's owners; it never introduces another playback clock.
+  return page.evaluateHandle(() => {
+    const handles = () => [window.explainer, document.querySelector('.ve-scene')?.scene];
+    const owner = (method) => handles().find((handle) => typeof handle?.[method] === 'function');
+    const documents = () => [
+      document,
+      ...[...document.querySelectorAll('object,iframe[data-scene-svg]')]
+        .map((element) => element.contentDocument)
+        .filter(Boolean),
+    ];
+    const slider = () => document.querySelector('[data-seek]:not([hidden])');
+    function pause() {
+      owner('pause')?.pause();
+      for (const doc of documents()) {
+        for (const audio of doc.querySelectorAll('audio')) audio.pause();
+        for (const svg of doc.querySelectorAll('svg')) svg.pauseAnimations();
+      }
+    }
+    return {
+      pause,
+      info() {
+        const duration =
+          handles().find((handle) => Number.isFinite(handle?.duration))?.duration ??
+          Number(slider()?.max ?? 0);
+        return {
+          duration,
+          seekable: duration > 0 && Boolean(owner('seek') || slider()),
+          audioURL:
+            handles().find((handle) => handle?.audioURL)?.audioURL ??
+            document.querySelector('audio:not([data-silent=true])')?.src,
+          checkpoints: handles().find((handle) => handle?.checkpoints)?.checkpoints ?? [0],
+        };
+      },
+      seek(time) {
+        if (!Number.isFinite(time) || time < 0)
+          throw new Error('Capture time must be finite and non-negative');
+        pause();
+        const handle = owner('seek');
+        if (handle) handle.seek(time);
+        else {
+          const button = document.querySelector('[data-mode=story]');
+          if (button && !button.hidden) button.click();
+          const input = slider();
+          if (input) {
+            input.value = String(time);
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+        for (const doc of documents())
+          for (const svg of doc.querySelectorAll('svg')) {
+            svg.pauseAnimations();
+            svg.setCurrentTime(time);
+          }
+      },
+      review() {
+        const handle = owner('review');
+        if (!handle)
+          throw new Error(
+            'Expose review: player.review or controller.sheet.review on the scene handle',
+          );
+        return handle.review();
+      },
+      snapshot: () => owner('snapshot')?.snapshot(),
+      async exportSVG() {
+        const handle = owner('exportSVG');
+        if (handle) return handle.exportSVG();
+        const svg =
+          owner('svg')?.svg() ??
+          documents()
+            .map((doc) => doc.querySelector('svg.canvas,svg.vs-canvas,svg.ve-scene'))
+            .find(Boolean);
+        if (!svg || document.querySelector('canvas'))
+          throw new Error('No SVG surface; use PNG, HTML or MP4 for Canvas');
+        return window.VisualExport.exportSVG(svg);
+      },
+    };
+  });
+}
+
+/** Allow layout and the scene's invalidated WebGL draw to reach the displayed frame. */
+export function seekScene(capture, time) {
+  return capture.evaluate(async (scene, time) => {
+    scene.seek(time);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  }, time);
 }

@@ -62,5 +62,5 @@ window.galleryReady = (async () => {
     }
   });
   const observer = new ResizeObserver(() => render()); observer.observe(shell.stage); render();
-  root.scene = {review: story.review, shell, story, dispose() {observer.disconnect(); shell.dispose();}};
+  root.scene = {seek: story.seek, pause: story.pause, review: story.review, shell, story, dispose() {observer.disconnect(); shell.dispose();}};
 })();

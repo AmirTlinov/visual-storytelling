@@ -56,11 +56,12 @@ test('audio controls play, pause, seek backwards and keep the exact area model',
   await expect.poll(() => seek.inputValue().then(Number)).toBeGreaterThan(4.4);
   await play.click();
   await expect(play).toHaveAttribute('aria-label', 'Воспроизвести');
-  await seek.fill('59');
+  const ending = (Number(await seek.getAttribute('max')) - 0.1).toFixed(2);
+  await seek.fill(ending);
   await expect(page.locator('[data-square]')).toHaveCount(20);
   const complete = await page.locator('[data-drawing]').innerHTML();
   await seek.fill('0');
-  await seek.fill('59');
+  await seek.fill(ending);
   expect(await page.locator('[data-drawing]').innerHTML()).toBe(complete);
   await page.locator('[data-formulas]').click();
   await expect(page.locator('[data-formulas]')).toHaveAttribute('aria-pressed', 'true');

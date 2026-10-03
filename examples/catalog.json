@@ -2,14 +2,14 @@
   "area-story": {
     "title": "Почему 4 × 5 = 20?",
     "page": "index.html",
-    "time": 48.2,
-    "checkpoints": [0, 4.3, 6.3, 18.4, 32, 48.2, 59]
+    "time": 61.929,
+    "checkpoints": [0, 5.189, 8.195, 23.709, 40.669, 61.729, 75.83]
   },
   "remainder-story": {
     "title": "Откуда берётся остаток",
     "page": "index.html",
-    "time": 28,
-    "checkpoints": [0, 8, 18, 28, 40]
+    "time": 32.927,
+    "checkpoints": [0, 9.827, 19.619, 28.929, 32.727]
   },
   "fraction-of-a-set": {
     "title": "Доля от двенадцати",
@@ -42,14 +42,14 @@
   "explorer-3d": {
     "title": "Как тензор меняет форму",
     "page": "index.html",
-    "time": 15,
-    "checkpoints": [0, 8, 15]
+    "time": 19.348,
+    "checkpoints": [0, 11.251, 19.148]
   },
   "explorer-svg": {
     "title": "Сложение перемещений",
     "page": "index.html",
-    "time": 15,
-    "checkpoints": [0, 8, 15]
+    "time": 18.828,
+    "checkpoints": [0, 9.178, 13.338, 18.628]
   },
   "controls": {
     "title": "Рисованные элементы управления",

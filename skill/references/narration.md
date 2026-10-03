@@ -68,6 +68,8 @@ Higgs TTS 3 BF16 (около 9.3 GB), русский выравниватель 
 `music.wav` (уже приглушённый фон), `CREDITS.txt`, `narration.txt`, `timeline.json`.
 Сцена импортирует `timeline.json`; сборщик включает его в итоговый JS.
 Все WAV начинаются в общей точке ноль и имеют одинаковую длительность.
+`source_sha256` связывает метки с точным сценарием; звук и `timeline.json`
+обновляются одной сборкой. Для примеров библиотеки эту связь проверяет `npm run test:tools`.
 Музыка тише голоса, автоматически приглушается во время речи и плавно входит/выходит.
 Визуализация воспроизводит `audio.wav`; стемы оставлены для редактирования.
 
@@ -107,7 +109,7 @@ const player = SketchPlayer.mount(root, {
 // Пуск, пауза и звук подключены к общему управлению в [data-player].
 // Перемотка работает в обе стороны, меняя всю сцену:
 player.seekCue('answer');
-root.scene = { review: player.review, dispose: player.dispose };
+root.scene = { seek: player.seek, pause: player.pause, review: player.review, dispose: player.dispose };
 ```
 
 `player.dispose()` вызывается при удалении сцены и останавливает озвучку.
@@ -184,8 +186,10 @@ visual-story review dist --out review-narrow --cue copy --width 375 --theme dark
 Открой `review/index.html`: реплика, задуманный переход и семь кадров от «до» до
 «после», а при наличии `snapshot()` — состояние модели. `review.json` хранит время,
 диагностику и состояния без изображений. `--cue` можно повторять для локальной проверки.
-На `window.explainer` или `root.scene` выставь `review: player.review`; для `story` —
+На `window.explainer` или `root.scene` выставь `seek`, `pause` и `review: player.review`; для `story` —
 `review: controller.sheet.review`, для `SceneShell.attachStory` — `review: story.review`.
+Инструменты вызывают методы сцены; общий плеер и native SVG служат адаптерами
+для примеров без собственного `seek`. Статичной сцене фиктивная перемотка не нужна.
 Читай метки через `clock.cue`, `clock.at` или `sheet.at`, чтобы учитывались обращения.
 
 Отчёт отмечает метки без описания, непрочитанные метки и действия с одинаковыми

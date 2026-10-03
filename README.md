@@ -42,7 +42,7 @@ import { Viewport3D, ThreeKit } from '@visual-storytelling/core/three';
 
 ```sh
 npm run export -- --scene area-story --format html --out artifacts/area.html
-npm run export -- --scene area-story --format svg --time 48.2 --out artifacts/area.svg
+npm run export -- --scene area-story --format svg --time 61.9 --out artifacts/area.svg
 npm run export -- --scene lc-oscillator --format png --time .75 --theme dark
 npm run export -- --scene area-story --format mp4 --fps 30 --width 960
 ```
@@ -54,7 +54,7 @@ PNG/MP4 используют Chromium, MP4 также требует FFmpeg. `--
 ```sh
 npm run check
 npm test
-python3 tests/audio-script.test.py # перенос авторских действий в акустические метки
+npm run test:tools      # сценарий озвучки и структура SVG, без загрузки моделей
 npm run test:browser    # взаимодействия со сборкой site/, порт 8794
 npm run test:delivery   # отдельный потребитель пакета, офлайн HTML и озвучка
 ```
@@ -64,7 +64,9 @@ npm run test:delivery   # отдельный потребитель пакета
 `--cue group_action` выбирает конкретный переход; `--width 375 --theme dark --reduced` проверяет другой режим.
 Сценарий хранит `action` или осмысленное `hold` на метке; подключение — в [озвучке](skill/references/narration.md#проверка), построение понимания — в [раскадровке](skill/references/visual-storytelling.md).
 
-При изменении общего рисунка сохрани исходные кадры до правки: `node tools/visual-regression.mjs capture site artifacts/reference/pixels`, затем сравни сборку через `npm run test:visual`. Проверка охватывает весь каталог, обе темы и две ширины; сообщает любые пиксельные различия и завершается с ошибкой при расхождениях; отчёт в `artifacts/migrated/report.json` позволяет отличить изменение рисунка от нестабильности сглаживания. Просмотр и взаимодействия проверяют целостность объяснения.
+При изменении общего рисунка сохрани исходные кадры до правки: `node tools/visual-regression.mjs capture site artifacts/reference/pixels`, затем сравни сборку через `npm run test:visual`. `VISUAL_SCENES=area-story,vector` ограничивает проверку затронутыми примерами; обе темы и две ширины сохраняются. Отчёт в `artifacts/migrated/report.json` сообщает все различия, а просмотр помогает оценить их смысл.
+
+Экспорт, превью, отчёт переходов и сравнение кадров используют `tools/open-scene.mjs`: он дожидается готовности, останавливает сцену и обращается к её `seek()`. `npm run profile` измеряет перематываемые сцены; для симуляций и статичных схем нужен конкретный сценарий взаимодействия. Проверки CTC и монтажа лежат в `tests/audio/test_pipeline.py` и запускаются отдельно в подготовленном окружении `sketch-audio`.
 
 [skill/SKILL.md](skill/SKILL.md) содержит действующий навык. Его `scripts` ссылается на `tools`, `examples` — на исходники, `previews` — на собранный `site`; исходники находятся в корневом `examples`. После изменения пакета пересобери страницы. Устанавливай навык ссылкой на `skill/`, сохраняя один источник инструкций и исполнения. Источники и лицензии — [THIRD_PARTY.md](THIRD_PARTY.md).
 

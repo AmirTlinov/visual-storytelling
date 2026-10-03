@@ -34,8 +34,10 @@ try {
   </script></body></html>`,
   );
   run('npm', ['run', 'build']);
+  const timing = JSON.parse(await readFile(join(consumer, 'timeline.json'), 'utf8'));
+  const pictureTime = (timing.cues.product_result.end + 0.05).toFixed(2);
   run('npm', ['run', 'review', '--', '--cue', 'add_rows']);
-  const review = JSON.parse(await readFile(join(consumer, 'review/review.json'), 'utf8'));
+  const review = JSON.parse(await readFile(join(consumer, 'artifacts/review/review.json'), 'utf8'));
   assert.deepEqual(review.warnings, []);
   assert.equal(review.cues[0].id, 'add_rows');
   assert.equal(review.cues[0].unchanged, false);
@@ -49,7 +51,7 @@ try {
   assert.equal(await page.locator('link[rel="stylesheet"]').count(), 0);
   await page.goto(server.url);
   await page.locator('[data-square]').first().waitFor({ state: 'attached' });
-  await page.locator('[data-seek]').fill('48.2');
+  await page.locator('[data-seek]').fill(pictureTime);
   await page.screenshot({ path: 'artifacts/consumer.png', fullPage: true });
   assert.equal(await page.locator('[data-square]').count(), 20);
   const offline = resolve('artifacts/offline-area.html');
@@ -64,7 +66,7 @@ try {
     await page.locator('[data-play]').click();
     await page.waitForFunction(() => Number(document.querySelector('[data-seek]').value) > 0.15);
     await page.locator('[data-play]').click();
-    await page.locator('[data-seek]').fill('48.2');
+    await page.locator('[data-seek]').fill(pictureTime);
     await page.emulateMedia({ colorScheme: 'dark' });
     assert.equal(
       await page.locator('.ve-scene').evaluate((n) => getComputedStyle(n).backgroundColor),

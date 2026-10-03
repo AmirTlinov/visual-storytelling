@@ -95,15 +95,7 @@ export async function reviewScene({
   const capture = await renderer({ directory, theme, width });
   const errors = [];
   capture.page.on('pageerror', (error) => errors.push(error.message));
-  const inspect = () =>
-    capture.page.evaluate(() => {
-      const handle = window.explainer ?? document.querySelector('.ve-scene')?.scene;
-      if (!handle?.review)
-        throw new Error(
-          'Expose review: player.review or controller.sheet.review on the scene handle',
-        );
-      return handle.review();
-    });
+  const inspect = () => capture.capture.evaluate((scene) => scene.review());
   try {
     await capture.page.emulateMedia({ reducedMotion: reduced ? 'reduce' : 'no-preference' });
     const initial = await inspect();
@@ -119,10 +111,7 @@ export async function reviewScene({
       const frames = [];
       for (const time of reviewTimes(cue, initial.duration)) {
         await capture.seek(time);
-        const state = await capture.page.evaluate(() => {
-          const handle = window.explainer ?? document.querySelector('.ve-scene')?.scene;
-          return handle?.snapshot?.();
-        });
+        const state = await capture.capture.evaluate((scene) => scene.snapshot());
         const png = await capture.png();
         frames.push({
           time,

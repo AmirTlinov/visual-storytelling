@@ -5,21 +5,24 @@ const catalog = JSON.parse(await readFile('examples/catalog.json', 'utf8'));
 for (const scene of Object.keys(catalog)) {
   const render = await renderer({ scene, theme: 'light', width: 960, controls: true });
   try {
-    const result = await render.page.evaluate(async () => {
+    if (!render.info.seekable) {
+      measurements.push({
+        scene,
+        skipped: 'No reversible timeline; measure a subject interaction',
+      });
+      continue;
+    }
+    const result = await render.capture.evaluate(async (capture) => {
       const durations = [],
         intervals = [];
+      const { duration } = capture.info();
       let last = 0;
       for (let frame = 0; frame < 120; frame++) {
         const timestamp = await new Promise(requestAnimationFrame);
         if (last) intervals.push(timestamp - last);
         last = timestamp;
         const start = performance.now();
-        const slider = document.querySelector('[data-seek]');
-        if (window.explainer) window.explainer.seek((window.explainer.duration * frame) / 120);
-        else if (slider) {
-          slider.value = String((Number(slider.max) * frame) / 120);
-          slider.dispatchEvent(new Event('input', { bubbles: true }));
-        }
+        capture.seek((duration * frame) / 120);
         durations.push(performance.now() - start);
       }
       const percentile = (values, p) =>

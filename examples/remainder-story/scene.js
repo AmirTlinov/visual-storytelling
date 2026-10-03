@@ -245,6 +245,8 @@ window.galleryReady = (async () => {
     ],
   });
   root.scene = {
+    seek: player.seek,
+    pause: player.pause,
     review: player.review,
     dispose() {
       player.dispose();
