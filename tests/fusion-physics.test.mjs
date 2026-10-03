@@ -48,6 +48,12 @@ test('Rapier deforms ink, preserves endpoints and reuses deterministic history o
     const guide = flatten(motion(frame(0).sources, { x: 0, y: 0 }, 0.3));
     const deformation = Math.max(...middle.map((v, i) => Math.abs(v - guide[i])));
     assert.ok(deformation > 0.001 && deformation < 10, `elastic displacement: ${deformation}`);
+    const joined = track.sample(1.4);
+    assert.deepEqual(
+      joined[0],
+      joined[1],
+      'Rapier must not reopen coincident strokes after fusion',
+    );
     const end = flatten(track.sample(2));
     assert.deepEqual(end, flatten(motion(frame(0).sources, { x: 0, y: 0 }, 1)));
     const steps = track.stats.steps;

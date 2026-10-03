@@ -3,6 +3,7 @@ import type { InkRoute } from './transport.js';
 
 export interface InkPatch {
   readonly source: 0 | 1;
+  readonly target: number;
   /** Contiguous segment ranges in the source's vertex buffer. */
   readonly ranges: readonly [offset: number, length: number][];
 }
@@ -19,6 +20,11 @@ function update(out: Pose, input: FusionPose) {
 }
 const x = (p: Pose, a: number, b: number) => p.c * a - p.s * b;
 const y = (p: Pose, a: number, b: number) => p.s * a + p.c * b;
+
+export function inkGather(morph: number) {
+  const phase = Math.max(0, Math.min(1, morph / 0.65));
+  return phase * phase * (3 - 2 * phase);
+}
 
 /** Compile correspondence once. Sampling reuses buffers and transforms each pose once. */
 export function inkMotion(routes: InkRoute[]) {
@@ -41,7 +47,7 @@ export function inkMotion(routes: InkRoute[]) {
   const vertices: InkVertices = [new Float32Array(0), new Float32Array(0)];
   const counts: [number, number] = [0, 0],
     patches: InkPatch[] = [];
-  const patchMap = new Map<string, { source: 0 | 1; ranges: [number, number][] }>();
+  const patchMap = new Map<string, { source: 0 | 1; target: number; ranges: [number, number][] }>();
   // x, y and translation weight for each source. Local vectors have weight zero.
   function mean(items: InkRoute[], point: (r: InkRoute) => readonly number[], translate = false) {
     const result = new Float64Array(6);
@@ -97,7 +103,8 @@ export function inkMotion(routes: InkRoute[]) {
       const key = route.text
         ? `${route.source}:${route.text.originWord}:${route.text.word}`
         : `${route.source}`;
-      if (!patchMap.has(key)) patchMap.set(key, { source: route.source, ranges: [] });
+      if (!patchMap.has(key))
+        patchMap.set(key, { source: route.source, target: route.text?.word ?? 0, ranges: [] });
       patchMap.get(key)!.ranges.push([offset, length]);
       return { route, offset };
     });
@@ -135,8 +142,7 @@ export function inkMotion(routes: InkRoute[]) {
     update(poses[0], sources[0]);
     update(poses[1], sources[1]);
     update(destination, target);
-    const phase = Math.max(0, Math.min(1, morph / 0.65));
-    const gather = phase * phase * (3 - 2 * phase);
+    const gather = inkGather(morph);
     for (const group of compiled) {
       const s = group.text ? gather : morph;
       for (let i = 0; i < group.n; i++) transformedMean(group.common, i * 6, group.current, i * 2);

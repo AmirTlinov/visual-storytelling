@@ -77,14 +77,60 @@ export function textRoutes(
       .toLocaleLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
-  // Each incoming text covers the destination. Concatenating both sources before
-  // alignment would squeeze whole intervening sentences into a single short word.
-  const wordPairs = inputs.flatMap((shape, owner) =>
+  const candidates = inputs.flatMap((shape, owner) =>
     orderedPairs(
       shape.text!.words.map((w) => normalize(w.value)),
       targetWords.map((w) => normalize(w.value)),
     ).map(([a, b]): [number, number] => [a + (owner ? first.text!.words.length : 0), b]),
   );
+  // Match preserved words across both inputs first. Only the remaining ink supplies
+  // new words; independently covering the whole result from each input creates echoes.
+  const wordPairs = candidates.filter(
+    ([a, b]) => normalize(sourceWords[a]!.value) === normalize(targetWords[b]!.value),
+  );
+  const claimedSources = new Set(wordPairs.map(([a]) => a)),
+    claimedTargets = new Set(wordPairs.map(([, b]) => b));
+  const remainingSources = sourceWords.map((_, i) => i).filter((i) => !claimedSources.has(i)),
+    remainingTargets = targetWords.map((_, i) => i).filter((i) => !claimedTargets.has(i));
+  const preferred = new Map<number, number>();
+  // Align word spans by their amount of ink, not by item count. A short inserted
+  // conjunction must not receive a complete long word and become a dense blot.
+  const totalSource = remainingSources.reduce((sum, i) => sum + sourceWords[i]!.glyphs.length, 0),
+    totalTarget = remainingTargets.reduce((sum, i) => sum + targetWords[i]!.glyphs.length, 0);
+  let a = 0,
+    b = 0,
+    startA = 0,
+    startB = 0,
+    bestOverlap = 0;
+  while (a < remainingSources.length && b < remainingTargets.length) {
+    const from = remainingSources[a]!,
+      to = remainingTargets[b]!;
+    const endA = startA + sourceWords[from]!.glyphs.length * totalTarget,
+      endB = startB + targetWords[to]!.glyphs.length * totalSource;
+    const overlap = Math.min(endA, endB) - Math.max(startA, startB);
+    wordPairs.push([from, to]);
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap;
+      preferred.set(from, to);
+    }
+    if (endA <= endB) {
+      a++;
+      startA = endA;
+      bestOverlap = 0;
+    }
+    if (endB <= endA) {
+      b++;
+      startB = endB;
+    }
+  }
+  // With only insertions or deletions, attach the unclaimed item to one supplying
+  // word. Its primary destination keeps the word; additional destinations grow from points.
+  for (const a of remainingSources)
+    if (!wordPairs.some(([from]) => from === a))
+      wordPairs.push(candidates.find(([from]) => from === a)!);
+  for (const b of remainingTargets)
+    if (!wordPairs.some(([, to]) => to === b))
+      wordPairs.push(candidates.find(([, to]) => to === b)!);
   // A supplying word remains whole. Extra destination words grow from its ink;
   // distributing the original letters across receivers would tear sentences apart.
   const assigned = targetWords.map(() => [] as number[]);
@@ -93,6 +139,7 @@ export function textRoutes(
     const receivers = [...new Set(wordPairs.filter(([a]) => a === i).map(([, b]) => b))];
     primaryWords[i] =
       receivers.find((j) => normalize(word.value) === normalize(targetWords[j]!.value)) ??
+      preferred.get(i) ??
       receivers.reduce((best, j) =>
         Math.abs(targetWords[j]!.glyphs.length - word.glyphs.length) <
         Math.abs(targetWords[best]!.glyphs.length - word.glyphs.length)

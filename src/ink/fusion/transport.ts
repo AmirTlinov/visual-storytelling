@@ -127,7 +127,10 @@ export function inkRoutes(
       return (
         (local
           ? (centers[i]![0] - destinations[j]![0]) ** 2 +
-            (centers[i]![1] - destinations[j]![1]) ** 2
+            (centers[i]![1] - destinations[j]![1]) ** 2 +
+            // Symmetric incoming loops still have an order: do not swap their
+            // destinations and send one projection through the other.
+            (rank - destinationRank) ** 2 * 400
           : (rank - destinationRank) ** 2 * 40000) +
         shape +
         Math.log((length(path) + 3) / (length(to) + 3)) ** 2 * 180

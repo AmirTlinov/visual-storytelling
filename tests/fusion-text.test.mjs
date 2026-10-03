@@ -114,6 +114,34 @@ test('a new word shares its letters between both sources without duplicate copie
   }
 });
 
+test('preserved words have their original supplier instead of echoes from the other sentence', () => {
+  const first = block('Свет раскрывает форму'),
+    second = block('Тень придаёт глубину'),
+    target = block('Свет и тень создают объём');
+  const routes = textRoutes(first, second, target);
+  for (const [word, owner, originWord] of [
+    [0, 0, 0],
+    [2, 1, 3],
+  ]) {
+    const incoming = routes.filter((r) => r.text.word === word);
+    assert.ok(incoming.length > 0);
+    assert.ok(incoming.every((r) => r.source === owner && r.text.originWord === originWord));
+  }
+  const inserted = routes.filter((r) => r.text.word === 1);
+  assert.ok(inserted.length > 0);
+  assert.ok(
+    inserted.every((r) =>
+      r.from.every((p) => Math.hypot(p[0] - r.from[0][0], p[1] - r.from[0][1]) < 1e-5),
+    ),
+    'The inserted conjunction grows from points instead of compressing a whole source word',
+  );
+  assert.equal(
+    new Set(routes.map((r) => r.text.origin)).size,
+    first.text.glyphs.length + second.text.glyphs.length,
+  );
+  assert.equal(new Set(routes.map((r) => r.text.glyph)).size, target.text.glyphs.length);
+});
+
 test('coalescing letters does not concentrate their travel in the opening frames', () => {
   const shape = block('о');
   const sample = inkMotion(textRoutes(shape, shape, shape));

@@ -17,6 +17,7 @@ window.galleryReady = (async () => {
   const equation = root.querySelector('.fusion-equation');
   const abort = new AbortController();
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  const motionRevision = 6;
   const clock = transport({ duration: 4 });
   const view = await Physics2D.fusion(stage, {
     width: 840,
@@ -111,7 +112,7 @@ window.galleryReady = (async () => {
     if (!ready || disposed) return;
     persistence.save({
       modelContent: { type: 'ink-fusion', texts: words, tension, example: scenario },
-      privateContent: { time: clock.state.time, motionRevision: 5 },
+      privateContent: { time: clock.state.time, motionRevision },
     });
   }
   function changeTexts() {
@@ -239,7 +240,7 @@ window.galleryReady = (async () => {
     cases.setValue(scenario);
     rebuild();
     if (
-      snapshot.privateContent?.motionRevision === 5 &&
+      snapshot.privateContent?.motionRevision === motionRevision &&
       Number.isFinite(snapshot.privateContent?.time)
     )
       clock.seek(snapshot.privateContent.time);
@@ -321,7 +322,7 @@ window.galleryReady = (async () => {
       view.dispose();
     },
   };
-  if ((!restored || saved?.privateContent?.motionRevision !== 5) && !reduced.matches)
+  if ((!restored || saved?.privateContent?.motionRevision !== motionRevision) && !reduced.matches)
     void clock.play();
 })().catch((error) => {
   document.querySelector('.fusion-error').textContent = error.message;

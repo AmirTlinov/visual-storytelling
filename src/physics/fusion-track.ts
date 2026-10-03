@@ -1,6 +1,11 @@
 import R from '@dimforge/rapier2d-compat';
 import type { FusionFrame } from '../ink/fusion/surface.js';
-import type { inkMotion, InkPatch, InkVertices } from '../ink/fusion/motion.js';
+import {
+  inkGather,
+  type inkMotion,
+  type InkPatch,
+  type InkVertices,
+} from '../ink/fusion/motion.js';
 import type { World2D } from './world2d.js';
 import { bodyLifetime } from './body.js';
 
@@ -27,6 +32,26 @@ function bounds(vertices: InkVertices, patch: InkPatch, out: Float64Array) {
   out[3] = Math.max(6, (bottom - top) / 2);
 }
 
+function displacement(
+  data: Float32Array,
+  base: number,
+  box: Float64Array,
+  x: number,
+  y: number,
+  axis: number,
+) {
+  const u = Math.max(0, Math.min(2, (x - box[0]!) / box[2]! + 1)),
+    v = Math.max(0, Math.min(2, (y - box[1]!) / box[3]! + 1));
+  const column = Math.min(1, Math.floor(u)),
+    row = Math.min(1, Math.floor(v));
+  const fx = u - column,
+    fy = v - row,
+    n = base + (row * 3 + column) * 2 + axis;
+  const top = data[n]! * (1 - fx) + data[n + 2]! * fx,
+    bottom = data[n + 6]! * (1 - fx) + data[n + 8]! * fx;
+  return top * (1 - fy) + bottom * fy;
+}
+
 /** A small Rapier cage carries each incoming word. Cached cage offsets make seeking deterministic. */
 export function fusionTrack(
   world: World2D,
@@ -44,11 +69,20 @@ export function fusionTrack(
     return motion(f.sources, f.target ?? origin, Math.max(0, Math.min(1, f.morph ?? 0)));
   };
   const initial = sample(0);
+  const merged = new Map<number, { box: Float64Array; offsets: Float32Array; count: number }>();
   const output: InkVertices = [
     new Float32Array(initial[0].length),
     new Float32Array(initial[1].length),
   ];
   const cages = motion.patches.map((patch, index) => {
+    if (!merged.has(patch.target))
+      merged.set(patch.target, {
+        box: new Float64Array(4),
+        offsets: new Float32Array(18),
+        count: 0,
+      });
+    const shared = merged.get(patch.target)!;
+    shared.count++;
     const box = new Float64Array(4);
     bounds(initial, patch, box);
     const center = { x: box[0]! / SCALE, y: box[1]! / SCALE };
@@ -74,7 +108,7 @@ export function fusionTrack(
       awake: () => !body.isSleeping(),
       remove: () => world.raw.removeSoftBody(body),
     });
-    return { patch, box, body, rest, nodes, life, limit: box[3]! * 0.4, target: center };
+    return { patch, box, body, rest, nodes, life, shared, limit: box[3]! * 0.4, target: center };
   });
   const history = [new Float32Array(cages.length * 18)];
   function extend(step: number) {
@@ -132,26 +166,46 @@ export function fusionTrack(
       output[0].set(geometry[0]);
       output[1].set(geometry[1]);
       const strength = 0.7 * 16 * morph * morph * (1 - morph) * (1 - morph);
+      // Joining ink acquires one deformation field. Independent cages must never
+      // pull coincident strokes apart again after their geometric correspondence has merged.
+      const separate = (1 - inkGather(morph)) ** 2;
+      for (const shared of merged.values()) {
+        shared.offsets.fill(0);
+        shared.box[0] = shared.box[1] = Infinity;
+        shared.box[2] = shared.box[3] = -Infinity;
+      }
+      cages.forEach((cage, j) => {
+        bounds(geometry, cage.patch, cage.box);
+        const box = cage.shared.box;
+        box[0] = Math.min(box[0]!, cage.box[0]! - cage.box[2]!);
+        box[1] = Math.min(box[1]!, cage.box[1]! - cage.box[3]!);
+        box[2] = Math.max(box[2]!, cage.box[0]! + cage.box[2]!);
+        box[3] = Math.max(box[3]!, cage.box[1]! + cage.box[3]!);
+        for (let n = 0; n < 18; n++)
+          cage.shared.offsets[n]! += deltas[j * 18 + n]! / cage.shared.count;
+      });
+      for (const { box } of merged.values()) {
+        const x = (box[0]! + box[2]!) / 2,
+          y = (box[1]! + box[3]!) / 2;
+        box[2] = (box[2]! - box[0]!) / 2;
+        box[3] = (box[3]! - box[1]!) / 2;
+        box[0] = x;
+        box[1] = y;
+      }
       for (let j = 0; j < cages.length; j++) {
         const cage = cages[j]!;
-        bounds(geometry, cage.patch, cage.box);
         const data = output[cage.patch.source],
           base = j * 18;
         for (const [offset, length] of cage.patch.ranges)
           for (let i = offset; i < offset + length; i += 6)
             for (let end = 0; end < 4; end += 2) {
               const at = i + end;
-              const u = Math.max(0, Math.min(2, (data[at]! - cage.box[0]!) / cage.box[2]! + 1));
-              const v = Math.max(0, Math.min(2, (data[at + 1]! - cage.box[1]!) / cage.box[3]! + 1));
-              const column = Math.min(1, Math.floor(u)),
-                row = Math.min(1, Math.floor(v));
-              const fx = u - column,
-                fy = v - row,
-                n = base + (row * 3 + column) * 2;
+              const x = data[at]!,
+                y = data[at + 1]!;
               for (let axis = 0; axis < 2; axis++) {
-                const top = deltas[n + axis]! * (1 - fx) + deltas[n + 2 + axis]! * fx;
-                const bottom = deltas[n + 6 + axis]! * (1 - fx) + deltas[n + 8 + axis]! * fx;
-                data[at + axis]! += (top * (1 - fy) + bottom * fy) * strength;
+                const own = displacement(deltas, base, cage.box, x, y, axis);
+                const shared = displacement(cage.shared.offsets, 0, cage.shared.box, x, y, axis);
+                data[at + axis]! += (own * separate + shared * (1 - separate)) * strength;
               }
             }
       }

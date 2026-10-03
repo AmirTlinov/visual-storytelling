@@ -61,3 +61,30 @@ test('a painted drop retains its radius in the medial representation', () => {
     assert.ok(points.every((p) => Math.hypot(p[0], p[1]) < 2));
   }
 });
+
+test('symmetric loops keep their source order when becoming a stem and a loop', () => {
+  const loop = (x: number): InkPath =>
+    Array.from({ length: 41 }, (_, i) => {
+      const angle = (i / 40) * Math.PI * 2;
+      return [x + 30 * Math.cos(angle), 30 * Math.sin(angle), 2];
+    });
+  const source = loop(0);
+  const routes = inkRoutes(
+    [source],
+    [source],
+    [
+      [
+        [-40, -30, 2],
+        [-40, 30, 2],
+      ],
+      [
+        [-40, 0, 2],
+        [-10, 0, 2],
+      ],
+      loop(20),
+    ],
+    true,
+  );
+  assert.ok(routes.filter((r) => r.target === 0).every((r) => r.source === 0));
+  assert.ok(routes.filter((r) => r.target === 2).every((r) => r.source === 1));
+});
