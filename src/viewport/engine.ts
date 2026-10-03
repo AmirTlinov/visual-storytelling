@@ -1,5 +1,6 @@
 export {
   Scene,
+  Raycaster,
   Group,
   Object3D,
   PerspectiveCamera,

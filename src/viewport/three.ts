@@ -2,22 +2,9 @@ import type { Material, Texture, Color } from 'three';
 type Palette = Record<string, Color>;
 type ColorMaterial = Material & { color: Color };
 type MaterialInk = string | ((palette: Palette) => Color);
-interface ProjectedLabel {
-  element: HTMLSpanElement;
-  leader: SVGPathElement;
-  point: () => ThreeKit.Vector3;
-  offset: [number, number];
-  visible: () => boolean;
-}
-interface LabelBox {
-  x: number;
-  y: number;
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
 import * as ThreeKit from './engine.js';
+import { ProjectedLabels, type LabelOptions } from './labels.js';
+import { ProjectedConnections, type ConnectionOptions } from './connections.js';
 /* Camera, GPU resources and projected labels belong to this surface. */
 
 function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объёмная сцена' } = {}) {
@@ -37,18 +24,15 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
     `${label}. Перетаскивание и стрелки — вращение; колесо и плюс или минус — масштаб; Shift и стрелки — перенос; Home — исходный вид.`,
   );
   stage.prepend(canvas);
-  const leaders = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  leaders.style.cssText = 'position:absolute;inset:0;pointer-events:none';
-  leaders.setAttribute('aria-hidden', 'true');
-  stage.append(leaders);
   const controls = new T.OrbitControls(camera, canvas);
   controls.enableDamping = false;
   controls.enablePan = true;
   const abort = new AbortController(),
     listen = { signal: abort.signal };
-  const labels = new Set<ProjectedLabel>(),
-    materials = new Map<ColorMaterial, MaterialInk>(),
+  const materials = new Map<ColorMaterial, MaterialInk>(),
     palette: Palette = {};
+  const interactions = new Set<() => void>(),
+    resizes = new Set<() => void>();
   let pending = 0,
     disposed = false,
     afterRender = () => {};
@@ -62,81 +46,26 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
     pending = 0;
     if (disposed) return;
     renderer.render(scene, camera);
-    const width = stage.clientWidth,
-      height = stage.clientHeight,
-      placed: LabelBox[] = [];
-    leaders.setAttribute('viewBox', `0 0 ${width} ${height}`);
-    const measured = [...labels].map((item) => {
-      item.element.hidden = false;
-      return { ...item, half: item.element.offsetWidth / 2, high: item.element.offsetHeight / 2 };
-    });
-    for (const item of measured) {
-      const p = item.point().clone().project(camera);
-      item.element.hidden = !item.visible() || p.z < -1 || p.z > 1;
-      item.leader.style.display = 'none';
-      if (item.element.hidden) continue;
-      const anchor: [number, number] = [((p.x + 1) * width) / 2, ((1 - p.y) * height) / 2];
-      const step = item.high * 2 + 8;
-      let box: LabelBox | undefined;
-      for (const [dx, dy] of [
-        [0, 0],
-        [0, -step],
-        [0, step],
-        [0, -2 * step],
-        [0, 2 * step],
-        [-item.half * 2 - 12, 0],
-        [item.half * 2 + 12, 0],
-      ] as [number, number][]) {
-        const x = Math.max(
-          item.half + 8,
-          Math.min(width - item.half - 8, anchor[0] + item.offset[0] + dx),
-        );
-        const y = Math.max(
-          item.high + 8,
-          Math.min(height - item.high - 8, anchor[1] + item.offset[1] + dy),
-        );
-        const candidate = {
-          x,
-          y,
-          left: x - item.half,
-          right: x + item.half,
-          top: y - item.high,
-          bottom: y + item.high,
-        };
-        if (
-          placed.every(
-            (b) =>
-              candidate.right + 6 < b.left ||
-              candidate.left - 6 > b.right ||
-              candidate.bottom + 6 < b.top ||
-              candidate.top - 6 > b.bottom,
-          )
-        ) {
-          box = candidate;
-          break;
-        }
-      }
-      item.element.hidden = !box;
-      if (!box) continue;
-      placed.push(box);
-      item.element.style.left = `${box.x}px`;
-      item.element.style.top = `${box.y}px`;
-      const end: [number, number] = [
-        Math.max(box.left, Math.min(box.right, anchor[0])),
-        Math.max(box.top, Math.min(box.bottom, anchor[1])),
-      ];
-      if (Math.hypot(end[0] - anchor[0], end[1] - anchor[1]) > 10) {
-        item.leader.setAttribute('d', `M${anchor}L${end}`);
-        item.leader.style.display = '';
-      }
-    }
+    lettering.render();
+    connections.render();
     afterRender();
   }
   function invalidate() {
     if (!pending && !disposed) pending = requestAnimationFrame(render);
   }
+  const lettering = new ProjectedLabels(stage, camera, scene, invalidate);
+  const connections = new ProjectedConnections(
+    stage,
+    camera,
+    () => lettering.boxes,
+    () => lettering.objects,
+    invalidate,
+  );
   const changed = () => invalidate(),
-    started = () => onInteract();
+    started = () => {
+      onInteract();
+      for (const callback of interactions) callback();
+    };
   controls.addEventListener('change', changed);
   controls.addEventListener('start', started);
   const sample = document.createElement('span');
@@ -197,6 +126,7 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     renderer.setSize(width, height, false);
+    for (const callback of resizes) callback();
     invalidate();
   }
   const sizeObserver = new ResizeObserver(resize);
@@ -245,7 +175,7 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
       const keys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', '+', '=', '-', '_', 'Home'];
       if (!keys.includes(event.key)) return;
       event.preventDefault();
-      onInteract();
+      started();
       if (event.key === 'Home') {
         reset();
         return;
@@ -316,7 +246,16 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
   );
   resize();
   theme();
+  const ready = Promise.all(
+    ['SketchPencil', 'SketchShantell'].map((name) =>
+      document.fonts.load(`20px ${name}`, '−0.123456789 сумма'),
+    ),
+  ).then(() => {
+    invalidate();
+  });
   return {
+    ready,
+    stage,
     scene,
     camera,
     controls,
@@ -326,6 +265,7 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
     invalidate,
     fit,
     reset,
+    release,
     setObject(next: ThreeKit.Object3D, { fitView = true } = {}) {
       if (object === next) return;
       if (object) {
@@ -337,35 +277,23 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
       if (fitView) fit(next);
       invalidate();
     },
-    label(
-      text: string,
-      point: () => ThreeKit.Vector3,
-      {
-        tone = 'ink',
-        offset = [0, 0],
-        visible = () => true,
-      }: { tone?: string; offset?: [number, number]; visible?: () => boolean } = {},
-    ) {
-      const element = document.createElement('span');
-      element.className = 've-label';
-      element.dataset.tone = tone;
-      element.textContent = text;
-      stage.append(element);
-      const leader = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      leader.setAttribute('fill', 'none');
-      leader.setAttribute('stroke', 'var(--ve-pencil)');
-      leader.setAttribute('stroke-width', '1');
-      leaders.append(leader);
-      const item = { element, leader, point, offset, visible };
-      labels.add(item);
-      invalidate();
-      return {
-        element,
-        remove() {
-          labels.delete(item);
-          element.remove();
-          leader.remove();
-        },
+    label(text: string, point: () => ThreeKit.Vector3, options: LabelOptions = {}) {
+      return lettering.add(text, point, options);
+    },
+    avoid: (object: ThreeKit.Object3D) => lettering.avoid(object),
+    inspect: () => ({ ...lettering.inspect(), connections: connections.inspect() }),
+    connect: (from: ThreeKit.Object3D, to: ThreeKit.Object3D, options: ConnectionOptions = {}) =>
+      connections.add(from, to, options),
+    onInteract(callback: () => void) {
+      interactions.add(callback);
+      return () => {
+        interactions.delete(callback);
+      };
+    },
+    onResize(callback: () => void) {
+      resizes.add(callback);
+      return () => {
+        resizes.delete(callback);
       };
     },
     async loadGLB(source: string | ArrayBuffer) {
@@ -390,11 +318,15 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
       themeObserver.disconnect();
       release(object);
       renderer.dispose();
-      for (const item of labels) item.element.remove();
+      lettering.dispose();
+      connections.dispose();
+      interactions.clear();
+      resizes.clear();
       canvas.remove();
-      leaders.remove();
       sample.remove();
     },
   };
 }
 export const Viewport3D = { mount };
+
+export type Viewport = ReturnType<typeof Viewport3D.mount>;

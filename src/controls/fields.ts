@@ -213,7 +213,11 @@ function selectControl(
   document.addEventListener(
     'scroll',
     (event) => {
-      if (isOpen() && !menu.contains(event.target as Node | null)) close();
+      if (isOpen() && !menu.contains(event.target as Node | null)) {
+        const bounds = trigger.getBoundingClientRect();
+        if (bounds.bottom < 0 || bounds.top > innerHeight) close();
+        else place();
+      }
     },
     { ...listen, capture: true },
   );

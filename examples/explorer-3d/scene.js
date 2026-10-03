@@ -13,6 +13,7 @@ window.galleryReady = (async () => {
     onMode: mode => {if (mode === 'story') view.reset();}
   });
   view = Viewport3D.mount(shell.stage, {label: 'Сфера и её образ при линейном преобразовании', onInteract: () => shell.setMode('explore')});
+  await view.ready;
   const model = new T.Group(), shape = new T.Group(); model.add(shape);
   const surface = new T.Mesh(new T.SphereGeometry(1, 64, 40), view.ink(new T.MeshBasicMaterial(), 'purple-wash'));
   shape.add(surface);

@@ -1,3 +1,4 @@
+import { connector, pathData, boundary } from './geometry.js';
 import { svg as element } from '../ink/dom.js';
 
 interface Point {
@@ -77,31 +78,31 @@ function beside(
 }
 
 function edge(bounds: Bounds, toward: Point, { shape = 'rect', gap = 0 } = {}) {
-  const cx = bounds.cx ?? bounds.x + bounds.width / 2;
-  const cy = bounds.cy ?? bounds.y + bounds.height / 2;
-  const dx = toward.x - cx,
-    dy = toward.y - cy,
-    length = Math.hypot(dx, dy);
-  if (!length) return { x: cx, y: cy };
-  const rx = Math.max(bounds.width / 2, 0.001),
-    ry = Math.max(bounds.height / 2, 0.001);
-  const factor =
-    shape === 'ellipse'
-      ? 1 / Math.hypot(dx / rx, dy / ry)
-      : 1 / Math.max(Math.abs(dx) / rx, Math.abs(dy) / ry);
-  return { x: cx + dx * factor + (dx / length) * gap, y: cy + dy * factor + (dy / length) * gap };
+  return boundary(bounds, toward, shape as 'rect' | 'ellipse', gap);
 }
 
 function connect(
   from: SVGGraphicsElement,
   to: SVGGraphicsElement,
-  { fromShape = 'rect', toShape = 'rect', gap = 3, space = from.ownerSVGElement! } = {},
+  {
+    fromShape = 'rect',
+    toShape = 'rect',
+    gap = 5,
+    space = from.ownerSVGElement!,
+    avoid = [] as SVGGraphicsElement[],
+  } = {},
 ) {
   const a = box(from, space),
     b = box(to, space);
-  const start = edge(a, { x: b.cx, y: b.cy }, { shape: fromShape, gap });
-  const end = edge(b, { x: a.cx, y: a.cy }, { shape: toShape, gap });
-  return { start, end, d: `M${start.x} ${start.y}L${end.x} ${end.y}` };
+  const points = connector(
+    a,
+    b,
+    avoid.map((node) => box(node, space)),
+    { gap, fromShape: fromShape as 'rect' | 'ellipse', toShape: toShape as 'rect' | 'ellipse' },
+  );
+  const start = points[0] ?? edge(a, { x: b.cx, y: b.cy }, { shape: fromShape, gap });
+  const end = points.at(-1) ?? edge(b, { x: a.cx, y: a.cy }, { shape: toShape, gap });
+  return { start, end, points, d: pathData(points), blocked: points.length === 0 };
 }
 
 function along(
