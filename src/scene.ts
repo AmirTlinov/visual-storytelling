@@ -178,11 +178,7 @@ function mount(
       stops: controller.sheet.script.segments?.map((s) => s.start),
       captions: { element: caption, segments: controller.sheet.script.segments ?? [] },
       onSeek: controller.seek,
-      onPlay: () => {
-        if (controller.currentTime >= controller.duration - 0.02) view?.reset();
-        if (exploration === 'model') setMode('story');
-        else controller.resume();
-      },
+      onPlay: preparePlayback,
     });
     inputStory = (key, value) => controller.explore({ ...controller.values, [key]: value });
     const chapters = chapterHeading(
@@ -215,6 +211,10 @@ function mount(
     setMode('story');
     Object.assign(root, {
       scene: {
+        play: () => {
+          preparePlayback();
+          return controller.player.play();
+        },
         seek: controller.seek,
         pause: controller.pause,
         review: controller.review,
@@ -227,6 +227,11 @@ function mount(
         dispose,
       },
     });
+    function preparePlayback() {
+      if (controller.currentTime >= controller.duration - 0.02) view?.reset();
+      if (exploration === 'model') setMode('story');
+      else controller.resume();
+    }
   }
 
   function dispose() {

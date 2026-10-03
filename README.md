@@ -20,6 +20,7 @@ npm run preview         # http://127.0.0.1:8793
 node tools/scene.mjs new /absolute/output/my-story --example explorer-svg
 cd /absolute/output/my-story
 npm install
+npx visual-story api SceneShell  # точный контракт установленной версии
 npm run build
 npm run dev
 ```
@@ -63,6 +64,7 @@ npm run test:delivery   # отдельный потребитель пакета
 
 Для повествования: `node tools/scene.mjs review site/remainder-story --out artifacts/remainder-review`.
 Отчёт сопоставляет слова, описание действия, кадры до/внутри/после и доступный снимок модели.
+Кнопка перехода проигрывает встроенную сцену с голосом и оставляет итог для сравнения.
 `--cue group_action` выбирает конкретный переход; `--width 375 --theme dark --reduced` проверяет другой режим.
 Сценарий хранит `action` или осмысленное `hold` на метке; подключение — в [озвучке](skill/references/narration.md#проверка), построение понимания — в [раскадровке](skill/references/visual-storytelling.md).
 

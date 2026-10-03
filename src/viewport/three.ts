@@ -2,6 +2,7 @@ import type { Material, Texture, Color } from 'three';
 import { pigments } from '../ink/palette.js';
 type Palette = Record<string, Color>;
 type ColorMaterial = Material & { color: Color };
+/** A derived pigment is resolved on each invalidated frame and on theme changes. */
 type MaterialInk = string | ((palette: Palette) => Color);
 import { projectedLabels, type LabelInsets } from './labels.js';
 import { shotPose, type ShotTransition3D } from './shots.js';
@@ -57,6 +58,8 @@ function mount(
   function render() {
     pending = 0;
     if (disposed) return;
+    for (const [material, color] of materials)
+      if (typeof color === 'function') material.color.copy(materialColor(color));
     scene.updateMatrixWorld(true);
     camera.updateMatrixWorld(true);
     labels.render();

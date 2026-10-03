@@ -31,6 +31,9 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
             const detailWidth = (right.x-left.x)*shell.stage.clientWidth/2;
             for (const color of ['blue','orange','purple','green','red','yellow'])
               for (const variant of ['', '-wash','-soft']) view.ink(new T.MeshBasicMaterial(),color+variant);
+            const model = {fraction:0};
+            const pigment = view.ink(new T.MeshBasicMaterial(), p=>p.blue.clone().lerp(p.surface,model.fraction));
+            detail.material = pigment;
             let invalidColor;
             try { view.ink(new T.MeshBasicMaterial(),'unknown'); } catch(error) { invalidColor=error.message; }
             const paper = surface(shell.actions,{id:'cells',width:500,height:250,title:'Cells',description:'Fitting and axes'});
@@ -52,7 +55,7 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
             shell.setMode('explore');
             const transition = {events:[...events],renders,mode:story.mode};
             shell.onDispose(()=>disposed++);
-            window.lab={shell,story,view,detail,events,disposeCount:()=>disposed};
+            window.lab={shell,story,view,detail,events,model,pigment,disposeCount:()=>disposed};
             return {detailWidth,shortWidth,overflow,cleared,wideWidth:wide.label.width,
               wideError:wide.label.element.dataset.layoutError,invalidColor,transition,
               axisY:chart.point(0,0)[1],tickY:tick.y+tick.height/2};
@@ -102,6 +105,20 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
     assert.match(result.invalidColor, /Unknown 3D pigment: unknown/);
     assert(Math.abs(result.tickY - result.axisY) < 1);
     assert.deepEqual(result.transition, { events: ['explore'], renders: 1, mode: 'explore' });
+    // The same model-derived pigment survives input and a theme change while paused.
+    await page.evaluate(() => {
+      lab.model.fraction = 0.75;
+      lab.view.invalidate();
+    });
+    for (const colorScheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme });
+      await page.waitForFunction(() =>
+        lab.pigment.color.equals(
+          lab.view.palette.blue.clone().lerp(lab.view.palette.surface, 0.75),
+        ),
+      );
+    }
+    await page.emulateMedia({ colorScheme: 'light' });
     assert.equal(await page.locator('h1').innerText(), 'Detail');
     for (const result of await page.evaluate(() => window.echoTrial())) {
       assert.equal(result.ownEchoes, 0);

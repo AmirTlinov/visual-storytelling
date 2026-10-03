@@ -4,6 +4,8 @@ import { createHash } from 'node:crypto';
 import { renderer } from './render.mjs';
 import { analyzeMotionFrames, motionData } from './motion-frames.mjs';
 import { motionMarkup, writeMotionReport } from './motion-report.mjs';
+import { packDirectory } from './standalone.mjs';
+import { installReviewPlayer } from './review-player.mjs';
 
 const escape = (text) =>
   String(text ?? '').replace(
@@ -66,7 +68,7 @@ ${frame.state !== undefined ? `<details><summary>Состояние модели
     .join('')}</div>`;
 }
 
-function html(report) {
+function html(report, sceneHTML) {
   const warnings = report.warnings.map((warning) => `<li>${escape(warning)}</li>`).join('');
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Разбор переходов</title>
@@ -77,6 +79,9 @@ h1{font-size:26px}h2{font-size:19px}section{padding:20px 0;border-top:1px solid 
 .frame{display:block;padding:0;width:100%;border:0;background:none;cursor:zoom-in}.frame:focus-visible{outline:2px solid LinkText;outline-offset:3px}
 dialog{max-width:calc(100vw - 40px);padding:16px;border:1px solid GrayText}dialog img{max-height:80vh;width:auto;max-width:100%;object-fit:contain}dialog::backdrop{background:#0009}
 dialog button{float:right;font:inherit;margin-bottom:8px}dialog p{margin:0 80px 12px 0}
+#playback{width:${report.width}px;max-height:90vh;overflow:auto}#playback h2{margin:0 80px 12px 0}
+#playback iframe{display:block;width:100%;height:calc(90vh - 140px);min-height:280px;border:0}#playback [role=status]{margin:12px 0 0}
+[data-play-cue]{font:inherit;padding:8px 12px;cursor:pointer}
 figcaption,summary{font-size:13px}pre{white-space:pre-wrap;font-size:12px}li{margin:5px 0}a{color:LinkText}code{overflow-wrap:anywhere}
 </style></head><body><h1>Разбор переходов</h1>
 <p>Реплика → видимое действие → результат. Откройте кадр для деталей; сравните промежуточные числа и сохранность объектов.
@@ -92,15 +97,17 @@ ${report.cues
     ) => `<section><h2><code>${escape(cue.id)}</code> · ${cue.start.toFixed(2)}–${cue.end.toFixed(2)} с</h2>
 <blockquote>«${escape(cue.text ?? cue.quote ?? cue.context)}»</blockquote>
 <p>${cue.kind === 'hold' ? 'Остановка' : 'Действие'}: ${escape(cue.action ?? cue.hold ?? 'описание отсутствует')}</p>
+${sceneHTML ? `<button type="button" data-play-cue data-title="${escape(cue.id)}" data-start="${Math.max(0, cue.start - 0.5)}" data-end="${Math.min(report.duration, cue.end + 0.7)}">Проиграть переход</button>` : ''}
 ${cue.context ? `<details><summary>Вся реплика</summary><p>${escape(cue.context)}</p></details>` : ''}
 <p>Метка ${cue.referenced ? 'прочитана кодом сцены' : 'не прочитана через Frame'}${cue.unchanged ? '; все снятые кадры одинаковы' : ''}.</p>
 ${cue.motion ? `${motionMarkup(cue.motion, { includeFrames: false })}<p><a href="${cue.motionImage}">Открыть наложение, дельты и кадры одним PNG</a></p>` : ''}
 ${framesHTML(cue.frames, cue.id, cue)}</section>`,
   )
   .join('')}
-<dialog aria-labelledby="frame-title"><button type="button" autofocus>Закрыть</button><p id="frame-title"></p><img alt=""></dialog>
+<dialog id="still" aria-labelledby="frame-title"><button type="button" autofocus>Закрыть</button><p id="frame-title"></p><img alt=""></dialog>
+${sceneHTML ? `<template id="review-scene">${escape(sceneHTML)}</template><dialog id="playback" data-reduced="${report.reduced}" aria-labelledby="playback-title"><button type="button" data-close autofocus>Закрыть</button><h2 id="playback-title"></h2><iframe title="Проверяемый переход" allow="autoplay"></iframe><p role="status"></p></dialog>` : ''}
 <script>
-const dialog = document.querySelector('dialog');
+const dialog = document.querySelector('#still');
 document.querySelectorAll('.frame').forEach(button => button.addEventListener('click', () => {
   const image = button.querySelector('img');
   dialog.querySelector('img').src = image.src;
@@ -109,6 +116,7 @@ document.querySelectorAll('.frame').forEach(button => button.addEventListener('c
   dialog.showModal();
 }));
 dialog.querySelector('button').addEventListener('click', () => dialog.close());
+(${installReviewPlayer.toString()})();
 </script></body></html>`;
 }
 
@@ -183,11 +191,27 @@ export async function reviewScene({
     }
     for (const gap of unmarked) gap.frames = [await sample(gap.start), await sample(gap.end)];
     const inspected = await inspect();
+    let sceneHTML;
+    const playable = await capture.page.evaluate(
+      () =>
+        [window.explainer, document.querySelector('.ve-scene')?.scene].some(
+          (handle) => typeof handle?.play === 'function',
+        ) || Boolean(document.querySelector('[data-play]')),
+    );
+    let playbackWarning;
+    if (playable) {
+      try {
+        sceneHTML = await packDirectory(directory, 'index.html', { theme });
+      } catch (error) {
+        playbackWarning = `Живой просмотр недоступен: ${error.message}`;
+      }
+    }
     const report = {
       duration: initial.duration,
       width,
       theme,
       reduced,
+      playback: Boolean(sceneHTML),
       unmarked,
       messages: capture.messages,
       cues: sampled.map((sample) => {
@@ -210,6 +234,7 @@ export async function reviewScene({
         .filter((message) => !/GL Driver Message.*GPU stall due to ReadPixels/.test(message.text))
         .map((message) => `${message.time.toFixed(2)} с: ${message.text}`),
     };
+    if (playbackWarning) report.warnings.push(playbackWarning);
     for (const cue of report.cues) {
       for (const message of new Set(cue.frames.flatMap((frame) => frame.diagnostics)))
         report.warnings.push(`${cue.id}: ${message}`);
@@ -228,7 +253,7 @@ export async function reviewScene({
           `${gap.chapter} · ${gap.start.toFixed(2)}–${gap.end.toFixed(2)} с: ${message}`,
         );
     // Images live in the self-contained HTML; the small JSON keeps times and model snapshots.
-    await writeFile(join(output, 'index.html'), html(report));
+    await writeFile(join(output, 'index.html'), html(report, sceneHTML));
     await writeFile(
       join(output, 'review.json'),
       JSON.stringify(

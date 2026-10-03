@@ -20,11 +20,12 @@ export async function renderer({ scene, theme, width = 960, controls = false, di
   };
   try {
     browser = await chromium.launch();
-    const page = await browser.newPage({
+    const context = await browser.newContext({
       viewport: { width, height: 1200 },
       deviceScaleFactor: 1,
       colorScheme: theme,
     });
+    const page = await context.newPage();
     const errors = [];
     const messages = new Map();
     let time = 0;

@@ -10,6 +10,7 @@ import { standalone, packDirectory } from './standalone.mjs';
 
 const { values } = parseArgs({
   options: {
+    help: { type: 'boolean', short: 'h' },
     scene: { type: 'string', default: 'area-story' },
     directory: { type: 'string' },
     format: { type: 'string', default: 'png' },
@@ -23,6 +24,18 @@ const { values } = parseArgs({
     to: { type: 'string' },
   },
 });
+if (values.help) {
+  console.log(`visual-story-export --directory DIST --format png|svg|html|mp4 [--out FILE]
+visual-story-export --scene NAME --format png|svg|html|mp4 [--out FILE]
+
+Still image: --time SECONDS --width 960 --theme light|dark
+Video:       --from SECONDS --to SECONDS --fps 30 --width 960 [--height PIXELS]
+HTML:        --theme auto|light|dark; embeds code, fonts and audio for offline use
+
+From a created scene: npm run export -- --format png --time 4
+Video uses the scene's media timeline and narration. PNG/MP4 need Chromium; MP4 also needs FFmpeg.`);
+  process.exit(0);
+}
 const { scene, format } = values;
 if (values.height !== undefined && format !== 'mp4')
   throw new Error('--height sets the MP4 frame. PNG captures the complete scene at --width.');

@@ -17,6 +17,15 @@ try {
   run(process.execPath, [resolve('tools/scene.mjs'), 'new', consumer, '--example', 'area-story']);
   run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund']);
   const skill = join(consumer, 'node_modules/@visual-storytelling/core/skill');
+  const cli = join(skill, '../tools/scene.mjs');
+  const signature = run(process.execPath, [cli, 'api', 'Viewport3D']).toString();
+  assert.match(signature, /@visual-storytelling\/core\/three/);
+  assert.match(signature, /ShotTransition3D/);
+  const api = JSON.parse(await readFile(join(skill, '../dist/api.json'), 'utf8'));
+  for (const file of new Set(Object.values(api.modules).flatMap(Object.values)))
+    await access(join(skill, '../dist', file));
+  assert.match(run(process.execPath, [cli, 'api', './story']).toString(), /StoryOptions/);
+  assert.throws(() => run(process.execPath, [cli, 'api', 'Viewport']), /Viewport3D/);
   for (const file of [
     join(skill, 'SKILL.md'),
     ...(await readdir(join(skill, 'references')))
@@ -54,6 +63,7 @@ try {
   assert.deepEqual(review.warnings, []);
   assert.equal(review.cues[0].id, 'add_rows');
   assert.equal(review.cues[0].unchanged, false);
+  assert.equal(review.playback, true);
   server = await serve(join(consumer, 'dist'));
   browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 700, height: 900 } }),
@@ -87,6 +97,28 @@ try {
     );
   }
   const lc = resolve('artifacts/offline-lc.html');
+  await page.goto(pathToFileURL(join(consumer, 'artifacts/review/index.html')).href);
+  const transition = page.locator('[data-play-cue]');
+  const end = Number(await transition.getAttribute('data-end'));
+  await transition.click();
+  const playingScene = page.frameLocator('#playback iframe').locator('.ve-scene');
+  await playingScene.waitFor();
+  await page.waitForFunction(() => {
+    const doc = document.querySelector('#playback iframe').contentDocument;
+    return doc.querySelector('audio')?.paused === false;
+  });
+  await page.waitForFunction(() =>
+    document.querySelector('#playback [role=status]').textContent.includes('завершён'),
+  );
+  assert(
+    Math.abs((await playingScene.locator('audio').evaluate((audio) => audio.currentTime)) - end) <
+      0.001,
+  );
+  assert.equal(await playingScene.locator('audio').evaluate((audio) => audio.paused), true);
+  await page.locator('#playback [data-close]').click();
+  await transition.click();
+  await page.locator('#playback [data-close]').click();
+  assert.equal(await playingScene.locator('audio').evaluate((audio) => audio.paused), true);
   await writeFile(lc, await standalone('lc-oscillator'));
   await page.goto(pathToFileURL(lc).href);
   await page.waitForFunction(() => !document.querySelector('[data-seek]')?.disabled);
@@ -123,7 +155,8 @@ try {
   await page.locator('[data-play]').click();
   const report = {
     consumer: 'created, installed, built and rendered',
-    review: 'installed CLI captured a narrated operation with distinct intermediate frames',
+    review:
+      'installed CLI captures frames and plays the real narrated transition offline; end and close pause it',
     offline: 'narration, compact HTML, LC native SVG seek and 3D work without network',
     inlineBytes: Buffer.byteLength(compact),
     silent: 'same clock/player, sound control hidden',
