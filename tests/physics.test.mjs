@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { world2D } from '../dist/physics/world2d.js';
 import { world3D } from '../dist/physics/world3d.js';
 import { meshSurface } from '../dist/physics/mesh-surface.js';
-import { SphereGeometry } from 'three';
+import { meshPose } from '../dist/physics/mesh-pose.js';
+import { SphereGeometry, BoxGeometry, Mesh, Group, Vector3, Quaternion } from 'three';
 
 for (const dimension of [2, 3]) {
   const create = dimension === 2 ? world2D : world3D;
@@ -68,6 +69,36 @@ for (const dimension of [2, 3]) {
       world.dispose();
     }
   });
+  test(`${dimension}D removing a body releases its springs once and leaves the world usable`, async () => {
+    const world = await create({ gravity: point(0, 0) });
+    const a = world.body('anchor', { shape: ball, fixed: true });
+    const b = world.body('weight', { shape: ball, at: point(2, 0), material: 'jelly' });
+    const spring = world.spring(a, b, { length: 1, damping: 0 });
+    world.step(30);
+    assert.ok(b.position[0] < 2, 'the joint transfers force to deformable material');
+    let removed = 0;
+    b.onDispose(() => {
+      removed++;
+      b.dispose();
+    });
+    b.dispose();
+    b.dispose();
+    spring.dispose();
+    assert.equal(removed, 1);
+    assert.equal(b.disposed, true);
+    assert.equal(world.size, 1);
+    assert.equal(world.raw.impulseJoints.len(), 0);
+    assert.throws(() => b.impulse(point(1, 0)), /removed/);
+    const replacement = world.body('weight', { shape: ball, at: point(2, 0) });
+    const next = world.spring(a, replacement);
+    world.step();
+    world.dispose();
+    next.dispose();
+    replacement.dispose();
+    world.dispose();
+    assert.equal(replacement.disposed, true);
+    assert.throws(() => world.onRender(() => {}), /disposed/);
+  });
 }
 
 test('a standard Three sphere joins physics seams while retaining original visual vertices', async () => {
@@ -94,4 +125,38 @@ test('a standard Three sphere joins physics seams while retaining original visua
     world.dispose();
     geometry.dispose();
   }
+});
+
+test('a rigid pose preserves world-space vertices inside a rotated, stretched parent', () => {
+  const parent = new Group(),
+    mesh = new Mesh(new BoxGeometry(1, 2, 3));
+  parent.scale.set(2, 0.7, 1.4);
+  parent.rotation.set(0.2, 0.4, 0.1);
+  parent.position.set(3, 2, 1);
+  mesh.position.set(1, 2, -1);
+  mesh.rotation.set(0.3, 0.7, 0.2);
+  parent.add(mesh);
+  mesh.updateWorldMatrix(true, false);
+  const before = mesh.matrixWorld.clone(),
+    origin = mesh.getWorldPosition(new Vector3());
+  const pose = meshPose(mesh);
+  const position = new Vector3(4, 5, 6),
+    rotation = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), 0.9);
+  pose.update(position, rotation);
+  mesh.updateWorldMatrix(true, false);
+  const vertices = mesh.geometry.getAttribute('position');
+  for (let i = 0; i < vertices.count; i++) {
+    const vertex = new Vector3().fromBufferAttribute(vertices, i);
+    const expected = vertex
+      .clone()
+      .applyMatrix4(before)
+      .sub(origin)
+      .applyQuaternion(rotation)
+      .add(position);
+    assert.ok(vertex.applyMatrix4(mesh.matrixWorld).distanceTo(expected) < 1e-10);
+  }
+  pose.dispose();
+  assert.equal(mesh.matrixAutoUpdate, true);
+  mesh.geometry.dispose();
+  mesh.material.dispose();
 });

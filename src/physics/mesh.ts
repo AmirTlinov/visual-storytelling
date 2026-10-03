@@ -3,11 +3,20 @@ import { Mesh, Vector2, Vector3, Quaternion, Matrix4, Raycaster, Plane } from 't
 import type { Viewport3D } from '../viewport/three.js';
 import type { World3D, Body3D, BodyOptions3D } from './world3d.js';
 import { pointerGrab } from './grab.js';
+import { deformableGrip } from './deformable-grip.js';
 import { meshSurface } from './mesh-surface.js';
+import { meshPose } from './mesh-pose.js';
 
 type View = ReturnType<typeof Viewport3D.mount>;
+const owners = new WeakMap<Mesh, Body3D>();
+const views = new WeakSet<View>();
 /** Existing geometry, materials, children and labels stay owned by their original view. */
 export function physicalMeshes(world: World3D, view: View) {
+  if (world.disposed) throw new Error('Physics world has been disposed');
+  if (views.has(view)) throw new Error('A 3D viewport can have only one physics binding');
+  let disposed = false;
+  const offView = view.onDispose(dispose);
+  views.add(view);
   const bindings = new Map<Mesh, Body3D>(),
     cleanups = new Set<() => void>();
   const draggable = new Set<Mesh>();
@@ -25,10 +34,17 @@ export function physicalMeshes(world: World3D, view: View) {
   const grab = pointerGrab(
     view.renderer.domElement,
     (event) => {
-      const hit = ray(event).intersectObjects([...draggable], false)[0];
+      const hit = ray(event)
+        .intersectObjects([...bindings.keys()], false)
+        .find(({ object }) => {
+          for (let node: typeof object | null = object; node; node = node.parent)
+            if (!node.visible) return false;
+          return true;
+        });
       if (!hit) return;
+      if (!draggable.has(hit.object as Mesh)) return;
       const physical = bindings.get(hit.object as Mesh)!;
-      return physical.fixed ? undefined : { physical, point: hit.point };
+      return { physical, point: hit.point };
     },
     ({ physical, point: initial }, event) => {
       const oldControls = view.controls.enabled;
@@ -45,27 +61,13 @@ export function physicalMeshes(world: World3D, view: View) {
       move(event);
       const soft = physical.soft;
       if (soft) {
-        let nearest = 0,
-          best = Infinity;
-        for (let i = 0; i < soft.numParticles(); i++) {
-          const p = soft.particlePosition(i),
-            d = (p.x - point.x) ** 2 + (p.y - point.y) ** 2 + (p.z - point.z) ** 2;
-          if (d < best) {
-            nearest = i;
-            best = d;
-          }
-        }
-        const pinned = soft.isParticlePinned(nearest);
-        soft.setParticlePinned(nearest, true);
-        const stop = world.beforeStep(() =>
-          physical.soft?.setParticleKinematicTarget(nearest, point),
-        );
-        world.wake();
+        const release = deformableGrip(world, soft, () => point);
+        const off = physical.onDispose(grab.release);
         return {
           move,
           release() {
-            stop();
-            physical.soft?.setParticlePinned(nearest, pinned);
+            off();
+            release();
             view.controls.enabled = oldControls;
           },
         };
@@ -87,10 +89,12 @@ export function physicalMeshes(world: World3D, view: View) {
         true,
       );
       const stop = world.beforeStep(() => cursor.setNextKinematicTranslation(point));
+      const off = physical.onDispose(grab.release);
       world.wake();
       return {
         move,
         release() {
+          off();
           stop();
           world.raw.removeImpulseJoint(joint, true);
           world.raw.removeRigidBody(cursor);
@@ -104,10 +108,10 @@ export function physicalMeshes(world: World3D, view: View) {
     mesh: Mesh,
     options: Omit<BodyOptions3D, 'shape' | 'at'> & { cellSize?: number; draggable?: boolean } = {},
   ) {
-    if (bindings.has(mesh)) throw new Error('A mesh can have only one physical owner');
+    if (disposed) throw new Error('Physical mesh binding has been disposed');
+    if (owners.has(mesh)) throw new Error('A mesh can have only one physical owner');
     mesh.updateWorldMatrix(true, false);
     const initialPosition = mesh.getWorldPosition(new Vector3());
-    const initialRotation = mesh.getWorldQuaternion(new Quaternion());
     const attribute = mesh.geometry.getAttribute('position');
     const vertices = new Float32Array(attribute.count * 3),
       v = new Vector3();
@@ -125,20 +129,16 @@ export function physicalMeshes(world: World3D, view: View) {
       shape: { vertices: surface.vertices, indices: surface.indices, cellSize: options.cellSize },
     });
     bindings.set(mesh, physical);
+    owners.set(mesh, physical);
     if (!physical.fixed && options.draggable !== false) draggable.add(mesh);
     const original = mesh.geometry;
     if (physical.soft) mesh.geometry = original.clone();
-    const inverse = new Matrix4(),
-      q = new Quaternion(),
-      parentQ = new Quaternion();
+    const pose = meshPose(mesh),
+      inverse = new Matrix4();
     const stop = world.onRender(() => {
       const p = physical.rigid.translation(),
         rotation = physical.rigid.rotation();
-      mesh.position.set(p.x, p.y, p.z);
-      if (mesh.parent) mesh.parent.worldToLocal(mesh.position);
-      q.set(rotation.x, rotation.y, rotation.z, rotation.w).multiply(initialRotation);
-      if (mesh.parent) q.premultiply(mesh.parent.getWorldQuaternion(parentQ).invert());
-      mesh.quaternion.copy(q);
+      pose.update(p, rotation);
       const soft = physical.soft;
       if (soft) {
         const positions = soft.meshVertices(0);
@@ -158,28 +158,43 @@ export function physicalMeshes(world: World3D, view: View) {
       }
       view.invalidate();
     });
-    const coreDispose = physical.dispose;
-    function dispose() {
-      grab.release();
+    physical.onDispose(cleanup);
+    function cleanup() {
       stop();
+      pose.dispose();
       bindings.delete(mesh);
+      owners.delete(mesh);
       draggable.delete(mesh);
       if (mesh.geometry !== original) {
         mesh.geometry.dispose();
         mesh.geometry = original;
       }
-      coreDispose();
-      cleanups.delete(dispose);
+      cleanups.delete(physical.dispose);
+      view.invalidate();
     }
-    cleanups.add(dispose);
-    return Object.assign(physical, { mesh, dispose });
+    cleanups.add(physical.dispose);
+    return Object.assign(physical, { mesh });
   }
   const off = world.onDispose(dispose);
+  const stopRemoval = view.beforeRemove((root) => {
+    for (const [mesh, physical] of bindings) {
+      for (let node: typeof mesh.parent = mesh; node; node = node.parent)
+        if (node === root) {
+          physical.dispose();
+          break;
+        }
+    }
+  });
   const stopCheckpoint = world.beforeCheckpoint(grab.release);
   function dispose() {
+    if (disposed) return;
+    disposed = true;
+    views.delete(view);
     grab.dispose();
     for (const cleanup of [...cleanups]) cleanup();
     off();
+    offView();
+    stopRemoval();
     stopCheckpoint();
   }
   return { body, dispose };

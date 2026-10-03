@@ -58,7 +58,7 @@ function trace(elements: SVGPathElement[], amount: number) {
     at = clamp(amount) * total;
   let cursor = 0;
   elements.forEach((e, i) => {
-    draw(e, (at - cursor) / weights[i]!);
+    draw(e, weights[i]! > 0 ? (at - cursor) / weights[i]! : Number(at >= cursor));
     cursor += weights[i]!;
   });
 }

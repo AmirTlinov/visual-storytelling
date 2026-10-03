@@ -159,11 +159,24 @@ export function projectedLabels(
         },
       };
     },
-    dispose() {
-      for (const item of labels) item.annotation.remove();
-      labels.clear();
-      for (const item of surfaces) item.remove();
-      surfaces.clear();
+    dispose(root?: T.Object3D) {
+      const belongs = (anchor: LabelAnchor) => {
+        if (!root) return true;
+        if (typeof anchor === 'function') return false;
+        for (let node: T.Object3D | null = anchor; node; node = node.parent)
+          if (node === root) return true;
+        return false;
+      };
+      for (const item of labels)
+        if (belongs(item.anchor)) {
+          item.annotation.remove();
+          labels.delete(item);
+        }
+      for (const item of surfaces)
+        if (belongs(item.object)) {
+          item.remove();
+          surfaces.delete(item);
+        }
     },
   };
 }

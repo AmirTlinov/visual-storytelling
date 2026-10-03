@@ -50,6 +50,7 @@ window.galleryReady = (async () => {
     scene: {
       world,
       bodies,
+      view: drawing,
       duration: 5,
       pause: player.pause,
       seek(time: number) {

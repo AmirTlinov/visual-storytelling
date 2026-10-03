@@ -11,6 +11,121 @@ const state = (page) => page.evaluate(() => document.querySelector('.ve-scene').
 const seek = (page, time) =>
   page.evaluate((t) => document.querySelector('.ve-scene').scene.seek(t), time);
 
+test('ink deformation preserves a partial stroke reveal and releases removed drawing ids', async ({
+  page,
+}) => {
+  await ready(page, 'index');
+  const result = await page.evaluate(() => {
+    const { view } = document.querySelector('.ve-scene').scene;
+    const drawing = view.pen.line(view.layer, 'changing-line', [0, 0], [80, 0]);
+    drawing.reveal(0.4);
+    const path = drawing.element.querySelector('path');
+    const ratio = () => Number(path.style.strokeDashoffset) / path.getTotalLength();
+    const before = ratio();
+    drawing.update('M0 0L240 0');
+    const after = ratio();
+    drawing.update('M0 0L0 0');
+    const collapsed = [...drawing.element.querySelectorAll('path')].every(
+      (path) => !path.style.strokeDashoffset.includes('NaN'),
+    );
+    drawing.element.remove();
+    const replacement = view.pen.line(view.layer, 'changing-line', [0, 0], [80, 0]);
+    const reused = replacement.element.isConnected;
+    replacement.dispose();
+    drawing.dispose();
+    return { before, after, reused, collapsed };
+  });
+  expect(result.after).toBeCloseTo(result.before, 5);
+  expect(result.reused).toBe(true);
+  expect(result.collapsed).toBe(true);
+});
+
+for (const file of ['index', 'three'])
+  test(`${file}: repeat restores the experiment; removing its view releases physical bodies`, async ({
+    page,
+  }) => {
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await ready(page, file);
+    const initial = await state(page);
+    await seek(page, 3);
+    await page.evaluate(() => {
+      const scene = document.querySelector('.ve-scene').scene;
+      for (const body of scene.bodies) body.rigid.sleep();
+      if (!scene.world.sleeping) throw new Error('Expected a settled world');
+      document.querySelector('[data-play]').click();
+      scene.pause(false);
+    });
+    expect(await state(page)).toEqual(initial);
+    const remaining = await page.evaluate(() => {
+      const scene = document.querySelector('.ve-scene').scene;
+      scene.view.dispose();
+      scene.view.dispose();
+      scene.world.step();
+      const state = {
+        bodies: scene.world.size,
+        removed: scene.bodies.every((body) => body.disposed),
+      };
+      scene.dispose();
+      return state;
+    });
+    expect(remaining).toEqual({ bodies: 0, removed: true });
+    expect(errors).toEqual([]);
+  });
+
+test('removing another body preserves a 3D grab; removing the grabbed body restores the camera', async ({
+  page,
+}) => {
+  await ready(page, 'three');
+  await seek(page, 2);
+  const point = await page.evaluate(() => {
+    const scene = document.querySelector('.ve-scene').scene;
+    for (const body of scene.bodies) body.rigid.sleep();
+    const p = scene.bodies[2].mesh.position.clone().project(scene.view.camera);
+    const rect = scene.view.renderer.domElement.getBoundingClientRect();
+    return { x: rect.x + ((p.x + 1) * rect.width) / 2, y: rect.y + ((1 - p.y) * rect.height) / 2 };
+  });
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.down();
+  expect(
+    await page.evaluate(() => document.querySelector('.ve-scene').scene.world.time),
+  ).toBeGreaterThan(1.99);
+  expect(
+    await page.evaluate(() => {
+      const scene = document.querySelector('.ve-scene').scene;
+      scene.bodies[0].dispose();
+      return scene.view.controls.enabled;
+    }),
+  ).toBe(false);
+  expect(
+    await page.evaluate(() => {
+      const scene = document.querySelector('.ve-scene').scene;
+      scene.bodies[2].dispose();
+      return scene.view.controls.enabled;
+    }),
+  ).toBe(true);
+  await page.mouse.up();
+  await page.evaluate(() => document.querySelector('.ve-scene').scene.dispose());
+});
+
+test('replacing the 3D subject releases its physics and attached annotations', async ({ page }) => {
+  await ready(page, 'three');
+  const result = await page.evaluate(() => {
+    const scene = document.querySelector('.ve-scene').scene;
+    const original = scene.bodies[0].mesh;
+    const next = new original.constructor(original.geometry.clone(), original.material.clone());
+    scene.view.setObject(next);
+    scene.world.step();
+    return {
+      bodies: scene.world.size,
+      removed: scene.bodies.every((body) => body.disposed),
+      annotations: document.querySelectorAll('.ve-label,.ve-surface-label').length,
+    };
+  });
+  expect(result).toEqual({ bodies: 0, removed: true, annotations: 0 });
+  await page.evaluate(() => document.querySelector('.ve-scene').scene.dispose());
+});
+
 test('physical ink keeps its material through grabs, keyboard input, pause and reset', async ({
   page,
 }) => {

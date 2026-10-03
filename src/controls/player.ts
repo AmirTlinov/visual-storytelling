@@ -7,6 +7,7 @@ export const formatTime = (seconds: number) =>
 export interface PlayerOptions {
   transport: Transport;
   stops?: readonly number[];
+  captions?: { element: HTMLElement; segments: readonly { start: number; text: string }[] };
   onSeek?: (time: number) => void;
   onPlay?: () => void;
 }
@@ -63,6 +64,11 @@ export function player(parent: HTMLElement, options: PlayerOptions) {
       muted: state.muted,
     });
     error.textContent = state.error;
+    if (options.captions) {
+      const { element, segments } = options.captions;
+      const text = segments.findLast((segment) => segment.start <= state.time)?.text ?? '';
+      if (element.textContent !== text) element.textContent = text;
+    }
   });
   return {
     element,

@@ -16,6 +16,8 @@ export interface SurfaceOptions {
 }
 
 export function surface(parent: HTMLElement, options: SurfaceOptions) {
+  const cleanups = new Set<() => void>();
+  let disposed = false;
   if (!/^[a-zA-Z][\w-]*$/.test(options.id) || document.getElementById(options.id))
     throw new Error('Surface id must be valid and unique in the document');
   const element = svg('svg', {
@@ -74,7 +76,18 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
     pen: pen(element),
     resize,
     grid: drawGrid,
+    onDispose(cleanup: () => void) {
+      if (disposed) throw new Error('Drawing surface has been disposed');
+      cleanups.add(cleanup);
+      return () => {
+        cleanups.delete(cleanup);
+      };
+    },
     dispose() {
+      if (disposed) return;
+      disposed = true;
+      for (const cleanup of [...cleanups]) cleanup();
+      cleanups.clear();
       element.remove();
     },
   };

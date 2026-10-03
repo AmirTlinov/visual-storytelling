@@ -1,5 +1,7 @@
 import R from '@dimforge/rapier3d-compat';
 import { physicsRuntime } from './runtime.js';
+import { bodyLifetime } from './body.js';
+import { springSettings, springLifetime, type SpringOptions } from './spring.js';
 import { coordinates, material, positive, type MaterialChoice } from './materials.js';
 
 export type Vec3 = readonly [number, number, number];
@@ -19,6 +21,8 @@ export interface Body3D {
   readonly world: ReturnType<typeof physicsRuntime<R.World>>;
   readonly shape: Shape3D;
   readonly fixed: boolean;
+  readonly disposed: boolean;
+  onDispose(cleanup: () => void): () => void;
   readonly rigid: R.RigidBody;
   readonly soft: R.SoftBody | undefined;
   readonly position: Vec3;
@@ -57,9 +61,10 @@ export async function world3D({ gravity = [0, -9.81, 0] as Vec3 } = {}) {
     } else {
       const { vertices, indices } = options.shape;
       if (
-        vertices.length < 12 ||
+        vertices.length < 9 ||
         vertices.length % 3 ||
         !vertices.every(Number.isFinite) ||
+        indices.length < 3 ||
         indices.length % 3 ||
         indices.some((index) => index >= vertices.length / 3)
       )
@@ -104,24 +109,32 @@ export async function world3D({ gravity = [0, -9.81, 0] as Vec3 } = {}) {
           .setAngularDamping(0.15)
           .setCcdEnabled(!options.fixed),
       );
-      runtime.raw.createCollider(collider, r);
+      try {
+        runtime.raw.createCollider(collider, r);
+      } catch (error) {
+        runtime.raw.removeRigidBody(r);
+        throw error;
+      }
       rigidHandle = r.handle;
     }
-    let removed = false;
-    const requireBody = () => {
-      if (removed) throw new Error(`Physical body was removed: ${id}`);
-    };
+    const life = bodyLifetime(runtime, id, {
+      awake: () => !result.fixed && !(result.soft ?? result.rigid).isSleeping(),
+      remove() {
+        if (result.soft) runtime.raw.removeSoftBody(result.soft);
+        else runtime.raw.removeRigidBody(result.rigid);
+      },
+    });
     const result: Body3D = {
       id,
       world: runtime,
       shape: options.shape,
       fixed: options.fixed ?? false,
       get rigid() {
-        requireBody();
+        life.assertLive();
         return runtime.raw.getRigidBody(rigidHandle);
       },
       get soft() {
-        requireBody();
+        life.assertLive();
         return softHandle === undefined ? undefined : runtime.raw.getSoftBody(softHandle);
       },
       get position(): Vec3 {
@@ -132,54 +145,29 @@ export async function world3D({ gravity = [0, -9.81, 0] as Vec3 } = {}) {
         (result.soft ?? result.rigid).applyImpulse(vector(value), true);
         runtime.wake();
       },
-      dispose() {
-        if (removed) return;
-        if (result.soft) runtime.raw.removeSoftBody(result.soft);
-        else runtime.raw.removeRigidBody(result.rigid);
-        removed = true;
-        untrack();
-        runtime.sync();
+      get disposed() {
+        return life.disposed;
       },
+      onDispose: life.onDispose,
+      dispose: life.dispose,
     };
-    const untrack = runtime.track(id, {
-      awake: () => !result.fixed && !(result.soft ?? result.rigid).isSleeping(),
-      dispose: result.dispose,
-    });
     return result;
   }
-  function spring(
-    a: Body3D,
-    b: Body3D,
-    options: { length?: number; stiffness?: number; damping?: number } = {},
-  ) {
+  function spring(a: Body3D, b: Body3D, options: SpringOptions = {}) {
     if (a.world !== runtime || b.world !== runtime)
       throw new Error('A spring connects bodies in the same world');
-    const length = options.length ?? Math.hypot(...a.position.map((v, i) => v - b.position[i]!));
-    if (!Number.isFinite(length) || length < 0)
-      throw new Error('Spring length must be non-negative');
+    const { length, stiffness, damping } = springSettings(a.position, b.position, options);
     const joint = runtime.raw.createImpulseJoint(
-      R.JointData.spring(
-        length,
-        positive(options.stiffness ?? 30, 'Spring stiffness'),
-        positive(options.damping ?? 3, 'Spring damping'),
-        { x: 0, y: 0, z: 0 },
-        { x: 0, y: 0, z: 0 },
-      ),
+      R.JointData.spring(length, stiffness, damping, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }),
       a.rigid,
       b.rigid,
       true,
     );
     const handle = joint.handle;
-    runtime.topologyChanged();
-    return {
-      dispose() {
-        const j = runtime.raw.getImpulseJoint(handle);
-        if (j) {
-          runtime.raw.removeImpulseJoint(j, true);
-          runtime.topologyChanged();
-        }
-      },
-    };
+    return springLifetime(runtime, [a, b], () => {
+      const current = runtime.raw.getImpulseJoint(handle);
+      if (current) runtime.raw.removeImpulseJoint(current, true);
+    });
   }
   return Object.assign(runtime, { body, spring });
 }

@@ -1,4 +1,10 @@
-import { SketchMotion, SvgLayout, SketchPlayer, rough } from '@visual-storytelling/core';
+import {
+  SketchMotion,
+  SvgLayout,
+  story,
+  player as storyPlayer,
+  rough,
+} from '@visual-storytelling/core';
 import narrationTiming from './timeline.json' with { type: 'json' };
 window.galleryReady = (async () => {
   const root = document.getElementById('ve-scene');
@@ -175,9 +181,9 @@ window.galleryReady = (async () => {
       node.textContent = String(value);
     }
   }
-  function render(t, clock, reduced) {
-    const frame = clock.at(t, reduced),
-      p = frame.reveal;
+  function render(frame) {
+    const { time: t, reduced } = frame;
+    const p = frame.reveal;
     const paperFocus = frame.between('unit', 'unit_square');
     const unitFocus = frame.between('unit_square', 'first_row');
     const recapFocus = frame.has('recap_unit');
@@ -217,7 +223,7 @@ window.galleryReady = (async () => {
     show(
       widthSide,
       (frame.has('width_side') && !frame.has('area_question')) ||
-        (frame.has('answer_width') && t <= clock.cue('answer_width').end),
+        (frame.has('answer_width') && t <= frame.cue('answer_width').end),
     );
     tiles.forEach(({ group, shape, fill, digit }, i) => {
       const r = Math.floor(i / model.columns),
@@ -268,8 +274,8 @@ window.galleryReady = (async () => {
     write(
       sumParts.at(-2),
       progress(
-        clock.cue('sum_four').end,
-        clock.cue('sum_result').start - clock.cue('sum_four').end,
+        frame.cue('sum_four').end,
+        frame.cue('sum_result').start - frame.cue('sum_four').end,
         t,
         reduced,
       ),
@@ -401,27 +407,34 @@ window.galleryReady = (async () => {
     listen = { signal: abort.signal };
   root.querySelector('[data-numbers]').addEventListener('click', () => mode(false), listen);
   root.querySelector('[data-formulas]').addEventListener('click', () => mode(true), listen);
-  player = SketchPlayer.mount(root, {
-    audio,
-    timing,
-    render,
-    stops: [
-      { time: 0, label: 'Прямоугольник: 4 см в высоту, 5 см в ширину' },
-      { time: C.unit.start, label: '1 см² — квадрат из 2 × 2 клеток бумаги' },
-      { time: C.first_row.start, label: 'Считаем первый ряд: 1, 2, 3, 4, 5' },
-      { time: C.more_rows.start, label: 'Четыре одинаковых ряда по пять квадратиков' },
-      { time: C.count_rows.start, label: 'Считаем рядами: 5, 10, 15, 20' },
-      { time: C.addition.start, label: '5 + 5 + 5 + 5 = 20' },
-      { time: C.multiply.start, label: '4 раза по 5 → 4 × 5 = 20' },
-      { time: C.answer.start, label: 'Площадь равна 20 см²: 20 квадратов по 2 × 2 клетки' },
-    ],
+  player = story({ script: timing, audio, stateAt: (frame) => frame, render });
+  const stops = [
+    { time: 0, label: 'Прямоугольник: 4 см в высоту, 5 см в ширину' },
+    { time: C.unit.start, label: '1 см² — квадрат из 2 × 2 клеток бумаги' },
+    { time: C.first_row.start, label: 'Считаем первый ряд: 1, 2, 3, 4, 5' },
+    { time: C.more_rows.start, label: 'Четыре одинаковых ряда по пять квадратиков' },
+    { time: C.count_rows.start, label: 'Считаем рядами: 5, 10, 15, 20' },
+    { time: C.addition.start, label: '5 + 5 + 5 + 5 = 20' },
+    { time: C.multiply.start, label: '4 раза по 5 → 4 × 5 = 20' },
+    { time: C.answer.start, label: 'Площадь равна 20 см²: 20 квадратов по 2 × 2 клетки' },
+  ];
+  const ui = storyPlayer(root.querySelector('[data-player]'), {
+    transport: player.player,
+    stops: stops.map((stop) => stop.time),
+    onSeek: player.seek,
+    captions: {
+      element: root.querySelector('[data-caption]'),
+      segments: stops.map(({ time, label }) => ({ start: time, text: label })),
+    },
   });
   root.scene = {
+    duration: timing.duration,
     seek: player.seek,
     pause: player.pause,
     review: player.review,
     dispose() {
       abort.abort();
+      ui.dispose();
       player.dispose();
       measured.dispose();
       root.replaceChildren();

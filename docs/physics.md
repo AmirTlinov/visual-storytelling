@@ -8,10 +8,17 @@ import { Physics2D, PhysicsPlayer } from '@visual-storytelling/core/physics/2d';
 const world = await Physics2D.create();
 const ink = Physics2D.ink(world, drawing, { scale: 100 }); // drawing — существующий surface
 ink.body('floor', {
-  shape: { box: [8, 0.16] }, at: [4, 3], fixed: true, pigment: 'ink',
+  shape: { box: [8, 0.16] },
+  at: [4, 3],
+  fixed: true,
+  pigment: 'ink',
 });
 const drop = ink.body('drop', {
-  shape: { circle: 0.4 }, at: [4, 1], material: 'jelly', pigment: 'blue', label: 'm',
+  shape: { circle: 0.4 },
+  at: [4, 1],
+  material: 'jelly',
+  pigment: 'blue',
+  label: 'm',
 });
 const player = PhysicsPlayer.mount(playerElement, world);
 drop.impulse([0.5, -1]); // автоматически запускает плеер
@@ -38,6 +45,8 @@ const player = PhysicsPlayer.mount(playerElement, world);
 
 `world.snapshot()` / `world.restore(snapshot)` дают повтор того же мира с тем же набором тел и связей. Создание и восстановление снимка освобождают текущий захват, исключая временные связи курсора. Для произвольного времени объяснения восстанови исходный снимок и вызови `world.step(Math.round(time * 120))`. Снимки содержат состояние WASM и предназначены для этой сессии.
 
-`world.dispose()` удаляет физику, привязки и её плеер. Поверхность SVG или `Viewport3D` освобождает их владелец. `body.dispose()` и `spring.dispose()` удаляют отдельный объект или связь. Слияние контуров и морфинг задаются через `InkFusion`; физический слой отвечает за контакт, упругость и деформацию с сохранением тел.
+Мир имеет один `PhysicsPlayer`, поверхность — одну физическую привязку, Mesh — одно физическое тело. Повтор восстанавливает начальный снимок; изменение состава тел или связей задаёт новое начальное состояние при следующем запуске или сбросе.
+
+`world.dispose()` удаляет физику, привязки и её плеер. Удаление SVG-поверхности, `Viewport3D` или замена его объекта освобождает связанные тела. `body.dispose()` также отпускает захват и удаляет пружины этого тела; `spring.dispose()` снимает отдельную связь. Повторное удаление безопасно. Для собственных ресурсов есть `body.onDispose(cleanup)` и `view.onDispose(cleanup)`. Слияние контуров и морфинг задаются через `InkFusion`; физический слой отвечает за контакт, упругость и деформацию с сохранением тел.
 
 Проверка: после `npm run build` — `node --test tests/physics.test.mjs` и `npx playwright test tests/browser/physics.spec.js`.

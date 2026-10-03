@@ -172,6 +172,7 @@ function mount(
     const ui = statePlayer(controls, {
       transport: controller.player,
       stops: controller.sheet.script.segments?.map((s) => s.start),
+      captions: { element: caption, segments: controller.sheet.script.segments ?? [] },
       onSeek: controller.seek,
       onPlay: () => {
         if (controller.currentTime >= controller.duration - 0.02) view?.reset();
@@ -207,11 +208,6 @@ function mount(
       for (const { key } of parameters) values[key] = (state as Record<string, ControlValue>)[key]!;
       refresh();
       chapters.update(controller.currentTime);
-      const spoken =
-        controller.sheet.script.segments?.findLast(
-          (segment) => segment.start <= controller.currentTime,
-        )?.text ?? '';
-      if (caption.textContent !== spoken) caption.textContent = spoken;
     });
     setMode('story');
     Object.assign(root, {

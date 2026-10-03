@@ -5,11 +5,18 @@ import type { Pigment } from '../ink/palette.js';
 import type { Surface } from '../ink/surface.js';
 import { positive } from './materials.js';
 import { pointerGrab } from './grab.js';
+import { deformableGrip } from './deformable-grip.js';
 import type { World2D, Body2D, BodyOptions2D } from './world2d.js';
 
+const owners = new WeakSet<Surface>();
 /** SVG drawing and collider share one shape. Units are metres; scale is pixels/metre. */
 export function physicalInk(world: World2D, view: Surface, { scale = 80 } = {}) {
   positive(scale, 'Drawing scale');
+  if (world.disposed) throw new Error('Physics world has been disposed');
+  if (owners.has(view)) throw new Error('A drawing surface can have only one physics binding');
+  let disposed = false;
+  const offView = view.onDispose(dispose);
+  owners.add(view);
   const bindings = new Map<string, Body2D>();
   const cleanups = new Set<() => void>();
   const fromPointer = (event: PointerEvent) => {
@@ -31,28 +38,16 @@ export function physicalInk(world: World2D, view: Surface, { scale = 80 } = {}) 
       let point = fromPointer(event);
       const soft = body.soft;
       if (soft) {
-        let nearest = 0,
-          best = Infinity;
-        for (let i = 0; i < soft.numParticles(); i++) {
-          const p = soft.particlePosition(i),
-            d = (p.x - point.x) ** 2 + (p.y - point.y) ** 2;
-          if (d < best) {
-            nearest = i;
-            best = d;
-          }
-        }
-        const pinned = soft.isParticlePinned(nearest);
-        soft.setParticlePinned(nearest, true);
-        const stop = world.beforeStep(() => body.soft?.setParticleKinematicTarget(nearest, point));
-        world.wake();
+        const release = deformableGrip(world, soft, () => point);
+        const off = body.onDispose(grab.release);
         return {
           move(e) {
             point = fromPointer(e);
             world.wake();
           },
           release() {
-            stop();
-            body.soft?.setParticlePinned(nearest, pinned);
+            off();
+            release();
           },
         };
       }
@@ -75,6 +70,7 @@ export function physicalInk(world: World2D, view: Surface, { scale = 80 } = {}) 
         true,
       );
       const stop = world.beforeStep(() => cursor.setNextKinematicTranslation(point));
+      const off = body.onDispose(grab.release);
       world.wake();
       return {
         move(e) {
@@ -82,6 +78,7 @@ export function physicalInk(world: World2D, view: Surface, { scale = 80 } = {}) 
           world.wake();
         },
         release() {
+          off();
           stop();
           world.raw.removeImpulseJoint(joint, true);
           world.raw.removeRigidBody(cursor);
@@ -93,6 +90,7 @@ export function physicalInk(world: World2D, view: Surface, { scale = 80 } = {}) 
     id: string,
     options: BodyOptions2D & { pigment?: Pigment; label?: string; draggable?: boolean },
   ) {
+    if (disposed) throw new Error('Physical ink binding has been disposed');
     const physical = world.body(id, options);
     const mark = object(view.layer, `physics-${id}`, options.pigment ?? 'blue');
     if (!physical.fixed && options.draggable !== false) {
@@ -178,27 +176,29 @@ export function physicalInk(world: World2D, view: Surface, { scale = 80 } = {}) 
         height: Math.max(...ys) - minY,
       });
     });
-    const coreDispose = physical.dispose;
-    function dispose() {
-      grab.release();
+    physical.onDispose(cleanup);
+    function cleanup() {
       stop();
       bindings.delete(id);
       mark.element.removeEventListener('keydown', keys);
       label?.dispose();
       drawing.dispose();
       mark.dispose();
-      coreDispose();
-      cleanups.delete(dispose);
+      cleanups.delete(physical.dispose);
     }
-    cleanups.add(dispose);
-    return Object.assign(physical, { mark, label, dispose });
+    cleanups.add(physical.dispose);
+    return Object.assign(physical, { mark, label });
   }
   const off = world.onDispose(dispose);
   const stopCheckpoint = world.beforeCheckpoint(grab.release);
   function dispose() {
+    if (disposed) return;
+    disposed = true;
+    owners.delete(view);
     grab.dispose();
     for (const cleanup of [...cleanups]) cleanup();
     off();
+    offView();
     stopCheckpoint();
   }
   return { body, dispose };

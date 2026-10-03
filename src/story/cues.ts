@@ -25,6 +25,7 @@ export interface Script<K extends string = string> {
 export interface Frame<K extends string = string> {
   time: number;
   reduced: boolean;
+  cue(id: K): Cue;
   progress(id: K): number;
   reveal(id: K): number;
   has(id: K): boolean;
@@ -121,6 +122,7 @@ export function cueSheet<K extends string>(script: Script<K>) {
       return {
         time,
         reduced,
+        cue: get,
         progress: amount,
         reveal(id) {
           return reduced ? Number(time >= get(id).start) : amount(id);

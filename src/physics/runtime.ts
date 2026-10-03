@@ -25,7 +25,8 @@ export function physicsRuntime<W extends SnapshotWorld>(
     time = 0,
     remainder = 0,
     revision = 0,
-    disposed = false;
+    disposed = false,
+    disposing = false;
   const owner = {},
     participants = new Map<string, Participant>();
   const renders = new Set<() => void>(),
@@ -39,7 +40,7 @@ export function physicsRuntime<W extends SnapshotWorld>(
     if (disposed) throw new Error('Physics world has been disposed');
   }
   function sync() {
-    if (!disposed) for (const render of renders) render();
+    if (!disposed && !disposing) for (const render of renders) render();
   }
   function wake() {
     assertLive();
@@ -67,7 +68,11 @@ export function physicsRuntime<W extends SnapshotWorld>(
     get size() {
       return participants.size;
     },
+    get revision() {
+      return revision;
+    },
     topologyChanged() {
+      assertLive();
       revision++;
     },
     reserve(id: string) {
@@ -124,31 +129,35 @@ export function physicsRuntime<W extends SnapshotWorld>(
     },
     onRender(render: () => void) {
       assertLive();
-      renders.add(render);
       render();
+      renders.add(render);
       return () => {
         renders.delete(render);
       };
     },
     beforeStep(update: () => void) {
+      assertLive();
       beforeStep.add(update);
       return () => {
         beforeStep.delete(update);
       };
     },
     onWake(listener: () => void) {
+      assertLive();
       wakeListeners.add(listener);
       return () => {
         wakeListeners.delete(listener);
       };
     },
     beforeCheckpoint(cancel: () => void) {
+      assertLive();
       checkpointListeners.add(cancel);
       return () => {
         checkpointListeners.delete(cancel);
       };
     },
     onDispose(cleanup: () => void) {
+      assertLive();
       cleanups.add(cleanup);
       return () => {
         cleanups.delete(cleanup);
@@ -157,7 +166,8 @@ export function physicsRuntime<W extends SnapshotWorld>(
     sync,
     wake,
     dispose() {
-      if (disposed) return;
+      if (disposed || disposing) return;
+      disposing = true;
       for (const cleanup of [...cleanups]) cleanup();
       for (const body of [...participants.values()]) body.dispose();
       participants.clear();

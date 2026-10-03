@@ -1,7 +1,8 @@
 import {
   SketchMotion,
   SvgLayout,
-  SketchPlayer,
+  story,
+  player as storyPlayer,
   rough,
   gsap,
   progress,
@@ -103,11 +104,11 @@ window.galleryReady = (async () => {
     'summary_remainder',
   ];
   let animation, player;
-  function render(t, clock, reduced) {
+  function render(frame) {
+    const { time: t, reduced } = frame;
     if (!animation) return;
     animation.time(t, false);
-    const frame = clock.at(t, reduced),
-      p = frame.reveal;
+    const p = frame.reveal;
     const reveal = (shape, amount) => {
       visible(shape, amount > 0);
       trace([...shape.querySelectorAll('path')], amount);
@@ -125,7 +126,7 @@ window.galleryReady = (async () => {
       write(node, p(i ? 'group_name' : 'group_count'));
       visible(node, !frame.has('product_groups'));
     });
-    const grouping = clock.cue('group_action'),
+    const grouping = frame.cue('group_action'),
       groupingDuration = grouping.end - grouping.start;
     groupShapes.forEach(({ shape }, i) => {
       const start = grouping.start + (groupingDuration * 0.4 * i) / (groupsCount - 1);
@@ -148,7 +149,7 @@ window.galleryReady = (async () => {
       shape
         .querySelectorAll('path[stroke]:not([stroke="none"])')
         .forEach((path) => path.setAttribute('stroke', leftover ? colors.orange : colors.blue));
-      const example = i < divisor && frame.has('each_group') && t < clock.cue('each_group').end;
+      const example = i < divisor && frame.has('each_group') && !frame.finished('each_group');
       shape
         .querySelectorAll('path[fill]:not([fill="none"])')
         .forEach((path) =>
@@ -231,24 +232,31 @@ window.galleryReady = (async () => {
     player?.update();
     return groupBottom + 113;
   });
-  player = SketchPlayer.mount(root, {
-    audio,
-    timing,
-    render,
-    stops: [
-      { time: 0, label: 'Откуда берётся остаток?' },
-      { time: C.number.start, label: 'Берём предметы' },
-      { time: C.grouping.start, label: 'Собираем одинаковые группы' },
-      { time: C.product.start, label: 'Считаем полные группы' },
-      { time: C.result.start, label: 'Рассматриваем оставшиеся предметы' },
-      { time: C.summary.start, label: 'Записываем равенство' },
-    ],
+  player = story({ script: timing, audio, stateAt: (frame) => frame, render });
+  const stops = [
+    { time: 0, label: 'Откуда берётся остаток?' },
+    { time: C.number.start, label: 'Берём предметы' },
+    { time: C.grouping.start, label: 'Собираем одинаковые группы' },
+    { time: C.product.start, label: 'Считаем полные группы' },
+    { time: C.result.start, label: 'Рассматриваем оставшиеся предметы' },
+    { time: C.summary.start, label: 'Записываем равенство' },
+  ];
+  const ui = storyPlayer(root.querySelector('[data-player]'), {
+    transport: player.player,
+    stops: stops.map((stop) => stop.time),
+    onSeek: player.seek,
+    captions: {
+      element: root.querySelector('[data-caption]'),
+      segments: stops.map(({ time, label }) => ({ start: time, text: label })),
+    },
   });
   root.scene = {
+    duration: timing.duration,
     seek: player.seek,
     pause: player.pause,
     review: player.review,
     dispose() {
+      ui.dispose();
       player.dispose();
       measured.dispose();
       animation?.kill();

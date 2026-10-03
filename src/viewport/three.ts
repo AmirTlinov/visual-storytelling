@@ -40,6 +40,8 @@ function mount(
   const labels = projectedLabels(stage, camera, scene, ink, release, invalidate, labelInsets);
   const materials = new Map<ColorMaterial, MaterialInk>(),
     palette: Palette = {};
+  const cleanups = new Set<() => void>();
+  const removals = new Set<(object: ThreeKit.Object3D) => void>();
   let pending = 0,
     disposed = false,
     afterRender = () => {};
@@ -282,7 +284,10 @@ function mount(
     },
     setObject(next: ThreeKit.Object3D, { fitView = true } = {}) {
       if (object === next) return;
+      next.removeFromParent();
       if (object) {
+        for (const remove of [...removals]) remove(object);
+        labels.dispose(object);
         scene.remove(object);
         release(object);
       }
@@ -303,8 +308,26 @@ function mount(
     onRender(callback: () => void) {
       afterRender = callback;
     },
+    onDispose(cleanup: () => void) {
+      if (disposed) throw new Error('3D viewport has been disposed');
+      cleanups.add(cleanup);
+      return () => {
+        cleanups.delete(cleanup);
+      };
+    },
+    beforeRemove(cleanup: (object: ThreeKit.Object3D) => void) {
+      if (disposed) throw new Error('3D viewport has been disposed');
+      removals.add(cleanup);
+      return () => {
+        removals.delete(cleanup);
+      };
+    },
     dispose() {
+      if (disposed) return;
       disposed = true;
+      for (const cleanup of [...cleanups]) cleanup();
+      cleanups.clear();
+      removals.clear();
       cancelAnimationFrame(pending);
       abort.abort();
       controls.removeEventListener('change', changed);
@@ -312,9 +335,10 @@ function mount(
       controls.dispose();
       sizeObserver.disconnect();
       themeObserver.disconnect();
-      release(object);
-      renderer.dispose();
       labels.dispose();
+      release(scene);
+      materials.clear();
+      renderer.dispose();
       canvas.remove();
       sample.remove();
     },

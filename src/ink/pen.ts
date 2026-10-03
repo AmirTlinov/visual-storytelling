@@ -29,13 +29,12 @@ export function pen(canvas: SVGSVGElement) {
     canvas.id = id;
   }
   const renderer = rough.svg(canvas);
-  const drawings = new Map<string, SVGGElement>();
   function draw(parent: SVGElement, id: string, path: string, style: PenStyle = {}) {
-    const previous = drawings.get(id);
-    if (previous && canvas.contains(previous)) throw new Error(`Duplicate drawing id: ${id}`);
-    const element = svg('g', { 'data-stroke': id });
+    const key = [...id].map((char) => char.codePointAt(0)!.toString(16)).join('-');
+    const elementId = `${canvas.id}-stroke-${key}`;
+    if (canvas.getElementById(elementId)) throw new Error(`Duplicate drawing id: ${id}`);
+    const element = svg('g', { id: elementId, 'data-stroke': id });
     parent.append(element);
-    drawings.set(id, element);
     const options: Options = {
       seed: seed(id),
       roughness: 0.38,
@@ -56,7 +55,7 @@ export function pen(canvas: SVGSVGElement) {
     let fillPaths: SVGPathElement[] = [];
     let paint = (_progress: number) => {};
     if (fill !== 'none') {
-      const clipId = `${canvas.id}-fill-${[...id].map((char) => char.codePointAt(0)!.toString(16)).join('-')}`;
+      const clipId = `${canvas.id}-fill-${key}`;
       const clip = svg('clipPath', { id: clipId });
       shapeClip = svg('path', { d: path });
       clip.append(shapeClip);
@@ -112,6 +111,7 @@ export function pen(canvas: SVGSVGElement) {
     element.append(outline);
     // Paint order keeps outlines on top; drawing order traces before filling.
     let trace = strokes([...outline.querySelectorAll('path'), ...fillPaths]);
+    let revealed: number | undefined;
     return {
       element,
       /** A moving boundary keeps its seeded pen and marker; callers supply geometric bounds. */
@@ -130,14 +130,15 @@ export function pen(canvas: SVGSVGElement) {
           );
         else outline.replaceChildren(...next.childNodes);
         trace = strokes([...outline.querySelectorAll('path'), ...fillPaths]);
+        if (revealed !== undefined) trace(revealed);
         if (bounds) moveWash(bounds);
       },
       reveal(progress: number) {
+        revealed = progress;
         trace(progress);
         paint(progress);
       },
       dispose() {
-        if (drawings.get(id) === element) drawings.delete(id);
         element.remove();
       },
     };

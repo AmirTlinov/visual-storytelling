@@ -1,5 +1,5 @@
 import { SilentMedia } from './media.js';
-import { timeline, type MediaClock, type Timing } from './clock.js';
+import { mediaTimeline, type MediaClock } from './clock.js';
 export interface Playback {
   time: number;
   duration: number;
@@ -11,11 +11,9 @@ export interface Playback {
 export interface TransportOptions {
   duration: number;
   audio?: MediaClock;
-  cues?: Timing['cues'];
-  segments?: Timing['segments'];
 }
 /** Commands and subscriptions over the single media clock used by narrated scenes. */
-export function transport({ duration, audio, cues = {}, segments = [] }: TransportOptions) {
+export function transport({ duration, audio }: TransportOptions) {
   if (!(duration > 0) || !Number.isFinite(duration))
     throw new Error('Playback duration must be positive');
   const media = audio ?? new SilentMedia(duration),
@@ -36,7 +34,7 @@ export function transport({ duration, audio, cues = {}, segments = [] }: Transpo
   const notify = () => {
     for (const listener of listeners) listener(state());
   };
-  const clock = timeline(media, { duration, cues, segments }, notify);
+  const clock = mediaTimeline(media, duration, notify);
   function pause() {
     request++;
     pending = false;
@@ -93,7 +91,6 @@ export function transport({ duration, audio, cues = {}, segments = [] }: Transpo
   }
   media.addEventListener('volumechange', notify, { signal: abort.signal });
   return {
-    clock,
     get state() {
       return state();
     },

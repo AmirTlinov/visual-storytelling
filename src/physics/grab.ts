@@ -10,11 +10,13 @@ export function pointerGrab<T>(
   const abort = new AbortController();
   let active: ReturnType<typeof start>, pointer: number | undefined;
   function release() {
-    active?.release();
+    const session = active;
+    const captured = pointer;
     active = undefined;
-    if (pointer !== undefined && element.hasPointerCapture(pointer))
-      element.releasePointerCapture(pointer);
     pointer = undefined;
+    session?.release();
+    if (captured !== undefined && element.hasPointerCapture(captured))
+      element.releasePointerCapture(captured);
   }
   element.addEventListener(
     'pointerdown',

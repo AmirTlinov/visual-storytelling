@@ -226,6 +226,26 @@ test('3D annotations stay readable, attached and non-intercepting during orbit a
           poses[0].position[i] - poses[0].target[i] - (initial.position[i] - initial.target[i]),
         ) < 1e-9,
       );
+    const releases = await page.evaluate(() => {
+      const counts = new Map();
+      lab.group.traverse((object) => {
+        for (const resource of [object.geometry, object.material, object.material?.map]) {
+          if (!resource || counts.has(resource)) continue;
+          counts.set(resource, 0);
+          resource.addEventListener('dispose', () =>
+            counts.set(resource, counts.get(resource) + 1),
+          );
+        }
+      });
+      lab.view.dispose();
+      lab.number.remove();
+      lab.view.dispose();
+      return [...counts.values()];
+    });
+    assert(
+      releases.length > 0 && releases.every((count) => count === 1),
+      'each GPU resource is released once',
+    );
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();

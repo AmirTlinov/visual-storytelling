@@ -31,6 +31,7 @@ export function surfaceLettering(
   element.textContent = typeof text === 'function' ? text() : text;
   stage.append(element);
   const group = new T.Group();
+  let removed = false;
   group.name = 'surface-lettering';
   if (typeof anchor === 'function') scene.add(group);
   else anchor.add(group);
@@ -142,6 +143,8 @@ export function surfaceLettering(
       invalidate();
     },
     remove() {
+      if (removed) return;
+      removed = true;
       element.remove();
       release(group);
       group.removeFromParent();
