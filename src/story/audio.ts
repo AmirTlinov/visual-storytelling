@@ -43,7 +43,12 @@ function mount(
       listeners.push(() => node.removeEventListener(event, action));
     }
   };
-  const playback = transport({ audio, duration: timing.duration, cues: timing.cues });
+  const playback = transport({
+    audio,
+    duration: timing.duration,
+    cues: timing.cues,
+    segments: timing.segments,
+  });
   const { clock } = playback;
   const unsubscribe = playback.subscribe((state) => {
     const t = state.time;

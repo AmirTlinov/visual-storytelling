@@ -16,9 +16,24 @@ export function mount(parent: HTMLElement): Example {
   const script = {
     duration: 18,
     cues: {
-      stretch: { start: 2, end: 5 },
-      flatten: { start: 7, end: 10 },
-      reflect: { start: 12, end: 16 },
+      stretch: {
+        start: 2,
+        end: 5,
+        action:
+          'Коэффициент x растёт от 1 до 1,8; горизонтальная компонента и произведение меняются вместе.',
+      },
+      flatten: {
+        start: 7,
+        end: 10,
+        action:
+          'Коэффициент y уменьшается до 0,5; вертикальная компонента и произведение меняются вместе.',
+      },
+      reflect: {
+        start: 12,
+        end: 16,
+        action:
+          'Коэффициент x проходит через ноль до −1; горизонтальная компонента меняет направление.',
+      },
     },
     segments: [
       { id: 'start', start: 0, end: 2, text: 'Исходный вектор показан синим.' },
@@ -82,6 +97,7 @@ export function mount(parent: HTMLElement): Example {
     setReduced: controller.setReduced,
     svg: () => layout.current.view.element,
     snapshot: () => ({ input: controller.values, output: transform(controller.values) }),
+    review: controller.sheet.review,
     dispose() {
       unsubscribe();
       fields.forEach(({ control }) => control.dispose());

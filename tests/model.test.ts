@@ -19,6 +19,45 @@ test('word intervals preserve timing across reverse seeking and reject invalid c
   );
   assert.throws(() => Reflect.apply(sheet.get, undefined, ['missing']), /Unknown cue/);
 });
+test('cue review distinguishes an unreferenced operation, deliberate hold and chapter', () => {
+  const sheet = cueSheet({
+    duration: 6,
+    cues: {
+      chapter: { start: 0, end: 6 },
+      copy: {
+        start: 1,
+        end: 3,
+        text: 'Копируем значение',
+        action: 'Копия прибывает в новую ячейку',
+      },
+      compare: { start: 3, end: 4, hold: 'Сравнить источник и получателя' },
+      forgotten: { start: 4, end: 5, action: 'Удалить копию' },
+    },
+    segments: [{ id: 'chapter', start: 0, end: 6, text: 'Читаем и сравниваем' }],
+  });
+  for (const reduced of [false, true]) {
+    const during = sheet.at(2, reduced);
+    assert.equal(during.progress('copy'), 0.5);
+    assert.equal(during.reveal('copy'), reduced ? 1 : 0.5);
+    assert.equal(during.finished('copy'), false);
+    assert.equal(sheet.at(3, reduced).finished('copy'), true);
+    assert.equal(sheet.at(2, reduced).finished('copy'), false);
+  }
+  assert.deepEqual(
+    sheet.review().cues.map(({ id, kind, referenced }) => ({ id, kind, referenced })),
+    [
+      { id: 'chapter', kind: 'chapter', referenced: false },
+      { id: 'copy', kind: 'action', referenced: true },
+      { id: 'compare', kind: 'hold', referenced: false },
+      { id: 'forgotten', kind: 'action', referenced: false },
+    ],
+  );
+  assert.throws(
+    () =>
+      cueSheet({ duration: 2, cues: { bad: { start: 0, end: 1, action: 'move', hold: 'read' } } }),
+    /action or hold/,
+  );
+});
 test('grouping preserves identities and endpoint positions', () => {
   const before = [
       [0, 0],

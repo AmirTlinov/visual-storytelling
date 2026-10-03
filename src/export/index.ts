@@ -152,6 +152,7 @@ export function download(content: string | Blob, name: string, type = 'image/svg
 }
 
 import type { Theme } from '../ink/palette.js';
+import type { CueReview } from '../story/cues.js';
 export interface SceneHandle {
   duration: number;
   checkpoints: readonly number[];
@@ -162,6 +163,7 @@ export interface SceneHandle {
   setReduced(value: boolean): void;
   svg(): SVGSVGElement;
   snapshot(): unknown;
+  review?(): CueReview;
   exportSVG?(): Promise<string>;
   dispose(): void;
 }

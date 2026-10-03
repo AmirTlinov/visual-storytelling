@@ -132,6 +132,20 @@ test('controls preserve pointer targets, keyboard editing and undo/redo', async 
   await page.keyboard.press('ControlOrMeta+Shift+z');
   expect(await vertex.getAttribute('transform')).not.toBe(before);
 });
+test('vector: intermediate displayed products distinguish approximation from equality', async ({
+  page,
+}) => {
+  await ready(page, '/vector/index.html');
+  const relation = page.locator('[data-object="horizontal:eq"] .vs-lettering');
+  for (const [time, sign] of [
+    [13, '≈'],
+    [16, '='],
+    [13, '≈'],
+  ] as const) {
+    await page.evaluate((time) => window.explainer.seek(time), time);
+    await expect(relation).toHaveAttribute('aria-label', sign);
+  }
+});
 test('all BERT tokens can be selected at their center and edges', async ({ page }) => {
   await ready(page, '/parameter-cube/preview.html');
   const frame = page.frames().find((f) => f.url().includes('tensor-cube.svg'))!;

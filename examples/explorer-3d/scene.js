@@ -60,5 +60,5 @@ window.galleryReady = (async () => {
   });
   render(shell.parameters);
   // Intentional public handle for capture/export and embedding; no second clock.
-  root.scene = {shell, view, story, dispose() {view.dispose(); shell.dispose();}};
+  root.scene = {review: story.review, shell, view, story, dispose() {view.dispose(); shell.dispose();}};
 })().catch(error => {const root = document.getElementById('ve-scene'); const message = document.createElement('p'); message.setAttribute('role', 'alert'); message.textContent = `Не удалось открыть сцену: ${error.message}`; root.append(message); throw error;});

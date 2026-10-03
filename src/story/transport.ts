@@ -12,9 +12,10 @@ export interface TransportOptions {
   duration: number;
   audio?: MediaClock;
   cues?: Timing['cues'];
+  segments?: Timing['segments'];
 }
 /** Commands and subscriptions over the single media clock used by narrated scenes. */
-export function transport({ duration, audio, cues = {} }: TransportOptions) {
+export function transport({ duration, audio, cues = {}, segments = [] }: TransportOptions) {
   if (!(duration > 0) || !Number.isFinite(duration))
     throw new Error('Playback duration must be positive');
   const media = audio ?? new SilentMedia(duration),
@@ -35,7 +36,7 @@ export function transport({ duration, audio, cues = {} }: TransportOptions) {
   const notify = () => {
     for (const listener of listeners) listener(state());
   };
-  const clock = timeline(media, { duration, cues, segments: [] }, notify);
+  const clock = timeline(media, { duration, cues, segments }, notify);
   function pause() {
     request++;
     pending = false;

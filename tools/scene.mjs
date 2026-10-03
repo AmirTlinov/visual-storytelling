@@ -17,6 +17,10 @@ const { values, positionals } = parseArgs({
     'no-audio': { type: 'boolean', default: false },
     audio: { type: 'boolean', default: false },
     inline: { type: 'boolean', default: false },
+    cue: { type: 'string', multiple: true },
+    theme: { type: 'string', default: 'light' },
+    width: { type: 'string', default: '960' },
+    reduced: { type: 'boolean', default: false },
   },
 });
 const [command, directory = '.'] = positionals,
@@ -73,6 +77,7 @@ if (command === 'new') {
           pack: 'visual-story pack dist --out story.html',
           audio: 'visual-story audio .',
           export: 'visual-story-export --directory dist',
+          review: 'visual-story review dist --out review',
         },
         dependencies: { '@visual-storytelling/core': `file:./${receipt.filename}` },
       },
@@ -143,6 +148,25 @@ if (command === 'new') {
       await server.close();
       process.exit(0);
     });
+} else if (command === 'review') {
+  const { reviewScene } = await import('./review.mjs');
+  const width = Number(values.width);
+  if (!['light', 'dark'].includes(values.theme) || !Number.isInteger(width) || width < 240)
+    throw new Error('Review needs --theme light|dark and --width at least 240');
+  console.log(
+    JSON.stringify(
+      await reviewScene({
+        directory: destination,
+        out: values.out ?? 'review',
+        cues: values.cue,
+        theme: values.theme,
+        width,
+        reduced: values.reduced,
+      }),
+      null,
+      2,
+    ),
+  );
 } else if (command === 'pack') {
   const output = resolve(values.out ?? 'story.html');
   await writeFile(
@@ -152,5 +176,5 @@ if (command === 'new') {
   console.log(output);
 } else
   console.log(
-    'visual-story new DIRECTORY --example NAME | generate DIRECTORY --example NAME | build DIRECTORY | preview DIRECTORY | pack DIST --out story.html',
+    'visual-story new DIRECTORY --example NAME | generate DIRECTORY --example NAME | build DIRECTORY | preview DIRECTORY | pack DIST --out story.html | review DIST --out review [--cue ID] [--theme dark] [--width 375] [--reduced]',
   );

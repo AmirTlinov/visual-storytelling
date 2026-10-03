@@ -34,6 +34,11 @@ try {
   </script></body></html>`,
   );
   run('npm', ['run', 'build']);
+  run('npm', ['run', 'review', '--', '--cue', 'add_rows']);
+  const review = JSON.parse(await readFile(join(consumer, 'review/review.json'), 'utf8'));
+  assert.deepEqual(review.warnings, []);
+  assert.equal(review.cues[0].id, 'add_rows');
+  assert.equal(review.cues[0].unchanged, false);
   server = await serve(join(consumer, 'dist'));
   browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 700, height: 900 } }),
@@ -103,6 +108,7 @@ try {
   await page.locator('[data-play]').click();
   const report = {
     consumer: 'created, installed, built and rendered',
+    review: 'installed CLI captured a narrated operation with distinct intermediate frames',
     offline: 'narration, compact HTML, LC native SVG seek and 3D work without network',
     inlineBytes: Buffer.byteLength(compact),
     silent: 'same clock/player, sound control hidden',

@@ -98,6 +98,11 @@ def read_script(path):
             if not ID.fullmatch(cid) or cid in ids:
                 raise ValueError(f"Invalid or duplicate cue id: {cid}")
             ids.add(cid)
+            if ("action" in cue and "hold" in cue) or any(
+                not isinstance(cue[key], str) or not cue[key].strip()
+                for key in ("action", "hold") if key in cue
+            ):
+                raise ValueError(f"{cid}: provide either a non-empty action or hold")
             quote = normalized(cue.get("quote", ""))
             matches = [i for i in range(len(tokens) - len(quote) + 1) if tokens[i:i + len(quote)] == quote] if quote else []
             occurrence = cue.get("occurrence")
@@ -122,3 +127,18 @@ def read_script(path):
         music["offset"] = number(music.get("offset", 0), "music.offset", 0, 86400)
         music["level_db"] = number(music.get("level_db", -19), "music.level_db", -40, -8)
     return spec
+
+
+def timed_cues(segment, aligned_words):
+    """Bind visible intentions to the same aligned words that drive playback."""
+    cues = {segment["id"]: {
+        "text": segment["spoken"], "start": aligned_words[0]["start"], "end": aligned_words[-1]["end"],
+    }}
+    for cue in segment["cues"]:
+        selected = aligned_words[cue["word_start"]:cue["word_end"]]
+        cues[cue["id"]] = {
+            "text": " ".join(word["text"] for word in selected),
+            "start": selected[0]["start"], "end": selected[-1]["end"],
+            **{key: cue[key] for key in ("action", "hold") if key in cue},
+        }
+    return cues

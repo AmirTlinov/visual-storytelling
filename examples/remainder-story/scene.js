@@ -106,7 +106,8 @@ window.galleryReady = (async () => {
   function render(t, clock, reduced) {
     if (!animation) return;
     animation.time(t, false);
-    const p = (id) => (reduced ? Number(t >= C[id].start) : clock.progress(id, t));
+    const frame = clock.at(t, reduced),
+      p = frame.reveal;
     const reveal = (shape, amount) => {
       visible(shape, amount > 0);
       trace([...shape.querySelectorAll('path')], amount);
@@ -116,21 +117,24 @@ window.galleryReady = (async () => {
     write(title[1], p('question_remainder'));
     countRow.forEach((node, i) => {
       write(node, p(i ? 'object_name' : 'object_count'));
-      visible(node, t < C.group_count.start);
+      visible(node, !frame.has('group_count'));
     });
     write(groupSize, p('group_size'));
-    visible(groupSize, t < C.group_count.start);
+    visible(groupSize, !frame.has('group_count'));
     groupCount.forEach((node, i) => {
       write(node, p(i ? 'group_name' : 'group_count'));
-      visible(node, t < C.product_groups.start);
+      visible(node, !frame.has('product_groups'));
     });
+    const grouping = clock.cue('group_action'),
+      groupingDuration = grouping.end - grouping.start;
     groupShapes.forEach(({ shape }, i) => {
-      const start =
-        C.group_action.start +
-        ((C.group_action.end - C.group_action.start) * 0.4 * i) / (groupsCount - 1);
+      const start = grouping.start + (groupingDuration * 0.4 * i) / (groupsCount - 1);
       const amount = reduced
         ? p('group_action')
-        : progress(t, { start, end: start + (C.group_action.end - C.group_action.start) * 0.6 });
+        : progress(t, {
+            start,
+            end: start + groupingDuration * 0.6,
+          });
       reveal(shape, amount);
     });
     tokens.forEach(({ outer, shape, pose }, i) => {
@@ -138,13 +142,13 @@ window.galleryReady = (async () => {
         ? p('object_count')
         : Math.min(1, Math.max(0, p('number') * 1.5 - i * 0.022));
       outer.style.opacity = String(amount);
-      const position = reduced ? (t >= C.group_action.start ? pose.end : pose.start) : pose;
+      const position = reduced ? (frame.has('group_action') ? pose.end : pose.start) : pose;
       outer.setAttribute('transform', `translate(${position.x} ${position.y})`);
-      const leftover = i >= groupsCount * divisor && t >= C.remainder_value.start;
+      const leftover = i >= groupsCount * divisor && frame.has('remainder_value');
       shape
         .querySelectorAll('path[stroke]:not([stroke="none"])')
         .forEach((path) => path.setAttribute('stroke', leftover ? colors.orange : colors.blue));
-      const example = i < divisor && t >= C.each_group.start && t < C.each_group.end;
+      const example = i < divisor && frame.has('each_group') && t < clock.cue('each_group').end;
       shape
         .querySelectorAll('path[fill]:not([fill="none"])')
         .forEach((path) =>
@@ -160,11 +164,11 @@ window.galleryReady = (async () => {
     });
     product.forEach((node, i) => {
       write(node, p(productCues[i]));
-      visible(node, t < C.summary.start);
+      visible(node, !frame.has('summary'));
     });
     answer.forEach((node, i) => write(node, p(answerCues[i])));
     remainderNote.forEach((node, i) => write(node, p(i ? 'remainder_name' : 'remainder_value')));
-    visible(missingSlot, t >= C.missing_slot.start && t < C.summary.start);
+    visible(missingSlot, frame.has('missing_slot') && !frame.has('summary'));
     root.dataset.phase = timing.segments.findLast((segment) => t >= segment.start)?.id || 'intro';
   }
   const measured = await observe(svg, (width) => {
@@ -241,6 +245,7 @@ window.galleryReady = (async () => {
     ],
   });
   root.scene = {
+    review: player.review,
     dispose() {
       player.dispose();
       measured.dispose();

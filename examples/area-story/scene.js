@@ -176,22 +176,23 @@ window.galleryReady = (async () => {
     }
   }
   function render(t, clock, reduced) {
-    const p = (id) => (reduced ? Number(t >= C[id].start) : clock.progress(id, t));
-    const paperFocus = t >= C.unit.start && t < C.unit_square.start;
-    const unitFocus = t >= C.unit_square.start && t < C.first_row.start;
-    const recapFocus = t >= C.recap_unit.start;
-    const rowNumberFocus = t >= C.four_rows.start && t < C.each_row.start;
-    const counting = t >= C.count_rows.start && t < C.addition.start;
-    const activeRow = totalCues.findLastIndex((id) => t >= C[id].start);
-    const adding = t >= C.sum_one.start && t < C.multiply.start;
-    const addedRow = sumTerms.findLastIndex((id) => t >= C[id].start);
-    const activeColumn = countCues.findLastIndex((id) => t >= C[id].start);
+    const frame = clock.at(t, reduced),
+      p = frame.reveal;
+    const paperFocus = frame.between('unit', 'unit_square');
+    const unitFocus = frame.between('unit_square', 'first_row');
+    const recapFocus = frame.has('recap_unit');
+    const rowNumberFocus = frame.between('four_rows', 'each_row');
+    const counting = frame.between('count_rows', 'addition');
+    const activeRow = totalCues.findLastIndex((id) => frame.has(id));
+    const adding = frame.between('sum_one', 'multiply');
+    const addedRow = sumTerms.findLastIndex((id) => frame.has(id));
+    const activeColumn = countCues.findLastIndex((id) => frame.has(id));
     // The frame is a pure projection of audio time. No separate animation clock.
     // Every new fact uses its spoken word cue, not the enclosing paragraph's duration.
     write(title, progress(0, 1.4, t, reduced));
     write(paperLabel, p('paper_length'));
     show(paperLabel, paperFocus);
-    show(paperCell, paperFocus && t >= C.paper_cell.start);
+    show(paperCell, paperFocus && frame.has('paper_cell'));
     draw(paperMeasure, p('paper_length'));
     show(paperMeasure, paperFocus);
     write(unitWidth, p('unit_side'));
@@ -199,24 +200,24 @@ window.galleryReady = (async () => {
     draw(unitMeasure, p('unit_side'));
     [unitWidth, unitHeight, unitMeasure].forEach((node) => show(node, unitFocus));
     write(unitArea, p('unit_area'));
-    show(unitArea, unitFocus || (recapFocus && t < C.recap_grid.start));
+    show(unitArea, unitFocus || (recapFocus && !frame.has('recap_grid')));
     write(unitGridHint, p('unit_grid'));
     show(unitGridHint, unitFocus);
     reveal(boundary, p('draw_rectangle'));
     write(widthLabel, p('width_value'));
     write(heightLabel, p('height_value'));
     [widthLabel, heightLabel].forEach((node) => show(node, !paperFocus && !unitFocus));
-    draw(heightSide, t < C.answer.start ? p('height_side') : p('answer_height'));
-    draw(widthSide, t < C.answer.start ? p('width_side') : p('answer_width'));
+    draw(heightSide, !frame.has('answer') ? p('height_side') : p('answer_height'));
+    draw(widthSide, !frame.has('answer') ? p('width_side') : p('answer_width'));
     show(
       heightSide,
-      (t >= C.height_side.start && t < C.width_side.start) ||
-        (t >= C.answer_height.start && t < C.answer_width.start),
+      (frame.has('height_side') && !frame.has('width_side')) ||
+        (frame.has('answer_height') && !frame.has('answer_width')),
     );
     show(
       widthSide,
-      (t >= C.width_side.start && t < C.area_question.start) ||
-        (t >= C.answer_width.start && t <= C.answer_width.end),
+      (frame.has('width_side') && !frame.has('area_question')) ||
+        (frame.has('answer_width') && t <= clock.cue('answer_width').end),
     );
     tiles.forEach(({ group, shape, fill, digit }, i) => {
       const r = Math.floor(i / model.columns),
@@ -231,7 +232,7 @@ window.galleryReady = (async () => {
       reveal(shape, amount);
       fill.style.opacity = amount;
       const countingTile =
-        r === 0 && c === activeColumn && t >= C.one.start && t < C.row_total.start;
+        r === 0 && c === activeColumn && frame.has('one') && !frame.has('row_total');
       const highlighted =
         (counting && r <= activeRow) ||
         (adding && r <= addedRow) ||
@@ -249,7 +250,7 @@ window.galleryReady = (async () => {
       );
       if (digit) {
         write(digit, p(countCues[c]));
-        show(digit, t < C.more_rows.start);
+        show(digit, !frame.has('more_rows'));
       }
     });
     rowValues.forEach((node, r) => {
@@ -258,26 +259,31 @@ window.galleryReady = (async () => {
     });
     write(rowsLabel, p('four_rows'));
     show(rowsLabel, rowNumberFocus);
-    const rowCount = totalCues.filter((id) => t >= C[id].start).length;
+    const rowCount = totalCues.filter((id) => frame.has(id)).length;
     setText(countLabel, `Всего: ${rowCount * model.columns}`);
     // Placement uses the full text after every number change.
     if (layout) place(countLabel, layout.width / 2, layout.bottom + 38);
-    show(countLabel, rowCount > 0 && t < C.addition.start);
+    show(countLabel, rowCount > 0 && !frame.has('addition'));
     sumParts.slice(0, -2).forEach((node, i) => write(node, p(sumCues[i])));
     write(
       sumParts.at(-2),
-      progress(C.sum_four.end, C.sum_result.start - C.sum_four.end, t, reduced),
+      progress(
+        clock.cue('sum_four').end,
+        clock.cue('sum_result').start - clock.cue('sum_four').end,
+        t,
+        reduced,
+      ),
     );
     write(sumParts.at(-1), p('sum_result'));
-    sumParts.forEach((node) => show(node, t < C.multiply.start));
+    sumParts.forEach((node) => show(node, !frame.has('multiply')));
     meaning.forEach((node, i) => {
       write(node, p(meaningCues[i]));
-      show(node, t < C.product_four.start);
+      show(node, !frame.has('product_four'));
     });
     equation.forEach((node, i) => write(node, p(productCues[i])));
     answer.forEach((node, i) => write(node, p(answerCues[i])));
     draw(underline, p('product_result'));
-    show(generic, formulas && t >= C.answer_units.end);
+    show(generic, formulas && frame.finished('answer_units'));
     paperCells.forEach((node, i) => show(node, p('recap_grid') * paperCells.length > i));
     root.dataset.phase = timing.segments.findLast((s) => t >= s.start)?.id || 'intro';
     root.dataset.visibleSquares = String(
@@ -411,6 +417,7 @@ window.galleryReady = (async () => {
     ],
   });
   root.scene = {
+    review: player.review,
     dispose() {
       abort.abort();
       player.dispose();

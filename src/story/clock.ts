@@ -1,4 +1,5 @@
-import type { Cue } from './cues.js';
+import { cueSheet, progress, type Cue, type Chapter, type Frame, type CueReview } from './cues.js';
+export { progress } from './cues.js';
 export interface Timing {
   duration: number;
   cues: Record<string, Cue>;
@@ -14,6 +15,8 @@ export interface MediaClock extends EventTarget {
 }
 export interface CueClock {
   cue(id: string): Cue;
+  at(time: number, reduced?: boolean): Frame;
+  review(): CueReview;
   seek(time: number): void;
   update(): void;
   duration: number;
@@ -21,12 +24,6 @@ export interface CueClock {
   progress(id: string, time?: number, lead?: number, tail?: number): number;
   dispose(): void;
 }
-const clamp = (x: number) => Math.min(1, Math.max(0, x));
-export const progress = (time: number, range: Cue, lead = 0, tail = 0) => {
-  const a = range.start - lead,
-    b = range.end + tail;
-  return b <= a ? Number(time >= a) : clamp((time - a) / (b - a));
-};
 export function timeline(
   audio: MediaClock,
   data: Timing,
@@ -34,10 +31,13 @@ export function timeline(
 ) {
   let frame = 0,
     disposed = false;
-  const cue = (id: string) => {
-    if (!data.cues[id]) throw Error(`Unknown narration cue: ${id}`);
-    return data.cues[id]!;
-  };
+  const sheet = cueSheet({
+    ...data,
+    segments: data.segments.filter(
+      (segment): segment is Chapter => segment.id !== undefined && segment.end !== undefined,
+    ),
+  });
+  const cue = sheet.get;
   const update = () => {
     cancelAnimationFrame(frame);
     frame = 0;
@@ -61,6 +61,8 @@ export function timeline(
   ];
   const api: CueClock = {
     cue,
+    at: sheet.at,
+    review: sheet.review,
     seek,
     update,
     duration: data.duration,

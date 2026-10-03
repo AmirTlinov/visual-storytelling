@@ -9,7 +9,7 @@ import numpy as np
 from alignment import Aligner
 from mixing import mix
 from resources import ALIGN_REPO, ALIGN_REVISION, SPEECH_CREDIT
-from script import read_script
+from script import read_script, timed_cues
 from speech import SAMPLE_RATE, Speaker
 
 
@@ -33,10 +33,7 @@ def build_audio(script_path, output, device):
             "audio_start": offset, "audio_end": (cursor + len(audio)) / SAMPLE_RATE, "words": words,
         }
         segments.append(record)
-        cues[segment["id"]] = {k: record[k] for k in ("text", "start", "end")}
-        for cue in segment["cues"]:
-            selected = words[cue["word_start"]:cue["word_end"]]
-            cues[cue["id"]] = {"text": " ".join(w["text"] for w in selected), "start": selected[0]["start"], "end": selected[-1]["end"]}
+        cues.update(timed_cues(segment, words))
         for w in words:
             if w["score"] < .3:
                 warnings.append(f'{segment["id"]}: check word {w["text"]!r} (acoustic score {w["score"]})')

@@ -128,7 +128,7 @@ function mount(
       if (audio?.dataset.src && !audio.getAttribute('src')) audio.src = audio.dataset.src;
       storyButton.hidden = false;
       modes.hidden = false;
-      player = SketchPlayer.mount(root, {
+      const mounted = SketchPlayer.mount(root, {
         audio: activeMedia,
         timing,
         stops,
@@ -137,7 +137,9 @@ function mount(
           if (mode === 'story') render(t, cues, reduced);
         },
       });
+      player = mounted;
       return {
+        review: mounted.review,
         seek: (time: number) => {
           setMode('story');
           player!.seek(time);

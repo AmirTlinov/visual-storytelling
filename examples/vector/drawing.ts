@@ -82,7 +82,11 @@ export function drawing(parent: HTMLElement, width: number) {
   x.at(start + a.width + 36 + x.width / 2, matrixY);
   result.at(start + a.width + x.width + 72 + result.width / 2, matrixY);
   lettering(view.layer, '×', { x: start + a.width + 18, y: matrixY + 6, size: 23 });
-  lettering(view.layer, '=', { x: start + a.width + 36 + x.width + 18, y: matrixY + 6, size: 23 });
+  const matrixRelation = lettering(view.layer, '=', {
+    x: start + a.width + 36 + x.width + 18,
+    y: matrixY + 6,
+    size: 23,
+  });
   const labels = [
     ['A', a, start + a.width / 2, 'ochre'],
     ['x', x, start + a.width + 36 + x.width / 2, 'blue'],
@@ -111,6 +115,9 @@ export function drawing(parent: HTMLElement, width: number) {
   const horizontal = component('horizontal', matrixY + 86),
     vertical = component('vertical', matrixY + 126);
   const clean = (n: number) => Number(n.toFixed(2)).toString();
+  // Equality describes the visible rounded operands, as well as the underlying model.
+  const exact = (c: number, v: number, n: number) =>
+    Math.abs(Number(clean(c)) * Number(clean(v)) - Number(clean(n))) < 1e-9;
   return {
     view,
     dispose: view.dispose,
@@ -136,6 +143,9 @@ export function drawing(parent: HTMLElement, width: number) {
       ]);
       x.set([[clean(state.x)], [clean(state.y)]]);
       result.set([[clean(out.x)], [clean(out.y)]]);
+      matrixRelation.text(
+        exact(state.a, state.x, out.x) && exact(state.b, state.y, out.y) ? '=' : '≈',
+      );
       for (const [eq, c, v, n] of [
         [horizontal, state.a, state.x, out.x],
         [vertical, state.b, state.y, out.y],
@@ -143,6 +153,7 @@ export function drawing(parent: HTMLElement, width: number) {
         eq.substitute('coefficient', clean(c));
         eq.substitute('input', clean(v));
         eq.substitute('output', clean(n));
+        eq.substitute('eq', exact(c, v, n) ? '=' : '≈');
       }
       view.element.dataset.output = JSON.stringify(out);
     },
