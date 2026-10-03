@@ -113,6 +113,8 @@ function mount(
   }
   function ink<M extends ColorMaterial>(material: M, color: MaterialInk = 'ink') {
     if (palette.ink) material.color.copy(materialColor(color));
+    if (!materials.has(material))
+      material.addEventListener('dispose', () => materials.delete(material));
     materials.set(material, color);
     return material;
   }
