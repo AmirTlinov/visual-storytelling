@@ -3,20 +3,18 @@ import {
   Vector3,
   Group,
   Object3D,
-  Mesh,
-  BoxGeometry,
-  MeshBasicMaterial,
   BufferGeometry,
   Float32BufferAttribute,
   LineSegments,
   LineBasicMaterial,
 } from 'three';
 import type { Viewport3D } from '../viewport/three.js';
-import { cellFormulaWidth, frameBounds, quantityGrid } from './measure.js';
-import { VolumeMorph } from '../viewport/morph/surface.js';
+import { cellFormulaWidth, frameBounds, quantityStep } from './measure.js';
+import { morphBody3D } from './body-3d.js';
+import { mathBodies } from './math-bodies.js';
 import { mathPlan } from './math.js';
 import { mathNumber } from './numbers.js';
-import type { MathOperation, MathMorphPlan, MathPart } from './types.js';
+import type { MathOperation, MathMorphPlan } from './types.js';
 
 /** One shared field with attached inscriptions, for quantities and symbolic number cells. */
 function mount(
@@ -27,15 +25,13 @@ function mount(
   const prepared = mathPlan(operation);
   const object = new Group(),
     bounds = new Box3();
-  const volume = VolumeMorph.mount(view, { pigment: options.pigment });
+  const body = morphBody3D(view, options),
+    volume = body.surface;
   object.add(volume.object);
   let plan: MathMorphPlan = prepared,
     disposed = false;
-  let topology = '',
-    progress = 0;
+  let progress = 0;
   const notes = new Map<string, { anchor: Object3D; label: ReturnType<typeof view.label> }>();
-  const annotations: Array<{ anchor: Object3D; label: ReturnType<typeof view.label> }> = [];
-  let cellFaces: { geometry: BoxGeometry; material: MeshBasicMaterial } | undefined;
   const ruler = new LineSegments(
     new BufferGeometry(),
     view.ink(new LineBasicMaterial({ transparent: true, opacity: 0.3 }), 'ink'),
@@ -63,23 +59,8 @@ function mount(
   const stepAnchor = new Object3D();
   object.add(stepAnchor);
   const stepLabel = view.label('', stepAnchor, { tone: 'ink', size: 17 });
-  const gridGeometry = new BufferGeometry(),
-    gridData = new Float32Array(10000 * 6);
-  gridGeometry.setAttribute('position', new Float32BufferAttribute(gridData, 3));
-  gridGeometry.setDrawRange(0, 0);
-  const grid = new LineSegments(
-    gridGeometry,
-    view.ink(new LineBasicMaterial({ transparent: true, opacity: 0.2 }), 'ink'),
-  );
-  grid.frustumCulled = false;
-  object.add(grid);
   let rulerKey = '';
   function clear() {
-    annotations.splice(0).forEach(({ anchor, label }) => {
-      label.remove();
-      anchor.removeFromParent();
-    });
-    topology = '';
     for (const { anchor, label } of notes.values()) {
       label.remove();
       anchor.removeFromParent();
@@ -108,7 +89,6 @@ function mount(
     if (disposed) return;
     const frame = plan.sample(p);
     progress = p;
-    const parts = [...frame.sources, ...frame.targets];
     const [min, max] = frameBounds(plan, frame, p);
     bounds.set(new Vector3(...min), new Vector3(...max));
     const width = max[0] - min[0],
@@ -135,19 +115,9 @@ function mount(
     }
     const measured = plan.encoding === 'quantity';
     ruler.visible = measured;
-    grid.visible = measured;
     const active = measured ? (frame.morph < 0.5 ? frame.sources : frame.targets) : [];
     const steps = new Set<number>();
-    let at = 0;
-    for (const part of active) {
-      const grid = quantityGrid(part);
-      steps.add(grid.step);
-      for (const line of grid.lines) {
-        gridData.set(line.from, at);
-        gridData.set(line.to, at + 3);
-        at += 6;
-      }
-    }
+    for (const part of active) steps.add(quantityStep(part));
     const coarse = [...steps].some((step) => step > 1);
     stepLabel.show(coarse);
     if (coarse) {
@@ -159,10 +129,6 @@ function mount(
       );
       stepAnchor.position.set((min[0] + max[0]) / 2, min[1] - gap * 1.1, 0.52);
     }
-    const attribute = gridGeometry.attributes.position!;
-    (attribute.array as Float32Array).set(gridData.subarray(0, at));
-    attribute.needsUpdate = true;
-    gridGeometry.setDrawRange(0, at / 3);
     const single = active.length === 1 ? active[0] : undefined;
     dimensionLabels.forEach((l) => l.show(!!single && single.size[1] > 1.01));
     if (single && single.size[1] > 1.01) {
@@ -183,70 +149,7 @@ function mount(
     bounds.max.y += gap * 2.2;
     bounds.min.x -= gap * 1.6;
     bounds.max.x += gap * 0.6;
-    const next = `${frame.sources.length}:${frame.targets.length}`;
-    if (next !== topology) {
-      annotations.splice(0).forEach(({ anchor, label }) => {
-        label.remove();
-        anchor.removeFromParent();
-      });
-      const box = VolumeMorph.box([1, 1, 1]);
-      volume.setShapes(
-        frame.sources.map(() => box),
-        frame.targets.map(() => box),
-      );
-      parts.forEach(() => {
-        if (!measured)
-          cellFaces ??= {
-            geometry: new BoxGeometry(1, 1, 1),
-            // The shared field owns the visible body; this mesh only anchors its inscriptions.
-            material: new MeshBasicMaterial({ visible: false }),
-          };
-        const anchor = measured
-          ? new Object3D()
-          : new Mesh(cellFaces!.geometry, cellFaces!.material);
-        object.add(anchor);
-        const label = view.label(
-          '',
-          anchor,
-          measured
-            ? { space: 'world', height: 1 }
-            : { face: ['front', 'back', 'left', 'right', 'top', 'bottom'] },
-        );
-        annotations.push({ anchor, label });
-      });
-      topology = next;
-    }
-    const pose = (part: MathPart) => ({ position: part.position, scale: part.size });
-    volume.render({
-      sources: frame.sources.map(pose),
-      targets: frame.targets.map(pose),
-      morph: frame.morph,
-      tension: 0,
-    });
-    parts.forEach((part, i) => {
-      const { anchor, label } = annotations[i]!;
-      const value = mathNumber(part.value);
-      if (measured) {
-        anchor.position.set(
-          part.position[0],
-          part.position[1],
-          part.position[2] + part.size[2] / 2 + 0.004,
-        );
-        // One physical size follows the measured face, including after growth.
-        anchor.scale.setScalar(
-          Math.min(
-            Math.max(0.42, extent * 0.12),
-            part.size[1] * 0.62,
-            (part.size[0] * 0.88) / Math.max(0.7, value.length * 0.5),
-          ),
-        );
-      } else {
-        anchor.position.set(...part.position);
-        anchor.scale.set(...part.size);
-      }
-      label.set(value);
-      label.opacity(i < frame.sources.length ? frame.sourceOpacity : frame.targetOpacity);
-    });
+    body.render(mathBodies(frame, measured));
     const currentNotes = new Set((frame.notes ?? []).map((note) => note.id));
     for (const [id, note] of notes)
       if (!currentNotes.has(id)) {
@@ -284,12 +187,8 @@ function mount(
     formula.remove();
     dimensionLabels.forEach((l) => l.remove());
     stepLabel.remove();
-    gridGeometry.dispose();
-    grid.material.dispose();
     ruler.geometry.dispose();
     ruler.material.dispose();
-    cellFaces?.geometry.dispose();
-    cellFaces?.material.dispose();
     object.removeFromParent();
     off();
     offRemove();

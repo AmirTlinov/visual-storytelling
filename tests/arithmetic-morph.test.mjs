@@ -16,7 +16,7 @@ const fieldAt = (frame) => {
     sources: frame.sources.map(pose),
     targets: frame.targets.map(pose),
     morph: frame.morph,
-    tension: 0,
+    tension: frame.tension ?? 0,
   });
   return field;
 };
@@ -49,7 +49,7 @@ test('signed dot product keeps zeros, original inputs and products through the t
   assert.deepEqual(plan.sample(0.15), earlier);
 });
 
-test('sources meet before evaluation; labels are cleared during the common shape transition', () => {
+test('sources meet before their shared shape transforms', () => {
   for (const operation of [
     MathMorph.dot([2, -1, 0], [-0.5, 3, 2]),
     MathMorph.vectorAdd([1, -2, 0], [-1, 4, 0]),
@@ -69,8 +69,6 @@ test('sources meet before evaluation; labels are cleared during the common shape
             'source cells never interpenetrate',
           );
         }
-      if (f.morph > 0.12 && f.morph < 0.99)
-        assert.ok(f.sourceOpacity < 0.15 && f.targetOpacity === 0);
     }
   }
   assert.deepEqual(MathMorph.plan(MathMorph.vectorAdd([1, -2, 0], [-1, 4, 0])).result, [0, 2, 0]);

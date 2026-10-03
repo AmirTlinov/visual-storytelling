@@ -1,10 +1,8 @@
 import { fusionShape, type FusionShape, type FusionPose } from './shape.js';
 import { fusionText } from './text.js';
-import { textRoutes } from './text-routing.js';
-import { inkRoutes } from './transport.js';
-import { inkMotion, type InkVertices } from './motion.js';
+import { compileInkMotion, type InkVertices } from './motion.js';
 import { inkDetailVisibility } from './detail.js';
-import { inkGeometry, type FusionGeometry } from './geometry.js';
+import { inkGeometry, type FusionGeometry, type InkFieldFrame } from './geometry.js';
 export type { FusionGeometry } from './geometry.js';
 import {
   combineFragment,
@@ -58,8 +56,11 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
     lost = false,
     previous: FusionFrame | undefined,
     previousVertices: InkVertices | undefined;
+  let previousField: InkFieldFrame | undefined,
+    fieldOrigin: readonly [number, number] = [0, 0];
+  const noMarks = { segments: new Float32Array(), visibility: new Float32Array() };
   let bounds = parent.getBoundingClientRect();
-  let motion: ReturnType<typeof inkMotion> | undefined,
+  let motion: ReturnType<typeof compileInkMotion> | undefined,
     details: ReturnType<typeof inkDetailVisibility> | undefined,
     ink = [0, 0, 0],
     textDetails = false,
@@ -148,7 +149,7 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
     gl!.vertexAttribDivisor(detail, 1);
     const uniforms = (p: WebGLProgram, names: string[]) =>
       Object.fromEntries(names.map((name) => [name, gl!.getUniformLocation(p, name)]));
-    strokeUniforms = uniforms(stroke, ['resolution', 'world', 'band']);
+    strokeUniforms = uniforms(stroke, ['resolution', 'world', 'band', 'origin', 'annotation']);
     fusionUniforms = uniforms(fusion, ['resolution', 'world', 'band', 'ink', 'details']);
     combineUniforms = uniforms(combine, ['band', 'tension']);
     gl!.useProgram(fusion);
@@ -209,7 +210,6 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
       throw new Error('Fusion progress and tension must be finite');
     const morph = Math.max(0, Math.min(1, frame.morph ?? 0));
     const tension = Math.max(0, Math.min(64, frame.tension ?? 28)) * textScale * (1 - morph) ** 2;
-    const band = Math.max(8, tension + 2);
     const vertices = deformed ?? motion(frame.sources, frame.targets, morph);
     if (vertices.length !== motion.sourceCount)
       throw new Error('Fusion segment buffers must match source shapes');
@@ -232,14 +232,36 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
       Math.max(width / Math.max(1, bounds.width), height / Math.max(1, bounds.height)),
     );
     if (changed) geometry = inkGeometry(vertices, detail, motion.patches, tension, ++revision);
+    previousField = undefined;
+    fieldOrigin = [0, 0];
     if (lost) return;
+    drawField({
+      segments: vertices,
+      visibility: detail,
+      tension,
+      details: textDetails && morph > 0 && morph < 1,
+      marks: noMarks,
+      label: '',
+    });
+    if (changed) for (const listener of changes) listener(geometry!);
+  }
+  function drawField(data: InkFieldFrame) {
+    if (disposed || lost) return;
+    const pixel = Math.max(width / Math.max(1, bounds.width), height / Math.max(1, bounds.height));
+    const band = Math.max(pixel * 8, data.tension + pixel * 2);
     const ratio = Math.min(devicePixelRatio || 1, 2);
     resize(
       Math.max(1, Math.round(bounds.width * ratio)),
       Math.max(1, Math.round(bounds.height * ratio)),
     );
     let aggregate = 0;
-    for (let i = 0; i < vertices.length; i++) {
+    gl!.useProgram(stroke);
+    gl!.uniform2f(strokeUniforms.origin!, fieldOrigin[0], fieldOrigin[1]);
+    gl!.uniform1i(strokeUniforms.annotation!, 0);
+    gl!.bindFramebuffer(gl!.FRAMEBUFFER, fields[0]!.buffer);
+    gl!.clearColor(1, 1, 1, 1);
+    gl!.clear(gl!.COLOR_BUFFER_BIT);
+    for (let i = 0; i < data.segments.length; i++) {
       gl!.useProgram(stroke);
       gl!.bindVertexArray(strokeVAO);
       gl!.uniform2f(strokeUniforms.resolution!, surfaceWidth, surfaceHeight);
@@ -253,10 +275,10 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
       gl!.clearColor(1, 1, 1, 1);
       gl!.clear(gl!.COLOR_BUFFER_BIT);
       gl!.bindBuffer(gl!.ARRAY_BUFFER, segments);
-      gl!.bufferData(gl!.ARRAY_BUFFER, vertices[i]!, gl!.DYNAMIC_DRAW);
+      gl!.bufferData(gl!.ARRAY_BUFFER, data.segments[i]!, gl!.DYNAMIC_DRAW);
       gl!.bindBuffer(gl!.ARRAY_BUFFER, visibility);
-      gl!.bufferData(gl!.ARRAY_BUFFER, detail[i]!, gl!.DYNAMIC_DRAW);
-      gl!.drawArraysInstanced(gl!.TRIANGLES, 0, 6, vertices[i]!.length / 6);
+      gl!.bufferData(gl!.ARRAY_BUFFER, data.visibility[i]!, gl!.DYNAMIC_DRAW);
+      gl!.drawArraysInstanced(gl!.TRIANGLES, 0, 6, data.segments[i]!.length / 6);
       gl!.disable(gl!.BLEND);
       if (i) {
         const next = 1 - aggregate;
@@ -268,10 +290,28 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
         gl!.activeTexture(gl!.TEXTURE1);
         gl!.bindTexture(gl!.TEXTURE_2D, fields[2]!.texture);
         gl!.uniform1f(combineUniforms.band!, band);
-        gl!.uniform1f(combineUniforms.tension!, tension);
+        gl!.uniform1f(combineUniforms.tension!, data.tension);
         gl!.drawArrays(gl!.TRIANGLES, 0, 6);
         aggregate = next;
       }
+    }
+    if (data.marks.segments.length) {
+      gl!.useProgram(stroke);
+      gl!.bindVertexArray(strokeVAO);
+      gl!.uniform2f(strokeUniforms.resolution!, surfaceWidth, surfaceHeight);
+      gl!.uniform2f(strokeUniforms.world!, width, height);
+      gl!.uniform1f(strokeUniforms.band!, band);
+      gl!.uniform1i(strokeUniforms.annotation!, 1);
+      gl!.bindFramebuffer(gl!.FRAMEBUFFER, fields[aggregate]!.buffer);
+      gl!.bindBuffer(gl!.ARRAY_BUFFER, segments);
+      gl!.bufferData(gl!.ARRAY_BUFFER, data.marks.segments, gl!.DYNAMIC_DRAW);
+      gl!.bindBuffer(gl!.ARRAY_BUFFER, visibility);
+      gl!.bufferData(gl!.ARRAY_BUFFER, data.marks.visibility, gl!.DYNAMIC_DRAW);
+      gl!.enable(gl!.BLEND);
+      gl!.blendEquation(gl!.MIN);
+      gl!.blendFunc(gl!.ONE, gl!.ONE);
+      gl!.drawArraysInstanced(gl!.TRIANGLES, 0, 6, data.marks.segments.length / 6);
+      gl!.disable(gl!.BLEND);
     }
     gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
     gl!.useProgram(fusion);
@@ -282,12 +322,27 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
     gl!.uniform2f(fusionUniforms.world!, width, height);
     gl!.uniform1f(fusionUniforms.band!, band);
     gl!.uniform3fv(fusionUniforms.ink!, ink);
-    gl!.uniform1i(fusionUniforms.details!, textDetails && morph > 0 && morph < 1 ? 1 : 0);
+    gl!.uniform1i(fusionUniforms.details!, data.details ? 1 : 0);
     gl!.drawArrays(gl!.TRIANGLES, 0, 6);
-    if (changed) for (const listener of changes) listener(geometry!);
+  }
+  function renderField(
+    data: InkFieldFrame,
+    layout: { width: number; height: number; origin?: readonly [number, number] },
+  ) {
+    if (disposed) return;
+    if (!(layout.width > 0 && layout.height > 0) || !Number.isFinite(layout.width + layout.height))
+      throw new Error('Ink field dimensions must be positive and finite');
+    width = layout.width;
+    height = layout.height;
+    bounds = parent.getBoundingClientRect();
+    previousField = data;
+    fieldOrigin = layout.origin ?? [0, 0];
+    canvas.setAttribute('aria-label', data.label);
+    drawField(data);
   }
   const redraw = () => {
-    if (previous) render(previous, previousVertices);
+    if (previousField) drawField(previousField);
+    else if (previous) render(previous, previousVertices);
   };
   function theme() {
     colorContext.clearRect(0, 0, 1, 1);
@@ -339,14 +394,7 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
       if (!sources.length || !targets.length || shapes.some((shape) => !shape.paths?.length))
         throw new Error('Fusion needs visible source and target shapes');
       const allText = shapes.every((shape) => shape.text);
-      const next = inkMotion(
-        allText
-          ? textRoutes(sources, targets)
-          : inkRoutes(
-              sources.map((shape) => shape.paths),
-              targets.map((shape) => shape.paths),
-            ),
-      );
+      const next = compileInkMotion(sources, targets);
       motion = next;
       details = inkDetailVisibility(motion.patches, allText);
       textDetails = allText;
@@ -356,6 +404,7 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
       previous = undefined;
       previousVertices = undefined;
       frameKey = '';
+      previousField = undefined;
       return motion;
     },
     get geometry() {
@@ -386,6 +435,12 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
       redraw();
     },
     render,
+    renderField,
+    snapshot() {
+      if (disposed) throw new Error('Fusion surface has been disposed');
+      redraw();
+      return canvas.toDataURL('image/png');
+    },
     dispose() {
       if (disposed) return;
       disposed = true;
@@ -413,6 +468,7 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
       details = undefined;
       previous = undefined;
       previousVertices = undefined;
+      previousField = undefined;
       canvas.remove();
       probe.remove();
     },

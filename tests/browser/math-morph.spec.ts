@@ -14,12 +14,16 @@ test('a hidden 2D view starts safely and shows the latest sought operation when 
   await page.getByRole('radio', { name: 'Плоскость', exact: true }).check();
   await expect(flat).toBeVisible();
   await expect(flat.locator('.vs-lettering[aria-label="6 ÷ 3 = 2"]')).toBeVisible();
-  const parts = flat.locator('.vs-lettering[aria-label="2"]');
-  await expect(parts).toHaveCount(3);
-  for (const part of await parts.all()) {
-    await expect(part).toHaveCSS('opacity', '1');
-    expect((await part.boundingBox())!.width).toBeGreaterThan(5);
-  }
+  await expect(flat.locator('svg > desc')).toHaveText('2, 2, 2');
+  // The visible inscription now belongs to the clipped GPU material.
+  const { data, info } = await sharp(await flat.locator('[data-morph-ink] canvas').screenshot())
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  let ink = 0;
+  for (let i = 0; i < data.length; i += info.channels)
+    if (data[i]! < 100 && data[i + 1]! < 100 && data[i + 2]! < 100 && data[i + 3]! > 160) ink++;
+  expect(ink).toBeGreaterThan(80);
   expect(errors).toEqual([]);
 });
 

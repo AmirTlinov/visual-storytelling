@@ -1,6 +1,7 @@
 import pencilURL from '../assets/pencil.woff2';
 import fallbackURL from '../assets/shantell.woff2';
 import { svg } from '../ink/dom.js';
+import { snapshotRaster } from './raster.js';
 
 const properties = [
   'color',
@@ -77,6 +78,7 @@ export async function exportSVG(source: SVGSVGElement): Promise<string> {
     }
     copy.removeAttribute('class');
   });
+  originals.forEach((node, i) => snapshotRaster(node, copies[i]!));
   clone
     .querySelectorAll('animate,animateTransform,animateMotion,set,script')
     .forEach((node) => node.remove());

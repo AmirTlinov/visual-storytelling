@@ -1,11 +1,11 @@
 import {
   InkFusion,
+  InkMorph,
   SketchControls,
   transport,
   player,
   widgetState,
 } from '@visual-storytelling/core';
-import { Physics2D } from '@visual-storytelling/core/physics/2d';
 import '@visual-storytelling/core/style.css';
 import './style.css';
 
@@ -19,13 +19,11 @@ window.galleryReady = (async () => {
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
   const motionRevision = 10;
   const clock = transport({ duration: 4 });
-  const view = await Physics2D.fusion(stage, {
-    width: 840,
-    height: 300,
-    color: 'var(--ve-blue)',
-    duration: clock.state.duration,
-    frame: poseAt,
-  });
+  const view = await InkMorph.mount(
+    stage,
+    { sources: ['свет', 'тень'], targets: ['объём'] },
+    { color: 'var(--ve-blue)' },
+  );
   const presets = {
     words: ['свет', 'тень', 'объём'],
     sentences: ['Свет раскрывает форму.', 'Тень придаёт глубину.', 'Свет и тень создают объём.'],
@@ -38,18 +36,9 @@ window.galleryReady = (async () => {
   let words = [...presets.words],
     scenario = 'words',
     tension = 36;
-  let shapes,
-    layout,
-    sceneWidth = 0,
-    layoutFrame = 0,
-    ready = false,
+  let ready = false,
     timer = 0,
     disposed = false;
-  const clamp = (value) => Math.max(0, Math.min(1, value));
-  const smooth = (a, b, value) => {
-    const t = clamp((value - a) / (b - a));
-    return t * t * (3 - 2 * t);
-  };
   const persistence = widgetState('ink-fusion', restore);
   const fields = ['Первый текст', 'Второй текст', 'Третий текст'].map((label, i) => {
     const field = SketchControls.field({ type: 'textarea', label, value: words[i] }, () => {
@@ -73,6 +62,7 @@ window.galleryReady = (async () => {
     (value) => {
       clock.pause();
       tension = Number(value);
+      view.setTension(tension);
       render(clock.state.time);
       save();
     },
@@ -138,10 +128,7 @@ window.galleryReady = (async () => {
     }
   }
   function rebuild() {
-    sceneWidth = Math.max(240, stage.getBoundingClientRect().width);
-    const block =
-      Boolean(presets[scenario]) && words.some((text) => /\s/.test(text) || text.length > 14);
-    let texts;
+    let shapes, texts;
     if (scenario === 'drops') {
       const drop = (radius) =>
         InkFusion.shape(radius * 2 + 112, radius * 2 + 112, (context) => {
@@ -162,80 +149,18 @@ window.galleryReady = (async () => {
               : scenario === 'gather'
                 ? { sources: ['свет', 'форма', 'тень'], targets: ['объём'] }
                 : { sources: words.slice(0, 2), targets: words.slice(2) };
-      const size =
-        scenario === 'letters'
-          ? Math.min(180, sceneWidth * 0.28)
-          : block
-            ? sceneWidth < 480
-              ? 25
-              : 30
-            : Math.min(96, sceneWidth / (Math.max(texts.sources.length, texts.targets.length) * 7));
-      const make = (group) =>
-        group.map((text) =>
-          InkFusion.text(text, {
-            size,
-            maxWidth: block
-              ? sceneWidth - 36
-              : (sceneWidth - 36 - (group.length - 1) * 48) / group.length,
-            align: block ? 'left' : 'center',
-          }),
-        );
-      shapes = { sources: make(texts.sources), targets: make(texts.targets) };
+      shapes = texts;
       equation.textContent = `${texts.sources.join(' + ')} → ${texts.targets.join(' + ')}`;
     }
-    view.canvas.setAttribute('aria-label', equation.textContent);
-    const gap = block ? 68 : 48;
-    const arrange = (group) => {
-      const extents = group.map((shape) => (block ? shape.bounds.height : shape.bounds.width));
-      const size = extents.reduce((sum, extent) => sum + extent, 0) + gap * (group.length - 1);
-      let cursor = -size / 2;
-      return group.map((_, i) => {
-        const position = cursor + extents[i] / 2;
-        cursor += extents[i] + gap;
-        return block ? { x: 0, y: position } : { x: position, y: 0 };
-      });
-    };
-    layout = {
-      sources: arrange(shapes.sources),
-      targets: arrange(shapes.targets),
-      block,
-      height: block
-        ? Math.max(
-            ...[shapes.sources, shapes.targets].map(
-              (group) =>
-                group.reduce((sum, shape) => sum + shape.bounds.height, 0) +
-                gap * (group.length - 1),
-            ),
-          ) + 64
-        : Math.max(
-            215,
-            ...[...shapes.sources, ...shapes.targets].map((shape) => shape.bounds.height + 100),
-          ),
-    };
-    stage.style.height = `${layout.height}px`;
-    view.setSize(sceneWidth, layout.height);
-    view.setShapes(shapes.sources, shapes.targets);
+    view.setOperation(shapes);
+    view.setTension(tension);
     fields.forEach((field) => {
       field.element.hidden = !presets[scenario];
     });
     render(clock.state.time);
   }
-  function poseAt(time) {
-    const t = time / clock.state.duration;
-    const approach = smooth(0.03, 0.2, t);
-    return {
-      sources: layout.sources.map((pose) => ({
-        x: pose.x * (1 - 0.16 * approach),
-        y: pose.y * (1 - 0.16 * approach),
-      })),
-      targets: layout.targets,
-      tension,
-      morph: 1 - (1 - smooth(0.04, 0.9, t)) ** 2,
-    };
-  }
   function render(time) {
-    if (!shapes || disposed) return;
-    view.render(time);
+    if (!disposed) view.render(time / clock.state.duration);
   }
   function restore(snapshot) {
     if (!ready || disposed) return;
@@ -287,14 +212,6 @@ window.galleryReady = (async () => {
       save();
     },
   });
-  const responsive = new ResizeObserver(() => {
-    if (disposed || Math.abs(stage.getBoundingClientRect().width - sceneWidth) < 1) return;
-    cancelAnimationFrame(layoutFrame);
-    layoutFrame = requestAnimationFrame(() => {
-      if (ready && !disposed) rebuild();
-    });
-  });
-  responsive.observe(stage);
   let wasPlaying = false;
   const unsubscribe = clock.subscribe((state) => {
     render(state.time);
@@ -344,8 +261,6 @@ window.galleryReady = (async () => {
       if (disposed) return;
       disposed = true;
       clearTimeout(timer);
-      cancelAnimationFrame(layoutFrame);
-      responsive.disconnect();
       abort.abort();
       unsubscribe();
       controls.dispose();

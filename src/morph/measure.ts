@@ -71,25 +71,5 @@ export function frameBounds(
     center.map((v, i) => v + half[i]!) as unknown as MorphPoint,
   ];
 }
-export interface MeasureLine {
-  from: MorphPoint;
-  to: MorphPoint;
-}
-export function quantityGrid(part: MathPart): { lines: MeasureLine[]; step: number } {
-  const [w, h, d] = part.size,
-    [x, y, z] = part.position;
-  const step = Math.max(1, 10 ** Math.ceil(Math.log10(Math.max(w, h) / 64)));
-  const lines: MeasureLine[] = [];
-  // Exact integer units until a labelled coarser scale is needed.
-  for (let i = step; i < w - 1e-6; i += step)
-    lines.push({
-      from: [x - w / 2 + i, y - h / 2, z + d / 2 + 0.003],
-      to: [x - w / 2 + i, y + h / 2, z + d / 2 + 0.003],
-    });
-  for (let i = step; i < h - 1e-6; i += step)
-    lines.push({
-      from: [x - w / 2, y - h / 2 + i, z + d / 2 + 0.003],
-      to: [x + w / 2, y - h / 2 + i, z + d / 2 + 0.003],
-    });
-  return { lines, step };
-}
+export const quantityStep = (part: MathPart) =>
+  Math.max(1, 10 ** Math.ceil(Math.log10(Math.max(part.size[0], part.size[1]) / 64)));

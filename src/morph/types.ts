@@ -43,8 +43,8 @@ export interface MathMorphFrame {
   sources: MathPart[];
   targets: MathPart[];
   morph: number;
-  sourceOpacity: number;
-  targetOpacity: number;
+  /** Local joining distance for the shared surface; zero preserves measured boundaries. */
+  tension?: number;
   formula: string;
   phase: 'approach' | 'contact' | 'separate' | 'resize' | 'hold';
   stage: number;

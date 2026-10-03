@@ -6,6 +6,7 @@ in float detailVisibility;
 uniform vec2 resolution;
 uniform vec2 world;
 uniform float band;
+uniform vec2 origin;
 out vec2 point;
 flat out vec4 segment;
 flat out vec2 radius;
@@ -17,9 +18,9 @@ void main() {
   segment = ends;
   radius = radii;
   visibility = detailVisibility;
-  vec2 clip = point / (resolution * pixel * .5);
+  vec2 clip = (point-origin) / (resolution * pixel * .5);
   gl_Position = vec4(clip.x, -clip.y, 0., 1.);
-  if (detailVisibility <= 0.) gl_Position = vec4(2., 2., 0., 1.);
+  if (detailVisibility <= 0. || max(radii.x,radii.y) <= 0.) gl_Position = vec4(2., 2., 0., 1.);
 }
 `;
 export const strokeFragment = `#version 300 es
@@ -31,6 +32,7 @@ flat in float visibility;
 uniform float band;
 uniform vec2 world;
 uniform vec2 resolution;
+uniform bool annotation;
 out vec4 color;
 void main() {
   vec2 a = segment.xy, b = segment.zw, ab = b-a;
@@ -40,7 +42,7 @@ void main() {
   float coverage = (1. - smoothstep(-pixel*.7, pixel*.7, d)) * visibility;
   // MIN blending retains distance, hard-union distance and one minus coverage.
   float encoded = clamp(.5 + d / (2.*band), 0., 1.);
-  color = vec4(encoded, encoded, 1.-coverage, 1.);
+  color = annotation ? vec4(1.,1.,1.,1.-coverage) : vec4(encoded, encoded, 1.-coverage, 1.);
 }
 `;
 export const fusionVertex = `#version 300 es
@@ -75,13 +77,13 @@ uniform bool details;
 uniform sampler2D field;
 out vec4 color;
 void main() {
-  vec3 fields=texture(field,uv).rgb;
+  vec4 fields=texture(field,uv);
   float distance=(fields.r-.5)*2.*band, raw=(fields.g-.5)*2.*band;
   float pixel=max(world.x/resolution.x,world.y/resolution.y);
   float fused=1.-smoothstep(-pixel*.7,pixel*.7,distance);
   float base=1.-smoothstep(-pixel*.7,pixel*.7,raw);
   float coverage=1.-fields.b;
   // Keep contact bridges while fading each whole stroke at its original width.
-  color=vec4(ink, details ? min(1.,coverage+max(0.,fused-base)) : fused);
+  color=vec4(ink, max(1.-fields.a,details ? min(1.,coverage+max(0.,fused-base)) : fused));
 }
 `;

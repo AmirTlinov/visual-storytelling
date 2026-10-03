@@ -5,6 +5,7 @@
 ```sh
 node ../tools/scene.mjs new /absolute/output/story --example explorer-svg --no-audio
 # Кубик → ряд → слой → объём: --example explorer-3d
+# Согласованный морф форм, надписей и текста: --example written-morph
 cd /absolute/output/story
 npm install
 npm run dev -- --port 0  # свободный порт; CLI печатает URL
@@ -28,7 +29,10 @@ npm run dev -- --port 0  # свободный порт; CLI печатает URL
 задай `timeline.json` прямо в секундах, например:
 
 ```json
-{"duration":6,"cues":{"move_x":{"start":1,"end":4,"action":"Предмет проходит сто единиц вправо"}}}
+{
+  "duration": 6,
+  "cues": { "move_x": { "start": 1, "end": 4, "action": "Предмет проходит сто единиц вправо" } }
+}
 ```
 
 Общие часы, плеер, перемотка и отчёт работают так же. `segments` нужны только для реплик
@@ -103,6 +107,10 @@ window.galleryReady = (async () => {
 подписки и движение предмета. `controller.subscribe((mode, values) => …)` сразу сообщает
 состояние и возвращает функцию отписки; `controller.onSeek(time => …)` сообщает целевое время до рендера.
 `notebook.attach(controller)` возвращает тот же `SceneHandle`, опубликованный в `root.scene`; `notebook.onDispose` регистрирует очистку у оболочки — см. [вектор](../../examples/vector/index.ts).
+
+## Превращение предметов
+
+Вместо собственной хореографии создай `Morph.merge([Morph.box([1,1,1], 1), Morph.sphere(.5, 2)], Morph.capsule(.5, 2, 3))` и передай в `Morph3D.mount(view, operation)` или `Morph2D.mount(stage, operation, {id})`. В `render` достаточно `body.render(frame.progress('merge'))`; надпись, контакт и грани принадлежат телу. Для самостоятельных слов и абзацев — `await InkMorph.mount(stage, {sources, targets})` с тем же прогрессом. Для вычисления величин — `MathMorph`. [Рабочий исходник](../../examples/written-morph/scene.js), [контракт и примеры](../../docs/morphing.md).
 
 ## Рассказ → самостоятельный опыт → восстановление
 

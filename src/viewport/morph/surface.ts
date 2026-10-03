@@ -12,6 +12,7 @@ import {
   ShaderMaterial,
   SrcAlphaFactor,
   Vector3,
+  Vector4,
   type Object3D,
 } from 'three';
 import type { Viewport3D } from '../three.js';
@@ -25,6 +26,8 @@ import {
 } from './field.js';
 import { vertexShader, fragmentShader } from './shader.js';
 import { prepareVolumePrograms, selectTopology, type VolumeTopology } from './prepare.js';
+import { inkAtlas } from './ink-atlas.js';
+import type { InkFieldFrame } from '../../ink/fusion/geometry.js';
 
 export interface VolumeMorphOptions {
   /** Finite local bounds enclosing the forms, every pose and the contact blend. */
@@ -61,6 +64,11 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
     paper: { value: paper },
     pigment: { value: pigment },
     ink: { value: ink },
+    written: { value: false },
+    inscription: { value: null as ReturnType<typeof inkAtlas>['texture'] | null },
+    inkRegion: { value: new Vector4() },
+    inkBand: { value: 1 },
+    inkDetails: { value: false },
   };
   const material = view.ink(
     Object.assign(
@@ -70,7 +78,7 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
         vertexShader,
         fragmentShader,
         side: BackSide,
-        // Keep the field in the opaque pass, before transparent surface lettering.
+        // The solid and its inscriptions share the opaque pass and fragment depth.
         // Only the subpixel silhouette has partial coverage.
         blending: CustomBlending,
         blendSrc: SrcAlphaFactor,
@@ -107,10 +115,15 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
     previous = '',
     revision = 0,
     disposed = false;
+  let atlas: ReturnType<typeof inkAtlas> | undefined;
   const changes = new Set<() => void>(),
     cleanups = new Set<() => void>(),
     prepared = new Set<string>();
-  const resetPrepared = () => prepared.clear();
+  let lastInk: InkFieldFrame | undefined;
+  const resetPrepared = () => {
+    prepared.clear();
+    if (lastInk) inscribe(lastInk);
+  };
   view.renderer.domElement.addEventListener('webglcontextrestored', resetPrepared);
   function notify() {
     for (const listener of changes) listener();
@@ -126,9 +139,11 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
     object.removeFromParent();
     geometry.dispose();
     material.dispose();
+    atlas?.dispose();
     unbind();
     offRemove();
     field = undefined;
+    lastInk = undefined;
   }
   const unbind = view.onDispose(dispose);
   const offRemove = view.beforeRemove((root) => {
@@ -138,8 +153,28 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
         break;
       }
   });
+  /** Ink is evaluated at each ray's actual hit, sharing the body's perspective and depth. */
+  function inscribe(frame: InkFieldFrame) {
+    if (disposed) return;
+    lastInk = frame;
+    uniforms.written.value =
+      frame.marks.segments.length > 0 || frame.segments.some((data) => data.length > 0);
+    if (uniforms.written.value) {
+      atlas ??= inkAtlas(view.renderer);
+      bounds.getSize(size);
+      bounds.getCenter(center);
+      const extent = Math.max(size.x, size.y);
+      atlas.render(frame, new Vector4(center.x, center.y, extent, extent));
+      uniforms.inscription.value = atlas.texture;
+      uniforms.inkRegion.value.copy(atlas.region);
+      uniforms.inkBand.value = atlas.band;
+      uniforms.inkDetails.value = frame.details;
+    }
+    view.invalidate();
+  }
   return {
     object,
+    inscribe,
     /** Prepare known stages once, retaining Three's specialized programs on the same material. */
     prepare(stages: readonly VolumeTopology[]) {
       if (disposed) throw new Error('Volume morph has been disposed');
@@ -185,6 +220,8 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
       uniforms.planes.value = field.planes;
       selectTopology(material, sources.length, targets.length);
       mesh.visible = false;
+      uniforms.written.value = false;
+      lastInk = undefined;
       previous = '';
       notify();
     },

@@ -1,5 +1,21 @@
-import type { FusionPose } from './shape.js';
+import type { FusionPose, FusionShape } from './shape.js';
 import type { InkRoute } from './transport.js';
+import { inkRoutes } from './transport.js';
+import { textRoutes } from './text-routing.js';
+
+/** Shared correspondence for all surfaces that carry transforming ink. */
+export function compileInkMotion(sources: readonly FusionShape[], targets: readonly FusionShape[]) {
+  if (!sources.length || !targets.length || [...sources, ...targets].some((s) => !s.paths.length))
+    throw new Error('Fusion needs visible source and target shapes');
+  return inkMotion(
+    [...sources, ...targets].every((s) => s.text)
+      ? textRoutes(sources, targets)
+      : inkRoutes(
+          sources.map((s) => s.paths),
+          targets.map((s) => s.paths),
+        ),
+  );
+}
 
 export interface InkPatch {
   readonly source: number;

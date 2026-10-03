@@ -1,11 +1,10 @@
-import { volumeBox, volumeField } from '../viewport/morph/field.js';
-import { fieldSection } from '../viewport/morph/section.js';
-import { frameBounds, quantityGrid } from './measure.js';
-import { surface, type Surface } from '../ink/surface.js';
+import { frameBounds, quantityStep } from './measure.js';
+import { surface } from '../ink/surface.js';
 import { lettering } from '../ink/lettering.js';
-import { svg } from '../ink/dom.js';
 import { mathPlan } from './math.js';
 import { mathNumber } from './numbers.js';
+import { morphBody2D } from './body-2d.js';
+import { mathBodies } from './math-bodies.js';
 import type { MathOperation, MathPart } from './types.js';
 
 /** A flat section of the shared morph field, drawn by the existing pen and lettering owners. */
@@ -25,11 +24,7 @@ function mount(
     description: 'Числа и формы следуют одной математической операции',
     grid: false,
   });
-  const shapes = svg('g', { color: `var(--ve-${options.pigment ?? 'blue'})` });
-  sheet.layer.append(shapes);
-  const lines = svg('g', { color: 'var(--ve-pencil)' });
-  sheet.layer.append(lines);
-  lines.style.opacity = '.3';
+  const body = morphBody2D(sheet, options);
   const formula = lettering(sheet.layer, '', { size: 30, x: width / 2, y: 45 });
   formula.element.style.color = 'var(--ve-purple)';
   const stepLabel = lettering(sheet.layer, '', { size: 17, x: width / 2, y: height - 14 });
@@ -38,12 +33,7 @@ function mount(
     lettering(sheet.layer, '', { size: 20 }),
   ];
   const notes = new Map<string, ReturnType<typeof lettering>>();
-  let field: ReturnType<typeof volumeField>,
-    topology = '';
-  const labels: Array<ReturnType<typeof lettering>> = [];
-  let plan = prepared,
-    strokes: Array<ReturnType<Surface['pen']['path']>> = [],
-    seams: Array<ReturnType<Surface['pen']['path']>> = [];
+  let plan = prepared;
   let scale = 1,
     disposed = false,
     latest = 0;
@@ -68,75 +58,13 @@ function mount(
     });
     const active =
       plan.encoding === 'quantity' ? (frame.morph >= 0.5 ? frame.targets : frame.sources) : [];
-    const next = `${frame.sources.length}:${frame.targets.length}`;
-    if (next !== topology) {
-      const box = volumeBox([1, 1, 1]);
-      field = volumeField(
-        frame.sources.map(() => box),
-        frame.targets.map(() => box),
-      );
-      topology = next;
-    }
-    const pose = (part: MathPart) => ({ position: part.position, scale: part.size });
-    field.update({
-      sources: frame.sources.map(pose),
-      targets: frame.targets.map(pose),
-      morph: frame.morph,
-      tension: 0,
-    });
-    const contours = fieldSection(field);
-    while (strokes.length > contours.length) strokes.pop()!.dispose();
-    contours.forEach((contour, i) => {
-      const points = contour.map(([x, y]) => [
-        width / 2 + (x - center[0]!) * scale,
-        height / 2 + 20 - (y - center[1]!) * scale,
-      ]);
-      const d = points.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join('') + 'Z';
-      const xs = points.map((p) => p[0]!),
-        ys = points.map((p) => p[1]!);
-      const bounds = {
-        x: Math.min(...xs),
-        y: Math.min(...ys),
-        width: Math.max(...xs) - Math.min(...xs),
-        height: Math.max(...ys) - Math.min(...ys),
-      };
-      if (!strokes[i])
-        strokes[i] = sheet.pen.path(shapes, `quantity-${i}`, d, { fill: 'marker', stroke: 'ink' });
-      else strokes[i]!.update(d, bounds);
-    });
-    const parts = [...frame.sources, ...frame.targets];
-    while (labels.length > parts.length) labels.pop()!.dispose();
-    parts.forEach((part, i) => {
-      const box = transform(part);
-      labels[i] ??= lettering(sheet.layer, '', { size: 26, anchor: 'start' });
-      const label = labels[i]!;
-      label.text(mathNumber(part.value));
-      const fit = Math.min(
-        plan.encoding === 'cells' ? Infinity : 1,
-        Math.max(1, plan.encoding === 'cells' ? box.w * 0.88 : box.w - 8) /
-          Math.max(1, label.width),
-        Math.max(1, plan.encoding === 'cells' ? box.h * 0.62 : box.h - 8) / 26,
-      );
-      label.element.setAttribute(
-        'transform',
-        `translate(${box.x + (box.w - label.width * fit) / 2} ${box.y + box.h / 2 + 9 * fit}) scale(${fit})`,
-      );
-      const opacity = i < frame.sources.length ? frame.sourceOpacity : frame.targetOpacity;
-      label.element.style.opacity = String(opacity);
-    });
-    const marks: Array<[number, number, number, number]> = [];
-    const steps = new Set<number>();
-    for (const part of active) {
-      const grid = quantityGrid(part);
-      steps.add(grid.step);
-      for (const line of grid.lines)
-        marks.push([
-          width / 2 + (line.from[0] - center[0]!) * scale,
-          height / 2 + 20 - (line.from[1] - center[1]!) * scale,
-          width / 2 + (line.to[0] - center[0]!) * scale,
-          height / 2 + 20 - (line.to[1] - center[1]!) * scale,
-        ]);
-    }
+    body.render(
+      mathBodies(frame, plan.encoding === 'quantity'),
+      width / 2 - center[0]! * scale,
+      height / 2 + 20 + center[1]! * scale,
+      scale,
+    );
+    const steps = new Set(active.map(quantityStep));
     stepLabel.text(
       [...steps].some((step) => step > 1)
         ? `${steps.size === 1 ? 'Шаг сетки' : 'Шаги сетки'}: ${[...steps]
@@ -145,12 +73,6 @@ function mount(
             .join(', ')}`
         : '',
     );
-    while (seams.length > marks.length) seams.pop()!.dispose();
-    marks.forEach((m, i) => {
-      const d = `M${m[0]} ${m[1]}L${m[2]} ${m[3]}`;
-      if (!seams[i]) seams[i] = sheet.pen.path(lines, `measure-${i}`, d, { width: 1 });
-      else seams[i]!.update(d);
-    });
     const single = active.length === 1 ? active[0] : undefined;
     dimensions.forEach(
       (l) => (l.element.style.visibility = single && single.size[1] > 1.01 ? '' : 'hidden'),
@@ -193,10 +115,8 @@ function mount(
     formula.dispose();
     stepLabel.dispose();
     dimensions.forEach((l) => l.dispose());
-    labels.forEach((l) => l.dispose());
     notes.forEach((l) => l.dispose());
-    strokes.forEach((s) => s.dispose());
-    seams.forEach((s) => s.dispose());
+    body.dispose();
     sheet.dispose();
   }
   const observer = new ResizeObserver(() => render(latest));

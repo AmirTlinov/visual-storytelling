@@ -24,3 +24,14 @@ export type {
   MathNote,
 } from './morph/types.js';
 export { MathMorph2D } from './morph/svg.js';
+export { Morph, morphPlan } from './morph/objects.js';
+export { Morph2D } from './morph/object-2d.js';
+export { InkMorph } from './morph/ink-operation.js';
+export type { InkOperation } from './morph/ink-operation.js';
+export type {
+  MorphObject,
+  MorphBody,
+  MorphFrame,
+  MorphOperation,
+  MorphPlan,
+} from './morph/objects.js';

@@ -6,7 +6,8 @@ import {
   Scene,
   Vector2,
   Vector4,
-  type ShaderMaterial,
+  ShaderMaterial,
+  UniformsUtils,
 } from 'three';
 import type { Viewport3D } from '../three.js';
 import { volumeBox, volumeField } from './field.js';
@@ -66,8 +67,20 @@ export function prepareVolumePrograms(
   const width = Math.min(8, right - left),
     height = Math.min(8, top - bottom);
 
+  // A render target belongs to the live material. The compilation probe needs no drawing atlas.
+  const { inscription: _atlas, ...probeUniforms } = material.uniforms;
   const geometry = new BoxGeometry(2, 2, 2),
-    clone = material.clone(),
+    clone = new ShaderMaterial({
+      vertexShader: material.vertexShader,
+      fragmentShader: material.fragmentShader,
+      uniforms: {
+        ...UniformsUtils.clone(probeUniforms),
+        inscription: { value: null },
+        written: { value: false },
+      },
+      defines: { ...material.defines },
+      side: material.side,
+    }),
     probe = new Mesh(geometry, clone),
     scene = new Scene().copy(view.scene, false),
     camera = new PerspectiveCamera(36, 1, 0.1, 10),

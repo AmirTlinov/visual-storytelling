@@ -54,14 +54,10 @@ function join(values: readonly number[], divide: boolean): Stage {
         ...piece,
         position: [mix(piece.position[0], together[i]!.position[0], approach), 0, 0] as MorphPoint,
       }));
-      const sourceOpacity = 1 - smooth((p - 0.46) / 0.12),
-        targetOpacity = smooth((p - 0.78) / 0.12);
       return {
         sources: divide ? [whole] : pieces,
         targets: divide ? pieces : [whole],
         morph: divide ? 1 - morph : morph,
-        sourceOpacity: divide ? targetOpacity : sourceOpacity,
-        targetOpacity: divide ? sourceOpacity : targetOpacity,
         formula: progress < 0.9 ? expression(formula) : formula,
         phase:
           progress >= 0.96 ? 'hold' : p < 0.48 ? (divide ? 'separate' : 'approach') : 'contact',
@@ -87,8 +83,6 @@ function resize(from: MorphPoint, to: MorphPoint, formula: string, preserve = fa
         sources: [object],
         targets: [object],
         morph: 0,
-        sourceOpacity: 1,
-        targetOpacity: 0,
         formula: !preserve && p < 0.88 ? expression(formula) : formula,
         phase: p >= 0.96 ? 'hold' : 'resize',
       };
@@ -199,8 +193,6 @@ export function mathPlan(operation: MathOperation): MathMorphPlan {
           sources: [object],
           targets: [object],
           morph: 0,
-          sourceOpacity: 1,
-          targetOpacity: 0,
           formula: label(x, y),
           phase: p === 1 ? 'hold' : 'resize',
         };

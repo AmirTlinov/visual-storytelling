@@ -53,6 +53,11 @@ uniform mat4 clipMatrix;
 uniform vec3 paper;
 uniform vec3 pigment;
 uniform vec3 ink;
+uniform bool written;
+uniform sampler2D inscription;
+uniform vec4 inkRegion;
+uniform float inkBand;
+uniform bool inkDetails;
 varying vec3 rayExit;
 vec3 normalAt(vec3 p, float e) {
   return normalize(vec3(field(p+vec3(e,0,0))-field(p-vec3(e,0,0)),
@@ -60,8 +65,9 @@ vec3 normalAt(vec3 p, float e) {
 }
 // Return the normal of the actual visible surface, including zero coverage for a miss.
 // The caller compares subpixel hits instead of probing inside the blended volume.
-vec4 trace(vec3 direction, vec3 dx, vec3 dy, out float depth) {
+vec4 trace(vec3 direction, vec3 dx, vec3 dy, out float depth, out vec3 point, out float pixel) {
   depth = 1.;
+  point = vec3(0.); pixel = .00001;
   float pixelAngle = max(length(dx),length(dy));
   vec3 safeDirection = mix(direction, vec3(1e-8), lessThan(abs(direction),vec3(1e-8)));
   vec3 nearBox = (boundsMin - rayOrigin) / safeDirection;
@@ -72,25 +78,35 @@ vec4 trace(vec3 direction, vec3 dx, vec3 dy, out float depth) {
   bool hit = false;
   for(int i=0;i<192;i++) {
     if(t > end) break;
-    float pixel = max(.00001, pixelAngle * t);
+    pixel = max(.00001, pixelAngle * t);
     float d = abs(field(rayOrigin + direction * t));
     if(d <= pixel * .04) { hit = true; break; }
     t += max(d * .85, pixel * .02);
   }
   if(!hit) return vec4(0.);
-  vec3 point = rayOrigin + direction * t;
-  float pixel = max(.00001,pixelAngle*t);
+  point = rayOrigin + direction * t;
+  pixel = max(.00001,pixelAngle*t);
   vec3 n = normalAt(point, pixel * .5);
   vec4 clip = clipMatrix * vec4(point,1.);
   depth = clip.z / clip.w * .5 + .5;
   return vec4(n,1.);
 }
-vec3 shade(vec3 n, float edge) {
+float writing(vec3 p, vec3 n, float pixel) {
+  if(!written || n.z <= 0.) return 0.;
+  vec2 uv = (p.xy-inkRegion.xy)/inkRegion.zw+.5;
+  if(any(lessThan(uv,vec2(0.))) || any(greaterThan(uv,vec2(1.)))) return 0.;
+  vec4 fields = texture2D(inscription,uv);
+  float d=(fields.r-.5)*2.*inkBand, raw=(fields.g-.5)*2.*inkBand;
+  float fused=1.-smoothstep(-pixel*.7,pixel*.7,d);
+  float base=1.-smoothstep(-pixel*.7,pixel*.7,raw);
+  return max(1.-fields.a,inkDetails ? min(1.,1.-fields.b+max(0.,fused-base)) : fused);
+}
+vec3 shade(vec3 n, float edge, float pen) {
   float crease = smoothstep(.2,1.4,edge);
   float stroke = .5 * crease;
   vec3 w = abs(n);
   float wash = dot(w,vec3(n.x > 0. ? .88 : 1.,n.y > 0. ? .82 : 1.,n.z > 0. ? .93 : .85)) / max(w.x+w.y+w.z,.00001);
-  return mix(mix(paper,pigment,.65*wash),ink,stroke);
+  return mix(mix(paper,pigment,.65*wash),ink,max(stroke,pen));
 }
 void main() {
   vec3 direction = normalize(rayExit-rayOrigin);
@@ -98,14 +114,17 @@ void main() {
   vec4 color = vec4(0.);
   float depth = 1.;
   vec4 surfaces[8];
+  float lettering[8];
   for(int i=0;i<8;i++) {
     vec2 offset = i==0 ? vec2(-.5,-.5) : i==1 ? vec2(.5,-.5) :
                   i==2 ? vec2(.5,.5) : i==3 ? vec2(-.5,.5) :
                   i==4 ? vec2(-.125,-.375) : i==5 ? vec2(.375,-.125) :
                   i==6 ? vec2(.125,.375) : vec2(-.375,.125);
     float sampleDepth;
+    vec3 point; float pixel;
     vec3 sampleDirection = normalize(direction+dx*offset.x+dy*offset.y);
-    surfaces[i] = trace(sampleDirection,dx,dy,sampleDepth);
+    surfaces[i] = trace(sampleDirection,dx,dy,sampleDepth,point,pixel);
+    lettering[i] = surfaces[i].a > 0. ? writing(point,surfaces[i].xyz,pixel) : 0.;
     depth = min(depth,sampleDepth);
   }
   // Corner samples cover the full pixel footprint so a thin edge cannot fall
@@ -118,7 +137,7 @@ void main() {
   }
   // Interior rotated samples carry the fill; corner samples retain a continuous
   // thin crease and contribute a small amount to antialiasing the silhouette.
-  for(int i=0;i<8;i++) color += vec4(shade(surfaces[i].xyz,edge)*surfaces[i].a,surfaces[i].a) * (i<4 ? .05 : .2);
+  for(int i=0;i<8;i++) color += vec4(shade(surfaces[i].xyz,edge,lettering[i])*surfaces[i].a,surfaces[i].a) * (i<4 ? .05 : .2);
   if(color.a == 0.) discard;
   vec3 wash = mix(color.rgb/color.a,ink,.5*(1.-color.a));
   gl_FragColor = vec4(wash,color.a);

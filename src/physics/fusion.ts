@@ -33,14 +33,9 @@ export async function physicalFusion(parent: HTMLElement, options: PhysicalFusio
     onDispose: surface.onDispose,
     setShapes(sources: readonly FusionShape[], targets: readonly FusionShape[]) {
       if (disposed) throw new Error('Fusion surface has been disposed');
+      const motion = surface.setShapes(sources, targets);
       track?.dispose();
-      track = fusionTrack(
-        world,
-        surface.setShapes(sources, targets),
-        options.frame,
-        options.duration,
-        options.softness,
-      );
+      track = fusionTrack(world, motion, options.frame, options.duration, options.softness);
     },
     render(time: number) {
       if (disposed || !track) return;

@@ -1,5 +1,15 @@
 import type { InkPatch } from './motion.js';
 
+/** Already transported ink, shared by the canvas and the solid's GPU material. */
+export interface InkFieldFrame {
+  readonly segments: readonly Float32Array[];
+  readonly visibility: readonly Float32Array[];
+  readonly tension: number;
+  readonly details: boolean;
+  readonly label: string;
+  readonly marks: { segments: Float32Array; visibility: Float32Array };
+}
+
 /** Borrowed displayed buffers. Values remain valid until the next render. */
 export interface FusionGeometry {
   /** Each source buffer stores ax, ay, bx, by, radiusA, radiusB per segment. */

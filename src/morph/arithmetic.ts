@@ -82,7 +82,7 @@ function reduceCells(
     bounds: [...inputs, target],
     sample(p) {
       const approach = smooth(p / 0.4),
-        morph = smooth((p - 0.48) / 0.34);
+        morph = smooth((p - 0.4) / 0.5);
       const sources = inputs.map((part, i) => ({
         ...part,
         position: [
@@ -114,8 +114,7 @@ function reduceCells(
           }),
         ],
         morph,
-        sourceOpacity: 1 - smooth((p - 0.44) / 0.14),
-        targetOpacity: smooth((p - 0.82) / 0.1),
+        tension: 0.24 * smooth((p - 0.3) / 0.1),
         formula:
           p < 0.82
             ? expression
@@ -162,7 +161,7 @@ function pairs(
     bounds: starts,
     sample(p) {
       const approach = smooth(p / 0.4),
-        morph = smooth((p - 0.48) / 0.34);
+        morph = smooth((p - 0.4) / 0.5);
       const sources = starts.map((part, i) => ({
         ...part,
         position: [
@@ -175,8 +174,7 @@ function pairs(
         sources,
         targets,
         morph,
-        sourceOpacity: 1 - smooth((p - 0.44) / 0.14),
-        targetOpacity: smooth((p - 0.82) / 0.1),
+        tension: 0.24 * smooth((p - 0.3) / 0.1),
         formula: operator === 'multiply' ? 'Умножаем пары' : 'Складываем пары',
         phase: p < 0.4 ? 'approach' : p < 0.9 ? 'contact' : 'hold',
         notes: [

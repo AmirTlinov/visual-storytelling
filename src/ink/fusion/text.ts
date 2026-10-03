@@ -10,6 +10,9 @@ export interface FusionTextOptions {
   font?: string;
 }
 
+// Glyph geometry is independent of the word or its position. Reuse it as counters change.
+const glyphInk = new Map<string, InkPath[]>();
+
 /** Layout keeps glyph and word ownership; wrapping never shrinks an entire paragraph. */
 export function fusionText(value: string, options: FusionTextOptions = {}): FusionShape {
   if (!value.trim()) throw new Error('Fusion text must contain a visible character');
@@ -70,52 +73,59 @@ export function fusionText(value: string, options: FusionTextOptions = {}): Fusi
         size,
         paths: [],
       };
-      const strokes = font.startsWith('SketchPencil') ? glyphs[char] : undefined;
-      if (strokes) {
-        const sx = advance / 6.7,
-          sy = size * 0.082;
-        for (const d of strokes) {
-          vector.setAttribute('d', d);
-          const length = vector.getTotalLength(),
-            count = Math.max(2, Math.ceil((length * Math.max(sx, sy)) / 1.5));
-          letter.paths.push(paths.length);
-          paths.push(
-            Array.from({ length: count }, (_, i): InkPoint => {
-              const at = (length * i) / (count - 1),
-                point = vector.getPointAtLength(at);
-              const before = vector.getPointAtLength(Math.max(0, at - 0.01)),
-                after = vector.getPointAtLength(Math.min(length, at + 0.01));
-              const tx = (after.x - before.x) * sx,
-                ty = (after.y - before.y) * sy,
-                norm = Math.hypot(tx, ty) || 1;
-              return [
-                x + advance * 0.055 + point.x * sx,
-                baseline + (point.y - 10) * sy,
-                0.325 * Math.hypot((sx * ty) / norm, (sy * tx) / norm),
-              ];
-            }),
-          );
-        }
-      } else {
-        const box = context.measureText(char),
-          w = Math.ceil(box.actualBoundingBoxLeft + box.actualBoundingBoxRight + 12),
-          h = Math.ceil(box.actualBoundingBoxAscent + box.actualBoundingBoxDescent + 12);
-        const shape = fusionShape(w, h, (ctx) => {
-          ctx.font = context.font;
-          ctx.fillText(char, 6 + box.actualBoundingBoxLeft, 6 + box.actualBoundingBoxAscent);
-        });
-        for (const path of shape.paths) {
-          letter.paths.push(paths.length);
-          paths.push(
+      const key = `${font}/${size}/${advance}/${char}`;
+      let local = glyphInk.get(key);
+      if (!local) {
+        local = [];
+        const strokes = font.startsWith('SketchPencil') ? glyphs[char] : undefined;
+        if (strokes) {
+          const sx = advance / 6.7,
+            sy = size * 0.082;
+          for (const d of strokes) {
+            vector.setAttribute('d', d);
+            const length = vector.getTotalLength(),
+              count = Math.max(2, Math.ceil((length * Math.max(sx, sy)) / 1.5));
+            local.push(
+              Array.from({ length: count }, (_, i): InkPoint => {
+                const at = (length * i) / (count - 1),
+                  point = vector.getPointAtLength(at);
+                const before = vector.getPointAtLength(Math.max(0, at - 0.01)),
+                  after = vector.getPointAtLength(Math.min(length, at + 0.01));
+                const tx = (after.x - before.x) * sx,
+                  ty = (after.y - before.y) * sy,
+                  norm = Math.hypot(tx, ty) || 1;
+                return [
+                  advance * 0.055 + point.x * sx,
+                  (point.y - 10) * sy,
+                  0.325 * Math.hypot((sx * ty) / norm, (sy * tx) / norm),
+                ];
+              }),
+            );
+          }
+        } else {
+          const box = context.measureText(char),
+            w = Math.ceil(box.actualBoundingBoxLeft + box.actualBoundingBoxRight + 12),
+            h = Math.ceil(box.actualBoundingBoxAscent + box.actualBoundingBoxDescent + 12);
+          const shape = fusionShape(w, h, (ctx) => {
+            ctx.font = context.font;
+            ctx.fillText(char, 6 + box.actualBoundingBoxLeft, 6 + box.actualBoundingBoxAscent);
+          });
+          local = shape.paths.map((path) =>
             path.map(
               (p): InkPoint => [
-                p[0] + w / 2 + x - 6 - box.actualBoundingBoxLeft,
-                p[1] + h / 2 + baseline - 6 - box.actualBoundingBoxAscent,
+                p[0] + w / 2 - 6 - box.actualBoundingBoxLeft,
+                p[1] + h / 2 - 6 - box.actualBoundingBoxAscent,
                 p[2],
               ],
             ),
           );
         }
+        if (glyphInk.size >= 512) glyphInk.delete(glyphInk.keys().next().value!);
+        glyphInk.set(key, local);
+      }
+      for (const path of local) {
+        letter.paths.push(paths.length);
+        paths.push(path.map((p): InkPoint => [x + p[0], baseline + p[1], p[2]]));
       }
       words[word]!.glyphs.push(letters.length);
       letters.push(letter);
