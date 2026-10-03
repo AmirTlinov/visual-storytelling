@@ -20,7 +20,6 @@
 .ve-scene .ve-view-actions p{margin:0;font-size:14px;color:var(--ve-muted)}
 .ve-scene .ve-view-actions button{font-size:15px;padding:6px 12px}
 .ve-scene .ve-status:empty{display:none}
-.ve-scene .ve-camera-reset{display:block;margin:0 auto 8px;font-size:15px;padding:6px 12px}
 .ve-scene .ve-chapter-heading .ve-control{display:block;margin:0}
 .ve-scene .ve-chapter-heading .ve-control-title{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 .ve-scene .ve-chapter-heading .ve-select-trigger{font:inherit;text-align:center;width:100%;height:auto;min-height:44px;white-space:normal;overflow-wrap:anywhere;padding:4px 28px}

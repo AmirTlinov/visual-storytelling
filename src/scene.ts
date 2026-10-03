@@ -42,7 +42,6 @@ function mount(
   const values = Object.fromEntries(parameters.map((p) => [p.key, p.value]));
   let inputStory: ((key: string, value: ControlValue) => void) | undefined;
   let view: { reset(): void; dispose(): void } | undefined;
-  let resetView: HTMLButtonElement | undefined;
   const heading = node('h1', {}, title),
     modes = node('div', { class: 'modes', role: 'group', 'aria-label': 'Режим сцены' });
   const storyButton = node(
@@ -96,8 +95,12 @@ function mount(
     root.dataset.sceneMode = mode;
     onMode(mode);
   }
-  storyButton.addEventListener('click', () => setMode('story'), options);
-  exploreButton.addEventListener('click', () => setMode('explore'), options);
+  function selectMode(next: 'story' | 'explore') {
+    setMode(next);
+    view?.reset();
+  }
+  storyButton.addEventListener('click', () => selectMode('story'), options);
+  exploreButton.addEventListener('click', () => selectMode('explore'), options);
   document.addEventListener(
     'visibilitychange',
     () => {
@@ -141,16 +144,12 @@ function mount(
       else cleanups.add(cleanup);
       return () => cleanups.delete(cleanup);
     },
-    /** View gestures keep media running; seeking restores the authored shot. */
+    /** View gestures keep media running; mode buttons and seeking restore the authored shot. */
     attachView(next: { reset(): void; dispose(): void }) {
       if (view === next) return;
       view?.dispose();
       view = next;
-      if (!resetView) {
-        resetView = SketchControls.action('Вернуть ракурс', () => view?.reset());
-        resetView.classList.add('ve-camera-reset');
-        modes.after(resetView);
-      }
+      modes.hidden = false;
     },
     dispose,
   };

@@ -55,7 +55,7 @@ export async function renderer({ scene, theme, width = 960, controls = false, di
           getComputedStyle(paper).backgroundPosition.split(',')[0].split(/\s+/).map(parseFloat);
         const style = document.createElement('style');
         style.textContent =
-          '.ve-player,.modes,.ve-parameters,.ve-view-actions,.ve-camera-reset,.caption,.ve-status{display:none!important}';
+          '.ve-player,.modes,.ve-parameters,.ve-view-actions,.caption,.ve-status{display:none!important}';
         document.head.append(style);
         // Hiding a row above the canvas must move its notebook grid by the same amount.
         if (paper && before && origin && position) {
