@@ -1,10 +1,14 @@
+import { volumeBox, volumeField } from '../viewport/morph/field.js';
+import { fieldSection } from '../viewport/morph/section.js';
 import { frameBounds, quantityGrid } from './measure.js';
 import { surface, type Surface } from '../ink/surface.js';
 import { lettering } from '../ink/lettering.js';
 import { svg } from '../ink/dom.js';
-import { mathPlan, mathNumber, type MathOperation, type MathPart } from './math.js';
+import { mathPlan } from './math.js';
+import { mathNumber } from './numbers.js';
+import type { MathOperation, MathPart } from './types.js';
 
-/** The same measured operation in 2D, drawn by the existing pen and lettering owners. */
+/** A flat section of the shared morph field, drawn by the existing pen and lettering owners. */
 function mount(
   parent: HTMLElement,
   operation: MathOperation,
@@ -17,8 +21,8 @@ function mount(
     id: options.id,
     width,
     height,
-    title: 'Преобразование величин',
-    description: 'Части сохраняют общую единицу измерения',
+    title: 'Математическое преобразование',
+    description: 'Числа и формы следуют одной математической операции',
     grid: false,
   });
   const shapes = svg('g', { color: `var(--ve-${options.pigment ?? 'blue'})` });
@@ -27,11 +31,15 @@ function mount(
   sheet.layer.append(lines);
   lines.style.opacity = '.3';
   const formula = lettering(sheet.layer, '', { size: 30, x: width / 2, y: 45 });
+  formula.element.style.color = 'var(--ve-purple)';
   const stepLabel = lettering(sheet.layer, '', { size: 17, x: width / 2, y: height - 14 });
   const dimensions = [
     lettering(sheet.layer, '', { size: 20 }),
     lettering(sheet.layer, '', { size: 20 }),
   ];
+  const notes = new Map<string, ReturnType<typeof lettering>>();
+  let field: ReturnType<typeof volumeField>,
+    topology = '';
   const labels: Array<ReturnType<typeof lettering>> = [];
   let plan = prepared,
     strokes: Array<ReturnType<Surface['pen']['path']>> = [],
@@ -58,24 +66,40 @@ function mount(
       w: part.size[0] * scale,
       h: part.size[1] * scale,
     });
-    const active = frame.morph >= 0.5 ? frame.targets : frame.sources;
-    const boxes = active.map(transform).sort((a, b) => a.x - b.x);
-    const merged: typeof boxes = [];
-    for (const box of boxes) {
-      const last = merged.at(-1);
-      if (
-        last &&
-        Math.abs(last.x + last.w - box.x) < 0.001 &&
-        Math.abs(last.y - box.y) < 0.001 &&
-        Math.abs(last.h - box.h) < 0.001
-      )
-        last.w += box.w;
-      else merged.push({ ...box });
+    const active =
+      plan.encoding === 'quantity' ? (frame.morph >= 0.5 ? frame.targets : frame.sources) : [];
+    const next = `${frame.sources.length}:${frame.targets.length}`;
+    if (next !== topology) {
+      const box = volumeBox([1, 1, 1]);
+      field = volumeField(
+        frame.sources.map(() => box),
+        frame.targets.map(() => box),
+      );
+      topology = next;
     }
-    while (strokes.length > merged.length) strokes.pop()!.dispose();
-    merged.forEach((box, i) => {
-      const d = `M${box.x} ${box.y}h${box.w}v${box.h}h${-box.w}Z`;
-      const bounds = { x: box.x, y: box.y, width: box.w, height: box.h };
+    const pose = (part: MathPart) => ({ position: part.position, scale: part.size });
+    field.update({
+      sources: frame.sources.map(pose),
+      targets: frame.targets.map(pose),
+      morph: frame.morph,
+      tension: 0,
+    });
+    const contours = fieldSection(field);
+    while (strokes.length > contours.length) strokes.pop()!.dispose();
+    contours.forEach((contour, i) => {
+      const points = contour.map(([x, y]) => [
+        width / 2 + (x - center[0]!) * scale,
+        height / 2 + 20 - (y - center[1]!) * scale,
+      ]);
+      const d = points.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join('') + 'Z';
+      const xs = points.map((p) => p[0]!),
+        ys = points.map((p) => p[1]!);
+      const bounds = {
+        x: Math.min(...xs),
+        y: Math.min(...ys),
+        width: Math.max(...xs) - Math.min(...xs),
+        height: Math.max(...ys) - Math.min(...ys),
+      };
       if (!strokes[i])
         strokes[i] = sheet.pen.path(shapes, `quantity-${i}`, d, { fill: 'marker', stroke: 'ink' });
       else strokes[i]!.update(d, bounds);
@@ -88,9 +112,10 @@ function mount(
       const label = labels[i]!;
       label.text(mathNumber(part.value));
       const fit = Math.min(
-        1,
-        Math.max(1, box.w - 8) / Math.max(1, label.width),
-        Math.max(1, box.h - 8) / 26,
+        plan.encoding === 'cells' ? Infinity : 1,
+        Math.max(1, plan.encoding === 'cells' ? box.w * 0.88 : box.w - 8) /
+          Math.max(1, label.width),
+        Math.max(1, plan.encoding === 'cells' ? box.h * 0.62 : box.h - 8) / 26,
       );
       label.element.setAttribute(
         'transform',
@@ -137,6 +162,27 @@ function mount(
       dimensions[1]!.text(mathNumber(single.size[1]));
       dimensions[1]!.at(b.x - 25, b.y + b.h / 2);
     }
+    const currentNotes = new Set((frame.notes ?? []).map((n) => n.id));
+    for (const [id, note] of notes)
+      if (!currentNotes.has(id)) {
+        note.dispose();
+        notes.delete(id);
+      }
+    for (const note of frame.notes ?? []) {
+      if (!notes.has(note.id))
+        notes.set(note.id, lettering(sheet.layer, '', { size: 26, anchor: 'start' }));
+      const label = notes.get(note.id)!;
+      label.text(note.text);
+      const fit = Math.min(
+        (note.size[0] * scale) / Math.max(1, label.width),
+        (note.size[1] * scale) / 26,
+      );
+      label.element.setAttribute(
+        'transform',
+        `translate(${width / 2 + (note.position[0] - center[0]!) * scale - (label.width * fit) / 2} ${height / 2 + 20 - (note.position[1] - center[1]!) * scale + 9 * fit}) scale(${fit})`,
+      );
+      label.element.style.opacity = String(note.opacity);
+    }
     formula.text(frame.formula);
     return frame;
   }
@@ -148,6 +194,7 @@ function mount(
     stepLabel.dispose();
     dimensions.forEach((l) => l.dispose());
     labels.forEach((l) => l.dispose());
+    notes.forEach((l) => l.dispose());
     strokes.forEach((s) => s.dispose());
     seams.forEach((s) => s.dispose());
     sheet.dispose();

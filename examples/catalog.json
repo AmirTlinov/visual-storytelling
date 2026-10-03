@@ -74,6 +74,12 @@
     "time": 22,
     "checkpoints": [0, 7, 12, 17, 22, 26, 35, 40, 48, 54, 63, 69]
   },
+  "neuron-morph": {
+    "title": "Как нейрон собирает сигнал",
+    "page": "index.html",
+    "time": 11,
+    "checkpoints": [0, 6, 9.5, 11, 16.8, 19.5, 21]
+  },
   "morph-contact": {
     "title": "Форма становится опорой",
     "page": "index.html",

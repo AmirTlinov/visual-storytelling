@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MathMorph, mathPlan, type MathPart } from '../src/morph/math.ts';
+import { MathMorph, mathPlan } from '../dist/morph/math.js';
+import type { MathPart } from '../dist/morph/types.js';
 const close = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-8, `${a} != ${b}`);
 const volume = (a: MathPart) => a.size[0] * a.size[1] * a.size[2];
 

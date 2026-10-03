@@ -24,6 +24,7 @@ import {
   type VolumeShape,
 } from './field.js';
 import { vertexShader, fragmentShader } from './shader.js';
+import { prepareVolumePrograms, selectTopology, type VolumeTopology } from './prepare.js';
 
 export interface VolumeMorphOptions {
   /** Finite local bounds enclosing the forms, every pose and the contact blend. */
@@ -107,7 +108,10 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
     revision = 0,
     disposed = false;
   const changes = new Set<() => void>(),
-    cleanups = new Set<() => void>();
+    cleanups = new Set<() => void>(),
+    prepared = new Set<string>();
+  const resetPrepared = () => prepared.clear();
+  view.renderer.domElement.addEventListener('webglcontextrestored', resetPrepared);
   function notify() {
     for (const listener of changes) listener();
   }
@@ -117,6 +121,8 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
     for (const cleanup of cleanups) cleanup();
     changes.clear();
     cleanups.clear();
+    prepared.clear();
+    view.renderer.domElement.removeEventListener('webglcontextrestored', resetPrepared);
     object.removeFromParent();
     geometry.dispose();
     material.dispose();
@@ -134,6 +140,24 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
   });
   return {
     object,
+    /** Prepare known stages once, retaining Three's specialized programs on the same material. */
+    prepare(stages: readonly VolumeTopology[]) {
+      if (disposed) throw new Error('Volume morph has been disposed');
+      if (
+        stages.some(
+          ({ sources, targets }) =>
+            !Number.isSafeInteger(sources) ||
+            sources < 1 ||
+            !Number.isSafeInteger(targets) ||
+            targets < 1,
+        )
+      )
+        throw new Error('Each prepared stage needs positive source and target counts');
+      const pending = new Map(stages.map((stage) => [`${stage.sources}:${stage.targets}`, stage]));
+      for (const key of prepared) pending.delete(key);
+      if (pending.size && prepareVolumePrograms(view, mesh, [...pending.values()]))
+        for (const key of pending.keys()) prepared.add(key);
+    },
     get geometry() {
       return field && previous ? { bounds, distance: field.distance, revision } : undefined;
     },
@@ -159,14 +183,7 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
       uniforms.transforms.value = field.transforms;
       uniforms.scales.value = field.scales;
       uniforms.planes.value = field.planes;
-      if (
-        material.defines.SHAPE_COUNT !== sources.length + targets.length ||
-        material.defines.SOURCE_COUNT !== sources.length
-      ) {
-        material.defines.SHAPE_COUNT = sources.length + targets.length;
-        material.defines.SOURCE_COUNT = sources.length;
-        material.needsUpdate = true;
-      }
+      selectTopology(material, sources.length, targets.length);
       mesh.visible = false;
       previous = '';
       notify();

@@ -1,53 +1,13 @@
-/** Arithmetic is the model. Renderers share quantities, dimensions, contact poses and timing. */
-export type MathOperation =
-  | { kind: 'add'; values: readonly number[] }
-  | { kind: 'divide'; value: number; parts: number }
-  | { kind: 'multiply'; value: number; factor: number }
-  | { kind: 'power'; base: number; exponent: number }
-  | { kind: 'exponential'; base: number; from: number; to: number }
-  | {
-      kind: 'map';
-      from: number;
-      to: number;
-      range: readonly [number, number];
-      value: (x: number) => number;
-      label: (x: number, y: number) => string;
-    };
-export type MorphPoint = readonly [number, number, number];
-export interface MathPart {
-  size: MorphPoint;
-  position: MorphPoint;
-  value: number;
-}
-export interface MathMorphFrame {
-  sources: MathPart[];
-  targets: MathPart[];
-  morph: number;
-  sourceOpacity: number;
-  targetOpacity: number;
-  formula: string;
-  phase: 'approach' | 'contact' | 'separate' | 'resize' | 'hold';
-  stage: number;
-}
-export interface MathMorphPlan {
-  readonly result: number;
-  readonly bounds: readonly [MorphPoint, MorphPoint];
-  readonly stages: number;
-  sample(progress: number): MathMorphFrame;
-}
-const clamp = (x: number) => Math.max(0, Math.min(1, x));
-const smooth = (p: number) => {
-  p = clamp(p);
-  return p * p * (3 - 2 * p);
-};
-const mix = (a: number, b: number, p: number) => a + (b - a) * p;
-export const mathNumber = (n: number) => Number(n.toPrecision(4)).toString().replace('-', '−');
-function equation(expression: string, result: number, inputs: readonly number[] = []) {
-  const rounded = [...inputs, result].some(
-    (n) => Math.abs(Number(n.toPrecision(4)) - n) > Math.abs(n) * Number.EPSILON * 8,
-  );
-  return `${expression} ${rounded ? '≈' : '='} ${mathNumber(result)}`;
-}
+import type {
+  Arithmetic,
+  MathOperation,
+  MathMorphFrame,
+  MathMorphPlan,
+  MathPart,
+  MorphPoint,
+} from './types.js';
+import { arithmeticPlan } from './arithmetic.js';
+import { clamp, smooth, mix, mathNumber, equation } from './numbers.js';
 const expression = (formula: string) => formula.split(/ [=≈] /)[0]!;
 function quantity(n: number) {
   if (!(n > 0) || !Number.isFinite(n))
@@ -135,7 +95,12 @@ function resize(from: MorphPoint, to: MorphPoint, formula: string, preserve = fa
     },
   };
 }
+export function mathPlan<O extends MathOperation>(
+  operation: O,
+): MathMorphPlan<O extends { kind: 'vectorAdd' } ? readonly number[] : number>;
 export function mathPlan(operation: MathOperation): MathMorphPlan {
+  if (operation.kind === 'calculate' || operation.kind === 'dot' || operation.kind === 'vectorAdd')
+    return arithmeticPlan(operation);
   const stages: Stage[] = [];
   let result: number;
   if (operation.kind === 'add') {
@@ -251,6 +216,7 @@ export function mathPlan(operation: MathOperation): MathMorphPlan {
         upper[axis] = Math.max(upper[axis]!, body.position[axis]! + body.size[axis]! / 2);
       }
   return {
+    encoding: 'quantity',
     result,
     bounds: [lower as unknown as MorphPoint, upper as unknown as MorphPoint],
     stages: stages.length,
@@ -263,17 +229,59 @@ export function mathPlan(operation: MathOperation): MathMorphPlan {
   };
 }
 export const MathMorph = {
-  add: (...values: number[]): MathOperation => ({ kind: 'add', values }),
-  divide: (value: number, parts: number): MathOperation => ({ kind: 'divide', value, parts }),
-  multiply: (value: number, factor: number): MathOperation => ({ kind: 'multiply', value, factor }),
-  power: (base: number, exponent: number): MathOperation => ({ kind: 'power', base, exponent }),
-  exponential: (from = 0, to = 3, base = Math.E): MathOperation => ({
+  calculate: (
+    operator: Arithmetic,
+    ...values: number[]
+  ): Extract<MathOperation, { kind: 'calculate' }> => ({
+    kind: 'calculate',
+    operator,
+    values,
+  }),
+  dot: (
+    left: readonly number[],
+    right: readonly number[],
+  ): Extract<MathOperation, { kind: 'dot' }> => ({
+    kind: 'dot',
+    left,
+    right,
+  }),
+  vectorAdd: (
+    left: readonly number[],
+    right: readonly number[],
+  ): Extract<MathOperation, { kind: 'vectorAdd' }> => ({
+    kind: 'vectorAdd',
+    left,
+    right,
+  }),
+  add: (...values: number[]): Extract<MathOperation, { kind: 'add' }> => ({ kind: 'add', values }),
+  divide: (value: number, parts: number): Extract<MathOperation, { kind: 'divide' }> => ({
+    kind: 'divide',
+    value,
+    parts,
+  }),
+  multiply: (value: number, factor: number): Extract<MathOperation, { kind: 'multiply' }> => ({
+    kind: 'multiply',
+    value,
+    factor,
+  }),
+  power: (base: number, exponent: number): Extract<MathOperation, { kind: 'power' }> => ({
+    kind: 'power',
+    base,
+    exponent,
+  }),
+  exponential: (
+    from = 0,
+    to = 3,
+    base = Math.E,
+  ): Extract<MathOperation, { kind: 'exponential' }> => ({
     kind: 'exponential',
     from,
     to,
     base,
   }),
-  map: (options: Omit<Extract<MathOperation, { kind: 'map' }>, 'kind'>): MathOperation => ({
+  map: (
+    options: Omit<Extract<MathOperation, { kind: 'map' }>, 'kind'>,
+  ): Extract<MathOperation, { kind: 'map' }> => ({
     kind: 'map',
     ...options,
   }),

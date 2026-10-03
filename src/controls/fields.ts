@@ -260,9 +260,9 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
     output: HTMLOutputElement | undefined,
     select: ReturnType<typeof selectControl> | undefined;
   element.append(title);
-  const emit = (next: ControlValue) => {
+  const emit = (next: ControlValue, editedInput?: HTMLInputElement) => {
     value = next;
-    update();
+    update(editedInput);
     onChange(next);
   };
   if (type === 'choice') {
@@ -313,7 +313,7 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
     const changed = () => {
       const valid = Number.isFinite(input.valueAsNumber) && input.validity.valid;
       input.setAttribute('aria-invalid', String(!valid));
-      if (valid) emit(input.valueAsNumber);
+      if (valid) emit(input.valueAsNumber, input);
     };
     input.addEventListener('input', changed, listen);
     input.addEventListener(
@@ -356,7 +356,7 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
       element.append(row);
     } else element.append(inkField(input));
   } else throw new Error(`Unknown control type: ${type}`);
-  function update() {
+  function update(editedInput?: HTMLInputElement) {
     select?.setValue(value);
     if (textarea) {
       textarea.value = String(value);
@@ -365,7 +365,8 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
     for (const input of inputs) {
       if (type === 'choice') input.checked = input.value === String(value);
       else if (type === 'toggle' || type === 'checkbox') input.checked = Boolean(value);
-      else input.value = String(value);
+      // Preserve intermediate numeric input such as "-0" until the edit is complete.
+      else if (input !== editedInput) input.value = String(value);
       input.disabled = Boolean(p.disabled);
     }
     if (output) output.textContent = p.format ? p.format(value) : String(value);

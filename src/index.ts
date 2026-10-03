@@ -14,5 +14,13 @@ export * from './explorer/index.js';
 export * from './host/widget-state.js';
 
 export { MathMorph, mathPlan } from './morph/math.js';
-export type { MathOperation, MathMorphFrame, MathMorphPlan, MathPart } from './morph/math.js';
+export type {
+  Arithmetic,
+  MathOperation,
+  MathMorphFrame,
+  MathMorphPlan,
+  MathPart,
+  MathOrigin,
+  MathNote,
+} from './morph/types.js';
 export { MathMorph2D } from './morph/svg.js';

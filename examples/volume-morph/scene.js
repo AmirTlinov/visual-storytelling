@@ -35,6 +35,9 @@ window.galleryReady = (async () => {
     [[cube, cube], [VolumeMorph.box([2.25, 1.15, 0.97])]],
     [[cube, VolumeMorph.sphere(0.575)], [VolumeMorph.capsule(0.62, 2.6)]],
   ];
+  morph.prepare(
+    shapes.map(([sources, targets]) => ({ sources: sources.length, targets: targets.length })),
+  );
   const world = new T.Group();
   world.add(morph.object);
   view.setObject(world, { fitView: false });

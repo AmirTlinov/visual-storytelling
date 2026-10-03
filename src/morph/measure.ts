@@ -1,4 +1,4 @@
-import type { MathMorphFrame, MathMorphPlan, MathPart, MorphPoint } from './math.js';
+import type { MathMorphFrame, MathMorphPlan, MathPart, MorphPoint } from './types.js';
 
 export function partBounds(parts: readonly MathPart[]): [MorphPoint, MorphPoint] {
   const min = [Infinity, Infinity, Infinity],
@@ -12,7 +12,10 @@ export function partBounds(parts: readonly MathPart[]): [MorphPoint, MorphPoint]
 }
 /** Large quantities use a following frame; the plan retains its fixed comparison bounds. */
 export function frameBounds(plan: MathMorphPlan, frame: MathMorphFrame): [MorphPoint, MorphPoint] {
-  if (Math.max(...plan.bounds[1].map((v, i) => v - plan.bounds[0][i]!)) <= 16)
+  if (
+    plan.encoding === 'cells' ||
+    Math.max(...plan.bounds[1].map((v, i) => v - plan.bounds[0][i]!)) <= 16
+  )
     return [[...plan.bounds[0]], [...plan.bounds[1]]];
   const [min, max] = partBounds(
     frame.morph === 0
