@@ -46,38 +46,47 @@ export async function buildAPI(root) {
 }
 
 /** Read actual public signatures without requiring TypeScript or implementation sources. */
-export async function describeAPI(root, query) {
+export async function describeAPI(root, ...queries) {
   const { name, modules } = JSON.parse(await readFile(join(root, 'dist/api.json'), 'utf8'));
   const importName = (entry) => name + (entry === '.' ? '' : entry.slice(1));
   const listing = (entries) =>
     entries
       .map(([entry, symbols]) => `${importName(entry)}\n  ${Object.keys(symbols).join(', ')}`)
       .join('\n\n');
-  if (!query)
+  if (!queries.length)
     return (
       listing(Object.entries(modules)) + '\n\nInspect a signature: visual-story api SceneShell'
     );
-  if (modules[query]) return listing([[query, modules[query]]]);
-  const matches = Object.entries(modules).flatMap(([entry, symbols]) =>
-    Object.entries(symbols)
-      .filter(([symbol]) => symbol.toLowerCase() === query.toLowerCase())
-      .map(([symbol, file]) => ({ entry, symbol, file })),
-  );
-  if (!matches.length) {
-    const candidates = [...new Set(Object.values(modules).flatMap(Object.keys))].filter((symbol) =>
-      symbol.toLowerCase().includes(query.toLowerCase()),
+  const blocks = [],
+    declarations = new Map();
+  for (const query of new Set(queries)) {
+    if (modules[query]) {
+      blocks.push(listing([[query, modules[query]]]));
+      continue;
+    }
+    const matches = Object.entries(modules).flatMap(([entry, symbols]) =>
+      Object.entries(symbols)
+        .filter(([symbol]) => symbol.toLowerCase() === query.toLowerCase())
+        .map(([symbol, file]) => ({ entry, symbol, file })),
     );
-    throw new Error(
-      `No public symbol "${query}". ${candidates.length ? `Matches: ${candidates.join(', ')}.` : 'Run visual-story api to list the public API.'}`,
-    );
+    if (!matches.length) {
+      const candidates = [...new Set(Object.values(modules).flatMap(Object.keys))].filter(
+        (symbol) => symbol.toLowerCase().includes(query.toLowerCase()),
+      );
+      throw new Error(
+        `No public symbol "${query}". ${candidates.length ? `Matches: ${candidates.join(', ')}.` : 'Run visual-story api to list the public API.'}`,
+      );
+    }
+    for (const { entry, file } of matches) {
+      if (!declarations.has(file)) declarations.set(file, new Set());
+      declarations.get(file).add(importName(entry));
+    }
   }
-  const blocks = [];
-  for (const file of new Set(matches.map((match) => match.file))) {
-    const imports = matches
-      .filter((match) => match.file === file)
-      .map((match) => importName(match.entry));
+  for (const [file, imports] of declarations) {
     const path = join(root, 'dist', file);
-    blocks.push(`${imports.join(' | ')}\nDeclaration: ${path}\n\n${await readFile(path, 'utf8')}`);
+    blocks.push(
+      `${[...imports].join(' | ')}\nDeclaration: ${path}\n\n${await readFile(path, 'utf8')}`,
+    );
   }
   return blocks.join('\n\n');
 }

@@ -35,7 +35,7 @@ const [command, directory = '.'] = positionals,
 const catalog = JSON.parse(await readFile(join(root, 'examples/catalog.json'), 'utf8'));
 const help = `visual-story new DIRECTORY --example NAME [--no-audio]
 visual-story examples                         list supported starting points
-visual-story api [NAME | ./SUBPATH]           public names or exact shipped declarations
+visual-story api [NAME ... | ./SUBPATH]       public names or exact shipped declarations
 visual-story dev DIRECTORY [--port 8793]       rebuild + reload at the current story time
 visual-story build DIRECTORY [--cdn]          build dist/; CDN mode loads pinned Rapier remotely
 visual-story audio DIRECTORY                  voice + aligned cues from narration.json
@@ -54,7 +54,7 @@ else if (command === 'examples') {
     console.log(`${name.padEnd(22)} ${entry.title}`);
 } else if (command === 'api') {
   const { describeAPI } = await import('./api.mjs');
-  console.log(await describeAPI(root, positionals[1]));
+  console.log(await describeAPI(root, ...positionals.slice(1)));
 } else if (command === 'new') {
   if (values.audio && values['no-audio']) throw new Error('Choose either --audio or --no-audio');
   if (!catalog[values.example])

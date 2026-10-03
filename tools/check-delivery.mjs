@@ -21,11 +21,23 @@ try {
   const signature = run(process.execPath, [cli, 'api', 'Viewport3D']).toString();
   assert.match(signature, /@visual-storytelling\/core\/three/);
   assert.match(signature, /ShotTransition3D/);
+  const batch = run(process.execPath, [
+    cli,
+    'api',
+    'surface',
+    'SurfaceOptions',
+    'object',
+    'lettering',
+  ]).toString();
+  for (const name of ['surface', 'object', 'lettering'])
+    assert.match(batch, new RegExp(`declare function ${name}\\(`));
+  assert.equal([...batch.matchAll(/^Declaration:/gm)].length, 3);
   const api = JSON.parse(await readFile(join(skill, '../dist/api.json'), 'utf8'));
   for (const file of new Set(Object.values(api.modules).flatMap(Object.values)))
     await access(join(skill, '../dist', file));
   assert.match(run(process.execPath, [cli, 'api', './story']).toString(), /StoryOptions/);
   assert.throws(() => run(process.execPath, [cli, 'api', 'Viewport']), /Viewport3D/);
+  assert.throws(() => run(process.execPath, [cli, 'api', 'surface', 'Viewport']), /Viewport3D/);
   for (const file of [
     join(skill, 'SKILL.md'),
     ...(await readdir(join(skill, 'references')))

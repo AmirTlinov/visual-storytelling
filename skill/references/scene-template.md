@@ -15,7 +15,7 @@ npm run dev -- --port 0  # свободный порт; CLI печатает URL
 открывает конкретное место. `npm run build` создаёт `dist/`; `npm run preview` показывает
 готовую сборку. `npm run pack` сохраняет автономный `artifacts/story.html`.
 
-Точные сигнатуры установленной версии: `npx visual-story api SceneShell`,
+Точные сигнатуры установленной версии: `npx visual-story api SceneShell StoryOptions`,
 `npx visual-story api Viewport3D`, `npx visual-story api lettering`.
 Без имени команда перечисляет публичный API; `api ./three` — один модуль.
 Ответ берётся из поставленных деклараций и указывает их настоящий путь.
@@ -89,6 +89,7 @@ window.galleryReady = (async () => {
 `type:'select'` сворачивает тот же выбор в меню; тип `value` сохраняется.
 Фабрики SVG возвращают объект с `element`; `object.at(x,y)` задаёт размещение,
 `move(dx,dy)` — относительное движение, `show(bool)` — общую видимость предмета и подписи.
+Высоту SVG в оболочке задаёт соотношение `surface.resize(width, height)`; она следует композиции при изменении ширины.
 `pen` возвращает `reveal(p)` и `dispose()`, `lettering` — `text(value)` и `write(p)`.
 Параметры расширений доступны тем же `api`: `SketchControls`, `pen`, `StoryOptions`.
 

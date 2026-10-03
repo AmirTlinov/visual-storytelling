@@ -21,7 +21,6 @@ export function notebook(
       paper: false,
       parameters: options.parameters,
     });
-  shell.stage.style.height = 'auto';
   shell.fields.hidden = false;
   if (options.subtitle)
     element.querySelector('h1')!.after(html('p', 'vs-subtitle', options.subtitle));
