@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { develop } from '../tools/dev.mjs';
 
-test('authoring: reload keeps the selected time, failed edits keep the scene, face labels remain readable', async () => {
+test('authoring: reload keeps the selected time, failed edits keep the scene, face lettering stays attached', async () => {
   const source = await mkdtemp(join(tmpdir(), 'story-authoring-'));
   let server, browser;
   try {
@@ -40,7 +40,9 @@ test('authoring: reload keeps the selected time, failed edits keep the scene, fa
     await page.locator('#visual-story-build-error').waitFor();
     await writeFile(join(source, 'scene.js'), program);
     await page.waitForFunction(() => document.querySelector('main')?.scene?.currentTime === 2);
-    assert(await page.locator('.ve-label').isVisible());
+    assert(
+      await page.evaluate(() => lab.label.object.parent === lab.cube && !lab.label.element.hidden),
+    );
     assert(
       await page.evaluate(() =>
         [...lab.group.querySelectorAll('path,circle,.vs-lettering')].every(
@@ -70,19 +72,24 @@ test('authoring: reload keeps the selected time, failed edits keep the scene, fa
       lab.setValue('123456789.987');
       lab.far();
     });
-    await page.waitForFunction(
-      () => document.querySelector('.ve-label').textContent === '123456789.987',
-    );
-    const box = await page.locator('.ve-label').boundingBox();
-    assert(box && box.x >= 0 && box.x + box.width <= 375);
+    await page.waitForFunction(() => lab.label.element.textContent === '123456789.987');
     assert(
-      await page
-        .locator('.ve-label')
-        .evaluate((e) => parseFloat(getComputedStyle(e).fontSize) >= 16),
+      await page.evaluate(() => {
+        const canvas = lab.label.object.children[0].material.map.image;
+        const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+        let painted = 0;
+        for (let y = 0; y < canvas.height; y++)
+          for (let x = 0; x < canvas.width; x++) {
+            const alpha = pixels[(y * canvas.width + x) * 4 + 3];
+            if (alpha) painted++;
+            if (alpha && (x < 4 || x >= canvas.width - 4 || y < 4 || y >= canvas.height - 4))
+              return false;
+          }
+        return painted > 0 && lab.label.object.parent === lab.cube;
+      }),
     );
-    assert.equal(await page.locator('[data-layout-error]').count(), 0);
     await page.evaluate(() => lab.back());
-    await page.waitForFunction(() => document.querySelector('.ve-label').hidden);
+    await page.waitForFunction(() => lab.label.element.hidden);
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();

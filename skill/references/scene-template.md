@@ -25,33 +25,38 @@ npm run dev
 ```js
 import { SceneShell, surface, object, lettering, ViewportSVG } from '@visual-storytelling/core';
 import '@visual-storytelling/core/style.css';
-import timing from './timeline.json' with {type: 'json'};
+import timing from './timeline.json' with { type: 'json' };
 
 window.galleryReady = (async () => {
   await SceneShell.ready(); // Запрашивает шрифты до измерения пустой сцены.
   const root = document.querySelector('.ve-scene');
   const shell = SceneShell.mount(root, {
-    title: 'Заголовок', paper: false,
-    parameters: [{key: 'x', label: 'Положение', min: 0, max: 100, value: 0}]
+    title: 'Заголовок',
+    paper: false,
+    parameters: [{ key: 'x', label: 'Положение', min: 0, max: 100, value: 0 }],
   });
   const drawing = surface(shell.stage, {
-    id: 'path', width: 360, height: 320,
-    title: 'Движение предмета', description: 'Предмет перемещается вправо по измерительной сетке.'
+    id: 'path',
+    width: 360,
+    height: 320,
+    title: 'Движение предмета',
+    description: 'Предмет перемещается вправо по измерительной сетке.',
   });
   const mark = object(drawing.layer, 'moving', 'blue');
-  drawing.pen.rect(mark.content, 'tile', -20, -20, 40, 40, {fill: 'marker'});
-  const value = lettering(mark.content, '0', {y: 7, size: 20, maxWidth: 30});
+  drawing.pen.rect(mark.content, 'tile', -20, -20, 40, 40, { fill: 'marker' });
+  const value = lettering(mark.content, '0', { y: 7, size: 20, maxWidth: 30 });
   const camera = ViewportSVG.mount(drawing.element);
   shell.attachView(camera);
-  const overview = {target: {x: 0, y: 0, w: 360, h: 320}, padding: 20};
+  const overview = { target: { x: 0, y: 0, w: 360, h: 320 }, padding: 20 };
   const controller = shell.attachStory({
-    audio: root.querySelector('[data-audio]'), script: timing,
-    stateAt: frame => ({x: 100 * frame.progress('move_x')}),
+    audio: root.querySelector('[data-audio]'),
+    script: timing,
+    stateAt: (frame) => ({ x: 100 * frame.progress('move_x') }),
     render(state) {
       mark.at(70 + state.x, 150);
       value.text(Math.round(state.x));
       camera.shot(overview);
-    }
+    },
   });
   // Дополнительное предметное действие использует controller.explore({...controller.values, x: 50}).
   // root.scene уже содержит seek, pause, review, snapshot, currentTime и dispose.
@@ -76,7 +81,7 @@ window.galleryReady = (async () => {
 В `render` передай камере **объект или группу, контекст и ход перехода**:
 
 ```js
-camera.shot({target: [mark], padding: 36, from: overview, progress: frame.progress('focus')});
+camera.shot({ target: [mark], padding: 36, from: overview, progress: frame.progress('focus') });
 ```
 
 SVG-камера измеряет предметы вместе с подписями. Для сравнения величин сохраняй общую
@@ -93,11 +98,17 @@ SVG-камера измеряет предметы вместе с подпис�
 
 ```js
 import { Viewport3D, ThreeKit as T } from '@visual-storytelling/core/three';
-const view = Viewport3D.mount(shell.stage, {label: 'Объём и его размеры'});
+const view = Viewport3D.mount(shell.stage, { label: 'Объём и его размеры' });
 shell.attachView(view);
-const cube = new T.Mesh(new T.BoxGeometry(1, 1, 1), view.ink(new T.MeshBasicMaterial(), 'blue-wash'));
+const cube = new T.Mesh(
+  new T.BoxGeometry(1, 1, 1),
+  view.ink(new T.MeshBasicMaterial(), 'blue-wash'),
+);
 view.setObject(cube);
-view.label(() => '3.14', cube, {face: 'front', tone: 'blue'});
+view.label(() => '3.14', cube, { face: ['front', 'back'], tone: 'blue' });
+view.label('Объём', () => cube.localToWorld(new T.Vector3(0, 1, 0)), {
+  frame: { padding: [13, 6] },
+});
 // В render: view.shot({target: cube, direction: [0,0,1], padding: 36, from: overview3d, progress: frame.progress('focus')});
 ```
 
@@ -106,11 +117,12 @@ view.label(() => '3.14', cube, {face: 'front', tone: 'blue'});
 `anchors: [{position, padding: [halfWidth, halfHeight]}]`, занятое управление —
 `insets: {top, right, bottom, left}` в пикселях.
 
-`view.label(textOrFunction, anchor, options)` владеет текстом и его проекцией.
-Якорь — объект или функция мировой точки. `face` выбирает
-грань Mesh: `front/back/left/right/top/bottom`; обратная грань скрыта, слишком тесная
-получает разборчивую выноску. `size/minSize` ограничивают размер письма. Подпись обновляется
-при `view.invalidate()`, который вызывай после изменения модели. `shot` делает это сам.
+`view.label(textOrFunction, anchor, options)` задаёт две пространственные роли: внешнее пояснение следует за постоянным якорем и обращено к зрителю, надпись на предмете участвует в его перспективе и перекрытиях.
+Числам на Mesh задавай `face: 'front'` или явные грани `['front', 'back']`; для надписи в плоскости фигуры используй её дочерний `Object3D` с `space: 'world', height: 0.3` (мировые единицы).
+Текст внутри геометрической фигуры и её обводка имеют общего владельца; рамку внешнего пояснения создавай через `frame`, чтобы она оставалась целой с текстом.
+При вращении сохраняй привязки: числа остаются на поверхности, пересортировка подписей и автоматические выноски создают скачки и визуальный шум; читаемость обеспечивают композиция, ракурс и масштаб.
+`side: 'top'/'bottom'/'left'/'right'` плавно держит пояснение за границей предмета; `size` задаёт его экранный размер, `labelInsets: () => ({top, bottom})` оставляет место интерфейсу; контроллер обновляет надпись через `set/show/opacity/remove`.
+После изменения модели вызывай `view.invalidate()`; `shot` делает это сам, средняя кнопка и Shift+левая переносят камеру.
 `loadGLB(urlOrBuffer)` загружает обычный самодостаточный GLB; Draco/KTX2 требуют декодеров.
 
 Для соединения рядов и арифметики используй общие `arrangeTensorRows`, `calculateTensorColumns` и `deliverTensorCells`: движущийся результат сам становится конечной ячейкой. `readableFrame` учитывает геометрию, экранные подписи и область заголовка/плеера; контракт и пример вызова находятся в [движении тензоров](../../docs/tensor-motion.md).

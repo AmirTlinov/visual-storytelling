@@ -2,12 +2,19 @@ import type { Material, Texture, Color } from 'three';
 type Palette = Record<string, Color>;
 type ColorMaterial = Material & { color: Color };
 type MaterialInk = string | ((palette: Palette) => Color);
-import { projectedLabels } from './labels.js';
+import { projectedLabels, type LabelInsets } from './labels.js';
 import { shotPose, type ShotTransition3D } from './shots.js';
 import * as ThreeKit from './engine.js';
 /* Camera, GPU resources and projected labels belong to this surface. */
 
-function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объёмная сцена' } = {}) {
+function mount(
+  stage: HTMLElement,
+  {
+    onInteract = () => {},
+    label = 'Объёмная сцена',
+    labelInsets = () => ({}),
+  }: { onInteract?: () => void; label?: string; labelInsets?: () => LabelInsets } = {},
+) {
   const T = ThreeKit,
     scene = new T.Scene();
   const camera = new T.PerspectiveCamera(36, 1, 0.01, 1000);
@@ -21,15 +28,16 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
   canvas.setAttribute('role', 'img');
   canvas.setAttribute(
     'aria-label',
-    `${label}. Перетаскивание и стрелки — вращение; колесо и плюс или минус — масштаб; Shift и стрелки — перенос; Home — исходный вид.`,
+    `${label}. Левая кнопка и стрелки — вращение; средняя кнопка, Shift и левая кнопка или Shift и стрелки — перенос; колесо и плюс или минус — масштаб; Home — исходный вид.`,
   );
   stage.prepend(canvas);
   const controls = new T.OrbitControls(camera, canvas);
   controls.enableDamping = false;
   controls.enablePan = true;
+  controls.mouseButtons.MIDDLE = T.MOUSE.PAN;
   const abort = new AbortController(),
     listen = { signal: abort.signal };
-  const labels = projectedLabels(stage, camera, invalidate);
+  const labels = projectedLabels(stage, camera, scene, ink, release, invalidate, labelInsets);
   const materials = new Map<ColorMaterial, MaterialInk>(),
     palette: Palette = {};
   let pending = 0,
@@ -46,8 +54,10 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
   function render() {
     pending = 0;
     if (disposed) return;
-    renderer.render(scene, camera);
+    scene.updateMatrixWorld(true);
+    camera.updateMatrixWorld(true);
     labels.render();
+    renderer.render(scene, camera);
     afterRender();
   }
   function invalidate() {
@@ -77,6 +87,7 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
       'green',
       'purple',
       'orange',
+      'red',
       'pencil',
       'blue-wash',
       'green-wash',
