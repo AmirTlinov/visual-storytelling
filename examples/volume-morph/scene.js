@@ -27,12 +27,12 @@ window.galleryReady = (async () => {
   });
   shell.attachView(view);
   const bounds = new T.Box3(new T.Vector3(-2.5, -1.35, -1.35), new T.Vector3(2.5, 1.35, 1.35));
-  const morph = VolumeMorph.mount(view, { bounds, resolution: 56, pigment: 'blue' });
-  const cube = VolumeMorph.box([1.15, 1.15, 1.15], 0.018);
+  const morph = VolumeMorph.mount(view, { bounds, resolution: 48, pigment: 'blue' });
+  const cube = VolumeMorph.box([1.15, 1.15, 0.97]);
   const sphere = VolumeMorph.sphere(0.69);
   const shapes = [
     [[cube], sphere],
-    [[cube, cube], VolumeMorph.box([2.25, 1.15, 1.15], 0.055)],
+    [[cube, cube], VolumeMorph.box([2.25, 1.15, 0.97])],
     [[cube, VolumeMorph.sphere(0.575)], VolumeMorph.capsule(0.62, 2.6)],
   ];
   const world = new T.Group();
@@ -53,8 +53,8 @@ window.galleryReady = (async () => {
   const labels = anchors.map((anchor, i) =>
     view.label(String(i + 1), anchor, {
       space: 'world',
-      height: 0.35,
-      maxWidth: 0.4,
+      height: 0.48,
+      maxWidth: 0.55,
       tone: 'ink',
       visible: () => current.progress < 0.16 && (current.index !== 0 || i === 0),
     }),
@@ -75,14 +75,14 @@ window.galleryReady = (async () => {
       labels.forEach((label, i) => {
         label.set(sourceLabels[i] ?? '');
         label.opacity(Math.max(0, 1 - state.progress / 0.16));
-        anchors[i].position.set(pose.sources[i]?.position?.[0] ?? 0, 0, 0.59);
+        anchors[i].position.set(pose.sources[i]?.position?.[0] ?? 0, 0, 0.5);
       });
       title.textContent = cases[active].title;
       const radius = active === 0 ? 1.2 : 2.45;
       const result = mode === 'story' ? frame.progress(`${cases[active].id}_result`) : 0;
       view.shot({
         target: new T.Box3(new T.Vector3(-radius, -0.95, -0.85), new T.Vector3(radius, 1.05, 0.85)),
-        direction: [-2.1 - result * 1.2, 1.45, 6],
+        direction: [-4.5 - result * 1.2, 2.8, 9],
         padding: 35,
         reduced: frame.reduced,
       });

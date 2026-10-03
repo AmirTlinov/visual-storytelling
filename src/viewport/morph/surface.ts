@@ -1,15 +1,17 @@
 import {
   BackSide,
   Box3,
+  Color,
   Group,
   Mesh,
   MeshBasicMaterial,
+  LineBasicMaterial,
+  LineSegments,
   Sphere,
   Vector3,
-  type BufferAttribute,
   type Object3D,
 } from 'three';
-import { MarchingCubes } from 'three/addons/objects/MarchingCubes.js';
+import { volumeContour } from './contour.js';
 import type { Viewport3D } from '../three.js';
 import {
   volumeBox,
@@ -27,7 +29,7 @@ export interface VolumeMorphOptions {
   pigment?: string;
 }
 
-/** Three owns triangulation and drawing; the story supplies deterministic frames. */
+/** The story supplies deterministic frames; this component owns their surface and ink. */
 function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOptions) {
   const resolution = options.resolution ?? 56;
   if (!Number.isInteger(resolution) || resolution < 16 || resolution > 128)
@@ -40,31 +42,39 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
   )
     throw new Error('Volume bounds must be finite and non-empty');
   const pigment = options.pigment ?? 'blue';
-  const material = view.ink(new MeshBasicMaterial(), (palette) => {
-    const paper = palette.surface!;
-    return paper.clone().lerp(palette[pigment]!, paper.r + paper.g + paper.b < 1 ? 0.7 : 0.44);
-  });
-  // The same restrained face shading as the teaching cubes, continuous on curved surfaces.
+  const paper = { value: new Color() };
+  const material = view.ink(
+    new MeshBasicMaterial({ polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }),
+    (palette) => {
+      paper.value.copy(palette.surface!);
+      return palette[pigment]!;
+    },
+  );
+  // Fixed pigment washes on each face, matching the numbered teaching cubes.
+  // The face color stays with the object when the camera moves.
   material.onBeforeCompile = (shader) => {
+    shader.uniforms.volumePaper = paper;
     shader.vertexShader = 'varying vec3 volumeNormal;\n' + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace(
       '#include <begin_vertex>',
-      '#include <begin_vertex>\nvolumeNormal = normalize(normalMatrix * normal);',
+      '#include <begin_vertex>\nvolumeNormal = normal;',
     );
-    shader.fragmentShader = 'varying vec3 volumeNormal;\n' + shader.fragmentShader;
+    shader.fragmentShader =
+      'uniform vec3 volumePaper; varying vec3 volumeNormal;\n' + shader.fragmentShader;
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <color_fragment>',
-      '#include <color_fragment>\nvec3 n = normalize(volumeNormal);\ndiffuseColor.rgb *= .55 + .45 * max(dot(n, normalize(vec3(-.45, .8, 1.))), 0.);',
+      `#include <color_fragment>
+       vec3 n = normalize(volumeNormal), w = abs(n);
+       float wash = dot(w, vec3(n.x > 0. ? .88 : 1., n.y > 0. ? .82 : 1., n.z > 0. ? .93 : .85)) / (w.x + w.y + w.z);
+       diffuseColor.rgb = mix(volumePaper, diffuseColor.rgb, .65 * wash);`,
     );
   };
-  const capacity = resolution * resolution * 16;
-  const mesh = new MarchingCubes(resolution, material, false, false, capacity);
-  mesh.isolation = 0;
-  mesh.geometry.setDrawRange(0, 0);
-  mesh.position.copy(center);
-  mesh.scale.copy(size).multiplyScalar(0.5);
-  mesh.geometry.boundingBox = new Box3(new Vector3(-1, -1, -1), new Vector3(1, 1, 1));
-  mesh.geometry.boundingSphere = new Sphere(new Vector3(), Math.sqrt(3));
+  const contour = volumeContour(options.bounds.min.toArray(), size.toArray(), resolution);
+  contour.geometry.boundingBox = options.bounds.clone();
+  contour.geometry.boundingSphere = new Sphere(center, size.length() * 0.5);
+  contour.outline.boundingBox = contour.geometry.boundingBox;
+  contour.outline.boundingSphere = contour.geometry.boundingSphere;
+  const mesh = new Mesh(contour.geometry, material);
   const outlineMaterial = view.ink(
     new MeshBasicMaterial({ side: BackSide, transparent: true, opacity: 0.45 }),
     'ink',
@@ -72,18 +82,17 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
   outlineMaterial.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader.replace(
       '#include <begin_vertex>',
-      '#include <begin_vertex>\ntransformed += normalize(normal) * .004;',
+      '#include <begin_vertex>\ntransformed += normalize(normal) * .006;',
     );
   };
   const outline = new Mesh(mesh.geometry, outlineMaterial);
-  outline.position.copy(mesh.position);
-  outline.scale.copy(mesh.scale);
+  const edgeMaterial = view.ink(
+    new LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.5 }),
+    'ink',
+  );
+  const creases = new LineSegments(contour.outline, edgeMaterial);
   const object = new Group();
-  object.add(mesh, outline);
-  const min = options.bounds.min;
-  const xs = Float64Array.from({ length: resolution }, (_, i) => min.x + (i * size.x) / resolution);
-  const ys = Float64Array.from({ length: resolution }, (_, i) => min.y + (i * size.y) / resolution);
-  const zs = Float64Array.from({ length: resolution }, (_, i) => min.z + (i * size.z) / resolution);
+  object.add(mesh, outline, creases);
   let field: ReturnType<typeof volumeField> | undefined,
     previous = '',
     disposed = false;
@@ -92,6 +101,8 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
     disposed = true;
     object.removeFromParent();
     mesh.geometry.dispose();
+    contour.outline.dispose();
+    edgeMaterial.dispose();
     material.dispose();
     outlineMaterial.dispose();
     unbind();
@@ -118,20 +129,7 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
       const key = JSON.stringify(frame);
       if (key === previous) return;
       field.update(frame);
-      mesh.normal_cache.fill(0);
-      let at = 0;
-      for (let z = 0; z < resolution; z++)
-        for (let y = 0; y < resolution; y++)
-          for (let x = 0; x < resolution; x++)
-            mesh.field[at++] = -field.distance(xs[x]!, ys[y]!, zs[z]!);
-      mesh.update();
-      if (mesh.geometry.drawRange.count > capacity * 3)
-        throw new Error('Volume surface exceeds the triangle budget; simplify the field');
-      for (const name of ['position', 'normal']) {
-        const attribute = mesh.geometry.getAttribute(name) as BufferAttribute;
-        attribute.clearUpdateRanges();
-        attribute.addUpdateRange(0, mesh.geometry.drawRange.count * 3);
-      }
+      contour.update(field.distance);
       previous = key;
       view.invalidate();
     },
