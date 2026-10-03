@@ -60,7 +60,7 @@ export async function packDirectory(
     for (const asset of [...css.matchAll(/url\(["']?([^"')]+)["']?\)/g)])
       if (!asset[1].startsWith('data:') && !asset[1].startsWith('#'))
         css = css.replace(asset[0], `url('${await data(asset[1], dirname(cssFile))}')`);
-    html = html.replace(match[0], `<style>${css}</style>`);
+    html = html.replace(match[0], () => `<style>${css}</style>`);
   }
   for (const match of [
     ...html.matchAll(/<script\b([^>]*?)\ssrc=(["'])([^"']+)\2[^>]*>\s*<\/script>/gi),
@@ -69,7 +69,7 @@ export async function packDirectory(
     if (inline) code = (await transform(code, { minify: true, legalComments: 'inline' })).code;
     html = html.replace(
       match[0],
-      `<script ${match[1]}>${code.replaceAll('</script', '<\\/script')}</script>`,
+      () => `<script ${match[1]}>${code.replaceAll('</script', '<\\/script')}</script>`,
     );
   }
   for (const match of [
@@ -95,7 +95,7 @@ export async function packDirectory(
         : attrs + ' style="border:0"';
       html = html.replace(
         match[0],
-        `<iframe data-scene-svg ${styled} srcdoc="${escape(document)}"></iframe>`,
+        () => `<iframe data-scene-svg ${styled} srcdoc="${escape(document)}"></iframe>`,
       );
     }
   html = html.replace(
