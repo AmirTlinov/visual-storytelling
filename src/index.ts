@@ -7,6 +7,7 @@ export { notebook } from './notebook.js';
 export { composition } from './composition.js';
 export * from './layout/svg.js';
 export * from './scene.js';
+export * from './viewport/svg.js';
 export { default as rough } from 'roughjs';
 export { gsap } from 'gsap';
 export * from './explorer/index.js';

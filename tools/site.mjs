@@ -2,17 +2,19 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 import { mediaType } from './assets.mjs';
-export async function serve(directory = 'site', port = 0) {
+export async function serve(directory = 'site', port = 0, { handle, html } = {}) {
   const root = resolve(directory);
   const server = createServer(async (req, res) => {
     try {
+      if (await handle?.(req, res)) return;
       const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
       const file = resolve(root, `.${pathname === '/' ? '/index.html' : pathname}`);
       if (!file.startsWith(root + sep)) {
         res.writeHead(403).end();
         return;
       }
-      const bytes = await readFile(file);
+      let bytes = await readFile(file);
+      if (html && file.endsWith('.html')) bytes = Buffer.from(html(bytes.toString()));
       res.setHeader('Content-Type', mediaType(file));
       res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Cache-Control', 'no-store');

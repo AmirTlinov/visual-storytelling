@@ -47,7 +47,9 @@ export class SilentMedia extends EventTarget {
 }
 
 export function resolveMedia(audio: import('./clock.js').MediaClock | null, duration: number) {
-  return !audio || (audio instanceof HTMLAudioElement && audio.dataset.silent === 'true')
-    ? new SilentMedia(duration)
-    : audio;
+  if (!audio || (audio instanceof HTMLAudioElement && audio.dataset.silent === 'true'))
+    return new SilentMedia(duration);
+  if (audio instanceof HTMLAudioElement && audio.dataset.src && !audio.getAttribute('src'))
+    audio.src = audio.dataset.src;
+  return audio;
 }

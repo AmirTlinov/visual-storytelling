@@ -5,8 +5,8 @@ export class SvgGestures {
   private abort = new AbortController();
   viewport: HTMLElement;
   camera: SvgCamera;
-  highlight: SvgHighlight;
-  scene: () => ExplorerScene;
+  highlight?: SvgHighlight;
+  scene: () => Pick<ExplorerScene, 'box' | 'hits'>;
   open: (key: string) => void;
   changed: () => void;
   settled: () => void;
@@ -17,16 +17,16 @@ export class SvgGestures {
   constructor(
     viewport: HTMLElement,
     camera: SvgCamera,
-    highlight: SvgHighlight,
+    highlight: SvgHighlight | undefined,
     {
       scene,
-      open,
+      open = () => {},
       fit,
       changed,
       settled = () => {},
     }: {
-      scene: () => ExplorerScene;
-      open: (key: string) => void;
+      scene: () => Pick<ExplorerScene, 'box' | 'hits'>;
+      open?: (key: string) => void;
       fit: () => void;
       changed: () => void;
       settled?: () => void;
@@ -147,8 +147,8 @@ export class SvgGestures {
     this.begin();
     if (event.pointerType === 'touch' && this.pointers.size === 1) {
       this.gesture!.tapKey = this.nearby(this.local(event), event.target as Element);
-      this.highlight.show(this.gesture!.tapKey);
-    } else if (this.pointers.size > 1) this.highlight.clear();
+      this.highlight?.show(this.gesture!.tapKey);
+    } else if (this.pointers.size > 1) this.highlight?.clear();
     if (this.pointers.size > 1)
       for (const id of this.pointers.keys()) this.viewport.setPointerCapture(id);
   }
@@ -162,7 +162,7 @@ export class SvgGestures {
       const dx = points[0]!.x - start[0]!.x,
         dy = points[0]!.y - start[0]!.y;
       if (Math.hypot(dx, dy) > 5 || gesture.moved) {
-        this.highlight.clear();
+        this.highlight?.clear();
         gesture.moved = true;
         this.viewport.setPointerCapture(event.pointerId);
         this.camera.set({
@@ -172,7 +172,7 @@ export class SvgGestures {
         });
       }
     } else if (points.length >= 2 && start.length >= 2) {
-      this.highlight.clear();
+      this.highlight?.clear();
       gesture.moved = true;
       const distance = (p: ExplorerPoint[]) => Math.hypot(p[1]!.x - p[0]!.x, p[1]!.y - p[0]!.y),
         mid = (p: ExplorerPoint[]) => ({ x: (p[0]!.x + p[1]!.x) / 2, y: (p[0]!.y + p[1]!.y) / 2 });
@@ -190,7 +190,7 @@ export class SvgGestures {
         y: b.y - (a.y - gesture.matrix.y) * ratio,
       });
     }
-    this.changed();
+    if (gesture.moved) this.changed();
   }
   end(event: PointerEvent) {
     if (!this.pointers.has(event.pointerId)) return;
@@ -205,7 +205,7 @@ export class SvgGestures {
       this.suppressClickUntil = performance.now() + 120;
       this.settled();
     }
-    if (event.pointerType === 'touch') this.highlight.clear();
+    if (event.pointerType === 'touch') this.highlight?.clear();
     this.pointers.delete(event.pointerId);
     if (this.viewport.hasPointerCapture(event.pointerId))
       this.viewport.releasePointerCapture(event.pointerId);
@@ -231,6 +231,6 @@ export class SvgGestures {
     clearTimeout(this.wheelTimer);
     this.abort.abort();
     this.cancel();
-    this.highlight.clear();
+    this.highlight?.clear();
   }
 }

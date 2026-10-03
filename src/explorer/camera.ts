@@ -1,8 +1,8 @@
 import type { Bounds, CameraPose, ExplorerTarget, ExplorerScene, ExplorerPoint } from './types.js';
 export class SvgCamera {
-  viewport: HTMLElement;
+  viewport: HTMLElement | SVGSVGElement;
   svg: SVGSVGElement;
-  hits: HTMLElement;
+  hits?: HTMLElement;
   world: SVGGElement;
   layers: SVGGElement[];
   matrix: CameraPose;
@@ -16,7 +16,7 @@ export class SvgCamera {
   body?: string;
   parentLayer?: SVGGElement;
   childLayer?: SVGGElement;
-  constructor(viewport: HTMLElement, svg: SVGSVGElement, hits: HTMLElement) {
+  constructor(viewport: HTMLElement | SVGSVGElement, svg: SVGSVGElement, hits?: HTMLElement) {
     this.viewport = viewport;
     this.svg = svg;
     this.hits = hits;
@@ -32,10 +32,20 @@ export class SvgCamera {
   get size() {
     return { w: this.viewport.clientWidth, h: this.viewport.clientHeight };
   }
-  fit(box: Bounds) {
+  fit(box: Bounds, padding?: number) {
     const { w, h } = this.size,
-      s = Math.max(0.05, Math.min((w - 32) / box.w, (h - 60) / box.h));
-    return { s, x: w / 2 - s * (box.x + box.w / 2), y: (h + 28) / 2 - s * (box.y + box.h / 2) };
+      s = Math.max(
+        0.05,
+        Math.min(
+          (w - (padding === undefined ? 32 : 2 * padding)) / box.w,
+          (h - (padding === undefined ? 60 : 2 * padding)) / box.h,
+        ),
+      );
+    return {
+      s,
+      x: w / 2 - s * (box.x + box.w / 2),
+      y: (h + (padding === undefined ? 28 : 0)) / 2 - s * (box.y + box.h / 2),
+    };
   }
   syncViewport() {
     this.viewportSize = this.size;
@@ -54,7 +64,7 @@ export class SvgCamera {
     for (const layer of this.layers)
       layer.setAttribute('transform', `translate(${matrix.x} ${matrix.y}) scale(${matrix.s})`);
     this.bounds.forEach((hit, i) => {
-      const button = this.hits.children[i] as HTMLElement | undefined;
+      const button = this.hits?.children[i] as HTMLElement | undefined;
       if (!button) return;
       const { x, y, w, h } = hit.box;
       Object.assign(button.style, {
@@ -90,14 +100,6 @@ export class SvgCamera {
     const token = this.token,
       start = performance.now(),
       from = { ...this.matrix };
-    const center = { x: this.size.w / 2, y: (this.size.h + 28) / 2 },
-      reference = target.s > from.s ? target : from;
-    const anchor = {
-      x: (center.x - reference.x) / reference.s,
-      y: (center.y - reference.y) / reference.s,
-    };
-    const initial = { x: anchor.x * from.s + from.x, y: anchor.y * from.s + from.y };
-    const final = { x: anchor.x * target.s + target.x, y: anchor.y * target.s + target.y };
     const tick = (now: number) => {
       if (token !== this.token) return;
       const p =
@@ -105,12 +107,7 @@ export class SvgCamera {
             ? 1
             : Math.min(1, (now - start) / duration),
         t = p * p * (3 - 2 * p);
-      const s = Math.exp(Math.log(from.s) * (1 - t) + Math.log(target.s) * t);
-      this.set({
-        s,
-        x: initial.x + (final.x - initial.x) * t - anchor.x * s,
-        y: initial.y + (final.y - initial.y) * t - anchor.y * s,
-      });
+      this.set(this.interpolate(from, target, t));
       update(t);
       if (p < 1) this.frame = requestAnimationFrame(tick);
       else {
@@ -119,6 +116,24 @@ export class SvgCamera {
       }
     };
     this.frame = requestAnimationFrame(tick);
+  }
+  /** The same pose interpolation is available to a narrated, seekable frame. */
+  interpolate(from: CameraPose, target: CameraPose, amount: number): CameraPose {
+    const t = Math.max(0, Math.min(1, amount));
+    const center = { x: this.size.w / 2, y: (this.size.h + 28) / 2 },
+      reference = target.s > from.s ? target : from;
+    const anchor = {
+      x: (center.x - reference.x) / reference.s,
+      y: (center.y - reference.y) / reference.s,
+    };
+    const initial = { x: anchor.x * from.s + from.x, y: anchor.y * from.s + from.y };
+    const final = { x: anchor.x * target.s + target.x, y: anchor.y * target.s + target.y };
+    const s = Math.exp(Math.log(from.s) * (1 - t) + Math.log(target.s) * t);
+    return {
+      s,
+      x: initial.x + (final.x - initial.x) * t - anchor.x * s,
+      y: initial.y + (final.y - initial.y) * t - anchor.y * s,
+    };
   }
   embed(child: ExplorerScene, hit: ExplorerTarget) {
     const a = child.box,
@@ -184,7 +199,7 @@ export class SvgCamera {
     this.parentLayer = undefined;
     this.childLayer = undefined;
     this.world.replaceChildren();
-    this.hits.replaceChildren();
+    this.hits?.replaceChildren();
     this.bounds = [];
     this.body = undefined;
   }

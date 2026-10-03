@@ -7,6 +7,9 @@ export interface LetteringOptions {
   size?: number;
   anchor?: 'start' | 'middle' | 'end';
   tabular?: boolean;
+  /** Fit the complete value without crossing the minimum readable size. */
+  maxWidth?: number;
+  minSize?: number;
 }
 /** A label owns its text and pen strokes together; the pen geometry has one implementation. */
 export function lettering(
@@ -36,7 +39,7 @@ export function lettering(
     progress = amount;
     if ([...value].every((c) => /\s/.test(c) || glyphs[c])) SketchMotion.write(label, amount);
     else label.style.opacity = amount >= 1 ? '1' : '0';
-    element.style.visibility = amount > 0 ? 'visible' : 'hidden';
+    element.style.visibility = amount > 0 ? '' : 'hidden';
   };
   const text = (next: string | number) => {
     if (String(next) === value && label.textContent) return;
@@ -44,6 +47,19 @@ export function lettering(
     value = String(next);
     label.textContent = value;
     element.setAttribute('aria-label', value);
+    const nominalSize = options.size ?? 24;
+    label.setAttribute('font-size', String(nominalSize));
+    if (options.maxWidth !== undefined) {
+      const natural = label.getComputedTextLength();
+      const size = Math.max(
+        Math.min(nominalSize, options.minSize ?? 16),
+        Math.min(nominalSize, (nominalSize * options.maxWidth) / (natural || 1)),
+      );
+      label.setAttribute('font-size', String(size));
+      if (label.getComputedTextLength() > options.maxWidth + 0.5)
+        element.dataset.layoutError = `Label "${value}" needs more than ${options.maxWidth}px at ${size}px. Enlarge its cell or show fewer items.`;
+      else delete element.dataset.layoutError;
+    }
     width = label.getComputedTextLength();
     position();
     write(progress);

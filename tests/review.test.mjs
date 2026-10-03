@@ -28,6 +28,8 @@ test('rendered review detects a frozen operation and unused cue, permits a readi
             seek(t) {
               const frame = sheet.at(t);
               frame.progress('frozen');
+              if (t < 1) circle.dataset.layoutError = 'No readable space for label';
+              else delete circle.dataset.layoutError;
               circle.setAttribute('cx', 50 + 30 * frame.progress('move'));
             },
             snapshot: () => ({x: circle.cx.baseVal.value}),
@@ -64,6 +66,8 @@ test('rendered review detects a frozen operation and unused cue, permits a readi
     );
     assert(!result.warnings.some((warning) => warning.startsWith('read:')));
     assert.equal(report.cues[0].frames[0].time, 0);
+    assert.deepEqual(report.cues[0].frames[0].diagnostics, ['No readable space for label']);
+    assert(result.warnings.includes('frozen: No readable space for label'));
     const moving = report.cues.find((cue) => cue.id === 'move');
     assert.equal(moving.unchanged, false);
     assert.equal(moving.frames[0].state.x, 50);

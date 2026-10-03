@@ -2,21 +2,8 @@ import type { Material, Texture, Color } from 'three';
 type Palette = Record<string, Color>;
 type ColorMaterial = Material & { color: Color };
 type MaterialInk = string | ((palette: Palette) => Color);
-interface ProjectedLabel {
-  element: HTMLSpanElement;
-  leader: SVGPathElement;
-  point: () => ThreeKit.Vector3;
-  offset: [number, number];
-  visible: () => boolean;
-}
-interface LabelBox {
-  x: number;
-  y: number;
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
+import { projectedLabels } from './labels.js';
+import { shotPose, type ShotTransition3D } from './shots.js';
 import * as ThreeKit from './engine.js';
 /* Camera, GPU resources and projected labels belong to this surface. */
 
@@ -37,23 +24,21 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
     `${label}. Перетаскивание и стрелки — вращение; колесо и плюс или минус — масштаб; Shift и стрелки — перенос; Home — исходный вид.`,
   );
   stage.prepend(canvas);
-  const leaders = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  leaders.style.cssText = 'position:absolute;inset:0;pointer-events:none';
-  leaders.setAttribute('aria-hidden', 'true');
-  stage.append(leaders);
   const controls = new T.OrbitControls(camera, canvas);
   controls.enableDamping = false;
   controls.enablePan = true;
   const abort = new AbortController(),
     listen = { signal: abort.signal };
-  const labels = new Set<ProjectedLabel>(),
-    materials = new Map<ColorMaterial, MaterialInk>(),
+  const labels = projectedLabels(stage, camera, invalidate);
+  const materials = new Map<ColorMaterial, MaterialInk>(),
     palette: Palette = {};
   let pending = 0,
     disposed = false,
     afterRender = () => {};
   let object: ThreeKit.Object3D | undefined,
     home: { position: ThreeKit.Vector3; target: ThreeKit.Vector3 } | undefined;
+  let following = true,
+    lastShot: ShotTransition3D | undefined;
   const hemisphere = new T.HemisphereLight(0xffffff, 0xb8c1c8, 2.4),
     light = new T.DirectionalLight(0xffffff, 2.2);
   light.position.set(-3, 5, 7);
@@ -62,81 +47,17 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
     pending = 0;
     if (disposed) return;
     renderer.render(scene, camera);
-    const width = stage.clientWidth,
-      height = stage.clientHeight,
-      placed: LabelBox[] = [];
-    leaders.setAttribute('viewBox', `0 0 ${width} ${height}`);
-    const measured = [...labels].map((item) => {
-      item.element.hidden = false;
-      return { ...item, half: item.element.offsetWidth / 2, high: item.element.offsetHeight / 2 };
-    });
-    for (const item of measured) {
-      const p = item.point().clone().project(camera);
-      item.element.hidden = !item.visible() || p.z < -1 || p.z > 1;
-      item.leader.style.display = 'none';
-      if (item.element.hidden) continue;
-      const anchor: [number, number] = [((p.x + 1) * width) / 2, ((1 - p.y) * height) / 2];
-      const step = item.high * 2 + 8;
-      let box: LabelBox | undefined;
-      for (const [dx, dy] of [
-        [0, 0],
-        [0, -step],
-        [0, step],
-        [0, -2 * step],
-        [0, 2 * step],
-        [-item.half * 2 - 12, 0],
-        [item.half * 2 + 12, 0],
-      ] as [number, number][]) {
-        const x = Math.max(
-          item.half + 8,
-          Math.min(width - item.half - 8, anchor[0] + item.offset[0] + dx),
-        );
-        const y = Math.max(
-          item.high + 8,
-          Math.min(height - item.high - 8, anchor[1] + item.offset[1] + dy),
-        );
-        const candidate = {
-          x,
-          y,
-          left: x - item.half,
-          right: x + item.half,
-          top: y - item.high,
-          bottom: y + item.high,
-        };
-        if (
-          placed.every(
-            (b) =>
-              candidate.right + 6 < b.left ||
-              candidate.left - 6 > b.right ||
-              candidate.bottom + 6 < b.top ||
-              candidate.top - 6 > b.bottom,
-          )
-        ) {
-          box = candidate;
-          break;
-        }
-      }
-      item.element.hidden = !box;
-      if (!box) continue;
-      placed.push(box);
-      item.element.style.left = `${box.x}px`;
-      item.element.style.top = `${box.y}px`;
-      const end: [number, number] = [
-        Math.max(box.left, Math.min(box.right, anchor[0])),
-        Math.max(box.top, Math.min(box.bottom, anchor[1])),
-      ];
-      if (Math.hypot(end[0] - anchor[0], end[1] - anchor[1]) > 10) {
-        item.leader.setAttribute('d', `M${anchor}L${end}`);
-        item.leader.style.display = '';
-      }
-    }
+    labels.render();
     afterRender();
   }
   function invalidate() {
     if (!pending && !disposed) pending = requestAnimationFrame(render);
   }
   const changed = () => invalidate(),
-    started = () => onInteract();
+    started = () => {
+      following = false;
+      onInteract();
+    };
   controls.addEventListener('change', changed);
   controls.addEventListener('start', started);
   const sample = document.createElement('span');
@@ -197,6 +118,7 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     renderer.setSize(width, height, false);
+    if (following && lastShot) shot(lastShot);
     invalidate();
   }
   const sizeObserver = new ResizeObserver(resize);
@@ -232,6 +154,8 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
     invalidate();
   }
   function reset() {
+    following = true;
+    if (lastShot) return shot(lastShot);
     if (home) {
       camera.position.copy(home.position);
       controls.target.copy(home.target);
@@ -239,13 +163,28 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
       invalidate();
     }
   }
+  function shot(options: ShotTransition3D) {
+    lastShot = options;
+    if (!following || !stage.clientWidth || !stage.clientHeight) return;
+    const pose = shotPose(camera, stage.clientWidth, stage.clientHeight, {
+      ...options,
+      reduced: options.reduced ?? matchMedia('(prefers-reduced-motion: reduce)').matches,
+    });
+    camera.position.copy(pose.position);
+    controls.target.copy(pose.target);
+    camera.near = pose.near;
+    camera.far = pose.far;
+    camera.updateProjectionMatrix();
+    controls.update();
+    invalidate();
+  }
   canvas.addEventListener(
     'keydown',
     (event) => {
       const keys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', '+', '=', '-', '_', 'Home'];
       if (!keys.includes(event.key)) return;
       event.preventDefault();
-      onInteract();
+      started();
       if (event.key === 'Home') {
         reset();
         return;
@@ -326,6 +265,10 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
     invalidate,
     fit,
     reset,
+    shot,
+    get following() {
+      return following;
+    },
     setObject(next: ThreeKit.Object3D, { fitView = true } = {}) {
       if (object === next) return;
       if (object) {
@@ -337,37 +280,7 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
       if (fitView) fit(next);
       invalidate();
     },
-    label(
-      text: string,
-      point: () => ThreeKit.Vector3,
-      {
-        tone = 'ink',
-        offset = [0, 0],
-        visible = () => true,
-      }: { tone?: string; offset?: [number, number]; visible?: () => boolean } = {},
-    ) {
-      const element = document.createElement('span');
-      element.className = 've-label';
-      element.dataset.tone = tone;
-      element.textContent = text;
-      stage.append(element);
-      const leader = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      leader.setAttribute('fill', 'none');
-      leader.setAttribute('stroke', 'var(--ve-pencil)');
-      leader.setAttribute('stroke-width', '1');
-      leaders.append(leader);
-      const item = { element, leader, point, offset, visible };
-      labels.add(item);
-      invalidate();
-      return {
-        element,
-        remove() {
-          labels.delete(item);
-          element.remove();
-          leader.remove();
-        },
-      };
-    },
+    label: labels.label,
     async loadGLB(source: string | ArrayBuffer) {
       const loader = new T.GLTFLoader();
       const result =
@@ -390,9 +303,8 @@ function mount(stage: HTMLElement, { onInteract = () => {}, label = 'Объём�
       themeObserver.disconnect();
       release(object);
       renderer.dispose();
-      for (const item of labels) item.element.remove();
+      labels.dispose();
       canvas.remove();
-      leaders.remove();
       sample.remove();
     },
   };

@@ -18,6 +18,10 @@ test('nested scene assets and data scripts survive building, serving and offline
     for (const folder of ['pages', 'styles', 'assets', 'artifacts/review'])
       await mkdir(join(source, folder), { recursive: true });
     const put = (name, data) => writeFile(join(source, name), data);
+    await writeFile(join(directory, 'tsconfig.json'), JSON.stringify({compilerOptions:{paths:{'dx-value':['./missing.ts']}}}));
+    await mkdir(join(source, 'node_modules/dx-value'), {recursive:true});
+    await put('node_modules/dx-value/package.json', JSON.stringify({name:'dx-value',type:'module',exports:'./index.js'}));
+    await put('node_modules/dx-value/index.js', 'export default 42');
     const png = Buffer.from(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2Y2cAAAAASUVORK5CYII=',
       'base64',
@@ -34,7 +38,7 @@ test('nested scene assets and data scripts survive building, serving and offline
     );
     await put(
       'entry.js',
-      `import model from './assets/model.glb'; window.model = model; window.payload = JSON.parse(document.querySelector('#data').textContent); document.querySelector('.ve-scene').style.colorScheme = 'light';`,
+      `import expected from 'dx-value'; window.expected = expected; import model from './assets/model.glb'; window.model = model; window.payload = JSON.parse(document.querySelector('#data').textContent); document.querySelector('.ve-scene').style.colorScheme = 'light';`,
     );
     await put(
       'pages/index.html',
@@ -63,6 +67,7 @@ test('nested scene assets and data scripts survive building, serving and offline
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto(pathToFileURL(file).href);
     assert.deepEqual(await page.evaluate(() => window.payload), { answer: 42 });
+    assert.equal(await page.evaluate(() => window.expected), 42);
     assert(await page.evaluate(() => window.model.startsWith('data:')));
     const scene = await page.locator('.ve-scene').evaluate((element) => ({
       theme: getComputedStyle(element).colorScheme,

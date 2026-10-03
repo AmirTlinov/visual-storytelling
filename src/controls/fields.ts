@@ -350,7 +350,7 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
       else input.value = String(value);
       input.disabled = Boolean(p.disabled);
     }
-    if (output) output.textContent = p.format ? p.format(value) : Number(value).toFixed(2);
+    if (output) output.textContent = p.format ? p.format(value) : String(value);
     if (type === 'stepper') {
       const buttons = element.querySelectorAll('button');
       buttons[0]!.disabled = Boolean(p.disabled) || Number(value) <= (p.min ?? -Infinity);
@@ -438,7 +438,7 @@ export function choice<T extends string>(
       options: options.map((o) => ({
         value: o.value,
         label: o.label,
-        color: o.pigment === 'ochre' ? 'orange' : o.pigment === 'straw' ? 'yellow' : o.pigment,
+        color: o.pigment,
       })),
     },
     (value) => onInput(value as T),

@@ -33,6 +33,8 @@ def build_audio(script_path, output, device):
             "id": segment["id"], "text": segment["spoken"], "start": words[0]["start"], "end": words[-1]["end"],
             "audio_start": offset, "audio_end": (cursor + len(audio)) / SAMPLE_RATE, "words": words,
         }
+        if "title" in segment:
+            record["title"] = segment["title"]
         segments.append(record)
         cues.update(timed_cues(segment, words))
         for w in words:

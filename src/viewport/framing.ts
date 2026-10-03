@@ -28,11 +28,28 @@ export function readableFrame(camera: T.PerspectiveCamera, options: ReadableFram
   const focal = height / (2 * Math.tan((camera.fov * Math.PI) / 360));
   const direction = options.direction.clone().normalize();
   if (!direction.lengthSq()) throw new Error('A frame needs a viewing direction');
-  const across = camera.up.clone().cross(direction).normalize();
-  const up = direction.clone().cross(across).normalize();
+  // Match Three's lookAt basis, including a view straight down the up axis.
+  const basis = new T.Matrix4().lookAt(direction, new T.Vector3(), camera.up);
+  const across = new T.Vector3().setFromMatrixColumn(basis, 0);
+  const up = new T.Vector3().setFromMatrixColumn(basis, 1);
   const panX = (width / 2 - (left + right) / 2) / focal;
   const panY = ((top + bottom) / 2 - height / 2) / focal;
   const minimum = options.minimum ?? { width: 0.1, height: 0.1 };
+  const coordinates = [
+    width,
+    height,
+    focal,
+    ...center.toArray(),
+    left,
+    right,
+    top,
+    bottom,
+    minimum.width,
+    minimum.height,
+    ...(options.anchors ?? []).flatMap((a) => [...a.position.toArray(), ...(a.padding ?? [])]),
+  ];
+  if (!coordinates.every(Number.isFinite) || minimum.width <= 0 || minimum.height <= 0)
+    throw new Error('A readable frame needs finite coordinates and positive dimensions');
   const anchors = (options.anchors ?? []).map((anchor) => {
     const p = anchor.position.clone().sub(center);
     return {
@@ -95,7 +112,7 @@ export function geometryFrameAnchors(objects: readonly T.Object3D[]): FrameAncho
   for (const object of objects) {
     object.updateWorldMatrix(true, true);
     object.traverseVisible((node) => {
-      if (!(node instanceof T.Mesh)) return;
+      if (!(node instanceof T.Mesh || node instanceof T.Line)) return;
       const geometry = node.geometry;
       if (!geometry.boundingBox) geometry.computeBoundingBox();
       const { min, max } = geometry.boundingBox!;

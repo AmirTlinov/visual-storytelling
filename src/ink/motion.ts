@@ -43,8 +43,8 @@ function draw(path: SVGPathElement, amount: number) {
   const ink = p === 0 || p === 1 ? p : p + 0.055 * Math.sin(Math.PI * 2 * p);
   path.style.strokeDasharray = `${length} ${length}`;
   path.style.strokeDashoffset = String(length * (1 - ink));
-  path.style.visibility = p === 0 ? 'hidden' : 'visible';
-  tip.style.visibility = p > 0 && p < 1 ? 'visible' : 'hidden';
+  path.style.visibility = p === 0 ? 'hidden' : '';
+  tip.style.visibility = p > 0 && p < 1 ? '' : 'hidden';
   if (p > 0 && p < 1) {
     const point = path.getPointAtLength(length * ink);
     tip.setAttribute('cx', String(point.x));

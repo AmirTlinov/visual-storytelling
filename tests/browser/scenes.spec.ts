@@ -229,3 +229,59 @@ test('audio: a second click cancels pending playback without reporting an error'
   await expect(button).toHaveAttribute('aria-label', 'Воспроизвести');
   await expect(page.locator('[data-caption]')).toHaveAttribute('role', 'status');
 });
+
+for (const name of ['explorer-svg', 'explorer-3d'])
+  test(`${name}: manual camera keeps real audio running, seeking restores its authored pose`, async ({
+    page,
+  }) => {
+    await ready(page, `/${name}/index.html`);
+    const play = page.locator('[data-play]'),
+      seek = page.locator('[data-seek]');
+    await play.click();
+    await expect
+      .poll(() => page.locator('audio').evaluate((audio: HTMLAudioElement) => audio.currentTime))
+      .toBeGreaterThan(0.1);
+    const canvas = page.locator(name === 'explorer-svg' ? '#displacements' : '.ve-stage > canvas');
+    await canvas.focus();
+    await page.keyboard.press('ArrowRight');
+    expect(
+      await page.evaluate(() => {
+        const scene = (document.querySelector('.ve-scene') as any).scene;
+        return (scene.camera ?? scene.view).following;
+      }),
+    ).toBe(false);
+    const before = Number(await seek.inputValue());
+    await expect.poll(() => seek.inputValue().then(Number)).toBeGreaterThan(before + 0.1);
+    await play.click();
+    await seek.fill('12');
+    const pose = () =>
+      page.evaluate(() => {
+        const scene = (document.querySelector('.ve-scene') as any).scene;
+        const camera = scene.camera ?? scene.view;
+        return {
+          following: camera.following,
+          pose: camera.pose ?? camera.camera.position.toArray(),
+        };
+      });
+    const expected = await pose();
+    expect(expected.following).toBe(true);
+    await seek.fill('25');
+    await seek.fill('0');
+    await seek.fill('12');
+    expect(await pose()).toEqual(expected);
+    await page.getByRole('combobox', { name: 'Глава' }).click();
+    await page.getByRole('option').last().click();
+    expect(Number(await seek.inputValue())).toBeGreaterThan(12);
+    await expect(page.locator('[data-caption]')).not.toBeEmpty();
+    if (name === 'explorer-svg') await expect(canvas).toHaveCSS('overflow', 'hidden');
+    await page.locator('[data-mode=explore]').click();
+    const field = page.locator('.ve-parameters input[type=range]').first();
+    await field.fill((await field.getAttribute('min')) ?? '0');
+    expect(await page.locator('audio').evaluate((audio: HTMLAudioElement) => audio.paused)).toBe(
+      true,
+    );
+    await page.locator('[data-mode=story]').click();
+    await expect(page.locator('.ve-scene')).toHaveAttribute('data-scene-mode', 'story');
+    await page.evaluate(() => (document.querySelector('.ve-scene') as any).scene.dispose());
+    await expect(page.locator('.ve-scene')).toBeEmpty();
+  });

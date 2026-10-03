@@ -78,6 +78,8 @@ def read_script(path):
         ids.add(sid)
     for segment in segments:
         sid = segment["id"]
+        if "title" in segment and (not isinstance(segment["title"], str) or not segment["title"].strip()):
+            raise ValueError(f"{sid}: title must be a non-empty chapter heading")
         if not isinstance(segment.get("text"), str) or not segment["text"].strip() or "ssml" in segment or "rate" in segment:
             raise ValueError(f"{sid}: provide Russian text with optional native Higgs controls")
         text = " ".join(without_controls(segment["text"]).split())

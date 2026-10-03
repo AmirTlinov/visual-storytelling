@@ -4,7 +4,6 @@ import {
   composition,
   object,
   lettering,
-  range,
   choice,
   story,
   pigments,
@@ -16,6 +15,17 @@ export function mount(parent: HTMLElement): Example {
   const book = notebook(parent, {
     title: 'Инструменты одного почерка',
     subtitle: 'Ручка, маркер и аккуратная штриховка.',
+    parameters: [
+      {
+        key: 'progress',
+        label: 'След инструмента',
+        min: 0,
+        max: 1,
+        step: 0.01,
+        value: 1,
+        format: (value) => `${Math.round(Number(value) * 100)}%`,
+      },
+    ],
   });
   let pigment: Pigment = 'blue';
   function draw(width: number) {
@@ -78,14 +88,14 @@ export function mount(parent: HTMLElement): Example {
         },
       },
     },
-    stateAt: (frame) => frame.reveal('draw'),
-    render: (value) => layout.current.render(value),
+    stateAt: (frame) => ({ progress: frame.reveal('draw') }),
+    render: (value) => layout.current.render(value.progress),
   });
   const colour = choice(
     'Пигмент',
     [
       { value: 'blue', label: 'Синий', pigment: 'blue' },
-      { value: 'ochre', label: 'Охра', pigment: 'ochre' },
+      { value: 'orange', label: 'Охра', pigment: 'orange' },
       { value: 'purple', label: 'Фиолетовый', pigment: 'purple' },
       { value: 'green', label: 'Зелёный', pigment: 'green' },
     ] as const,
@@ -95,17 +105,7 @@ export function mount(parent: HTMLElement): Example {
       controller.update();
     },
   );
-  const progress = range({
-    label: 'След инструмента',
-    min: 0,
-    max: 1,
-    step: 0.01,
-    value: 1,
-    format: (value) => `${Math.round(value * 100)}%`,
-    onInput: (value) => controller.explore(value),
-  });
-  const unsubscribe = controller.subscribe((_, value) => progress.set(value));
-  book.parameters.append(colour.element, progress.element);
+  book.parameters.append(colour.element);
   book.attach(controller);
   return {
     duration: 5,
@@ -115,12 +115,10 @@ export function mount(parent: HTMLElement): Example {
     setTheme: book.theme,
     setReduced: controller.setReduced,
     svg: () => layout.current.view.element,
-    snapshot: () => ({ progress: controller.values, pigment }),
+    snapshot: () => ({ progress: controller.values.progress, pigment }),
     review: controller.sheet.review,
     dispose() {
-      unsubscribe();
       colour.dispose();
-      progress.dispose();
       book.dispose();
       layout.dispose();
     },

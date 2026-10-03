@@ -13,6 +13,7 @@ export function matrix(
     cellWidth?: number;
     cellHeight?: number;
     size?: number;
+    minSize?: number;
     pigment?: Pigment;
     frame?: 'brackets' | 'cells';
   },
@@ -43,6 +44,8 @@ export function matrix(
       y: y + (options.size ?? 23) * 0.25,
       size: options.size ?? 23,
       tabular: true,
+      maxWidth: cw - 12,
+      minSize: options.minSize,
     });
   });
   return {

@@ -59,7 +59,7 @@ export function drawing(parent: HTMLElement, width: number) {
     cellWidth: small ? 44 : 53,
     cellHeight: 31,
     size: 21,
-    pigment: 'ochre',
+    pigment: 'orange',
   });
   const x = matrix(view, 'vector-x', {
     rows: 2,
@@ -88,7 +88,7 @@ export function drawing(parent: HTMLElement, width: number) {
     size: 23,
   });
   const labels = [
-    ['A', a, start + a.width / 2, 'ochre'],
+    ['A', a, start + a.width / 2, 'orange'],
     ['x', x, start + a.width + 36 + x.width / 2, 'blue'],
     ['Ax', result, start + a.width + x.width + 72 + result.width / 2, 'purple'],
   ] as const;
@@ -101,7 +101,7 @@ export function drawing(parent: HTMLElement, width: number) {
       view.layer,
       id,
       [
-        { id: 'coefficient', text: '1', pigment: 'ochre' },
+        { id: 'coefficient', text: '1', pigment: 'orange' },
         { id: 'times', text: '×' },
         { id: 'input', text: '1', pigment: 'blue' },
         { id: 'eq', text: '=' },
