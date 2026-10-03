@@ -20,16 +20,13 @@ export interface FusionGlyph {
   value: string;
   word: number;
   line: number;
-  paragraph: number;
   center: readonly [number, number];
   size: number;
   paths: number[];
 }
 export interface FusionText {
-  value: string;
   glyphs: FusionGlyph[];
   words: { value: string; glyphs: number[] }[];
-  lines: number;
 }
 
 /** Any painted silhouette can participate: letters, SVG paths, images or geometry. */

@@ -34,7 +34,7 @@ function center(path: InkPath): [number, number] {
     path.reduce((s, p) => s + p[1], 0) / path.length,
   ];
 }
-export function resample(path: InkPath, count: number): InkPoint[] {
+function resample(path: InkPath, count: number): InkPoint[] {
   const distances = [0];
   for (let i = 1; i < path.length; i++)
     distances.push(
@@ -140,7 +140,7 @@ export function inkRoutes(
     }),
   );
   // Hungarian assignment of the smaller set into the larger set, then closest attachment
-  // for the remaining strokes. No stroke fades out or waits for a second transition.
+  // for the remaining strokes.
   const transpose = source.length < target.length;
   const n = Math.min(source.length, target.length),
     m = Math.max(source.length, target.length);

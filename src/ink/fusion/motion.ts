@@ -44,9 +44,7 @@ export function inkMotion(routes: InkRoute[]) {
       if (!items.some((r) => r.text![origin] === route.text![origin])) items.push(route);
     }
   }
-  const vertices: InkVertices = [new Float32Array(0), new Float32Array(0)];
-  const counts: [number, number] = [0, 0],
-    patches: InkPatch[] = [];
+  const counts: [number, number] = [0, 0];
   const patchMap = new Map<string, { source: 0 | 1; target: number; ranges: [number, number][] }>();
   // x, y and translation weight for each source. Local vectors have weight zero.
   function mean(items: InkRoute[], point: (r: InkRoute) => readonly number[], translate = false) {
@@ -82,42 +80,39 @@ export function inkMotion(routes: InkRoute[]) {
   const compiled = [...groups.values()].map((group) => {
     const text = group[0]!.text,
       n = group[0]!.from.length;
-    const selected = group.filter((r) => r.attachment === undefined);
+    const owner = group.find((r) => r.attachment === undefined)!,
+      carrier = text ? carriers.get(text.glyph)! : undefined;
     const common = new Float64Array(n * 6),
       current = new Float64Array(n * 2),
       contour = new Float64Array(n * 2);
     for (let i = 0; i < n; i++) {
-      const m = mean(
-        selected,
-        (r) =>
-          text ? [r.from[i]![0] - r.text!.from[0], r.from[i]![1] - r.text!.from[1]] : r.from[i]!,
-        !text,
-      );
-      const carrier = text ? carriers.get(text.glyph)! : undefined;
-      for (let j = 0; j < 6; j++) common[i * 6 + j] = m[j]! + (carrier?.[j] ?? 0);
+      const at = i * 6 + owner.source * 3,
+        point = owner.from[i]!;
+      common[at] = point[0] - (owner.text?.from[0] ?? 0);
+      common[at + 1] = point[1] - (owner.text?.from[1] ?? 0);
+      common[at + 2] = text ? 0 : 1;
+      if (carrier) for (let j = 0; j < 6; j++) common[i * 6 + j]! += carrier[j]!;
     }
     // The complete contour is sampled before ink that is absorbed by it.
-    const inputs = [...selected, ...group.filter((r) => r.attachment !== undefined)].map(
-      (route) => {
-        const offset = counts[route.source]!,
-          length = (route.from.length - 1) * 6;
-        counts[route.source]! += length;
-        const key = route.text
-          ? `${route.source}:${route.text.originWord}:${route.text.word}`
-          : `${route.source}`;
-        if (!patchMap.has(key))
-          patchMap.set(key, { source: route.source, target: route.text?.word ?? 0, ranges: [] });
-        patchMap.get(key)!.ranges.push([offset, length]);
-        const center = route.from.reduce(
-          (sum, p) => [sum[0]! + p[0] / n, sum[1]! + p[1] / n],
-          [0, 0],
-        );
-        const extent = Math.max(
-          ...route.from.map((p) => Math.hypot(p[0] - center[0]!, p[1] - center[1]!)),
-        );
-        return { route, offset, center, extent };
-      },
-    );
+    const inputs = [owner, ...group.filter((r) => r.attachment !== undefined)].map((route) => {
+      const offset = counts[route.source]!,
+        length = (route.from.length - 1) * 6;
+      counts[route.source]! += length;
+      const key = route.text
+        ? `${route.source}:${route.text.originWord}:${route.text.word}`
+        : `${route.source}`;
+      if (!patchMap.has(key))
+        patchMap.set(key, { source: route.source, target: route.text?.word ?? 0, ranges: [] });
+      patchMap.get(key)!.ranges.push([offset, length]);
+      const center = route.from.reduce(
+        (sum, p) => [sum[0]! + p[0] / n, sum[1]! + p[1] / n],
+        [0, 0],
+      );
+      const extent = Math.max(
+        ...route.from.map((p) => Math.hypot(p[0] - center[0]!, p[1] - center[1]!)),
+      );
+      return { route, offset, center, extent };
+    });
     return {
       inputs,
       common,
@@ -128,9 +123,8 @@ export function inkMotion(routes: InkRoute[]) {
       word: text ? wordCarriers.get(text.word)! : undefined,
     };
   });
-  patches.push(...patchMap.values());
-  vertices[0] = new Float32Array(counts[0]);
-  vertices[1] = new Float32Array(counts[1]);
+  const patches: InkPatch[] = [...patchMap.values()];
+  const vertices: InkVertices = [new Float32Array(counts[0]), new Float32Array(counts[1])];
   const poses = [pose(), pose()] as const,
     destination = pose();
   function transformedMean(values: Float64Array, at: number, out: Float64Array, offset: number) {

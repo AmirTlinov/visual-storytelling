@@ -34,7 +34,6 @@ export function fusionText(value: string, options: FusionTextOptions = {}): Fusi
   const lineWidths: number[] = [];
   let x = 0,
     line = 0,
-    paragraph = 0,
     space = 0;
   const advanceLine = () => {
     lineWidths[line] = x;
@@ -47,7 +46,6 @@ export function fusionText(value: string, options: FusionTextOptions = {}): Fusi
   for (const token of tokens) {
     if (token === '\n') {
       advanceLine();
-      paragraph++;
       continue;
     }
     if (/^\s+$/u.test(token)) {
@@ -68,7 +66,6 @@ export function fusionText(value: string, options: FusionTextOptions = {}): Fusi
         value: char,
         word,
         line,
-        paragraph,
         center: [x + advance / 2, baseline - size * 0.35],
         size,
         paths: [],
@@ -153,6 +150,6 @@ export function fusionText(value: string, options: FusionTextOptions = {}): Fusi
     height: maxY - minY,
     bounds: { width: maxX - minX, height: maxY - minY },
     paths: paths.map((path) => path.map((p): InkPoint => [p[0] - cx, p[1] - cy, p[2]])),
-    text: { value, glyphs: letters, words, lines: line + 1 },
+    text: { glyphs: letters, words },
   };
 }

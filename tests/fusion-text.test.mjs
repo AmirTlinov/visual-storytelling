@@ -29,7 +29,6 @@ function block(value) {
         value: char,
         word,
         line: 0,
-        paragraph: 0,
         center: [x, 0],
         size: 100,
         paths: [paths.length],
@@ -48,7 +47,7 @@ function block(value) {
     height: 20,
     bounds: { width: x, height: 20 },
     paths,
-    text: { value, words, glyphs, lines: 1 },
+    text: { words, glyphs },
   };
 }
 
