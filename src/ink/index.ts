@@ -9,7 +9,13 @@ export type { Pen, Point, Fill, PenStyle } from './pen.js';
 export { lettering } from './lettering.js';
 export type { Lettering, LetteringOptions } from './lettering.js';
 export { InkFusion } from './fusion/surface.js';
-export type { FusionShape, FusionPose, FusionFrame, FusionOptions } from './fusion/surface.js';
+export type {
+  FusionShape,
+  FusionPose,
+  FusionFrame,
+  FusionOptions,
+  FusionGeometry,
+} from './fusion/surface.js';
 export type { FusionTextOptions } from './fusion/text.js';
 
 export * from './marks.js';

@@ -1,4 +1,4 @@
-import { Euler, Matrix4, Quaternion, Vector3 } from 'three';
+import { Box3, Euler, Matrix4, Quaternion, Vector3 } from 'three';
 import { contactPlanes } from './contact-planes.js';
 
 export type VolumePoint = readonly [number, number, number];
@@ -10,11 +10,12 @@ export interface VolumePose {
   position?: VolumePoint;
   /** Euler angles in radians, applied in XYZ order. */
   rotation?: VolumePoint;
-  scale?: number;
+  /** Positive uniform or per-axis scale. */
+  scale?: number | VolumePoint;
 }
 export interface VolumeFrame {
   sources: readonly VolumePose[];
-  target?: VolumePose;
+  targets: readonly VolumePose[];
   morph: number;
   /** Contact blend width in scene units; zero disables the contact blend. */
   tension?: number;
@@ -55,10 +56,11 @@ export function volumeCapsule(radius: number, length: number): VolumeShape {
 
 /** Shared field parameters: the renderer uploads these arrays directly to the GPU.
  * distance() is the CPU reference for geometry checks and renderer comparisons. */
-export function volumeField(sources: readonly VolumeShape[], target: VolumeShape) {
-  if (!sources.length) throw new Error('Volume morph needs at least one source');
+export function volumeField(sources: readonly VolumeShape[], targets: readonly VolumeShape[]) {
+  if (!sources.length || !targets.length)
+    throw new Error('Volume morph needs visible sources and targets');
   const count = sources.length,
-    shapes = [...sources, target];
+    shapes = [...sources, ...targets];
   const kinds = new Int32Array(shapes.length),
     parameters = new Float32Array(shapes.length * 4);
   const transforms = new Float32Array(shapes.length * 16),
@@ -104,12 +106,15 @@ export function volumeField(sources: readonly VolumeShape[], target: VolumeShape
         1;
     scales[i] = 1;
   });
+  const bounds = new Box3(),
+    nextBounds = new Box3(),
+    localBounds = new Box3();
   const matrix = new Matrix4(),
     position = new Vector3(),
     scale = new Vector3(),
     rotation = new Euler(),
     quaternion = new Quaternion();
-  const updatePlanes = contactPlanes(kinds, parameters);
+  const updatePlanes = contactPlanes(kinds, parameters, count);
   let progress = 0,
     tension = 0,
     planeCount = 0;
@@ -117,16 +122,30 @@ export function volumeField(sources: readonly VolumeShape[], target: VolumeShape
     const p = pose.position ?? [0, 0, 0],
       r = pose.rotation ?? [0, 0, 0],
       s = pose.scale ?? 1;
-    positive(s);
+    const dimensions: VolumePoint = typeof s === 'number' ? [s, s, s] : s;
+    finitePoint(dimensions);
+    positive(...dimensions);
     finitePoint(p);
     finitePoint(r);
-    if (!Number.isFinite(Math.fround(s)) || Math.fround(s) <= 0)
+    if (dimensions.some((v) => !Number.isFinite(Math.fround(v)) || Math.fround(v) <= 0))
       throw new Error('Volume scales must fit positive GPU floats');
-    matrix
-      .compose(position.set(...p), quaternion.setFromEuler(rotation.set(...r)), scale.setScalar(s))
-      .invert();
+    matrix.compose(
+      position.set(...p),
+      quaternion.setFromEuler(rotation.set(...r)),
+      scale.set(...dimensions),
+    );
+    const shape = shapes[i]!;
+    const half: VolumePoint =
+      shape.kind === 'box'
+        ? (shape.size.map((v) => v / 2) as unknown as VolumePoint)
+        : shape.kind === 'sphere'
+          ? [shape.radius, shape.radius, shape.radius]
+          : [shape.length / 2, shape.radius, shape.radius];
+    localBounds.set(new Vector3(...half).negate(), new Vector3(...half)).applyMatrix4(matrix);
+    nextBounds.union(localBounds);
+    matrix.invert();
     nextTransforms.set(matrix.elements, i * 16);
-    nextScales[i] = s;
+    nextScales[i] = Math.min(...dimensions);
   }
   function primitive(i: number, x: number, y: number, z: number) {
     const m = i * 16,
@@ -163,12 +182,14 @@ export function volumeField(sources: readonly VolumeShape[], target: VolumeShape
     return d * scales[i]!;
   }
   return {
+    bounds,
     kinds,
     parameters,
     transforms,
     scales,
     planes,
     count,
+    targetCount: targets.length,
     get planeCount() {
       return planeCount;
     },
@@ -179,21 +200,24 @@ export function volumeField(sources: readonly VolumeShape[], target: VolumeShape
       return tension;
     },
     update(frame: VolumeFrame) {
-      if (frame.sources.length !== count)
-        throw new Error('Volume source poses do not match shapes');
+      if (frame.sources.length !== count || frame.targets.length !== targets.length)
+        throw new Error('Volume poses must match every source and target shape');
       if (!Number.isFinite(frame.morph) || !Number.isFinite(frame.tension ?? 0.2))
         throw new Error('Volume progress and tension must be finite');
       const nextProgress = Math.fround(Math.max(0, Math.min(1, frame.morph)));
       const nextTension = Math.fround(Math.max(0, frame.tension ?? 0.2) * (1 - nextProgress));
       if (!Number.isFinite(nextTension))
         throw new Error('Volume tension must fit a finite GPU float');
+      nextBounds.makeEmpty();
       for (let i = 0; i < count; i++) updatePose(frame.sources[i], i);
-      updatePose(frame.target, count);
+      for (let i = 0; i < targets.length; i++) updatePose(frame.targets[i], count + i);
       if (!nextTransforms.every(Number.isFinite))
         throw new Error('Volume transforms must fit finite GPU floats');
-      const nextPlaneCount = updatePlanes(nextTransforms, nextTension, nextPlanes);
+      const nextPlaneCount =
+        targets.length === 1 ? updatePlanes(nextTransforms, nextTension, nextPlanes) : 0;
       if (!nextPlanes.every(Number.isFinite))
         throw new Error('Volume contact planes must fit finite GPU floats');
+      bounds.copy(nextBounds).expandByScalar((nextTension * Math.max(0, count - 1)) / 4 + 0.01);
       transforms.set(nextTransforms);
       scales.set(nextScales);
       planes.set(nextPlanes);
@@ -202,7 +226,10 @@ export function volumeField(sources: readonly VolumeShape[], target: VolumeShape
       planeCount = nextPlaneCount;
     },
     distance(x: number, y: number, z: number) {
-      if (progress === 1) return primitive(count, x, y, z);
+      let target = primitive(count, x, y, z);
+      for (let i = count + 1; i < shapes.length; i++)
+        target = Math.min(target, primitive(i, x, y, z));
+      if (progress === 1) return target;
       let d = primitive(0, x, y, z);
       for (let i = 1; i < count; i++) {
         const next = primitive(i, x, y, z),
@@ -216,7 +243,7 @@ export function volumeField(sources: readonly VolumeShape[], target: VolumeShape
           planes[at]! * x + planes[at + 1]! * y + planes[at + 2]! * z + planes[at + 3]!,
         );
       }
-      return progress === 0 ? d : d * (1 - progress) + primitive(count, x, y, z) * progress;
+      return progress === 0 ? d : d * (1 - progress) + target * progress;
     },
   };
 }

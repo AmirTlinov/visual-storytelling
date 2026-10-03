@@ -24,7 +24,7 @@ export function stateAt(frame) {
 
 export function shapeFrame(index, progress) {
   const p = Math.max(0, Math.min(1, progress));
-  if (index === 0) return { sources: [{}], morph: ease(p), tension: 0 };
+  if (index === 0) return { sources: [{}], targets: [{}], morph: ease(p), tension: 0 };
   const approach = ease(p / 0.3),
     contact = ease((p - 0.3) / 0.18),
     morph = ease((p - 0.3) / 0.7);
@@ -32,6 +32,7 @@ export function shapeFrame(index, progress) {
   const distance = 1.55 - 0.975 * approach - 0.025 * contact;
   return {
     sources: [{ position: [-distance, 0, 0] }, { position: [distance, 0, 0] }],
+    targets: [{}],
     morph,
     tension: (index === 1 ? 0.12 : 0.6) * contact,
   };

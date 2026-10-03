@@ -7,7 +7,7 @@ const smooth = (value: number) => {
 
 /** Suppress unreadable stroke fragments after deformation, in displayed coordinates. */
 export function inkDetailVisibility(patches: readonly InkPatch[], text: boolean) {
-  const counts = [0, 0];
+  const counts = Array<number>(Math.max(...patches.map((patch) => patch.source)) + 1).fill(0);
   for (const patch of patches)
     for (const [offset, length] of patch.ranges)
       counts[patch.source] = Math.max(counts[patch.source]!, (offset + length) / 6);
@@ -21,7 +21,7 @@ export function inkDetailVisibility(patches: readonly InkPatch[], text: boolean)
       return output;
     }
     for (const patch of patches) {
-      const data = vertices[patch.source],
+      const data = vertices[patch.source]!,
         values = output[patch.source]!;
       for (const [offset, length] of patch.ranges) {
         let left = Infinity,

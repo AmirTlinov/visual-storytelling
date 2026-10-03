@@ -38,8 +38,9 @@ void main() {
   float d = length(point - mix(a,b,t)) - mix(radius.x, radius.y, t);
   float pixel = max(world.x / resolution.x, world.y / resolution.y);
   float coverage = (1. - smoothstep(-pixel*.7, pixel*.7, d)) * visibility;
-  // Both channels use MIN blending: distance union and one minus ink coverage.
-  color = vec4(clamp(.5 + d / (2.*band), 0., 1.), 1.-coverage, 0., 1.);
+  // MIN blending retains distance, hard-union distance and one minus coverage.
+  float encoded = clamp(.5 + d / (2.*band), 0., 1.);
+  color = vec4(encoded, encoded, 1.-coverage, 1.);
 }
 `;
 export const fusionVertex = `#version 300 es
@@ -47,28 +48,40 @@ in vec2 corner;
 out vec2 uv;
 void main() { uv=corner; gl_Position=vec4(corner*2.-1.,0.,1.); }
 `;
+export const combineFragment = `#version 300 es
+precision highp float;
+in vec2 uv;
+uniform float tension;
+uniform float band;
+uniform sampler2D first;
+uniform sampler2D second;
+out vec4 color;
+void main() {
+  vec3 firstField=texture(first,uv).rgb, secondField=texture(second,uv).rgb;
+  float a=(firstField.r-.5)*2.*band, b=(secondField.r-.5)*2.*band;
+  float h=max(tension-abs(a-b),0.)/max(tension,.00001);
+  float distance=min(a,b)-h*h*tension*.25;
+  color=vec4(clamp(.5+distance/(2.*band),0.,1.),min(firstField.gb,secondField.gb),1.);
+}
+`;
 export const fusionFragment = `#version 300 es
 precision highp float;
 in vec2 uv;
 uniform vec2 resolution;
 uniform vec2 world;
 uniform vec3 ink;
-uniform float tension;
 uniform float band;
 uniform bool details;
-uniform sampler2D first;
-uniform sampler2D second;
+uniform sampler2D field;
 out vec4 color;
 void main() {
-  vec2 firstField=texture(first,uv).rg, secondField=texture(second,uv).rg;
-  float a=(firstField.r-.5)*2.*band, b=(secondField.r-.5)*2.*band;
-  float h=max(tension-abs(a-b),0.)/max(tension,.00001);
-  float distance=min(a,b)-h*h*tension*.25;
+  vec3 fields=texture(field,uv).rgb;
+  float distance=(fields.r-.5)*2.*band, raw=(fields.g-.5)*2.*band;
   float pixel=max(world.x/resolution.x,world.y/resolution.y);
   float fused=1.-smoothstep(-pixel*.7,pixel*.7,distance);
-  float base=max(1.-smoothstep(-pixel*.7,pixel*.7,a), 1.-smoothstep(-pixel*.7,pixel*.7,b));
-  float coverage=max(1.-firstField.g,1.-secondField.g);
-  // Keep the contact bridge while fading each whole stroke at its original width.
+  float base=1.-smoothstep(-pixel*.7,pixel*.7,raw);
+  float coverage=1.-fields.b;
+  // Keep contact bridges while fading each whole stroke at its original width.
   color=vec4(ink, details ? min(1.,coverage+max(0.,fused-base)) : fused);
 }
 `;

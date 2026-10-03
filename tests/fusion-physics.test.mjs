@@ -22,7 +22,7 @@ test('Rapier deforms ink, preserves endpoints and reuses deterministic history o
     [10, -15, 2],
     [20, 12, 2],
   ];
-  const routes = inkRoutes([path], [path], [path]);
+  const routes = inkRoutes([[path], [path]], [[path]]);
   const motion = inkMotion(routes);
   const owner = routes.find((route) => route.attachment === undefined);
   const donor = routes.find((route) => route.attachment !== undefined);
@@ -31,6 +31,7 @@ test('Rapier deforms ink, preserves endpoints and reuses deterministic history o
       { x: -120, y: 0 },
       { x: 120, y: 0 },
     ],
+    targets: [{ x: 0, y: 0 }],
     morph: time / 2,
   });
   const world = await world2D({ gravity: [0, 0] });
@@ -40,15 +41,15 @@ test('Rapier deforms ink, preserves endpoints and reuses deterministic history o
     assert.equal(track.stats.particles, 18);
     assert.deepEqual(
       flatten(track.sample(0)),
-      flatten(motion(frame(0).sources, { x: 0, y: 0 }, 0)),
+      flatten(motion(frame(0).sources, frame(0).targets, 0)),
     );
     assert.deepEqual(
       flatten(track.sample(2)),
-      flatten(motion(frame(0).sources, { x: 0, y: 0 }, 1)),
+      flatten(motion(frame(0).sources, frame(0).targets, 1)),
     );
     assert.equal(track.stats.steps, 0, 'A direct seek to the exact endpoint needs no simulation');
     const middle = flatten(track.sample(0.6));
-    const guideParts = motion(frame(0).sources, { x: 0, y: 0 }, 0.3);
+    const guideParts = motion(frame(0).sources, frame(0).targets, 0.3);
     const donorXs = Array.from(guideParts[donor.source]).filter(
       (_, i) => i % 6 === 0 || i % 6 === 2,
     );
@@ -70,7 +71,7 @@ test('Rapier deforms ink, preserves endpoints and reuses deterministic history o
       assert.ok(Math.hypot(dx, dy) < 0.001, 'Rapier must keep the absorbed ink on its owner');
     }
     const end = flatten(track.sample(2));
-    assert.deepEqual(end, flatten(motion(frame(0).sources, { x: 0, y: 0 }, 1)));
+    assert.deepEqual(end, flatten(motion(frame(0).sources, frame(0).targets, 1)));
     const steps = track.stats.steps;
     assert.deepEqual(flatten(track.sample(0.6)), middle);
     assert.equal(track.stats.steps, steps, 'Reverse seek reuses the existing Rapier result');
@@ -83,4 +84,36 @@ test('Rapier deforms ink, preserves endpoints and reuses deterministic history o
     world.dispose();
   }
   assert.throws(() => track.sample(1), /disposed/);
+});
+
+test('elastic one-to-three separation shares the displayed endpoints and deterministic history', async () => {
+  const path = [
+    [-20, 0, 3],
+    [20, 0, 3],
+  ];
+  const motion = inkMotion(inkRoutes([[path]], [[path], [path], [path]]));
+  const frame = (time) => ({
+    sources: [{ x: 0, y: 0 }],
+    targets: [
+      { x: -100, y: -40 },
+      { x: 0, y: 60 },
+      { x: 100, y: -40 },
+    ],
+    morph: time / 2,
+  });
+  const world = await world2D({ gravity: [0, 0] });
+  const track = fusionTrack(world, motion, frame, 2);
+  try {
+    const middle = track.sample(0.8).map((buffer) => buffer.slice());
+    track.sample(1.7);
+    const steps = track.stats.steps;
+    assert.deepEqual(track.sample(0.8), middle);
+    assert.equal(track.stats.steps, steps);
+    assert.deepEqual(track.sample(2), motion(frame(2).sources, frame(2).targets, 1));
+    assert.equal(track.stats.particles, 27);
+  } finally {
+    track.dispose();
+    assert.equal(world.size, 0);
+    world.dispose();
+  }
 });

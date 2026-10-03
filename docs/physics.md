@@ -51,4 +51,6 @@ const player = PhysicsPlayer.mount(playerElement, world);
 
 Для слияния текста и фигур есть [`Physics2D.fusion`](../examples/ink-fusion/README.md): Rapier деформирует небольшие управляющие сетки, а `InkFusion` сопоставляет штрихи и соединяет поверхности. Привязка принимает детерминированный `frame(time)` и использует существующий таймлайн; история смещений обеспечивает обратную перемотку.
 
+[Контакт с морфящейся формой](morphing.md#столкновения-с-меняющейся-формой): `Physics2D.morph` и `Physics3D.morph` используют текущее поле рисунка как опору для окружающих тел.
+
 Проверка: после `npm run build` — `node --test tests/physics.test.mjs` и `npx playwright test tests/browser/physics.spec.js`.

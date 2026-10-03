@@ -26,12 +26,17 @@ export async function physicalFusion(parent: HTMLElement, options: PhysicalFusio
   return {
     canvas: surface.canvas,
     setSize: surface.setSize,
-    setShapes(first: FusionShape, second: FusionShape, target: FusionShape) {
+    get geometry() {
+      return surface.geometry;
+    },
+    onChange: surface.onChange,
+    onDispose: surface.onDispose,
+    setShapes(sources: readonly FusionShape[], targets: readonly FusionShape[]) {
       if (disposed) throw new Error('Fusion surface has been disposed');
       track?.dispose();
       track = fusionTrack(
         world,
-        surface.setShapes(first, second, target),
+        surface.setShapes(sources, targets),
         options.frame,
         options.duration,
         options.softness,

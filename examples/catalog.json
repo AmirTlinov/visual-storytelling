@@ -68,6 +68,17 @@
     "time": 17,
     "checkpoints": [0, 6.8, 9.5, 17, 20, 26.5, 34, 42, 50]
   },
+  "math-morph": {
+    "title": "Собрать, разделить, умножить",
+    "page": "index.html",
+    "time": 22,
+    "checkpoints": [0, 7, 12, 17, 22, 26, 35, 40, 48, 54, 63, 69]
+  },
+  "morph-contact": {
+    "title": "Форма становится опорой",
+    "page": "index.html",
+    "time": 0
+  },
   "logic-gates": {
     "title": "Логические элементы",
     "page": "logic-gates.svg",

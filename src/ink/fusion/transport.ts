@@ -2,7 +2,9 @@
 export type InkPoint = readonly [x: number, y: number, radius: number];
 export type InkPath = readonly InkPoint[];
 export interface InkRoute {
-  source: 0 | 1;
+  source: number;
+  /** Shape receiving this route; target identifies its stroke across all destination shapes. */
+  destination: number;
   target: number;
   origin: number;
   /** Surplus ink joins this sample of the target's sole owning stroke. */
@@ -92,50 +94,61 @@ function align(a: InkPoint[], b: InkPoint[]): InkPoint[] {
 
 /** Minimum-cost assignment. Every target gets ink; surplus strokes merge into a target. */
 export function inkRoutes(
-  first: readonly InkPath[],
-  second: readonly InkPath[],
-  target: readonly InkPath[],
+  inputs: readonly (readonly InkPath[])[],
+  outputs: readonly (readonly InkPath[])[],
   local = false,
 ): InkRoute[] {
-  const source = [
-    ...first.map((path) => ({ path, source: 0 as const })),
-    ...second.map((path) => ({ path, source: 1 as const })),
-  ];
+  const source = inputs.flatMap((paths, source) => paths.map((path) => ({ path, source })));
+  const destinations = outputs.flatMap((paths, destination) =>
+    paths.map((path) => ({ path, destination })),
+  );
+  const target = destinations.map(({ path }) => path);
   if (!source.length || !target.length)
     throw new Error('Ink transport requires visible source and target paths');
   const centers = source.map(({ path }) => center(path)),
-    destinations = target.map(center);
-  // Normalize each word into its own half of the destination. This preserves reading order.
+    centersTo = target.map(center);
+  // Normalize each shape into its own span. Source and destination order stay explicit.
   function extent(paths: readonly InkPath[]) {
     const xs = paths.flatMap((path) => path.map((p) => p[0]));
     return xs.length ? ([Math.min(...xs), Math.max(...xs)] as const) : ([0, 1] as const);
   }
-  const bounds = [extent(first), extent(second)],
-    final = extent(target);
-  const widths = bounds.map(([a, b]) => Math.max(1, b - a)),
-    totalWidth = widths[0]! + widths[1]!;
+  function spans(shapes: readonly (readonly InkPath[])[]) {
+    const bounds = shapes.map(extent),
+      widths = bounds.map(([a, b], i) => (shapes[i]!.length ? Math.max(1, b - a) : 0));
+    let total = 0;
+    const offsets = widths.map((width) => {
+      const offset = total;
+      total += width;
+      return offset;
+    });
+    return { bounds, offsets, total };
+  }
+  const from = spans(inputs),
+    to = spans(outputs);
   const cost = source.map(({ path, source: group }, i) =>
-    target.map((to, j) => {
-      const rank = (centers[i]![0] - bounds[group]![0] + (group ? widths[0]! : 0)) / totalWidth;
-      const destinationRank = (destinations[j]![0] - final[0]) / Math.max(1, final[1] - final[0]);
+    target.map((pathTo, j) => {
+      const destination = destinations[j]!.destination;
+      const rank = (centers[i]![0] - from.bounds[group]![0] + from.offsets[group]!) / from.total;
+      const destinationRank =
+        (centersTo[j]![0] - to.bounds[destination]![0] + to.offsets[destination]!) / to.total;
       const a = resample(path, 12),
-        b = align(a, resample(to, 12));
+        b = align(a, resample(pathTo, 12));
       let shape = 0;
       for (let k = 0; k < a.length; k++)
         shape +=
-          ((a[k]![0] - centers[i]![0] - b[k]![0] + destinations[j]![0]) ** 2 +
-            (a[k]![1] - centers[i]![1] - b[k]![1] + destinations[j]![1]) ** 2) /
+          ((a[k]![0] - centers[i]![0] - b[k]![0] + centersTo[j]![0]) ** 2 +
+            (a[k]![1] - centers[i]![1] - b[k]![1] + centersTo[j]![1]) ** 2) /
           12;
       return (
         (local
-          ? (centers[i]![0] - destinations[j]![0]) ** 2 +
-            (centers[i]![1] - destinations[j]![1]) ** 2 +
+          ? (centers[i]![0] - centersTo[j]![0]) ** 2 +
+            (centers[i]![1] - centersTo[j]![1]) ** 2 +
             // Symmetric incoming loops still have an order: do not swap their
             // destinations and send one projection through the other.
             (rank - destinationRank) ** 2 * 400
           : (rank - destinationRank) ** 2 * 40000) +
         shape +
-        Math.log((length(path) + 3) / (length(to) + 3)) ** 2 * 180
+        Math.log((length(path) + 3) / (length(pathTo) + 3)) ** 2 * 180
       );
     }),
   );
@@ -268,6 +281,7 @@ export function inkRoutes(
           attachment = k;
       return {
         source: source[i]!.source,
+        destination: destinations[j]!.destination,
         origin: i,
         target: j,
         attachment,
@@ -275,6 +289,13 @@ export function inkRoutes(
         to: b.map(() => b[attachment]!),
       };
     }
-    return { source: source[i]!.source, origin: i, target: j, from: a, to: b };
+    return {
+      source: source[i]!.source,
+      destination: destinations[j]!.destination,
+      origin: i,
+      target: j,
+      from: a,
+      to: b,
+    };
   });
 }

@@ -11,10 +11,9 @@ import { bodyLifetime } from './body.js';
 
 const STEP = 1 / 120;
 const SCALE = 100;
-const origin = { x: 0, y: 0 };
 
 function bounds(vertices: InkVertices, patch: InkPatch, out: Float64Array) {
-  const data = vertices[patch.source];
+  const data = vertices[patch.source]!;
   let left = Infinity,
     top = Infinity,
     right = -Infinity,
@@ -66,14 +65,11 @@ export function fusionTrack(
     lastStep = 0;
   const sample = (time: number) => {
     const f = frame(time);
-    return motion(f.sources, f.target ?? origin, Math.max(0, Math.min(1, f.morph ?? 0)));
+    return motion(f.sources, f.targets, Math.max(0, Math.min(1, f.morph ?? 0)));
   };
   const initial = sample(0);
   const merged = new Map<number, { box: Float64Array; offsets: Float32Array; count: number }>();
-  const output: InkVertices = [
-    new Float32Array(initial[0].length),
-    new Float32Array(initial[1].length),
-  ];
+  const output: InkVertices = initial.map((vertices) => new Float32Array(vertices.length));
   const cages = motion.patches.map((patch, index) => {
     if (!merged.has(patch.target))
       merged.set(patch.target, {
@@ -149,9 +145,8 @@ export function fusionTrack(
         morph = Math.max(0, Math.min(1, f.morph ?? 0));
       // Exact endpoints need no simulation, including a first seek straight to the result.
       if (morph === 0 || morph === 1) {
-        const geometry = motion(f.sources, f.target ?? origin, morph);
-        output[0].set(geometry[0]);
-        output[1].set(geometry[1]);
+        const geometry = motion(f.sources, f.targets, morph);
+        geometry.forEach((vertices, i) => output[i]!.set(vertices));
         return output;
       }
       const tick = time / STEP,
@@ -162,9 +157,8 @@ export function fusionTrack(
       const a = history[low]!,
         b = history[high]!;
       for (let i = 0; i < deltas.length; i++) deltas[i] = a[i]! + (b[i]! - a[i]!) * fraction;
-      const geometry = motion(f.sources, f.target ?? origin, morph);
-      output[0].set(geometry[0]);
-      output[1].set(geometry[1]);
+      const geometry = motion(f.sources, f.targets, morph);
+      geometry.forEach((vertices, i) => output[i]!.set(vertices));
       const strength = 0.7 * 16 * morph * morph * (1 - morph) * (1 - morph);
       // Joining ink acquires one deformation field. Independent cages must never
       // pull coincident strokes apart again after their geometric correspondence has merged.
@@ -194,7 +188,7 @@ export function fusionTrack(
       }
       for (let j = 0; j < cages.length; j++) {
         const cage = cages[j]!;
-        const data = output[cage.patch.source],
+        const data = output[cage.patch.source]!,
           base = j * 18;
         for (const [offset, length] of cage.patch.ranges)
           for (let i = offset; i < offset + length; i += 6)

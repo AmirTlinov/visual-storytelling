@@ -47,43 +47,56 @@ export function orderedPairs(
   return pairs;
 }
 export function textRoutes(
-  first: FusionShape,
-  second: FusionShape,
-  target: FusionShape,
+  inputs: readonly FusionShape[],
+  outputs: readonly FusionShape[],
 ): InkRoute[] {
-  const inputs = [first, second] as const;
-  const wordCenters = (shape: FusionShape) =>
-    shape.text!.words.map((word): readonly [number, number] => [
-      word.glyphs.reduce((sum, i) => sum + shape.text!.glyphs[i]!.center[0], 0) /
-        word.glyphs.length,
-      word.glyphs.reduce((sum, i) => sum + shape.text!.glyphs[i]!.center[1], 0) /
-        word.glyphs.length,
+  function flatten(shapes: readonly FusionShape[]) {
+    let glyphOffset = 0,
+      wordOffset = 0,
+      pathOffset = 0;
+    const records = shapes.map((shape, owner) => {
+      const glyphs = shape.text!.glyphs.map((glyph) => ({
+        glyph,
+        owner,
+        shape,
+        word: glyph.word + wordOffset,
+        pathOffset,
+      }));
+      const words = shape.text!.words.map((word) => ({
+        value: word.value,
+        glyphs: word.glyphs.map((i) => i + glyphOffset),
+      }));
+      glyphOffset += glyphs.length;
+      wordOffset += words.length;
+      pathOffset += shape.paths.length;
+      return { glyphs, words };
+    });
+    return { glyphs: records.flatMap((r) => r.glyphs), words: records.flatMap((r) => r.words) };
+  }
+  const incoming = flatten(inputs),
+    outgoing = flatten(outputs);
+  const source = incoming.glyphs,
+    sourceWords = incoming.words;
+  const targetRecords = outgoing.glyphs,
+    targetWords = outgoing.words;
+  const targets = targetRecords.map(({ glyph, word }) => ({ ...glyph, word }));
+  const wordCenters = (words: typeof sourceWords, glyphs: typeof source) =>
+    words.map((word): readonly [number, number] => [
+      word.glyphs.reduce((sum, i) => sum + glyphs[i]!.glyph.center[0], 0) / word.glyphs.length,
+      word.glyphs.reduce((sum, i) => sum + glyphs[i]!.glyph.center[1], 0) / word.glyphs.length,
     ]);
-  const fromWords = inputs.map(wordCenters),
-    toWords = wordCenters(target);
-  const source = inputs.flatMap((shape, owner) =>
-    shape.text!.glyphs.map((glyph) => ({ glyph, owner: owner as 0 | 1, shape })),
-  );
-  const sourceWords = inputs.flatMap((shape, owner) =>
-    shape.text!.words.map((word) => ({
-      value: word.value,
-      glyphs: word.glyphs.map((i) => i + (owner ? first.text!.glyphs.length : 0)),
-    })),
-  );
-  const targetWords = target.text!.words,
-    targets = target.text!.glyphs;
+  const fromWords = wordCenters(sourceWords, source),
+    toWords = wordCenters(targetWords, targetRecords);
   const normalize = (text: string) =>
     text
       .toLocaleLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
-  const candidates = inputs.flatMap((shape, owner) =>
-    orderedPairs(
-      shape.text!.words.map((w) => normalize(w.value)),
-      targetWords.map((w) => normalize(w.value)),
-    ).map(([a, b]): [number, number] => [a + (owner ? first.text!.words.length : 0), b]),
+  const candidates = orderedPairs(
+    sourceWords.map((word) => normalize(word.value)),
+    targetWords.map((word) => normalize(word.value)),
   );
-  // Match preserved words across both inputs first. Only the remaining ink supplies
+  // Match preserved words across all inputs first. Only the remaining ink supplies
   // new words; independently covering the whole result from each input creates echoes.
   const wordPairs = candidates.filter(
     ([a, b]) => normalize(sourceWords[a]!.value) === normalize(targetWords[b]!.value),
@@ -158,13 +171,12 @@ export function textRoutes(
   targetWords.forEach((word, i) => {
     const originals = [...new Set(assigned[i]!)].sort((a, b) => a - b);
     const anchored = originals.some((j) => {
-      const { glyph, owner } = source[j]!;
-      return normalize(inputs[owner].text!.words[glyph.word]!.value) === normalize(word.value);
+      return normalize(sourceWords[source[j]!.word]!.value) === normalize(word.value);
     });
     // Unchanged words retain their letters. A new word uses the combined ink of
-    // both suppliers instead of growing two complete copies before they meet.
+    // the suppliers instead of growing two complete copies before they meet.
     const suppliers = anchored
-      ? [0, 1].map((owner) => originals.filter((j) => source[j]!.owner === owner))
+      ? inputs.map((_, owner) => originals.filter((j) => source[j]!.owner === owner))
       : [originals];
     for (const incoming of suppliers) {
       for (const [a, b] of orderedPairs(
@@ -176,7 +188,7 @@ export function textRoutes(
     }
   });
   const received = targets.map(
-    () => [] as { path: InkPath; owner: 0 | 1; glyph: FusionGlyph; id: number; seed: boolean }[],
+    () => [] as { path: InkPath; owner: number; glyph: FusionGlyph; id: number; seed: boolean }[],
   );
   source.forEach(({ glyph, owner, shape }, i) => {
     const receivers = [...new Set(glyphPairs.filter(([a]) => a === i).map(([, b]) => b))].sort(
@@ -192,7 +204,7 @@ export function textRoutes(
         ],
       ),
     );
-    const word = glyph.word + (owner ? first.text!.words.length : 0);
+    const word = source[i]!.word;
     const primaryReceivers = receivers.filter((j) => targets[j]!.word === primaryWords[word]);
     const primary =
       primaryReceivers.find((j) => normalize(glyph.value) === normalize(targets[j]!.value)) ??
@@ -209,12 +221,10 @@ export function textRoutes(
     );
   });
   return targets.flatMap((glyph, index) => {
-    const records = [
-      ...received[index]!.filter((p) => p.owner === 0),
-      ...received[index]!.filter((p) => p.owner === 1),
-    ];
+    const records = received[index]!.toSorted((a, b) => a.owner - b.owner);
+    const destination = targetRecords[index]!;
     const local = glyph.paths.map((i) =>
-      target.paths[i]!.map(
+      destination.shape.paths[i]!.map(
         (p): InkPoint => [
           ((p[0] - glyph.center[0]) * 100) / glyph.size,
           ((p[1] - glyph.center[1]) * 100) / glyph.size,
@@ -223,9 +233,10 @@ export function textRoutes(
       ),
     );
     return inkRoutes(
-      records.filter((p) => p.owner === 0).map((p) => p.path),
-      records.filter((p) => p.owner === 1).map((p) => p.path),
-      local,
+      inputs.map((_, owner) =>
+        records.filter((record) => record.owner === owner).map((record) => record.path),
+      ),
+      [local],
       true,
     ).flatMap((route) => {
       const original = records[route.origin]!;
@@ -240,7 +251,8 @@ export function textRoutes(
       return [
         {
           ...route,
-          target: glyph.paths[route.target]!,
+          destination: destination.owner,
+          target: destination.pathOffset + glyph.paths[route.target]!,
           from: route.from.map((p) => expand(p, original.glyph)),
           to: route.to.map((p) => expand(p, glyph)),
           text: {
@@ -249,11 +261,11 @@ export function textRoutes(
             origin: original.id,
             same: original.glyph.value === glyph.value,
             word: glyph.word,
-            originWord: original.glyph.word + (original.owner ? first.text!.words.length : 0),
+            originWord: source[original.id]!.word,
             wordSame:
-              normalize(inputs[original.owner].text!.words[original.glyph.word]!.value) ===
-              normalize(target.text!.words[glyph.word]!.value),
-            fromWord: fromWords[original.owner]![original.glyph.word]!,
+              normalize(sourceWords[source[original.id]!.word]!.value) ===
+              normalize(targetWords[glyph.word]!.value),
+            fromWord: fromWords[source[original.id]!.word]!,
             toWord: toWords[glyph.word]!,
           },
         },

@@ -19,10 +19,11 @@ float primitive(int i, vec3 point) {
   return (length(p) - a.x) * scales[i];
 }
 float field(vec3 p) {
-  if (morph >= 1.) return primitive(SHAPE_COUNT - 1, p);
-  float target = primitive(SHAPE_COUNT - 1, p);
+  float target = primitive(SOURCE_COUNT, p);
+  for (int i = SOURCE_COUNT + 1; i < SHAPE_COUNT; i++) target = min(target, primitive(i, p));
+  if (morph >= 1.) return target;
   float d = primitive(0, p);
-  for (int i = 1; i < SHAPE_COUNT - 1; i++) {
+  for (int i = 1; i < SOURCE_COUNT; i++) {
     float next = primitive(i, p);
     float h = tension > 0. ? max(0., tension - abs(d - next)) / tension : 0.;
     d = min(d, next) - h * h * tension * .25;

@@ -1,3 +1,4 @@
+import { measureText } from './text-measure.js';
 import { svg } from './dom.js';
 import { SketchMotion } from './motion.js';
 import { glyphs } from './glyphs.js';
@@ -54,17 +55,17 @@ export function lettering(
     const nominalSize = options.size ?? 24;
     label.setAttribute('font-size', String(nominalSize));
     if (options.maxWidth !== undefined) {
-      const natural = label.getComputedTextLength();
+      const natural = measureText(label, (text) => text.getComputedTextLength());
       const size = Math.max(
         Math.min(nominalSize, options.minSize ?? 16),
         Math.min(nominalSize, (nominalSize * options.maxWidth) / (natural || 1)),
       );
       label.setAttribute('font-size', String(size));
-      if (label.getComputedTextLength() > options.maxWidth + 0.5)
+      if (measureText(label, (text) => text.getComputedTextLength()) > options.maxWidth + 0.5)
         element.dataset.layoutError = `Label "${value}" needs more than ${options.maxWidth}px at ${size}px. Enlarge its cell or show fewer items.`;
       else delete element.dataset.layoutError;
     }
-    width = label.getComputedTextLength();
+    width = measureText(label, (text) => text.getComputedTextLength());
     position();
     write(progress);
   };

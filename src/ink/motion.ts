@@ -9,6 +9,7 @@ interface TextInk {
   weights: number[];
   total: number;
 }
+import { measureText } from './text-measure.js';
 import { glyphs as SketchPencil } from './glyphs.js';
 import { SVG_NS as NS, clamp } from './dom.js';
 /* Seekable pen strokes. Scene composition and playback belong to their own owners. */
@@ -86,31 +87,33 @@ function prepareText(text: SVGTextElement) {
     group.setAttribute('transform', text.getAttribute('transform')!);
   text.after(group);
   const strokes: SVGPathElement[] = [];
-  Array.from(text.textContent ?? '').forEach((char, i) => {
-    if (/\s/.test(char)) return;
-    const glyph = SketchPencil[char];
-    if (!glyph)
-      throw Error(`No pen strokes for ${char}; add them in src/ink/glyphs.ts or use static text`);
-    const bounds = text.getExtentOfChar(i),
-      position = text.getStartPositionOfChar(i),
-      letter = document.createElementNS(NS, 'g');
-    letter.setAttribute(
-      'transform',
-      `translate(${bounds.x + bounds.width * 0.055} ${position.y - size * 0.82}) scale(${bounds.width / 6.7} ${size * 0.082})`,
-    );
-    group.append(letter);
-    glyph.forEach((d) => {
-      const path = document.createElementNS(NS, 'path');
-      path.setAttribute('d', d);
-      path.setAttribute('fill', 'none');
-      path.setAttribute('stroke', 'currentColor');
-      path.setAttribute('stroke-width', '.65');
-      path.setAttribute('stroke-linecap', 'round');
-      path.setAttribute('stroke-linejoin', 'round');
-      letter.append(path);
-      strokes.push(path);
-    });
-  });
+  measureText(text, (measured) =>
+    Array.from(text.textContent ?? '').forEach((char, i) => {
+      if (/\s/.test(char)) return;
+      const glyph = SketchPencil[char];
+      if (!glyph)
+        throw Error(`No pen strokes for ${char}; add them in src/ink/glyphs.ts or use static text`);
+      const bounds = measured.getExtentOfChar(i),
+        position = measured.getStartPositionOfChar(i),
+        letter = document.createElementNS(NS, 'g');
+      letter.setAttribute(
+        'transform',
+        `translate(${bounds.x + bounds.width * 0.055} ${position.y - size * 0.82}) scale(${bounds.width / 6.7} ${size * 0.082})`,
+      );
+      group.append(letter);
+      glyph.forEach((d) => {
+        const path = document.createElementNS(NS, 'path');
+        path.setAttribute('d', d);
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', 'currentColor');
+        path.setAttribute('stroke-width', '.65');
+        path.setAttribute('stroke-linecap', 'round');
+        path.setAttribute('stroke-linejoin', 'round');
+        letter.append(path);
+        strokes.push(path);
+      });
+    }),
+  );
   text.style.fillOpacity = '0';
   // Include small pen-lift intervals between strokes. Their placement is stable.
   const weights = strokes.map((p) => geometry(p).length + 0.9),

@@ -71,7 +71,7 @@ test('inserting a word preserves the complete strokes of unchanged words', () =>
   const first = block('свет'),
     second = block('тень'),
     target = block('свет и тень');
-  const routes = textRoutes(first, second, target);
+  const routes = textRoutes([first, second], [target]);
   assert.equal(new Set(routes.map((r) => r.text.glyph)).size, target.text.glyphs.length);
   for (const [owner, shape] of [first, second].entries())
     for (const glyph of shape.text.glyphs) {
@@ -92,10 +92,10 @@ test('inserting a word preserves the complete strokes of unchanged words', () =>
       { x: 0, y: 50 },
     ];
   for (const progress of [0, 0.2, 0.5, 0.8, 1]) {
-    const frames = sample(sources, { x: 0, y: 0 }, progress);
+    const frames = sample(sources, [{ x: 0, y: 0 }], progress);
     assert.ok(frames.every((frame) => frame.length > 0 && frame.every(Number.isFinite)));
   }
-  const final = sample(sources, { x: 0, y: 0 }, 1).flatMap((frame) => Array.from(frame));
+  const final = sample(sources, [{ x: 0, y: 0 }], 1).flatMap((frame) => Array.from(frame));
   assert.ok(final.every(Number.isFinite));
 });
 
@@ -103,7 +103,7 @@ test('a new word shares its letters between both sources without duplicate copie
   const first = block('свет'),
     second = block('тень'),
     target = block('объём');
-  const routes = textRoutes(first, second, target);
+  const routes = textRoutes([first, second], [target]);
   assert.equal(routes.length, first.paths.length + second.paths.length);
   assert.equal(new Set(routes.map((r) => r.text.glyph)).size, target.text.glyphs.length);
   for (const owner of [0, 1]) {
@@ -127,7 +127,7 @@ test('new letters have no travelling seeds that supply neither original nor fina
       [0, 8, 1],
     ]);
   }
-  const routes = textRoutes(first, second, target);
+  const routes = textRoutes([first, second], [target]);
   const collapsed = (path) => path.every((p) => p[0] === path[0][0] && p[1] === path[0][1]);
   assert.ok(routes.some((route) => collapsed(route.from) && !collapsed(route.to)));
   assert.ok(routes.every((route) => !(collapsed(route.from) && collapsed(route.to))));
@@ -142,7 +142,7 @@ test('preserved words have their original supplier instead of echoes from the ot
   const first = block('Свет раскрывает форму'),
     second = block('Тень придаёт глубину'),
     target = block('Свет и тень создают объём');
-  const routes = textRoutes(first, second, target);
+  const routes = textRoutes([first, second], [target]);
   for (const [word, owner, originWord] of [
     [0, 0, 0],
     [2, 1, 3],
@@ -168,15 +168,15 @@ test('preserved words have their original supplier instead of echoes from the ot
 
 test('coalescing letters does not concentrate their travel in the opening frames', () => {
   const shape = block('о');
-  const sample = inkMotion(textRoutes(shape, shape, shape));
+  const sample = inkMotion(textRoutes([shape, shape], [shape]));
   const sources = [
     { x: -100, y: 0 },
     { x: 100, y: 0 },
   ];
-  let previous = sample(sources, { x: 0, y: 0 }, 0).map((v) => v.slice());
+  let previous = sample(sources, [{ x: 0, y: 0 }], 0).map((v) => v.slice());
   let largestStep = 0;
   for (let frame = 1; frame <= 120; frame++) {
-    const current = sample(sources, { x: 0, y: 0 }, frame / 120);
+    const current = sample(sources, [{ x: 0, y: 0 }], frame / 120);
     for (let source = 0; source < 2; source++)
       for (let i = 0; i < current[source].length; i += 6)
         largestStep = Math.max(
@@ -189,4 +189,70 @@ test('coalescing letters does not concentrate their travel in the opening frames
     previous = current.map((v) => v.slice());
   }
   assert.ok(largestStep < 3, `A frame moved a letter by ${largestStep} of its 100-unit journey`);
+});
+
+test('one word splits into three independently posed destinations and seeks back exactly', () => {
+  const input = block('2');
+  const outputs = [block('2'), block('2'), block('2')];
+  const routes = textRoutes([input], outputs);
+  assert.deepEqual([...new Set(routes.map((route) => route.destination))], [0, 1, 2]);
+  const sample = inkMotion(routes);
+  const sources = [{ x: 17, y: -12, rotation: 0.15 }];
+  const targets = [
+    { x: -130, y: -30, scale: 0.8 },
+    { x: 0, y: 45, rotation: Math.PI / 2 },
+    { x: 150, y: -25, scale: 1.4 },
+  ];
+  const middle = sample(sources, targets, 0.42).map((buffer) => buffer.slice());
+  const final = sample(sources, targets, 1);
+  for (const route of routes.filter((route) => route.attachment === undefined)) {
+    const pose = targets[route.destination];
+    const angle = pose.rotation ?? 0,
+      scale = pose.scale ?? 1;
+    for (const point of [route.to[0], route.to.at(-1)]) {
+      const x = pose.x + (point[0] * Math.cos(angle) - point[1] * Math.sin(angle)) * scale;
+      const y = pose.y + (point[0] * Math.sin(angle) + point[1] * Math.cos(angle)) * scale;
+      assert.ok(
+        final.some((buffer) =>
+          Array.from({ length: buffer.length / 6 }, (_, i) => i * 6).some((i) =>
+            [0, 2].some((end) => Math.hypot(buffer[i + end] - x, buffer[i + end + 1] - y) < 1e-4),
+          ),
+        ),
+        `Destination ${route.destination} must reach its own pose`,
+      );
+    }
+  }
+  assert.deepEqual(sample(sources, targets, 0.42), middle);
+  assert.throws(() => sample(sources, targets.slice(0, 2), 0.5), /shape counts/);
+});
+
+test('many text shapes keep unique target strokes and the occurrence order of repeated words', () => {
+  const inputs = [block('свет'), block('свет'), block('тень')];
+  const outputs = [block('свет'), block('свет и тень')];
+  const routes = textRoutes(inputs, outputs);
+  const targetPaths = outputs.reduce((sum, shape) => sum + shape.paths.length, 0);
+  for (let target = 0; target < targetPaths; target++)
+    assert.equal(
+      routes.filter((route) => route.target === target && route.attachment === undefined).length,
+      1,
+    );
+  assert.ok(routes.filter((route) => route.text.word === 0).every((route) => route.source === 0));
+  assert.ok(routes.filter((route) => route.text.word === 1).every((route) => route.source === 1));
+  assert.ok(routes.filter((route) => route.text.word === 3).every((route) => route.source === 2));
+  const sample = inkMotion(routes);
+  const sources = [
+    { x: -180, y: 0 },
+    { x: 0, y: 0 },
+    { x: 180, y: 0 },
+  ];
+  const targets = [
+    { x: 0, y: -80 },
+    { x: 0, y: 80 },
+  ];
+  for (const progress of [0, 0.25, 0.6, 1])
+    assert.ok(
+      sample(sources, targets, progress).every(
+        (buffer) => buffer.length && buffer.every(Number.isFinite),
+      ),
+    );
 });

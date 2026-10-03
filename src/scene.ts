@@ -91,6 +91,7 @@ function mount(
     mode = next;
     transition?.(next);
     controls.hidden = exploration === 'model' && mode !== 'story';
+    caption.hidden = controls.hidden;
     fields.hidden = mode === 'story' || !fields.childElementCount;
     storyButton.setAttribute('aria-pressed', String(mode === 'story'));
     exploreButton.setAttribute('aria-pressed', String(mode === 'explore'));

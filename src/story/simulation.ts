@@ -51,7 +51,8 @@ function mount(element: HTMLElement, model: SimulationOptions) {
     const started = performance.now();
     function tick(now: number) {
       if (!playing || disposed) return;
-      if (model.advance(now - started)) model.render();
+      // A callback in the current refresh cycle can predate the play handler.
+      if (model.advance(Math.max(0, now - started))) model.render();
       update();
       if (model.read().done) {
         pause(false);

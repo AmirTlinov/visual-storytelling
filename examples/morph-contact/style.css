@@ -1,0 +1,9 @@
+#morph-contact-scene .ve-stage {
+  height: clamp(360px, 60vh, 560px);
+}
+.contact-hint {
+  text-align: center;
+  color: var(--ve-muted);
+  font-size: 20px;
+  margin: 8px 0 20px;
+}

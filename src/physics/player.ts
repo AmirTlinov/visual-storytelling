@@ -8,7 +8,8 @@ function mount(element: HTMLElement, world: PhysicsRuntime) {
   let last = 0;
   let initial = world.snapshot(),
     disposed = false,
-    interacting = false;
+    interacting = false,
+    resetting = false;
   function baseline() {
     // Structural edits establish the next experiment; an old snapshot cannot restore removed bodies.
     if (initial.revision !== world.revision) initial = world.snapshot();
@@ -38,6 +39,7 @@ function mount(element: HTMLElement, world: PhysicsRuntime) {
     commit() {},
   });
   const stopWake = world.onWake(() => {
+    if (resetting) return;
     // Touching a settled body continues this pose; explicit replay restores the experiment.
     interacting = true;
     try {
@@ -61,7 +63,12 @@ function mount(element: HTMLElement, world: PhysicsRuntime) {
     reset() {
       if (disposed) return;
       player.pause(false);
-      world.restore(baseline());
+      resetting = true;
+      try {
+        world.restore(baseline());
+      } finally {
+        resetting = false;
+      }
       player.update();
     },
     dispose,

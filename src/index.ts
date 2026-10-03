@@ -12,3 +12,7 @@ export { default as rough } from 'roughjs';
 export { gsap } from 'gsap';
 export * from './explorer/index.js';
 export * from './host/widget-state.js';
+
+export { MathMorph, mathPlan } from './morph/math.js';
+export type { MathOperation, MathMorphFrame, MathMorphPlan, MathPart } from './morph/math.js';
+export { MathMorph2D } from './morph/svg.js';

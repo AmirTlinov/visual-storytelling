@@ -1,8 +1,7 @@
 import { Matrix4 } from 'three';
 
 /** Preserve shared box faces without imposing unrelated target geometry on a contact. */
-export function contactPlanes(kinds: Int32Array, parameters: Float32Array) {
-  const count = kinds.length - 1;
+export function contactPlanes(kinds: Int32Array, parameters: Float32Array, count: number) {
   const world = new Float64Array(kinds.length * 16),
     matrix = new Matrix4();
   const direction = new Float64Array(3);

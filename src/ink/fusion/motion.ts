@@ -2,12 +2,14 @@ import type { FusionPose } from './shape.js';
 import type { InkRoute } from './transport.js';
 
 export interface InkPatch {
-  readonly source: 0 | 1;
+  readonly source: number;
+  readonly destination: number;
   readonly target: number;
   /** Contiguous segment ranges in the source's vertex buffer. */
   readonly ranges: readonly [offset: number, length: number][];
 }
-export type InkVertices = [Float32Array, Float32Array];
+/** One borrowed segment buffer per source: ax, ay, bx, by, radiusA, radiusB. */
+export type InkVertices = Float32Array[];
 
 type Pose = { c: number; s: number; x: number; y: number; scale: number };
 const pose = (): Pose => ({ c: 1, s: 0, x: 0, y: 0, scale: 1 });
@@ -44,11 +46,17 @@ export function inkMotion(routes: InkRoute[]) {
       if (!items.some((r) => r.text![origin] === route.text![origin])) items.push(route);
     }
   }
-  const counts: [number, number] = [0, 0];
-  const patchMap = new Map<string, { source: 0 | 1; target: number; ranges: [number, number][] }>();
+  const sourceCount = Math.max(...routes.map((route) => route.source)) + 1;
+  const targetCount = Math.max(...routes.map((route) => route.destination)) + 1;
+  const stride = sourceCount * 3;
+  const counts = Array<number>(sourceCount).fill(0);
+  const patchMap = new Map<
+    string,
+    { source: number; destination: number; target: number; ranges: [number, number][] }
+  >();
   // x, y and translation weight for each source. Local vectors have weight zero.
   function mean(items: InkRoute[], point: (r: InkRoute) => readonly number[], translate = false) {
-    const result = new Float64Array(6);
+    const result = new Float64Array(stride);
     for (const r of items) {
       const p = point(r),
         at = r.source * 3;
@@ -82,16 +90,16 @@ export function inkMotion(routes: InkRoute[]) {
       n = group[0]!.from.length;
     const owner = group.find((r) => r.attachment === undefined)!,
       carrier = text ? carriers.get(text.glyph)! : undefined;
-    const common = new Float64Array(n * 6),
+    const common = new Float64Array(n * stride),
       current = new Float64Array(n * 2),
       contour = new Float64Array(n * 2);
     for (let i = 0; i < n; i++) {
-      const at = i * 6 + owner.source * 3,
+      const at = i * stride + owner.source * 3,
         point = owner.from[i]!;
       common[at] = point[0] - (owner.text?.from[0] ?? 0);
       common[at + 1] = point[1] - (owner.text?.from[1] ?? 0);
       common[at + 2] = text ? 0 : 1;
-      if (carrier) for (let j = 0; j < 6; j++) common[i * 6 + j]! += carrier[j]!;
+      if (carrier) for (let j = 0; j < stride; j++) common[i * stride + j]! += carrier[j]!;
     }
     // The complete contour is sampled before ink that is absorbed by it.
     const inputs = [owner, ...group.filter((r) => r.attachment !== undefined)].map((route) => {
@@ -100,9 +108,14 @@ export function inkMotion(routes: InkRoute[]) {
       counts[route.source]! += length;
       const key = route.text
         ? `${route.source}:${route.text.originWord}:${route.text.word}`
-        : `${route.source}`;
+        : `${route.source}:${route.destination}`;
       if (!patchMap.has(key))
-        patchMap.set(key, { source: route.source, target: route.text?.word ?? 0, ranges: [] });
+        patchMap.set(key, {
+          source: route.source,
+          destination: route.destination,
+          target: route.text?.word ?? route.destination,
+          ranges: [],
+        });
       patchMap.get(key)!.ranges.push([offset, length]);
       const center = route.from.reduce(
         (sum, p) => [sum[0]! + p[0] / n, sum[1]! + p[1] / n],
@@ -120,36 +133,49 @@ export function inkMotion(routes: InkRoute[]) {
       contour,
       n,
       text,
+      destination: owner.destination,
       word: text ? wordCarriers.get(text.word)! : undefined,
     };
   });
   const patches: InkPatch[] = [...patchMap.values()];
-  const vertices: InkVertices = [new Float32Array(counts[0]), new Float32Array(counts[1])];
-  const poses = [pose(), pose()] as const,
-    destination = pose();
+  const vertices: InkVertices = counts.map((count) => new Float32Array(count));
+  const poses = Array.from({ length: sourceCount }, pose),
+    destinations = Array.from({ length: targetCount }, pose);
   function transformedMean(values: Float64Array, at: number, out: Float64Array, offset: number) {
-    const a = poses[0],
-      b = poses[1];
-    out[offset] =
-      x(a, values[at]!, values[at + 1]!) +
-      a.x * values[at + 2]! +
-      x(b, values[at + 3]!, values[at + 4]!) +
-      b.x * values[at + 5]!;
-    out[offset + 1] =
-      y(a, values[at]!, values[at + 1]!) +
-      a.y * values[at + 2]! +
-      y(b, values[at + 3]!, values[at + 4]!) +
-      b.y * values[at + 5]!;
+    let px = 0,
+      py = 0;
+    for (let i = 0; i < sourceCount; i++) {
+      const p = poses[i]!,
+        index = at + i * 3;
+      px += x(p, values[index]!, values[index + 1]!) + p.x * values[index + 2]!;
+      py += y(p, values[index]!, values[index + 1]!) + p.y * values[index + 2]!;
+    }
+    out[offset] = px;
+    out[offset + 1] = py;
   }
   const word = new Float64Array(2);
-  function sample(sources: readonly [FusionPose, FusionPose], target: FusionPose, morph: number) {
-    update(poses[0], sources[0]);
-    update(poses[1], sources[1]);
-    update(destination, target);
+  function sample(sources: readonly FusionPose[], targets: readonly FusionPose[], morph: number) {
+    if (sources.length !== sourceCount || targets.length !== targetCount)
+      throw new Error('Fusion poses must match source and target shape counts');
+    if (!Number.isFinite(morph)) throw new Error('Fusion progress must be finite');
+    for (const p of [...sources, ...targets])
+      if (
+        !Number.isFinite(p.x) ||
+        !Number.isFinite(p.y) ||
+        !Number.isFinite(p.rotation ?? 0) ||
+        !Number.isFinite(p.scale ?? 1) ||
+        (p.scale ?? 1) <= 0
+      )
+        throw new Error('Fusion poses need finite coordinates and positive scales');
+    sources.forEach((input, i) => update(poses[i]!, input));
+    targets.forEach((input, i) => update(destinations[i]!, input));
+    morph = Math.max(0, Math.min(1, morph));
     const gather = inkGather(morph);
     for (const group of compiled) {
+      const destination = destinations[group.destination]!;
       const s = group.text ? gather : morph;
-      for (let i = 0; i < group.n; i++) transformedMean(group.common, i * 6, group.current, i * 2);
+      for (let i = 0; i < group.n; i++)
+        transformedMean(group.common, i * stride, group.current, i * 2);
       let wx = 0,
         wy = 0,
         tx = 0,
@@ -164,8 +190,8 @@ export function inkMotion(routes: InkRoute[]) {
       const own = (1 - s) * (1 - gather),
         shared = (1 - s) * gather;
       for (const { route, offset, center, extent } of group.inputs) {
-        const p = poses[route.source],
-          buffer = vertices[route.source];
+        const p = poses[route.source]!,
+          buffer = vertices[route.source]!;
         let dx = 0,
           dy = 0;
         if (group.text) {
@@ -236,5 +262,5 @@ export function inkMotion(routes: InkRoute[]) {
     }
     return vertices;
   }
-  return Object.assign(sample, { patches });
+  return Object.assign(sample, { patches, sourceCount, targetCount });
 }

@@ -16,3 +16,5 @@ export { arrangeTensorRows, deliverTensorCells, calculateTensorColumns } from '.
 export type { TensorCell, TensorHandle, Point3 } from './tensor-motion.js';
 export { readableFrame, geometryFrameAnchors } from './framing.js';
 export type { FrameAnchor, ReadableFrame } from './framing.js';
+
+export { MathMorph3D } from '../morph/three.js';

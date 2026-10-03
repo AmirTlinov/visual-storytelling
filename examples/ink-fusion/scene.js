@@ -17,7 +17,7 @@ window.galleryReady = (async () => {
   const equation = root.querySelector('.fusion-equation');
   const abort = new AbortController();
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-  const motionRevision = 9;
+  const motionRevision = 10;
   const clock = transport({ duration: 4 });
   const view = await Physics2D.fusion(stage, {
     width: 840,
@@ -89,6 +89,9 @@ window.galleryReady = (async () => {
         { value: 'paragraphs', label: 'Абзацы' },
         { value: 'letters', label: 'Буквы' },
         { value: 'drops', label: 'Капли' },
+        { value: 'split', label: 'Разделить' },
+        { value: 'repeat', label: 'Повторить' },
+        { value: 'gather', label: 'Три в одну' },
       ],
     },
     (value) => {
@@ -138,6 +141,7 @@ window.galleryReady = (async () => {
     sceneWidth = Math.max(240, stage.getBoundingClientRect().width);
     const block =
       Boolean(presets[scenario]) && words.some((text) => /\s/.test(text) || text.length > 14);
+    let texts;
     if (scenario === 'drops') {
       const drop = (radius) =>
         InkFusion.shape(radius * 2 + 112, radius * 2 + 112, (context) => {
@@ -145,10 +149,19 @@ window.galleryReady = (async () => {
           context.arc(radius + 56, radius + 56, radius, 0, Math.PI * 2);
           context.fill();
         });
-      shapes = [drop(38), drop(38), drop(38 * Math.SQRT2)];
+      shapes = { sources: [drop(38), drop(38)], targets: [drop(38 * Math.SQRT2)] };
       equation.textContent = 'две капли → одна';
     } else {
-      const text = scenario === 'letters' ? ['о', 'о', 'ю'] : words;
+      texts =
+        scenario === 'letters'
+          ? { sources: ['о', 'о'], targets: ['ю'] }
+          : scenario === 'split'
+            ? { sources: ['свет и тень'], targets: ['свет', 'тень'] }
+            : scenario === 'repeat'
+              ? { sources: ['2'], targets: ['2', '2', '2'] }
+              : scenario === 'gather'
+                ? { sources: ['свет', 'форма', 'тень'], targets: ['объём'] }
+                : { sources: words.slice(0, 2), targets: words.slice(2) };
       const size =
         scenario === 'letters'
           ? Math.min(180, sceneWidth * 0.28)
@@ -156,47 +169,52 @@ window.galleryReady = (async () => {
             ? sceneWidth < 480
               ? 25
               : 30
-            : Math.min(96, sceneWidth * 0.17);
-      shapes = text.map((word, i) =>
-        InkFusion.text(word, {
-          size: i === 2 && !block ? size * 1.15 : size,
-          maxWidth: block || i === 2 ? sceneWidth - 36 : (sceneWidth - 84) / 2,
-          align: block ? 'left' : 'center',
-        }),
-      );
-      equation.textContent = block ? 'Два текста → один' : `${text[0]} + ${text[1]} → ${text[2]}`;
+            : Math.min(96, sceneWidth / (Math.max(texts.sources.length, texts.targets.length) * 7));
+      const make = (group) =>
+        group.map((text) =>
+          InkFusion.text(text, {
+            size,
+            maxWidth: block
+              ? sceneWidth - 36
+              : (sceneWidth - 36 - (group.length - 1) * 48) / group.length,
+            align: block ? 'left' : 'center',
+          }),
+        );
+      shapes = { sources: make(texts.sources), targets: make(texts.targets) };
+      equation.textContent = `${texts.sources.join(' + ')} → ${texts.targets.join(' + ')}`;
     }
-    view.canvas.setAttribute(
-      'aria-label',
-      scenario === 'drops' || scenario === 'letters'
-        ? equation.textContent
-        : `${words[0]} + ${words[1]} → ${words[2]}`,
-    );
-    const gap = block ? 68 : 64;
-    layout = block
-      ? {
-          sources: [
-            { x: 0, y: -(shapes[1].bounds.height + gap) / 2 },
-            { x: 0, y: (shapes[0].bounds.height + gap) / 2 },
-          ],
-          block: true,
-          height:
-            Math.max(
-              shapes[0].bounds.height + shapes[1].bounds.height + gap,
-              shapes[2].bounds.height,
-            ) + 64,
-        }
-      : {
-          sources: [
-            { x: -(shapes[1].bounds.width + gap) / 2, y: 0 },
-            { x: (shapes[0].bounds.width + gap) / 2, y: 0 },
-          ],
-          block: false,
-          height: Math.max(215, ...shapes.map((shape) => shape.bounds.height + 100)),
-        };
+    view.canvas.setAttribute('aria-label', equation.textContent);
+    const gap = block ? 68 : 48;
+    const arrange = (group) => {
+      const extents = group.map((shape) => (block ? shape.bounds.height : shape.bounds.width));
+      const size = extents.reduce((sum, extent) => sum + extent, 0) + gap * (group.length - 1);
+      let cursor = -size / 2;
+      return group.map((_, i) => {
+        const position = cursor + extents[i] / 2;
+        cursor += extents[i] + gap;
+        return block ? { x: 0, y: position } : { x: position, y: 0 };
+      });
+    };
+    layout = {
+      sources: arrange(shapes.sources),
+      targets: arrange(shapes.targets),
+      block,
+      height: block
+        ? Math.max(
+            ...[shapes.sources, shapes.targets].map(
+              (group) =>
+                group.reduce((sum, shape) => sum + shape.bounds.height, 0) +
+                gap * (group.length - 1),
+            ),
+          ) + 64
+        : Math.max(
+            215,
+            ...[...shapes.sources, ...shapes.targets].map((shape) => shape.bounds.height + 100),
+          ),
+    };
     stage.style.height = `${layout.height}px`;
     view.setSize(sceneWidth, layout.height);
-    view.setShapes(...shapes);
+    view.setShapes(shapes.sources, shapes.targets);
     fields.forEach((field) => {
       field.element.hidden = !presets[scenario];
     });
@@ -206,11 +224,11 @@ window.galleryReady = (async () => {
     const t = time / clock.state.duration;
     const approach = smooth(0.03, 0.2, t);
     return {
-      sources: layout.sources.map((pose, i) => ({
-        x: pose.x + (layout.block ? 0 : (i ? -1 : 1) * 24 * approach),
-        y: pose.y + (layout.block ? (i ? -1 : 1) * 24 * approach : 0),
+      sources: layout.sources.map((pose) => ({
+        x: pose.x * (1 - 0.16 * approach),
+        y: pose.y * (1 - 0.16 * approach),
       })),
-      target: { x: 0, y: 0 },
+      targets: layout.targets,
       tension,
       morph: 1 - (1 - smooth(0.04, 0.9, t)) ** 2,
     };
@@ -230,7 +248,18 @@ window.galleryReady = (async () => {
     )
       words = model.texts.map((text) => text.slice(0, 2000));
     if (Number.isFinite(model?.tension)) tension = Math.max(0, Math.min(64, model.tension));
-    if (['words', 'sentences', 'paragraphs', 'letters', 'drops'].includes(model?.example))
+    if (
+      [
+        'words',
+        'sentences',
+        'paragraphs',
+        'letters',
+        'drops',
+        'split',
+        'repeat',
+        'gather',
+      ].includes(model?.example)
+    )
       scenario = model.example;
     clearTimeout(timer);
     timer = 0;

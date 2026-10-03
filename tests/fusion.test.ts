@@ -14,6 +14,7 @@ test('moving text suppresses unreadable fragments while endpoints and non-text s
   const patches = [
     {
       source: 0 as const,
+      destination: 0,
       target: 0,
       ranges: [
         [0, 6],
@@ -63,7 +64,7 @@ test('transport covers every original and final stroke without an intermediate s
     [first, second, target],
     [target.slice(0, 1), target.slice(1), [...first, ...second]],
   ] as const) {
-    const routes = inkRoutes(a, b, result);
+    const routes = inkRoutes([a, b], [result]);
     assert.equal(routes.length, Math.max(a.length + b.length, result.length));
     for (const [group, paths] of [a, b].entries())
       for (const path of paths) {
@@ -111,18 +112,19 @@ test('symmetric loops keep their source order when becoming a stem and a loop', 
     });
   const source = loop(0);
   const routes = inkRoutes(
-    [source],
-    [source],
+    [[source], [source]],
     [
       [
-        [-40, -30, 2],
-        [-40, 30, 2],
+        [
+          [-40, -30, 2],
+          [-40, 30, 2],
+        ],
+        [
+          [-40, 0, 2],
+          [-10, 0, 2],
+        ],
+        loop(20),
       ],
-      [
-        [-40, 0, 2],
-        [-10, 0, 2],
-      ],
-      loop(20),
     ],
     true,
   );

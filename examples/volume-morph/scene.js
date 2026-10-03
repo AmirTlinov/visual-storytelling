@@ -31,9 +31,9 @@ window.galleryReady = (async () => {
   const cube = VolumeMorph.box([1.15, 1.15, 0.97]);
   const sphere = VolumeMorph.sphere(0.69);
   const shapes = [
-    [[cube], sphere],
-    [[cube, cube], VolumeMorph.box([2.25, 1.15, 0.97])],
-    [[cube, VolumeMorph.sphere(0.575)], VolumeMorph.capsule(0.62, 2.6)],
+    [[cube], [sphere]],
+    [[cube, cube], [VolumeMorph.box([2.25, 1.15, 0.97])]],
+    [[cube, VolumeMorph.sphere(0.575)], [VolumeMorph.capsule(0.62, 2.6)]],
   ];
   const world = new T.Group();
   world.add(morph.object);

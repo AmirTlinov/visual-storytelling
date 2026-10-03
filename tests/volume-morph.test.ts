@@ -9,11 +9,9 @@ import {
   type VolumeFrame,
   type VolumeShape,
 } from '../dist/viewport/morph/field.js';
-
-const distanceOf = (shape: VolumeShape) => volumeField([shape], shape).distance;
+const distanceOf = (shape: VolumeShape) => volumeField([shape], [shape]).distance;
 const close = (actual: number, expected: number, message?: string) =>
   assert.ok(Math.abs(actual - expected) < 2e-6, message ?? `${actual} differs from ${expected}`);
-
 test('packed primitives preserve their outer dimensions and rounded box faces', () => {
   const box = distanceOf(volumeBox([2, 4, 6], 0.2));
   const sphere = distanceOf(volumeSphere(2));
@@ -26,15 +24,14 @@ test('packed primitives preserve their outer dimensions and rounded box faces', 
   close(capsule(0, 1, 0), 0);
   assert.ok(capsule(0, 0, 0) < 0);
 });
-
 test('packed poses agree with Three XYZ rotation, translation and uniform scale', () => {
   const box = volumeBox([1, 2, 3]),
     localDistance = distanceOf(box);
-  const morph = volumeField([box], volumeSphere(1));
+  const morph = volumeField([box], [volumeSphere(1)]);
   const rotation = [0.35, -0.6, 0.7] as const;
   const position = [2, -3, 1] as const,
     scale = 1.7;
-  morph.update({ sources: [{ position, rotation, scale }], morph: 0, tension: 0 });
+  morph.update({ sources: [{ position, rotation, scale }], morph: 0, tension: 0, targets: [{}] });
   for (const p of [
     [0.5, 0, 0],
     [0, 1, 0],
@@ -48,42 +45,42 @@ test('packed poses agree with Three XYZ rotation, translation and uniform scale'
       .add(new Vector3(...position));
     close(morph.distance(world.x, world.y, world.z), localDistance(p[0]!, p[1]!, p[2]!) * scale);
   }
-  morph.update({ sources: [{}], target: { position, rotation, scale }, morph: 1 });
+  morph.update({ sources: [{}], targets: [{ position, rotation, scale }], morph: 1 });
   const surface = new Vector3(0, 1, 0)
     .multiplyScalar(scale)
     .applyEuler(new Euler(...rotation))
     .add(new Vector3(...position));
   close(morph.distance(surface.x, surface.y, surface.z), 0, 'The target receives its own pose');
 });
-
 test('contact fills facing surfaces without pinching the seam or rounding free corners', () => {
   const box = volumeBox([2, 2, 2]),
     target = volumeBox([4.2, 2, 2]);
-  const morph = volumeField([box, box], target),
+  const morph = volumeField([box, box], [target]),
     targetDistance = distanceOf(target);
   const sources = [{ position: [-1.1, 0, 0] as const }, { position: [1.1, 0, 0] as const }];
-  morph.update({ sources, morph: 0, tension: 0 });
+  morph.update({ sources, morph: 0, tension: 0, targets: [{}] });
   assert.ok(morph.distance(0, 0, 0) > 0, 'The initial gap remains empty');
-  morph.update({ sources, morph: 0, tension: 0.6 });
+  morph.update({ sources, morph: 0, tension: 0.6, targets: [{}] });
   assert.ok(morph.distance(0, 0, 0) < 0, 'A bridge joins the facing surfaces');
   assert.ok(morph.distance(0, 0.9, 0.9) < 0, 'Contact reaches the rim without an artificial waist');
   close(morph.distance(2.1, 1, 1), 0, 'The opposite corner stays on the rigid source');
   close(morph.distance(-2.1, 1, 1), 0);
   const middle = morph.distance(0.1, 0.2, 0.3);
-  morph.update({ sources, morph: 1, tension: 0.6 });
+  morph.update({ sources, morph: 1, tension: 0.6, targets: [{}] });
   for (const p of [
     [0, 0, 0],
     [1, 0.6, 0],
     [2.2, 0, 0],
   ])
     assert.equal(morph.distance(p[0]!, p[1]!, p[2]!), targetDistance(p[0]!, p[1]!, p[2]!));
-  morph.update({ sources, morph: 0, tension: 0.6 });
+  morph.update({ sources, morph: 0, tension: 0.6, targets: [{}] });
   assert.equal(morph.distance(0.1, 0.2, 0.3), middle, 'Reverse seek has no simulation history');
   for (const separation of [1, 0.98, 0.95]) {
     morph.update({
       sources: [{ position: [-separation, 0, 0] }, { position: [separation, 0, 0] }],
       morph: 0,
       tension: 0.6,
+      targets: [{}],
     });
     for (const x of [-separation - 1, -0.75, 0, 0.75, separation + 1])
       for (const z of [-1, -0.5, 0, 0.5, 1]) {
@@ -92,14 +89,14 @@ test('contact fills facing surfaces without pinching the seam or rounding free c
       }
   }
 });
-
 test('rejected frames leave the displayed field intact and preserve GPU buffer identities', () => {
   const box = volumeBox([1, 2, 3]);
-  const morph = volumeField([box, box], volumeBox([3, 2, 3]));
+  const morph = volumeField([box, box], [volumeBox([3, 2, 3])]);
   const frame: VolumeFrame = {
     sources: [{ position: [-1, 0, 0] }, { position: [1, 0, 0] }],
     morph: 0.3,
     tension: 0.4,
+    targets: [{}],
   };
   const transforms = morph.transforms,
     scales = morph.scales,
@@ -112,11 +109,12 @@ test('rejected frames leave the displayed field intact and preserve GPU buffer i
     morph: morph.morph,
     tension: morph.tension,
     distance: morph.distance(0.2, 0.1, -0.3),
+    targets: [{}],
   });
   morph.update(frame);
   const before = snapshot();
   for (const invalid of [
-    { ...frame, morph: 0.8, target: { position: [Infinity, 0, 0] } },
+    { ...frame, morph: 0.8, targets: [{ position: [Infinity, 0, 0] }] },
     { ...frame, sources: [{ position: [5, 0, 0] }, { scale: 0 }] },
     { ...frame, sources: [{ position: [1e100, 0, 0] }, {}] },
     { ...frame, tension: 1e100 },
@@ -124,21 +122,21 @@ test('rejected frames leave the displayed field intact and preserve GPU buffer i
     assert.throws(() => morph.update(invalid));
     assert.deepEqual(snapshot(), before);
   }
-  morph.update({ sources: [{}, {}], morph: 1 });
+  morph.update({ sources: [{}, {}], morph: 1, targets: [{}] });
   morph.update(frame);
   assert.deepEqual(snapshot(), before);
   assert.equal(morph.transforms, transforms);
   assert.equal(morph.scales, scales);
   assert.equal(morph.planes, planes);
 });
-
 test('shared planes follow rotated boxes and fade continuously under small pose changes', () => {
   const box = volumeBox([2, 2, 2]),
-    field = volumeField([box, box], volumeBox([4.2, 2, 2]));
+    field = volumeField([box, box], [volumeBox([4.2, 2, 2])]);
   const frame: VolumeFrame = {
     sources: [{ position: [-1, 0, 0] }, { position: [1, 0, 0] }],
     morph: 0,
     tension: 0.6,
+    targets: [{}],
   };
   const probes = [
     [0, 1, 0],
@@ -158,7 +156,7 @@ test('shared planes follow rotated boxes and fade continuously under small pose 
       rotation,
       scale,
     })),
-    target: { rotation, scale },
+    targets: [{ rotation, scale }],
     morph: 0,
     tension: 0.6 * scale,
   });
@@ -189,15 +187,15 @@ test('shared planes follow rotated boxes and fade continuously under small pose 
     );
   }
 });
-
 test('curved targets do not cut artificial folds into the source contact', () => {
   const sources = [volumeBox([1.15, 1.15, 0.97]), volumeSphere(0.575)];
-  const capsule = volumeField(sources, volumeCapsule(0.62, 2.6));
-  const sphere = volumeField(sources, volumeSphere(0.8));
+  const capsule = volumeField(sources, [volumeCapsule(0.62, 2.6)]);
+  const sphere = volumeField(sources, [volumeSphere(0.8)]);
   const frame: VolumeFrame = {
     sources: [{ position: [-0.55, 0, 0] }, { position: [0.55, 0, 0] }],
     morph: 0,
     tension: 0.6,
+    targets: [{}],
   };
   capsule.update(frame);
   sphere.update(frame);
@@ -211,7 +209,6 @@ test('curved targets do not cut artificial folds into the source contact', () =>
         'Contact depends on the source forms before global morphing',
       );
 });
-
 test('shape descriptors are validated before upload and detached from mutable author input', () => {
   assert.throws(() => volumeBox([1, 1, 1], 0.6), /Rounding/);
   assert.throws(() => volumeSphere(0), /positive/);
@@ -225,14 +222,47 @@ test('shape descriptors are validated before upload and detached from mutable au
     { kind: 'sphere', radius: 1e100 },
     { kind: 'sphere', radius: 1e-100 },
   ])
-    assert.throws(() => volumeField([shape as VolumeShape], target));
+    assert.throws(() => volumeField([shape as VolumeShape], [target]));
   const size: [number, number, number] = [2, 2, 2];
   const shape = volumeBox(size),
     sources = [shape];
-  const morph = volumeField(sources, target);
+  const morph = volumeField(sources, [target]);
   size[0] = 20;
   sources.push(target);
-  morph.update({ sources: [{}], morph: 0, tension: 0 });
+  morph.update({ sources: [{}], morph: 0, tension: 0, targets: [{}] });
   assert.equal(morph.count, 1);
   close(morph.distance(1, 0, 0), 0);
+});
+
+test('one volume can cut into three independently posed target pieces and replay', () => {
+  const box = volumeBox([2, 1, 1]);
+  const field = volumeField([volumeBox([6, 1, 1])], [box, box, box]);
+  const frame: VolumeFrame = {
+    sources: [{}],
+    targets: [-3, 0, 3].map((x) => ({ position: [x, 0, 0] })),
+    morph: 1,
+    tension: 0,
+  };
+  field.update(frame);
+  for (const x of [-3, 0, 3]) assert.ok(field.distance(x, 0, 0) < 0);
+  for (const x of [-1.5, 1.5]) assert.ok(field.distance(x, 0, 0) > 0);
+  field.update({ ...frame, morph: 0 });
+  assert.ok(field.distance(1.5, 0, 0) < 0);
+  field.update(frame);
+  assert.ok(field.distance(1.5, 0, 0) > 0);
+  assert.ok(field.bounds.min.x <= -4 && field.bounds.max.x >= 4);
+});
+
+test('per-axis scaling keeps measured faces and automatic bounds aligned', () => {
+  const field = volumeField([volumeBox([1, 1, 1])], [volumeSphere(1)]);
+  field.update({
+    sources: [{ scale: [6, 2, 1], position: [1, 0, 0] }],
+    targets: [{}],
+    morph: 0,
+    tension: 0,
+  });
+  close(field.distance(4, 0, 0), 0);
+  close(field.distance(1, 1, 0), 0);
+  close(field.distance(1, 0, 0.5), 0);
+  assert.ok(field.distance(4.1, 0, 0) > 0);
 });
