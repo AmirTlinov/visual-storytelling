@@ -37,7 +37,6 @@ window.galleryReady = (async () => {
   });
   const question = document.createElement('p');
   question.className = 'neuron-question';
-  question.textContent = 'Как входы и веса становятся одним сигналом?';
   const controls = document.createElement('div');
   controls.className = 'neuron-views';
   shell.stage.before(question, controls);
@@ -74,7 +73,6 @@ window.galleryReady = (async () => {
   controls.append(representation.element);
   const hint = document.createElement('p');
   hint.className = 'neuron-hint';
-  hint.textContent = 'Поверни рисунок мышью. В «Исследовать» меняй входы, веса и ход вычисления.';
   shell.stage.after(hint);
   let key = [...inputsOf(initial), ...weightsOf(initial)].join('/'),
     current;
@@ -98,14 +96,14 @@ window.galleryReady = (async () => {
         state.progress === 1
           ? 'Сигнал собран. Что изменится при другом входе?'
           : measured.stage === 0
-            ? 'Входы сверху, веса снизу. Какой вклад даст каждая пара?'
+            ? 'Входы сверху, веса снизу. Каков вклад пары?'
             : 'Произведения готовы. Какой получится их сумма?';
       const negative = measured.sources.some((part) => part.value < 0);
       const zero = measured.sources.some((part) => part.value === 0);
       hint.textContent =
         measured.stage === 0
-          ? 'Поверни фишки. В «Исследовать» можно изменить числа и ход вычисления.'
-          : `${negative ? 'Отрицательный вклад уменьшает сумму. ' : ''}${zero ? 'Нулевой вклад сохраняет её. ' : ''}Измени один вход и проверь результат.`;
+          ? 'Поверни фишки. Менять числа можно в «Исследовать».'
+          : `${negative ? 'Отрицательный вклад уменьшает сумму. ' : ''}${zero ? 'Нулевой вклад её не меняет.' : 'Измени один вход и проверь результат.'}`;
       view.shot({
         target: volume.bounds,
         direction: [-1.4, 1.6, 12],

@@ -57,7 +57,7 @@ function mount(
     const frame = plan.sample(progress);
     latest = progress;
     if (!parent.getClientRects().length) return frame;
-    const [min, max] = frameBounds(plan, frame);
+    const [min, max] = frameBounds(plan, frame, progress);
     const center = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2];
     scale = Math.min((width - 72) / (max[0] - min[0]), (height - 150) / (max[1] - min[1]));
     const transform = (part: MathPart) => ({

@@ -12,7 +12,7 @@ import {
   LineBasicMaterial,
 } from 'three';
 import type { Viewport3D } from '../viewport/three.js';
-import { frameBounds, quantityGrid } from './measure.js';
+import { cellFormulaWidth, frameBounds, quantityGrid } from './measure.js';
 import { VolumeMorph } from '../viewport/morph/surface.js';
 import { mathPlan } from './math.js';
 import { mathNumber } from './numbers.js';
@@ -52,7 +52,7 @@ function mount(
             tone: 'purple',
             space: 'world',
             height: 0.85,
-            maxWidth: Math.max(3, plan.bounds[1][0] - plan.bounds[0][0]),
+            maxWidth: cellFormulaWidth(plan),
           }
         : { tone: 'purple', size: 26 },
     );
@@ -109,7 +109,7 @@ function mount(
     const frame = plan.sample(p);
     progress = p;
     const parts = [...frame.sources, ...frame.targets];
-    const [min, max] = frameBounds(plan, frame);
+    const [min, max] = frameBounds(plan, frame, p);
     bounds.set(new Vector3(...min), new Vector3(...max));
     const width = max[0] - min[0],
       height = max[1] - min[1],
@@ -121,7 +121,7 @@ function mount(
       plan.encoding === 'cells' ? max[2] + 0.01 : 0,
     );
     const key = [...min, ...max].join(',');
-    if (key !== rulerKey) {
+    if (plan.encoding === 'quantity' && key !== rulerKey) {
       const ticks: number[] = [],
         y = min[1] - gap / 2,
         step = Math.max(1, 10 ** Math.ceil(Math.log10(width / 32)));

@@ -4,7 +4,7 @@
 }
 #neuron-scene .ve-stage {
   position: relative;
-  height: clamp(360px, 53vh, 510px);
+  height: clamp(280px, calc(100svh - 390px), 510px);
 }
 .neuron-volume,
 .neuron-flat {
@@ -16,8 +16,8 @@
 .neuron-flat svg {
   max-height: 100%;
 }
-.neuron-question {
-  font: 24px var(--ve-font);
+#neuron-scene .neuron-question {
+  font: 22px/1.4 var(--ve-font);
   text-align: center;
   margin: 8px 12px 14px;
 }
@@ -34,26 +34,29 @@
   height: 1px;
   overflow: hidden;
 }
-.neuron-hint {
-  font: 17px var(--ve-font);
+#neuron-scene .neuron-hint {
+  font: 17px/1.4 var(--ve-font);
   color: var(--ve-muted);
   text-align: center;
   margin: 8px 14px 12px;
-  min-height: 2lh;
+  min-height: 1lh;
 }
 #neuron-scene .ve-control-range {
   grid-column: 1 / -1;
 }
 @media (max-width: 480px) {
-  .neuron-question {
+  #neuron-scene .ve-chapter-heading .ve-select-trigger {
+    min-height: calc(2lh + 8px);
+  }
+  #neuron-scene .neuron-question {
     font-size: 20px;
     min-height: 2lh;
   }
-  .neuron-hint {
+  #neuron-scene .neuron-hint {
     min-height: 3lh;
   }
   #neuron-scene .ve-stage {
-    height: 400px;
+    height: clamp(240px, calc(100svh - 460px), 400px);
   }
   #neuron-scene .ve-parameters {
     grid-template-columns: repeat(3, minmax(0, 1fr));

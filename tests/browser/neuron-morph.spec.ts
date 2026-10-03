@@ -6,8 +6,11 @@ test('the signed neuron keeps its result through orbit, projection changes and r
 }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/neuron-morph/index.html');
   await page.evaluate(() => window.galleryReady);
+  const player = await page.locator('.ve-player').boundingBox();
+  expect(player!.y + player!.height).toBeLessThanOrEqual(720);
   // Preparation may itself draw a probe; establish the displayed scene before taking its baseline.
   await page.locator('.neuron-volume canvas').screenshot();
   const rendererInfo = () =>
@@ -58,5 +61,18 @@ test('the signed neuron keeps its result through orbit, projection changes and r
   await page.locator('[data-seek]').fill('7');
   await page.locator('[data-seek]').fill('21');
   await expect(flat.locator('.vs-lettering[aria-label="(−1) + (−3) + 0 = −4"]')).toBeVisible();
+  await page.setViewportSize({ width: 375, height: 720 });
+  let stageY: number | undefined;
+  let playerY: number | undefined;
+  for (const time of ['0', '14', '21']) {
+    await page.locator('[data-seek]').fill(time);
+    const stage = (await page.locator('.ve-stage').boundingBox())!;
+    const player = (await page.locator('.ve-player').boundingBox())!;
+    stageY ??= stage.y;
+    playerY ??= player.y;
+    expect(stage.y).toBeCloseTo(stageY, 1);
+    expect(player.y).toBeCloseTo(playerY, 1);
+    expect(player.y + player.height).toBeLessThanOrEqual(720);
+  }
   expect(errors).toEqual([]);
 });

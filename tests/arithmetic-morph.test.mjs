@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MathMorph } from '../dist/morph/math.js';
+import { frameBounds } from '../dist/morph/measure.js';
 import { volumeBox, volumeField } from '../dist/viewport/morph/field.js';
 import { fieldSection } from '../dist/viewport/morph/section.js';
 
@@ -25,8 +26,10 @@ test('signed dot product keeps zeros, original inputs and products through the t
   assert.equal(plan.encoding, 'cells');
   assert.equal(plan.result, -4);
   const collecting = plan.sample(0.55);
-  for (const note of collecting.notes)
-    assert.equal(note.position[0], collecting.sources.find((p) => p.id === note.id).position[0]);
+  for (const source of collecting.sources) {
+    const note = collecting.notes.find((note) => note.id === source.id);
+    assert.equal(note.position[0], source.position[0]);
+  }
   const products = plan.sample(0.499999).targets;
   assert.deepEqual(
     products.map((p) => p.value),
@@ -81,6 +84,34 @@ test('scalar calculation validates real arithmetic before changing a view', () =
   assert.throws(() => MathMorph.plan(MathMorph.calculate('power', -2, 0.5)), /real/);
   assert.throws(() => MathMorph.plan(MathMorph.dot([1], [1, 2])), /equally/);
   assert.throws(() => MathMorph.plan(MathMorph.dot([Infinity], [2])), /finite/);
+});
+
+test('local operators clear the contact and framing stays continuous across the dot stages', () => {
+  const plan = MathMorph.plan(MathMorph.dot([2, -1, 0], [-0.5, 3, 2]));
+  const operators = (frame) => frame.notes.filter((note) => note.id.startsWith('operator:'));
+  assert.ok(operators(plan.sample(0)).every((note) => note.opacity === 1));
+  for (let i = 0; i <= 100; i++) {
+    const frame = plan.sample(i / 100);
+    for (const note of operators(frame).filter((note) => note.opacity > 0))
+      for (const part of frame.sources)
+        assert.ok(
+          [0, 1].some(
+            (axis) =>
+              Math.abs(note.position[axis] - part.position[axis]) >=
+              (note.size[axis] + part.size[axis]) / 2,
+          ),
+          'operation ink stays outside its moving participants',
+        );
+  }
+  assert.ok(operators(plan.sample(0.5)).every((note) => note.opacity === 0));
+  assert.ok(operators(plan.sample(0.52)).some((note) => note.opacity > 0));
+  const before = frameBounds(plan, plan.sample(0.5 - 1e-6), 0.5 - 1e-6);
+  const after = frameBounds(plan, plan.sample(0.5 + 1e-6), 0.5 + 1e-6);
+  for (let side = 0; side < 2; side++)
+    for (let axis = 0; axis < 3; axis++)
+      assert.ok(Math.abs(before[side][axis] - after[side][axis]) < 1e-4);
+  const end = frameBounds(plan, plan.sample(1), 1);
+  assert.ok(end[1][0] - end[0][0] < plan.bounds[1][0] - plan.bounds[0][0]);
 });
 
 test('flat contours follow the shared field continuously through the previous midpoint switch', () => {

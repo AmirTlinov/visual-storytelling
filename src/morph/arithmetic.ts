@@ -4,6 +4,7 @@ import type {
   MathMorphFrame,
   MathMorphPlan,
   MathPart,
+  MathNote,
   MorphPoint,
 } from './types.js';
 import { clamp, equation, mathNumber, mix, smooth } from './numbers.js';
@@ -44,6 +45,22 @@ const cell = (
 });
 type Stage = { sample(p: number): Omit<MathMorphFrame, 'stage'>; bounds: MathPart[] };
 
+function between(a: MathPart, b: MathPart, text: string, id: string): MathNote {
+  const gap = Math.hypot(...a.position.map((v, axis) => v - b.position[axis]!)) - cellSize;
+  return {
+    id,
+    text,
+    size: [0.7, 0.7],
+    position: [
+      (a.position[0] + b.position[0]) / 2,
+      (a.position[1] + b.position[1]) / 2,
+      cellSize / 2 + 0.01,
+    ],
+    // Retire the sign before the closing gap becomes smaller than its inscription.
+    opacity: smooth((gap - 0.75) / 0.6),
+  };
+}
+
 /** Contact precedes evaluation: the packed source union contracts into its result slot. */
 function reduceCells(
   inputs: MathPart[],
@@ -77,18 +94,25 @@ function reduceCells(
       return {
         sources,
         targets: [target],
-        notes: provenance?.map((note) => {
-          const owner = sources.find((source) => source.id === note.id);
-          return {
-            ...note,
-            position: [
-              owner?.position[0] ?? note.position[0],
-              note.position[1],
-              note.position[2],
-            ] as MorphPoint,
-            opacity: 1 - smooth(p / 0.38),
-          };
-        }),
+        notes: [
+          ...provenance.map((note) => {
+            const owner = sources.find((source) => source.id === note.id);
+            return {
+              ...note,
+              position: [
+                owner?.position[0] ?? note.position[0],
+                note.position[1],
+                note.position[2],
+              ] as MorphPoint,
+              opacity: note.opacity * (1 - smooth(p / 0.38)),
+            };
+          }),
+          ...sources.slice(1).map((part, i) => {
+            const note = between(sources[i]!, part, symbols[operator], `operator:${i}`);
+            note.opacity *= provenance.length ? smooth(p / 0.08) : 1;
+            return note;
+          }),
+        ],
         morph,
         sourceOpacity: 1 - smooth((p - 0.44) / 0.14),
         targetOpacity: smooth((p - 0.82) / 0.1),
@@ -153,18 +177,20 @@ function pairs(
         morph,
         sourceOpacity: 1 - smooth((p - 0.44) / 0.14),
         targetOpacity: smooth((p - 0.82) / 0.1),
-        formula:
-          operator === 'multiply'
-            ? 'Умножаем соответствующие числа'
-            : 'Складываем соответствующие числа',
+        formula: operator === 'multiply' ? 'Умножаем пары' : 'Складываем пары',
         phase: p < 0.4 ? 'approach' : p < 0.9 ? 'contact' : 'hold',
-        notes: left.map((a, i) => ({
-          id: `pair:${i}`,
-          position: [targets[i]!.position[0], -3, cellSize / 2 + 0.01] as MorphPoint,
-          size: [3.1, 0.85] as const,
-          text: `${term(a)} ${symbols[operator]} ${term(right[i]!)}`,
-          opacity: 1,
-        })),
+        notes: [
+          ...left.map((a, i) => ({
+            id: `pair:${i}`,
+            position: [targets[i]!.position[0], -3, cellSize / 2 + 0.01] as MorphPoint,
+            size: [3.1, 0.85] as const,
+            text: `${term(a)} ${symbols[operator]} ${term(right[i]!)}`,
+            opacity: smooth((p - 0.34) / 0.24),
+          })),
+          ...left.map((_, i) =>
+            between(sources[i]!, sources[n + i]!, symbols[operator], `operator:${i}`),
+          ),
+        ],
       };
     },
   };
@@ -182,7 +208,7 @@ export function arithmeticPlan(operation: CellOperation): MathMorphPlan {
           cell(
             value,
             `input:${i}`,
-            [(i - (values.length - 1) / 2) * 1.8, 0, 0],
+            [(i - (values.length - 1) / 2) * 3, 0, 0],
             [{ operand: 0, index: i, value }],
           ),
         ),
@@ -198,7 +224,11 @@ export function arithmeticPlan(operation: CellOperation): MathMorphPlan {
     stages.push(paired);
     const products = paired.sample(1).targets;
     if (operation.kind === 'dot') {
-      const sum = reduceCells(products, 'add', paired.sample(1).notes);
+      const sum = reduceCells(
+        products,
+        'add',
+        paired.sample(1).notes?.filter((note) => note.opacity > 0),
+      );
       stages.push(sum);
       result = sum.sample(1).targets[0]!.value;
     } else result = products.map((p) => p.value);
