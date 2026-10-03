@@ -17,7 +17,7 @@ window.galleryReady = (async () => {
   const equation = root.querySelector('.fusion-equation');
   const abort = new AbortController();
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-  const motionRevision = 7;
+  const motionRevision = 8;
   const clock = transport({ duration: 4 });
   const view = await Physics2D.fusion(stage, {
     width: 840,

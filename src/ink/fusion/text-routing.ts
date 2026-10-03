@@ -176,7 +176,7 @@ export function textRoutes(
     }
   });
   const received = targets.map(
-    () => [] as { path: InkPath; owner: 0 | 1; glyph: FusionGlyph; id: number }[],
+    () => [] as { path: InkPath; owner: 0 | 1; glyph: FusionGlyph; id: number; seed: boolean }[],
   );
   source.forEach(({ glyph, owner, shape }, i) => {
     const receivers = [...new Set(glyphPairs.filter(([a]) => a === i).map(([, b]) => b))].sort(
@@ -200,10 +200,12 @@ export function textRoutes(
     // Keep the supplying letter intact. Additional letters grow from points on it,
     // rather than transporting detached pieces of one glyph across the sentence.
     const pieces = receivers.map((j) =>
-      j === primary ? local : local.map((path): InkPath => [path[0]!, path[0]!]),
+      j === primary ? local : [[local[0]![0]!, local[0]![0]!] as InkPath],
     );
     receivers.forEach((j, k) =>
-      pieces[k]!.forEach((path) => received[j]!.push({ path, owner, glyph, id: i })),
+      pieces[k]!.forEach((path) =>
+        received[j]!.push({ path, owner, glyph, id: i, seed: j !== primary }),
+      ),
     );
   });
   return targets.flatMap((glyph, index) => {
@@ -225,32 +227,37 @@ export function textRoutes(
       records.filter((p) => p.owner === 1).map((p) => p.path),
       local,
       true,
-    ).map((route) => {
+    ).flatMap((route) => {
       const original = records[route.origin]!;
+      // A seed carries no original ink. If it did not acquire a final contour,
+      // transporting it would add a free-floating dot with nothing to build.
+      if (original.seed && route.attachment !== undefined) return [];
       const expand = (p: InkPoint, glyph: FusionGlyph): InkPoint => [
         (p[0] * glyph.size) / 100 + glyph.center[0],
         (p[1] * glyph.size) / 100 + glyph.center[1],
         (p[2] * glyph.size) / 100,
       ];
-      return {
-        ...route,
-        target: glyph.paths[route.target]!,
-        from: route.from.map((p) => expand(p, original.glyph)),
-        to: route.to.map((p) => expand(p, glyph)),
-        text: {
-          from: original.glyph.center,
-          glyph: index,
-          origin: original.id,
-          same: original.glyph.value === glyph.value,
-          word: glyph.word,
-          originWord: original.glyph.word + (original.owner ? first.text!.words.length : 0),
-          wordSame:
-            normalize(inputs[original.owner].text!.words[original.glyph.word]!.value) ===
-            normalize(target.text!.words[glyph.word]!.value),
-          fromWord: fromWords[original.owner]![original.glyph.word]!,
-          toWord: toWords[glyph.word]!,
+      return [
+        {
+          ...route,
+          target: glyph.paths[route.target]!,
+          from: route.from.map((p) => expand(p, original.glyph)),
+          to: route.to.map((p) => expand(p, glyph)),
+          text: {
+            from: original.glyph.center,
+            glyph: index,
+            origin: original.id,
+            same: original.glyph.value === glyph.value,
+            word: glyph.word,
+            originWord: original.glyph.word + (original.owner ? first.text!.words.length : 0),
+            wordSame:
+              normalize(inputs[original.owner].text!.words[original.glyph.word]!.value) ===
+              normalize(target.text!.words[glyph.word]!.value),
+            fromWord: fromWords[original.owner]![original.glyph.word]!,
+            toWord: toWords[glyph.word]!,
+          },
         },
-      };
+      ];
     });
   });
 }

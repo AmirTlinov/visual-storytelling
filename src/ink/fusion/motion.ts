@@ -84,7 +84,8 @@ export function inkMotion(routes: InkRoute[]) {
       n = group[0]!.from.length;
     const selected = group.filter((r) => r.attachment === undefined);
     const common = new Float64Array(n * 6),
-      current = new Float64Array(n * 2);
+      current = new Float64Array(n * 2),
+      contour = new Float64Array(n * 2);
     for (let i = 0; i < n; i++) {
       const m = mean(
         selected,
@@ -95,22 +96,33 @@ export function inkMotion(routes: InkRoute[]) {
       const carrier = text ? carriers.get(text.glyph)! : undefined;
       for (let j = 0; j < 6; j++) common[i * 6 + j] = m[j]! + (carrier?.[j] ?? 0);
     }
-    const inputs = group.map((route) => {
-      const offset = counts[route.source]!,
-        length = (route.from.length - 1) * 6;
-      counts[route.source]! += length;
-      const key = route.text
-        ? `${route.source}:${route.text.originWord}:${route.text.word}`
-        : `${route.source}`;
-      if (!patchMap.has(key))
-        patchMap.set(key, { source: route.source, target: route.text?.word ?? 0, ranges: [] });
-      patchMap.get(key)!.ranges.push([offset, length]);
-      return { route, offset };
-    });
+    // The complete contour is sampled before ink that is absorbed by it.
+    const inputs = [...selected, ...group.filter((r) => r.attachment !== undefined)].map(
+      (route) => {
+        const offset = counts[route.source]!,
+          length = (route.from.length - 1) * 6;
+        counts[route.source]! += length;
+        const key = route.text
+          ? `${route.source}:${route.text.originWord}:${route.text.word}`
+          : `${route.source}`;
+        if (!patchMap.has(key))
+          patchMap.set(key, { source: route.source, target: route.text?.word ?? 0, ranges: [] });
+        patchMap.get(key)!.ranges.push([offset, length]);
+        const center = route.from.reduce(
+          (sum, p) => [sum[0]! + p[0] / n, sum[1]! + p[1] / n],
+          [0, 0],
+        );
+        const extent = Math.max(
+          ...route.from.map((p) => Math.hypot(p[0] - center[0]!, p[1] - center[1]!)),
+        );
+        return { route, offset, center, extent };
+      },
+    );
     return {
       inputs,
       common,
       current,
+      contour,
       n,
       text,
       word: text ? wordCarriers.get(text.word)! : undefined,
@@ -157,7 +169,7 @@ export function inkMotion(routes: InkRoute[]) {
       }
       const own = (1 - s) * (1 - gather),
         shared = (1 - s) * gather;
-      for (const { route, offset } of group.inputs) {
+      for (const { route, offset, center, extent } of group.inputs) {
         const p = poses[route.source],
           buffer = vertices[route.source];
         let dx = 0,
@@ -167,6 +179,30 @@ export function inkMotion(routes: InkRoute[]) {
           dx = wx + tx + (x(p, ...route.text!.fromWord) + p.x) * weight;
           dy = wy + ty + (y(p, ...route.text!.fromWord) + p.y) * weight;
         }
+        let contraction = own;
+        const centerX = x(p, center[0]!, center[1]!),
+          centerY = y(p, center[0]!, center[1]!);
+        if (route.attachment !== undefined && extent > 0) {
+          const at = route.attachment * 2,
+            to = route.to[0]!;
+          const cx =
+            dx +
+            own * (centerX + p.x) +
+            shared * group.current[at]! +
+            s * (x(destination, to[0], to[1]) + destination.x);
+          const cy =
+            dy +
+            own * (centerY + p.y) +
+            shared * group.current[at + 1]! +
+            s * (y(destination, to[0], to[1]) + destination.y);
+          const distance = Math.hypot(cx - group.contour[at]!, cy - group.contour[at + 1]!);
+          // Keep travelling ink substantial. It contracts only inside its own
+          // contact radius, so a tiny remnant cannot fly across the sentence.
+          const contact = Math.min(1, distance / (extent * p.scale));
+          contraction = own + (1 - own) * contact * (2 - contact);
+        }
+        const baseX = dx + own * p.x - (contraction - own) * centerX + s * destination.x,
+          baseY = dy + own * p.y - (contraction - own) * centerY + s * destination.y;
         let previousX = 0,
           previousY = 0,
           previousRadius = 0,
@@ -176,15 +212,19 @@ export function inkMotion(routes: InkRoute[]) {
             b = route.to[i]!,
             commonIndex = (route.attachment ?? i) * 2;
           const px =
-            dx +
-            own * (x(p, a[0], a[1]) + p.x) +
+            baseX +
+            contraction * x(p, a[0], a[1]) +
             shared * group.current[commonIndex]! +
-            s * (x(destination, b[0], b[1]) + destination.x);
+            s * x(destination, b[0], b[1]);
           const py =
-            dy +
-            own * (y(p, a[0], a[1]) + p.y) +
+            baseY +
+            contraction * y(p, a[0], a[1]) +
             shared * group.current[commonIndex + 1]! +
-            s * (y(destination, b[0], b[1]) + destination.y);
+            s * y(destination, b[0], b[1]);
+          if (route.attachment === undefined) {
+            group.contour[i * 2] = px;
+            group.contour[i * 2 + 1] = py;
+          }
           const radius = a[2] * p.scale * (1 - s) + b[2] * destination.scale * s;
           if (i) {
             buffer[at++] = previousX;

@@ -24,6 +24,8 @@ test('Rapier deforms ink, preserves endpoints and reuses deterministic history o
   ];
   const routes = inkRoutes([path], [path], [path]);
   const motion = inkMotion(routes);
+  const owner = routes.find((route) => route.attachment === undefined);
+  const donor = routes.find((route) => route.attachment !== undefined);
   const frame = (time) => ({
     sources: [
       { x: -120, y: 0 },
@@ -46,11 +48,17 @@ test('Rapier deforms ink, preserves endpoints and reuses deterministic history o
     );
     assert.equal(track.stats.steps, 0, 'A direct seek to the exact endpoint needs no simulation');
     const middle = flatten(track.sample(0.6));
-    const guide = flatten(motion(frame(0).sources, { x: 0, y: 0 }, 0.3));
+    const guideParts = motion(frame(0).sources, { x: 0, y: 0 }, 0.3);
+    const donorXs = Array.from(guideParts[donor.source]).filter(
+      (_, i) => i % 6 === 0 || i % 6 === 2,
+    );
+    assert.ok(
+      Math.max(...donorXs) - Math.min(...donorXs) > 39,
+      'Ink that is still far from contact must retain its size instead of travelling as a speck',
+    );
+    const guide = flatten(guideParts);
     const deformation = Math.max(...middle.map((v, i) => Math.abs(v - guide[i])));
     assert.ok(deformation > 0.001 && deformation < 10, `elastic displacement: ${deformation}`);
-    const owner = routes.find((route) => route.attachment === undefined);
-    const donor = routes.find((route) => route.attachment !== undefined);
     // Check the contact throughout settling, not equality of two complete copies.
     for (const time of [1.4, 1.6, 1.8, 1.95]) {
       const joined = track.sample(time);

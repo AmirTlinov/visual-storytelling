@@ -114,6 +114,31 @@ test('a new word shares its letters between both sources without duplicate copie
   }
 });
 
+test('new letters have no travelling seeds that supply neither original nor final ink', () => {
+  const first = block('а'),
+    second = block('б'),
+    target = block('а в б');
+  // A letter with several strokes used to spawn one seed per stroke, even when
+  // the new letter only needed a single contour. The leftovers became specks.
+  for (const shape of [first, target]) {
+    const glyph = shape.text.glyphs[0];
+    glyph.paths.push(shape.paths.length);
+    shape.paths.push([
+      [0, -8, 1],
+      [0, 8, 1],
+    ]);
+  }
+  const routes = textRoutes(first, second, target);
+  const collapsed = (path) => path.every((p) => p[0] === path[0][0] && p[1] === path[0][1]);
+  assert.ok(routes.some((route) => collapsed(route.from) && !collapsed(route.to)));
+  assert.ok(routes.every((route) => !(collapsed(route.from) && collapsed(route.to))));
+  for (let path = 0; path < target.paths.length; path++)
+    assert.equal(
+      routes.filter((route) => route.target === path && route.attachment === undefined).length,
+      1,
+    );
+});
+
 test('preserved words have their original supplier instead of echoes from the other sentence', () => {
   const first = block('Свет раскрывает форму'),
     second = block('Тень придаёт глубину'),
