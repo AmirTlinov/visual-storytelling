@@ -2,21 +2,25 @@ import { inkRoutes, type InkPath, type InkPoint, type InkRoute } from './transpo
 import type { FusionGlyph, FusionShape } from './shape.js';
 
 /** Exact anchors keep their identity; replacement runs retain their reading order. */
-export function orderedPairs(a: readonly string[], b: readonly string[]): [number, number][] {
+export function orderedPairs(
+  a: readonly string[],
+  b: readonly string[],
+  preserveMatches = true,
+): [number, number][] {
   if (!a.length || !b.length) return [];
   const columns = b.length + 1,
     table = new Uint16Array((a.length + 1) * columns);
   for (let i = a.length - 1; i >= 0; i--)
     for (let j = b.length - 1; j >= 0; j--)
       table[i * columns + j] =
-        a[i] === b[j]
+        preserveMatches && a[i] === b[j]
           ? table[(i + 1) * columns + j + 1]! + 1
           : Math.max(table[(i + 1) * columns + j]!, table[i * columns + j + 1]!);
   const anchors: [number, number][] = [];
   let i = 0,
     j = 0;
   while (i < a.length && j < b.length) {
-    if (a[i] === b[j]) {
+    if (preserveMatches && a[i] === b[j]) {
       anchors.push([i++, j++]);
     } else if (table[(i + 1) * columns + j]! >= table[i * columns + j + 1]!) i++;
     else j++;
@@ -106,11 +110,20 @@ export function textRoutes(
   const glyphPairs: [number, number][] = [];
   targetWords.forEach((word, i) => {
     const originals = [...new Set(assigned[i]!)].sort((a, b) => a - b);
-    for (const owner of [0, 1]) {
-      const incoming = originals.filter((j) => source[j]!.owner === owner);
+    const anchored = originals.some((j) => {
+      const { glyph, owner } = source[j]!;
+      return normalize(inputs[owner].text!.words[glyph.word]!.value) === normalize(word.value);
+    });
+    // Unchanged words retain their letters. A new word uses the combined ink of
+    // both suppliers instead of growing two complete copies before they meet.
+    const suppliers = anchored
+      ? [0, 1].map((owner) => originals.filter((j) => source[j]!.owner === owner))
+      : [originals];
+    for (const incoming of suppliers) {
       for (const [a, b] of orderedPairs(
         incoming.map((j) => normalize(source[j]!.glyph.value)),
         word.glyphs.map((j) => normalize(targets[j]!.value)),
+        anchored,
       ))
         glyphPairs.push([incoming[a]!, word.glyphs[b]!]);
     }

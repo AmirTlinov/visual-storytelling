@@ -73,12 +73,7 @@ test('inserting a word preserves the complete strokes of unchanged words', () =>
     second = block('тень'),
     target = block('свет и тень');
   const routes = textRoutes(first, second, target);
-  for (const owner of [0, 1])
-    assert.equal(
-      new Set(routes.filter((r) => r.source === owner).map((r) => r.text.glyph)).size,
-      target.text.glyphs.length,
-      'Each incoming text must cover the complete destination',
-    );
+  assert.equal(new Set(routes.map((r) => r.text.glyph)).size, target.text.glyphs.length);
   for (const [owner, shape] of [first, second].entries())
     for (const glyph of shape.text.glyphs) {
       const original = shape.paths[glyph.paths[0]];
@@ -103,4 +98,43 @@ test('inserting a word preserves the complete strokes of unchanged words', () =>
   }
   const final = sample(sources, { x: 0, y: 0 }, 1).flatMap((frame) => Array.from(frame));
   assert.ok(final.every(Number.isFinite));
+});
+
+test('a new word shares its letters between both sources without duplicate copies', () => {
+  const first = block('свет'),
+    second = block('тень'),
+    target = block('объём');
+  const routes = textRoutes(first, second, target);
+  assert.equal(routes.length, first.paths.length + second.paths.length);
+  assert.equal(new Set(routes.map((r) => r.text.glyph)).size, target.text.glyphs.length);
+  for (const owner of [0, 1]) {
+    const incoming = routes.filter((r) => r.source === owner);
+    assert.ok(incoming.length > 0);
+    assert.ok(new Set(incoming.map((r) => r.text.glyph)).size < target.text.glyphs.length);
+  }
+});
+
+test('coalescing letters does not concentrate their travel in the opening frames', () => {
+  const shape = block('о');
+  const sample = inkMotion(textRoutes(shape, shape, shape));
+  const sources = [
+    { x: -100, y: 0 },
+    { x: 100, y: 0 },
+  ];
+  let previous = sample(sources, { x: 0, y: 0 }, 0).map((v) => v.slice());
+  let largestStep = 0;
+  for (let frame = 1; frame <= 120; frame++) {
+    const current = sample(sources, { x: 0, y: 0 }, frame / 120);
+    for (let source = 0; source < 2; source++)
+      for (let i = 0; i < current[source].length; i += 6)
+        largestStep = Math.max(
+          largestStep,
+          Math.hypot(
+            current[source][i] - previous[source][i],
+            current[source][i + 1] - previous[source][i + 1],
+          ),
+        );
+    previous = current.map((v) => v.slice());
+  }
+  assert.ok(largestStep < 3, `A frame moved a letter by ${largestStep} of its 100-unit journey`);
 });

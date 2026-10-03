@@ -5,8 +5,6 @@ const smooth = (value: number) => {
   const t = Math.max(0, Math.min(1, value));
   return t * t * (3 - 2 * t);
 };
-// Readable text settles early; contact smoothing uses this same phase.
-export const textProgress = (morph: number) => 1 - (1 - morph) ** 10;
 function transformed(point: InkPoint, pose: FusionPose): InkPoint {
   const scale = pose.scale ?? 1,
     c = Math.cos(pose.rotation ?? 0),
@@ -80,9 +78,9 @@ export function inkMotion(routes: InkRoute[]) {
     for (const group of groups.values()) {
       const last: (InkPoint | undefined)[] = group.map(() => undefined);
       const text = group[0]!.text;
-      const gather = smooth(text ? morph / 0.12 : morph / 0.65);
-      const shapeProgress = text ? textProgress(morph) : morph;
-      const placement = shapeProgress;
+      const gather = smooth(morph / 0.65);
+      const shapeProgress = text ? gather : morph;
+      const placement = morph;
       const anchors = text
         ? group.map((r) => transformed([...r.text!.from, 0], sources[r.source]))
         : [];

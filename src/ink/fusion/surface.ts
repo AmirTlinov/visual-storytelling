@@ -2,7 +2,7 @@ import { fusionShape, type FusionShape, type FusionPose } from './shape.js';
 import { fusionText } from './text.js';
 import { textRoutes } from './text-routing.js';
 import { inkRoutes } from './transport.js';
-import { inkMotion, textProgress } from './motion.js';
+import { inkMotion } from './motion.js';
 import { fusionFragment, fusionVertex, strokeFragment, strokeVertex } from './shader.js';
 
 export interface FusionFrame {
@@ -50,8 +50,7 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
     previous: FusionFrame | undefined;
   let motion: ReturnType<typeof inkMotion> | undefined,
     ink = [0, 0, 0],
-    textScale = 1,
-    textShapes = false;
+    textScale = 1;
   let stroke: WebGLProgram, fusion: WebGLProgram;
   let quad: WebGLBuffer, segments: WebGLBuffer;
   let strokeVAO: WebGLVertexArrayObject, fusionVAO: WebGLVertexArrayObject;
@@ -174,8 +173,7 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
     if (!Number.isFinite((frame.morph ?? 0) + (frame.tension ?? 28)))
       throw new Error('Fusion progress and tension must be finite');
     const morph = Math.max(0, Math.min(1, frame.morph ?? 0));
-    const settled = textShapes ? textProgress(morph) : morph;
-    const tension = Math.max(0, Math.min(64, frame.tension ?? 28)) * textScale * (1 - settled) ** 2;
+    const tension = Math.max(0, Math.min(64, frame.tension ?? 28)) * textScale * (1 - morph) ** 2;
     const band = Math.max(8, tension + 2);
     const vertices = motion(frame.sources, target, morph);
     const bounds = parent.getBoundingClientRect(),
@@ -261,7 +259,6 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
     canvas,
     setShapes(first: FusionShape, second: FusionShape, target: FusionShape) {
       const allText = first.text && second.text && target.text;
-      textShapes = Boolean(allText);
       motion = inkMotion(
         allText
           ? textRoutes(first, second, target)

@@ -104,7 +104,7 @@ window.galleryReady = (async () => {
     if (!ready || disposed) return;
     persistence.save({
       modelContent: { type: 'ink-fusion', texts: words, tension, example: scenario },
-      privateContent: { time: clock.state.time, motionRevision: 3 },
+      privateContent: { time: clock.state.time, motionRevision: 4 },
     });
   }
   function changeTexts() {
@@ -197,7 +197,7 @@ window.galleryReady = (async () => {
   function render(time) {
     if (!shapes || disposed) return;
     const t = time / clock.state.duration;
-    const approach = smooth(0.08, 0.34, t);
+    const approach = smooth(0.03, 0.2, t);
     view.render({
       sources: layout.sources.map((pose, i) => ({
         x: pose.x + (layout.block ? 0 : (i ? -1 : 1) * 24 * approach),
@@ -205,7 +205,7 @@ window.galleryReady = (async () => {
       })),
       target: { x: 0, y: 0 },
       tension,
-      morph: 1 - (1 - smooth(0.24, 0.67, t)) ** 3,
+      morph: 1 - (1 - smooth(0.04, 0.9, t)) ** 2,
     });
   }
   function restore(snapshot) {
@@ -229,7 +229,7 @@ window.galleryReady = (async () => {
     cases.setValue(scenario);
     rebuild();
     if (
-      snapshot.privateContent?.motionRevision === 3 &&
+      snapshot.privateContent?.motionRevision === 4 &&
       Number.isFinite(snapshot.privateContent?.time)
     )
       clock.seek(snapshot.privateContent.time);
@@ -305,7 +305,7 @@ window.galleryReady = (async () => {
       view.dispose();
     },
   };
-  if ((!restored || saved?.privateContent?.motionRevision !== 3) && !reduced.matches)
+  if ((!restored || saved?.privateContent?.motionRevision !== 4) && !reduced.matches)
     void clock.play();
 })().catch((error) => {
   document.querySelector('.fusion-error').textContent = error.message;
