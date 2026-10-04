@@ -9,7 +9,10 @@ export function mathBodies(frame: MathMorphFrame, measured: boolean): MorphFrame
   const body = (part: MathPart) => ({
     // Authored dimensions belong to the material. A pose scale is reserved for
     // deformation, so local measurement marks deform with their body as well.
-    shape: volumeBox(part.size),
+    shape: part.shape ?? volumeBox(part.size),
+    scale: part.scale,
+    rounding: part.rounding,
+    material: part.material,
     text: mathNumber(part.value),
     position: part.position,
     origins: part.origins?.map((o) => `${o.operand}:${o.index}`),
@@ -20,5 +23,6 @@ export function mathBodies(frame: MathMorphFrame, measured: boolean): MorphFrame
     targets: frame.targets.map(body),
     morph: frame.morph,
     tension: frame.tension ?? 0,
+    materials: frame.materials,
   };
 }

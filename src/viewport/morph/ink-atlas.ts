@@ -27,7 +27,7 @@ import {
   fusionVertex,
   combineFragment,
 } from '../../ink/fusion/shader.js';
-import type { InkFieldFrame } from '../../ink/fusion/geometry.js';
+import { composeInkField, type InkFieldFrame } from '../../ink/fusion/geometry.js';
 
 const glsl = (source: string) => source.replace('#version 300 es', '');
 /** The existing ink field, rendered into the solid's material with the same GPU and shaders. */
@@ -78,15 +78,14 @@ export function inkAtlas(renderer: WebGLRenderer) {
   const scene = new Scene(),
     camera = new Camera();
   scene.add(mesh);
-  const fields = [0, 1, 2].map(
-    () =>
-      new WebGLRenderTarget(1, 1, {
-        type: renderer.extensions.has('EXT_color_buffer_float') ? HalfFloatType : undefined,
-        minFilter: LinearFilter,
-        magFilter: LinearFilter,
-        depthBuffer: false,
-      }),
-  );
+  const fieldTarget = () =>
+    new WebGLRenderTarget(1, 1, {
+      type: renderer.extensions.has('EXT_color_buffer_float') ? HalfFloatType : undefined,
+      minFilter: LinearFilter,
+      magFilter: LinearFilter,
+      depthBuffer: false,
+    });
+  const fields = [fieldTarget(), fieldTarget(), fieldTarget()];
   let capacity = 0,
     active = 0;
   const clear = new Color();
@@ -104,13 +103,20 @@ export function inkAtlas(renderer: WebGLRenderer) {
       const density = 1024 / Math.max(bounds.z, bounds.w);
       const w = Math.max(1, Math.ceil(bounds.z * density)),
         h = Math.max(1, Math.ceil(bounds.w * density));
+      if (frame.groups.length > 1 && fields.length === 3) {
+        const additional = fieldTarget();
+        additional.setSize(w, h);
+        fields.push(additional);
+      }
       if (resolution.x !== w || resolution.y !== h) {
         resolution.set(w, h);
         fields.forEach((field) => field.setSize(w, h));
       }
       const pixel = Math.max(world.x / w, world.y / h);
-      uniforms.band.value = Math.max(pixel * 8, frame.tension + pixel * 2);
-      uniforms.tension.value = frame.tension;
+      uniforms.band.value = Math.max(
+        pixel * 8,
+        ...frame.groups.map((group) => group.tension + pixel * 2),
+      );
       const count = Math.max(
         frame.marks.segments.length / 6,
         ...frame.segments.map((data) => data.length / 6),
@@ -170,22 +176,24 @@ export function inkAtlas(renderer: WebGLRenderer) {
         uniforms.annotation.value = false;
         renderer.setRenderTarget(fields[0]!);
         renderer.clear();
-        frame.segments.forEach((data, source) => {
-          upload(data, frame.visibility[source]!);
-          renderer.setRenderTarget(fields[source ? 2 : active]!);
-          renderer.clear();
-          renderer.render(scene, camera);
-          if (source) {
-            const next = 1 - active;
-            uniforms.first.value = fields[active]!.texture;
-            uniforms.second.value = fields[2]!.texture;
+        active = composeInkField(
+          frame.groups,
+          (source, target) => {
+            upload(frame.segments[source]!, frame.visibility[source]!);
+            renderer.setRenderTarget(fields[target]!);
+            renderer.clear();
+            renderer.render(scene, camera);
+          },
+          (first, second, target, tension) => {
+            uniforms.first.value = fields[first]!.texture;
+            uniforms.second.value = fields[second]!.texture;
+            uniforms.tension.value = tension;
             scene.clear();
             scene.add(screen);
-            renderer.setRenderTarget(fields[next]!);
+            renderer.setRenderTarget(fields[target]!);
             renderer.render(scene, camera);
-            active = next;
-          }
-        });
+          },
+        );
         if (frame.marks.segments.length) {
           uniforms.annotation.value = true;
           upload(frame.marks.segments, frame.marks.visibility);

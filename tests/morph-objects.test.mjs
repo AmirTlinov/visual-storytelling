@@ -92,6 +92,45 @@ test('approaching bodies keep their rest shape and ink until actual contact', ()
     assert.ok(approached > 20 && contacted > 40);
   }
 });
+test('contact in multiple rows remains rigid through the approach and responds on both axes', () => {
+  const parts = Array.from({ length: 4 }, () => Morph.box([1, 1, 1], 1));
+  const plan = Morph.plan(Morph.merge(parts, Morph.box([2, 2, 1], 4)), { columns: 2 });
+  const positions = [
+    [-0.85, 0.85, 0],
+    [0.85, 0.85, 0],
+    [-0.85, -0.85, 0],
+    [0.85, -0.85, 0],
+  ];
+  plan
+    .sample(0)
+    .sources.forEach((body, i) =>
+      body.position.forEach((v, axis) => assert.ok(Math.abs(v - positions[i][axis]) < 1e-12)),
+    );
+  for (const p of [0.01, 0.1, 0.2])
+    for (const body of plan.sample(p).sources) assert.equal(body.scale, undefined);
+  const frame = plan.sample(0.35),
+    stretch = frame.sources[0].scale;
+  assert.ok(stretch);
+  assert.ok(
+    Math.abs(stretch[0] - stretch[1]) < 1e-9,
+    'symmetric contact has no preferred packing axis',
+  );
+  for (const count of [3, 4]) {
+    const row = Morph.plan(
+      Morph.merge(
+        Array.from({ length: count }, () => Morph.box([1.4, 1.4, 1.4])),
+        Morph.box([2, 2, 2]),
+      ),
+    );
+    for (const p of [0.02, 0.1, 0.2])
+      for (const body of row.sample(p).sources)
+        assert.equal(
+          body.scale,
+          undefined,
+          'a body between separated pieces is not their connecting neck',
+        );
+  }
+});
 
 test('material response is short, bounded and preserves inscriptions and material volume', () => {
   const parts = [Morph.box([1, 1, 1], 2), Morph.box([1, 1, 1], 2)];

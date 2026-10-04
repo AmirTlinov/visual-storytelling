@@ -122,12 +122,11 @@ export function prepareVolumePrograms(
         'contactRadii',
         'planes',
         'groups',
+        'blends',
         'planeCounts',
       ] as const)
         uniforms[key]!.value = field[key];
       uniforms.groupCount!.value = field.groupCount;
-      uniforms.morph!.value = field.morph;
-      uniforms.tension!.value = field.tension;
       uniforms.boundsMin!.value.copy(field.bounds.min);
       uniforms.boundsMax!.value.copy(field.bounds.max);
       uniforms.rayOrigin!.value.copy(camera.position);

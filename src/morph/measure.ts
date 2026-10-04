@@ -10,9 +10,6 @@ export function partBounds(parts: readonly MathPart[]): [MorphPoint, MorphPoint]
     }
   return [min as unknown as MorphPoint, max as unknown as MorphPoint];
 }
-export const cellFormulaWidth = (plan: MathMorphPlan) =>
-  Math.max(3, Math.min(6.6, plan.bounds[1][0] - plan.bounds[0][0]));
-
 /** Large measured quantities follow the current body; cell layout owns symbolic arithmetic. */
 export function quantityBounds(
   plan: MathMorphPlan,

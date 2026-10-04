@@ -53,8 +53,8 @@ export function materialMotion(shapeAt: (progress: number) => MorphFrame, durati
     previousSize: number[] | undefined,
     previousRate = [0, 0, 0],
     equilibrium = [0, 0, 0],
-    previousGaps: number[] = [],
-    closingRates: number[] = [];
+    previousGaps = new Map<string, number>(),
+    closingRates = new Map<string, number>();
   for (let tick = 0; tick <= steps; tick++) {
     // Integrate only the load known at the start of this interval. Recording
     // after a newly observed collision would interpolate its impulse backwards
@@ -73,57 +73,116 @@ export function materialMotion(shapeAt: (progress: number) => MorphFrame, durati
     field.update(frame);
     const sources = frame.sources.map(bodySize),
       targets = frame.targets.map(bodySize);
-    const packed = (sizes: readonly VolumePoint[], axis: number) =>
-      axis === 0
-        ? sizes.reduce((sum, size) => sum + size[axis], 0)
-        : Math.max(...sizes.map((s) => s[axis]!));
+    // Strain belongs to the material, independent of how empty space between
+    // the pieces is packed into rows. Affine registration supplies its stretch.
+    const dimension = (sizes: readonly VolumePoint[], axis: number, offset: number) =>
+      sizes.reduce(
+        (sum, size, i) =>
+          sum + Math.log(size[axis]! * field.registration[(offset + i) * 6 + axis]!),
+        0,
+      ) / sizes.length;
     const size = [0, 1, 2].map(
       (axis) =>
-        Math.log(packed(sources, axis) * field.registration[axis]!) * (1 - frame.morph) +
-        Math.log(packed(targets, axis) * field.registration[frame.sources.length * 6 + axis]!) *
-          frame.morph,
+        dimension(sources, axis, 0) * (1 - frame.morph) +
+        dimension(targets, axis, sources.length) * frame.morph,
     );
     const rate = size.map((value, axis) => (previousSize ? (value - previousSize[axis]!) / dt : 0));
-    let traction = 0;
-    const gaps: number[] = [];
-    for (let i = 0; i < frame.sources.length - 1; i++) {
-      const a = frame.sources[i]!,
-        b = frame.sources[i + 1]!;
-      const width = (sources[i]![0] + sources[i + 1]![0]) / 2;
-      const separation = b.position[0] - a.position[0] - width;
-      const gap = separation > Number.EPSILON * width * 8 ? separation : 0;
-      gaps.push(gap);
-      // Contact reaction follows the actual closing velocity. No approach load
-      // exists while the two source surfaces remain separated.
-      if (gap === 0 && (previousGaps[i] ?? 0) > 0)
-        velocity[0]! -= Math.max(0, closingRates[i] ?? 0) / width / (frame.sources.length - 1);
-      closingRates[i] = ((previousGaps[i] ?? gap) - gap) / dt;
-      const seam =
-        (a.position[0] + sources[i]![0] / 2 + b.position[0] - sources[i + 1]![0] / 2) / 2;
-      const x = seam * field.registration[0]! + field.registration[3]!;
-      if (gap === 0 || field.distance(x, 0, 0) >= 0) continue;
-      // The shrinking neck's measured cross-section carries tensile load.
-      // The same section rule covers boxes, balls and capsules.
-      const radii = [1, 2].map((axis) => {
-        let low = 0,
-          high = field.bounds.max.getComponent(axis);
-        for (let n = 0; n < 10; n++) {
-          const middle = (low + high) / 2;
-          if (field.distance(x, axis === 1 ? middle : 0, axis === 2 ? middle : 0) < 0) low = middle;
-          else high = middle;
-        }
-        return (low + high) / 2;
-      });
-      const faceArea =
-        Math.min(sources[i]![1] * sources[i]![2], sources[i + 1]![1] * sources[i + 1]![2]) *
-        field.registration[1]! *
-        field.registration[2]!;
-      const neck = Math.min(1, (4 * radii[0]! * radii[1]!) / faceArea);
-      traction += (((compliance * gap) / width) * neck) / (frame.sources.length - 1);
-    }
+    const traction = [0, 0, 0],
+      gaps = new Map<string, number>();
+    for (let i = 0; i < frame.sources.length - 1; i++)
+      for (let j = i + 1; j < frame.sources.length; j++) {
+        const a = frame.sources[i]!,
+          b = frame.sources[j]!;
+        const separations = [0, 1, 2].map(
+          (axis) =>
+            Math.abs(b.position[axis]! - a.position[axis]!) -
+            (sources[i]![axis]! + sources[j]![axis]!) / 2,
+        );
+        const axis = separations.indexOf(Math.max(...separations));
+        // A corner across two gaps carries no tensile load or collision yet.
+        if (separations.some((gap, index) => index !== axis && gap >= -1e-9)) continue;
+        const cross = [0, 1, 2].filter((k) => k !== axis);
+        const patch = cross.map(
+          (k) =>
+            (Math.max(a.position[k]! - sources[i]![k]! / 2, b.position[k]! - sources[j]![k]! / 2) +
+              Math.min(
+                a.position[k]! + sources[i]![k]! / 2,
+                b.position[k]! + sources[j]![k]! / 2,
+              )) /
+            2,
+        );
+        // A third body blocks this pair's facing patch. The union's occupied
+        // midpoint cannot be mistaken for a neck between non-neighbouring pieces.
+        if (
+          frame.sources.some(
+            (other, k) =>
+              k !== i &&
+              k !== j &&
+              other.position[axis]! > Math.min(a.position[axis]!, b.position[axis]!) &&
+              other.position[axis]! < Math.max(a.position[axis]!, b.position[axis]!) &&
+              cross.every(
+                (side, n) => Math.abs(other.position[side]! - patch[n]!) < sources[k]![side]! / 2,
+              ),
+          )
+        )
+          continue;
+        const key = `${i}/${j}/${axis}`;
+        const width = (sources[i]![axis]! + sources[j]![axis]!) / 2;
+        const separation = separations[axis]!;
+        const gap = separation > Number.EPSILON * width * 8 ? separation : 0;
+        gaps.set(key, gap);
+        // Contact reaction follows the actual closing velocity. No approach load
+        // exists while the two source surfaces remain separated.
+        if (gap === 0 && (previousGaps.get(key) ?? 0) > 0)
+          velocity[axis]! -=
+            Math.max(0, closingRates.get(key) ?? 0) / width / (frame.sources.length - 1);
+        closingRates.set(key, ((previousGaps.get(key) ?? gap) - gap) / dt);
+        const point = [0, 1, 2].map((k) => {
+          const direction = Math.sign(b.position[k]! - a.position[k]!);
+          const center =
+            k === axis
+              ? (a.position[k]! +
+                  (direction * sources[i]![k]!) / 2 +
+                  b.position[k]! -
+                  (direction * sources[j]![k]!) / 2) /
+                2
+              : (Math.max(
+                  a.position[k]! - sources[i]![k]! / 2,
+                  b.position[k]! - sources[j]![k]! / 2,
+                ) +
+                  Math.min(
+                    a.position[k]! + sources[i]![k]! / 2,
+                    b.position[k]! + sources[j]![k]! / 2,
+                  )) /
+                2;
+          return center * field.registration[i * 6 + k]! + field.registration[i * 6 + k + 3]!;
+        }) as [number, number, number];
+        if (gap === 0 || field.distance(...point) >= 0) continue;
+        // The shrinking neck's measured cross-section carries tensile load.
+        // The same section rule covers boxes, balls and capsules.
+        const radii = cross.map((side) => {
+          let low = 0,
+            high = field.bounds.max.getComponent(side) - point[side]!;
+          for (let n = 0; n < 10; n++) {
+            const middle = (low + high) / 2;
+            const probe = [...point] as [number, number, number];
+            probe[side]! += middle;
+            if (field.distance(...probe) < 0) low = middle;
+            else high = middle;
+          }
+          return (low + high) / 2;
+        });
+        const faceArea = cross.reduce(
+          (area, k) =>
+            area * Math.min(sources[i]![k]!, sources[j]![k]!) * field.registration[i * 6 + k]!,
+          1,
+        );
+        const neck = Math.min(1, (4 * radii[0]! * radii[1]!) / faceArea);
+        traction[axis]! += (((compliance * gap) / width) * neck) / (frame.sources.length - 1);
+      }
     for (let axis = 0; axis < 3; axis++) {
       const acceleration = (rate[axis]! - previousRate[axis]!) / dt;
-      equilibrium[axis] = (axis === 0 ? traction : 0) - acceleration / spring.stiffness;
+      equilibrium[axis] = traction[axis]! - acceleration / spring.stiffness;
     }
     previousGaps = gaps;
     previousSize = size;

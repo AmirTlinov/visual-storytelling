@@ -1,0 +1,13 @@
+.ve-math-view {
+  width: 100%;
+  min-height: 320px;
+  position: relative;
+}
+.ve-math-stage {
+  width: 100%;
+  min-height: 320px;
+}
+.ve-math-projection {
+  width: min(340px, 100%);
+  margin: 0 auto 8px;
+}

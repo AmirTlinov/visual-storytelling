@@ -10,6 +10,7 @@
 | Однолинейные буквы                                          | Авторские штрихи из visual-explainer, `src/ink/glyphs.ts`                              | Перенесены в `src/ink/glyphs.ts`, дополнены и оформлены как плотные чернила.                  |
 | Озвученные рассказы | `examples/*/narration.json`, голос Higgs TTS 3 и акустические метки `timeline.json` | Атрибуция голоса и музыки — в `CREDITS.txt` каждого рассказа; упаковка сохраняет её. |
 | Образец рассказчика | `src/assets/audio/narrator-male.wav`: принятая цельная реплика Higgs TTS 3; точная расшифровка в `tools/audio/resources.py` | Тот же мужской голос; образец задаёт живую манеру дальнейшего синтеза. Атрибуция Boson AI сохраняется в каждом рассказе. |
+| [mathjs](https://mathjs.org/) | 15.2.0, разбор выражений, скалярные/матричные функции и символическая производная | Apache-2.0, лицензия в установленном пакете. |
 | [Three.js](https://github.com/mrdoob/three.js) | 0.186.1, WebGL, OrbitControls и GLTFLoader | MIT, лицензия в установленном пакете. |
 | [Rapier](https://github.com/dimforge/rapier.js) | 0.21.0, отдельные `rapier2d-compat` / `rapier3d-compat`, столкновения и мягкие тела в WASM | Apache-2.0, лицензии в установленных пакетах. |
 | [Sharp](https://sharp.pixelplumbing.com) | 0.35.5, декодирование, масштаб и PNG для проверки движения | Apache-2.0, лицензия в установленном пакете. |

@@ -15,6 +15,13 @@ export * from './host/widget-state.js';
 
 export { MathMorph, mathPlan } from './morph/math.js';
 export type {
+  MathValue,
+  FormulaBody,
+  FormulaInput,
+  FormulaOptions,
+  FormulaOperation,
+} from './morph/formula/types.js';
+export type {
   Arithmetic,
   CellOperation,
   MathStep,

@@ -11,7 +11,13 @@ import type {
 import { clamp, equation, mathNumber, mix, smooth } from './numbers.js';
 import { partBounds } from './measure.js';
 
-const symbols: Record<Arithmetic, string> = { add: '+', multiply: '×', divide: '÷', power: '^' };
+const symbols: Record<Arithmetic, string> = {
+  add: '+',
+  subtract: '−',
+  multiply: '×',
+  divide: '÷',
+  power: '^',
+};
 const cellSize = 1.4;
 const term = (n: number) => (n < 0 ? `(${mathNumber(n)})` : mathNumber(n));
 function evaluate(operator: Arithmetic, values: readonly number[]) {
@@ -24,11 +30,13 @@ function evaluate(operator: Arithmetic, values: readonly number[]) {
   const result =
     operator === 'add'
       ? values.reduce((a, b) => a + b, 0)
-      : operator === 'multiply'
-        ? values.reduce((a, b) => a * b, 1)
-        : operator === 'divide'
-          ? values[0]! / values[1]!
-          : values[0]! ** values[1]!;
+      : operator === 'subtract'
+        ? values.slice(1).reduce((a, b) => a - b, values[0]!)
+        : operator === 'multiply'
+          ? values.reduce((a, b) => a * b, 1)
+          : operator === 'divide'
+            ? values[0]! / values[1]!
+            : values[0]! ** values[1]!;
   if (!Number.isFinite(result)) throw new Error('The calculation must have a finite real result');
   return Object.is(result, -0) ? 0 : result;
 }

@@ -9,6 +9,16 @@ import type {
   MathStep,
 } from './types.js';
 import { arithmeticPlan } from './arithmetic.js';
+import { formulaPlan } from './formula/plan.js';
+import type {
+  FormulaBody,
+  FormulaInput,
+  FormulaOperation,
+  FormulaOptions,
+  MathValue,
+} from './formula/types.js';
+import type { MorphObject } from './objects.js';
+import { mountMath } from './presentation.js';
 import { clamp, smooth, mix, mathNumber, equation } from './numbers.js';
 const expression = (formula: string) => formula.split(/ [=≈] /)[0]!;
 function quantity(n: number) {
@@ -93,8 +103,17 @@ function resize(from: MorphPoint, to: MorphPoint, formula: string, preserve = fa
 }
 export function mathPlan<O extends MathOperation>(
   operation: O,
-): MathMorphPlan<O extends { kind: 'vectorAdd' } ? readonly number[] : number>;
-export function mathPlan(operation: MathOperation): MathMorphPlan {
+): MathMorphPlan<
+  O extends FormulaOperation
+    ? MathValue
+    : O extends { kind: 'vectorAdd' }
+      ? readonly number[]
+      : number
+>;
+export function mathPlan(operation: MathOperation | MathMorphPlan): MathMorphPlan;
+export function mathPlan(operation: MathOperation | MathMorphPlan): MathMorphPlan {
+  if ('sample' in operation) return operation;
+  if (operation.kind === 'formula') return formulaPlan(operation);
   if (
     operation.kind === 'calculate' ||
     operation.kind === 'dot' ||
@@ -234,6 +253,13 @@ export function mathPlan(operation: MathOperation): MathMorphPlan {
   };
 }
 export const MathMorph = {
+  mount: mountMath,
+  body: (value: MathValue, body: MorphObject): FormulaBody => ({ value, body }),
+  formula: (
+    expression: string,
+    inputs: Readonly<Record<string, FormulaInput>> = {},
+    options: FormulaOptions = {},
+  ): FormulaOperation => ({ kind: 'formula', expression, inputs, ...options }),
   chain: (
     input: CellOperation,
     ...steps: MathStep[]

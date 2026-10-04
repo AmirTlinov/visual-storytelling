@@ -5,8 +5,7 @@ uniform vec4 parameters[SHAPE_COUNT];
 uniform mat4 transforms[SHAPE_COUNT];
 uniform float scales[SHAPE_COUNT];
 uniform vec3 contactRadii[SOURCE_COUNT * 6];
-uniform float morph;
-uniform float tension;
+uniform vec2 blends[GROUP_CAPACITY];
 uniform int groups[SHAPE_COUNT];
 uniform int groupCount;
 uniform vec4 planes[GROUP_CAPACITY * 6];
@@ -41,11 +40,11 @@ float field(vec3 p) {
   for (int i=SOURCE_COUNT;i<SHAPE_COUNT;i++) {
     float d = primitive(i,p);
     target[groups[i]] = min(target[groups[i]],d);
-    result = min(result,d);
   }
-  if (morph >= 1.) return result;
   for (int i=0;i<SOURCE_COUNT;i++) {
     int group = groups[i];
+    if(blends[group].x >= 1.) continue;
+    float tension = blends[group].y;
     float d = from[group];
     float next = primitive(i, p);
     float h = tension > 0. ? max(0., tension - abs(d - next)) / tension : 0.;
@@ -54,6 +53,8 @@ float field(vec3 p) {
   result = 1e30;
   for (int group=0;group<GROUP_CAPACITY;group++) {
     if(group >= groupCount) break;
+    float morph = blends[group].x;
+    if(morph >= 1.) { result=min(result,target[group]); continue; }
     float d = from[group];
     for (int i=0;i<6;i++) {
       if(i >= planeCounts[group]) break;

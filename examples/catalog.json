@@ -285,5 +285,44 @@
     ],
     "source": "scene.js",
     "guides": ["examples/arithmetic-objects/README.md"]
+  },
+  "formula-objects": {
+    "title": "Формула действует на предметы",
+    "page": "index.html",
+    "time": 4.7,
+    "checkpoints": [
+      0,
+      2.8,
+      4.7,
+      6.5,
+      10.8,
+      13.7,
+      19,
+      24,
+      32,
+      38,
+      49,
+      55.2,
+      58.5,
+      64.3,
+      66.8
+    ],
+    "group": "techniques",
+    "summary": "Формула задаёт разделение, рост и слияние тел; составные функции, производная, интеграл и матрица используют общий морфинг.",
+    "tags": [
+      "формулы",
+      "математика",
+      "морфинг",
+      "деление",
+      "производная",
+      "интеграл",
+      "матрица",
+      "MathMorph"
+    ],
+    "source": "scene.js",
+    "guides": [
+      "docs/morphing.md"
+    ],
+    "recommended": true
   }
 }

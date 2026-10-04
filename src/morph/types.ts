@@ -1,5 +1,7 @@
+import type { VolumeShape, VolumeFrame } from '../viewport/morph/field.js';
+import type { FormulaOperation, MathValue } from './formula/types.js';
 export type MorphPoint = readonly [number, number, number];
-export type Arithmetic = 'add' | 'multiply' | 'divide' | 'power';
+export type Arithmetic = 'add' | 'subtract' | 'multiply' | 'divide' | 'power';
 export type CellOperation =
   | { kind: 'calculate'; operator: Arithmetic; values: readonly number[] }
   | { kind: 'dot'; left: readonly number[]; right: readonly number[] }
@@ -12,6 +14,7 @@ export type MathStep =
   | { operator: 'apply'; label: string; value: (input: number) => number };
 export type MathOperation =
   | CellOperation
+  | FormulaOperation
   | { kind: 'add'; values: readonly number[] }
   | { kind: 'divide'; value: number; parts: number }
   | { kind: 'multiply'; value: number; factor: number }
@@ -37,6 +40,11 @@ export interface MathPart {
   /** Stable identities and original inputs survive each arithmetic step. */
   id?: string;
   origins?: readonly MathOrigin[];
+  shape?: VolumeShape;
+  scale?: MorphPoint;
+  rounding?: number;
+  /** Independent material groups keep inactive branches completely still. */
+  material?: string;
 }
 export interface MathNote {
   size: readonly [number, number];
@@ -51,20 +59,22 @@ export interface MathMorphFrame {
   morph: number;
   /** Local joining distance for the shared surface; zero preserves measured boundaries. */
   tension?: number;
+  materials?: VolumeFrame['materials'];
   formula: string;
   phase: 'approach' | 'contact' | 'separate' | 'resize' | 'hold';
   stage: number;
   notes?: readonly MathNote[];
   /** Available when this stage has resolved; narration need not guess a reveal threshold. */
-  result?: number | readonly number[];
+  result?: MathValue;
 }
-export interface MathMorphPlan<
-  Result extends number | readonly number[] = number | readonly number[],
-> {
+export interface MathMorphPlan<Result extends MathValue = MathValue> {
   /** Quantities encode magnitude in size; cells carry signed numbers in equally sized slots. */
-  readonly encoding: 'quantity' | 'cells';
+  readonly encoding: 'quantity' | 'cells' | 'objects';
+  readonly measure?: 'volume' | 'value';
   readonly result: Result;
   readonly bounds: readonly [MorphPoint, MorphPoint];
+  /** Analytic motion envelope for a responsive arrangement, including contact and inertia. */
+  boundsFor?(columns: number): readonly [MorphPoint, MorphPoint];
   readonly stages: number;
-  sample(progress: number, layout?: { columns?: number }): MathMorphFrame;
+  sample(progress: number, layout?: { columns?: number; duration?: number }): MathMorphFrame;
 }

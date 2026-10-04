@@ -3,10 +3,12 @@ import { inkDetailVisibility } from '../ink/fusion/detail.js';
 import { fusionText } from '../ink/fusion/text.js';
 import type { FusionShape } from '../ink/fusion/shape.js';
 import { bodySize, shapeSize, type MorphBody, type MorphFrame } from './objects.js';
+import { materialState } from '../viewport/morph/field.js';
 
 import type { InkFieldFrame } from '../ink/fusion/geometry.js';
 
 type Group = {
+  material?: string;
   sources: number[];
   targets: number[];
   from: FusionShape[];
@@ -49,12 +51,14 @@ function registered(body: MorphBody, transform: Float64Array, side: number): Mor
 }
 function surfaceMarks(frame: MorphFrame, registration: Float64Array) {
   const lines = new Map<string, { coordinates: number[]; opacity: number }>();
-  for (const [parts, opacity, offset] of [
-    [frame.sources, 1 - frame.morph, 0],
-    [frame.targets, frame.morph, frame.sources.length],
+  for (const [parts, side, offset] of [
+    [frame.sources, 0, 0],
+    [frame.targets, 1, frame.sources.length],
   ] as const) {
-    if (!opacity) continue;
     for (const [index, part] of parts.entries()) {
+      const progress = materialState(frame, part.material).morph;
+      const opacity = side ? progress : 1 - progress;
+      if (!opacity) continue;
       const step = part.grid;
       if (!step) continue;
       const [w, h] = shapeSize(part.shape),
@@ -150,7 +154,7 @@ export function surfaceInscriptions() {
       };
       const next = JSON.stringify(
         [input.sources, input.targets].map((parts) =>
-          parts.map((p) => [text(p) ? layoutKey(p) : '', p.origins]),
+          parts.map((p) => [text(p) ? layoutKey(p) : '', p.origins, p.material]),
         ),
       );
       if (next !== key) {
@@ -170,10 +174,15 @@ export function surfaceInscriptions() {
             }))
           : [];
         const assigned = pairs.flatMap((p) => p.sources);
-        const mapping =
-          pairs.length &&
-          assigned.length === sources.length &&
-          new Set(assigned).size === sources.length
+        const materials = [...new Set([...frame.sources, ...frame.targets].map((p) => p.material))];
+        const mapping = materials.every(Boolean)
+          ? materials.map((material) => ({
+              sources: sources.filter((i) => frame.sources[i]!.material === material),
+              targets: targets.filter((i) => frame.targets[i]!.material === material),
+            }))
+          : pairs.length &&
+              assigned.length === sources.length &&
+              new Set(assigned).size === sources.length
             ? pairs
             : [{ sources, targets }];
         groups = mapping
@@ -185,6 +194,8 @@ export function surfaceInscriptions() {
             const to = targets.map((i) => shape(input.targets[i]!));
             const motion = compileInkMotion(appearing ? to : from, disappearing ? from : to);
             return {
+              material:
+                input.sources[sources[0]!]?.material ?? input.targets[targets[0]!]?.material,
               sources,
               targets,
               from,
@@ -198,42 +209,55 @@ export function surfaceInscriptions() {
         key = next;
       }
       const segments: InkVertices = [],
-        visibility: Float32Array[] = [];
-      for (const group of groups) {
+        visibility: Float32Array[] = [],
+        fields: Array<InkFieldFrame['groups'][number]> = [];
+      const progress = groups.map((group) => materialState(frame, group.material).morph);
+      for (const [index, group] of groups.entries()) {
+        const morph = progress[index]!;
         const from = group.sources.map((i, j) => pose(frame.sources[i]!, group.from[j]!));
         const to = group.targets.map((i, j) => pose(frame.targets[i]!, group.to[j]!));
         const vertices = group.motion(
           group.appearing ? to : from,
           group.disappearing ? from : to,
-          frame.morph,
+          morph,
         );
         // Unwritten endpoints grow/absorb their own pen width without unrelated flying fragments.
-        const weight = group.appearing ? frame.morph : group.disappearing ? 1 - frame.morph : 1;
+        const weight = group.appearing ? morph : group.disappearing ? 1 - morph : 1;
         if (weight !== 1)
           for (const data of vertices)
             for (let i = 0; i < data.length; i += 6) {
               data[i + 4]! *= weight;
               data[i + 5]! *= weight;
             }
-        const detail = group.details(vertices, frame.morph, pixel);
+        const detail = group.details(vertices, morph, pixel);
         if (weight !== 1)
           vertices.forEach((data, source) => {
             for (let i = 0; i < data.length; i += 6)
               detail[source]![i / 6]! *= Math.min(1, Math.max(data[i + 4]!, data[i + 5]!) / pixel);
           });
+        const height = Math.min(
+          ...group.sources.map((i) => bodySize(frame.sources[i]!)[1]),
+          ...group.targets.map((i) => bodySize(frame.targets[i]!)[1]),
+        );
+        fields.push({
+          start: segments.length,
+          end: segments.length + vertices.length,
+          tension: height * 0.04 * (1 - morph) ** 2,
+        });
         segments.push(...vertices);
         visibility.push(...detail);
       }
       return {
         segments,
         visibility,
-        tension:
-          Math.min(...[...frame.sources, ...frame.targets].map((p) => bodySize(p)[1])) *
-          0.04 *
-          (1 - frame.morph) ** 2,
-        details: frame.morph > 0 && frame.morph < 1,
-        label: (frame.morph >= 1 ? frame.targets : frame.sources)
-          .map(text)
+        groups: fields,
+        details: progress.some((p) => p > 0 && p < 1),
+        label: groups
+          .flatMap((group, i) =>
+            progress[i] === 1
+              ? group.targets.map((index) => text(frame.targets[index]!))
+              : group.sources.map((index) => text(frame.sources[index]!)),
+          )
           .filter(Boolean)
           .join(', '),
         marks: surfaceMarks(input, registration),

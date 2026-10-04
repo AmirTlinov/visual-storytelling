@@ -118,8 +118,7 @@ test('rejected frames leave the displayed field intact and preserve GPU buffer i
     groupCount: morph.groupCount,
     registration: [...morph.registration],
     bounds: [morph.bounds.min.toArray(), morph.bounds.max.toArray()],
-    morph: morph.morph,
-    tension: morph.tension,
+    blends: [...morph.blends],
     distance: morph.distance(0.2, 0.1, -0.3),
     targets: [{}],
   });
@@ -130,6 +129,12 @@ test('rejected frames leave the displayed field intact and preserve GPU buffer i
     { ...frame, sources: [{ position: [5, 0, 0] }, { scale: 0 }] },
     { ...frame, sources: [{ position: [1e100, 0, 0] }, {}] },
     { ...frame, tension: 1e100 },
+    {
+      ...frame,
+      sources: [{ material: 'a' }, { material: 'a' }],
+      targets: [{ material: 'a' }],
+      materials: { a: { morph: NaN } },
+    },
     { ...frame, sources: [{ rounding: 0.2 }, { rounding: 1 }] },
   ] as VolumeFrame[]) {
     assert.throws(() => morph.update(invalid));
@@ -247,7 +252,7 @@ test('packed cubes contract through flat faces without intermediate diagonal fac
   const sources = [{ position: [-0.7, 0, 0] as const }, { position: [0.7, 0, 0] as const }];
   for (const progress of [0, 0.1, 0.417659, 0.7, 0.95, 1]) {
     field.update({ sources, targets: [{}], morph: progress, tension: 0.24 });
-    const halfWidth = 1.4 - 0.7 * field.morph;
+    const halfWidth = 1.4 - 0.7 * field.blends[0]!;
     for (const x of [-halfWidth, -halfWidth / 2, 0, halfWidth / 2, halfWidth])
       for (const z of [-0.7, 0, 0.7]) close(field.distance(x, 0.7, z), 0);
     close(field.distance(halfWidth, 0, 0), 0);
@@ -354,9 +359,9 @@ test('measured material carries its original grid lines through registration', (
       12,
       'Stretching does not create or delete source grid lines',
     );
-    const x = 1 + 2 * field.morph,
-      y = -(2 + 2 * field.morph),
-      halfWidth = 1 + field.morph;
+    const x = 1 + 2 * field.blends[0]!,
+      y = -(2 + 2 * field.blends[0]!),
+      halfWidth = 1 + field.blends[0]!;
     for (const [i, expected] of [
       [0, x],
       [1, y - 1],

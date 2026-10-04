@@ -8,7 +8,7 @@ import { mathPlan } from './math.js';
 import { mathNumber } from './numbers.js';
 import { morphBody2D } from './body-2d.js';
 import { mathBodies } from './math-bodies.js';
-import type { MathOperation, MathPart } from './types.js';
+import type { MathOperation, MathPart, MathMorphPlan } from './types.js';
 import {
   morphTiming,
   mathMotionFrame,
@@ -20,7 +20,7 @@ import {
 /** A flat section of the shared morph field, drawn by the existing pen and lettering owners. */
 function mount(
   parent: HTMLElement,
-  operation: MathOperation,
+  operation: MathOperation | MathMorphPlan,
   options: { id: string; pigment?: string; width?: number; height?: number },
 ) {
   const prepared = mathPlan(operation);
@@ -63,7 +63,7 @@ function mount(
   let arrangement: ReturnType<typeof cellLayout> | undefined,
     layoutKey = '';
   let headingSpace = 36;
-  function setOperation(next: MathOperation) {
+  function setOperation(next: MathOperation | MathMorphPlan) {
     if (disposed) throw new Error('Math morph has been disposed');
     plan = mathPlan(next);
     configured = next;
@@ -75,7 +75,7 @@ function mount(
     const time = morphTiming(input, cues, plan.stages),
       progress = time.progress;
     const available = Math.round(parent.getBoundingClientRect().width);
-    if (plan.encoding === 'cells') {
+    if (plan.encoding !== 'quantity') {
       width = Math.max(180, available || width);
       if (!arrangement || `${width}` !== layoutKey) {
         arrangement = cellLayout(plan, width);

@@ -18,7 +18,23 @@ export function registerBounds(from: Box3, to: Box3, progress: number, out: Floa
 
 /** Nearest counterparts form independent material groups (e.g. each vector pair).
  * World-space centers keep membership independent of the first group's orientation. */
-export function materialGroups(boxes: readonly Box3[], count: number) {
+export function materialGroups(
+  boxes: readonly Box3[],
+  count: number,
+  ids?: readonly (string | undefined)[],
+) {
+  if (ids?.some((id) => id !== undefined)) {
+    if (ids.length !== boxes.length || ids.some((id) => !id))
+      throw new Error('Every surface needs a material group when explicit groups are used');
+    const materials = new Map<string, { sources: number[]; targets: number[] }>();
+    ids.forEach((id, i) => {
+      if (!materials.has(id!)) materials.set(id!, { sources: [], targets: [] });
+      (i < count ? materials.get(id!)!.sources : materials.get(id!)!.targets).push(i);
+    });
+    if ([...materials.values()].some((group) => !group.sources.length || !group.targets.length))
+      throw new Error('A material group needs both an origin and a destination');
+    return [...materials.values()];
+  }
   const root = boxes.map((_, i) => i);
   const find = (i: number): number => (root[i] === i ? i : (root[i] = find(root[i]!)));
   const join = (a: number, b: number) => {

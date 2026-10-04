@@ -9,7 +9,7 @@ import {
   LineBasicMaterial,
 } from 'three';
 import type { Viewport3D } from '../viewport/three.js';
-import { cellFormulaWidth, quantityBounds, quantityStep } from './measure.js';
+import { quantityBounds, quantityStep } from './measure.js';
 import { morphBody3D } from './body-3d.js';
 import { mathBodies } from './math-bodies.js';
 import { mathPlan } from './math.js';
@@ -28,7 +28,7 @@ import {
 /** One shared field with attached inscriptions, for quantities and symbolic number cells. */
 function mount(
   view: ReturnType<typeof Viewport3D.mount>,
-  operation: MathOperation,
+  operation: MathOperation | MathMorphPlan,
   options: { pigment?: string } = {},
 ) {
   const prepared = mathPlan(operation);
@@ -62,20 +62,11 @@ function mount(
   object.add(ruler);
   const formulaAnchor = new Object3D();
   object.add(formulaAnchor);
-  const createFormula = () =>
-    view.label(
-      '',
-      formulaAnchor,
-      plan.encoding === 'cells'
-        ? {
-            tone: 'purple',
-            space: 'world',
-            height: 0.85,
-            maxWidth: cellFormulaWidth(plan),
-          }
-        : { tone: 'purple', size: 26 },
-    );
-  let formula = createFormula();
+  // The equation is a reading aid above the material; the numbers on the body
+  // remain physical strokes. Camera distance must not shrink the equation.
+  const formula = view.label('', formulaAnchor, { tone: 'purple', size: 26 });
+  formula.element.style.whiteSpace = 'normal';
+  formula.element.style.textAlign = 'center';
   const dimensions = [new Object3D(), new Object3D()];
   dimensions.forEach((a) => object.add(a));
   const dimensionLabels = dimensions.map((a) => view.label('', a, { tone: 'ink', size: 20 }));
@@ -90,15 +81,13 @@ function mount(
     }
     notes.clear();
   }
-  function setOperation(next: MathOperation) {
+  function setOperation(next: MathOperation | MathMorphPlan) {
     if (disposed) throw new Error('Math morph has been disposed');
     const prepared = mathPlan(next); // Validate before replacing the visible operation.
     clear();
-    formula.remove();
     plan = prepared;
     configured = next;
     layoutWidth = 0;
-    formula = createFormula();
     prepare();
     render(0);
   }
@@ -115,7 +104,7 @@ function mount(
     const time = morphTiming(input, cues, plan.stages),
       p = time.progress;
     const widthAvailable = stage.clientWidth || layoutWidth || 640;
-    if (plan.encoding === 'cells') {
+    if (plan.encoding !== 'quantity') {
       if (!arrangement || widthAvailable !== layoutWidth) {
         arrangement = cellLayout(plan, widthAvailable);
         layoutWidth = widthAvailable;
@@ -126,6 +115,8 @@ function mount(
       viewport.resize();
     }
     const frame = mathMotionFrame(plan, time, arrangement?.columns);
+    formula.element.style.maxWidth = `${Math.max(160, widthAvailable - 64)}px`;
+    formula.set(frame.formula);
     lastTime = input;
     lastCues = cues;
     currentFrame = frame;
@@ -135,12 +126,8 @@ function mount(
     const width = max[0] - min[0],
       height = max[1] - min[1],
       extent = Math.max(width, height),
-      gap = plan.encoding === 'cells' ? 0.6 : Math.max(0.7, extent * 0.12);
-    formulaAnchor.position.set(
-      (min[0] + max[0]) / 2,
-      max[1] + gap * 1.4,
-      plan.encoding === 'cells' ? max[2] + 0.01 : 0,
-    );
+      gap = plan.encoding !== 'quantity' ? 0.6 : Math.max(0.7, extent * 0.12);
+    formulaAnchor.position.set((min[0] + max[0]) / 2, max[1] + gap * 1.4, 0);
     const key = [...min, ...max].join(',');
     if (plan.encoding === 'quantity' && key !== rulerKey) {
       const ticks: number[] = [],
@@ -186,7 +173,7 @@ function mount(
       dimensionLabels[0]!.set(mathNumber(single.size[0]));
       dimensionLabels[1]!.set(mathNumber(single.size[1]));
     }
-    bounds.min.y -= gap * (plan.encoding === 'cells' ? 0.2 : coarse ? 1.8 : 1);
+    bounds.min.y -= gap * (plan.encoding !== 'quantity' ? 0.2 : coarse ? 1.8 : 1);
     bounds.max.y += gap * 2.2;
     bounds.min.x -= gap * 1.6;
     bounds.max.x += gap * 0.6;
@@ -216,7 +203,6 @@ function mount(
       entry.label.set(note.text);
       entry.label.opacity(note.opacity);
     }
-    formula.set(frame.formula);
     view.invalidate();
     return frame;
   }

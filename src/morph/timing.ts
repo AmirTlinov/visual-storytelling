@@ -42,6 +42,8 @@ export function morphTiming(input: MorphTime, cues?: MorphCues, stages = 1) {
         while (first > 0 && ids[first - 1] === ids[active]) first--;
         const amount = input.progress(ids[active]!);
         const end = active + 1;
+        const cue = input.cue(ids[active]!);
+        duration = ((cue.end - cue.start) * stages) / (end - first);
         progress =
           (first + amount * (end - first) - (amount === 1 && end < stages ? 1e-10 : 0)) / stages;
       }
@@ -57,7 +59,10 @@ export function mathMotionFrame(
   time: ReturnType<typeof morphTiming>,
   columns?: number,
 ) {
-  const frame = plan.sample(time.progress, { columns });
+  const frame = plan.sample(time.progress, {
+    columns,
+    duration: time.duration === undefined ? undefined : time.duration / plan.stages,
+  });
   if (!time.reduced) return { ...frame, motionProgress: time.progress };
   const settled = frame.phase === 'hold';
   // Keep the original stage and disclosure time. The next result is never shown early.

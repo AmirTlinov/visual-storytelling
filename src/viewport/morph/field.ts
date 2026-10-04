@@ -9,6 +9,7 @@ export type VolumeShape =
   | { readonly kind: 'sphere'; readonly radius: number }
   | { readonly kind: 'capsule'; readonly radius: number; readonly length: number };
 export interface VolumePose {
+  material?: string;
   position?: VolumePoint;
   /** Euler angles in radians, applied in XYZ order. */
   rotation?: VolumePoint;
@@ -23,6 +24,20 @@ export interface VolumeFrame {
   morph: number;
   /** Contact blend width in scene units; zero disables the contact blend. */
   tension?: number;
+  /** Independent operations share the renderer, while each material retains its own clock. */
+  materials?: Readonly<Record<string, { morph: number; tension?: number }>>;
+}
+export function materialState(
+  frame: Pick<VolumeFrame, 'morph' | 'tension' | 'materials'>,
+  id?: string,
+) {
+  const state = (id && frame.materials?.[id]) || frame;
+  if (!Number.isFinite(state.morph) || !Number.isFinite(state.tension ?? 0.2))
+    throw new Error('Volume progress and tension must be finite');
+  const morph = Math.fround(Math.max(0, Math.min(1, state.morph)));
+  const tension = Math.fround(Math.max(0, state.tension ?? 0.2) * (1 - morph));
+  if (!Number.isFinite(tension)) throw new Error('Volume tension must fit a finite GPU float');
+  return { morph, tension };
 }
 function positive(...values: number[]) {
   if (values.some((n) => !Number.isFinite(n) || n <= 0))
@@ -79,6 +94,8 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
     nextContactRadii = contactRadii.slice();
   const groups = new Int32Array(shapes.length),
     nextGroups = groups.slice();
+  const blends = new Float32Array(capacity * 2),
+    nextBlends = blends.slice();
   const planeCounts = new Int32Array(capacity),
     nextPlaneCounts = planeCounts.slice();
   const sourceDistances = new Float64Array(capacity),
@@ -154,9 +171,7 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
     quaternion = new Quaternion();
   const updatePlanes = contactPlanes(kinds, nextParameters);
   const updateRounding = contactRounding(kinds, nextParameters);
-  let progress = 0,
-    tension = 0,
-    groupCount = 1;
+  let groupCount = 1;
   function shapeBounds(i: number, transform: Matrix4) {
     const half = halfSizes[i]!;
     return localBounds.set(expansion.copy(half).negate(), half).applyMatrix4(transform);
@@ -265,6 +280,7 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
     planes,
     contactRadii,
     groups,
+    blends,
     planeCounts,
     registration,
     count,
@@ -272,29 +288,27 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
     get groupCount() {
       return groupCount;
     },
-    get morph() {
-      return progress;
-    },
-    get tension() {
-      return tension;
-    },
     update(frame: VolumeFrame) {
       if (frame.sources.length !== count || frame.targets.length !== targetCount)
         throw new Error('Volume poses must match every source and target shape');
-      if (!Number.isFinite(frame.morph) || !Number.isFinite(frame.tension ?? 0.2))
-        throw new Error('Volume progress and tension must be finite');
-      const nextProgress = Math.fround(Math.max(0, Math.min(1, frame.morph)));
-      const nextTension = Math.fround(Math.max(0, frame.tension ?? 0.2) * (1 - nextProgress));
-      if (!Number.isFinite(nextTension))
-        throw new Error('Volume tension must fit a finite GPU float');
+      materialState(frame);
       nextBounds.makeEmpty();
       for (let i = 0; i < count; i++) updatePose(frame.sources[i], i);
       for (let i = 0; i < targetCount; i++) updatePose(frame.targets[i], count + i);
-      const materials = materialGroups(materialBounds, count);
+      const materials = materialGroups(
+        materialBounds,
+        count,
+        [...frame.sources, ...frame.targets].map((p) => p.material),
+      );
       nextPlanes.fill(0);
       nextPlaneCounts.fill(0);
       nextContactRadii.fill(0);
       for (const [group, material] of materials.entries()) {
+        const { morph: nextProgress, tension: nextTension } = materialState(
+          frame,
+          frame.sources[material.sources[0]!]!.material,
+        );
+        nextBlends.set([nextProgress, nextTension], group * 2);
         const orientation = frame.sources[material.sources[0]!]?.rotation ?? [0, 0, 0];
         basis.makeRotationFromEuler(rotation.set(...orientation));
         inverseBasis.copy(basis).invert();
@@ -386,10 +400,9 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
       planes.set(nextPlanes);
       contactRadii.set(nextContactRadii);
       groups.set(nextGroups);
+      blends.set(nextBlends);
       planeCounts.set(nextPlaneCounts);
       registration.set(nextRegistration);
-      progress = nextProgress;
-      tension = nextTension;
       groupCount = materials.length;
     },
     distance(x: number, y: number, z: number) {
@@ -400,18 +413,23 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
         const group = groups[i]!;
         const next = primitive(i, x, y, z);
         targetDistances[group] = Math.min(targetDistances[group]!, next);
-        union = Math.min(union, next);
       }
-      if (progress === 1) return union;
       for (let i = 0; i < count; i++) {
         const group = groups[i]!,
-          d = sourceDistances[group]!;
+          d = sourceDistances[group]!,
+          tension = blends[group * 2 + 1]!;
+        if (blends[group * 2] === 1) continue;
         const next = primitive(i, x, y, z),
           h = tension ? Math.max(0, tension - Math.abs(d - next)) / tension : 0;
         sourceDistances[group] = Math.min(d, next) - h * h * tension * 0.25;
       }
       union = Infinity;
       for (let group = 0; group < groupCount; group++) {
+        const progress = blends[group * 2]!;
+        if (progress === 1) {
+          union = Math.min(union, targetDistances[group]!);
+          continue;
+        }
         let d = sourceDistances[group]!;
         for (let i = 0; i < planeCounts[group]!; i++) {
           const at = group * 24 + i * 4;

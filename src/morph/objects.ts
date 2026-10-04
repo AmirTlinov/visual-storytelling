@@ -5,6 +5,7 @@ import {
   volumeField,
   type VolumePoint,
   type VolumeShape,
+  type VolumeFrame,
 } from '../viewport/morph/field.js';
 import { registeredEnvelope } from '../viewport/morph/registration.js';
 import { contactRetention } from '../viewport/morph/contact-rounding.js';
@@ -19,6 +20,7 @@ export interface MorphObject {
   readonly grid?: number;
 }
 export interface MorphBody extends MorphObject {
+  readonly material?: string;
   readonly position: VolumePoint;
   readonly scale?: VolumePoint;
   /** Material curvature during contact; the operation supplies this automatically. */
@@ -31,6 +33,7 @@ export interface MorphFrame {
   readonly targets: readonly MorphBody[];
   readonly morph: number;
   readonly tension?: number;
+  readonly materials?: VolumeFrame['materials'];
 }
 export interface MorphOperation {
   readonly kind: 'transform' | 'merge' | 'split';
@@ -52,17 +55,36 @@ export function shapeSize(shape: VolumeShape): VolumePoint {
 export function bodySize(body: MorphBody): VolumePoint {
   return shapeSize(body.shape).map((v, i) => v * (body.scale?.[i] ?? 1)) as unknown as VolumePoint;
 }
-function row(objects: readonly MorphObject[], gap: number): MorphBody[] {
-  const widths = objects.map((o) => shapeSize(o.shape)[0]);
-  let x = -(widths.reduce((a, b) => a + b, 0) + gap * (objects.length - 1)) / 2;
-  return objects.map((object, i) => {
-    const position: VolumePoint = [x + widths[i]! / 2, 0, 0];
-    x += widths[i]! + gap;
-    return { ...object, position };
+function packed(objects: readonly MorphObject[], gap: number, columns: number): MorphBody[] {
+  const rows = Array.from({ length: Math.ceil(objects.length / columns) }, (_, i) =>
+    objects.slice(i * columns, (i + 1) * columns),
+  );
+  const heights = rows.map((row) => Math.max(...row.map((o) => shapeSize(o.shape)[1])));
+  let y = (heights.reduce((a, b) => a + b, 0) + gap * (rows.length - 1)) / 2;
+  return rows.flatMap((row, r) => {
+    const widths = row.map((o) => shapeSize(o.shape)[0]);
+    let x = -(widths.reduce((a, b) => a + b, 0) + gap * (row.length - 1)) / 2;
+    const result = row.map((object, i) => {
+      const position: VolumePoint = [x + widths[i]! / 2, y - heights[r]! / 2, 0];
+      x += widths[i]! + gap;
+      return { ...object, position };
+    });
+    y -= heights[r]! + gap;
+    return result;
   });
 }
+function envelope(bodies: readonly MorphBody[]) {
+  return [0, 1, 2].map(
+    (axis) =>
+      Math.max(...bodies.map((body) => body.position[axis]! + shapeSize(body.shape)[axis]! / 2)) -
+      Math.min(...bodies.map((body) => body.position[axis]! - shapeSize(body.shape)[axis]! / 2)),
+  );
+}
 /** The common approach/contact/resolve choreography; scenes supply no trajectories or fades. */
-export function morphPlan(operation: MorphOperation): MorphPlan {
+export function morphPlan(
+  operation: MorphOperation,
+  options: { columns?: number } = {},
+): MorphPlan {
   if (!operation.sources.length || !operation.targets.length)
     throw new Error('A morph needs source and target objects');
   for (const object of [...operation.sources, ...operation.targets]) {
@@ -92,16 +114,15 @@ export function morphPlan(operation: MorphOperation): MorphPlan {
   const reverse = operation.kind === 'split';
   const inputs = reverse ? operation.targets : operation.sources;
   const outputs = reverse ? operation.sources : operation.targets;
+  const columns = options.columns ?? inputs.length;
+  if (!Number.isInteger(columns) || columns < 1)
+    throw new Error('Material columns must be a positive integer');
   const unit = Math.min(...[...inputs, ...outputs].map((o) => Math.min(...shapeSize(o.shape))));
-  const apart = row(inputs, unit * 0.7),
-    contact = row(inputs, 0),
-    result = row(outputs, 0);
-  const dimensions = inputs.map((o) => shapeSize(o.shape));
-  const source = [
-    dimensions.reduce((sum, size) => sum + size[0], 0),
-    Math.max(...dimensions.map((s) => s[1])),
-    Math.max(...dimensions.map((s) => s[2])),
-  ];
+  const apart = packed(inputs, unit * 0.7, columns),
+    contact = packed(inputs, 0, columns),
+    result = packed(outputs, 0, columns);
+  const source = envelope(contact),
+    apartSize = envelope(apart);
   const whole = outputs[0]!.shape;
   const target = shapeSize(whole);
   const curvature = whole.kind === 'box' ? whole.rounding / (Math.min(...whole.size) / 2) : 1;
@@ -125,9 +146,7 @@ export function morphPlan(operation: MorphOperation): MorphPlan {
     const scale = Math.min(
       ...source.map(
         (size, axis) =>
-          1 -
-          morph +
-          (morph * target[axis]!) / (size + (axis === 0 ? gap * (inputs.length - 1) : 0)),
+          1 - morph + (morph * target[axis]!) / (size + (apartSize[axis]! - size) * (1 - approach)),
       ),
     );
     const retained =
@@ -145,11 +164,9 @@ export function morphPlan(operation: MorphOperation): MorphPlan {
                 retained,
           }
         : {}),
-      position: [
-        object.position[0] * (1 - approach) + contact[i]!.position[0] * approach,
-        0,
-        0,
-      ] as VolumePoint,
+      position: object.position.map(
+        (v, axis) => v * (1 - approach) + contact[i]!.position[axis]! * approach,
+      ) as unknown as VolumePoint,
     }));
     return {
       sources,
@@ -177,9 +194,6 @@ export function morphPlan(operation: MorphOperation): MorphPlan {
     }
     return motion(progress);
   };
-  const apartSize = source.map(
-    (size, axis) => size + (axis === 0 ? unit * 0.7 * (inputs.length - 1) : 0),
-  );
   const minRatio = Math.min(...apartSize.map((size, axis) => target[axis]! / size));
   const allowance = ((inputs.length - 1) * unit * 0.52) / 4;
   const half = source.map((size, axis) => {

@@ -2,7 +2,12 @@ import { fusionShape, type FusionShape, type FusionPose } from './shape.js';
 import { fusionText } from './text.js';
 import { compileInkMotion, type InkVertices } from './motion.js';
 import { inkDetailVisibility } from './detail.js';
-import { inkGeometry, type FusionGeometry, type InkFieldFrame } from './geometry.js';
+import {
+  composeInkField,
+  inkGeometry,
+  type FusionGeometry,
+  type InkFieldFrame,
+} from './geometry.js';
 export type { FusionGeometry } from './geometry.js';
 import {
   combineFragment,
@@ -238,7 +243,7 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
     drawField({
       segments: vertices,
       visibility: detail,
-      tension,
+      groups: [{ start: 0, end: vertices.length, tension }],
       details: textDetails && morph > 0 && morph < 1,
       marks: noMarks,
       label: '',
@@ -248,53 +253,56 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
   function drawField(data: InkFieldFrame) {
     if (disposed || lost) return;
     const pixel = Math.max(width / Math.max(1, bounds.width), height / Math.max(1, bounds.height));
-    const band = Math.max(pixel * 8, data.tension + pixel * 2);
+    const band = Math.max(pixel * 8, ...data.groups.map((group) => group.tension + pixel * 2));
     const ratio = Math.min(devicePixelRatio || 1, 2);
+    if (data.groups.length > 1 && fields.length === 3) {
+      fields.push({ texture: gl!.createTexture()!, buffer: gl!.createFramebuffer()! });
+      surfaceWidth = 0; // Allocate the extra field at the current resolution, once.
+    }
     resize(
       Math.max(1, Math.round(bounds.width * ratio)),
       Math.max(1, Math.round(bounds.height * ratio)),
     );
-    let aggregate = 0;
     gl!.useProgram(stroke);
     gl!.uniform2f(strokeUniforms.origin!, fieldOrigin[0], fieldOrigin[1]);
     gl!.uniform1i(strokeUniforms.annotation!, 0);
     gl!.bindFramebuffer(gl!.FRAMEBUFFER, fields[0]!.buffer);
     gl!.clearColor(1, 1, 1, 1);
     gl!.clear(gl!.COLOR_BUFFER_BIT);
-    for (let i = 0; i < data.segments.length; i++) {
-      gl!.useProgram(stroke);
-      gl!.bindVertexArray(strokeVAO);
-      gl!.uniform2f(strokeUniforms.resolution!, surfaceWidth, surfaceHeight);
-      gl!.uniform2f(strokeUniforms.world!, width, height);
-      gl!.uniform1f(strokeUniforms.band!, band);
-      gl!.enable(gl!.BLEND);
-      gl!.blendEquation(gl!.MIN);
-      gl!.blendFunc(gl!.ONE, gl!.ONE);
-      // Only three reusable fields, regardless of how many shapes participate.
-      gl!.bindFramebuffer(gl!.FRAMEBUFFER, fields[i === 0 ? aggregate : 2]!.buffer);
-      gl!.clearColor(1, 1, 1, 1);
-      gl!.clear(gl!.COLOR_BUFFER_BIT);
-      gl!.bindBuffer(gl!.ARRAY_BUFFER, segments);
-      gl!.bufferData(gl!.ARRAY_BUFFER, data.segments[i]!, gl!.DYNAMIC_DRAW);
-      gl!.bindBuffer(gl!.ARRAY_BUFFER, visibility);
-      gl!.bufferData(gl!.ARRAY_BUFFER, data.visibility[i]!, gl!.DYNAMIC_DRAW);
-      gl!.drawArraysInstanced(gl!.TRIANGLES, 0, 6, data.segments[i]!.length / 6);
-      gl!.disable(gl!.BLEND);
-      if (i) {
-        const next = 1 - aggregate;
-        gl!.bindFramebuffer(gl!.FRAMEBUFFER, fields[next]!.buffer);
+    const aggregate = composeInkField(
+      data.groups,
+      (i, target) => {
+        gl!.useProgram(stroke);
+        gl!.bindVertexArray(strokeVAO);
+        gl!.uniform2f(strokeUniforms.resolution!, surfaceWidth, surfaceHeight);
+        gl!.uniform2f(strokeUniforms.world!, width, height);
+        gl!.uniform1f(strokeUniforms.band!, band);
+        gl!.enable(gl!.BLEND);
+        gl!.blendEquation(gl!.MIN);
+        gl!.blendFunc(gl!.ONE, gl!.ONE);
+        gl!.bindFramebuffer(gl!.FRAMEBUFFER, fields[target]!.buffer);
+        gl!.clearColor(1, 1, 1, 1);
+        gl!.clear(gl!.COLOR_BUFFER_BIT);
+        gl!.bindBuffer(gl!.ARRAY_BUFFER, segments);
+        gl!.bufferData(gl!.ARRAY_BUFFER, data.segments[i]!, gl!.DYNAMIC_DRAW);
+        gl!.bindBuffer(gl!.ARRAY_BUFFER, visibility);
+        gl!.bufferData(gl!.ARRAY_BUFFER, data.visibility[i]!, gl!.DYNAMIC_DRAW);
+        gl!.drawArraysInstanced(gl!.TRIANGLES, 0, 6, data.segments[i]!.length / 6);
+        gl!.disable(gl!.BLEND);
+      },
+      (first, second, target, tension) => {
+        gl!.bindFramebuffer(gl!.FRAMEBUFFER, fields[target]!.buffer);
         gl!.useProgram(combine);
         gl!.bindVertexArray(combineVAO);
         gl!.activeTexture(gl!.TEXTURE0);
-        gl!.bindTexture(gl!.TEXTURE_2D, fields[aggregate]!.texture);
+        gl!.bindTexture(gl!.TEXTURE_2D, fields[first]!.texture);
         gl!.activeTexture(gl!.TEXTURE1);
-        gl!.bindTexture(gl!.TEXTURE_2D, fields[2]!.texture);
+        gl!.bindTexture(gl!.TEXTURE_2D, fields[second]!.texture);
         gl!.uniform1f(combineUniforms.band!, band);
-        gl!.uniform1f(combineUniforms.tension!, data.tension);
+        gl!.uniform1f(combineUniforms.tension!, tension);
         gl!.drawArrays(gl!.TRIANGLES, 0, 6);
-        aggregate = next;
-      }
-    }
+      },
+    );
     if (data.marks.segments.length) {
       gl!.useProgram(stroke);
       gl!.bindVertexArray(strokeVAO);
