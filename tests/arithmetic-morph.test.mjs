@@ -50,12 +50,30 @@ test('signed dot product keeps zeros, original inputs and products through the t
 
 test('sources meet before their shared shape transforms', () => {
   for (const operation of [
+    MathMorph.calculate('add', 1, 2, 3),
     MathMorph.dot([2, -1, 0], [-0.5, 3, 2]),
     MathMorph.vectorAdd([1, -2, 0], [-1, 4, 0]),
   ]) {
     const plan = MathMorph.plan(operation);
     for (let step = 0; step <= 100; step++) {
       const f = plan.sample(step / 100);
+      if (f.phase === 'approach') {
+        assert.equal(f.morph, 0, 'the shared contour waits for contact');
+        assert.equal(f.tension, 0, 'separated cells carry no contact tension');
+        const a = f.sources[0],
+          b = f.sources[f.targets.length > 1 ? f.targets.length : 1];
+        const middle = a.position.map((v, axis) => (v + b.position[axis]) / 2);
+        const gap = Math.max(
+          ...a.position.map(
+            (v, axis) => Math.abs(v - b.position[axis]) - (a.size[axis] + b.size[axis]) / 2,
+          ),
+        );
+        // A stage boundary can round down into "approach" after the poses have
+        // already reached exact contact; the packed field stores Float32 poses.
+        const distance = fieldAt(f).distance(...middle);
+        if (gap > 1e-6) assert.ok(distance > 0, 'the closing gap stays empty');
+        else assert.ok(Math.abs(distance) < 1e-6, 'exact contact adds no premature bridge');
+      }
       for (let i = 0; i < f.sources.length; i++)
         for (let j = i + 1; j < f.sources.length; j++) {
           const a = f.sources[i],

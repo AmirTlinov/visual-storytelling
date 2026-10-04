@@ -51,19 +51,26 @@ const chapters = [
     },
   },
 ];
+const chapterDuration = 6.5;
 const script = {
-  duration: chapters.length * 9,
+  duration: chapters.length * chapterDuration,
   segments: chapters.map((chapter, i) => ({
     id: chapter.id,
     title: chapter.title,
     text: chapter.text,
-    start: i * 9,
-    end: i * 9 + 9,
+    start: i * chapterDuration,
+    end: (i + 1) * chapterDuration,
   })),
   cues: Object.fromEntries(
     chapters.flatMap((chapter, i) => [
-      [chapter.id, { start: i * 9, end: i * 9 + 9, text: chapter.text }],
-      [`${chapter.id}_change`, { start: i * 9 + 1.5, end: i * 9 + 7, action: chapter.text }],
+      [
+        chapter.id,
+        { start: i * chapterDuration, end: (i + 1) * chapterDuration, text: chapter.text },
+      ],
+      [
+        `${chapter.id}_change`,
+        { start: i * chapterDuration + 0.8, end: i * chapterDuration + 4.2, action: chapter.text },
+      ],
     ]),
   ),
 };

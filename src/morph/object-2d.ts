@@ -16,6 +16,7 @@ function mount(
 ) {
   let plan = morphPlan(operation),
     progress = 0,
+    duration = 4,
     disposed = false;
   const width = options.width ?? 840,
     height = options.height ?? 420;
@@ -36,7 +37,8 @@ function mount(
       p = time.progress;
     lastTime = input;
     lastCues = cues;
-    const frame = plan.sample(motionProgress(time, plan.completeAt));
+    duration = time.duration ?? duration;
+    const frame = plan.sample(motionProgress(time, plan.completeAt), duration);
     progress = Math.max(0, Math.min(1, p));
     if (!parent.getClientRects().length) return frame;
     const [min, max] = plan.bounds;

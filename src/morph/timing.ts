@@ -14,7 +14,7 @@ export const motionProgress = (time: ReturnType<typeof morphTiming>, completeAt:
 
 /** The story supplies time; this owner resolves narrative stages and motion preference. */
 export function morphTiming(input: MorphTime, cues?: MorphCues, stages = 1) {
-  let progress: number, reduced: boolean;
+  let progress: number, reduced: boolean, duration: number | undefined;
   if (typeof input === 'number') {
     progress = input;
     reduced = motionPreference()?.matches ?? false;
@@ -28,8 +28,11 @@ export function morphTiming(input: MorphTime, cues?: MorphCues, stages = 1) {
         throw new Error('Repeated morph cues must be consecutive');
       seen.add(id);
     }
-    if (ids.length === 1) progress = input.progress(ids[0]!);
-    else {
+    if (ids.length === 1) {
+      progress = input.progress(ids[0]!);
+      const cue = input.cue(ids[0]!);
+      duration = cue.end - cue.start;
+    } else {
       // A completed cue holds its result until the next operation actually starts.
       // Repeating a cue allocates consecutive stages within that same speech interval.
       const active = ids.findLastIndex((id) => input.has(id));
@@ -46,7 +49,7 @@ export function morphTiming(input: MorphTime, cues?: MorphCues, stages = 1) {
     reduced = input.reduced;
   }
   if (!Number.isFinite(progress)) throw new Error('Morph progress must be finite');
-  return { progress: Math.max(0, Math.min(1, progress)), reduced };
+  return { progress: Math.max(0, Math.min(1, progress)), reduced, duration };
 }
 
 export function mathMotionFrame(

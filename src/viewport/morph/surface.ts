@@ -53,6 +53,7 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
     parameters: { value: new Float32Array(8) },
     transforms: { value: new Float32Array(32) },
     scales: { value: new Float32Array(2) },
+    contactRadii: { value: new Float32Array(18) },
     planes: { value: new Float32Array(24) },
     groups: { value: new Int32Array(2) },
     groupCount: { value: 1 },
@@ -222,6 +223,7 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
       uniforms.parameters.value = field.parameters;
       uniforms.transforms.value = field.transforms;
       uniforms.scales.value = field.scales;
+      uniforms.contactRadii.value = field.contactRadii;
       uniforms.planes.value = field.planes;
       uniforms.groups.value = field.groups;
       uniforms.planeCounts.value = field.planeCounts;

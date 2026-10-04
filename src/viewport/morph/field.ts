@@ -1,5 +1,6 @@
 import { Box3, Euler, Matrix4, Quaternion, Vector3 } from 'three';
 import { contactPlanes } from './contact-planes.js';
+import { contactRounding } from './contact-rounding.js';
 import { materialGroups, registerBounds } from './registration.js';
 
 export type VolumePoint = readonly [number, number, number];
@@ -13,6 +14,8 @@ export interface VolumePose {
   rotation?: VolumePoint;
   /** Positive uniform or per-axis scale. */
   scale?: number | VolumePoint;
+  /** Local box radius while its material relaxes; preserves the outer dimensions. */
+  rounding?: number;
 }
 export interface VolumeFrame {
   sources: readonly VolumePose[];
@@ -72,6 +75,8 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
   const capacity = Math.min(count, targetCount);
   const planes = new Float32Array(24 * capacity),
     nextPlanes = new Float32Array(planes.length);
+  const contactRadii = new Float32Array(count * 18),
+    nextContactRadii = contactRadii.slice();
   const groups = new Int32Array(shapes.length),
     nextGroups = groups.slice();
   const planeCounts = new Int32Array(capacity),
@@ -117,6 +122,7 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
         1;
     scales[i] = 1;
   });
+  const nextParameters = parameters.slice();
   const bounds = new Box3(),
     nextBounds = new Box3(),
     localBounds = new Box3(),
@@ -135,6 +141,7 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
             : [shape.length / 2, shape.radius, shape.radius]),
       ),
   );
+  const restRadii = shapes.map((shape) => (shape.kind === 'box' ? shape.rounding : 0));
   const matrix = new Matrix4(),
     registrationMatrix = new Matrix4(),
     basis = new Matrix4(),
@@ -145,7 +152,8 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
     scale = new Vector3(),
     rotation = new Euler(),
     quaternion = new Quaternion();
-  const updatePlanes = contactPlanes(kinds, parameters);
+  const updatePlanes = contactPlanes(kinds, nextParameters);
+  const updateRounding = contactRounding(kinds, nextParameters);
   let progress = 0,
     tension = 0,
     groupCount = 1;
@@ -154,6 +162,23 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
     return localBounds.set(expansion.copy(half).negate(), half).applyMatrix4(transform);
   }
   function updatePose(pose: VolumePose = {}, i: number) {
+    if (kinds[i] === 0) {
+      const rounding = pose.rounding ?? restRadii[i]!;
+      const half = halfSizes[i]!;
+      if (!Number.isFinite(rounding) || rounding < 0 || rounding > Math.min(half.x, half.y, half.z))
+        throw new Error('Rounding must fit inside the box');
+      const at = i * 4;
+      for (let axis = 0; axis < 3; axis++)
+        nextParameters[at + axis] = half.getComponent(axis) - rounding;
+      nextParameters[at + 3] = rounding;
+      if (
+        !nextParameters.subarray(at, at + 4).every(Number.isFinite) ||
+        [0, 1, 2].some((axis) => nextParameters[at + axis]! + nextParameters[at + 3]! <= 0)
+      )
+        throw new Error('Volume dimensions must fit positive GPU floats');
+    } else if (pose.rounding !== undefined) {
+      throw new Error('Only box poses accept a corner radius');
+    }
     const p = pose.position ?? [0, 0, 0],
       r = pose.rotation ?? [0, 0, 0],
       s = pose.scale ?? 1;
@@ -203,6 +228,27 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
         Math.sqrt(ox * ox + oy * oy + oz * oz) +
         Math.min(Math.max(qx, qy, qz), 0) -
         parameters[a + 3]!;
+      if (i < count) {
+        for (let face = 0; face < 6; face++) {
+          const at = i * 18 + face * 3;
+          const r = contactRadii[at]!;
+          if (r === 0) continue;
+          const axis = Math.floor(face / 2),
+            sign = face % 2 ? 1 : -1;
+          const p = axis === 0 ? px : axis === 1 ? py : pz;
+          const cap = sign * p - parameters[a + axis]! - parameters[a + 3]!;
+          for (let side = 1; side <= 2; side++) {
+            const transverse = (axis + side) % 3;
+            const q = transverse === 0 ? qx : transverse === 1 ? qy : qz;
+            const rest = ((q - parameters[a + 3]!) * r) / contactRadii[at + side]!;
+            d = Math.max(
+              d,
+              Math.min(-r, Math.max(cap, rest)) +
+                Math.hypot(Math.max(cap + r, 0), Math.max(rest + r, 0)),
+            );
+          }
+        }
+      }
     } else {
       const dx =
         kinds[i] === 2 ? px - Math.max(-parameters[a + 1]!, Math.min(parameters[a + 1]!, px)) : px;
@@ -217,6 +263,7 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
     transforms,
     scales,
     planes,
+    contactRadii,
     groups,
     planeCounts,
     registration,
@@ -246,6 +293,7 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
       const materials = materialGroups(materialBounds, count);
       nextPlanes.fill(0);
       nextPlaneCounts.fill(0);
+      nextContactRadii.fill(0);
       for (const [group, material] of materials.entries()) {
         const orientation = frame.sources[material.sources[0]!]?.rotation ?? [0, 0, 0];
         basis.makeRotationFromEuler(rotation.set(...orientation));
@@ -309,15 +357,14 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
           );
           nextBounds.union(localBounds);
         }
-        if (material.targets.length === 1)
-          nextPlaneCounts[group] = updatePlanes(
-            nextTransforms,
-            nextTension,
-            nextPlanes,
-            material.sources,
-            material.targets[0]!,
-            group * 24,
-          );
+        updateRounding(nextTransforms, nextScales, nextTension, material.sources, nextContactRadii);
+        nextPlaneCounts[group] = updatePlanes(
+          nextTransforms,
+          nextTension,
+          nextPlanes,
+          material.sources,
+          group * 24,
+        );
       }
       if (!nextTransforms.every(Number.isFinite))
         throw new Error('Volume transforms must fit finite GPU floats');
@@ -328,12 +375,16 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
         throw new Error('Registered volume scales must fit positive GPU floats');
       if (!nextPlanes.every(Number.isFinite))
         throw new Error('Volume contact planes must fit finite GPU floats');
+      if (!nextContactRadii.every(Number.isFinite))
+        throw new Error('Volume contact radii must fit finite GPU floats');
       if (![...nextBounds.min.toArray(), ...nextBounds.max.toArray()].every(Number.isFinite))
         throw new Error('Registered volume bounds must be finite');
       bounds.copy(nextBounds).expandByScalar(0.01);
+      parameters.set(nextParameters);
       transforms.set(nextTransforms);
       scales.set(nextScales);
       planes.set(nextPlanes);
+      contactRadii.set(nextContactRadii);
       groups.set(nextGroups);
       planeCounts.set(nextPlaneCounts);
       registration.set(nextRegistration);

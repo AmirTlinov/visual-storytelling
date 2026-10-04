@@ -14,13 +14,70 @@ function simplify(path: Point[], epsilon: number): Point[] {
       const dx = c[0] - a[0],
         dy = c[1] - a[1],
         length = Math.hypot(dx, dy);
-      if (length && Math.abs(dx * (a[1] - b[1]) - (a[0] - b[0]) * dy) / length < epsilon) {
+      const ux = b[0] - a[0],
+        uy = b[1] - a[1],
+        vx = c[0] - b[0],
+        vy = c[1] - b[1];
+      if (
+        length &&
+        ux * vx + uy * vy > 0 &&
+        Math.abs(ux * vy - uy * vx) < Math.hypot(ux, uy) * Math.hypot(vx, vy) * 0.05 &&
+        Math.abs(dx * (a[1] - b[1]) - (a[0] - b[0]) * dy) / length < epsilon
+      ) {
         points.splice(i, 1);
         changed = true;
       }
     }
   }
   return points;
+}
+
+/** Marching cells connect the two sides of a sharp corner with a small bevel.
+ * Restore their intersection only when the field confirms it belongs to the surface. */
+function corners(
+  path: Point[],
+  field: ReturnType<typeof volumeField>,
+  z: number,
+  dx: number,
+  dy: number,
+) {
+  const reach = Math.hypot(dx, dy) * 1.01;
+  const tolerance = Math.min(dx, dy) * 1e-4 + 1e-8;
+  let changed = true;
+  while (changed && path.length > 3) {
+    changed = false;
+    for (let i = 0; i < path.length; i++) {
+      const a = path[(i + path.length - 1) % path.length]!,
+        b = path[i]!,
+        c = path[(i + 1) % path.length]!,
+        d = path[(i + 2) % path.length]!;
+      if (Math.hypot(c[0] - b[0], c[1] - b[1]) > reach) continue;
+      const ux = b[0] - a[0],
+        uy = b[1] - a[1],
+        vx = d[0] - c[0],
+        vy = d[1] - c[1];
+      const lengths = Math.hypot(ux, uy) * Math.hypot(vx, vy);
+      const cross = ux * vy - uy * vx;
+      if (!lengths || Math.abs(cross) < lengths * 0.2) continue;
+      const x = c[0] - b[0],
+        y = c[1] - b[1];
+      const t = (x * vy - y * vx) / cross;
+      const s = (x * uy - y * ux) / cross;
+      if (t < 0 || s > 0) continue;
+      const point: Point = [b[0] + t * ux, b[1] + t * uy];
+      if (
+        Math.hypot(point[0] - b[0], point[1] - b[1]) > reach ||
+        Math.hypot(point[0] - c[0], point[1] - c[1]) > reach ||
+        Math.abs(field.distance(point[0], point[1], z)) > tolerance
+      )
+        continue;
+      path[i] = point;
+      path.splice((i + 1) % path.length, 1);
+      changed = true;
+      break;
+    }
+  }
+  return path;
 }
 /** A planar section of the same distance field that the GPU and contact solver use. */
 export function fieldSection(
@@ -73,9 +130,10 @@ export function fieldSection(
         [x, y + 1],
       ];
       const v = coords.map(([xx, yy]) => values[yy * (nx + 1) + xx]!);
-      const mask = v.reduce((m, value, i) => m | (value < 0 ? 1 << i : 0), 0);
+      // A shared zero-distance face belongs to the solid, including exact lattice contacts.
+      const mask = v.reduce((m, value, i) => m | (value <= 0 ? 1 << i : 0), 0);
       if (mask === 0 || mask === 15) continue;
-      const inside = field.distance(x0 + (x + 0.5) * dx, y0 + (y + 0.5) * dy, z) < 0;
+      const inside = field.distance(x0 + (x + 0.5) * dx, y0 + (y + 0.5) * dy, z) <= 0;
       const edges =
         mask === 5
           ? inside
@@ -109,7 +167,7 @@ export function fieldSection(
               z,
             );
             if (Math.abs(d) < 1e-8) break;
-            if (d < 0 === v[e]! < 0) low = t;
+            if (d <= 0 === v[e]! <= 0) low = t;
             else high = t;
             t = (low + high) / 2;
           }
@@ -137,7 +195,8 @@ export function fieldSection(
       previous = current;
       current = next;
     }
-    if (path.length >= 3) paths.push(simplify(path, Math.min(dx, dy) * 0.04));
+    if (path.length >= 3)
+      paths.push(corners(simplify(path, Math.min(dx, dy) * 1e-4 + 1e-8), field, z, dx, dy));
   }
   return paths;
 }

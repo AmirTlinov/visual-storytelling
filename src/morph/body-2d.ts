@@ -29,7 +29,7 @@ export function morphBody2D(sheet: Surface, options: { pigment?: string } = {}) 
   const inscriptions = surfaceInscriptions();
   let field: ReturnType<typeof volumeField>,
     topology = '';
-  let strokes: Array<ReturnType<Surface['pen']['path']>> = [];
+  let strokes: Array<ReturnType<Surface['pen']['contour']>> = [];
   return {
     render(frame: MorphFrame, x: number, y: number, scale: number) {
       const next = JSON.stringify(
@@ -44,28 +44,19 @@ export function morphBody2D(sheet: Surface, options: { pigment?: string } = {}) 
       }
       field.update(frame);
       const contours = fieldSection(field).map((contour) =>
-        contour.map(([px, py]) => [x + px * scale, y - py * scale]),
+        contour.map(([px, py]) => [x + px * scale, y - py * scale] as const),
       );
       const data = contours.map(
         (contour) => contour.map(([px, py], i) => `${i ? 'L' : 'M'}${px} ${py}`).join('') + 'Z',
       );
       while (strokes.length > data.length) strokes.pop()!.dispose();
-      data.forEach((d, i) => {
+      contours.forEach((contour, i) => {
         if (!strokes[i])
-          strokes[i] = sheet.pen.path(shapes, `morph-body-${i}`, d, {
+          strokes[i] = sheet.pen.contour(shapes, `morph-body-${i}`, contour, {
             fill: 'marker',
             stroke: 'ink',
           });
-        else {
-          const xs = contours[i]!.map((p) => p[0]!),
-            ys = contours[i]!.map((p) => p[1]!);
-          strokes[i]!.update(d, {
-            x: Math.min(...xs),
-            y: Math.min(...ys),
-            width: Math.max(...xs) - Math.min(...xs),
-            height: Math.max(...ys) - Math.min(...ys),
-          });
-        }
+        else strokes[i]!.update(contour);
       });
       outline.setAttribute('d', data.join(''));
       const width = sheet.element.viewBox.baseVal.width,
@@ -73,7 +64,11 @@ export function morphBody2D(sheet: Surface, options: { pigment?: string } = {}) 
       ink.setAttribute('width', String(width));
       ink.setAttribute('height', String(height));
       const actualWidth = host.getBoundingClientRect().width;
-      const sampled = inscriptions.sample(frame, width / Math.max(1, actualWidth) / scale, field.registration);
+      const sampled = inscriptions.sample(
+        frame,
+        width / Math.max(1, actualWidth) / scale,
+        field.registration,
+      );
       pen.renderField(sampled, {
         width: width / scale,
         height: height / scale,

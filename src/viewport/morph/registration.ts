@@ -50,18 +50,25 @@ export function materialGroups(boxes: readonly Box3[], count: number) {
   return [...groups.values()];
 }
 
-/** Maximum registered half-extent, including shrinking contact reach. The reach is
- * divided by the smallest registration scale, just as in the conservative SDF.
- * H(m) is concave, so endpoints and its single stationary point bound every frame. */
-export function registeredEnvelope(h: number, a: number, b: number, allowance: number) {
+/** Bound the moving half-extent plus contact reach. The scale numerator uses the
+ * contact frame, its denominator the apart frame, so approach may overlap morph.
+ * H(m) is concave for a >= b; its endpoints and single maximum cover every frame. */
+export function registeredEnvelope(
+  from: number,
+  to: number,
+  a: number,
+  b: number,
+  allowance: number,
+) {
   const A = a - 1,
-    D = b - 1;
-  const d0 = h * A + allowance * (a - b - 1);
-  const d1 = h * A - (allowance * a) / b;
-  if (d0 <= 0) return h + allowance;
-  if (d1 >= 0) return h * a;
-  const q = A * (allowance - h * D);
+    D = b - 1,
+    slope = to - from;
+  const d0 = slope + allowance * (a - b - 1);
+  const d1 = slope - (allowance * a) / b;
+  if (d0 <= 0) return from + allowance;
+  if (d1 >= 0) return to;
+  const q = allowance * A - slope * D;
   const m = d0 / (q * (1 + Math.sqrt((allowance * b * (a - b)) / q)));
   const scale = 1 + A * m;
-  return h * scale + (allowance * (1 - m) * scale) / (1 + D * m);
+  return from + slope * m + (allowance * (1 - m) * scale) / (1 + D * m);
 }

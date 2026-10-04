@@ -53,7 +53,7 @@ test('packed poses agree with Three XYZ rotation, translation and uniform scale'
     .add(new Vector3(...position));
   close(morph.distance(surface.x, surface.y, surface.z), 0, 'The target receives its own pose');
 });
-test('contact fills facing surfaces without pinching the seam or rounding free corners', () => {
+test('separating faces form an inward neck while joined faces and free corners stay flat', () => {
   const box = volumeBox([2, 2, 2]),
     target = volumeBox([4.2, 2, 2]);
   const morph = volumeField([box, box], [target]),
@@ -63,7 +63,7 @@ test('contact fills facing surfaces without pinching the seam or rounding free c
   assert.ok(morph.distance(0, 0, 0) > 0, 'The initial gap remains empty');
   morph.update({ sources, morph: 0, tension: 0.6, targets: [{}] });
   assert.ok(morph.distance(0, 0, 0) < 0, 'A bridge joins the facing surfaces');
-  assert.ok(morph.distance(0, 0.9, 0.9) < 0, 'Contact reaches the rim without an artificial waist');
+  assert.ok(morph.distance(0, 0.9, 0.9) > 0, 'Separating faces recede into a neck');
   close(morph.distance(2.1, 1, 1), 0, 'The opposite corner stays on the rigid source');
   close(morph.distance(-2.1, 1, 1), 0);
   const middle = morph.distance(0.1, 0.2, 0.3);
@@ -100,14 +100,18 @@ test('rejected frames leave the displayed field intact and preserve GPU buffer i
     targets: [{}],
   };
   const transforms = morph.transforms,
+    parameters = morph.parameters,
     scales = morph.scales,
     planes = morph.planes,
+    contactRadii = morph.contactRadii,
     groups = morph.groups,
     registration = morph.registration;
   const snapshot = () => ({
+    parameters: [...morph.parameters],
     transforms: [...morph.transforms],
     scales: [...morph.scales],
     planes: [...morph.planes],
+    contactRadii: [...morph.contactRadii],
     planeCounts: [...morph.planeCounts],
     groups: [...morph.groups],
     groupCount: morph.groupCount,
@@ -125,6 +129,7 @@ test('rejected frames leave the displayed field intact and preserve GPU buffer i
     { ...frame, sources: [{ position: [5, 0, 0] }, { scale: 0 }] },
     { ...frame, sources: [{ position: [1e100, 0, 0] }, {}] },
     { ...frame, tension: 1e100 },
+    { ...frame, sources: [{ rounding: 0.2 }, { rounding: 1 }] },
   ] as VolumeFrame[]) {
     assert.throws(() => morph.update(invalid));
     assert.deepEqual(snapshot(), before);
@@ -133,10 +138,106 @@ test('rejected frames leave the displayed field intact and preserve GPU buffer i
   morph.update(frame);
   assert.deepEqual(snapshot(), before);
   assert.equal(morph.transforms, transforms);
+  assert.equal(morph.parameters, parameters);
   assert.equal(morph.scales, scales);
   assert.equal(morph.planes, planes);
+  assert.equal(morph.contactRadii, contactRadii);
   assert.equal(morph.groups, groups);
   assert.equal(morph.registration, registration);
+});
+
+test('material curvature updates the shared field without changing dimensions or retaining seek history', () => {
+  const box = volumeBox([2, 2, 2]);
+  const field = volumeField([box], [box]);
+  const initial = { sources: [{}], targets: [{}], morph: 0, tension: 0 };
+  field.update(initial);
+  close(field.distance(1, 1, 0), 0);
+  const parameters = field.parameters;
+  field.update({ ...initial, sources: [{ rounding: 1 }] });
+  close(field.distance(1, 0, 0), 0, 'Curvature retains the outside dimensions');
+  close(field.distance(1, 1, 0), Math.SQRT2 - 1, 'The corner follows the curved material');
+  const rounded = field.distance(0.8, 0.8, 0);
+  for (const rounding of [-1, 1.1, NaN]) {
+    assert.throws(() => field.update({ ...initial, sources: [{ rounding }] }), /Rounding/);
+    close(
+      field.distance(0.8, 0.8, 0),
+      rounded,
+      'Rejected curvature cannot change displayed pixels',
+    );
+  }
+  field.update(initial);
+  close(field.distance(1, 1, 0), 0, 'Omitting the pose deformation restores the resting form');
+  assert.equal(field.parameters, parameters);
+  const huge = volumeField([volumeBox([8e38, 8e38, 8e38], 2e38)], [box]);
+  assert.throws(() => huge.update({ ...initial, sources: [{ rounding: 0 }] }), /GPU floats/);
+  const tiny = volumeField([volumeBox([1.6e-45, 1.6e-45, 1.6e-45])], [box]);
+  assert.throws(() => tiny.update({ ...initial, sources: [{ rounding: 4e-46 }] }), /GPU floats/);
+});
+
+test('thin and deep contacts shrink to a point before separation, regardless of box axis naming', () => {
+  for (const size of [
+    [2, 2, 2],
+    [0.2, 2, 2],
+    [2, 2, 0.04],
+  ] as const) {
+    const shape = volumeBox(size),
+      field = volumeField([shape, shape], [volumeCapsule(1, 4)]);
+    const height = (axis: 1 | 2) => {
+      if (field.distance(0, 0, 0) > 0) return 0;
+      let low = 0,
+        high = size[axis] / 2;
+      for (let i = 0; i < 35; i++) {
+        const mid = (low + high) / 2;
+        if (field.distance(0, axis === 1 ? mid : 0, axis === 2 ? mid : 0) <= 0) low = mid;
+        else high = mid;
+      }
+      return (low + high) / 2;
+    };
+    let previous = [size[1] / 2, size[2] / 2];
+    for (const gap of [0.12, 0.2, 0.28, 0.2999999, 0.30001]) {
+      const x = (size[0] + gap) / 2;
+      field.update({
+        sources: [{ position: [-x, 0, 0] }, { position: [x, 0, 0] }],
+        targets: [{}],
+        morph: 0,
+        tension: 0.6,
+      });
+      const neck = [height(1), height(2)];
+      neck.forEach((radius, axis) =>
+        assert.ok(radius <= previous[axis]! + 1e-7, 'The neck cannot swell as the gap opens'),
+      );
+      if (gap === 0.2999999)
+        neck.forEach((radius, axis) =>
+          assert.ok(radius < size[axis + 1]! * 0.02, 'No wide flat patch may vanish at pinch-off'),
+        );
+      if (gap > 0.3) assert.ok(field.distance(0, 0, 0) > 0, 'The neck releases');
+      close(
+        field.distance(x + size[0] / 2, size[1] / 2, size[2] / 2),
+        0,
+        'The free corner stays rigid even on a thin prism',
+      );
+      previous = neck;
+    }
+  }
+  const cube = volumeBox([2, 2, 2]);
+  const field = volumeField([cube, cube], [volumeCapsule(1, 4)]);
+  for (const rotation of [
+    [0, 0, 0],
+    [0, 0, Math.PI / 2],
+    [Math.PI / 2, 0, Math.PI],
+  ]) {
+    field.update({
+      sources: [
+        { position: [-1, 0, 0] },
+        { position: [1, 0, 0], rotation: rotation as [number, number, number] },
+      ],
+      targets: [{}],
+      morph: 0,
+      tension: 0.6,
+    });
+    close(field.distance(0, 1, 0), 0, 'Equivalent cube rotations cannot restore a ridge');
+    assert.ok(field.distance(0, 1.01, 0) > 0);
+  }
 });
 
 test('packed cubes contract through flat faces without intermediate diagonal facets', () => {
@@ -347,6 +448,25 @@ test('curved targets do not cut artificial folds into the source contact', () =>
         sphere.distance(x, y, 0.4),
         'Contact depends on the source forms before global morphing',
       );
+});
+test('shared source faces stay flat with a curved destination and any source ordering', () => {
+  const round = volumeBox([2, 2, 2], 1),
+    cube = volumeBox([2, 2, 2]);
+  const parts = [
+    { shape: round, position: [0, -0.3, 0] as const },
+    { shape: cube, position: [-1, 0, 0] as const },
+    { shape: cube, position: [1, 0, 0] as const },
+  ];
+  for (const target of [volumeBox([4, 2, 2]), volumeCapsule(1, 4), volumeSphere(2)])
+    for (const sources of [parts, [parts[1]!, parts[2]!, parts[0]!]]) {
+      const field = volumeField(
+        sources.map((p) => p.shape),
+        [target],
+      );
+      field.update({ sources, targets: [{}], morph: 0, tension: 0.6 });
+      close(field.distance(0, 1, 0), 0, 'Source geometry owns the flat contact rim');
+      assert.ok(field.distance(0, 1.01, 0) > 0);
+    }
 });
 test('shape descriptors are validated before upload and detached from mutable author input', () => {
   assert.throws(() => volumeBox([1, 1, 1], 0.6), /Rounding/);

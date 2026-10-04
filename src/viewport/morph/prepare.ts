@@ -119,6 +119,7 @@ export function prepareVolumePrograms(
         'parameters',
         'transforms',
         'scales',
+        'contactRadii',
         'planes',
         'groups',
         'planeCounts',

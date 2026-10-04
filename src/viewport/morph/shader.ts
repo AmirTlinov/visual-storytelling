@@ -4,6 +4,7 @@ uniform int kinds[SHAPE_COUNT];
 uniform vec4 parameters[SHAPE_COUNT];
 uniform mat4 transforms[SHAPE_COUNT];
 uniform float scales[SHAPE_COUNT];
+uniform vec3 contactRadii[SOURCE_COUNT * 6];
 uniform float morph;
 uniform float tension;
 uniform int groups[SHAPE_COUNT];
@@ -15,7 +16,20 @@ float primitive(int i, vec3 point) {
   vec4 a = parameters[i];
   if (kinds[i] == 0) {
     vec3 q = abs(p) - a.xyz;
-    return (length(max(q, 0.)) + min(max(q.x, max(q.y, q.z)), 0.) - a.w) * scales[i];
+    float d = length(max(q, 0.)) + min(max(q.x, max(q.y, q.z)), 0.) - a.w;
+    if(i < SOURCE_COUNT) for(int face=0;face<6;face++) {
+      vec3 radii = contactRadii[i*6+face];
+      float r = radii.x;
+      if(r <= 0.) continue;
+      int axis = face/2;
+      float sign = face%2 == 0 ? -1. : 1.;
+      float cap = sign*p[axis]-a[axis]-a.w;
+      for(int side=1;side<=2;side++) {
+        float rest = (q[(axis+side)%3]-a.w)*r/radii[side];
+        d = max(d,min(-r,max(cap,rest))+length(max(vec2(cap,rest)+r,0.)));
+      }
+    }
+    return d * scales[i];
   }
   if (kinds[i] == 2) p.x -= clamp(p.x, -a.y, a.y);
   return (length(p) - a.x) * scales[i];

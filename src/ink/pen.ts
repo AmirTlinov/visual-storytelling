@@ -13,13 +13,67 @@ export interface PenStyle {
   /** A quiet construction edge can surround a saturated colour wash. */
   stroke?: 'ink' | 'pencil' | 'currentColor';
 }
+type Bounds = { x: number; y: number; width: number; height: number };
+
+/** Measured boundaries keep one quiet hand, independent of tessellation or traversal order. */
+export function contourGeometry(points: readonly Point[], id: string, width = 1.65) {
+  if (points.length < 3 || points.some((p) => !Number.isFinite(p[0]) || !Number.isFinite(p[1])))
+    throw new Error('A contour needs at least three finite points');
+  let left = Infinity,
+    top = Infinity,
+    right = -Infinity,
+    bottom = -Infinity;
+  for (const [x, y] of points) {
+    left = Math.min(left, x);
+    top = Math.min(top, y);
+    right = Math.max(right, x);
+    bottom = Math.max(bottom, y);
+  }
+  const bounds = { x: left, y: top, width: right - left, height: bottom - top };
+  if (!Number.isFinite(bounds.width) || !Number.isFinite(bounds.height))
+    throw new Error('Contour bounds must be finite');
+  const samplingScale = Math.max(1, Math.max(bounds.width, bounds.height) / 4096);
+  const phase = ((seed(id) % 65536) / 65536) * Math.PI * 2;
+  const amplitude = width * 0.18;
+  const ink: string[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]!,
+      b = points[(i + 1) % points.length]!;
+    const steps = Math.max(
+      1,
+      Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (8 * samplingScale)),
+    );
+    for (let j = 0; j < steps; j++) {
+      const x = a[0] + (b[0] - a[0]) * (j / steps);
+      const y = a[1] + (b[1] - a[1]) * (j / steps);
+      const u = (x - left) / samplingScale,
+        v = (y - top) / samplingScale;
+      const px =
+        x +
+        amplitude *
+          (0.65 * Math.sin(v * 0.045 + phase) +
+            0.35 * Math.sin(u * 0.03 + v * 0.025 + phase * 1.71));
+      const py =
+        y +
+        amplitude *
+          (0.65 * Math.sin(u * 0.043 + phase * 1.37) +
+            0.35 * Math.sin(v * 0.032 - u * 0.02 + phase * 0.79));
+      ink.push(`${ink.length ? 'L' : 'M'}${px} ${py}`);
+    }
+  }
+  return {
+    path: points.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join('') + 'Z',
+    outline: ink.join('') + 'Z',
+    bounds,
+  };
+}
 let nextCanvasId = 0;
 export function roundedRect(x: number, y: number, width: number, height: number, radius = 3) {
   const r = Math.min(radius, width / 2, height / 2);
   return `M${x + r} ${y} H${x + width - r} Q${x + width} ${y} ${x + width} ${y + r} V${y + height - r} Q${x + width} ${y + height} ${x + width - r} ${y + height} H${x + r} Q${x} ${y + height} ${x} ${y + height - r} V${y + r} Q${x} ${y} ${x + r} ${y} Z`;
 }
 
-/** Rough owns the geometry; this module owns materials, seeded identity and stroke order. */
+/** Authored paths use Rough; measured contours keep their geometry. Materials and motion are shared. */
 export function pen(canvas: SVGSVGElement) {
   if (!canvas.id) {
     let id: string;
@@ -29,7 +83,14 @@ export function pen(canvas: SVGSVGElement) {
     canvas.id = id;
   }
   const renderer = rough.svg(canvas);
-  function draw(parent: SVGElement, id: string, path: string, style: PenStyle = {}) {
+  function draw(
+    parent: SVGElement,
+    id: string,
+    path: string,
+    style: PenStyle = {},
+    measured?: () => string,
+    initialBounds?: Bounds,
+  ) {
     const key = [...id].map((char) => char.codePointAt(0)!.toString(16)).join('-');
     const elementId = `${canvas.id}-stroke-${key}`;
     if (canvas.getElementById(elementId)) throw new Error(`Duplicate drawing id: ${id}`);
@@ -51,7 +112,20 @@ export function pen(canvas: SVGSVGElement) {
     };
     const fill = style.fill ?? 'none';
     let shapeClip: SVGPathElement | undefined;
-    let moveWash = (_bounds: { x: number; y: number; width: number; height: number }) => {};
+    const boundary = (path: string) => {
+      if (!measured) return renderer.path(path, options);
+      const group = svg('g');
+      group.append(
+        svg('path', {
+          d: measured(),
+          fill: 'none',
+          stroke: options.stroke!,
+          'stroke-width': options.strokeWidth!,
+        }),
+      );
+      return group;
+    };
+    let moveWash = (_bounds: Bounds) => {};
     let fillPaths: SVGPathElement[] = [];
     let paint = (_progress: number) => {};
     if (fill !== 'none') {
@@ -63,10 +137,15 @@ export function pen(canvas: SVGSVGElement) {
       definitions.append(clip);
       element.append(definitions);
       if (fill === 'marker') {
-        const geometry = svg('path', { d: path });
-        element.append(geometry);
-        const bounds = geometry.getBBox();
-        geometry.remove();
+        const bounds =
+          initialBounds ??
+          (() => {
+            const geometry = svg('path', { d: path });
+            element.append(geometry);
+            const bounds = geometry.getBBox();
+            geometry.remove();
+            return bounds;
+          })();
         const revealClip = svg('clipPath', { id: `${clipId}-reveal` });
         const window = svg('rect', {
           x: bounds.x,
@@ -104,7 +183,7 @@ export function pen(canvas: SVGSVGElement) {
         fillPaths = [...wash.querySelectorAll('path')];
       }
     }
-    const outline = renderer.path(path, options);
+    const outline = boundary(path);
     outline.setAttribute('stroke-linecap', 'round');
     outline.setAttribute('stroke-linejoin', 'round');
     if (style.pencil) outline.style.opacity = '.42';
@@ -115,13 +194,13 @@ export function pen(canvas: SVGSVGElement) {
     return {
       element,
       /** A moving boundary keeps its seeded pen and marker; callers supply geometric bounds. */
-      update(nextPath: string, bounds?: { x: number; y: number; width: number; height: number }) {
+      update(nextPath: string, bounds?: Bounds) {
         if (nextPath === path) return;
         if (fill === 'hatch')
           throw new Error('Deforming hatch geometry is not supported; use marker or outline');
         path = nextPath;
         shapeClip?.setAttribute('d', path);
-        const next = renderer.path(path, options);
+        const next = boundary(path);
         const currentPaths = [...outline.querySelectorAll('path')];
         const nextPaths = [...next.querySelectorAll('path')];
         if (currentPaths.length === nextPaths.length)
@@ -145,7 +224,30 @@ export function pen(canvas: SVGSVGElement) {
     };
   }
   return {
-    path: draw,
+    path(parent: SVGElement, id: string, path: string, style: PenStyle = {}) {
+      return draw(parent, id, path, style);
+    },
+    /** A deforming closed boundary with stable ink and the same marker/reveal lifecycle. */
+    contour(parent: SVGElement, id: string, points: readonly Point[], style: PenStyle = {}) {
+      if (style.fill === 'hatch')
+        throw new Error('Deforming hatch geometry is not supported; use marker or outline');
+      let geometry = contourGeometry(points, id, style.width);
+      const drawing = draw(
+        parent,
+        id,
+        geometry.path,
+        style,
+        () => geometry.outline,
+        geometry.bounds,
+      );
+      return {
+        ...drawing,
+        update(next: readonly Point[]) {
+          geometry = contourGeometry(next, id, style.width);
+          drawing.update(geometry.path, geometry.bounds);
+        },
+      };
+    },
     rect(
       parent: SVGElement,
       id: string,

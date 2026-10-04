@@ -177,7 +177,7 @@ function reduceCells(
           }),
         ],
         morph,
-        tension: 0.24 * smooth((p - 0.3) / 0.1),
+        tension: 0.24 * morph,
         formula:
           p < 0.9
             ? expression
@@ -240,7 +240,7 @@ function pairs(
         sources,
         targets: destinations,
         morph,
-        tension: 0.24 * smooth((p - 0.3) / 0.1),
+        tension: 0.24 * morph,
         formula: operator === 'multiply' ? 'Умножаем пары' : 'Складываем пары',
         phase: p < 0.4 ? 'approach' : p < 0.9 ? 'contact' : 'hold',
         notes: [

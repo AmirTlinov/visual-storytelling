@@ -19,6 +19,7 @@ function mount(
   const body = morphBody3D(view, options);
   const bounds = new Box3();
   let progress = 0,
+    duration = 4,
     disposed = false;
   body.surface.onDispose(() => {
     disposed = true;
@@ -37,7 +38,8 @@ function mount(
       p = time.progress;
     lastTime = input;
     lastCues = cues;
-    const frame = plan.sample(motionProgress(time, plan.completeAt));
+    duration = time.duration ?? duration;
+    const frame = plan.sample(motionProgress(time, plan.completeAt), duration);
     body.render(frame);
     progress = Math.max(0, Math.min(1, p));
     return frame;

@@ -84,13 +84,15 @@ export function surfaceInscriptions() {
   }
   function pose(body: MorphBody, shape: FusionShape) {
     const size = bodySize(body);
+    const radius =
+      body.shape.kind === 'box' ? (body.rounding ?? body.shape.rounding) : body.shape.radius;
+    // Curved end caps turn away from the reader. Keep the writing on their
+    // front patch instead of letting the last letters run onto the silhouette.
+    const writingWidth = size[0] * 0.74 - radius * (body.scale?.[0] ?? 1) * 0.3;
     return {
       x: body.position[0],
       y: -body.position[1],
-      scale: Math.min(
-        (size[0] * 0.74) / shape.bounds.width,
-        (size[1] * 0.46) / shape.bounds.height,
-      ),
+      scale: Math.min(writingWidth / shape.bounds.width, (size[1] * 0.46) / shape.bounds.height),
     };
   }
   return {

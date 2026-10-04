@@ -1,48 +1,39 @@
 import { Matrix4 } from 'three';
 
-/** Preserve shared box faces without imposing unrelated target geometry on a contact. */
+/** Shared source faces bound the contact; the destination cannot add clipping planes. */
 export function contactPlanes(kinds: Int32Array, parameters: Float32Array) {
   const world = new Float64Array(kinds.length * 16),
     matrix = new Matrix4();
-  const direction = new Float64Array(3);
+  const directions = new Float64Array(kinds.length * 3),
+    centers = new Float64Array(kinds.length),
+    supports = new Float64Array(kinds.length);
   return (
     transforms: Float32Array,
     tension: number,
     planes: Float32Array,
     sources: readonly number[],
-    destination: number,
     offset: number,
   ) => {
-    if (sources.length < 2 || kinds[destination] !== 0 || tension === 0) return 0;
-    for (const i of [...sources, destination]) {
+    const reference = sources.find((i) => kinds[i] === 0);
+    if (sources.length < 2 || reference === undefined || tension === 0) return 0;
+    for (const i of sources) {
       matrix.fromArray(transforms, i * 16).invert();
       world.set(matrix.elements, i * 16);
     }
-    const target = destination * 16,
-      dimensions = destination * 4;
+    const basis = reference * 16;
     // Each smooth-min adds at most tension/4 outside the original union.
     const allowance = (sources.length - 1) * tension * 0.25;
     let written = 0;
     for (let axis = 0; axis < 3; axis++) {
-      if (
-        parameters[dimensions + ((axis + 1) % 3)]! <= 0 ||
-        parameters[dimensions + ((axis + 2) % 3)]! <= 0
-      )
-        continue; // A rounded box can have a point or a line instead of this face.
-      const ax = transforms[target + axis]!,
-        ay = transforms[target + axis + 4]!,
-        az = transforms[target + axis + 8]!;
+      const ax = transforms[basis + axis]!,
+        ay = transforms[basis + axis + 4]!,
+        az = transforms[basis + axis + 8]!;
       const length = Math.sqrt(ax * ax + ay * ay + az * az);
       for (let sign = -1; sign <= 1; sign += 2) {
         const nx = (sign * ax) / length,
           ny = (sign * ay) / length,
           nz = (sign * az) / length;
-        const height =
-          (parameters[dimensions + axis]! +
-            parameters[dimensions + 3]! -
-            sign * transforms[target + axis + 12]!) /
-          length;
-        let outer = height,
+        let outer = -Infinity,
           first = 0,
           second = 0;
         for (const i of sources) {
@@ -68,19 +59,23 @@ export function contactPlanes(kinds: Int32Array, parameters: Float32Array) {
               (kinds[i] === 2 ? Math.abs(dx) * parameters[p + 1]! : 0);
           }
           outer = Math.max(outer, support);
+          centers[i] = center;
+          supports[i] = support;
+          directions.set([dx, dy, dz], i * 3);
+        }
+        for (const i of sources) {
           if (kinds[i] !== 0) continue;
-          direction[0] = dx;
-          direction[1] = dy;
-          direction[2] = dz;
+          const p = i * 4;
           let match = 0;
           for (let face = 0; face < 3; face++) {
             if (parameters[p + ((face + 1) % 3)]! <= 0 || parameters[p + ((face + 2) % 3)]! <= 0)
               continue;
             const faceHeight =
-              center + Math.abs(direction[face]!) * (parameters[p + face]! + parameters[p + 3]!);
+              centers[i]! +
+              Math.abs(directions[i * 3 + face]!) * (parameters[p + face]! + parameters[p + 3]!);
             // Projection spread measures a face's tilt in scene units. A small
             // translation or rotation fades the constraint across the blend width.
-            const error = Math.abs(faceHeight - height) + Math.max(0, support - faceHeight);
+            const error = Math.abs(faceHeight - outer) + Math.max(0, supports[i]! - faceHeight);
             const t = Math.max(0, 1 - error / tension);
             match = Math.max(match, t * t * (3 - 2 * t));
           }
