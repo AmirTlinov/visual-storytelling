@@ -1,24 +1,87 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Когда нейрон включается</title>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Когда нейрон включается</title>
 
-<script type="module">import '@visual-storytelling/core/style.css';</script></head><body class="ve-standalone">
-<main id="ve-scene" class="ve-scene" lang="ru">
-<style>
-#ve-scene .wire{fill:none;stroke:var(--ve-ink);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-#ve-scene .math{font-size:26px}#ve-scene .sum{font-size:35px}#ve-scene .small{font-size:14px}#ve-scene .heading{font-size:15px}#ve-scene .signal{fill:var(--ve-surface);stroke:var(--ve-ink);stroke-width:1.6}#ve-scene .signal[data-active=true]{fill:var(--ve-green);stroke:var(--ve-green)}#ve-scene .algebra{text-align:center;margin:18px 0;font:20px Georgia,serif}#ve-scene .algebra p{font:15px system-ui,sans-serif}#ve-scene .canvas{margin:10px 0}
-</style>
-<h1>Когда нейрон включается</h1>
-<div class="modes" role="group" aria-label="Представление нейрона">
-<button type="button" aria-pressed="true" data-mode="numbers">Числа</button>
-<button type="button" aria-pressed="false" data-mode="formulas">Формулы</button>
-</div>
-<svg class="canvas" role="img" aria-labelledby="neuron-title neuron-desc"><title id="neuron-title">Входы, веса, сумма и порог</title><desc id="neuron-desc"></desc><g data-wires></g><g data-nodes></g><g data-labels></g><g data-pulses aria-hidden="true"></g></svg>
-<div class="algebra sr-only" data-algebra hidden><math aria-label="Взвешенная сумма"><mi>z</mi><mo>=</mo><msub><mi>w</mi><mn>1</mn></msub><msub><mi>x</mi><mn>1</mn></msub><mo>+</mo><msub><mi>w</mi><mn>2</mn></msub><msub><mi>x</mi><mn>2</mn></msub></math><p>y = 1 при z ≥ θ; иначе y = 0. Здесь w₁ = 3, w₂ = 4, θ = 9.</p></div>
-<div class="inputs">
-<label><span data-a-label>Вход A:</span> <output data-a-value>2</output><input data-a type="range" min="0" max="4" step="1" value="2" aria-label="Вход A"></label>
-<label><span data-b-label>Вход B:</span> <output data-b-value>1</output><input data-b type="range" min="0" max="4" step="1" value="1" aria-label="Вход B"></label>
-</div>
-<output class="sr-only" data-result aria-live="polite"></output>
-</main>
-<script type="module" src="scene.js"></script>
-</body></html>
+    <script type="module">
+      import '@visual-storytelling/core/style.css';
+    </script>
+  </head>
+  <body class="ve-standalone">
+    <main id="ve-scene" class="ve-scene" lang="ru">
+      <style>
+        #ve-scene .wire {
+          fill: none;
+          stroke: var(--ve-ink);
+          stroke-width: 1.8;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+        }
+        #ve-scene .math {
+          font-size: 26px;
+        }
+        #ve-scene .sum {
+          font-size: 35px;
+        }
+        #ve-scene .small {
+          font-size: 14px;
+        }
+        #ve-scene .heading {
+          font-size: 15px;
+        }
+        #ve-scene .signal {
+          fill: var(--ve-surface);
+          stroke: var(--ve-ink);
+          stroke-width: 1.6;
+        }
+        #ve-scene .signal[data-active='true'] {
+          fill: var(--ve-green);
+          stroke: var(--ve-green);
+        }
+        #ve-scene .canvas {
+          margin: 10px 0;
+        }
+        #ve-scene .operation {
+          font-size: 19px;
+          fill: var(--ve-purple);
+        }
+      </style>
+      <h1>Когда нейрон включается</h1>
+      <div class="modes" role="group" aria-label="Представление нейрона">
+        <button type="button" aria-pressed="true" data-mode="numbers">Числа</button>
+        <button type="button" aria-pressed="false" data-mode="formulas">Формулы</button>
+      </div>
+      <svg class="canvas" role="img" aria-labelledby="neuron-title neuron-desc">
+        <title id="neuron-title">Входы, веса, сумма и порог</title>
+        <desc id="neuron-desc"></desc>
+        <g data-wires></g>
+        <g data-nodes></g>
+        <g data-labels></g>
+        <g data-pulses aria-hidden="true"></g>
+      </svg>
+      <div class="algebra sr-only" data-algebra hidden>
+        <math aria-label="Взвешенная сумма"
+          ><mi>z</mi><mo>=</mo><msub><mi>w</mi><mn>1</mn></msub
+          ><msub><mi>x</mi><mn>1</mn></msub
+          ><mo>+</mo><msub><mi>w</mi><mn>2</mn></msub
+          ><msub><mi>x</mi><mn>2</mn></msub></math
+        >
+        <p>y = 1 при z ≥ θ; иначе y = 0. Здесь w₁ = 3, w₂ = 4, θ = 9.</p>
+      </div>
+      <div class="inputs">
+        <label
+          ><span data-a-label>Вход A:</span> <output data-a-value>2</output
+          ><input data-a type="range" min="0" max="4" step="1" value="2" aria-label="Вход A"
+        /></label>
+        <label
+          ><span data-b-label>Вход B:</span> <output data-b-value>1</output
+          ><input data-b type="range" min="0" max="4" step="1" value="1" aria-label="Вход B"
+        /></label>
+      </div>
+      <output class="sr-only" data-result aria-live="polite"></output>
+    </main>
+    <script type="module" src="scene.js"></script>
+  </body>
+</html>

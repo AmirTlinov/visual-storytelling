@@ -1,4 +1,4 @@
-import { SvgLayout, rough, gsap, widgetState } from '@visual-storytelling/core';
+import { SvgLayout, SketchInk, rough, gsap, widgetState } from '@visual-storytelling/core';
 // Subject model: a threshold neuron. Changing this file changes the explanation.
 window.galleryReady = (async () => {
   const root = document.getElementById('ve-scene'),
@@ -60,11 +60,28 @@ window.galleryReady = (async () => {
   const signal = el('circle', { r: 5, class: 'signal' });
   select('nodes').append(signal);
   const tones = ['blue', 'orange'];
-  const pulses = tones.map((tone) => {
-    const p = el('circle', { r: 4, fill: `var(--ve-${tone})`, visibility: 'hidden' });
-    select('pulses').append(p);
-    return p;
+  const packets = [...tones, 'purple'].map((tone, i) => {
+    const group = el('g', { visibility: 'hidden' });
+    group.style.color = `var(--ve-${tone})`;
+    group.append(
+      el('path', {
+        d: SketchInk.inkBox(-24, -18, 48, 34, i + 47),
+        fill: `color-mix(in srgb,var(--ve-${tone}) 18%,var(--ve-surface))`,
+        stroke: `var(--ve-${tone})`,
+        'stroke-width': 1.3,
+      }),
+    );
+    const value = el('text', {
+      'text-anchor': 'middle',
+      y: 5,
+      'font-size': 20,
+      fill: `var(--ve-${tone})`,
+    });
+    group.append(value);
+    select('pulses').append(group);
+    return { group, value };
   });
+  const operation = label('', 'operation');
   tones.forEach((tone, i) => {
     for (const node of [inputs[i], factors[i], products[i], weightDetails[i]])
       node.style.color = `var(--ve-${tone})`;
@@ -84,16 +101,55 @@ window.galleryReady = (async () => {
     geometry;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)'),
     pulse = { position: 1 };
+  let outputRoute,
+    operationY = 298;
   function paintPulse() {
-    pulses.forEach((node, i) => {
-      const route = routes[i];
-      if (!route || pulse.position >= 1 || reduced.matches) {
-        node.setAttribute('visibility', 'hidden');
-        return;
-      }
-      node.setAttribute('visibility', 'visible');
-      node.setAttribute('cx', route.start.x + (route.end.x - route.start.x) * pulse.position);
-      node.setAttribute('cy', route.start.y + (route.end.y - route.start.y) * pulse.position);
+    const p = pulse.position,
+      { terms, sum, output } = compute();
+    const productsReady = p >= 0.68,
+      sumReady = p >= 0.68,
+      complete = p === 1;
+    for (const node of products)
+      node.setAttribute('visibility', productsReady ? 'visible' : 'hidden');
+    for (const node of [sumLabel, sumParts])
+      node.setAttribute('visibility', sumReady ? 'visible' : 'hidden');
+    for (const node of [outputLabel, signal])
+      node.setAttribute('visibility', complete ? 'visible' : 'hidden');
+    const instruction = complete
+      ? `${sum} ${output ? '≥' : '<'} ${threshold} → выход ${output}`
+      : p < 0.25
+        ? 'Умножаем входы на веса'
+        : p < 0.68
+          ? 'Собираем два вклада'
+          : 'Сравниваем сумму с порогом';
+    if (operation.textContent !== instruction) {
+      operation.textContent = instruction;
+      if (width) place(operation, width / 2, operationY);
+    }
+    root.dataset.phase = complete ? 'complete' : sumReady ? 'threshold' : 'contributions';
+    const detail = complete
+      ? `${terms.join(' + ')} = ${sum}; ${sum} ${output ? '≥' : '<'} ${threshold} → выход ${output}`
+      : operation.textContent;
+    if (select('result').textContent !== detail) select('result').textContent = detail;
+    svg.querySelector('desc').textContent = complete
+      ? `Входы ${state.a} и ${state.b}, веса ${weights.join(' и ')}. ${detail}.`
+      : `Входы ${state.a} и ${state.b}. ${operation.textContent}.`;
+    packets.forEach(({ group, value }, i) => {
+      const start = i === 2 ? 0.72 : 0.25,
+        end = i === 2 ? 1 : 0.68;
+      const route = i === 2 ? outputRoute : routes[i];
+      const visible = route && p >= start && p < end;
+      group.setAttribute('visibility', visible ? 'visible' : 'hidden');
+      if (!visible) return;
+      const t = (p - start) / (end - start);
+      const length = Math.hypot(route.end.x - route.start.x, route.end.y - route.start.y);
+      const inset = Math.min(26, length * 0.35) / length;
+      const position = inset + (1 - 2 * inset) * t;
+      group.setAttribute(
+        'transform',
+        `translate(${route.start.x + (route.end.x - route.start.x) * position} ${route.start.y + (route.end.y - route.start.y) * position})`,
+      );
+      value.textContent = i === 2 ? sum : terms[i];
     });
   }
   function arrange() {
@@ -103,8 +159,8 @@ window.galleryReady = (async () => {
       ? [
           [width * 0.25, 110],
           [width * 0.75, 110],
-          [width / 2, 244],
-          [width / 2, 366],
+          [width / 2, 274],
+          [width / 2, 424],
         ]
       : [
           [width * 0.25, 83],
@@ -126,14 +182,12 @@ window.galleryReady = (async () => {
       wires[i].setAttribute('d', route.d);
       along(products[i], route, { offset: vertical ? (i ? -28 : 28) : i ? 22 : -22 });
     });
-    wires[2].setAttribute(
-      'd',
-      connect(nodes[2].circle, nodes[3].circle, {
-        fromShape: 'ellipse',
-        toShape: 'ellipse',
-        gap: 1,
-      }).d,
-    );
+    outputRoute = connect(nodes[2].circle, nodes[3].circle, {
+      fromShape: 'ellipse',
+      toShape: 'ellipse',
+      gap: 1,
+    });
+    wires[2].setAttribute('d', outputRoute.d);
     const [sx, sy] = positions[2],
       [gx, gy] = positions[3];
     factors.forEach((node, i) => {
@@ -149,7 +203,7 @@ window.galleryReady = (async () => {
       wires[3 + i].setAttribute('d', vertical ? `M${x} 68V${y - 29}` : `M60 ${y}H${x - 29}`);
     });
     const ex = vertical ? gx : width - 20,
-      ey = vertical ? 455 : gy;
+      ey = vertical ? 525 : gy;
     wires[5].setAttribute('d', vertical ? `M${gx} ${gy + 26}V${ey}` : `M${gx + 26} ${gy}H${ex}`);
     arrow.setAttribute(
       'd',
@@ -166,9 +220,9 @@ window.galleryReady = (async () => {
       ? [
           [width / 2, 13],
           [width / 2, 110],
-          [sx, sy - 79],
+          [sx, sy - 39],
           [gx + 66, gy],
-          [gx, 481],
+          [gx, 551],
         ]
       : [
           [42, 26],
@@ -178,8 +232,10 @@ window.galleryReady = (async () => {
           [ex - 24, 26],
         ];
     headings.forEach((node, i) => place(node, ...headingPositions[i]));
+    operationY = vertical ? 590 : 298;
+    place(operation, width / 2, operationY);
     paintPulse();
-    return vertical ? 505 : 312;
+    return vertical ? 618 : 326;
   }
   function render() {
     const { terms, sum, output } = compute(),
@@ -220,10 +276,7 @@ window.galleryReady = (async () => {
       .querySelectorAll('[data-mode]')
       .forEach((button) => button.setAttribute('aria-pressed', button.dataset.mode === state.mode));
     select('algebra').hidden = !symbolic;
-    select('result').textContent =
-      `${symbolic ? 'z = ' : ''}${terms[0]} + ${terms[1]} = ${sum}; ${sum} ${output ? '≥' : '<'} ${threshold} → ${symbolic ? 'y' : 'выход'} ${output}`;
-    root.querySelector('desc').textContent =
-      `Входы ${state.a} и ${state.b}, веса ${weights.join(' и ')}. Вклады ${terms.join(' и ')}, сумма ${sum}. Порог ${threshold}. Выход ${output}.`;
+    paintPulse();
     geometry?.update();
   }
   function save() {
@@ -234,13 +287,16 @@ window.galleryReady = (async () => {
   }
   function restore(snapshot) {
     const saved = snapshot?.privateContent;
-    if (saved?.example !== 'neuron') return;
+    if (saved?.example !== 'neuron') return false;
     for (const key of ['a', 'b'])
       state[key] = Math.max(0, Math.min(4, Math.round(Number(saved[key]) || 0)));
     state.mode = saved.mode === 'formulas' ? 'formulas' : 'numbers';
+    return true;
   }
   const storage = widgetState('threshold-neuron', (snapshot) => {
-    restore(snapshot);
+    if (!restore(snapshot)) return;
+    gsap.killTweensOf(pulse);
+    pulse.position = 1;
     render();
   });
   for (const key of ['a', 'b'])
@@ -248,15 +304,14 @@ window.galleryReady = (async () => {
       'input',
       () => {
         state[key] = Number(select(key).value);
-        render();
-        save();
         gsap.killTweensOf(pulse);
         pulse.position = reduced.matches ? 1 : 0;
-        paintPulse();
+        render();
+        save();
         if (!reduced.matches)
           gsap.to(pulse, {
             position: 1,
-            duration: 0.45,
+            duration: 1.6,
             ease: 'none',
             overwrite: true,
             onUpdate: paintPulse,
@@ -291,12 +346,21 @@ window.galleryReady = (async () => {
     return arrange();
   });
   root.scene = {
+    snapshot: () => ({
+      ...state,
+      ...compute(),
+      progress: pulse.position,
+      sumVisible: pulse.position >= 0.68,
+      outputVisible: pulse.position === 1,
+    }),
     dispose() {
+      if (abort.signal.aborted) return;
       abort.abort();
       storage.dispose();
       geometry.dispose();
       gsap.killTweensOf(pulse);
       root.replaceChildren();
+      delete root.scene;
     },
   };
 })().catch((error) => {

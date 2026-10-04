@@ -79,11 +79,11 @@
         display: block;
         width: 100%;
         height: auto;
-        aspect-ratio: 1100/1770;
+        aspect-ratio: 1100/1433;
       }
       @media (max-width: 650px) {
         object {
-          aspect-ratio: 550/3860;
+          aspect-ratio: 550/1918;
         }
       }
       @media (max-width: 700px) {
@@ -134,27 +134,43 @@
         data="tensor-cube.svg"
         aria-label="Постоянные параметры W_Q и вычисленные векторы"
       ></object>
+      <div data-player style="padding: 12px 5.82% 24px"></div>
     </main>
     <script type="module">
-      import '@visual-storytelling/core/style.css';
+      import { attachProjection } from './controls.mjs';
       const app = document.getElementById('app'),
         input = document.getElementById('text'),
         scene = document.getElementById('scene'),
         status = document.getElementById('status');
+      const lifetime = new AbortController();
       let view,
         controller,
         timer,
         version = 0;
+      const listen = (target, type, callback) =>
+        target.addEventListener(type, callback, { signal: lifetime.signal });
+      window.galleryReady = attachProjection(app, scene, {
+        dispose() {
+          lifetime.abort();
+          ++version;
+          clearTimeout(timer);
+          controller?.abort();
+          app.removeAttribute('aria-busy');
+          view = undefined;
+        },
+      });
       function loaded() {
+        if (lifetime.signal.aborted) return;
         view = scene.contentDocument?.defaultView;
         if (!view?.getProjection) return;
         input.value = view.getProjection().text;
         input.disabled = false;
         document.getElementById('compute').disabled = false;
       }
-      scene.addEventListener('load', loaded);
+      listen(scene, 'load', loaded);
       loaded();
       async function compute() {
+        if (lifetime.signal.aborted) return;
         clearTimeout(timer);
         const current = ++version;
         controller?.abort();
@@ -188,7 +204,7 @@
           if (current === version) app.removeAttribute('aria-busy');
         }
       }
-      input.addEventListener('input', (event) => {
+      listen(input, 'input', (event) => {
         ++version;
         controller?.abort();
         clearTimeout(timer);
@@ -197,14 +213,14 @@
         status.textContent = '';
         if (!event.isComposing) timer = setTimeout(compute, 280);
       });
-      input.addEventListener('compositionstart', () => {
+      listen(input, 'compositionstart', () => {
         clearTimeout(timer);
       });
-      input.addEventListener('compositionend', () => {
+      listen(input, 'compositionend', () => {
         clearTimeout(timer);
         timer = setTimeout(compute, 280);
       });
-      document.getElementById('form').addEventListener('submit', (event) => {
+      listen(document.getElementById('form'), 'submit', (event) => {
         event.preventDefault();
         compute();
       });

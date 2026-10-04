@@ -1,245 +1,147 @@
 import { resolve } from 'node:path';
-import {svgRange} from '@visual-storytelling/core/controls';
-import {execFileSync} from 'node:child_process';
-import {readFile,writeFile} from 'node:fs/promises';
-import {SketchInk} from '@visual-storytelling/core/ink';
 import { pathToFileURL } from 'node:url';
-const {inkShape, inkBox, markerDefs, markerMarkup} = SketchInk;
-const {svgRuntime}=await import(pathToFileURL(`${process.env.VISUAL_STORY_TOOLS ?? new URL('../../tools',import.meta.url).pathname}/svg-runtime.mjs`));
-const sharedRuntime=await svgRuntime({'/ink':['SketchInk'],'/three':['SvgOrbit'],'/controls':['fitSvgControls']});
-const initial=JSON.parse(await readFile(new URL('projection.json',import.meta.url),'utf8'));
-if(initial.model!=='prajjwal1/bert-mini'||initial.total_heads!==4)throw Error('Generate the BERT-mini snapshot with projection.py --snapshot first.');
-const parameters=initial.parameters;
-const start={spread:0,yaw:-.64,pitch:-.48,selected:'1-2-0',token:1};
+import { readFile, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { svgRange } from '@visual-storytelling/core/controls';
+import { SketchInk } from '@visual-storytelling/core/ink';
+import { projectionBreakdown, decimal, weightColor, escapeXML } from './model.mjs';
+import { cubeScene } from './geometry.mjs';
+import { mountCube } from './runtime.mjs';
 
-function escapeXML(text){return String(text).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));}
-
-function weightColor(value,limit,surface='var(--ve-surface)'){const amount=52*Math.min(1,Math.abs(value)/limit);return 'color-mix(in srgb,var(--ve-'+(value<0?'orange':'blue')+') '+amount+'%,'+surface+')';}
-function componentLabel(key,parameters){
-  const [i,j,h]=key.split('-').map(Number);
-  return 'W_Q['+[i+1,j+1,h+1].join(',')+'] = '+parameters.values[h][i][j].toFixed(6);
-}
-function cubeScene(data,spread,yaw,pitch,selected,mirror=false){
-  const n=4,c=Math.cos(yaw),s=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);
-  const nx=Math.cos(-.64),nz=Math.sin(-.64);
-  const rotate=([x,y,z])=>{
-    if(mirror){const distance=nx*x+nz*z;x-=2*nx*distance;z-=2*nz*distance;}
-    return[c*x+s*z,cp*y+sp*(-s*x+c*z),-sp*y+cp*(-s*x+c*z)];
-  };
-  const fmt=n=>Number(n.toFixed(3)),half=(mirror?1:.94)/2,scale=62;
-  const vertices=[[-1,-1,-1],[-1,-1,1],[-1,1,-1],[-1,1,1],[1,-1,-1],[1,-1,1],[1,1,-1],[1,1,1]].map(v=>rotate(v.map(x=>x*half)));
-  const faces=[{n:[-1,0,0],v:[0,1,3,2]},{n:[1,0,0],v:[4,6,7,5]},{n:[0,-1,0],v:[0,4,5,1]},{n:[0,1,0],v:[2,3,7,6]},{n:[0,0,-1],v:[0,2,6,4]},{n:[0,0,1],v:[1,5,7,3]}];
-  const visible=faces.map(face=>rotate(face.n)[2]>1e-9);
-  const cells=[];
-  for(let i=0;i<n;i++)for(let j=0;j<n;j++)for(let h=0;h<4;h++){
-    const key=[i,j,h].join('-'),center=rotate([i-(n-1)/2,j-(n-1)/2,(h-1.5)*(1+.85*(mirror?0:spread))]);
-    const active=key===selected,base=weightColor(data.values[h][i][j],data.color_limit);
-    const points=vertices.map(v=>[fmt(550+scale*(center[0]+v[0])),fmt(396-scale*(center[1]+v[1]))]);
-    cells.push({key,depth:center[2],active,faces:faces.map((face,f)=>visible[f]?{
-      d:inkShape(face.v.map(v=>points[v]),i*16+j*4+h+f),display:'inline',fill:base,
-      stroke:active?'var(--ve-purple)':'var(--ve-pencil)','stroke-width':active?1.8:1.05,
-      'fill-opacity':mirror?(active?.28:.07):1,'stroke-opacity':mirror?(active?1:.6):1
-    }:{display:'none'})});
-  }
-  return cells.sort((a,b)=>a.depth-b.depth||a.key.localeCompare(b.key));
-}
-function geometryMarkup(data,start,mirror){
-  return cubeScene(data,start.spread,start.yaw,start.pitch,start.selected,mirror).map(cell=>
-    '<g data-cell="'+cell.key+'">'+cell.faces.map(face=>'<path data-cell="'+cell.key+'" stroke-linejoin="round" vector-effect="non-scaling-stroke" '+Object.entries(face).map(([name,value])=>name+'="'+value+'"').join(' ')+'/>').join('')+'</g>').join('');
-}
-function matricesMarkup(parameters,selected){
-  return parameters.values.map((matrix,h)=>{
-    const entries=matrix.map((row,i)=>row.map((value,j)=>{
-      const key=[i,j,h].join('-');
-      return '<g id="entry-'+key+'" class="entry" data-cell="'+key+'" role="option" aria-selected="'+(key===selected)+'" aria-label="'+escapeXML(componentLabel(key,parameters))+'" transform="translate('+(56+j*96)+' '+(940+i*48)+')"><title>'+escapeXML(componentLabel(key,parameters))+'</title><path class="selection-outline" fill="'+weightColor(value,parameters.color_limit,'transparent')+'" d="'+inkBox(-44,-29,88,42,h*16+i*4+j)+'"/><text text-anchor="middle" font-size="21" style="fill:var(--ve-ink)">'+value.toFixed(3)+'</text></g>';
-    }).join('')).join('');
-    return '<g role="group" aria-label="Голова '+(h+1)+'" transform="translate('+(100+(h%2)*500)+' '+(Math.floor(h/2)*260)+')"><text x="200" y="888" class="head-label" text-anchor="middle">h = '+(h+1)+'</text><path d="M5 906Q0 905 0 911Q-.8 1001 0 1095Q0 1101 5 1100 M395 906Q400 905 400 911Q400.8 1002 400 1095Q400 1101 395 1100" fill="none" stroke="var(--ve-pencil)" stroke-width="1.2"/>'+entries+'</g>';
-  }).join('');
-}
-function tokenMarkup(data,active){
-  const step=972/data.tokens.length;
-  return data.tokens.map((token,index)=>{
-    return '<g id="token-'+index+'" data-token="'+index+'" role="option" aria-selected="'+(index===active)+'" aria-label="Токен '+(index+1)+': '+escapeXML(token)+'" transform="translate('+(64+(index+.5)*step)+' 1242)"><path class="selection-outline" d="'+inkBox(-step/2+4,-30,step-8,43,index)+'"/><text text-anchor="middle" font-size="'+Math.min(23,step/(token.length*.6))+'">'+escapeXML(token)+'</text></g>';
-  }).join('');
-}
-function vectorMarkup(data,selected,token){
-  const [i,j,h]=selected.split('-').map(Number);
-  const vectors=[{name:'x[1:4]',values:data.inputs[token],active:i,left:84},{name:'q'+'₁₂₃₄'[h]+'[1:4]',values:data.queries[h][token],active:j,left:646}];
-  return vectors.map(vector=>'<g><text x="'+(vector.left+200)+'" y="1320" class="vector-name" text-anchor="middle">'+vector.name+'</text>'+vector.values.map((value,k)=>'<g transform="translate('+(vector.left+50+100*k)+' 1370)"><path d="'+inkBox(-46,-33,92,48,k)+'" fill="'+(k===vector.active?'var(--ve-blue-wash)':'none')+'" stroke="'+(k===vector.active?'var(--ve-blue)':'none')+'" stroke-width="1.5"/><text text-anchor="middle" font-size="22">'+value.toFixed(3)+'</text></g>').join('')+'</g>').join('')+'<path d="M514 1359H596M587 1352L596 1359L587 1366" fill="none" stroke="var(--ve-pencil)" stroke-width="1.8"/>';
-}
-const runtime=String.raw`
-(()=>{
-  'use strict';
-  const root=document.querySelector('svg.ve-scene'),byID=id=>document.getElementById(id);
-  const lifetime=new AbortController(),listen={signal:lifetime.signal};
-  const stage=byID('stage'),slider=byID('layers-input'),notation=byID('notation'),tokens=byID('tokens');
-  let data=${JSON.stringify(initial).replace(/</g,'\\u003c')};
-  const parameters=data.parameters;
-  let {spread,yaw,pitch,selected,token}=${JSON.stringify(start)},pending=0;
-  let displayedSelection=selected;
-  const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
-  const attr=(node,name,value)=>{const v=String(value);if(node.getAttribute(name)!==v)node.setAttribute(name,v)};
-  const text=(id,value)=>{const node=byID(id);if(node.textContent!==value)node.textContent=value};
-  const views=['cells','mirror'].map((id,i)=>{
-    const scene=byID(id);return{scene,mirror:i===1,cells:new Map(Array.from(scene.children,node=>[node.dataset.cell,{node,faces:Array.from(node.children)}]))};
-  });
-  function updateVectors(){
-    byID('vectors').innerHTML=vectorMarkup(data,selected,token);
-    data.tokens.forEach((_,index)=>attr(byID('token-'+index),'aria-selected',index===token));
-    attr(tokens,'aria-activedescendant','token-'+token);
-    text('flow-token','Вход и выход: '+data.tokens[token]);layout();
-  }
-  function updateSelection(){
-    text('component-value',componentLabel(selected,parameters).slice(3));
-    attr(byID('component'),'aria-label',componentLabel(selected,parameters));
-    attr(byID('entry-'+displayedSelection),'aria-selected','false');
-    attr(byID('entry-'+selected),'aria-selected','true');
-    attr(notation,'aria-activedescendant','entry-'+selected);
-    displayedSelection=selected;updateVectors();
-  }
-  function draw(){
-    pending=0;
-    for(const view of views){
-      const geometry=cubeScene(parameters,spread,yaw,pitch,selected,view.mirror);
-      let cursor=view.scene.firstElementChild;
-      for(const cell of geometry){
-        const cached=view.cells.get(cell.key);
-        cell.faces.forEach((face,i)=>{for(const [name,value] of Object.entries(face))attr(cached.faces[i],name,value)});
-        if(cached.node!==cursor)view.scene.insertBefore(cached.node,cursor);
-        cursor=cached.node.nextElementSibling;
-      }
-    }
-    if(displayedSelection!==selected)updateSelection();
-    slider.value=spread;
-  }
-  function layout(){
-    const small=innerWidth<650;
-    attr(root,'viewBox',small?'0 0 550 3860':'0 0 1100 1770');
-    root.style.aspectRatio=small?'550 / 3860':'1100 / 1770';
-    const positions={heading:[small?24:64,small?42:60],component:[small?275:1036,small?91:60],'shape-note':[small?24:64,small?136:108],'layers-label':[small?275:295,small?634:694],'notation-label':[small?275:550,small?1340:818],'indices-label':[small?275:550,small?1380:853],'flow-token':[small?24:64,1170],'projection-formula':[small?275:1036,small?1220:1170],'projection-note':[small?275:550,small?1770:1430]};
-    for(const [id,[x,y]] of Object.entries(positions)){attr(byID(id),'x',x);attr(byID(id),'y',y);}
-    attr(byID('component'),'text-anchor',small?'middle':'end');
-    attr(byID('projection-formula'),'text-anchor',small?'middle':'end');
-    attr(byID('shape-note'),'font-size',small?18:21);
-    attr(byID('indices-label'),'font-size',small?17:19);
-    attr(byID('projection-note'),'font-size',small?19:21);
-    byID('projection-note').innerHTML=small?'<tspan x="275">Полная проекция: 256 компонент + b.</tspan><tspan x="275" dy="29">На рисунке первые четыре.</tspan>':'Расчёт использует все 256 компонент и смещение b; показаны первые четыре.';
-    const transforms={cells:small?'translate(-275 0)':'translate(-255 0)',mirror:small?'translate(-275 504)':'translate(255 0)',layers:small?'translate(-20 -60)':'','color-key':small?'translate(-530 520)':'','activation-region':small?'translate(0 2000)':'translate(0 300)'};
-    for(const [id,value] of Object.entries(transforms))attr(byID(id),'transform',value);
-    Array.from(notation.children).forEach((node,h)=>attr(node,'transform',small?'translate(35 '+(376.4+h*420)+') scale(1.2)':'translate('+(100+(h%2)*500)+' '+(Math.floor(h/2)*260)+')'));
-    attr(stage.querySelector('rect'),'height',small?1015:512);attr(stage.querySelector('rect'),'width',small?490:1016);
-    attr(byID('stage-focus'),'d',small?'M250 1170 Q275 1172 300 1170':'M525 658 Q550 660 575 658');
-    if(small){
-      Array.from(tokens.children).forEach((node,i)=>attr(node,'transform','translate('+(82+(i%4)*128)+' '+(1300+Math.floor(i/4)*64)+')'));
-      Array.from(tokens.children).forEach((node,i)=>{attr(node.querySelector('.selection-outline'),'d',inkBox(-59,-30,118,43,i));});
-      Array.from(tokens.querySelectorAll('text')).forEach(node=>attr(node,'font-size',19));
-      const vectors=Array.from(byID('vectors').children);
-      attr(vectors[0],'transform','translate(-9 160)');attr(vectors[1],'transform','translate(-571 300)');
-      attr(vectors[2],'d','M275 1560V1580m-6 -8 6 8 6-8');
-    }
-    fitSvgControls(root);
-  }
-  addEventListener('resize',()=>{tokens.innerHTML=tokenMarkup(data,token);updateVectors();layout();},listen);layout();
-  function invalidate(){if(!pending)pending=requestAnimationFrame(draw)}
-  function setSpread(value){spread=clamp(value,0,1);invalidate()}
-  window.getProjection=()=>data;
-  window.setPending=value=>byID('activation-region').classList.toggle('pending',value);
-  window.setProjection=next=>{
-    if(next.parameters.sha256!==parameters.sha256)throw Error('Параметры модели изменились. Перезагрузите пример.');
-    data=next;window.setPending(false);token=Math.min(token,data.tokens.length-1);
-    tokens.innerHTML=tokenMarkup(data,token);updateVectors();
-    text('provenance',JSON.stringify({model:data.model,revision:data.revision,layer:data.layer,text:data.text,parameter_sha256:parameters.sha256,full_shape:parameters.shape,visible_shape:parameters.visible_shape}));
-    // New text owns only activations. It does not touch cube geometry,
-    // camera, coefficients, color scale, matrix nodes or selection.
-  };
-  root.addEventListener('pointerdown',()=>root.classList.add('pointer-input'),{...listen,capture:true});
-  root.addEventListener('keydown',()=>root.classList.remove('pointer-input'),{...listen,capture:true});
-  const orbit=SvgOrbit.mount(root,stage,byID('orbit-world'),{
-    yaw,pitch,pitchLimits:[-1.25,1.25],changed(pose){yaw=pose.yaw;pitch=pose.pitch;invalidate();},
-    select(target){const cell=target.closest('[data-cell]');if(cell){selected=cell.dataset.cell;invalidate();}}
-  });
-  slider.addEventListener('input',()=>setSpread(slider.valueAsNumber),listen);
-  root.scene={snapshot:()=>({selected,token,spread,view:orbit.pose}),dispose(){lifetime.abort();orbit.dispose();cancelAnimationFrame(pending);delete root.scene;delete window.getProjection;delete window.setPending;delete window.setProjection;}};
-  notation.addEventListener('click',e=>{
-    const entry=e.target.closest('[data-cell]');if(!entry)return;
-    selected=entry.dataset.cell;notation.focus({preventScroll:true});invalidate();
-  },listen);
-  notation.addEventListener('keydown',e=>{
-    const moves={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[1,-1],ArrowRight:[1,1],PageUp:[2,-1],PageDown:[2,1]};
-    const move=moves[e.key];if(!move)return;e.preventDefault();
-    const indices=selected.split('-').map(Number);indices[move[0]]=clamp(indices[move[0]]+move[1],0,3);
-    selected=indices.join('-');invalidate();
-  },listen);
-  tokens.addEventListener('click',e=>{
-    const item=e.target.closest('[data-token]');if(!item)return;
-    token=Number(item.dataset.token);tokens.focus({preventScroll:true});updateVectors();
-  },listen);
-  tokens.addEventListener('keydown',e=>{
-    if(e.key==='ArrowLeft')token=Math.max(0,token-1);else if(e.key==='ArrowRight')token=Math.min(data.tokens.length-1,token+1);
-    else if(e.key==='Home')token=0;else if(e.key==='End')token=data.tokens.length-1;else return;
-    e.preventDefault();updateVectors();
-  },listen);
-  stage.addEventListener('keydown',e=>{
-    if(['i','j','h'].includes(e.key.toLowerCase())){
-      const axis='ijh'.indexOf(e.key.toLowerCase()),indices=selected.split('-').map(Number);
-      indices[axis]=(indices[axis]+(e.shiftKey?3:1))%4;selected=indices.join('-');
-    } else return;e.preventDefault();invalidate();
-  },listen);
-})();`;
-const height=1770,limit=parameters.color_limit;
-const svg=`<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="${height}" viewBox="0 0 1100 ${height}" role="group" aria-labelledby="title desc">
-<title id="title">Постоянные параметры и переменные активации BERT-mini</title>
-<desc id="desc">Куб показывает реальные обученные коэффициенты проекции запросов W_Q четвёртого слоя BERT-mini: первые четыре входные и первые четыре выходные компоненты каждой из четырёх голов. Показаны 64 коэффициента из 65536, не вся модель. Полная форма в выбранной записи: вход 256, выход на голову 64, головы 4. При смене текста параметры, размер и цвет куба не меняются. Справа — прозрачное отражение того же фрагмента без зазоров, не выходной тензор. Внизу показаны первые четыре компоненты входного вектора x выбранного токена на входе в четвёртый слой и первые четыре компоненты его выходного запроса q для выбранной головы. Выход получен полной проекцией всех 256 компонент со смещением, а не только изображённым фрагментом. Выбор коэффициента выделяет соответствующие входную и выходную компоненты. Числа вектора изменяются при смене текста, токена и выбранной головы. Стрелки вращают сцену, I, J, H меняют координату. В матрицах стрелки выбирают строку и столбец, PageUp и PageDown — голову. В токенах — стрелки влево и вправо. Ползунок раздвигает только основную модель для осмотра. Для пересчёта текста откройте cube.html. SVG самодостаточен для просмотра вычисленного снимка.</desc>
-<metadata id="provenance">${escapeXML(JSON.stringify({model:initial.model,revision:initial.revision,layer:initial.layer,text:initial.text,parameter_sha256:parameters.sha256,full_shape:parameters.shape,visible_shape:parameters.visible_shape}))}</metadata>
+const tools = process.env.VISUAL_STORY_TOOLS ?? new URL('../../tools', import.meta.url).pathname;
+const { svgRuntime } = await import(pathToFileURL(`${tools}/svg-runtime.mjs`));
+const sharedRuntime = await svgRuntime({
+  '': ['transport'],
+  '/ink': ['SketchInk'],
+  '/three': ['SvgOrbit'],
+  '/controls': ['fitSvgControls'],
+});
+const initial = JSON.parse(await readFile(new URL('projection.json', import.meta.url), 'utf8'));
+if (initial.model !== 'prajjwal1/bert-mini' || initial.total_heads !== 4)
+  throw Error('Generate the BERT-mini snapshot with projection.py --snapshot first.');
+const parameters = initial.parameters,
+  start = { spread: 0.3, yaw: -0.64, pitch: -0.48, selected: '1-2-0', token: 1 };
+const { inkShape, inkBox, markerDefs, markerMarkup } = SketchInk;
+const cells = cubeScene(
+  parameters,
+  start.spread,
+  start.yaw,
+  start.pitch,
+  start.selected,
+  inkShape,
+  weightColor,
+)
+  .map(
+    (cell) =>
+      `<g data-cell="${cell.key}">${cell.faces
+        .map(
+          (face) =>
+            `<path data-cell="${cell.key}" stroke-linejoin="round" vector-effect="non-scaling-stroke" ${Object.entries(
+              face,
+            )
+              .map(([key, value]) => `${key}="${value}"`)
+              .join(' ')}/>`,
+        )
+        .join('')}</g>`,
+  )
+  .join('');
+const heads = Array.from(
+  { length: 4 },
+  (_, h) =>
+    `<g data-head="${h}" role="button" tabindex="0" aria-label="Голова ${h + 1}" aria-pressed="${h === 0}" transform="translate(${83 + h * 112} 46)"><path d="${inkBox(-34, -27, 68, 44, h)}"/><text text-anchor="middle">${h + 1}</text></g>`,
+).join('');
+const matrices = parameters.values
+  .map(
+    (matrix, h) =>
+      `<g role="group" aria-label="Голова ${h + 1}" style="${h ? 'display:none' : ''}">${matrix
+        .map((row, i) =>
+          row
+            .map((value, j) => {
+              const key = [i, j, h].join('-');
+              return `<g id="entry-${key}" data-cell="${key}" class="entry" role="option" aria-selected="${key === start.selected}" aria-label="W_Q[${i + 1},${j + 1},${h + 1}] = ${value.toFixed(6)}" transform="translate(${83 + j * 112} ${149 + i * 54})"><title>W_Q[${i + 1},${j + 1},${h + 1}] = ${value.toFixed(6)}</title><path d="${inkBox(-49, -29, 98, 42, h * 16 + i * 4 + j)}" fill="${weightColor(value, parameters.color_limit, 'transparent')}"/><text text-anchor="middle">${decimal(value)}</text></g>`;
+            })
+            .join(''),
+        )
+        .join('')}</g>`,
+  )
+  .join('');
+const indices = Array.from(
+  { length: 4 },
+  (_, i) =>
+    `<text x="${83 + i * 112}" y="107" class="small muted" text-anchor="middle">j=${i + 1}</text><text x="15" y="${149 + i * 54}" class="small muted" text-anchor="middle">${i + 1}</text>`,
+).join('');
+const values = projectionBreakdown(initial, start.selected, start.token);
+const rows = values.inputs
+  .map(
+    (
+      value,
+      i,
+    ) => `<g id="calc-row-${i}" transform="translate(0 ${108 + i * 56})" data-selected="${i === values.i}">
+<text id="index-${i}" x="90" class="small muted" text-anchor="middle">${i + 1}</text>
+<path id="input-box-${i}" class="input-box" d="${inkBox(199, -30, 102, 43, i)}"/>
+<text id="input-${i}" x="250" text-anchor="middle">${decimal(value)}</text>
+<text id="multiply-${i}" x="375" text-anchor="middle">×</text>
+<path id="weight-box-${i}" class="weight-box" d="${inkBox(464, -30, 102, 43, i + 4)}"/>
+<text id="weight-${i}" x="515" text-anchor="middle">${decimal(values.weights[i])}</text>
+<path id="calculation-flow-${i}" fill="none" stroke="var(--ve-purple)" stroke-width="1.5" pathLength="100" visibility="hidden"/>
+<g id="product-${i}" visibility="hidden"><text id="equal-${i}" x="640" text-anchor="middle">≈</text><path id="product-box-${i}" fill="var(--ve-green-wash)" d="${inkBox(764, -30, 102, 43, i + 8)}"/><text id="term-${i}" x="815" text-anchor="middle" class="green">${decimal(values.terms[i])}</text></g></g>`,
+  )
+  .join('');
+const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1433" viewBox="0 0 1100 1433" role="group" aria-labelledby="title desc">
+<title id="title">Как веса BERT собирают запрос</title>
+<desc id="desc">Реальные коэффициенты проекции запросов четвёртого слоя BERT-mini. Один куб показывает первые четыре входные и выходные компоненты каждой из четырёх голов, всего 64 веса из 65536. Справа раскрывается выбранная голова. Выбранный столбец даёт одну компоненту запроса: первые четыре входа умножаются на свои веса, их вклады складываются, затем учитываются остальные 252 компоненты и смещение. Полный выход вычислен настоящей моделью. Числа округлены. Стрелки в матрице выбирают строку и столбец; PageUp и PageDown переключают голову. Токены выбираются стрелками. Для времени вычисления используйте плеер HTML-страницы. Куб вращается общей камерой; Home восстанавливает вид.</desc>
+<metadata id="provenance">${escapeXML(JSON.stringify({ model: initial.model, revision: initial.revision, layer: initial.layer, text: initial.text, parameter_sha256: parameters.sha256 }))}</metadata>
 ${markerDefs('bert-ink')}
 <defs><linearGradient id="weight-scale"><stop stop-color="var(--ve-orange)" stop-opacity=".52"/><stop offset=".5" stop-color="var(--ve-orange)" stop-opacity="0"/><stop offset=".5" stop-color="var(--ve-blue)" stop-opacity="0"/><stop offset="1" stop-color="var(--ve-blue)" stop-opacity=".52"/></linearGradient></defs>
 <style>
-svg{width:100%;height:auto;display:block;aspect-ratio:1100/1770;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;background-image:var(--ve-grid);background-size:30px 30px}text{font-family:inherit;fill:var(--ve-ink)}
-svg:focus,[tabindex]:focus{outline:none}
-.heading{font-size:32px;font-weight:400}#component{font-size:23px;font-variant-numeric:tabular-nums;fill:var(--ve-purple)}
-.math,.head-label{font-family:inherit;font-size:27px}.vector-name{font-size:23px;font-family:inherit}
-.entry{cursor:pointer}.entry text{font-variant-numeric:tabular-nums;pointer-events:none;fill:inherit}.entry>.selection-outline{stroke:transparent;stroke-width:1.4px;stroke-linejoin:round;vector-effect:non-scaling-stroke}
-.entry:hover>.selection-outline{stroke:var(--ve-pencil)}.entry[aria-selected="true"]>.selection-outline{stroke:var(--ve-purple)}
-#notation,#tokens{outline:none}#notation:focus-visible .entry[aria-selected="true"]>.selection-outline{stroke:var(--ve-purple);stroke-dasharray:3 2}
-#tokens [data-token]{cursor:pointer}#tokens .selection-outline{pointer-events:all;fill:none;stroke:transparent;stroke-width:1.3;stroke-linejoin:round}#tokens text{pointer-events:none}
-#tokens [aria-selected="true"] .selection-outline{fill:var(--ve-blue-wash)}#tokens [data-token]:hover .selection-outline{stroke:var(--ve-pencil)}#tokens:focus-visible [aria-selected="true"] .selection-outline{stroke:var(--ve-blue)}
-#stage{cursor:grab;touch-action:none;outline:none}#stage.dragging{cursor:grabbing}
-.focus-ring{fill:none;stroke:transparent}svg:not(.pointer-input) #stage:focus-visible .focus-ring{stroke:var(--ve-pencil);stroke-width:2}
-#vectors text{font-variant-numeric:tabular-nums}#activation-region.pending{opacity:.3;pointer-events:none}
+svg.ve-scene{width:100%;height:auto;display:block;aspect-ratio:1100/1433;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;background-image:var(--ve-grid);background-size:30px 30px;font-size:26px}
+text{font-family:inherit;fill:var(--ve-ink);font-variant-numeric:tabular-nums}.small{font-size:22px}.muted{fill:var(--ve-muted)}.green{fill:var(--ve-green)}.purple{fill:var(--ve-purple)}
+.entry{cursor:pointer}.entry text,#heads text,#tokens text{pointer-events:none}.entry>path{stroke:transparent;stroke-width:1.6;pointer-events:all}.entry[data-column=true]>path{stroke:var(--ve-pencil)}.entry[aria-selected=true]>path{stroke:var(--ve-purple);stroke-width:2}
+#notation:focus-visible .entry[aria-selected=true]>path{stroke-dasharray:4 3}
+#heads [data-head]{cursor:pointer;outline:none}#heads path{fill:none;stroke:transparent;pointer-events:all}#heads [aria-pressed=true] path{fill:var(--ve-purple-wash);stroke:var(--ve-purple);stroke-width:1.4}#heads [data-head]:focus-visible path,#heads [data-head]:hover path{stroke:var(--ve-purple);stroke-width:1.4}
+#tokens{outline:none}#tokens [data-token]{cursor:pointer}#tokens .token-outline{fill:none;stroke:transparent;pointer-events:all}#tokens [aria-selected=true] .token-outline{fill:var(--ve-blue-wash);stroke:var(--ve-blue);stroke-width:1.4}#tokens:focus-visible [aria-selected=true] .token-outline{stroke-dasharray:4 3}
+#stage{cursor:grab;touch-action:none;outline:none}#stage.dragging{cursor:grabbing}.focus-ring{fill:none;stroke:transparent}svg:not(.pointer-input) #stage:focus-visible .focus-ring{stroke:var(--ve-ink);stroke-width:1.4}
+.input-box{fill:var(--ve-blue-wash);stroke:transparent}.weight-box{fill:var(--ve-purple-wash);stroke:transparent}[data-selected=true] .input-box{stroke:var(--ve-blue);stroke-width:1.3}[data-selected=true] .weight-box{stroke:var(--ve-purple);stroke-width:1.3}#activation-region.pending{opacity:.3;pointer-events:none}
 </style>
-
-<text id="heading" x="64" y="60" class="heading">Параметры W<tspan dy="7" font-size="23">Q</tspan></text>
-<text id="component" x="1036" y="60" text-anchor="end" aria-live="polite" aria-label="${componentLabel(start.selected,parameters)}">W<tspan dy="6" font-size="17">Q</tspan><tspan id="component-value" dy="-6">${componentLabel(start.selected,parameters).slice(3)}</tspan></text>
-<text id="shape-note" x="64" y="108" font-size="21">Фрагмент 4 × 4 × 4 · полная форма 256 × 64 × 4</text>
-<g id="stage" tabindex="0" role="group" aria-label="Постоянный фрагмент параметров W_Q. Нажатие — выбор коэффициента.">
-<rect x="42" y="150" width="1016" height="512" fill="transparent"/><path id="stage-focus" d="M525 658 Q550 660 575 658" class="focus-ring" stroke-linecap="round"/>
-<g id="orbit-world"><g id="cells" transform="translate(-255 0)">${geometryMarkup(parameters,start,false)}</g>
-<g id="mirror" transform="translate(255 0)" pointer-events="none" aria-hidden="true">${geometryMarkup(parameters,start,true)}</g>
+<text id="heading" x="64" y="55" font-size="36">Как веса собирают запрос</text>
+<text id="subtitle" x="64" y="98" class="small muted">BERT-mini · слой 4 · показываем 64 коэффициента из 65 536</text>
+<g id="stage" tabindex="0" role="group" aria-label="Куб четырёх голов. Нажатие выбирает коэффициент."><rect x="24" y="133" width="506" height="334" fill="transparent"/><g id="orbit-world"><g id="cells">${cells}</g></g><path id="stage-focus" class="focus-ring" d="M200 466Q270 468 340 466"/></g>
+<text x="270" y="492" text-anchor="middle" class="small">4 × 4 × 4 · четыре фрагмента голов</text>
+<text x="270" y="538" text-anchor="middle" class="small">Раздвинуть головы</text>
+${svgRange({ id: 'layers', x: 120, y: 548, width: 300, value: start.spread, label: 'Раздвинуть фрагменты четырёх голов' })}
+<g id="color-key"><text x="130" y="627" text-anchor="end" class="small muted">${decimal(-parameters.color_limit, 2)}</text>${markerMarkup({ x: 150, y: 610, width: 236, height: 17, color: 'url(#weight-scale)', seed: 4, prefix: 'bert-ink' })}<text x="406" y="627" class="small muted">+${decimal(parameters.color_limit, 2)}</text><text x="270" y="631" text-anchor="middle" class="small muted">0</text></g>
+<g id="matrix-section" transform="translate(550 158)"><text x="251" y="0" text-anchor="middle" font-size="28">1. Выбери голову и столбец</text><g id="heads" role="group" aria-label="Головы внимания">${heads}</g>
+${indices}<path d="M35 120H29V327H35M474 120H480V327H474" fill="none" stroke="var(--ve-pencil)" stroke-width="1.4"/>
+<g id="notation" tabindex="0" role="listbox" aria-label="Коэффициенты выбранной головы. Стрелки выбирают строку и столбец, PageUp и PageDown — голову." aria-activedescendant="entry-${start.selected}">${matrices}</g>
+<text id="head-caption" x="251" y="365" text-anchor="middle" class="small purple">Голова 1 · столбец 3 → q₃</text>
+<text id="component" x="251" y="407" text-anchor="middle" class="small">W_Q[2,3,1] = −0.034802</text>
+<text x="251" y="450" text-anchor="middle" class="small muted">Строка i → вход · столбец j → выход</text></g>
+<g id="activation-region" transform="translate(0 665)">
+<text id="calculation-title" x="36" y="25" font-size="28">2. Соберём q₁,₃ для токена</text>
+<g id="tokens" tabindex="0" role="listbox" aria-label="Выберите токен. Стрелки влево и вправо." aria-activedescendant="token-1"></g>
+<g id="calculation" transform="translate(0 102)">
+<text id="input-heading" x="250" y="56" text-anchor="middle" class="small">Вход xᵢ</text><text id="weight-heading" x="515" y="56" text-anchor="middle" class="small">Вес → q₃</text><text id="term-heading" x="815" y="56" text-anchor="middle" class="small">Вклад</text>
+${rows}
+<path id="gather" fill="none" stroke="var(--ve-green)" stroke-width="1.6" pathLength="100" visibility="hidden"/>
+<text id="operation" x="550" y="315" text-anchor="middle" class="small purple">Умножаем каждую компоненту на её вес</text>
+<g id="partial" visibility="hidden"><path id="partial-box" d="${inkBox(38, 336, 1024, 64, 50)}" fill="var(--ve-green-wash)"/><text id="partial-label" x="60" y="379">Первые 4 вклада</text><text id="partial-value" x="1038" y="379" text-anchor="end" class="green">${decimal(values.partial)}</text></g>
+<text id="plus" x="550" y="429" text-anchor="middle" visibility="hidden">+</text>
+<g id="rest" visibility="hidden"><path id="rest-box" d="${inkBox(38, 440, 1024, 64, 51)}" fill="var(--ve-purple-wash)"/><text id="rest-label" x="60" y="483" class="small">Остальные 252 + b</text><text id="rest-value" x="1038" y="483" text-anchor="end" class="purple">${decimal(values.rest)}</text></g>
+<g id="final" visibility="hidden"><path id="final-box" d="${inkBox(364, 524, 372, 70, 62)}" fill="var(--ve-blue-wash)" stroke="var(--ve-blue)" stroke-width="1.5"/><text id="output-value" x="550" y="571" text-anchor="middle" font-size="34">q₁,₃ ≈ ${decimal(values.output)}</text></g>
+<text id="reading" x="550" y="632" text-anchor="middle" class="small muted">Проследи путь от входов к одному q.</text>
+<text id="rounding" x="550" y="664" text-anchor="middle" font-size="19" class="muted">Округлено. Полная проекция BERT: 256 входов + b.</text>
 </g></g>
-<text id="layers-label" x="295" y="694" font-size="21" text-anchor="middle">Головы</text>
-${svgRange({id:'layers', x:118, y:709, width:354, value:0, label:'Раздвинуть фрагменты четырёх голов'})}
-<g id="color-key"><text x="805" y="694" text-anchor="middle" font-size="21">Коэффициент</text>
-<text x="678" y="736" font-size="18" text-anchor="end">−${limit.toFixed(2)}</text>${markerMarkup({x:697,y:721,width:216,height:18,color:'url(#weight-scale)',seed:4,prefix:'bert-ink'})}<path d="M697 744q54 2 108 0t108 0M805 742v8" fill="none" stroke="var(--ve-pencil)" stroke-width="1.2"/><text x="931" y="736" font-size="18">+${limit.toFixed(2)}</text><text x="805" y="761" text-anchor="middle" font-size="17">0</text>
-</g><text id="notation-label" x="550" y="818" class="math" text-anchor="middle">W<tspan dy="6" font-size="19">Q</tspan><tspan dy="-6">[i, j, h]</tspan></text>
-<text id="indices-label" x="550" y="853" font-size="19" text-anchor="middle">i — входная компонента · j — выходная · h — голова</text>
-<g id="notation" tabindex="0" role="listbox" aria-label="Постоянные коэффициенты W_Q. Стрелки выбирают число, PageUp и PageDown — голову." aria-activedescendant="entry-${start.selected}">${matricesMarkup(parameters,start.selected)}</g>
-<g id="activation-region" transform="translate(0 300)">
-<text id="flow-token" x="64" y="1170" font-size="28">Вход и выход: ${escapeXML(initial.tokens[start.token])}</text>
-<text id="projection-formula" x="1036" y="1170" class="math" text-anchor="end">q<tspan dy="6" font-size="19">h</tspan><tspan dy="-6"> = x W</tspan><tspan dy="6" font-size="19">Q,h</tspan><tspan dy="-6"> + b</tspan><tspan dy="6" font-size="19">h</tspan></text>
-<g id="tokens" tabindex="0" role="listbox" aria-label="Выберите токен для просмотра его векторов. Стрелки влево и вправо." aria-activedescendant="token-${start.token}">${tokenMarkup(initial,start.token)}</g>
-<g id="vectors" aria-live="polite">${vectorMarkup(initial,start.selected,start.token)}</g>
-<text id="projection-note" x="550" y="1430" text-anchor="middle" font-size="21">Расчёт использует все 256 компонент и смещение b; показаны первые четыре.</text>
-</g>
 <script><![CDATA[
 ${sharedRuntime}
-const {SvgOrbit,SketchInk,fitSvgControls}=VisualStory;
-const {inkShape, inkBox} = SketchInk;
-${[escapeXML,weightColor,componentLabel,cubeScene,geometryMarkup,matricesMarkup,tokenMarkup,vectorMarkup].map(fn=>fn.toString()).join('\n')}
-${runtime}
+${[projectionBreakdown, decimal, weightColor, escapeXML, cubeScene, mountCube].map((fn) => fn.toString()).join('\n')}
+mountCube(${JSON.stringify(initial).replace(/</g, '\\u003c')},${JSON.stringify(start)},VisualStory,{projectionBreakdown,decimal,weightColor,escapeXML},cubeScene);
 ]]></script>
 </svg>`;
-const output = resolve(process.env.VISUAL_STORY_OUTPUT ?? new URL('.',import.meta.url).pathname, 'tensor-cube.svg');
-await writeFile(output,svg);
-execFileSync('python3', [`${process.env.VISUAL_STORY_TOOLS ?? new URL('../../tools',import.meta.url).pathname}/svg_style.py`, output]);
-console.log('Created tensor-cube.svg: fixed W_Q parameters and live activations.');
+const output = resolve(
+  process.env.VISUAL_STORY_OUTPUT ?? new URL('.', import.meta.url).pathname,
+  'tensor-cube.svg',
+);
+await writeFile(output, svg);
+execFileSync('python3', [`${tools}/svg_style.py`, output]);
+console.log('Created tensor-cube.svg: one selected head and a timed full-projection explanation.');

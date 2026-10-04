@@ -1,34 +1,128 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Уравнение держит равновесие</title><script type="module">import '@visual-storytelling/core/style.css';</script></head><body class="ve-standalone"><main id="ve-scene" class="ve-scene"><style>
-    #ve-scene .figure { display: block; width: 100%; height: 338px; margin: 12px 0; }
-    #ve-scene h3, #ve-scene .figure text, #ve-scene .result { font-family: inherit; font-weight: 400; }
-    #ve-scene .figure text { fill: var(--ve-ink); font-size:19px; }
-    #ve-scene .scale { fill: none; stroke: var(--ve-ink); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-    #ve-scene .suspension { fill: none; stroke: var(--ve-ink); stroke-opacity: .6; stroke-width: 1.5; stroke-linecap: round; }
-    #ve-scene .figure .equation { font-size: 30px; }
-    #ve-scene .figure .unknown { font-size: 26px; }
-    #ve-scene .figure .note { font-size: 17px; }
-    #ve-scene .bag { fill: var(--ve-orange-wash); stroke: var(--ve-orange); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-    #ve-scene .crease { fill: none; stroke: var(--ve-orange); stroke-width: 1.15; stroke-linecap: round; }
-    #ve-scene .unit { fill: color-mix(in srgb, var(--ve-blue) 22%, var(--ve-surface)); stroke: var(--ve-blue); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-    #ve-scene .token[data-removed="true"] .unit { fill: color-mix(in srgb, var(--ve-blue) 8%, var(--ve-surface)); stroke: var(--ve-blue); opacity: .5; }
-    #ve-scene .token[data-selected="true"] .bag { fill: color-mix(in srgb, var(--ve-orange) 28%, var(--ve-surface)); }
-    #ve-scene .token[data-selected="true"] .unit { fill: color-mix(in srgb, var(--ve-blue) 32%, var(--ve-surface)); stroke: var(--ve-purple); }
-    #ve-scene .token[data-secondary="true"] { opacity: .35; }
-    #ve-scene .annotation { fill: none; stroke: var(--ve-purple); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    #ve-scene .highlight { fill: var(--ve-purple); fill-opacity: .2; }
-    #ve-scene .controls { display: flex; justify-content: center; gap: 8px; }
-    #ve-scene .result { display: block; margin: 14px 0 0; text-align: center; }
-  </style>
-  <h1>Уравнение держит равновесие</h1>
-  <svg class="figure canvas" role="img" aria-labelledby="vb-title vb-desc">
-    <title id="vb-title">Решение 3x + 2 = 8 на весах</title><desc id="vb-desc"></desc>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Уравнение держит равновесие</title>
+    <script type="module">
+      import '@visual-storytelling/core/style.css';
+    </script>
+  </head>
+  <body class="ve-standalone">
+    <main id="ve-scene" class="ve-scene">
+      <style>
+        #ve-scene .figure {
+          display: block;
+          width: 100%;
+          height: 338px;
+          margin: 12px 0;
+        }
+        #ve-scene .figure text {
+          font-family: inherit;
+          font-weight: 400;
+        }
+        #ve-scene .figure text {
+          fill: var(--ve-ink);
+          font-size: 19px;
+        }
+        #ve-scene .scale {
+          fill: none;
+          stroke: var(--ve-ink);
+          stroke-width: 2.2;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+        }
+        #ve-scene .suspension {
+          fill: none;
+          stroke: var(--ve-ink);
+          stroke-opacity: 0.6;
+          stroke-width: 1.5;
+          stroke-linecap: round;
+        }
+        #ve-scene .figure .equation {
+          font-size: 30px;
+        }
+        #ve-scene .figure .unknown {
+          font-size: 26px;
+        }
+        #ve-scene .figure .note {
+          font-size: 18px;
+        }
+        #ve-scene .figure .action {
+          font-size: 20px;
+          fill: var(--ve-purple);
+        }
+        #ve-scene .bag {
+          fill: var(--ve-orange-wash);
+          stroke: var(--ve-orange);
+          stroke-width: 1.8;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+        }
+        #ve-scene .crease {
+          fill: none;
+          stroke: var(--ve-orange);
+          stroke-width: 1.15;
+          stroke-linecap: round;
+        }
+        #ve-scene .unit {
+          fill: color-mix(in srgb, var(--ve-blue) 22%, var(--ve-surface));
+          stroke: var(--ve-blue);
+          stroke-width: 1.7;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+        }
+        #ve-scene .token[data-removed='true'] .unit {
+          fill: color-mix(in srgb, var(--ve-blue) 8%, var(--ve-surface));
+          stroke: var(--ve-blue);
+          opacity: 0.5;
+        }
+        #ve-scene .token[data-selected='true'] .bag {
+          fill: color-mix(in srgb, var(--ve-orange) 28%, var(--ve-surface));
+        }
+        #ve-scene .token[data-selected='true'] .unit {
+          fill: color-mix(in srgb, var(--ve-blue) 32%, var(--ve-surface));
+          stroke: var(--ve-purple);
+        }
+        #ve-scene .token[data-secondary='true'] {
+          opacity: 0.35;
+        }
+        #ve-scene .annotation {
+          fill: none;
+          stroke: var(--ve-purple);
+          stroke-width: 2;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+        }
+        #ve-scene .highlight {
+          fill: var(--ve-purple);
+          fill-opacity: 0.2;
+        }
+      </style>
+      <h1>Уравнение держит равновесие</h1>
+      <svg class="figure canvas" role="img" aria-labelledby="vb-title vb-desc">
+        <title id="vb-title">Решение 3x + 2 = 8 на весах</title>
+        <desc id="vb-desc"></desc>
 
-    <g data-scale></g><g data-tokens></g><g data-annotations></g><g data-labels></g>
-  </svg>
-  <div class="step-controls">
-    <button  type="button" data-back disabled>Назад</button>
-    <button  type="button" data-next>Убрать по 2</button>
-  </div>
-  <output class="sr-only" aria-live="polite" data-result></output>
-  </main><script type="module" src="scene.js"></script></body></html>
+        <text
+          data-action
+          x="400"
+          y="34"
+          text-anchor="middle"
+          class="action"
+          visibility="hidden"
+        ></text>
+        <g data-scale></g>
+        <g data-tokens></g>
+        <g data-annotations></g>
+        <g data-labels></g>
+      </svg>
+      <div class="step-controls">
+        <button type="button" data-back disabled>Назад</button>
+        <button type="button" data-next>Убрать по 2</button>
+      </div>
+      <output class="sr-only" aria-live="polite" data-result></output>
+    </main>
+    <script type="module" src="scene.js"></script>
+  </body>
+</html>

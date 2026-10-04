@@ -96,9 +96,10 @@
     "time": 0
   },
   "parameter-cube": {
-    "title": "Параметры BERT-mini",
+    "title": "Как веса BERT собирают запрос",
     "page": "preview.html",
-    "time": 0
+    "time": 7.2,
+    "checkpoints": [0, 1, 2.65, 3.7, 5, 6.3, 7.2]
   },
   "lc-oscillator": {
     "title": "Колебательный LC-контур",

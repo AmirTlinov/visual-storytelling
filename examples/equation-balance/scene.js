@@ -1,4 +1,4 @@
-import { widgetState } from '@visual-storytelling/core';
+import { gsap, widgetState } from '@visual-storytelling/core';
 (() => {
   const root = document.getElementById('ve-scene');
   const svg = root.querySelector('.figure');
@@ -7,6 +7,11 @@ import { widgetState } from '@visual-storytelling/core';
   const abort = new AbortController(),
     listen = { signal: abort.signal };
   let step = 0;
+  const movement = { progress: 1 };
+  const poses = new Map();
+  let targets = [],
+    instruction = [],
+    activeRoute = '';
   const states = [
     {
       equation: '3x + 2 = 8',
@@ -30,32 +35,65 @@ import { widgetState } from '@visual-storytelling/core';
         ? `<g data-shape><path class="bag" d="${bagShapes[index]}"/><path class="crease" d="M-5 -34Q0 -32 5 -34 M-5 -32l-3 5 M4 -32l3 4"/><text class="unknown" y="-10" text-anchor="middle">x</text></g>`
         : '<g data-shape><path class="unit" d="M-5 -15Q0 -16 5 -15L8 -1Q1 1 -8 0Z M-3 -15L-3 -20Q0 -21 3 -20L3 -15"/></g>';
     root.querySelector('[data-tokens]').append(g);
+    poses.set(g, { x: 0, y: 0 });
     return g;
   }
   const bags = Array.from({ length: 3 }, (_, i) => token('bag', i));
   const leftUnits = Array.from({ length: 2 }, (_, i) => token('left-unit', i));
   const rightUnits = Array.from({ length: 8 }, (_, i) => token('right-unit', i));
   function place(g, x, y, removed = false, secondary = false, route = '') {
-    const previous = new DOMMatrix(getComputedStyle(g).transform);
-    g.getAnimations().forEach((animation) => animation.cancel());
-    g.style.transform = `translate(${x}px, ${y}px)`;
-    g.dataset.removed = String(removed);
-    g.dataset.secondary = String(secondary);
-    g.dataset.selected = String(step === 2 && !removed && !secondary);
-    if (route && !motion.matches && (previous.e !== x || previous.f !== y)) {
-      const positions = [[previous.e, previous.f]];
-      if (route === 'spread') positions.push([x, previous.f]);
-      if (route === 'gather') positions.push([previous.e, y]);
-      positions.push([x, y]);
-      g.animate(
-        positions.map(([px, py]) => ({ transform: `translate(${px}px, ${py}px)` })),
-        { duration: 440, easing: 'ease-in-out' },
-      );
+    const pose = poses.get(g);
+    targets.push({
+      g,
+      pose,
+      from: { ...pose },
+      x,
+      y,
+      removed,
+      secondary,
+      route,
+      wasRemoved: g.dataset.removed === 'true',
+    });
+  }
+  function paint() {
+    const p = movement.progress,
+      complete = p === 1;
+    for (const item of targets) {
+      const { g, pose, from, x, y, removed, secondary, route, wasRemoved } = item;
+      // Division separates the same six weights horizontally before lowering them.
+      const px =
+        route === 'spread' ? Math.min(1, p * 2) : route === 'gather' ? Math.max(0, p * 2 - 1) : p;
+      const py =
+        route === 'spread' ? Math.max(0, p * 2 - 1) : route === 'gather' ? Math.min(1, p * 2) : p;
+      pose.x = from.x + (x - from.x) * px;
+      pose.y = from.y + (y - from.y) * py;
+      g.style.transform = `translate(${pose.x}px, ${pose.y}px)`;
+      g.dataset.removed = String(removed && (wasRemoved || complete));
+      g.dataset.secondary = String(complete && secondary);
+      g.dataset.selected = String(complete && step === 2 && !removed && !secondary);
+    }
+    root.dataset.phase = complete ? 'complete' : 'moving';
+    root.querySelector('[data-labels]').setAttribute('visibility', complete ? 'visible' : 'hidden');
+    root
+      .querySelector('[data-annotations]')
+      .setAttribute('visibility', complete ? 'visible' : 'hidden');
+    const action = root.querySelector('[data-action]');
+    action.setAttribute('visibility', complete ? 'hidden' : 'visible');
+    const detail = complete ? states[step].detail : instruction.join(' ');
+    if (root.querySelector('[data-result]').textContent !== detail) {
+      root.querySelector('[data-result]').textContent = detail;
+      root.querySelector('#vb-desc').textContent = complete
+        ? `${states[step].equation}. ${detail}`
+        : detail;
     }
   }
-  function draw(route = '') {
+  function draw(route = movement.progress < 1 ? activeRoute : '') {
     const width = Math.round(svg.getBoundingClientRect().width);
     if (!width) return;
+    gsap.killTweensOf(movement);
+    activeRoute = route;
+    targets = [];
+    movement.progress = route && !motion.matches ? 0 : 1;
     const left = width * 0.25,
       right = width * 0.75,
       center = width / 2;
@@ -154,8 +192,20 @@ import { widgetState } from '@visual-storytelling/core';
               .map((x) => `<text class="note" x="${x}" y="318" text-anchor="middle">−2</text>`)
               .join('')
           : `<text class="note" x="${left}" y="264" text-anchor="middle">мешочек: x</text><text class="note" x="${right}" y="264" text-anchor="middle">гирька: 1</text>`);
-    root.querySelector('[data-result]').textContent = states[step].detail;
-    root.querySelector('#vb-desc').textContent = `${states[step].equation}. ${states[step].detail}`;
+    const action = root.querySelector('[data-action]');
+    const lines = compact ? instruction : [instruction.join(' ')];
+    action.replaceChildren(
+      ...lines.map((line, i) => {
+        const span = document.createElementNS(ns, 'tspan');
+        span.setAttribute('x', center);
+        span.setAttribute('y', compact ? 23 + i * 25 : 34);
+        span.textContent = line;
+        return span;
+      }),
+    );
+    paint();
+    if (movement.progress < 1)
+      gsap.to(movement, { progress: 1, duration: 0.85, ease: 'power2.inOut', onUpdate: paint });
     root.querySelector('[data-back]').disabled = step === 0;
     root.querySelector('[data-next]').textContent = ['Убрать по 2', 'Разделить на 3', 'Сначала'][
       step
@@ -163,12 +213,21 @@ import { widgetState } from '@visual-storytelling/core';
   }
   function restore(snapshot) {
     const saved = snapshot?.privateContent;
-    if (saved?.example === 'balance' && Number.isInteger(saved.step))
-      step = Math.max(0, Math.min(2, saved.step));
+    if (saved?.example !== 'balance' || !Number.isInteger(saved.step)) return false;
+    step = Math.max(0, Math.min(2, saved.step));
+    return true;
   }
   function change(next) {
     const previous = step;
     step = next;
+    instruction =
+      step === 1
+        ? previous === 2
+          ? ['Собираем три группы', 'на каждой чаше']
+          : ['Убираем по две гирьки', 'с каждой чаши']
+        : step === 2
+          ? ['Делим обе стороны', 'на три равные группы']
+          : ['Возвращаем все предметы', 'на чаши'];
     draw(step === 2 ? 'spread' : previous === 2 ? 'gather' : 'move');
     storage.save({
       modelContent: { example: 'balance', equation: states[step].equation },
@@ -176,9 +235,7 @@ import { widgetState } from '@visual-storytelling/core';
     });
   }
   const storage = widgetState('equation-balance', (snapshot) => {
-    const previous = step;
-    restore(snapshot);
-    if (step !== previous) draw();
+    if (restore(snapshot)) draw('');
   });
   root.querySelector('[data-next]').addEventListener('click', () => change((step + 1) % 3), listen);
   root
@@ -190,15 +247,22 @@ import { widgetState } from '@visual-storytelling/core';
   window.galleryReady = document.fonts.ready.then(() => {
     if (!abort.signal.aborted) draw();
   });
+  motion.addEventListener('change', () => draw(''), listen);
   root.scene = {
+    snapshot: () => ({
+      step,
+      complete: movement.progress === 1,
+      equation: movement.progress === 1 ? states[step].equation : null,
+      positions: [...poses.values()].map((pose) => ({ ...pose })),
+    }),
     dispose() {
+      if (abort.signal.aborted) return;
       abort.abort();
       storage.dispose();
       observer.disconnect();
-      [...bags, ...leftUnits, ...rightUnits].forEach((node) =>
-        node.getAnimations().forEach((animation) => animation.cancel()),
-      );
+      gsap.killTweensOf(movement);
       root.replaceChildren();
+      delete root.scene;
     },
   };
   draw();
