@@ -29,6 +29,16 @@ export function interpolate(a: GroundPoint, b: GroundPoint, t: number): GroundPo
 }
 export const distance = (a: GroundPoint, b: GroundPoint) =>
   Math.hypot(b.x - a.x, b.z - a.z, (b.height ?? 0) - (a.height ?? 0));
+/** Sample a route by travelled distance, so feet and body follow the same bends. */
+export function alongPath(points: readonly GroundPoint[], progress: number): GroundPoint {
+  const lengths = points.slice(1).map((p, i) => distance(points[i]!, p));
+  let left = clamp(progress) * lengths.reduce((sum, n) => sum + n, 0);
+  for (const [i, length] of lengths.entries()) {
+    if (left <= length && length > 0) return interpolate(points[i]!, points[i + 1]!, left / length);
+    left -= length;
+  }
+  return { ...points.at(-1)! };
+}
 export const ground = (x: number, z = 0, height = 0): GroundPoint => ({ x, z, height });
 export function floorGrid(space: Projection, color: string) {
   const line = (a: GroundPoint, b: GroundPoint) => {

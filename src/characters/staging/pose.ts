@@ -11,7 +11,7 @@ import type { performance } from '../performance.js';
 import type { BipedRig, Projection } from './types.js';
 import type { BlockingActor, PairContact } from './blocking.js';
 import { ease } from './space.js';
-import { project, interpolate } from './space.js';
+import { project, interpolate, alongPath } from './space.js';
 import { bookHands, type BookFrame } from './furniture.js';
 
 type Performer = ReturnType<typeof performance>;
@@ -153,6 +153,7 @@ export function body(
       for (const side of sides) legs[side].upper.pose.scaleX *= 1 - state.seated * 0.52;
       const travel = state.travel;
       if (travel && travel.length > 0.001 && !reduced) {
+        const depthStep = state.facing === 'front' || state.facing === 'back';
         const count =
           travel.steps ??
           Math.max(
@@ -162,7 +163,7 @@ export function body(
           );
         const phase = travel.progress * count;
         const activity = ease(travel.progress / 0.07) * (1 - ease((travel.progress - 0.93) / 0.07));
-        hips.pose.y -= activity * (travel.steps ? 2 : 7 + 4 * Math.sin(phase * Math.PI) ** 2);
+        hips.pose.y -= activity * (depthStep ? 1.5 : 7 + 4 * Math.sin(phase * Math.PI) ** 2);
         torso.pose.rotation +=
           (Math.sin(phase * Math.PI) * 1.3 +
             (travel.running ? (state.facing === 'right' ? -8 : 8) : 0)) *
@@ -173,15 +174,28 @@ export function body(
           const from = step === index ? 0 : Math.min(1, step / count);
           const to = Math.min(1, (step + 2) / count);
           const progress = phase < index ? 0 : from + (to - from) * swing;
-          const point = interpolate(travel.from, travel.to, progress);
+          const point = travel.path
+            ? alongPath(travel.path, progress)
+            : interpolate(travel.from, travel.to, progress);
           const base = feet[side].data.setupPose;
           point.x += ((base.x * (actor.scale ?? 0.77)) / 100) * (actor.flip ? -1 : 1);
           point.height =
             (point.height ?? 0) +
             Math.sin(Math.PI * swing) *
-              (travel.steps ? 0.26 : travel.running ? 0.36 : 0.24) *
+              (depthStep ? (travel.running ? 0.18 : 0.12) : travel.running ? 0.36 : 0.24) *
               (actor.scale ?? 0.77);
-          foot(side, project(space, point));
+          const target = project(space, point);
+          foot(side, target);
+          if (depthStep && state.seated < 0.01) {
+            // A knee bends into depth when walking away. Foreshorten the whole leg
+            // vertically instead of forcing that bend sideways in the drawing plane.
+            const leg = legs[side],
+              root = leg.upper.parent!;
+            const hipY = leg.upper.appliedPose.worldY + (hips.pose.y - restingHips) * scale;
+            const reach = hipY - (height - target.y);
+            const length = (leg.upper.data.length + leg.lower.data.length) * scale;
+            root.pose.scaleY *= Math.max(0.55, Math.min(1.12, (reach / length) * 1.006));
+          }
           arms[side].upper.pose.rotation +=
             Math.sin(phase * Math.PI + index * Math.PI) * 13 * activity;
         }

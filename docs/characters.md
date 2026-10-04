@@ -2,7 +2,7 @@
 
 `@visual-storytelling/core/characters` — готовые риги, SVG-облики, декорации и предметы.
 Начальная семья **Chibi** сохраняет принятый рисунок Теслы: 44 родные кости,
-ограничения, сетки и порядок деталей. Доступны Tesla/Mira, 24 родных клипа и 14 подготовленных действий.
+ограничения, сетки и порядок деталей. Доступны Tesla/Mira, 24 родных клипа и 15 подготовленных действий.
 Три плоских фона и три семейства декораций с общей перспективой переиспользуют тот же риг. [Каталог возможностей](../src/assets/characters/chibi/pack.json)
 и `visual-story characters --json` дают точные имена.
 
@@ -97,6 +97,7 @@ await CharacterStory.mount(root, {
 | Сесть / встать               | `action: 'sit', actor, seat` / `action: 'stand', actor`                  |
 | Взять, читать, вернуть книгу | `take: actor, object` / `read: actor, book, pages?` / `put: actor, onto` |
 | Открыть дверь                | `action: 'openDoor', actor, door`                                        |
+| Пройти через проём           | `action: 'passDoor', actor, door, to: 'inside' / 'outside', gait?: 'walk' / 'run'` |
 | Подняться по лестнице        | `action: 'climb', actor, stairs`                                         |
 | Указать / нажать             | `action: 'point' / 'press', actor, target`                               |
 | Дать пять / идти за руки     | `action: 'highFive', actors: ['a','b']` / `walkTogether: actors, to`     |
@@ -108,7 +109,8 @@ await CharacterStory.mount(root, {
 
 `readingRoom` принимает `theme: library | laboratory | classroom`, `seat: chair | bench`,
 `furnitureScale`, `depth`; `street` — `theme: town | park`, `depth`; `courtyard`
-содержит дверь и лестницу. [Одна цепочка для двух разных героев](../examples/chibi-reading/scene.js)
+принимает `theme: workshop | library`, `entranceScale` и содержит вход с комнатой,
+фасад и лестницу с площадкой. [Одна цепочка для двух разных героев](../examples/chibi-reading/scene.js)
 выбирает Миру через `?variant=mira`, меняя только облик, рост и декорацию.
 
 Готовые декорации задают `staging`: `projection`, именованные `spots`, `objects`.
@@ -117,6 +119,13 @@ await CharacterStory.mount(root, {
 `project(projection, ground(...))` даёт координаты для её фонового рисунка.
 Одни размеры предметов определяют контуры, сиденье, ручку, ступени и точки контакта.
 Руки находят предмет, стопы ставятся на опору, перекрытия следуют глубине.
+
+Вход владеет стеной с проёмом, комнатой, порогом, петлёй и ручкой. `openDoor`
+тянет створку наружу; маршрут героя следует дуге её свободного края. Следующий
+эпизод `passDoor` проводит через середину открытого проёма. Называй `inside` или
+`outside`; траектория тела и шагов общая. Цвета `object.color`, `facade.wall` и
+`facade.inside` меняют оформление без изменения контактов. Пример
+`chibi-adventure?variant=tesla` использует тот же сценарий с другим ростом и размером входа.
 
 Называй места в декорации и используй их в `cast.at` и `to`. Книгу нужно взять или
 сразу объявить через `cast.reader.holding`; после `put` она остаётся на столе.
@@ -226,7 +235,8 @@ actors.render(frame.time, frame.reduced);
 `score.ts` связывает эпизоды с существующими метками, `performance.ts` сэмплирует
 родные клипы по абсолютному времени, `stage.ts` рисует весь состав одним WebGL-контекстом,
 `story.ts` подключает общую оболочку. `staging/blocking.ts` планирует действия,
-`motion.ts` вычисляет их по времени, `pose.ts` решает контакты, `world.ts` рисует
+`motion.ts` вычисляет их по времени, `pose.ts` решает контакты, `doorway.ts` владеет
+геометрией входа и маршрутами через него; `geometry.ts` проецирует общий рисунок. `world.ts` рисует
 предметы и героев в общем порядке. Сборщик обликов — `tools/characters/compile.mjs`.
 
 Проверь характерные позы и переходы вперёд/назад, контакт с предметом и узкую ширину.

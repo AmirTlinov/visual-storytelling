@@ -1,6 +1,8 @@
 import type { StageSet } from '../types.js';
 import type { Furniture, GroundPoint, Projection } from './types.js';
 import { floorGrid, ground, project } from './space.js';
+import { projectedParts } from './geometry.js';
+import { doorPassage } from './doorway.js';
 
 export interface RoomOptions {
   theme?: 'library' | 'laboratory' | 'classroom';
@@ -98,23 +100,104 @@ export function street(options: StreetOptions = {}): StageSet {
   );
 }
 
-/** A small exploration set: a working door and a staircase share the ground projection. */
-export function courtyard(): StageSet {
-  const set = street({ theme: 'town' }),
-    old = set.staging!;
+export interface CourtyardOptions {
+  theme?: 'workshop' | 'library';
+  entranceScale?: number;
+}
+/** One architectural courtyard: pavement, annex and entrance share the same horizon. */
+export function courtyard(options: CourtyardOptions = {}): StageSet {
+  const space: Projection = { horizon: 225, floor: 620, center: 440, unit: 98, distance: 14 };
+  const library = options.theme === 'library';
+  const door: Furniture = {
+    kind: 'door',
+    at: ground(1.9, 7),
+    scale: options.entranceScale ?? 1,
+    color: library ? '#626f90' : '#537d77',
+    facade: { wall: library ? '#c3c4b0' : '#cebd97', inside: library ? '#a9b5b6' : '#8faba4' },
+  };
+  const stairs: Furniture = { kind: 'stairs', at: ground(-3.2, 2.8) };
+  const { parts, group } = projectedParts({ kind: 'board', at: ground(0, 0) }, space);
+  group(0, (path) => {
+    const face = (
+      x: number,
+      y: number,
+      w: number,
+      h: number,
+      z: number,
+      color: string,
+      stroke = 2.5,
+    ) =>
+      path(
+        [
+          [x, y, z],
+          [x + w, y, z],
+          [x + w, y + h, z],
+          [x, y + h, z],
+        ],
+        color,
+        stroke,
+      );
+    let svg = face(-12, 0, 24, 2.65, 13, '#9ba99a');
+    svg += face(-12, 2.65, 24, 0.14, 13, '#ced0b1');
+    for (let x = -12; x < 12; x += 2.4) svg += face(x, 0, 0.16, 2.8, 12.95, '#b7b99c', 1.6);
+    // Lower annex and the landing meet at the same wall plane.
+    svg += face(-5.2, 0, 3.55, 4.92, 7.28, library ? '#a5b5ad' : '#afbdac');
+    svg += face(-5.2, 0, 3.55, 0.5, 7.26, '#8b9b8a');
+    svg += face(-4.87, 2.44, 3, 1.8, 7.25, '#4f6e66');
+    svg += face(-4.7, 2.57, 2.66, 1.53, 7.23, '#d4d5b3', 1.5);
+    for (const x of [-3.85, -2.93]) svg += face(x, 2.56, 0.085, 1.55, 7.22, '#668676', 0);
+    svg += face(-4.75, 3.33, 2.75, 0.075, 7.21, '#668676', 0);
+    svg += face(-5.37, 4.9, 3.88, 0.14, 7.1, '#d5c7a4');
+    svg += path(
+      [
+        [-5.45, 5.05, 7.08],
+        [-1.45, 5.05, 7.08],
+        [-1.6, 5.42, 8.6],
+        [-5.3, 5.42, 8.6],
+      ],
+      '#607e74',
+    );
+    // A path is laid on the ground instead of painted as a second perspective.
+    svg += path(
+      [
+        [-5.6, 0, -0.3],
+        [5.8, 0, -0.3],
+        [5.8, 0, 7],
+        [-5.6, 0, 7],
+      ],
+      '#b9b49a',
+      0,
+    );
+    for (let z = 0; z < 7; z += 1.25)
+      for (let x = -5.6; x < 5.4; x += 1.6) {
+        const offset = (Math.round(z / 1.25) % 2) * 0.8;
+        svg += path(
+          [
+            [x + offset, 0.002, z],
+            [Math.min(5.8, x + offset + 1.55), 0.002, z],
+            [Math.min(5.8, x + offset + 1.55), 0.002, z + 1.2],
+            [x + offset, 0.002, z + 1.2],
+          ],
+          (Math.round((x + 5.6) / 1.6) + Math.round(z / 1.25)) % 4 === 0 ? '#c7bea2' : '#b9b49a',
+          0.65,
+        );
+      }
+    return svg;
+  });
+  const svg = `<path fill="#c8d8ce" d="M0 0h960v650H0z"/><circle cx="130" cy="85" r="39" fill="#f1dfb4"/>
+    <g fill="#e4e5cf"><path d="M20 91q31-30 67-3 40-45 71-5l50 25H9Z"/><path d="M715 56q28-32 60-7 38-27 57 10l49 15H684Z"/></g>
+    <path fill="#88a48e" d="M0 239Q71 117 142 219Q214 115 279 234Q374 149 463 241Q618 134 693 239Q820 133 960 245V390H0Z"/>
+    <path fill="#a9ad92" d="M0 395h960v255H0z"/>${parts.map((p) => p.svg).join('')}`;
   return prepareSet(
-    set.svg,
-    old.projection,
+    svg,
+    space,
     {
-      entry: ground(-2.8, 0.5),
-      door: ground(2.2, 3),
-      stairs: ground(-2, 1),
-      exit: ground(3.5, 0.5),
+      entry: ground(-1.25, 0.7),
+      door: doorPassage(door, 'outside'),
+      inside: doorPassage(door, 'inside'),
+      stairs: { ...stairs.at },
+      exit: ground(-4.4, 0.7),
     },
-    {
-      door: { kind: 'door', at: ground(2.5, 4), color: '#a78258' },
-      stairs: { kind: 'stairs', at: ground(-2, 1) },
-      light: { kind: 'lamp', at: ground(4.1, 5), scale: 0.8 },
-    },
+    { door, stairs, plant: { kind: 'tree', at: ground(5.4, 8.3), scale: 0.85 } },
   );
 }

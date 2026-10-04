@@ -1,19 +1,31 @@
 import type { Blocking, BlockingActor, PairContact } from './blocking.js';
 import type { GroundPoint } from './types.js';
-import { approach, doorHandle, objectShape } from './objects.js';
-import { clamp, ease, distance, interpolate, facing } from './space.js';
+import { objectShape } from './objects.js';
+import { doorApproach, doorHandle } from './doorway.js';
+import { clamp, ease, distance, interpolate, facing, alongPath } from './space.js';
 
 /** Pure sampling of prepared actions at absolute story time. */
-function moving(actor: BlockingActor, from: GroundPoint, to: GroundPoint, p: number) {
-  const length = distance(from, to);
+function moving(
+  actor: BlockingActor,
+  from: GroundPoint,
+  to: GroundPoint,
+  p: number,
+  via?: GroundPoint[],
+) {
+  const path = via ? [from, ...via, to] : undefined;
+  const length = path
+    ? path.slice(1).reduce((sum, point, i) => sum + distance(path[i]!, point), 0)
+    : distance(from, to);
   if (length < 0.001) {
     actor.at = { ...to };
     return;
   }
   const t = ease(p);
-  actor.at = interpolate(from, to, t);
-  actor.facing = facing(from, to);
-  actor.travel = { from, to, progress: t, length };
+  actor.at = path ? alongPath(path, t) : interpolate(from, to, t);
+  actor.facing = path
+    ? facing(alongPath(path, Math.max(0, t - 0.01)), alongPath(path, Math.min(1, t + 0.01)))
+    : facing(from, to);
+  actor.travel = { from, to, progress: t, length, path };
 }
 export function blockAt(blocking: Blocking, time: number, reduced = false) {
   if (!Number.isFinite(time)) throw new Error('Stage time must be finite');
@@ -63,10 +75,17 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
         const open =
           plan.objectFrom! + (plan.objectTo! - plan.objectFrom!) * ease((t - 0.35) / 0.45);
         objects[a.door] = open;
-        if (t < 0.3) moving(p, before.at, approach(door, scale, plan.objectFrom!), t / 0.3);
+        if (t < 0.3) moving(p, before.at, doorApproach(door, scale, plan.objectFrom!), t / 0.3);
         else {
-          moving(p, approach(door, scale, plan.objectFrom!), after.at, (t - 0.35) / 0.45);
-          p.facing = 'front';
+          const arc = Array.from({ length: 15 }, (_, i) =>
+            doorApproach(
+              door,
+              scale,
+              plan.objectFrom! + ((plan.objectTo! - plan.objectFrom!) * (i + 1)) / 16,
+            ),
+          );
+          moving(p, doorApproach(door, scale, plan.objectFrom!), after.at, (t - 0.35) / 0.45, arc);
+          p.facing = 'left';
         }
         p.seated = before.seated * (1 - ease(t / 0.15));
         p.reach = {
@@ -75,9 +94,14 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
           press: 0,
         };
       }
+      if (a.action === 'passDoor') {
+        moving(p, before.at, after.at, t, plan.via);
+        p.seated = before.seated * (1 - ease(t / 0.15));
+        if (p.travel) p.travel.running = a.gait === 'run';
+      }
       if (a.action === 'climb') {
         const stairs = blocking.staging.objects[a.stairs]!,
-          start = approach(stairs, blocking.scales[a.actor]!);
+          start = { ...stairs.at };
         if (t < 0.24) moving(p, before.at, start, t / 0.24);
         else {
           moving(p, start, after.at, (t - 0.24) / 0.76);

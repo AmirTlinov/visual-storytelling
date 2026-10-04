@@ -2,7 +2,8 @@ import { stagingCatalog } from './catalog.js';
 import type { CharacterStageOptions } from '../types.js';
 import type { Script } from '../../story/cues.js';
 import type { Destination, Facing, GroundPoint, StageAction } from './types.js';
-import { approach, stairEnd, objectShape, supportPoint } from './objects.js';
+import { stairEnd, objectShape, supportPoint } from './objects.js';
+import { doorApproach, doorPassage, doorWaypoint } from './doorway.js';
 import { distance, interpolate, project, facing } from './space.js';
 
 export interface Placement {
@@ -21,6 +22,7 @@ export interface BlockingActor extends Placement {
     length: number;
     running?: boolean;
     steps?: number;
+    path?: GroundPoint[];
   };
   transfer?: { id: string; at: GroundPoint; progress: number; taking: boolean; grip: number };
   contact?: boolean;
@@ -44,6 +46,7 @@ export interface Plan {
   transfer?: { id: string; at: GroundPoint; taking: boolean };
   objectFrom?: number;
   objectTo?: number;
+  via?: GroundPoint[];
 }
 function participants(a: StageAction) {
   if (!a || typeof a !== 'object') throw new Error('A prepared action is required');
@@ -124,6 +127,7 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
     return item;
   };
   for (const beat of options.beats) {
+    const startingObjects = { ...objectStates };
     const used = new Set<string>(),
       usedObjects = new Set<string>();
     for (const action of beat.perform ?? []) {
@@ -137,7 +141,10 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
       }
       const from = Object.fromEntries(ids.map((id) => [id, structuredClone(state[id]!)]));
       const to = structuredClone(from);
-      let objectFrom: number | undefined, objectTo: number | undefined, transfer: Plan['transfer'];
+      let objectFrom: number | undefined,
+        objectTo: number | undefined,
+        transfer: Plan['transfer'],
+        via: Plan['via'];
       if ('actor' in action) {
         const p = to[action.actor]!;
         if (p.book && ['point', 'press', 'openDoor'].includes(action.action))
@@ -211,11 +218,31 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
             throw new Error(`Two actions own object ${action.door} in beat ${beat.id}`);
           usedObjects.add(action.door);
           objectFrom = objectStates[action.door] ?? 0;
-          point(approach(door, options.cast[action.actor]!.scale ?? 0.77, objectFrom));
+          point(doorApproach(door, options.cast[action.actor]!.scale ?? 0.77, objectFrom));
           objectTo = 1;
           objectStates[action.door] = 1;
-          p.at = point(approach(door, options.cast[action.actor]!.scale ?? 0.77, 1));
-          p.facing = 'front';
+          p.at = point(doorApproach(door, options.cast[action.actor]!.scale ?? 0.77, 1));
+          p.facing = 'left';
+          p.seated = 0;
+          p.seat = undefined;
+        }
+        if (action.action === 'passDoor') {
+          const door = object(action.door, ['door']);
+          if (action.to !== 'inside' && action.to !== 'outside')
+            throw new Error('passDoor needs inside or outside');
+          if (action.gait !== undefined && !['walk', 'run'].includes(action.gait))
+            throw new Error('passDoor gait must be walk or run');
+          if ((startingObjects[action.door] ?? 0) < 0.9)
+            throw new Error(`Open door ${action.door} before passing through it`);
+          if (usedObjects.has(action.door))
+            throw new Error(`Two actions own object ${action.door} in beat ${beat.id}`);
+          usedObjects.add(action.door);
+          const inside = from[action.actor]!.at.z > door.at.z;
+          if (inside === (action.to === 'inside'))
+            throw new Error(`Actor ${action.actor} is already ${action.to} door ${action.door}`);
+          p.at = point(doorPassage(door, action.to));
+          via = [point(doorWaypoint(door, action.to))];
+          p.facing = action.to === 'inside' ? 'back' : 'front';
           p.seated = 0;
           p.seat = undefined;
         }
@@ -260,6 +287,7 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
         objectFrom,
         objectTo,
         transfer,
+        via,
       });
       Object.assign(state, to);
     }

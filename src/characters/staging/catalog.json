@@ -13,8 +13,9 @@
       "spots": ["entry", "left", "right", "exit", "far", "near"]
     },
     "courtyard": {
-      "objects": ["door", "stairs", "light"],
-      "spots": ["entry", "door", "stairs", "exit"]
+      "themes": ["workshop", "library"],
+      "objects": ["door", "stairs", "plant"],
+      "spots": ["entry", "door", "inside", "stairs", "exit"]
     }
   },
   "objects": ["chair", "bench", "table", "book", "board", "tree", "lamp", "door", "stairs"],
@@ -28,6 +29,7 @@
     "read": { "actor": "hero", "book": "book", "pages": 3 },
     "put": { "actor": "hero", "onto": "sideTable" },
     "openDoor": { "actor": "hero", "door": "door" },
+    "passDoor": { "actor": "hero", "door": "door", "to": "inside", "gait": "walk" },
     "climb": { "actor": "hero", "stairs": "stairs" },
     "point": { "actor": "hero", "target": { "x": 1, "z": 1, "height": 2 } },
     "press": { "actor": "hero", "target": { "x": 1, "z": 1, "height": 2 } },
@@ -38,6 +40,7 @@
     "Use named ground spots for cast.at.",
     "One prepared action owns each actor per beat. actors selects the expression alongside it.",
     "Take the book before read; put it on a table before a free-hand interaction.",
+    "Open the door before passDoor. The entrance owns the threshold route; do not walk through its wall with a free destination.",
     "shot.focus names actors or prepared objects; the camera fits their actual bounds.",
     "Use scene.presentation() and review screenshots to inspect clipping at action boundaries."
   ]

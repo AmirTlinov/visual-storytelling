@@ -22,6 +22,8 @@ export interface Furniture {
   at: GroundPoint;
   scale?: number;
   color?: string;
+  /** An entrance includes its wall and room; colors change without changing contacts. */
+  facade?: { wall?: string; inside?: string };
 }
 export interface Staging {
   projection: Projection;
@@ -37,6 +39,13 @@ export type StageAction =
   | { action: 'take'; actor: string; object: string }
   | { action: 'put'; actor: string; onto: string }
   | { action: 'openDoor'; actor: string; door: string }
+  | {
+      action: 'passDoor';
+      actor: string;
+      door: string;
+      to: 'inside' | 'outside';
+      gait?: 'walk' | 'run';
+    }
   | { action: 'climb'; actor: string; stairs: string }
   | { action: 'point' | 'press'; actor: string; target: Destination }
   | { action: 'highFive'; actors: readonly [string, string] }

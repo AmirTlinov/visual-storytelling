@@ -5,50 +5,15 @@ import {
   type ManagedWebGLRenderingContext,
 } from '@esotericsoftware/spine-webgl';
 import { objectShape } from './objects.js';
-import { project } from './space.js';
 import type { Furniture, Projection } from './types.js';
 
-export interface Part {
-  svg: string;
-  polygons: { points: { x: number; y: number }[]; fill: string; stroke: number }[];
-  depth: number;
-  bounds: { x: number; y: number; width: number; height: number };
-}
-const ink = '#2a4145';
-/** Geometry and contacts use the same metres and projection. No perspective is painted by eye. */
+import { projectedParts, stageInk as ink, type Part } from './geometry.js';
+import { doorwayParts } from './doorway.js';
+
+/** Furniture keeps its physical contacts in the same projected world as its artwork. */
 export function furnitureParts(item: Furniture, space: Projection, open?: number): Part[] {
-  const s = item.scale ?? 1,
-    a = item.at,
-    parts: Part[] = [];
-  const p = (x: number, y: number, z: number) =>
-    project(space, { x: a.x + x * s, z: a.z + z * s, height: (a.height ?? 0) + y * s });
-  const group = (
-    depth: number,
-    draw: (path: (points: number[][], fill: string, stroke?: number) => string) => string,
-  ) => {
-    const points: { x: number; y: number }[] = [],
-      polygons: Part['polygons'] = [];
-    const path = (vertices: number[][], fill: string, stroke = 3) => {
-      const ps = vertices.map((v) => p(v[0]!, v[1]!, v[2]!));
-      points.push(...ps);
-      polygons.push({ points: ps, fill, stroke });
-      return `<path d="${ps.map((v, i) => `${i ? 'L' : 'M'}${v.x.toFixed(2)} ${v.y.toFixed(2)}`).join('')}Z" fill="${fill}" stroke="${ink}" stroke-width="${stroke}" stroke-linejoin="round"/>`;
-    };
-    const svg = draw(path);
-    const left = Math.min(...points.map((p) => p.x)) - 6,
-      top = Math.min(...points.map((p) => p.y)) - 6;
-    parts.push({
-      svg,
-      polygons,
-      depth: a.z + depth * s,
-      bounds: {
-        x: left,
-        y: top,
-        width: Math.max(...points.map((p) => p.x)) - left + 6,
-        height: Math.max(...points.map((p) => p.y)) - top + 6,
-      },
-    });
-  };
+  if (item.kind === 'door') return doorwayParts(item, space, open);
+  const { parts, group } = projectedParts(item, space);
   const wood = item.color ?? '#aa8057';
   if (item.kind === 'chair' || item.kind === 'bench') {
     const w = item.kind === 'bench' ? 1.45 : 0.68;
@@ -106,78 +71,42 @@ export function furnitureParts(item: Furniture, space: Projection, open?: number
         );
       return out;
     });
-  } else if (item.kind === 'door') {
-    const d = objectShape.door,
-      w = d.width / 2,
-      h = d.height;
-    if (open === undefined) {
-      group(5, (path) =>
-        path(
-          [
-            [-w, 0, 0],
-            [w, 0, 0],
-            [w, h, 0],
-            [-w, h, 0],
-          ],
-          '#233f40',
-        ),
-      );
-      group(
-        0.05,
-        (path) =>
-          path(
-            [
-              [-w - 0.14, 0, 0],
-              [-w, 0, 0],
-              [-w, h + 0.14, 0],
-              [-w - 0.14, h + 0.14, 0],
-            ],
-            '#b49b70',
-          ) +
-          path(
-            [
-              [w, 0, 0],
-              [w + 0.14, 0, 0],
-              [w + 0.14, h + 0.14, 0],
-              [w, h + 0.14, 0],
-            ],
-            '#b49b70',
-          ) +
-          path(
-            [
-              [-w, h, 0],
-              [w, h, 0],
-              [w, h + 0.14, 0],
-              [-w, h + 0.14, 0],
-            ],
-            '#b49b70',
-          ),
-      );
-    } else
-      group(Math.sin(open * Math.PI * 0.47) * w, (path) => {
-        const a = open * Math.PI * 0.47,
-          cs = Math.cos(a),
-          sn = Math.sin(a);
-        const quad = (x: number, y: number, width: number, height: number, fill: string) =>
-          path(
-            [
-              [x, y, 0],
-              [x + width, y, 0],
-              [x + width, y + height, 0],
-              [x, y + height, 0],
-            ].map(([x, y]) => [-w + x! * cs, y!, x! * sn]),
-            fill,
-          );
-        return (
-          quad(0, 0, d.width, h, wood) +
-          quad(0.2, 0.25, d.width - 0.4, 1.65, '#907754') +
-          quad(0.2, 2.5, d.width - 0.4, 1.75, '#bea275') +
-          quad(d.handleX - 0.1, d.handleHeight - 0.07, 0.2, 0.14, '#edce82')
-        );
-      });
   } else if (item.kind === 'stairs') {
     const d = objectShape.stairs,
-      w = 0.85;
+      w = 1.03,
+      top = d.steps * d.rise,
+      end = d.steps * d.tread;
+    group(
+      end + d.landing / 2,
+      (path) =>
+        path(
+          [
+            [-w, top, end],
+            [w, top, end],
+            [w, top, end + d.landing],
+            [-w, top, end + d.landing],
+          ],
+          '#d2c19c',
+        ) +
+        path(
+          [
+            [-w, 0, end],
+            [w, 0, end],
+            [w, top, end],
+            [-w, top, end],
+          ],
+          '#a29d84',
+        ) +
+        path(
+          [
+            [-w, 0, end],
+            [-w, top, end],
+            [-w, top, end + d.landing],
+            [-w, 0, end + d.landing],
+          ],
+          '#899784',
+        ),
+    );
     for (let i = d.steps - 1; i >= 0; i--)
       group((i + 0.5) * d.tread, (path) => {
         const y = (i + 1) * d.rise,
@@ -202,6 +131,46 @@ export function furnitureParts(item: Furniture, space: Projection, open?: number
             '#9c8f76',
           )
         );
+      });
+    // Rail follows the stair pitch and continues across its usable landing.
+    for (let i = 0; i <= d.steps; i += 2)
+      group(i * d.tread - 0.015, (path) => {
+        const z = i * d.tread,
+          y = Math.min(top, (i + 1) * d.rise),
+          next = Math.min(end, z + 2 * d.tread);
+        let svg = path(
+          [
+            [-w - 0.04, y, z],
+            [-w + 0.04, y, z],
+            [-w + 0.04, y + 1.05, z],
+            [-w - 0.04, y + 1.05, z],
+          ],
+          '#5c7668',
+          1.6,
+        );
+        if (i < d.steps)
+          svg += path(
+            [
+              [-w, y + 0.97, z],
+              [-w, y + 1.05, z],
+              [-w, Math.min(top, (i + 3) * d.rise) + 1.05, next],
+              [-w, Math.min(top, (i + 3) * d.rise) + 0.97, next],
+            ],
+            '#5c7668',
+            1.6,
+          );
+        else
+          svg += path(
+            [
+              [-w, top + 0.97, end],
+              [-w, top + 1.05, end],
+              [-w, top + 1.05, end + d.landing],
+              [-w, top + 0.97, end + d.landing],
+            ],
+            '#5c7668',
+            1.6,
+          );
+        return svg;
       });
   } else if (item.kind === 'table') {
     group(0, (path) => {

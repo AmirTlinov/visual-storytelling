@@ -9,7 +9,8 @@ import { blockAt } from '../dist/characters/staging/motion.js';
 import { body, connect } from '../dist/characters/staging/pose.js';
 import { world } from '../dist/characters/staging/world.js';
 import { ground, project } from '../dist/characters/staging/space.js';
-import { readingRoom } from '../dist/characters/staging/sets.js';
+import { readingRoom, courtyard } from '../dist/characters/staging/sets.js';
+import { doorway, doorHandle, doorPassage } from '../dist/characters/staging/doorway.js';
 import { performance, readSkeleton } from '../dist/characters/performance.js';
 
 const template = fileURLToPath(new URL('../src/assets/characters/chibi', import.meta.url));
@@ -354,6 +355,177 @@ test('projection preserves metric height and rejects non-finite geometry', () =>
   assert.equal(a.y - b.y, space.unit * a.scale);
   for (const invalid of [ground(NaN, 0), ground(0, -space.distance), ground(0, 0, Infinity)])
     assert.throws(() => project(space, invalid));
+});
+
+test('an opened entrance guides different actors around its leaf and through the same clear threshold', () => {
+  const open = { action: 'openDoor', actor: 'a', door: 'door' },
+    enter = { action: 'passDoor', actor: 'a', door: 'door', to: 'inside' },
+    leave = { ...enter, to: 'outside', gait: 'run' },
+    run = { action: 'flee', actor: 'a', to: 'stairs' };
+  const entranceScene = (
+    skin,
+    scale,
+    entranceScale,
+    beats = [beat(open), beat(enter), beat(leave), beat(run)],
+  ) => ({
+    pack,
+    set: courtyard({ entranceScale }),
+    cast: { a: { skin, at: 'entry', scale } },
+    beats: beats.map((b, i) => ({ ...b, id: `door-${i}` })),
+  });
+  const separation = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+  for (const [skin, scale, entranceScale] of [
+    ['mira', 0.64, 1],
+    ['tesla', 0.8, 1.08],
+  ]) {
+    const options = entranceScene(skin, scale, entranceScale),
+      blocking = compileScore(options).blocking,
+      door = options.set.staging.objects.door,
+      sample = performer(options),
+      hinge = { x: door.at.x - (doorway.width * entranceScale) / 2, z: door.at.z };
+    const halfStance = Math.max(
+      ...Object.values(pack.rig.feet).map(
+        (name) => (Math.abs(data.findBone(name).setupPose.x) * scale) / 100,
+      ),
+    );
+    const clearance = (at, open) => {
+      const angle = -open * doorway.swing,
+        leaf = {
+          x: Math.cos(angle) * doorway.width * entranceScale,
+          z: Math.sin(angle) * doorway.width * entranceScale,
+        },
+        u = Math.max(
+          0,
+          Math.min(
+            1,
+            ((at.x - hinge.x) * leaf.x + (at.z - hinge.z) * leaf.z) / (leaf.x ** 2 + leaf.z ** 2),
+          ),
+        );
+      return separation(at, { x: hinge.x + u * leaf.x, z: hinge.z + u * leaf.z });
+    };
+
+    // The actor pulls from the free edge; the facade plane is never crossed during opening.
+    for (let i = 0; i <= 100; i++) {
+      const time = i * 0.02,
+        frame = blockAt(blocking, time),
+        actor = frame.actors.a;
+      assert.ok(actor.at.z < door.at.z, `${skin}: opening stays outside the facade`);
+      if (time >= 0.7 && time < 2) {
+        assert.ok(
+          clearance(actor.at, frame.objects.door) > halfStance,
+          `${skin}: stance intersects swinging leaf @ ${time}`,
+        );
+      }
+      if (actor.reach?.weight === 1) {
+        const target = project(
+            options.set.staging.projection,
+            doorHandle(door, frame.objects.door),
+          ),
+          contacts = sample(time).a.contacts;
+        assert.equal(contacts.length, 1, 'the gripping hand follows the real handle');
+        assert.ok(
+          Math.hypot(contacts[0].target.x - target.x, contacts[0].target.y - target.y) < 1e-6,
+        );
+        assert.ok(contacts[0].error < 0.01, `${skin}: handle contact error @ ${time}`);
+      }
+    }
+
+    for (const [start, end, side, direction] of [
+      [2, 4, 'inside', 1],
+      [4, 6, 'outside', -1],
+    ]) {
+      let previous = blockAt(blocking, start).actors.a.at,
+        crossings = 0;
+      for (let i = 1; i <= 100; i++) {
+        const time = start + ((end - start) * i) / 100,
+          actor = blockAt(blocking, time).actors.a,
+          at = actor.at;
+        assert.ok(
+          direction * (at.z - previous.z) >= -1e-9,
+          `${skin}: passage does not double back`,
+        );
+        if ((previous.z - door.at.z) * (at.z - door.at.z) <= 0) {
+          const alpha = (door.at.z - previous.z) / (at.z - previous.z),
+            x = previous.x + (at.x - previous.x) * alpha;
+          assert.ok(Math.abs(x - door.at.x) < 1e-8, `${skin}: cross the opening, not the wall`);
+          crossings++;
+        }
+        if (actor.facing === 'front' || actor.facing === 'back') {
+          const pose = sample(time).a;
+          for (const [side, leg] of Object.entries(pack.rig.legs)) {
+            const lower = data.findBone(leg.lower),
+              bone = pose.bones[data.bones.indexOf(lower)],
+              ankle = {
+                x: bone[4] + bone[0] * lower.length,
+                y: options.set.height - bone[5] - bone[2] * lower.length,
+              };
+            assert.ok(
+              Math.hypot(ankle.x - pose.feet[side].x, ankle.y - pose.feet[side].y) < 0.01,
+              `${skin}: perspective stride loses the ${side} foot target @ ${time}`,
+            );
+          }
+        }
+        previous = at;
+      }
+      assert.equal(crossings, 1, `${skin}: one threshold crossing towards ${side}`);
+      assert.deepEqual(blockAt(blocking, end).actors.a.at, doorPassage(door, side));
+      assert.ok(separation(blockAt(blocking, end - 1e-5).actors.a.at, previous) < 1e-7);
+    }
+    assert.equal(blockAt(blocking, 5).actors.a.travel.running, true);
+    for (let i = 0; i <= 100; i++) {
+      const time = 6 + i * 0.02,
+        frame = blockAt(blocking, time);
+      assert.ok(
+        clearance(frame.actors.a.at, frame.objects.door) > halfStance,
+        `${skin}: leave enough clearance to run sideways past the open leaf @ ${time}`,
+      );
+    }
+    assert.equal(blockAt(blocking, 8).actors.a.travel, undefined);
+    const times = [0, 0.76, 1.13, 1.6, 2, 2.5, 3.28, 3.99999, 4, 5.1, 6, 6.8, 8],
+      expected = times.map((time) => sample(time));
+    for (const [i, time] of [...times.entries()].reverse()) {
+      sample(time, true);
+      assert.deepEqual(sample(time), expected[i], `${skin}: native door-route rewind @ ${time}`);
+    }
+  }
+
+  assert.throws(() => compileScore(entranceScene('mira', 0.64, 1, [beat(enter)])), /Open door/);
+  // Actions within one beat are simultaneous: their array order cannot make a closed door passable.
+  for (const actions of [
+    [open, { ...enter, actor: 'b' }],
+    [{ ...enter, actor: 'b' }, open],
+  ]) {
+    const options = entranceScene('mira', 0.64, 1, [beat(...actions)]);
+    options.cast.b = { skin: 'tesla', at: 'entry', scale: 0.8 };
+    assert.throws(() => compileScore(options), /Open door/);
+  }
+  for (const [beats, error] of [
+    [[beat(open), beat(enter), beat(enter)], /already inside/],
+    [[beat(open), beat(leave)], /already outside/],
+  ])
+    assert.throws(() => compileScore(entranceScene('mira', 0.64, 1, beats)), error);
+
+  const competing = entranceScene('mira', 0.64, 1, [
+    beat(open),
+    beat(enter, { ...leave, actor: 'b' }),
+  ]);
+  competing.cast.b = { skin: 'tesla', at: 'inside', scale: 0.8 };
+  assert.throws(() => compileScore(competing), /Two actions own object door/);
+
+  const seated = entranceScene('mira', 0.64, 1, [
+    beat(open),
+    beat({ action: 'sit', actor: 'a', seat: 'seat' }),
+    beat(enter),
+  ]);
+  seated.set.staging.objects.seat = {
+    kind: 'chair',
+    at: doorPassage(seated.set.staging.objects.door, 'outside'),
+  };
+  const standing = compileScore(seated).blocking;
+  assert.equal(blockAt(standing, 4).actors.a.seated, 1);
+  assert.ok(blockAt(standing, 4.1).actors.a.seated < 1);
+  assert.ok(blockAt(standing, 4.1).actors.a.seated > 0);
+  assert.equal(blockAt(standing, 4.4).actors.a.seated, 0);
 });
 
 test('take and put preserve one book owner and its last resting place across rewinds', async () => {
