@@ -16,6 +16,8 @@ export * from './host/widget-state.js';
 export { MathMorph, mathPlan } from './morph/math.js';
 export type {
   Arithmetic,
+  CellOperation,
+  MathStep,
   MathOperation,
   MathMorphFrame,
   MathMorphPlan,
@@ -23,6 +25,7 @@ export type {
   MathOrigin,
   MathNote,
 } from './morph/types.js';
+export type { MorphTime, MorphCues } from './morph/timing.js';
 export { MathMorph2D } from './morph/svg.js';
 export { Morph, morphPlan } from './morph/objects.js';
 export { Morph2D } from './morph/object-2d.js';

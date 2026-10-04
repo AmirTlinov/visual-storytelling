@@ -21,7 +21,7 @@ function mount(svg: SVGSVGElement, { onInteract = () => {} } = {}) {
     throw new Error(
       'ViewportSVG needs a surface() or a <g data-camera-world data-camera-transform>',
     );
-  const viewport = svg.parentElement!;
+  const viewport = svg;
   const camera = new SvgCamera(viewport, svg);
   const abort = new AbortController();
   const original = {
@@ -56,6 +56,7 @@ function mount(svg: SVGSVGElement, { onInteract = () => {} } = {}) {
   function shot(options: SvgShotTransition) {
     last = options;
     if (!following) return;
+    camera.syncViewport();
     const target = camera.fit(bounds(options.target), options.padding ?? 24);
     const p = Math.max(0, Math.min(1, options.progress ?? 1));
     const amount =

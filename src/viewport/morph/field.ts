@@ -1,5 +1,6 @@
 import { Box3, Euler, Matrix4, Quaternion, Vector3 } from 'three';
 import { contactPlanes } from './contact-planes.js';
+import { materialGroups, registerBounds } from './registration.js';
 
 export type VolumePoint = readonly [number, number, number];
 export type VolumeShape =
@@ -60,6 +61,7 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
   if (!sources.length || !targets.length)
     throw new Error('Volume morph needs visible sources and targets');
   const count = sources.length,
+    targetCount = targets.length,
     shapes = [...sources, ...targets];
   const kinds = new Int32Array(shapes.length),
     parameters = new Float32Array(shapes.length * 4);
@@ -67,8 +69,17 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
     scales = new Float32Array(shapes.length);
   const nextTransforms = new Float32Array(transforms.length),
     nextScales = new Float32Array(scales.length);
-  const planes = new Float32Array(24),
-    nextPlanes = new Float32Array(24);
+  const capacity = Math.min(count, targetCount);
+  const planes = new Float32Array(24 * capacity),
+    nextPlanes = new Float32Array(planes.length);
+  const groups = new Int32Array(shapes.length),
+    nextGroups = groups.slice();
+  const planeCounts = new Int32Array(capacity),
+    nextPlaneCounts = planeCounts.slice();
+  const sourceDistances = new Float64Array(capacity),
+    targetDistances = sourceDistances.slice();
+  const registration = new Float64Array(shapes.flatMap(() => [1, 1, 1, 0, 0, 0])),
+    nextRegistration = registration.slice();
   shapes.forEach((shape, i) => {
     const at = i * 4;
     if (!shape || typeof shape !== 'object') throw new Error('Invalid volume shape');
@@ -108,16 +119,40 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
   });
   const bounds = new Box3(),
     nextBounds = new Box3(),
-    localBounds = new Box3();
+    localBounds = new Box3(),
+    fromBounds = new Box3(),
+    toBounds = new Box3();
+  const materialBounds = shapes.map(() => new Box3());
+  const worldTransforms = new Float64Array(shapes.length * 16),
+    pairRegistration = new Float64Array(12);
+  const halfSizes = shapes.map(
+    (shape) =>
+      new Vector3(
+        ...(shape.kind === 'box'
+          ? shape.size.map((v) => v / 2)
+          : shape.kind === 'sphere'
+            ? [shape.radius, shape.radius, shape.radius]
+            : [shape.length / 2, shape.radius, shape.radius]),
+      ),
+  );
   const matrix = new Matrix4(),
+    registrationMatrix = new Matrix4(),
+    basis = new Matrix4(),
+    inverseBasis = new Matrix4(),
+    localMatrix = new Matrix4(),
+    expansion = new Vector3(),
     position = new Vector3(),
     scale = new Vector3(),
     rotation = new Euler(),
     quaternion = new Quaternion();
-  const updatePlanes = contactPlanes(kinds, parameters, count);
+  const updatePlanes = contactPlanes(kinds, parameters);
   let progress = 0,
     tension = 0,
-    planeCount = 0;
+    groupCount = 1;
+  function shapeBounds(i: number, transform: Matrix4) {
+    const half = halfSizes[i]!;
+    return localBounds.set(expansion.copy(half).negate(), half).applyMatrix4(transform);
+  }
   function updatePose(pose: VolumePose = {}, i: number) {
     const p = pose.position ?? [0, 0, 0],
       r = pose.rotation ?? [0, 0, 0],
@@ -134,15 +169,9 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
       quaternion.setFromEuler(rotation.set(...r)),
       scale.set(...dimensions),
     );
-    const shape = shapes[i]!;
-    const half: VolumePoint =
-      shape.kind === 'box'
-        ? (shape.size.map((v) => v / 2) as unknown as VolumePoint)
-        : shape.kind === 'sphere'
-          ? [shape.radius, shape.radius, shape.radius]
-          : [shape.length / 2, shape.radius, shape.radius];
-    localBounds.set(new Vector3(...half).negate(), new Vector3(...half)).applyMatrix4(matrix);
-    nextBounds.union(localBounds);
+    worldTransforms.set(matrix.elements, i * 16);
+    materialBounds[i]!.copy(shapeBounds(i, matrix));
+    nextBounds.union(materialBounds[i]!);
     matrix.invert();
     nextTransforms.set(matrix.elements, i * 16);
     nextScales[i] = Math.min(...dimensions);
@@ -188,10 +217,13 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
     transforms,
     scales,
     planes,
+    groups,
+    planeCounts,
+    registration,
     count,
-    targetCount: targets.length,
-    get planeCount() {
-      return planeCount;
+    targetCount,
+    get groupCount() {
+      return groupCount;
     },
     get morph() {
       return progress;
@@ -200,7 +232,7 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
       return tension;
     },
     update(frame: VolumeFrame) {
-      if (frame.sources.length !== count || frame.targets.length !== targets.length)
+      if (frame.sources.length !== count || frame.targets.length !== targetCount)
         throw new Error('Volume poses must match every source and target shape');
       if (!Number.isFinite(frame.morph) || !Number.isFinite(frame.tension ?? 0.2))
         throw new Error('Volume progress and tension must be finite');
@@ -210,40 +242,139 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
         throw new Error('Volume tension must fit a finite GPU float');
       nextBounds.makeEmpty();
       for (let i = 0; i < count; i++) updatePose(frame.sources[i], i);
-      for (let i = 0; i < targets.length; i++) updatePose(frame.targets[i], count + i);
+      for (let i = 0; i < targetCount; i++) updatePose(frame.targets[i], count + i);
+      const materials = materialGroups(materialBounds, count);
+      nextPlanes.fill(0);
+      nextPlaneCounts.fill(0);
+      for (const [group, material] of materials.entries()) {
+        const orientation = frame.sources[material.sources[0]!]?.rotation ?? [0, 0, 0];
+        basis.makeRotationFromEuler(rotation.set(...orientation));
+        inverseBasis.copy(basis).invert();
+        fromBounds.makeEmpty();
+        toBounds.makeEmpty();
+        const indices = [...material.sources, ...material.targets];
+        for (const i of indices) {
+          localMatrix.multiplyMatrices(inverseBasis, matrix.fromArray(worldTransforms, i * 16));
+          (i < count ? fromBounds : toBounds).union(shapeBounds(i, localMatrix));
+        }
+        registerBounds(fromBounds, toBounds, nextProgress, pairRegistration);
+        // Displacement and size use the group's own axes. Contour blending then
+        // preserves a packed rectangular union, without fixed-space diagonal facets.
+        for (const i of indices) {
+          nextGroups[i] = group;
+          const at = i < count ? 0 : 6;
+          nextRegistration.set(pairRegistration.subarray(at, at + 6), i * 6);
+          const sx = pairRegistration[at]!,
+            sy = pairRegistration[at + 1]!,
+            sz = pairRegistration[at + 2]!;
+          if (nextProgress !== Number(i >= count)) {
+            registrationMatrix.set(
+              1 / sx,
+              0,
+              0,
+              -pairRegistration[at + 3]! / sx,
+              0,
+              1 / sy,
+              0,
+              -pairRegistration[at + 4]! / sy,
+              0,
+              0,
+              1 / sz,
+              -pairRegistration[at + 5]! / sz,
+              0,
+              0,
+              0,
+              1,
+            );
+            registrationMatrix.premultiply(basis).multiply(inverseBasis);
+            matrix.fromArray(nextTransforms, i * 16).multiply(registrationMatrix);
+            nextTransforms.set(matrix.elements, i * 16);
+            nextScales[i]! *= Math.min(sx, sy, sz);
+          }
+          matrix.fromArray(nextTransforms, i * 16).invert();
+          shapeBounds(i, matrix);
+          // Conservative SDF scaling also scales contact reach. Bound that reach
+          // through the complete affine transform, including anisotropy and shear.
+          const allowance =
+            i < count ? (nextTension * (material.sources.length - 1)) / (4 * nextScales[i]!) : 0;
+          const e = matrix.elements;
+          localBounds.expandByVector(
+            expansion
+              .set(
+                Math.hypot(e[0]!, e[4]!, e[8]!),
+                Math.hypot(e[1]!, e[5]!, e[9]!),
+                Math.hypot(e[2]!, e[6]!, e[10]!),
+              )
+              .multiplyScalar(allowance),
+          );
+          nextBounds.union(localBounds);
+        }
+        if (material.targets.length === 1)
+          nextPlaneCounts[group] = updatePlanes(
+            nextTransforms,
+            nextTension,
+            nextPlanes,
+            material.sources,
+            material.targets[0]!,
+            group * 24,
+          );
+      }
       if (!nextTransforms.every(Number.isFinite))
         throw new Error('Volume transforms must fit finite GPU floats');
-      const nextPlaneCount =
-        targets.length === 1 ? updatePlanes(nextTransforms, nextTension, nextPlanes) : 0;
+      if (
+        !nextScales.every((n) => Number.isFinite(n) && n > 0) ||
+        !nextRegistration.every(Number.isFinite)
+      )
+        throw new Error('Registered volume scales must fit positive GPU floats');
       if (!nextPlanes.every(Number.isFinite))
         throw new Error('Volume contact planes must fit finite GPU floats');
-      bounds.copy(nextBounds).expandByScalar((nextTension * Math.max(0, count - 1)) / 4 + 0.01);
+      if (![...nextBounds.min.toArray(), ...nextBounds.max.toArray()].every(Number.isFinite))
+        throw new Error('Registered volume bounds must be finite');
+      bounds.copy(nextBounds).expandByScalar(0.01);
       transforms.set(nextTransforms);
       scales.set(nextScales);
       planes.set(nextPlanes);
+      groups.set(nextGroups);
+      planeCounts.set(nextPlaneCounts);
+      registration.set(nextRegistration);
       progress = nextProgress;
       tension = nextTension;
-      planeCount = nextPlaneCount;
+      groupCount = materials.length;
     },
     distance(x: number, y: number, z: number) {
-      let target = primitive(count, x, y, z);
-      for (let i = count + 1; i < shapes.length; i++)
-        target = Math.min(target, primitive(i, x, y, z));
-      if (progress === 1) return target;
-      let d = primitive(0, x, y, z);
-      for (let i = 1; i < count; i++) {
+      sourceDistances.fill(Infinity, 0, groupCount);
+      targetDistances.fill(Infinity, 0, groupCount);
+      let union = Infinity;
+      for (let i = count; i < shapes.length; i++) {
+        const group = groups[i]!;
+        const next = primitive(i, x, y, z);
+        targetDistances[group] = Math.min(targetDistances[group]!, next);
+        union = Math.min(union, next);
+      }
+      if (progress === 1) return union;
+      for (let i = 0; i < count; i++) {
+        const group = groups[i]!,
+          d = sourceDistances[group]!;
         const next = primitive(i, x, y, z),
           h = tension ? Math.max(0, tension - Math.abs(d - next)) / tension : 0;
-        d = Math.min(d, next) - h * h * tension * 0.25;
+        sourceDistances[group] = Math.min(d, next) - h * h * tension * 0.25;
       }
-      for (let i = 0; i < planeCount; i++) {
-        const at = i * 4;
-        d = Math.max(
-          d,
-          planes[at]! * x + planes[at + 1]! * y + planes[at + 2]! * z + planes[at + 3]!,
+      union = Infinity;
+      for (let group = 0; group < groupCount; group++) {
+        let d = sourceDistances[group]!;
+        for (let i = 0; i < planeCounts[group]!; i++) {
+          const at = group * 24 + i * 4;
+          d = Math.max(
+            d,
+            planes[at]! * x + planes[at + 1]! * y + planes[at + 2]! * z + planes[at + 3]!,
+          );
+        }
+        union = Math.min(
+          union,
+          progress === 0 ? d : d * (1 - progress) + targetDistances[group]! * progress,
         );
       }
-      return progress === 0 ? d : d * (1 - progress) + target * progress;
+      return union;
     },
   };
 }

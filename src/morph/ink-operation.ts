@@ -2,6 +2,13 @@ import { fusionText } from '../ink/fusion/text.js';
 import type { FusionShape, FusionPose } from '../ink/fusion/shape.js';
 import { physicalFusion } from '../physics/fusion.js';
 import { smooth } from './numbers.js';
+import {
+  morphTiming,
+  motionProgress,
+  watchMotion,
+  type MorphTime,
+  type MorphCues,
+} from './timing.js';
 
 export interface InkOperation {
   readonly sources: readonly (string | FusionShape)[];
@@ -38,11 +45,16 @@ async function mount(
     },
   });
   const originalHeight = parent.style.height;
-  function render(p: number) {
+  let lastTime: MorphTime = 0,
+    lastCues: MorphCues | undefined;
+  function render(input: MorphTime, cues?: MorphCues) {
     if (disposed) return;
-    if (!Number.isFinite(p)) throw new Error('Ink progress must be finite');
+    const time = morphTiming(input, cues),
+      p = time.progress;
+    lastTime = input;
+    lastCues = cues;
     progress = Math.max(0, Math.min(1, p));
-    view.render(progress * duration);
+    view.render(motionProgress(time, 0.9) * duration);
   }
   function rebuild(candidate = current) {
     const nextWidth = Math.max(240, parent.getBoundingClientRect().width);
@@ -129,7 +141,7 @@ async function mount(
         )
         .join(' → '),
     );
-    render(progress);
+    render(lastTime, lastCues);
   }
   function setOperation(next: InkOperation) {
     if (disposed) throw new Error('Ink morph has been disposed');
@@ -149,11 +161,13 @@ async function mount(
     )
       rebuild();
   });
+  const unwatchMotion = watchMotion(() => render(lastTime, lastCues));
   try {
     setOperation(operation);
     observer.observe(parent);
   } catch (error) {
     observer.disconnect();
+    unwatchMotion();
     view.dispose();
     parent.style.height = originalHeight;
     throw error;
@@ -165,7 +179,7 @@ async function mount(
     setTension(value: number) {
       if (!Number.isFinite(value)) throw new Error('Ink tension must be finite');
       tension = Math.max(0, Math.min(64, value));
-      render(progress);
+      render(lastTime, lastCues);
     },
     get stats() {
       return view.stats;
@@ -177,6 +191,7 @@ async function mount(
       if (disposed) return;
       disposed = true;
       observer.disconnect();
+      unwatchMotion();
       view.dispose();
       parent.style.height = originalHeight;
     },

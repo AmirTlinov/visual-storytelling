@@ -1,6 +1,13 @@
 import { surface } from '../ink/surface.js';
 import { morphBody2D } from './body-2d.js';
 import { morphPlan, type MorphOperation } from './objects.js';
+import {
+  morphTiming,
+  motionProgress,
+  watchMotion,
+  type MorphTime,
+  type MorphCues,
+} from './timing.js';
 
 function mount(
   parent: HTMLElement,
@@ -21,9 +28,15 @@ function mount(
     grid: false,
   });
   const body = morphBody2D(sheet, options);
-  function render(p: number) {
+  let lastTime: MorphTime = 0,
+    lastCues: MorphCues | undefined;
+  function render(input: MorphTime, cues?: MorphCues) {
     if (disposed) return;
-    const frame = plan.sample(p);
+    const time = morphTiming(input, cues),
+      p = time.progress;
+    lastTime = input;
+    lastCues = cues;
+    const frame = plan.sample(motionProgress(time, plan.completeAt));
     progress = Math.max(0, Math.min(1, p));
     if (!parent.getClientRects().length) return frame;
     const [min, max] = plan.bounds;
@@ -36,7 +49,9 @@ function mount(
     );
     return frame;
   }
-  const observer = new ResizeObserver(() => render(progress));
+  const refresh = () => render(lastTime, lastCues);
+  const observer = new ResizeObserver(refresh);
+  const unwatchMotion = watchMotion(refresh);
   observer.observe(parent);
   render(0);
   return {
@@ -51,6 +66,7 @@ function mount(
       if (disposed) return;
       disposed = true;
       observer.disconnect();
+      unwatchMotion();
       body.dispose();
       sheet.dispose();
     },

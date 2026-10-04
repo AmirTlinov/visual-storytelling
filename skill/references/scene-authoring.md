@@ -32,7 +32,7 @@ npm run dev
 ```js
 import '@visual-storytelling/core/style.css';
 import { SceneShell, SketchInk, SketchMotion, SvgLayout } from '@visual-storytelling/core';
-import timing from './timeline.json' with {type: 'json'};
+import timing from './timeline.json' with { type: 'json' };
 ```
 
 Для SVG-генератора импортируй `svgRange` и `fitSvgControls` из `@visual-storytelling/core/controls`, `SketchInk` — из `@visual-storytelling/core/ink`. Генератор встраивает производный код пакета. Общие исправления делай у владельца в библиотеке, пересобирай пакет и его примеры; обновление отдельной сцены выполняется установкой нового tarball и сборкой.
@@ -44,7 +44,8 @@ import timing from './timeline.json' with {type: 'json'};
 Дождись `SceneShell.ready()` перед измерением. Размещаемые подписи и предметы должны уже быть в SVG.
 `SvgLayout.observe(svg, width => height)` сам ждёт шрифт, вызывает компоновку при
 изменении ширины и выставляет `viewBox` и высоту. Возвращает `update()` и `dispose()`.
-Узкую композицию перестрой рядами или столбцами, сохранив читаемый размер букв.
+Для числовых операций `MathMorph2D/3D` сами выбирают ряды и читаемый масштаб. Монтируй 2D-компонент в отдельный HTML-контейнер: высота следует его содержимому. Для собственных предметных сцен используй общие измерения и размещение ниже.
+`node(drawing, id, value, options)` владеет контуром и ограниченной им надписью; `node.value()` обновляет оба. `lettering` с `bounds` центрирует реальные штрихи внутри уже заданного прямоугольника или эллипса.
 В задачах на измерение фигура и сетка используют одну единицу, шаг и начало координат:
 для тетрадной клетки 5 мм это 1 см = 2 клетки и 1 см² = 2×2 клетки.
 `--ve-grid-step`, `--ve-grid-x`, `--ve-grid-y` задают шаг
@@ -54,21 +55,26 @@ import timing from './timeline.json' with {type: 'json'};
 Центрируй изменяемую фигуру привязкой её края к ближайшей линии неподвижной сетки.
 
 ```js
-const {element, place, row, beside, connect, along, observe} = SvgLayout;
+const { element, place, row, beside, connect, along, observe } = SvgLayout;
 const label = element('text', {}, 'Результат');
 svg.append(label);
-place(label, 200, 80);                 // центр измеренной надписи
-row([a, plus, b], {x: 200, y: 140, gap: 12});
-beside(label, object, {side: 'bottom', gap: 10});
+place(label, 200, 80); // центр измеренной надписи
+row([a, plus, b], { x: 200, y: 140, gap: 12 });
+beside(label, object, { side: 'bottom', gap: 10 });
 const route = connect(leftCircle, rightCircle, {
-  fromShape: 'ellipse', toShape: 'ellipse', gap: 2
+  fromShape: 'ellipse',
+  toShape: 'ellipse',
+  gap: 2,
 });
-wire.setAttribute('d', route.d);       // концы на границах предметов
-along(weight, route, {at: .5, offset: -18});
+wire.setAttribute('d', route.d); // концы на границах предметов
+along(weight, route, { avoid: [leftCircle, rightCircle] });
 ```
 
 `box(node, space)` измеряет преобразованный объект в координатах `space` (по
-умолчанию корневой SVG). `beside`/`along` предполагают подпись в этом пространстве.
+умолчанию корневой SVG). Для `beside` выбирай пространство родителя подписи.
+`along` принимает `space` маршрута и сам переводит положение в пространство подписи;
+`avoid` принимает измеряемые SVG-объекты и маршруты `{start, end}`. Передавай видимые
+узлы, подписи и связи: размещение учитывает их границы и выбирает ближайшее свободное место.
 `place` и `row` владеют `transform` размещаемого элемента. Для движения внутри
 композиции добавь внутреннюю группу; так размещение и анимация не перезаписывают друг друга.
 Соединение измеряй по контуру узла, отдельно от его внешних подписей.
@@ -80,11 +86,10 @@ along(weight, route, {at: .5, offset: -18});
 ```js
 import { gsap } from '@visual-storytelling/core';
 gsap.killTweensOf(pose);
-gsap.to(pose, {x: target.x, y: target.y, duration: .35,
-  overwrite: true, onUpdate: render});
+gsap.to(pose, { x: target.x, y: target.y, duration: 0.35, overwrite: true, onUpdate: render });
 ```
 
-При ручном вводе reduced-motion сразу выставляет выбранную позу. В рассказе
+В `Morph`, `MathMorph` и `InkMorph` передавай `render(frame, cues)`: политика движения и раскрытие результата принадлежат библиотеке. Для остальных предметных движений при ручном вводе reduced-motion сразу выставляет выбранную позу. В рассказе
 сохраняй время смысловых событий; сокращай только декоративное движение через
 `frame.reveal()`. Для непрерывных поз можно создать
 `gsap.timeline({paused: true})`. В `shell.attachStory(...).render` вызывай

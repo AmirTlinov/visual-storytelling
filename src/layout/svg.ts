@@ -4,6 +4,10 @@ interface Point {
   x: number;
   y: number;
 }
+interface Route {
+  start: Point;
+  end: Point;
+}
 interface Bounds extends Point {
   width: number;
   height: number;
@@ -110,19 +114,105 @@ function connect(
   return { start, end, d: `M${start.x} ${start.y}L${end.x} ${end.y}` };
 }
 
+/** Segment/rectangle intersection keeps crossing links out of an inscription's ink. */
+function crosses(route: Route, bounds: Bounds) {
+  let lo = 0,
+    hi = 1;
+  for (const axis of ['x', 'y'] as const) {
+    const start = route.start[axis],
+      delta = route.end[axis] - start;
+    const min = bounds[axis],
+      max = min + (axis === 'x' ? bounds.width : bounds.height);
+    if (Math.abs(delta) < 1e-9) {
+      if (start < min || start > max) return false;
+    } else {
+      const a = (min - start) / delta,
+        b = (max - start) / delta;
+      lo = Math.max(lo, Math.min(a, b));
+      hi = Math.min(hi, Math.max(a, b));
+      if (lo > hi) return false;
+    }
+  }
+  return true;
+}
+
 function along(
   label: SVGGraphicsElement,
-  { start, end }: { start: Point; end: Point },
-  { at = 0.5, offset = 16 } = {},
+  { start, end }: Route,
+  {
+    at = 0.5,
+    offset = 16,
+    avoid = [],
+    gap = 4,
+    space = label.parentElement as unknown as SVGGraphicsElement,
+  }: {
+    at?: number;
+    offset?: number;
+    avoid?: readonly (SVGGraphicsElement | Route)[];
+    gap?: number;
+    space?: SVGGraphicsElement;
+  } = {},
 ) {
   const dx = end.x - start.x,
     dy = end.y - start.y,
     length = Math.hypot(dx, dy) || 1;
-  place(
-    label,
-    start.x + dx * at - (dy / length) * offset,
-    start.y + dy * at + (dx / length) * offset,
-  );
+  const ink = label.getBBox();
+  const parentToSpace = space
+    .getCTM()!
+    .inverse()
+    .multiply((label.parentElement as unknown as SVGGraphicsElement).getCTM()!);
+  const spaceToParent = parentToSpace.inverse();
+  const width = Math.abs(parentToSpace.a) * ink.width + Math.abs(parentToSpace.c) * ink.height;
+  const height = Math.abs(parentToSpace.b) * ink.width + Math.abs(parentToSpace.d) * ink.height;
+  const obstacles = avoid.map((node) => ('start' in node ? node : box(node, space)));
+  const normalRadius = (Math.abs(dy) * width + Math.abs(dx) * height) / (2 * length);
+  const preferred =
+    offset === 0 ? 0 : Math.sign(offset) * Math.max(Math.abs(offset), normalRadius + gap);
+  const step = Math.max(8, Math.min(width, height) / 2 + gap);
+  const candidates: { at: number; distance: number; cost: number }[] = [];
+  // Try nearby positions on the link before pushing a label far from its owner.
+  for (let i = 0; i < 64; i++) {
+    const distance = preferred + (i % 2 ? -1 : 1) * Math.ceil(i / 2) * step;
+    if (offset !== 0 && Math.abs(distance) < normalRadius + gap) continue;
+    for (const shift of [0, -0.12, 0.12, -0.24, 0.24, -0.36, 0.36]) {
+      const position = Math.max(0, Math.min(1, at + shift));
+      candidates.push({
+        at: position,
+        distance,
+        cost: (distance - preferred) ** 2 + ((position - at) * length) ** 2,
+      });
+    }
+  }
+  candidates.sort((a, b) => a.cost - b.cost);
+  let chosen = { at, distance: preferred };
+  for (const candidate of candidates) {
+    const x = start.x + dx * candidate.at - (dy / length) * candidate.distance;
+    const y = start.y + dy * candidate.at + (dx / length) * candidate.distance;
+    const rect = {
+      x: x - width / 2 - gap,
+      y: y - height / 2 - gap,
+      width: width + 2 * gap,
+      height: height + 2 * gap,
+    };
+    if (
+      obstacles.every((b) =>
+        'start' in b
+          ? !crosses(b, rect)
+          : rect.x + rect.width <= b.x ||
+            rect.x >= b.x + b.width ||
+            rect.y + rect.height <= b.y ||
+            rect.y >= b.y + b.height,
+      )
+    ) {
+      chosen = candidate;
+      break;
+    }
+  }
+  const center = new DOMPoint(
+    start.x + dx * chosen.at - (dy / length) * chosen.distance,
+    start.y + dy * chosen.at + (dx / length) * chosen.distance,
+  ).matrixTransform(spaceToParent);
+  place(label, center.x, center.y);
 }
 
 // Reflow only when width changes. The callback returns the content height.

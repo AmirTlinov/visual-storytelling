@@ -3,7 +3,7 @@ import type { SvgHighlight } from './highlight.js';
 import type { CameraPose, ExplorerScene, ExplorerPoint } from './types.js';
 export class SvgGestures {
   private abort = new AbortController();
-  viewport: HTMLElement;
+  viewport: HTMLElement | SVGSVGElement;
   camera: SvgCamera;
   highlight?: SvgHighlight;
   scene: () => Pick<ExplorerScene, 'box' | 'hits'>;
@@ -15,7 +15,7 @@ export class SvgGestures {
   gesture: { matrix: CameraPose; points: ExplorerPoint[]; moved: boolean; tapKey?: string } | null;
   suppressClickUntil: number;
   constructor(
-    viewport: HTMLElement,
+    viewport: HTMLElement | SVGSVGElement,
     camera: SvgCamera,
     highlight: SvgHighlight | undefined,
     {
@@ -42,7 +42,8 @@ export class SvgGestures {
     this.pointers = new Map();
     this.gesture = null;
     this.suppressClickUntil = 0;
-    viewport.addEventListener(
+    const events: GlobalEventHandlers = viewport;
+    events.addEventListener(
       'dblclick',
       (event) => {
         if (camera.travel || performance.now() < this.suppressClickUntil) {
@@ -56,7 +57,7 @@ export class SvgGestures {
       },
       { signal: this.abort.signal },
     );
-    viewport.addEventListener(
+    events.addEventListener(
       'wheel',
       (event) => {
         event.preventDefault();
@@ -73,22 +74,22 @@ export class SvgGestures {
       },
       { passive: false, signal: this.abort.signal },
     );
-    viewport.addEventListener('pointerdown', (event) => this.start(event), {
+    events.addEventListener('pointerdown', (event) => this.start(event), {
       signal: this.abort.signal,
     });
-    viewport.addEventListener('pointermove', (event) => this.move(event), {
+    events.addEventListener('pointermove', (event) => this.move(event), {
       signal: this.abort.signal,
     });
     for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'] as const)
-      viewport.addEventListener(type, (event) => this.end(event), { signal: this.abort.signal });
-    viewport.addEventListener(
+      events.addEventListener(type, (event) => this.end(event), { signal: this.abort.signal });
+    events.addEventListener(
       'pointerleave',
       (event) => {
         if (!viewport.hasPointerCapture(event.pointerId)) this.end(event);
       },
       { signal: this.abort.signal },
     );
-    viewport.addEventListener(
+    events.addEventListener(
       'click',
       (event) => {
         if (event.detail > 0 && performance.now() < this.suppressClickUntil) {

@@ -7,6 +7,7 @@ export type { InkObject } from './object.js';
 export { pen, roundedRect } from './pen.js';
 export type { Pen, Point, Fill, PenStyle } from './pen.js';
 export { lettering } from './lettering.js';
+export { paragraph } from './paragraph.js';
 export type { Lettering, LetteringOptions } from './lettering.js';
 export { InkFusion } from './fusion/surface.js';
 export type {

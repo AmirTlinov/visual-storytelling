@@ -40,7 +40,7 @@ const x = (p: Pose, a: number, b: number) => p.c * a - p.s * b;
 const y = (p: Pose, a: number, b: number) => p.s * a + p.c * b;
 
 export function inkGather(morph: number) {
-  const phase = Math.max(0, Math.min(1, morph / 0.65));
+  const phase = Math.max(0, Math.min(1, morph / 0.7));
   return phase * phase * (3 - 2 * phase);
 }
 
@@ -218,28 +218,18 @@ export function inkMotion(routes: InkRoute[]) {
       for (let i = 0; i < group.n; i++)
         transformedMean(group.common, i * stride, group.current, i * 2);
       let wx = 0,
-        wy = 0,
-        tx = 0,
-        ty = 0;
+        wy = 0;
       if (group.text) {
         transformedMean(group.word!, 0, word, 0);
-        wx = word[0]! * (1 - morph) * gather;
-        wy = word[1]! * (1 - morph) * gather;
-        tx = (x(destination, ...group.text.toWord) + destination.x) * (morph - s);
-        ty = (y(destination, ...group.text.toWord) + destination.y) * (morph - s);
+        wx = word[0]! * (1 - s) * gather;
+        wy = word[1]! * (1 - s) * gather;
       }
       const own = (1 - s) * (1 - gather),
         shared = (1 - s) * gather;
       for (const { route, offset, center, extent } of group.inputs) {
         const p = poses[route.source]!,
           buffer = vertices[route.source]!;
-        let dx = 0,
-          dy = 0;
-        if (group.text) {
-          const weight = (s - morph) * (1 - gather);
-          dx = wx + tx + (x(p, ...route.text!.fromWord) + p.x) * weight;
-          dy = wy + ty + (y(p, ...route.text!.fromWord) + p.y) * weight;
-        }
+        const dx = wx, dy = wy;
         let contraction = own;
         const centerX = x(p, center[0]!, center[1]!),
           centerY = y(p, center[0]!, center[1]!);

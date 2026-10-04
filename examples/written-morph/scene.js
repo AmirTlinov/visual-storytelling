@@ -142,14 +142,10 @@ window.galleryReady = (async () => {
       const chapter = chapters.findLast((c) => frame.has(c.id)) ?? chapters[0];
       return {
         chapter: chapter.id,
-        progress: frame.reduced
-          ? frame.finished(`${chapter.id}_change`)
-            ? 1
-            : 0
-          : frame.progress(`${chapter.id}_change`),
+        progress: frame.progress(`${chapter.id}_change`),
       };
     },
-    render(state, frame) {
+    render(state, frame, mode) {
       if (active !== state.chapter) {
         active = state.chapter;
         const chapter = chapters.find((c) => c.id === active);
@@ -161,7 +157,9 @@ window.galleryReady = (async () => {
           flat.setOperation(chapter.operation);
         }
       }
-      if (isInk) writing.render(state.progress);
+      const time = mode === 'story' ? frame : state.progress;
+      const cue = `${active}_change`;
+      if (isInk) writing.render(time, cue);
       else {
         view.shot({
           target: morph.bounds,
@@ -169,8 +167,8 @@ window.galleryReady = (async () => {
           padding: 48,
           reduced: frame.reduced,
         });
-        morph.render(state.progress);
-        flat.render(state.progress);
+        morph.render(time, cue);
+        flat.render(time, cue);
       }
     },
   });

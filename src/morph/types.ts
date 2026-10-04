@@ -3,7 +3,13 @@ export type Arithmetic = 'add' | 'multiply' | 'divide' | 'power';
 export type CellOperation =
   | { kind: 'calculate'; operator: Arithmetic; values: readonly number[] }
   | { kind: 'dot'; left: readonly number[]; right: readonly number[] }
-  | { kind: 'vectorAdd'; left: readonly number[]; right: readonly number[] };
+  | { kind: 'vectorAdd'; left: readonly number[]; right: readonly number[] }
+  | { kind: 'apply'; input: number; label: string; value: (input: number) => number }
+  | { kind: 'chain'; input: CellOperation; steps: readonly MathStep[] };
+/** Each step consumes the previous result, retaining its object and provenance. */
+export type MathStep =
+  | { operator: Arithmetic; value: number }
+  | { operator: 'apply'; label: string; value: (input: number) => number };
 export type MathOperation =
   | CellOperation
   | { kind: 'add'; values: readonly number[] }
@@ -49,6 +55,8 @@ export interface MathMorphFrame {
   phase: 'approach' | 'contact' | 'separate' | 'resize' | 'hold';
   stage: number;
   notes?: readonly MathNote[];
+  /** Available when this stage has resolved; narration need not guess a reveal threshold. */
+  result?: number | readonly number[];
 }
 export interface MathMorphPlan<
   Result extends number | readonly number[] = number | readonly number[],
@@ -58,5 +66,5 @@ export interface MathMorphPlan<
   readonly result: Result;
   readonly bounds: readonly [MorphPoint, MorphPoint];
   readonly stages: number;
-  sample(progress: number): MathMorphFrame;
+  sample(progress: number, layout?: { columns?: number }): MathMorphFrame;
 }

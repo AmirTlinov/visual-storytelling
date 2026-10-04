@@ -72,8 +72,8 @@ export function morphBody2D(sheet: Surface, options: { pigment?: string } = {}) 
         height = sheet.element.viewBox.baseVal.height;
       ink.setAttribute('width', String(width));
       ink.setAttribute('height', String(height));
-      const actualWidth = sheet.element.getBoundingClientRect().width;
-      const sampled = inscriptions.sample(frame, width / Math.max(1, actualWidth) / scale);
+      const actualWidth = host.getBoundingClientRect().width;
+      const sampled = inscriptions.sample(frame, width / Math.max(1, actualWidth) / scale, field.registration);
       pen.renderField(sampled, {
         width: width / scale,
         height: height / scale,

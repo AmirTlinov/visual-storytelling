@@ -28,3 +28,9 @@
 @media(max-width:480px){.ve-scene .ve-parameters{grid-template-columns:1fr;gap:8px}.ve-scene .ve-label{font-size:16px}.ve-scene .ve-stage{height:340px}}
 
 .ve-scene .ve-surface-label{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;pointer-events:none}
+
+/* Arithmetic owns its intrinsic height; neighbouring captions and controls stay in flow. */
+.ve-scene .ve-stage:has([data-math-layout="cells"]:not([hidden])){height:auto}
+.ve-scene [data-math-layout="cells"]{position:relative;width:100%;height:var(--ve-math-height)}
+.ve-scene [data-math-layout="cells"]>svg{display:block;width:100%;height:auto;max-height:none}
+.ve-scene [data-math-layout="cells"]>canvas{display:block;width:100%;height:100%}

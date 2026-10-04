@@ -2,6 +2,13 @@ import { Box3, Vector3 } from 'three';
 import type { Viewport3D } from '../viewport/three.js';
 import { morphBody3D } from './body-3d.js';
 import { morphPlan, type MorphOperation } from './objects.js';
+import {
+  morphTiming,
+  motionProgress,
+  watchMotion,
+  type MorphTime,
+  type MorphCues,
+} from './timing.js';
 
 function mount(
   view: ReturnType<typeof Viewport3D.mount>,
@@ -15,15 +22,22 @@ function mount(
     disposed = false;
   body.surface.onDispose(() => {
     disposed = true;
+    unwatchMotion();
   });
   function prepare() {
     bounds.set(new Vector3(...plan.bounds[0]), new Vector3(...plan.bounds[1]));
     const frame = plan.sample(0);
     body.surface.prepare([{ sources: frame.sources.length, targets: frame.targets.length }]);
   }
-  function render(p: number) {
+  let lastTime: MorphTime = 0,
+    lastCues: MorphCues | undefined;
+  function render(input: MorphTime, cues?: MorphCues) {
     if (disposed) return;
-    const frame = plan.sample(p);
+    const time = morphTiming(input, cues),
+      p = time.progress;
+    lastTime = input;
+    lastCues = cues;
+    const frame = plan.sample(motionProgress(time, plan.completeAt));
     body.render(frame);
     progress = Math.max(0, Math.min(1, p));
     return frame;
@@ -35,6 +49,7 @@ function mount(
     render(0);
   }
   prepare();
+  const unwatchMotion = watchMotion(() => render(lastTime, lastCues));
   render(0);
   return {
     object: body.object,

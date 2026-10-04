@@ -5,6 +5,8 @@ import type {
   MathMorphPlan,
   MathPart,
   MorphPoint,
+  CellOperation,
+  MathStep,
 } from './types.js';
 import { arithmeticPlan } from './arithmetic.js';
 import { clamp, smooth, mix, mathNumber, equation } from './numbers.js';
@@ -93,7 +95,13 @@ export function mathPlan<O extends MathOperation>(
   operation: O,
 ): MathMorphPlan<O extends { kind: 'vectorAdd' } ? readonly number[] : number>;
 export function mathPlan(operation: MathOperation): MathMorphPlan {
-  if (operation.kind === 'calculate' || operation.kind === 'dot' || operation.kind === 'vectorAdd')
+  if (
+    operation.kind === 'calculate' ||
+    operation.kind === 'dot' ||
+    operation.kind === 'vectorAdd' ||
+    operation.kind === 'apply' ||
+    operation.kind === 'chain'
+  )
     return arithmeticPlan(operation);
   const stages: Stage[] = [];
   let result: number;
@@ -216,11 +224,25 @@ export function mathPlan(operation: MathOperation): MathMorphPlan {
       if (!Number.isFinite(progress)) throw new Error('Morph progress must be finite');
       const p = clamp(progress),
         stage = Math.min(stages.length - 1, Math.floor(p * stages.length));
-      return { ...stages[stage]!.sample(p === 1 ? 1 : p * stages.length - stage), stage };
+      const frame = stages[stage]!.sample(p === 1 ? 1 : p * stages.length - stage);
+      return {
+        ...frame,
+        stage,
+        result: frame.phase === 'hold' ? frame.targets[0]!.value : undefined,
+      };
     },
   };
 }
 export const MathMorph = {
+  chain: (
+    input: CellOperation,
+    ...steps: MathStep[]
+  ): Extract<CellOperation, { kind: 'chain' }> => ({ kind: 'chain', input, steps }),
+  apply: (
+    input: number,
+    label: string,
+    value: (input: number) => number,
+  ): Extract<CellOperation, { kind: 'apply' }> => ({ kind: 'apply', input, label, value }),
   calculate: (
     operator: Arithmetic,
     ...values: number[]

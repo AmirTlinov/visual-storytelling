@@ -90,10 +90,11 @@ window.galleryReady = (async () => {
         volume.setOperation(operation);
         key = next;
       }
-      const measured = volume.render(state.progress);
-      flat.render(state.progress);
+      const time = mode === 'story' ? frame : state.progress;
+      const measured = volume.render(time, ['multiply', 'sum']);
+      flat.render(time, ['multiply', 'sum']);
       question.textContent =
-        state.progress === 1
+        measured.stage === volume.plan.stages - 1 && measured.result !== undefined
           ? 'Сигнал собран. Что изменится при другом входе?'
           : measured.stage === 0
             ? 'Входы сверху, веса снизу. Каков вклад пары?'

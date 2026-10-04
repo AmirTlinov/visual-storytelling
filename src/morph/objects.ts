@@ -6,6 +6,7 @@ import {
   type VolumePoint,
   type VolumeShape,
 } from '../viewport/morph/field.js';
+import { registeredEnvelope } from '../viewport/morph/registration.js';
 import { smooth } from './numbers.js';
 
 /** A written object. Its inscription belongs to its material, in local front-face coordinates. */
@@ -33,6 +34,7 @@ export interface MorphOperation {
   readonly targets: readonly MorphObject[];
 }
 export interface MorphPlan {
+  readonly completeAt: number;
   readonly bounds: readonly [VolumePoint, VolumePoint];
   sample(progress: number): MorphFrame;
 }
@@ -112,26 +114,35 @@ export function morphPlan(operation: MorphOperation): MorphPlan {
       tension: multiple ? unit * (flat ? 0.1 : 0.52) * smooth((p - 0.27) / 0.15) : 0,
     };
   };
-  // The field validates dimensions and supplies the same conservative bounds as rendering.
+  // Validate against the renderer, then reserve an analytic envelope for all time.
   const field = volumeField(
     inputs.map((o) => o.shape),
     outputs.map((o) => o.shape),
   );
-  const bounds = field.bounds.clone().makeEmpty();
-  for (const p of [0, 1]) {
-    const frame = sample(p);
-    field.update({
-      ...frame,
-      morph: 0,
-      tension: inputs.length > 1 ? unit * (flat ? 0.1 : 0.52) : 0,
-    });
-    bounds.union(field.bounds);
-  }
+  field.update(sample(0));
+  const dimensions = inputs.map((o) => shapeSize(o.shape));
+  const source = [
+    dimensions.reduce((sum, size) => sum + size[0], 0),
+    Math.max(...dimensions.map((s) => s[1])),
+    Math.max(...dimensions.map((s) => s[2])),
+  ];
+  const target = shapeSize(outputs[0]!.shape);
+  const ratios = source.map((size, axis) => target[axis]! / size);
+  const minRatio = Math.min(...ratios);
+  const allowance = ((inputs.length - 1) * unit * (flat ? 0.1 : 0.52)) / 4;
+  const half = source.map((size, axis) => {
+    const apartHalf = (size + (axis === 0 ? unit * 0.7 * (inputs.length - 1) : 0)) / 2;
+    const extent = Math.max(
+      apartHalf + allowance,
+      target[axis]! / 2,
+      registeredEnvelope(size / 2, ratios[axis]!, minRatio, allowance),
+    );
+    // The shader packs transforms as Float32; round the public envelope outward.
+    return extent + 0.01 + 8 * 2 ** -23 * Math.max(1, extent);
+  });
   return {
-    bounds: [
-      bounds.min.toArray() as unknown as VolumePoint,
-      bounds.max.toArray() as unknown as VolumePoint,
-    ],
+    completeAt: operation.kind === 'merge' && inputs.length > 1 ? 0.95 : 1,
+    bounds: [half.map((value) => -value) as unknown as VolumePoint, half as unknown as VolumePoint],
     sample,
   };
 }

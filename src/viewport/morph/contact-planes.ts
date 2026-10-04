@@ -1,21 +1,27 @@
 import { Matrix4 } from 'three';
 
 /** Preserve shared box faces without imposing unrelated target geometry on a contact. */
-export function contactPlanes(kinds: Int32Array, parameters: Float32Array, count: number) {
+export function contactPlanes(kinds: Int32Array, parameters: Float32Array) {
   const world = new Float64Array(kinds.length * 16),
     matrix = new Matrix4();
   const direction = new Float64Array(3);
-  return (transforms: Float32Array, tension: number, planes: Float32Array) => {
-    planes.fill(0);
-    if (count < 2 || kinds[count] !== 0 || tension === 0) return 0;
-    for (let i = 0; i <= count; i++) {
+  return (
+    transforms: Float32Array,
+    tension: number,
+    planes: Float32Array,
+    sources: readonly number[],
+    destination: number,
+    offset: number,
+  ) => {
+    if (sources.length < 2 || kinds[destination] !== 0 || tension === 0) return 0;
+    for (const i of [...sources, destination]) {
       matrix.fromArray(transforms, i * 16).invert();
       world.set(matrix.elements, i * 16);
     }
-    const target = count * 16,
-      dimensions = count * 4;
+    const target = destination * 16,
+      dimensions = destination * 4;
     // Each smooth-min adds at most tension/4 outside the original union.
-    const allowance = (count - 1) * tension * 0.25;
+    const allowance = (sources.length - 1) * tension * 0.25;
     let written = 0;
     for (let axis = 0; axis < 3; axis++) {
       if (
@@ -39,7 +45,7 @@ export function contactPlanes(kinds: Int32Array, parameters: Float32Array, count
         let outer = height,
           first = 0,
           second = 0;
-        for (let i = 0; i < count; i++) {
+        for (const i of sources) {
           const at = i * 16,
             p = i * 4;
           const center = nx * world[at + 12]! + ny * world[at + 13]! + nz * world[at + 14]!;
@@ -84,7 +90,7 @@ export function contactPlanes(kinds: Int32Array, parameters: Float32Array, count
           } else second = Math.max(second, match);
         }
         if (second === 0) continue;
-        const at = written++ * 4;
+        const at = offset + written++ * 4;
         planes[at] = nx;
         planes[at + 1] = ny;
         planes[at + 2] = nz;

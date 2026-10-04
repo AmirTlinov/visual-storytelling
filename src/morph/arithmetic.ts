@@ -6,6 +6,7 @@ import type {
   MathPart,
   MathNote,
   MorphPoint,
+  MathStep,
 } from './types.js';
 import { clamp, equation, mathNumber, mix, smooth } from './numbers.js';
 import { partBounds } from './measure.js';
@@ -43,7 +44,49 @@ const cell = (
   id,
   origins,
 });
-type Stage = { sample(p: number): Omit<MathMorphFrame, 'stage'>; bounds: MathPart[] };
+type Stage = {
+  sample(p: number, columns?: number): Omit<MathMorphFrame, 'stage'>;
+  bounds: MathPart[];
+};
+function slots(count: number, columns = count, xGap = 3.4, yGap = 7.2): MorphPoint[] {
+  columns = Math.max(1, Math.min(count, Math.floor(columns)));
+  const rows = Math.ceil(count / columns);
+  return Array.from({ length: count }, (_, i) => [
+    ((i % columns) - (Math.min(columns, count - Math.floor(i / columns) * columns) - 1) / 2) * xGap,
+    ((rows - 1) / 2 - Math.floor(i / columns)) * yGap,
+    0,
+  ]);
+}
+
+/** A carried result keeps its body while a unary step changes the writing on it. */
+function applyTo(input: MathPart, step: MathStep): Stage {
+  const value =
+    step.operator === 'apply'
+      ? step.value(input.value)
+      : evaluate(step.operator, [input.value, step.value]);
+  if (!Number.isFinite(value)) throw new Error('The calculation must have a finite real result');
+  if (step.operator === 'apply' && !step.label.trim())
+    throw new Error('A function needs a visible label');
+  const target = { ...input, value: Object.is(value, -0) ? 0 : value };
+  const expression =
+    step.operator === 'apply'
+      ? `${step.label}(${mathNumber(input.value)})`
+      : `${term(input.value)} ${symbols[step.operator]} ${term(step.value)}`;
+  return {
+    bounds: [input, target],
+    sample(p) {
+      const done = p >= 0.9;
+      return {
+        sources: [input],
+        targets: [target],
+        morph: smooth(p / 0.9),
+        tension: 0,
+        formula: done ? equation(expression, value, [input.value]) : expression,
+        phase: done ? 'hold' : 'contact',
+      };
+    },
+  };
+}
 
 function between(a: MathPart, b: MathPart, text: string, id: string): MathNote {
   const gap = Math.hypot(...a.position.map((v, axis) => v - b.position[axis]!)) - cellSize;
@@ -80,14 +123,23 @@ function reduceCells(
   const expression = inputs.map((p) => term(p.value)).join(` ${symbols[operator]} `);
   return {
     bounds: [...inputs, target],
-    sample(p) {
+    sample(p, columns) {
       const approach = smooth(p / 0.4),
         morph = smooth((p - 0.4) / 0.5);
+      const starts =
+        columns === undefined
+          ? inputs.map((p) => p.position)
+          : slots(
+              inputs.length,
+              columns,
+              inputs.length > 1 ? Math.abs(inputs[1]!.position[0] - inputs[0]!.position[0]) : 3.4,
+            );
+      const packed = slots(inputs.length, columns, cellSize, cellSize);
       const sources = inputs.map((part, i) => ({
         ...part,
         position: [
-          mix(part.position[0], (i - (inputs.length - 1) / 2) * cellSize, approach),
-          mix(part.position[1], 0, approach),
+          mix(starts[i]![0], packed[i]![0], approach),
+          mix(starts[i]![1], packed[i]![1], approach),
           0,
         ] as MorphPoint,
       }));
@@ -101,22 +153,33 @@ function reduceCells(
               ...note,
               position: [
                 owner?.position[0] ?? note.position[0],
-                note.position[1],
+                columns === undefined ? note.position[1] : (owner?.position[1] ?? 0) - 3,
                 note.position[2],
               ] as MorphPoint,
-              opacity: note.opacity * (1 - smooth(p / 0.38)),
+              opacity: note.opacity * (1 - smooth(p / 0.08)),
             };
           }),
           ...sources.slice(1).map((part, i) => {
             const note = between(sources[i]!, part, symbols[operator], `operator:${i}`);
-            note.opacity *= provenance.length ? smooth(p / 0.08) : 1;
+            const clearance = Math.min(
+              ...sources.map((source) =>
+                Math.max(
+                  ...[0, 1].map(
+                    (axis) =>
+                      Math.abs(note.position[axis]! - source.position[axis]!) -
+                      (note.size[axis]! + source.size[axis]!) / 2,
+                  ),
+                ),
+              ),
+            );
+            note.opacity *= smooth(clearance / 0.25) * (provenance.length ? smooth(p / 0.08) : 1);
             return note;
           }),
         ],
         morph,
         tension: 0.24 * smooth((p - 0.3) / 0.1),
         formula:
-          p < 0.82
+          p < 0.9
             ? expression
             : equation(
                 expression,
@@ -159,20 +222,23 @@ function pairs(
   );
   return {
     bounds: starts,
-    sample(p) {
+    sample(p, columns) {
       const approach = smooth(p / 0.4),
         morph = smooth((p - 0.4) / 0.5);
+      const locations = slots(n, columns, spacing);
+      const destinations = targets.map((part, i) => ({ ...part, position: locations[i]! }));
       const sources = starts.map((part, i) => ({
         ...part,
         position: [
-          part.position[0],
-          mix(part.position[1], i < n ? cellSize / 2 : -cellSize / 2, approach),
+          locations[i % n]![0],
+          locations[i % n]![1] +
+            mix(part.position[1], i < n ? cellSize / 2 : -cellSize / 2, approach),
           0,
         ] as MorphPoint,
       }));
       return {
         sources,
-        targets,
+        targets: destinations,
         morph,
         tension: 0.24 * smooth((p - 0.3) / 0.1),
         formula: operator === 'multiply' ? 'Умножаем пары' : 'Складываем пары',
@@ -180,7 +246,11 @@ function pairs(
         notes: [
           ...left.map((a, i) => ({
             id: `pair:${i}`,
-            position: [targets[i]!.position[0], -3, cellSize / 2 + 0.01] as MorphPoint,
+            position: [
+              destinations[i]!.position[0],
+              destinations[i]!.position[1] - 3,
+              cellSize / 2 + 0.01,
+            ] as MorphPoint,
             size: [3.1, 0.85] as const,
             text: `${term(a)} ${symbols[operator]} ${term(right[i]!)}`,
             opacity: smooth((p - 0.34) / 0.24),
@@ -197,7 +267,38 @@ function pairs(
 export function arithmeticPlan(operation: CellOperation): MathMorphPlan {
   const stages: Stage[] = [];
   let result: number | readonly number[];
-  if (operation.kind === 'calculate') {
+  if (operation.kind === 'chain') {
+    const initial = arithmeticPlan(operation.input);
+    if (Array.isArray(initial.result)) throw new Error('A chain needs a scalar result');
+    for (let i = 0; i < initial.stages; i++)
+      stages.push({
+        bounds: [...initial.sample(i / initial.stages).sources],
+        sample: (p, columns) =>
+          initial.sample((i + Math.min(p, 1 - 1e-12)) / initial.stages, { columns }),
+      });
+    let previous = initial.sample(1).targets[0]!;
+    for (const step of operation.steps) {
+      const stage = applyTo(previous, step);
+      stages.push(stage);
+      previous = stage.sample(1).targets[0]!;
+    }
+    result = previous.value;
+  } else if (operation.kind === 'apply') {
+    const input = cell(
+      operation.input,
+      'result',
+      [0, 0, 0],
+      [{ operand: 0, index: 0, value: operation.input }],
+    );
+    if (!Number.isFinite(operation.input)) throw new Error('Function input must be finite');
+    const stage = applyTo(input, {
+      operator: 'apply',
+      label: operation.label,
+      value: operation.value,
+    });
+    stages.push(stage);
+    result = stage.sample(1).targets[0]!.value;
+  } else if (operation.kind === 'calculate') {
     const values = [...operation.values];
     result = evaluate(operation.operator, values);
     stages.push(
@@ -235,7 +336,7 @@ export function arithmeticPlan(operation: CellOperation): MathMorphPlan {
   // Equations stay below their own column without shrinking or colliding with its cell.
   bounds[0] = [
     bounds[0][0] - 0.65,
-    operation.kind === 'calculate' ? bounds[0][1] : Math.min(bounds[0][1], -3.5),
+    ['calculate', 'apply'].includes(operation.kind) ? bounds[0][1] : Math.min(bounds[0][1], -3.5),
     bounds[0][2],
   ];
   bounds[1] = [bounds[1][0] + 0.65, bounds[1][1], bounds[1][2]];
@@ -244,11 +345,21 @@ export function arithmeticPlan(operation: CellOperation): MathMorphPlan {
     result,
     bounds,
     stages: stages.length,
-    sample(progress) {
+    sample(progress, layout) {
       if (!Number.isFinite(progress)) throw new Error('Morph progress must be finite');
       const p = clamp(progress),
         stage = Math.min(stages.length - 1, Math.floor(p * stages.length));
-      return { ...stages[stage]!.sample(p === 1 ? 1 : p * stages.length - stage), stage };
+      const frame = stages[stage]!.sample(p === 1 ? 1 : p * stages.length - stage, layout?.columns);
+      return {
+        ...frame,
+        stage,
+        result:
+          frame.phase === 'hold'
+            ? frame.targets.length === 1
+              ? frame.targets[0]!.value
+              : frame.targets.map((part) => part.value)
+            : undefined,
+      };
     },
   };
 }

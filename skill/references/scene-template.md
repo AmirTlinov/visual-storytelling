@@ -41,7 +41,7 @@ npm run dev -- --port 0  # свободный порт; CLI печатает URL
 ## Один путь от времени к рисунку
 
 ```js
-import { SceneShell, surface, object, lettering, ViewportSVG } from '@visual-storytelling/core';
+import { SceneShell, surface, node, ViewportSVG } from '@visual-storytelling/core';
 import '@visual-storytelling/core/style.css';
 import timing from './timeline.json' with { type: 'json' };
 
@@ -60,9 +60,7 @@ window.galleryReady = (async () => {
     title: 'Движение предмета',
     description: 'Предмет перемещается вправо по измерительной сетке.',
   });
-  const mark = object(drawing.layer, 'moving', 'blue');
-  drawing.pen.rect(mark.content, 'tile', -20, -20, 40, 40, { fill: 'marker' });
-  const value = lettering(mark.content, '0', { y: 7, size: 20, maxWidth: 30 });
+  const mark = node(drawing, 'moving', 0, { shape: 'rect', width: 48, size: 20 });
   const camera = ViewportSVG.mount(drawing.element);
   shell.attachView(camera);
   const overview = { target: { x: 0, y: 0, w: 360, h: 320 }, padding: 20 };
@@ -72,7 +70,7 @@ window.galleryReady = (async () => {
     stateAt: (frame) => ({ x: 100 * frame.progress('move_x') }),
     render(state) {
       mark.at(70 + state.x, 150);
-      value.text(Math.round(state.x));
+      mark.value(Math.round(state.x));
       camera.shot(overview);
     },
   });
@@ -117,7 +115,7 @@ window.galleryReady = (async () => {
 
 ## Превращение предметов
 
-Вместо собственной хореографии создай `Morph.merge([Morph.box([1,1,1], 1), Morph.sphere(.5, 2)], Morph.capsule(.5, 2, 3))` и передай в `Morph3D.mount(view, operation)` или `Morph2D.mount(stage, operation, {id})`. В `render` достаточно `body.render(frame.progress('merge'))`; надпись, контакт и грани принадлежат телу. Для самостоятельных слов и абзацев — `await InkMorph.mount(stage, {sources, targets})` с тем же прогрессом. Для вычисления величин — `MathMorph`. [Рабочий исходник](../../examples/written-morph/scene.js), [контракт и примеры](../../docs/morphing.md).
+Вместо собственной хореографии создай `Morph.merge([Morph.box([1,1,1], 1), Morph.sphere(.5, 2)], Morph.capsule(.5, 2, 3))` и передай в `Morph3D.mount(view, operation)` или `Morph2D.mount(stage, operation, {id})`. В `render` достаточно `body.render(frame, 'merge')`; надпись, контакт и грани принадлежат телу. Для самостоятельных слов и абзацев — `await InkMorph.mount(stage, {sources, targets})` с тем же прогрессом. Для вычисления величин — `MathMorph`. [Рабочий исходник](../../examples/written-morph/scene.js), [контракт и примеры](../../docs/morphing.md).
 
 ## Рассказ → самостоятельный опыт → восстановление
 

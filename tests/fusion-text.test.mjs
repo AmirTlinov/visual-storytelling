@@ -180,6 +180,26 @@ test('word alignment retains exact anchors and reading order through replacement
   });
 });
 
+test('completed glyph gathering also places a retained word at its destination', () => {
+  const motion = inkMotion(textRoutes([block('1'), block('0')], [block('1')]));
+  const from = [
+    { x: -70, y: 15, scale: 1.2 },
+    { x: 70, y: 15, scale: 1.2 },
+  ];
+  const to = [{ x: 12, y: -8, scale: 0.9 }];
+  const sample = (progress) => motion(from, to, progress).map((data) => [...data]);
+  const final = sample(1);
+  assert.deepEqual(
+    sample(0.7),
+    final,
+    'A completed 1 must not keep sliding from its former operand',
+  );
+  const middle = sample(0.43);
+  sample(0);
+  sample(1);
+  assert.deepEqual(sample(0.43), middle, 'Backward seek restores the same ink placement');
+});
+
 test('inserting a word preserves the complete strokes of unchanged words', () => {
   const first = block('свет'),
     second = block('тень'),

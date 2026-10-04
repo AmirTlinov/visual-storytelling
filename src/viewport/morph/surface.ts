@@ -54,7 +54,9 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
     transforms: { value: new Float32Array(32) },
     scales: { value: new Float32Array(2) },
     planes: { value: new Float32Array(24) },
-    planeCount: { value: 0 },
+    groups: { value: new Int32Array(2) },
+    groupCount: { value: 1 },
+    planeCounts: { value: new Int32Array(1) },
     morph: { value: 0 },
     tension: { value: 0 },
     boundsMin: { value: bounds.min.clone() },
@@ -74,7 +76,7 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
     Object.assign(
       new ShaderMaterial({
         uniforms,
-        defines: { SHAPE_COUNT: 2, SOURCE_COUNT: 1 },
+        defines: { SHAPE_COUNT: 2, SOURCE_COUNT: 1, GROUP_CAPACITY: 1 },
         vertexShader,
         fragmentShader,
         side: BackSide,
@@ -196,6 +198,9 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
     get geometry() {
       return field && previous ? { bounds, distance: field.distance, revision } : undefined;
     },
+    get registration() {
+      return field?.registration;
+    },
     onChange(listener: () => void) {
       if (disposed) throw new Error('Volume morph has been disposed');
       changes.add(listener);
@@ -218,6 +223,8 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
       uniforms.transforms.value = field.transforms;
       uniforms.scales.value = field.scales;
       uniforms.planes.value = field.planes;
+      uniforms.groups.value = field.groups;
+      uniforms.planeCounts.value = field.planeCounts;
       selectTopology(material, sources.length, targets.length);
       mesh.visible = false;
       uniforms.written.value = false;
@@ -251,7 +258,7 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
       }
       uniforms.morph.value = field.morph;
       uniforms.tension.value = field.tension;
-      uniforms.planeCount.value = field.planeCount;
+      uniforms.groupCount.value = field.groupCount;
       mesh.visible = true;
       previous = key;
       revision++;

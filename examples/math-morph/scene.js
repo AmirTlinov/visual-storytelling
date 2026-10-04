@@ -100,8 +100,9 @@ window.galleryReady = (async () => {
         volume.setOperation(operation);
         key = next;
       }
-      const measured = volume.render(state.progress);
-      flat.render(state.progress);
+      const time = mode === 'story' ? frame : state.progress;
+      const measured = volume.render(time, `${state.operation}_move`);
+      flat.render(time, `${state.operation}_move`);
       question.textContent = explanation(state);
       view.shot({
         target: volume.bounds,

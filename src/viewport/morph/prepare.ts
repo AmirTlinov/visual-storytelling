@@ -21,6 +21,7 @@ export function selectTopology(material: ShaderMaterial, sources: number, target
   ) {
     material.defines.SHAPE_COUNT = sources + targets;
     material.defines.SOURCE_COUNT = sources;
+    material.defines.GROUP_CAPACITY = Math.min(sources, targets);
     material.needsUpdate = true;
   }
 }
@@ -113,9 +114,17 @@ export function prepareVolumePrograms(
         tension: 0,
       });
       const uniforms = clone.uniforms;
-      for (const key of ['kinds', 'parameters', 'transforms', 'scales', 'planes'] as const)
+      for (const key of [
+        'kinds',
+        'parameters',
+        'transforms',
+        'scales',
+        'planes',
+        'groups',
+        'planeCounts',
+      ] as const)
         uniforms[key]!.value = field[key];
-      uniforms.planeCount!.value = field.planeCount;
+      uniforms.groupCount!.value = field.groupCount;
       uniforms.morph!.value = field.morph;
       uniforms.tension!.value = field.tension;
       uniforms.boundsMin!.value.copy(field.bounds.min);

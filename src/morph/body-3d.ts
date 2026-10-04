@@ -54,7 +54,7 @@ export function morphBody3D(
         canvas.clientHeight *
         Math.max(0.001, Math.min(Math.abs(scale.x), Math.abs(scale.y))));
     if (key === previous && Math.abs(pixel - previousPixel) < previousPixel * 0.05) return;
-    const ink = inscriptions.sample(frame, pixel);
+    const ink = inscriptions.sample(frame, pixel, surface.registration!);
     surface.inscribe(ink);
     reading.textContent = ink.label;
     previous = key;

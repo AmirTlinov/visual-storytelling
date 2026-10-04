@@ -17,19 +17,36 @@ type Group = {
   disappearing: boolean;
 };
 const text = (body: MorphBody) => String(body.text ?? '').trim();
-function surfaceMarks(frame: MorphFrame) {
+function registered(body: MorphBody, transform: Float64Array, side: number): MorphBody {
+  const at = side * 6;
+  return {
+    ...body,
+    position: body.position.map(
+      (v, axis) => v * transform[at + axis]! + transform[at + axis + 3]!,
+    ) as unknown as MorphBody['position'],
+    scale: [0, 1, 2].map(
+      (axis) => (body.scale?.[axis] ?? 1) * transform[at + axis]!,
+    ) as unknown as MorphBody['scale'],
+  };
+}
+function surfaceMarks(frame: MorphFrame, registration: Float64Array) {
   const lines = new Map<string, { coordinates: number[]; opacity: number }>();
-  for (const [parts, opacity] of [
-    [frame.sources, 1 - frame.morph],
-    [frame.targets, frame.morph],
+  for (const [parts, opacity, offset] of [
+    [frame.sources, 1 - frame.morph, 0],
+    [frame.targets, frame.morph, frame.sources.length],
   ] as const) {
     if (!opacity) continue;
-    for (const part of parts) {
+    for (const [index, part] of parts.entries()) {
       const step = part.grid;
       if (!step) continue;
       const [w, h] = bodySize(part),
         [x, y] = part.position;
       const add = (coordinates: number[]) => {
+        const at = (offset + index) * 6;
+        for (let i = 0; i < 4; i += 2) {
+          coordinates[i] = coordinates[i]! * registration[at]! + registration[at + 3]!;
+          coordinates[i + 1] = coordinates[i + 1]! * registration[at + 1]! - registration[at + 4]!;
+        }
         const key = coordinates.map((v) => Math.round(v * 1e6)).join(',');
         const previous = lines.get(key);
         if (previous) previous.opacity = Math.min(1, previous.opacity + opacity);
@@ -77,7 +94,14 @@ export function surfaceInscriptions() {
     };
   }
   return {
-    sample(frame: MorphFrame, pixel: number): InkFieldFrame {
+    sample(input: MorphFrame, pixel: number, registration: Float64Array): InkFieldFrame {
+      const frame = {
+        ...input,
+        sources: input.sources.map((body, i) => registered(body, registration, i)),
+        targets: input.targets.map((body, i) =>
+          registered(body, registration, input.sources.length + i),
+        ),
+      };
       const next = JSON.stringify(
         [frame.sources, frame.targets].map((parts) => parts.map((p) => [text(p), p.origins])),
       );
@@ -164,7 +188,7 @@ export function surfaceInscriptions() {
           .map(text)
           .filter(Boolean)
           .join(', '),
-        marks: surfaceMarks(frame),
+        marks: surfaceMarks(input, registration),
       };
     },
   };

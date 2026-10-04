@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Euler, Vector3 } from 'three';
+import { surfaceInscriptions } from '../dist/morph/ink.js';
 import {
   volumeBox,
   volumeSphere,
@@ -100,12 +101,18 @@ test('rejected frames leave the displayed field intact and preserve GPU buffer i
   };
   const transforms = morph.transforms,
     scales = morph.scales,
-    planes = morph.planes;
+    planes = morph.planes,
+    groups = morph.groups,
+    registration = morph.registration;
   const snapshot = () => ({
     transforms: [...morph.transforms],
     scales: [...morph.scales],
     planes: [...morph.planes],
-    planeCount: morph.planeCount,
+    planeCounts: [...morph.planeCounts],
+    groups: [...morph.groups],
+    groupCount: morph.groupCount,
+    registration: [...morph.registration],
+    bounds: [morph.bounds.min.toArray(), morph.bounds.max.toArray()],
     morph: morph.morph,
     tension: morph.tension,
     distance: morph.distance(0.2, 0.1, -0.3),
@@ -128,6 +135,138 @@ test('rejected frames leave the displayed field intact and preserve GPU buffer i
   assert.equal(morph.transforms, transforms);
   assert.equal(morph.scales, scales);
   assert.equal(morph.planes, planes);
+  assert.equal(morph.groups, groups);
+  assert.equal(morph.registration, registration);
+});
+
+test('packed cubes contract through flat faces without intermediate diagonal facets', () => {
+  const box = volumeBox([1.4, 1.4, 1.4]),
+    field = volumeField([box, box], [box]);
+  const sources = [{ position: [-0.7, 0, 0] as const }, { position: [0.7, 0, 0] as const }];
+  for (const progress of [0, 0.1, 0.417659, 0.7, 0.95, 1]) {
+    field.update({ sources, targets: [{}], morph: progress, tension: 0.24 });
+    const halfWidth = 1.4 - 0.7 * field.morph;
+    for (const x of [-halfWidth, -halfWidth / 2, 0, halfWidth / 2, halfWidth])
+      for (const z of [-0.7, 0, 0.7]) close(field.distance(x, 0.7, z), 0);
+    close(field.distance(halfWidth, 0, 0), 0);
+    assert.ok(field.distance(halfWidth + 0.02, 0, 0) > 0);
+    assert.ok(field.distance(0, 0.69, 0) < 0);
+  }
+});
+
+test('distant material pairs keep their own contact planes and registration axes', () => {
+  const box = volumeBox([1.4, 1.4, 1.4]);
+  const single = volumeField([box, box], [box]),
+    paired = volumeField([box, box, box, box], [box, box]);
+  const right = [{ position: [5, -0.7, 0] as const }, { position: [5, 0.7, 0] as const }];
+  const rotation = [0.31, -0.45, 0.77] as const,
+    euler = new Euler(...rotation);
+  const left = [-0.7, 0.7].map((y) => ({
+    position: new Vector3(0, y, 0)
+      .applyEuler(euler)
+      .add(new Vector3(-5, 0, 0))
+      .toArray(),
+    rotation,
+  }));
+  for (const morph of [0, 0.2, 0.417659, 0.8, 1]) {
+    single.update({ sources: right, targets: [{ position: [5, 0, 0] }], morph, tension: 0.24 });
+    paired.update({
+      sources: [...left, ...right],
+      targets: [{ position: [-5, 0, 0], rotation }, { position: [5, 0, 0] }],
+      morph,
+      tension: 0.24,
+    });
+    assert.equal(paired.groupCount, 2);
+    for (const x of [4.3, 4.5, 5, 5.7])
+      for (const y of [-1, -0.5, 0, 0.5, 1])
+        close(
+          paired.distance(x, y, 0.3),
+          single.distance(x, y, 0.3),
+          'A distant rotated pair cannot alter this pair',
+        );
+    close(paired.distance(5.7, 0, 0), 0, 'The shared side stays flat in every material group');
+    // The complete same arrangement can be rotated in space without changing its local field.
+    const turned = volumeField([box, box], [box]);
+    const turn = (p: readonly number[]) =>
+      new Vector3(...p)
+        .applyEuler(euler)
+        .add(new Vector3(2, -3, 1))
+        .toArray();
+    turned.update({
+      sources: right.map((p) => ({ position: turn(p.position), rotation })),
+      targets: [{ position: turn([5, 0, 0]), rotation }],
+      morph,
+      tension: 0.24,
+    });
+    for (const p of [
+      [5.7, 0, 0],
+      [5, 0.9, 0.2],
+      [5.3, 0.4, 0.8],
+      [4.4, -0.6, 0.3],
+    ]) {
+      const q = turn(p);
+      close(turned.distance(q[0]!, q[1]!, q[2]!), single.distance(p[0]!, p[1]!, p[2]!));
+    }
+  }
+});
+
+test('ray bounds contain contact expansion under anisotropic material scaling', () => {
+  const sphere = volumeSphere(1),
+    field = volumeField([sphere, sphere], [sphere]);
+  field.update({
+    sources: [
+      { position: [-0.01, 0, 0], scale: [10, 1, 1] },
+      { position: [0.01, 0, 0], scale: [10, 1, 1] },
+    ],
+    targets: [{ scale: [10, 1, 1] }],
+    morph: 0,
+    tension: 1,
+  });
+  assert.ok(
+    field.distance(12, 0, 0) < 0,
+    'The scaled smooth contact reaches past the original ellipsoids',
+  );
+  assert.ok(
+    field.bounds.containsPoint(new Vector3(12, 0, 0)),
+    'The GPU proxy must not cut off visible material',
+  );
+  assert.ok(field.distance(field.bounds.max.x, 0, 0) > 0);
+});
+
+test('measured material carries its original grid lines through registration', () => {
+  const source = volumeBox([2, 2, 1]),
+    target = volumeBox([4, 2, 1]);
+  const field = volumeField([source], [target]),
+    ink = surfaceInscriptions();
+  for (const morph of [0.1, 0.49, 0.51, 0.9]) {
+    const frame = {
+      sources: [{ shape: source, position: [1, 2, 0] as const, grid: 1 }],
+      targets: [{ shape: target, position: [3, 4, 0] as const }],
+      morph,
+      tension: 0,
+    };
+    field.update(frame);
+    const marks = ink.sample(frame, 0.01, field.registration).marks;
+    assert.equal(
+      marks.segments.length,
+      12,
+      'Stretching does not create or delete source grid lines',
+    );
+    const x = 1 + 2 * field.morph,
+      y = -(2 + 2 * field.morph),
+      halfWidth = 1 + field.morph;
+    for (const [i, expected] of [
+      [0, x],
+      [1, y - 1],
+      [2, x],
+      [3, y + 1],
+      [6, x - halfWidth],
+      [7, y],
+      [8, x + halfWidth],
+      [9, y],
+    ] as const)
+      close(marks.segments[i]!, expected);
+  }
 });
 test('shared planes follow rotated boxes and fade continuously under small pose changes', () => {
   const box = volumeBox([2, 2, 2]),
@@ -146,7 +285,7 @@ test('shared planes follow rotated boxes and fade continuously under small pose 
   ];
   field.update(frame);
   const baseline = probes.map((p) => field.distance(p[0]!, p[1]!, p[2]!));
-  assert.ok(field.planeCount > 0 && field.planeCount <= 6);
+  assert.ok(field.planeCounts[0]! > 0 && field.planeCounts[0]! <= 6);
   const rotation = [0.3, -0.4, 0.5] as const,
     euler = new Euler(...rotation),
     scale = 1.4;
@@ -169,7 +308,7 @@ test('shared planes follow rotated boxes and fade continuously under small pose 
       ...frame,
       sources: [frame.sources[0]!, { position: [1, delta, 0], rotation: [0, 0, delta] }],
     });
-    for (let i = 0; i < field.planeCount; i++)
+    for (let i = 0; i < field.planeCounts[0]!; i++)
       close(
         Math.hypot(field.planes[i * 4]!, field.planes[i * 4 + 1]!, field.planes[i * 4 + 2]!),
         1,
@@ -199,8 +338,8 @@ test('curved targets do not cut artificial folds into the source contact', () =>
   };
   capsule.update(frame);
   sphere.update(frame);
-  assert.equal(capsule.planeCount, 0);
-  assert.equal(sphere.planeCount, 0);
+  assert.equal(capsule.planeCounts[0], 0);
+  assert.equal(sphere.planeCounts[0], 0);
   for (const x of [-0.4, 0, 0.4])
     for (const y of [-0.5, 0, 0.5])
       assert.equal(
@@ -225,12 +364,15 @@ test('shape descriptors are validated before upload and detached from mutable au
     assert.throws(() => volumeField([shape as VolumeShape], [target]));
   const size: [number, number, number] = [2, 2, 2];
   const shape = volumeBox(size),
-    sources = [shape];
-  const morph = volumeField(sources, [target]);
+    sources = [shape],
+    targets = [target];
+  const morph = volumeField(sources, targets);
   size[0] = 20;
   sources.push(target);
+  targets.push(shape);
   morph.update({ sources: [{}], morph: 0, tension: 0, targets: [{}] });
   assert.equal(morph.count, 1);
+  assert.equal(morph.targetCount, 1);
   close(morph.distance(1, 0, 0), 0);
 });
 

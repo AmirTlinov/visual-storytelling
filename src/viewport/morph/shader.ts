@@ -6,8 +6,10 @@ uniform mat4 transforms[SHAPE_COUNT];
 uniform float scales[SHAPE_COUNT];
 uniform float morph;
 uniform float tension;
-uniform vec4 planes[6];
-uniform int planeCount;
+uniform int groups[SHAPE_COUNT];
+uniform int groupCount;
+uniform vec4 planes[GROUP_CAPACITY * 6];
+uniform int planeCounts[GROUP_CAPACITY];
 float primitive(int i, vec3 point) {
   vec3 p = (transforms[i] * vec4(point, 1.)).xyz;
   vec4 a = parameters[i];
@@ -19,20 +21,34 @@ float primitive(int i, vec3 point) {
   return (length(p) - a.x) * scales[i];
 }
 float field(vec3 p) {
-  float target = primitive(SOURCE_COUNT, p);
-  for (int i = SOURCE_COUNT + 1; i < SHAPE_COUNT; i++) target = min(target, primitive(i, p));
-  if (morph >= 1.) return target;
-  float d = primitive(0, p);
-  for (int i = 1; i < SOURCE_COUNT; i++) {
+  float from[GROUP_CAPACITY], target[GROUP_CAPACITY];
+  for (int group=0;group<GROUP_CAPACITY;group++) { from[group]=1e30; target[group]=1e30; }
+  float result = 1e30;
+  for (int i=SOURCE_COUNT;i<SHAPE_COUNT;i++) {
+    float d = primitive(i,p);
+    target[groups[i]] = min(target[groups[i]],d);
+    result = min(result,d);
+  }
+  if (morph >= 1.) return result;
+  for (int i=0;i<SOURCE_COUNT;i++) {
+    int group = groups[i];
+    float d = from[group];
     float next = primitive(i, p);
     float h = tension > 0. ? max(0., tension - abs(d - next)) / tension : 0.;
-    d = min(d, next) - h * h * tension * .25;
+    from[group] = min(d, next) - h * h * tension * .25;
   }
-  for (int i=0;i<6;i++) {
-    if(i >= planeCount) break;
-    d = max(d,dot(planes[i].xyz,p)+planes[i].w);
+  result = 1e30;
+  for (int group=0;group<GROUP_CAPACITY;group++) {
+    if(group >= groupCount) break;
+    float d = from[group];
+    for (int i=0;i<6;i++) {
+      if(i >= planeCounts[group]) break;
+      vec4 plane = planes[group*6+i];
+      d = max(d,dot(plane.xyz,p)+plane.w);
+    }
+    result = min(result,morph <= 0. ? d : mix(d,target[group],morph));
   }
-  return morph <= 0. ? d : mix(d, target, morph);
+  return result;
 }
 `;
 

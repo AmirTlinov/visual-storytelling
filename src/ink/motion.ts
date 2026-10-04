@@ -31,7 +31,7 @@ function geometry(path: SVGPathElement) {
     tip.setAttribute('fill', path.style.stroke || path.getAttribute('stroke') || 'currentColor');
     tip.setAttribute('stroke', 'none');
     tip.style.pointerEvents = 'none';
-    tip.style.visibility = 'hidden';
+    tip.style.display = 'none';
     path.after(tip);
     paths.set(path, { length, tip, signature });
   }
@@ -45,7 +45,8 @@ function draw(path: SVGPathElement, amount: number) {
   path.style.strokeDasharray = `${length} ${length}`;
   path.style.strokeDashoffset = String(length * (1 - ink));
   path.style.visibility = p === 0 ? 'hidden' : '';
-  tip.style.visibility = p > 0 && p < 1 ? '' : 'hidden';
+  // A hidden tip must not enlarge getBBox() at its last position (or the origin).
+  tip.style.display = p > 0 && p < 1 ? '' : 'none';
   if (p > 0 && p < 1) {
     const point = path.getPointAtLength(length * ink);
     tip.setAttribute('cx', String(point.x));

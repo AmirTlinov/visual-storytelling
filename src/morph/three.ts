@@ -9,12 +9,20 @@ import {
   LineBasicMaterial,
 } from 'three';
 import type { Viewport3D } from '../viewport/three.js';
-import { cellFormulaWidth, frameBounds, quantityStep } from './measure.js';
+import { cellFormulaWidth, quantityBounds, quantityStep } from './measure.js';
 import { morphBody3D } from './body-3d.js';
 import { mathBodies } from './math-bodies.js';
 import { mathPlan } from './math.js';
 import { mathNumber } from './numbers.js';
+import { cellLayout, cellViewport } from './layout.js';
 import type { MathOperation, MathMorphPlan } from './types.js';
+import {
+  morphTiming,
+  mathMotionFrame,
+  watchMotion,
+  type MorphTime,
+  type MorphCues,
+} from './timing.js';
 
 /** One shared field with attached inscriptions, for quantities and symbolic number cells. */
 function mount(
@@ -31,6 +39,12 @@ function mount(
   let plan: MathMorphPlan = prepared,
     disposed = false;
   let progress = 0;
+  const stage = view.renderer.domElement.parentElement!;
+  const viewport = cellViewport(stage);
+  let arrangement: ReturnType<typeof cellLayout> | undefined,
+    layoutWidth = 0;
+  let lastTime: MorphTime = 0,
+    lastCues: MorphCues | undefined;
   let currentFrame: ReturnType<typeof plan.sample> | undefined;
   let configured = operation;
   object.userData.visualReview = () => ({
@@ -82,6 +96,7 @@ function mount(
     formula.remove();
     plan = prepared;
     configured = next;
+    layoutWidth = 0;
     formula = createFormula();
     prepare();
     render(0);
@@ -94,12 +109,27 @@ function mount(
       }),
     );
   }
-  function render(p: number) {
+  function render(input: MorphTime, cues?: MorphCues) {
     if (disposed) return;
-    const frame = plan.sample(p);
+    const time = morphTiming(input, cues, plan.stages),
+      p = time.progress;
+    const widthAvailable = stage.clientWidth || layoutWidth || 640;
+    if (plan.encoding === 'cells') {
+      if (!arrangement || widthAvailable !== layoutWidth) {
+        arrangement = cellLayout(plan, widthAvailable);
+        layoutWidth = widthAvailable;
+        viewport.resize(arrangement.height + 64);
+      }
+    } else {
+      arrangement = undefined;
+      viewport.resize();
+    }
+    const frame = mathMotionFrame(plan, time, arrangement?.columns);
+    lastTime = input;
+    lastCues = cues;
     currentFrame = frame;
     progress = p;
-    const [min, max] = frameBounds(plan, frame, p);
+    const [min, max] = arrangement?.bounds ?? quantityBounds(plan, frame);
     bounds.set(new Vector3(...min), new Vector3(...max));
     const width = max[0] - min[0],
       height = max[1] - min[1],
@@ -192,6 +222,9 @@ function mount(
   function dispose() {
     if (disposed) return;
     disposed = true;
+    unwatchMotion();
+    resizeObserver.disconnect();
+    viewport.dispose();
     clear();
     volume.dispose();
     formula.remove();
@@ -204,6 +237,10 @@ function mount(
     offRemove();
   }
   const off = view.onDispose(dispose);
+  const refresh = () => render(lastTime, lastCues);
+  const unwatchMotion = watchMotion(refresh);
+  const resizeObserver = new ResizeObserver(refresh);
+  resizeObserver.observe(stage);
   const offRemove = view.beforeRemove((root) => {
     for (let p: Object3D | null = object; p; p = p.parent)
       if (p === root) {
