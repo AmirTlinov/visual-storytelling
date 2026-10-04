@@ -1,4 +1,5 @@
 import sharp from 'sharp';
+import { frameInput } from './session.mjs';
 
 export function frameColor(index, count) {
   const t = count > 1 ? index / (count - 1) : 0;
@@ -45,8 +46,8 @@ export async function analyzeMotionFrames(samples, { crop, threshold = 8, maxSiz
     if (!Number.isFinite(samples[i].time) || (i && samples[i].time <= samples[i - 1].time))
       throw new Error('Frame times must be finite and strictly increasing, in seconds');
   const sizes = await Promise.all(
-    samples.map(async ({ png }) => {
-      const { width, height } = await sharp(png).metadata();
+    samples.map(async (sample) => {
+      const { width, height } = await sharp(frameInput(sample)).metadata();
       return { width, height };
     }),
   );
@@ -73,7 +74,7 @@ export async function analyzeMotionFrames(samples, { crop, threshold = 8, maxSiz
   let hasTransparency = false;
   // Decode one source at a time; retain only the bounded analysis rasters.
   for (let i = 0; i < samples.length; i++) {
-    let pipeline = sharp(samples[i].png).toColourspace('srgb').ensureAlpha();
+    let pipeline = sharp(frameInput(samples[i])).toColourspace('srgb').ensureAlpha();
     if (crop)
       pipeline = pipeline.extract({
         left: crop.x,
@@ -256,6 +257,8 @@ export function motionData(report) {
     'images',
     'baselineImage',
     'currentImage',
+    'samples',
+    'telemetry',
   ]);
   return JSON.parse(JSON.stringify(report, (key, value) => (omit.has(key) ? undefined : value)));
 }

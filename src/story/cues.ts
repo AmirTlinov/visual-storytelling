@@ -33,6 +33,8 @@ export interface Frame<K extends string = string> {
   between(from: K, until: K): boolean;
 }
 export interface CueReview {
+  /** Values actually requested from the latest frame, not inferred animation progress. */
+  observed?: { time: number; reads: { id: string; operation: string; value: number | boolean }[] };
   duration: number;
   cues: (Cue & {
     id: string;
@@ -53,6 +55,8 @@ export const interpolate = (from: number, to: number, p: number) =>
 /** Spoken-word cues, or authored silent cues, are the only source of reveal times. */
 export function cueSheet<K extends string>(script: Script<K>) {
   const referenced = new Set<K>();
+  let observedTime = 0;
+  const reads = new Map<string, { id: K; operation: string; value: number | boolean }>();
   const chapters = new Set(script.segments?.map((chapter) => chapter.id));
   if (!Number.isFinite(script.duration) || script.duration <= 0)
     throw new Error('Story duration must be positive');
@@ -99,6 +103,7 @@ export function cueSheet<K extends string>(script: Script<K>) {
     review(): CueReview {
       return {
         duration: script.duration,
+        observed: { time: observedTime, reads: [...reads.values()] },
         segments: script.segments ?? [],
         cues: Object.entries<Cue>(script.cues)
           .map(([id, cue]): CueReview['cues'][number] => ({
@@ -118,20 +123,26 @@ export function cueSheet<K extends string>(script: Script<K>) {
     },
     at(time: number, reduced = false): Frame<K> {
       if (!Number.isFinite(time)) throw new Error('Story time must be finite');
-      const amount = (id: K) => progress(time, get(id));
+      observedTime = time;
+      reads.clear();
+      const observe = <V extends number | boolean>(id: K, operation: string, value: V): V => {
+        reads.set(`${operation}:${id}`, { id, operation, value });
+        return value;
+      };
+      const amount = (id: K) => observe(id, 'progress', progress(time, get(id)));
       return {
         time,
         reduced,
         cue: get,
         progress: amount,
         reveal(id) {
-          return reduced ? Number(time >= get(id).start) : amount(id);
+          return observe(id, 'reveal', reduced ? Number(time >= get(id).start) : amount(id));
         },
         has(id) {
-          return time >= get(id).start;
+          return observe(id, 'has', time >= get(id).start);
         },
         finished(id) {
-          return time >= get(id).end;
+          return observe(id, 'finished', time >= get(id).end);
         },
         between(from, until) {
           return time >= get(from).start && time < get(until).start;

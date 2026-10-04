@@ -1,5 +1,6 @@
 import type { Material, Texture, Color } from 'three';
 import { pigments } from '../ink/palette.js';
+import { attachInspection } from './inspection.js';
 type Palette = Record<string, Color>;
 type ColorMaterial = Material & { color: Color };
 /** A derived pigment is resolved on each invalidated frame and on theme changes. */
@@ -27,6 +28,13 @@ function mount(
   renderer.outputColorSpace = T.SRGBColorSpace;
   renderer.toneMapping = T.NoToneMapping;
   const canvas = renderer.domElement;
+  let frameSequence = 0,
+    renderedAt = 0;
+  const detachInspection = attachInspection(canvas, scene, camera, () => ({
+    frameSequence,
+    renderedAt,
+    clock: 'performance.now after renderer.render; display presentation unknown',
+  }));
   canvas.tabIndex = 0;
   canvas.setAttribute('role', 'img');
   canvas.setAttribute('aria-label', `${label}. ${orbitHelp}`);
@@ -64,6 +72,8 @@ function mount(
     camera.updateMatrixWorld(true);
     labels.render();
     renderer.render(scene, camera);
+    frameSequence++;
+    renderedAt = performance.now();
     afterRender();
   }
   function invalidate() {
@@ -322,6 +332,7 @@ function mount(
       labels.dispose();
       release(scene);
       materials.clear();
+      detachInspection();
       renderer.dispose();
       canvas.remove();
       sample.remove();

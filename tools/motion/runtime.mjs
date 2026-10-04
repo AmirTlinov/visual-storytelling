@@ -60,7 +60,8 @@ export function summarizeRuntime(telemetry, viewport) {
       selector,
       observedSamples: points.length,
       points: steps,
-      velocityNote: 'Finite differences between DOM observations; delayed callbacks can create derivative spikes. The report plots position to preserve direction and timing context.',
+      velocityNote:
+        'Finite differences between DOM observations; delayed callbacks can create derivative spikes. The report plots position to preserve direction and timing context.',
       largestStep: biggest,
       clippedAt: clipped?.time,
       contentClippedAt: overflow?.time,
@@ -139,7 +140,9 @@ export function summarizeRuntime(telemetry, viewport) {
       max: raf.at(-1) ?? 0,
     },
     longFrameCount: telemetry.longFrames.length,
-    maxInteractionMs: events.length ? Math.max(...events.map((e) => e.duration)) : null,
+    maxInteractionMs: events.length
+      ? events.reduce((max, e) => Math.max(max, e.duration), 0)
+      : null,
     warning: telemetry.warning,
   };
 }

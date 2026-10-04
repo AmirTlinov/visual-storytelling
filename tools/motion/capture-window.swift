@@ -74,15 +74,15 @@ final class RecordingDelegate: NSObject, SCRecordingOutputDelegate, @unchecked S
             encoding: .utf8)!)
         return
       }
-      guard args.count == 3, let id = UInt32(args[0]), let seconds = Double(args[1]),
-        seconds >= 0.1, seconds <= 15,
+      guard (args.count == 3 || args.count == 4), let id = UInt32(args[0]), let seconds = Double(args[1]),
+        seconds >= 0.1, seconds <= 86400,
         let window = windows.first(where: { $0.windowID == id })
       else {
         throw NSError(
           domain: "motion", code: 3,
           userInfo: [
             NSLocalizedDescriptionKey:
-              "Choose an on-screen window ID from --windows and seconds between 0.1 and 15"
+              "Choose an on-screen window ID from --windows and seconds between 0.1 and 86400"
           ])
       }
       let output = URL(fileURLWithPath: args[2])
@@ -113,7 +113,12 @@ final class RecordingDelegate: NSObject, SCRecordingOutputDelegate, @unchecked S
       try await stream.startCapture()
       FileHandle.standardError.write(
         Data("Recording selected window for \(seconds) seconds\n".utf8))
-      try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+      let deadline = Date().addingTimeInterval(seconds)
+      while Date() < deadline {
+        if args.count == 4 && FileManager.default.fileExists(atPath: args[3]) { break }
+        if let failure = delegate.status().1 { throw failure }
+        try await Task.sleep(nanoseconds: 100_000_000)
+      }
       try await stream.stopCapture()
       for _ in 0..<200 {
         let state = delegate.status()

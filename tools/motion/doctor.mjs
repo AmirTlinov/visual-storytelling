@@ -6,7 +6,7 @@ import { nativeHelper } from './native.mjs';
 
 const run = promisify(execFile);
 export const offlineReviewHint =
-  'Analyze saved files here: visual-story review frames.json --motion --out REPORT, or recording.mp4 with FFmpeg. HTML, JSON and analysis/*.png remain available when Chromium previews are unavailable.';
+  'Analyze saved files here: visual-story review frames.json --out REPORT, or recording.mp4 with FFmpeg. HTML, JSON and analysis/*.png remain available when Chromium previews are unavailable.';
 
 /** Retain the startup cause without flooding an agent with process logs. */
 export function startupFailureReason(error) {

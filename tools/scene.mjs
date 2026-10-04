@@ -9,26 +9,7 @@ import { serve } from './site.mjs';
 import { packDirectory } from './standalone.mjs';
 import { readCatalog } from './catalog.mjs';
 const reviewArgs = process.argv.slice(3);
-if (
-  process.argv[2] === 'review' &&
-  (reviewArgs.some((arg) =>
-    [
-      '--motion',
-      '--slice',
-      '--capture',
-      '--click',
-      '--scenario',
-      '--target',
-      '--cdp',
-      '--window',
-      '--windows',
-      '--doctor',
-      '--help',
-      '-h',
-    ].includes(arg.split('=')[0]),
-  ) ||
-    reviewArgs.some((arg) => /^https?:\/\//.test(arg)))
-) {
+if (process.argv[2] === 'review') {
   const { runMotionCLI } = await import('./motion/cli.mjs');
   const code = await runMotionCLI(reviewArgs);
   // Agents read pipes: flush the complete JSON/help before an explicit exit.
@@ -65,7 +46,7 @@ visual-story audio DIRECTORY                  voice + aligned cues from narratio
 visual-story preview DIST [--port 8793]        serve an existing build
 visual-story review DIST --out review [--cue ID] [--width 375] [--theme dark] [--reduced]
 visual-story review URL --click SELECTOR --target CSS  capture an interaction
-visual-story review INPUT --motion                    scene, video or PNG analysis
+visual-story review inspect SESSION                    episode, time or object evidence
 visual-story review --help                            capture, replay, comparison and native windows
 visual-story pack DIST --out artifacts/story.html [--inline]
 
@@ -198,26 +179,6 @@ else if (command === 'examples') {
       await server.close();
       process.exit(0);
     });
-} else if (command === 'review') {
-  const { reviewScene } = await import('./review.mjs');
-  const width = Number(values.width);
-  const theme = values.theme ?? 'light';
-  if (!['light', 'dark'].includes(theme) || !Number.isInteger(width) || width < 240)
-    throw new Error('Review needs --theme light|dark and --width at least 240');
-  console.log(
-    JSON.stringify(
-      await reviewScene({
-        directory: destination,
-        out: values.out ?? 'review',
-        cues: values.cue,
-        theme,
-        width,
-        reduced: values.reduced,
-      }),
-      null,
-      2,
-    ),
-  );
 } else if (command === 'pack') {
   const output = resolve(values.out ?? 'story.html');
   await mkdir(dirname(output), { recursive: true });

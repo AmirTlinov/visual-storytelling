@@ -34,17 +34,29 @@ function mount(
   ];
   const notes = new Map<string, ReturnType<typeof lettering>>();
   let plan = prepared;
+  let currentFrame: ReturnType<typeof plan.sample> | undefined;
+  let configured = operation;
+  const inspected = sheet.element as SVGSVGElement & { __visualReview?: () => unknown };
+  inspected.setAttribute('data-review-id', options.id);
+  inspected.__visualReview = () => ({
+    source: 'src/morph/svg.ts',
+    operation: configured,
+    progress: latest,
+    frame: currentFrame,
+  });
   let scale = 1,
     disposed = false,
     latest = 0;
   function setOperation(next: MathOperation) {
     if (disposed) throw new Error('Math morph has been disposed');
     plan = mathPlan(next);
+    configured = next;
     render(0);
   }
   function render(progress: number) {
     if (disposed) return;
     const frame = plan.sample(progress);
+    currentFrame = frame;
     latest = progress;
     if (!parent.getClientRects().length) return frame;
     const [min, max] = frameBounds(plan, frame, progress);

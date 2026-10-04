@@ -51,7 +51,19 @@ export async function renderer({
     });
     const file = directory ? entry : `${scene}/${catalog[scene].page}`,
       url = `${server.url}/${file.split('/').map(encodeURIComponent).join('/')}`;
-    const capture = await openScene(page, url);
+    let rejectStartup;
+    const startupFailure = new Promise((_, reject) => {
+      rejectStartup = reject;
+    });
+    const onStartupFailure = (error) =>
+      rejectStartup(new Error(`Scene failed during startup: ${error.message}`));
+    page.on('pageerror', onStartupFailure);
+    let capture;
+    try {
+      capture = await Promise.race([openScene(page, url), startupFailure]);
+    } finally {
+      page.off('pageerror', onStartupFailure);
+    }
     await capture.evaluate((scene) => scene.pause());
     if (!controls)
       await page.evaluate(() => {

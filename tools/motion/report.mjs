@@ -1,11 +1,12 @@
 import { mkdir, writeFile, readFile, lstat, readdir, rm } from 'node:fs/promises';
 import { join, dirname, relative } from 'node:path';
 import { chromium } from 'playwright';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { motionData } from './frames.mjs';
 import { escapeText as escape, playbackMarkup } from './diagnostics.mjs';
 import { orderedInsights, reviewFocus } from './focus.mjs';
 import { motionMarkup } from './report-view.mjs';
+import { sessionMarkup } from './session-view.mjs';
 import { startupFailureReason } from './doctor.mjs';
 export { motionMarkup } from './report-view.mjs';
 
@@ -85,8 +86,14 @@ export async function assertMotionOutput(out) {
     'replay.json',
     'telemetry.json',
     'recording.mp4',
+    'session.json',
+    'narration.audio',
+    'recording-job.json',
+    'recording-job.json.tmp',
+    'recorder.log',
+    'stop-recording',
   ].map((name) => join(out, name));
-  const folders = ['capture', 'analysis'].map((name) => join(out, name));
+  const folders = ['capture', 'analysis', 'comparison'].map((name) => join(out, name));
   const rejectLink = (path) => {
     throw new Error(
       `Motion review refuses to overwrite symbolic link ${path}; choose a fresh output directory`,
@@ -149,10 +156,20 @@ export async function writeMotionReport(report, out, { context } = {}) {
     const main = motionMarkup(report, { playback: true });
     const document = (body) =>
       `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.title ?? 'Проверка движения')}</title><body style="margin:0;background:#fbfaf6">${body}</body></html>`;
-    const html = document(
-      main +
-        `<section class="motion-sheet">${playbackMarkup(playback, { unsynchronized: report.source.domSynchronized === false })}</section>`,
-    );
+    const audio = report.context?.audio
+      ? relative(
+          out,
+          report.context.audio.startsWith('/')
+            ? report.context.audio
+            : join(out, report.context.audio),
+        )
+          .split('/')
+          .map(encodeURIComponent)
+          .join('/')
+      : undefined;
+    const player = `<section class="motion-sheet">${playbackMarkup(playback, { unsynchronized: report.source.domSynchronized === false, audio, open: Boolean(report.session) })}</section>`;
+    const session = sessionMarkup(report, out, player);
+    const html = document(session ? session + main : main + player);
     await writeFile(join(out, 'index.html'), html);
     const data = { ...motionData(report), focus };
     if (data.captureManifest) data.captureManifest = relative(out, data.captureManifest);
@@ -161,12 +178,20 @@ export async function writeMotionReport(report, out, { context } = {}) {
     if (report.previews.available) {
       page = context ? await context.newPage() : await browser.newPage();
       await page.setViewportSize({ width: 1320, height: 1000 });
-      await page.setContent(document(main));
+      await page.goto(pathToFileURL(join(out, 'index.html')).href);
       await page.evaluate(async () => {
         await document.fonts.ready;
-        await Promise.all([...document.images].map((image) => image.decode()));
+        await Promise.all(
+          [
+            ...document.querySelectorAll(
+              '.session-summary img,.motion-summary img,.motion-frame-evidence img,.motion-photometry img',
+            ),
+          ].map((image) => image.decode()),
+        );
       });
-      await page.locator('.motion-summary').screenshot({ path: join(out, 'motion.png') });
+      await page
+        .locator(report.session ? '.session-summary' : '.motion-summary')
+        .screenshot({ path: join(out, 'motion.png') });
       const framesPanel = page.locator('.motion-frame-evidence');
       await framesPanel.evaluate((element) => {
         element.closest('details').open = true;
@@ -202,7 +227,7 @@ export async function writeMotionReport(report, out, { context } = {}) {
     ...(report.captureManifest
       ? {
           captureManifest: report.captureManifest,
-          reanalyze: `${cli} review ${quote(report.captureManifest)} --motion --out NEW_REPORT`,
+          reanalyze: `${cli} review ${quote(report.captureManifest)} --out NEW_REPORT`,
         }
       : {}),
     frames: report.frames.length,
@@ -227,7 +252,7 @@ export async function writeMotionReport(report, out, { context } = {}) {
     ...(report.replayPath
       ? {
           replay: report.replayPath,
-          repeat: `${cli} review ${quote(report.replayPath)} --motion --baseline ${quote(out)} --out NEW_REPORT`,
+          repeat: `${cli} review ${quote(report.replayPath)} --baseline ${quote(out)} --out NEW_REPORT`,
         }
       : {}),
     ...(report.comparison

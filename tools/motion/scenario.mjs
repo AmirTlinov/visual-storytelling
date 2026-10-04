@@ -43,8 +43,8 @@ export function validateScenario(value) {
       throw new Error(`Action ${i + 1}: repeated click needs repeat 2–20 and intervalMs 10–10000`);
   }
   const seconds = value.seconds ?? 2;
-  if (!Number.isFinite(seconds) || seconds < 0.1 || seconds > 15)
-    throw new Error('--seconds must be between 0.1 and 15 (time after the last action)');
+  if (!Number.isFinite(seconds) || seconds < 0.1 || seconds > 86400)
+    throw new Error('--seconds must be between 0.1 and 86400 (time after the last action)');
   const width = value.width ?? 960,
     height = value.height ?? 720;
   if (![width, height].every((v) => Number.isInteger(v) && v >= 240 && v <= 4096))

@@ -185,7 +185,13 @@ export function photometryCollector({ crop, slice, source = {} } = {}) {
       const ranges = Object.fromEntries(
         ['luminance', 'red', 'green', 'blue', 'saturation', 'alpha'].map((key) => {
           const values = points.map((point) => point[key]);
-          return [key, [Math.min(...values), Math.max(...values)]];
+          return [
+            key,
+            [
+              values.reduce((min, v) => Math.min(min, v), Infinity),
+              values.reduce((max, v) => Math.max(max, v), -Infinity),
+            ],
+          ];
         }),
       );
       const kymoPixels = Buffer.alloc(imageWidth * along * 3),

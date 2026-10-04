@@ -40,7 +40,6 @@ test('offline CLI analysis keeps evidence when Chromium is unavailable and remov
           fileURLToPath(new URL('../tools/scene.mjs', import.meta.url)),
           'review',
           manifest,
-          '--motion',
           '--out',
           out,
         ],
@@ -437,8 +436,8 @@ test('scene motion uses the existing seek owner and labels its clock as model ti
       fps: 50,
     });
     assert.equal(selected.source.cue.id, 'move');
-    assert(Math.abs(selected.window.from - 0.47) < 1e-9);
-    assert(Math.abs(selected.window.to - 0.53) < 1e-9);
+    assert(selected.coverage.from < 0.4);
+    assert(selected.coverage.to > 0.6);
     assert(selected.timingMs.total > selected.timingMs.analysis);
     const reducedResult = await reviewMotion({
       input: directory,
@@ -549,7 +548,6 @@ test('CLI scans a plain PNG manifest interval and exports complete photometry an
           'tools/scene.mjs',
           'review',
           manifest,
-          '--motion',
           '--from',
           '.5',
           '--seconds',
@@ -596,7 +594,7 @@ test('CLI scans a plain PNG manifest interval and exports complete photometry an
       encoding: 'utf8',
     });
     assert(help.includes('--slice x,Y,THICKNESS'));
-    assert(help.trimEnd().endsWith('SCENE --cue ID --out REPORT'));
+    assert(help.includes('review inspect SESSION'));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -43,8 +43,14 @@ try {
   for (const file of new Set(Object.values(api.modules).flatMap(Object.values)))
     await access(join(runtime, 'dist', file));
   assert.match(run(process.execPath, [cli, 'api', './story']).toString(), /StoryOptions/);
-  assert.throws(() => run(process.execPath, [cli, 'api', 'Viewport']), /Viewport3D/);
-  assert.throws(() => run(process.execPath, [cli, 'api', 'surface', 'Viewport']), /Viewport3D/);
+  assert.throws(
+    () => run(process.execPath, [cli, 'api', 'Viewport']),
+    (error) => error.status === 1 && /Viewport3D/.test(error.stdout.toString()),
+  );
+  assert.throws(
+    () => run(process.execPath, [cli, 'api', 'surface', 'Viewport']),
+    (error) => error.status === 1 && /Viewport3D/.test(error.stdout.toString()),
+  );
   for (const file of [
     join(skill, 'SKILL.md'),
     ...(await readdir(join(skill, 'references')))
@@ -78,11 +84,13 @@ try {
   const timing = JSON.parse(await readFile(join(consumer, 'timeline.json'), 'utf8'));
   const pictureTime = (timing.cues.product_result.end + 0.05).toFixed(2);
   run('npm', ['run', 'review', '--', '--cue', 'add_rows']);
-  const review = JSON.parse(await readFile(join(consumer, 'artifacts/review/review.json'), 'utf8'));
-  assert.deepEqual(review.warnings, []);
-  assert.equal(review.cues[0].id, 'add_rows');
-  assert.equal(review.cues[0].unchanged, false);
-  assert.equal(review.playback, true);
+  const review = JSON.parse(
+    await readFile(join(consumer, 'artifacts/review/session.json'), 'utf8'),
+  );
+  const action = review.episodes.find((e) => e.cue === 'add_rows');
+  assert(action);
+  assert.deepEqual(action.observations, []);
+  assert(action.frames.length >= 3);
   server = await serve(join(consumer, 'dist'));
   browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 700, height: 900 } }),
@@ -117,27 +125,27 @@ try {
   }
   const lc = resolve('artifacts/offline-lc.html');
   await page.goto(pathToFileURL(join(consumer, 'artifacts/review/index.html')).href);
-  const transition = page.locator('[data-play-cue]');
-  const end = Number(await transition.getAttribute('data-end'));
+  const episode = page.locator('[id="episode-cue:add_rows"]');
+  await episode.evaluate((element) => (element.open = true));
+  const transition = episode.locator('[data-evidence-range]');
+  const end = Number((await transition.getAttribute('data-evidence-range')).split(',')[1]);
   await transition.click();
-  const playingScene = page.frameLocator('#playback iframe').locator('.ve-scene');
-  await playingScene.waitFor();
-  await page.waitForFunction(() => {
-    const doc = document.querySelector('#playback iframe').contentDocument;
-    return doc.querySelector('audio')?.paused === false;
-  });
-  await page.waitForFunction(() =>
-    document.querySelector('#playback [role=status]').textContent.includes('завершён'),
+  const playback = page.locator('#motion-playback');
+  await page.waitForFunction(
+    () => document.querySelector('#motion-playback audio')?.paused === false,
+  );
+  await page.waitForFunction(
+    () => document.querySelector('#motion-playback [data-play]').textContent === 'Воспроизвести',
   );
   assert(
-    Math.abs((await playingScene.locator('audio').evaluate((audio) => audio.currentTime)) - end) <
-      0.001,
+    Math.abs((await playback.locator('audio').evaluate((audio) => audio.currentTime)) - end) < 0.03,
   );
-  assert.equal(await playingScene.locator('audio').evaluate((audio) => audio.paused), true);
-  await page.locator('#playback [data-close]').click();
+  assert.equal(await playback.locator('audio').evaluate((audio) => audio.paused), true);
   await transition.click();
-  await page.locator('#playback [data-close]').click();
-  assert.equal(await playingScene.locator('audio').evaluate((audio) => audio.paused), true);
+  await playback.evaluate((element) => (element.open = false));
+  await page.waitForFunction(
+    () => document.querySelector('#motion-playback audio')?.paused === true,
+  );
   await writeFile(lc, await standalone('lc-oscillator'));
   await page.goto(pathToFileURL(lc).href);
   await page.waitForFunction(() => !document.querySelector('[data-seek]')?.disabled);
@@ -191,7 +199,7 @@ try {
     generation:
       'build regenerates SVG with the installed styles; no source SVG or template catalog in the runtime',
     review:
-      'installed CLI captures frames and plays the real narrated transition offline; end and close pause it',
+      'installed CLI stores a session and plays its frames with narration offline; episode end and close pause audio',
     offline: 'narration, compact HTML, LC native SVG seek and 3D work without network',
     inlineBytes: Buffer.byteLength(compact),
     silent: 'same clock/player, sound control hidden',

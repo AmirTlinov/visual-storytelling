@@ -1,4 +1,5 @@
 import sharp from 'sharp';
+import { frameInput } from './session.mjs';
 import { photometryCollector } from './photometry.mjs';
 
 const percentile = (values, p) =>
@@ -18,8 +19,8 @@ export async function scanTimeline(samples, threshold = 8, options = {}) {
     previousSize,
     previousDelta = 0;
   for (const [i, sample] of samples.entries()) {
-    const original = await sharp(sample.png).metadata();
-    let pipeline = sharp(sample.png);
+    const original = await sharp(frameInput(sample)).metadata();
+    let pipeline = sharp(frameInput(sample));
     if (options.crop) {
       const { x: left, y: top, width, height } = options.crop;
       if (
@@ -125,7 +126,11 @@ export async function scanTimeline(samples, threshold = 8, options = {}) {
     peakFrame: peak?.to ?? 0,
     duplicateIntervals: intervals.filter((v) => v.duplicate).length,
     longestHoldMs: longestHold * 1000,
-    captureIntervalMs: { p50: typical, p95: percentile(dt, 0.95), max: Math.max(0, ...dt) },
+    captureIntervalMs: {
+      p50: typical,
+      p95: percentile(dt, 0.95),
+      max: dt.reduce((max, value) => Math.max(max, value), 0),
+    },
     photometry: await photometry.finish(),
   };
 }

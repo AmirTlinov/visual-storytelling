@@ -6,50 +6,46 @@ import { parseCrop } from './frames.mjs';
 import { parseSlice } from './photometry.mjs';
 import { startupFailureReason, offlineReviewHint } from './doctor.mjs';
 
-const help = `Motion review — capture, inspect, repeat
+const help = `Visual review — one session, full interval, inspect, compare
 
-visual-story review URL --click 'text=Open' --target '#panel' --out REPORT
-visual-story review ./page.html --capture --click '#start' --seconds 2 --out REPORT
-visual-story review URL --scenario flow.json --out REPORT
-visual-story review REPORT/replay.json --motion --baseline REPORT --out AFTER
-visual-story review recording.mp4 --motion --from 1.2 --frames 16 --out REPORT
-visual-story review recording.mp4 --motion --from 1.2 --seconds 3 --out REPORT
-visual-story review scene-dir --motion --cue ACTION --out REPORT
-visual-story review frames.json --motion --out REPORT
-visual-story review frames.json --motion --seconds 3 --out REPORT
+visual-story review SOURCE --out SESSION
+visual-story review scene-dir --cue ACTION --out SESSION
+visual-story review URL --click '#open' --out SESSION
+visual-story review page.html --capture --scenario flow.json --out SESSION
+visual-story review recording.mp4 --from 1 --seconds 30 --out SESSION
 visual-story review --windows
-visual-story review --window ID --seconds 3 --out REPORT
+visual-story review --window ID --seconds 30 --out SESSION
+visual-story review record URL --cdp ENDPOINT --out SESSION
+visual-story review record --window ID --out SESSION
+visual-story review stop SESSION
+visual-story review status SESSION
+visual-story review inspect SESSION
+visual-story review inspect SESSION --episode ID
+visual-story review inspect SESSION --at 2.1 --radius .3 --object ID
+visual-story review inspect SESSION --at 2.1 --point 120,80
+visual-story review inspect SESSION --episode ID --out DETAIL
+visual-story review SESSION/replay.json --baseline SESSION --out AFTER
 
-Start with image (motion.png) and focus: a compact overview and up to 3 observation groups.
-Open framesImage for all detail frames/deltas, photometryImage for brightness/colour.
-index.html opens linked evidence sections and plays saved frames; data (motion.json)
-retains all observations. Browser reports also save replay.json and capture/frames.json.
+SOURCE: scene, URL, local HTML (--capture), video, frame manifest or saved session.
+A cue selects its entire action with context before/after; --frames controls detail density.
+Start with session and index.html: complete episode map, playback, objects and observations.
+image is the overview PNG; framesImage and photometryImage contain detailed measurements.
+inspect returns existing evidence without repeating an interaction. --search filters episode text; --offset/--limit page the index.
+Use --out on inspect to render a focused report; raw capture is reused.
 
-Capture: --capture (ordinary HTML), --scenario FILE, --click SELECTOR (repeatable),
-  --target CSS (repeatable, up to 12), --seconds 2 (after actions), --ready SELECTOR,
-  --width 960 --height 720, --theme light|dark, --reduced, --headed,
-  --cdp ENDPOINT (reuse an existing matching tab, preserve browser and login).
-Analysis: --from SECONDS, --seconds N (full video/PNG interval),
-  --frames 12 (2–32 detail frames; photometry covers the full interval), --crop x,y,w,h,
-  --max-size 960 (0 = original pixels), --threshold 8, --loop, --baseline REPORT.
-  --slice x,Y,THICKNESS or y,X,THICKNESS chooses a kymograph strip in source pixels.
-Brightness, RGB, saturation, region map and kymograph are automatic. STFT needs
-  >=64 regularly timed frames, >=1 second and repeated brightness changes.
-Scene only: --cue ID, --fps 60. Recordings retain their timestamps.
---doctor probes Chromium launch, localhost listen and dependencies.
-If live capture is unavailable, analyze saved PNG manifests or videos with --motion.
-Without Chromium, HTML/JSON and analysis/*.png are saved; previews.available is false.
---out defaults to a fresh artifacts/motion-* directory.
+Capture: --scenario FILE, --click SELECTOR (repeatable), --target CSS (repeatable),
+  --seconds 2 (time after actions), --ready SELECTOR, --width 960 --height 720,
+  --theme light|dark, --reduced, --headed, --cdp ENDPOINT (existing authenticated tab).
+Analysis: --from SECONDS --seconds N (full interval), --episode ID, --at T --radius .3,
+  --object ID, --frames 12 (2–32), --crop x,y,w,h, --max-size 960 (0 = native pixels),
+  --threshold 8, --loop, --baseline SESSION.
+  --slice x,Y,THICKNESS or y,X,THICKNESS selects a kymograph strip in source pixels.
+Scene checkpoints describe model states; video retains PTS; sparse CDP is not display FPS.
+--doctor checks dependencies. Reports retain evidence if preview rendering is unavailable.
 
-Scenario JSON (paths relative to the scenario file):
-{"actions":[{"type":"click","selector":"#open"},{"type":"wait","ms":120},
- {"type":"click","selector":"#close"}],"targets":["#panel"],"seconds":2}
-Rapid repeat: {"type":"click","selector":"#button","repeat":2,"intervalMs":120}.
-  Read actual clickIntervalsMs; wait ms is a pause between completed steps.
-Actions: click, dblclick, hover, fill (value or env), press (key), scroll (x/y),
-  drag (selector/to), wait (ms). Select an element using selector or role + name.
-
-For a narrated scene overview: visual-story review SCENE --cue ID --out REPORT
+Scenario: {"actions":[{"type":"click","selector":"#open"}],"seconds":2}
+Actions: click, dblclick, hover, fill (value or env), press, scroll, drag, wait.
+Select by selector or role + name. Repeated click: repeat:2, intervalMs:120.
 `;
 
 export async function runMotionCLI(args) {
@@ -60,7 +56,6 @@ export async function runMotionCLI(args) {
       allowPositionals: true,
       options: {
         help: { type: 'boolean', short: 'h' },
-        motion: { type: 'boolean' },
         out: { type: 'string' },
         capture: { type: 'boolean' },
         scenario: { type: 'string' },
@@ -84,6 +79,14 @@ export async function runMotionCLI(args) {
         baseline: { type: 'string' },
         cue: { type: 'string' },
         fps: { type: 'string' },
+        episode: { type: 'string' },
+        at: { type: 'string' },
+        radius: { type: 'string' },
+        object: { type: 'string' },
+        point: { type: 'string' },
+        search: { type: 'string' },
+        offset: { type: 'string' },
+        limit: { type: 'string' },
         windows: { type: 'boolean' },
         window: { type: 'string' },
         doctor: { type: 'boolean' },
@@ -103,12 +106,24 @@ export async function runMotionCLI(args) {
       console.log(JSON.stringify(await listWindows(), null, 2));
       return 0;
     }
+    if (['stop', 'status'].includes(positionals[0])) {
+      if (positionals.length !== 2) throw new Error('Provide one recording directory');
+      const { recordingStatus } = await import('./record.mjs');
+      console.log(
+        JSON.stringify(await recordingStatus(positionals[1], positionals[0] === 'stop'), null, 2),
+      );
+      return 0;
+    }
+    const recording = positionals[0] === 'record';
+    if (recording) positionals.shift();
     let scenario;
     if (v.scenario) {
       scenario = JSON.parse(await readFile(v.scenario, 'utf8'));
       if (scenario.url && !/^https?:\/\//.test(scenario.url))
         scenario.url = resolve(dirname(resolve(v.scenario)), scenario.url);
     }
+    const inspecting = positionals[0] === 'inspect';
+    if (inspecting) positionals.shift();
     const input = positionals[0] ?? scenario?.url;
     if (!input && !v.window)
       throw new Error('Provide a URL, scene, HTML, recording or frame manifest');
@@ -116,27 +131,53 @@ export async function runMotionCLI(args) {
     if (v.theme && !['light', 'dark'].includes(v.theme))
       throw new Error('--theme must be light or dark');
     const numeric = (key) => (v[key] === undefined ? undefined : Number(v[key]));
+    const point = v.point?.split(',').map(Number);
+    if (point && (point.length !== 2 || point.some((n) => !Number.isFinite(n))))
+      throw new Error('--point needs x,y in source pixels');
+    if (inspecting && !v.out) {
+      const { inspectSession } = await import('./inspect.mjs');
+      console.log(
+        JSON.stringify(
+          await inspectSession(input, {
+            episode: v.episode ?? v.cue,
+            at: numeric('at'),
+            radius: numeric('radius'),
+            object: v.object,
+            point,
+            from: numeric('from'),
+            to: v.seconds === undefined ? undefined : (numeric('from') ?? 0) + numeric('seconds'),
+            search: v.search,
+            offset: numeric('offset'),
+            limit: numeric('limit'),
+          }),
+          null,
+          2,
+        ),
+      );
+      return 0;
+    }
     let replayInput = false;
     if (/\.json$/i.test(input ?? '') && !/^https?:\/\//i.test(input) && !v.scenario) {
       const parsed = JSON.parse(await readFile(input, 'utf8'));
       replayInput = parsed.kind === 'motion-capture';
     }
     const captureRequested =
-      replayInput ||
-      /^https?:\/\//i.test(input ?? '') ||
-      v.ready ||
-      v.capture ||
-      v.scenario ||
-      v.click ||
-      v.target ||
-      v.cdp ||
-      v.headed ||
-      v.window;
+      !inspecting &&
+      (replayInput ||
+        /^https?:\/\//i.test(input ?? '') ||
+        v.ready ||
+        v.capture ||
+        v.scenario ||
+        v.click ||
+        v.target ||
+        v.cdp ||
+        v.headed ||
+        v.window);
     const browserFlags =
       v.capture || v.scenario || v.click || v.target || v.cdp || v.headed || v.ready;
     if (!v.window && browserFlags && /\.(mp4|mov|mkv|webm|avi|gif)$/i.test(input ?? ''))
       throw new Error(
-        'Browser actions need a URL or HTML. For this recording use --motion --seconds N or --from/--frames.',
+        'Browser actions need a URL or HTML. For this recording use --from/--seconds.',
       );
     if (v.window && (input || browserFlags))
       throw new Error(
@@ -174,6 +215,19 @@ export async function runMotionCLI(args) {
     const out = resolve(
       v.out ?? join('artifacts', `motion-${new Date().toISOString().replace(/[:.]/g, '-')}`),
     );
+    if (recording) {
+      if (!captureRequested)
+        throw new Error('record needs a browser URL, local HTML with --capture, or --window ID');
+      const { startRecording } = await import('./record.mjs');
+      console.log(
+        JSON.stringify(
+          await startRecording(input, out, { ...capture, url: input, seconds: numeric('seconds') }),
+          null,
+          2,
+        ),
+      );
+      return 0;
+    }
     const result = await reviewMotion({
       input: input ?? '.',
       out,
@@ -181,6 +235,11 @@ export async function runMotionCLI(args) {
       from: numeric('from'),
       frames: numeric('frames'),
       fps: numeric('fps'),
+      episode: v.episode,
+      at: numeric('at'),
+      radius: numeric('radius'),
+      target: v.object,
+      point,
       crop: parseCrop(v.crop),
       slice: parseSlice(v.slice),
       threshold: numeric('threshold'),

@@ -1,5 +1,5 @@
 import { access, mkdir, readFile } from 'node:fs/promises';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -43,16 +43,38 @@ export async function listWindows() {
   return JSON.parse(stdout);
 }
 
-export async function captureWindow({ window: id, seconds = 2 }, out) {
-  if (!/^\d+$/.test(String(id)) || !Number.isFinite(seconds) || seconds < 0.1 || seconds > 15)
-    throw new Error('Choose --window ID from --windows, and --seconds between 0.1 and 15');
+export async function captureWindow(
+  { window: id, seconds = 2, stopFile, onReady, onCaptured },
+  out,
+) {
+  if (!/^\d+$/.test(String(id)) || !Number.isFinite(seconds) || seconds < 0.1 || seconds > 86400)
+    throw new Error('Choose --window ID from --windows, and --seconds between 0.1 and 86400');
   await mkdir(out, { recursive: true });
   const video = join(out, 'recording.mp4');
-  const { stdout } = await run(await nativeHelper(), [String(id), String(seconds), video], {
-    timeout: (seconds + 15) * 1000,
+  const helper = await nativeHelper();
+  const stdout = await new Promise((done, reject) => {
+    const child = spawn(
+      helper,
+      [String(id), String(seconds), video, ...(stopFile ? [stopFile] : [])],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    let output = '',
+      errors = '',
+      ready = false;
+    child.stdout.on('data', (chunk) => (output += chunk));
+    child.stderr.on('data', (chunk) => {
+      errors += chunk;
+      if (!ready && errors.includes('Recording selected window')) {
+        ready = true;
+        void onReady?.();
+      }
+    });
+    child.on('error', reject);
+    child.on('close', (code) => (code === 0 ? done(output) : reject(new Error(errors))));
   });
+  await onCaptured?.();
   const recording = JSON.parse(stdout);
-  const samples = await videoFrames(video, 0, 600);
+  const samples = await videoFrames(video, 0, undefined, undefined, out);
   const source = {
     kind: 'window-capture',
     path: video,
@@ -60,9 +82,6 @@ export async function captureWindow({ window: id, seconds = 2 }, out) {
     windowID: Number(id),
     viewport: { width: recording.width, height: recording.height },
     clock: 'ScreenCaptureKit recording PTS',
-    ...(samples.length === 600
-      ? { warning: 'The analysis reached 600 frames; use a shorter recording for full coverage.' }
-      : {}),
   };
   const captureManifest = await saveCapture(samples, source, out);
   return { samples, source, captureManifest };

@@ -44,7 +44,10 @@ function regionMarkup(photo, frame) {
 function spectrumMarkup(spectrum) {
   if (spectrum.status !== 'available')
     return `<p class="photo-note">Спектрограмма: ${escapeText(spectrum.reason)}</p>`;
-  const maximum = Math.max(...spectrum.power.flat());
+  const maximum = spectrum.power.reduce(
+    (max, column) => column.reduce((n, v) => Math.max(n, v), max),
+    0,
+  );
   const width = 530 / spectrum.times.length,
     height = 150 / spectrum.frequencies.length;
   const halfHop = spectrum.hopSamples / spectrum.sampleRateHz / 2;

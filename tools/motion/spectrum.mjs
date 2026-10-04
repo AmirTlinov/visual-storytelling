@@ -17,7 +17,10 @@ export function brightnessSpectrum(points, { sparse = false, sizeChanged = false
   if (duration < 1) return skip('Запись короче секунды: увеличьте наблюдаемый интервал.');
   const dt = duration / (points.length - 1);
   const jitter =
-    Math.max(...points.slice(1).map((p, i) => Math.abs(p.time - points[i].time - dt))) / dt;
+    points.reduce(
+      (max, p, i) => (i ? Math.max(max, Math.abs(p.time - points[i - 1].time - dt)) : max),
+      0,
+    ) / dt;
   if (jitter > 0.02)
     return skip(
       'Интервалы кадров различаются более чем на 2%; STFT без подмены времён недоступна.',
@@ -47,7 +50,9 @@ export function brightnessSpectrum(points, { sparse = false, sizeChanged = false
   let best;
   for (const channel of channels) {
     if (!channel.values.every(Number.isFinite)) continue;
-    const range = Math.max(...channel.values) - Math.min(...channel.values);
+    const range =
+      channel.values.reduce((max, v) => Math.max(max, v), -Infinity) -
+      channel.values.reduce((min, v) => Math.min(min, v), Infinity);
     if (range < 1) continue;
     const columns = [],
       times = [],

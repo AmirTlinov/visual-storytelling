@@ -31,6 +31,14 @@ function mount(
   let plan: MathMorphPlan = prepared,
     disposed = false;
   let progress = 0;
+  let currentFrame: ReturnType<typeof plan.sample> | undefined;
+  let configured = operation;
+  object.userData.visualReview = () => ({
+    source: 'src/morph/three.ts',
+    operation: configured,
+    progress,
+    frame: currentFrame,
+  });
   const notes = new Map<string, { anchor: Object3D; label: ReturnType<typeof view.label> }>();
   const ruler = new LineSegments(
     new BufferGeometry(),
@@ -73,6 +81,7 @@ function mount(
     clear();
     formula.remove();
     plan = prepared;
+    configured = next;
     formula = createFormula();
     prepare();
     render(0);
@@ -88,6 +97,7 @@ function mount(
   function render(p: number) {
     if (disposed) return;
     const frame = plan.sample(p);
+    currentFrame = frame;
     progress = p;
     const [min, max] = frameBounds(plan, frame, p);
     bounds.set(new Vector3(...min), new Vector3(...max));

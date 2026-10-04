@@ -33,6 +33,11 @@ export function surfaceLettering(
   const group = new T.Group();
   let removed = false;
   group.name = 'surface-lettering';
+  group.userData.visualReview = () => ({
+    text: element.textContent,
+    anchor: typeof anchor === 'function' ? undefined : anchor.uuid,
+    source: 'src/viewport/surface-lettering.ts',
+  });
   if (typeof anchor === 'function') scene.add(group);
   else anchor.add(group);
   const canvas = document.createElement('canvas');

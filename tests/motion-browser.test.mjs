@@ -132,10 +132,10 @@ test('browser records repeated input, attributes a stall and blink, replays and 
     });
     const imported = await read(offline.data);
     assert.equal(imported.source.kind, 'browser-capture');
-    assert.equal(imported.timeline.frames, report.timeline.frames);
+    assert(imported.timeline.frames <= report.timeline.frames);
     assert(imported.runtime.insights.some((v) => v.kind === 'brief-disappearance'));
     const captures = await read(resolve(dirname(offline.data), imported.captureManifest));
-    assert.equal(captures.frames.length, report.timeline.frames);
+    assert.equal(captures.frames.length, imported.timeline.frames);
 
     const healthy = await reviewMotion({
       input: faulty.replay,
@@ -145,7 +145,9 @@ test('browser records repeated input, attributes a stall and blink, replays and 
     });
     const after = await read(healthy.data);
     assert(!after.runtime.insights.some((v) => v.kind === 'brief-disappearance'));
-    assert.equal(after.comparison.pairs.length, 3);
+    assert(after.comparison.pairs.length >= 6);
+    assert(after.comparison.pairs.some((p) => p.mode === 'elapsed'));
+    assert(after.comparison.pairs.some((p) => p.mode === 'phase'));
     assert(after.comparison.pairs.every((v) => Number.isFinite(v.timestampDistanceMs)));
     assert(after.runtime.trajectories[0].largestStep);
     await assert.rejects(
@@ -213,9 +215,9 @@ test('browser records repeated input, attributes a stall and blink, replays and 
         `${Number(maximum).toFixed(3)} с`,
       );
       assert(
-        (await page.locator('.motion-play img').getAttribute('src')).endsWith(
-          captures.frames.at(-1).file,
-        ),
+        new URL(await page.locator('.motion-play img').getAttribute('src'), page.url()).pathname ===
+          new URL(captures.frames.at(-1).file, `${reports.url}/offline/capture/frames.json`)
+            .pathname,
       );
       await page.locator('.motion-play [data-play]').click();
       await page.waitForTimeout(100);

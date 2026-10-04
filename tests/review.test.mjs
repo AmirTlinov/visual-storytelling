@@ -4,7 +4,9 @@ import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { build } from 'esbuild';
-import { reviewScene, unmarkedIntervals } from '../tools/review.mjs';
+import { reviewMotion } from '../tools/motion/review.mjs';
+import { unmarkedIntervals } from '../tools/motion/episodes.mjs';
+import { loadCapture } from '../tools/motion/session.mjs';
 import { renderer } from '../tools/render.mjs';
 
 test('rendered review detects a frozen operation and unused cue, permits a reading hold', async () => {
@@ -47,49 +49,31 @@ test('rendered review detects a frozen operation and unused cue, permits a readi
       <main class="ve-scene"><svg width="100" height="100"><circle cx="50" cy="50" r="20"/></svg></main>
       <script src="index.js"></script></body></html>`,
     );
-    const result = await reviewScene({ directory, out, width: 375 });
-    const report = JSON.parse(await readFile(join(out, 'review.json'), 'utf8'));
+    const result = await reviewMotion({ input: directory, out, width: 375 });
+    const report = JSON.parse(await readFile(result.session, 'utf8'));
+    const capture = await loadCapture(result.session);
+    const frozen = report.episodes.find((e) => e.cue === 'frozen');
+    assert(frozen.observations.some((s) => s.includes('одинаковы')));
+    assert(frozen.observations.includes('No readable space for label'));
     assert(
-      result.warnings.some(
-        (warning) => warning.startsWith('frozen:') && warning.includes('кадры одинаковы'),
-      ),
+      report.episodes
+        .find((e) => e.cue === 'missing')
+        .observations.some((s) => s.includes('нет обращения')),
     );
     assert(
-      result.warnings.some(
-        (warning) => warning.startsWith('missing:') && warning.includes('не обращался'),
-      ),
+      report.episodes
+        .find((e) => e.cue === 'unassigned')
+        .observations.some((s) => s.includes('action/hold')),
     );
-    assert(
-      result.warnings.some(
-        (warning) => warning.startsWith('unassigned:') && warning.includes('опишите'),
-      ),
-    );
-    assert(!result.warnings.some((warning) => warning.startsWith('read:')));
-    assert.equal(report.cues[0].frames[0].time, 0);
-    assert.deepEqual(report.cues[0].frames[0].diagnostics, ['No readable space for label']);
-    assert(result.warnings.includes('frozen: No readable space for label'));
-    const moving = report.cues.find((cue) => cue.id === 'move');
-    assert.equal(moving.unchanged, false);
-    assert.equal(moving.frames[0].state.x, 50);
-    assert.equal(moving.frames.at(-1).state.x, 80);
-    assert.equal(moving.motion.source.kind, 'scene-seek');
-    assert.equal(moving.motion.sampling, 'cue-checkpoints');
-    assert(moving.motion.intervals.some((interval) => interval.changedPercent > 0));
-    assert(!JSON.stringify(report).includes('base64'));
-    assert((await readFile(join(out, moving.motionImage))).length > 1000);
-    assert.equal(report.cues.at(-1).frames.at(-1).time, 5);
-    assert(!result.warnings.some((warning) => warning.startsWith('move:')));
-    assert(result.warnings.some((warning) => warning.includes('Line geometry has too few points')));
-    assert.equal(
-      report.messages.find((message) => message.text.includes('too few points')).time,
-      0,
-    );
-    assert.equal(report.unmarked.length, 1);
-    assert.deepEqual([report.unmarked[0].start, report.unmarked[0].end], [3, 4]);
-    assert.equal(report.unmarked[0].frames.length, 2);
+    assert(!report.episodes.find((e) => e.cue === 'read').observations.length);
+    assert.equal(report.coverage.from, 0);
+    assert.equal(report.coverage.to, 5);
+    assert(capture.samples.some((f) => f.state.x === 50));
+    assert(capture.samples.some((f) => f.state.x === 80));
+    assert(report.episodes.some((e) => e.kind === 'unmarked' && e.start === 3 && e.end === 4));
+    assert(capture.context.messages.some((m) => m.text.includes('too few points')));
     const html = await readFile(result.path, 'utf8');
     assert(html.includes('&lt;em&gt;copy&lt;/em&gt;'));
-    assert(html.includes('<dialog'));
     assert(!html.includes('<em>copy</em>'));
     await writeFile(
       join(directory, 'index.html'),

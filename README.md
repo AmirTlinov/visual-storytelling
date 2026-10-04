@@ -65,17 +65,23 @@ npm run test:browser    # взаимодействия со сборкой site/
 npm run test:delivery   # отдельный потребитель пакета, офлайн HTML и озвучка
 ```
 
-Для повествования: `node tools/scene.mjs review site/remainder-story --out artifacts/remainder-review`.
-Отчёт сопоставляет слова, описание действия, кадры до/внутри/после и доступный снимок модели.
-Кнопка перехода проигрывает встроенную сцену с голосом и оставляет итог для сравнения.
-`--cue group_action` выбирает конкретный переход; `--width 375 --theme dark --reduced` проверяет другой режим.
-Сценарий хранит `action` или осмысленное `hold` на метке; подключение — в [озвучке](skill/references/narration.md#проверка), построение понимания — в [раскадровке](skill/references/visual-storytelling.md).
+Проверка рассказа или любого UI использует один сеанс наблюдения:
 
-Для живого интерфейса: `node tools/scene.mjs review http://localhost:3000 --click '#open' --target '#panel'`.
-Команда возвращает краткий PNG-обзор с приоритетными наблюдениями, отдельные кадры и дельты, HTML-плеер и сохранённый сценарий. Поддерживаются обычный HTML, сцены, видео, PNG и окна macOS; `review --help` показывает маршруты, `--doctor` проверяет зависимости.
-`photometry.png` показывает яркость, цвет, области во времени и кимограмму; для достаточно длинной равномерной записи с периодическими изменениями добавляется спектрограмма.
-Тот же режим принимает видео или JSON со списком PNG; `--crop` выбирает область. Видео сохраняет PTS и повторы; перемотка сцены показывает время модели.
-Для окна по метке есть `--motion --cue ID`, для мелких деталей — `--crop x,y,w,h --max-size 0`, для сравнения версий — `--baseline REPORT`. Сохранённые кадры можно пересмотреть без нового захвата. [Команды и чтение отчёта](skill/references/motion.md#проверка).
+```sh
+node tools/scene.mjs review site/remainder-story --out artifacts/review
+node tools/scene.mjs review http://localhost:3000 --click '#open' --out artifacts/ui
+node tools/scene.mjs review inspect artifacts/ui --at .4 --object '#panel'
+node tools/scene.mjs review artifacts/ui/replay.json --baseline artifacts/ui --out artifacts/after
+```
+
+`image` даёт обзор, `index.html` — карту эпизодов, запись и выбор объекта;
+`inspect` читает те же кадры, события и состояние без повторного запуска приложения.
+`--cue ID` сохраняет весь переход с контекстом; `record/stop/status` позволяет
+записывать ручные взаимодействия. Поддерживаются HTML, SVG/WebGL, видео, PNG и окна
+macOS. В сцене доступны речь, реально прочитанные метки, группы 3D и этапы MathMorph.
+`--object`/`--crop` приближают деталь, `--baseline` сравнивает каждый эпизод по времени
+и стадиям с сохранением длительности. `framesImage` и `photometryImage` содержат
+разности, яркость, цвет и кимограмму. [Команды, источники времени и ограничения](skill/references/motion.md#проверка).
 
 При изменении общего рисунка сохрани исходные кадры до правки: `node tools/visual-regression.mjs capture site artifacts/reference/pixels`, затем сравни сборку через `npm run test:visual`. `VISUAL_SCENES=area-story,vector` ограничивает проверку затронутыми примерами; обе темы и две ширины сохраняются. Отчёт в `artifacts/migrated/report.json` сообщает все различия, а просмотр помогает оценить их смысл.
 
