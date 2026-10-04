@@ -140,6 +140,68 @@ test('3D annotations stay readable, attached and non-intercepting during orbit a
     const attachments = await page.evaluate(() =>
       lab.number.object.children.map((p) => ({ id: p.uuid, local: p.matrix.toArray() })),
     );
+    // A subject's registered annotations belong to its shot without authored pixel bounds.
+    for (const width of [800, 375]) {
+      await page.setViewportSize({ width, height: 650 });
+      for (const direction of [
+        [-2, 5, 8],
+        [0, 0, 1],
+        [4, -2, 8],
+      ]) {
+        await page.evaluate((direction) => {
+          lab.formula.set('Две единицы');
+          lab.view.shot({ target: lab.cube, direction, padding: 24 });
+        }, direction);
+        await page.evaluate(
+          () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
+        );
+        const framing = await page.evaluate(() => {
+          const frame = lab.formula.element.parentElement.getBoundingClientRect();
+          const stage = lab.formula.element.closest('.ve-stage').getBoundingClientRect();
+          return {
+            visible: !lab.formula.element.hidden,
+            gaps: [
+              frame.left - stage.left,
+              stage.right - frame.right,
+              frame.top - stage.top,
+              stage.bottom - frame.bottom,
+            ],
+          };
+        });
+        assert(framing.visible && framing.gaps.every((gap) => gap >= 23), JSON.stringify(framing));
+      }
+    }
+    const isolation = await page.evaluate(() => {
+      const shot = () => {
+        lab.view.shot({ target: lab.cube, direction: [0, 0, 1], padding: 24 });
+        return lab.view.camera.position.toArray();
+      };
+      const before = shot();
+      const other = new lab.T.Object3D();
+      other.position.x = 100;
+      lab.group.add(other);
+      const unrelated = lab.view.label('Другой предмет', other);
+      const future = new lab.T.Object3D();
+      future.position.y = 100;
+      future.visible = false;
+      lab.cube.add(future);
+      const hidden = lab.view.label('Будущий шаг', future);
+      const after = shot();
+      unrelated.remove();
+      hidden.remove();
+      other.removeFromParent();
+      future.removeFromParent();
+      return { before, after };
+    });
+    assert.deepEqual(isolation.after, isolation.before);
+    await page.setViewportSize({ width: 800, height: 650 });
+    await page.evaluate(() => {
+      lab.formula.set('ReLU: x < 0 → 0');
+      lab.view.shot({
+        target: new lab.T.Box3(new lab.T.Vector3(-2, -2, -2), new lab.T.Vector3(2, 2, 2)),
+        direction: [0, 0, 1],
+      });
+    });
     for (const angle of [0, 0.7, 1.55, 2.3, Math.PI]) {
       await page.evaluate((a) => {
         lab.group.rotation.y = a;

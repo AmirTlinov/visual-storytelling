@@ -7,6 +7,7 @@ import {
 } from './framing.js';
 
 export interface Shot3D {
+  /** Object targets include their registered screen labels; explicit bounds use anchors. */
   target: T.Object3D | T.Box3 | readonly T.Object3D[];
   /** Direction from the target towards the camera. */
   direction?: readonly [number, number, number];
@@ -78,6 +79,7 @@ export function shotPose(
       radius,
       bounds,
       insets,
+      annotations: options.anchors ?? [],
     };
   }
   const to = frame(shot),
@@ -109,7 +111,13 @@ export function shotPose(
       width,
       height,
       insets,
-      anchors: corners(bounds),
+      anchors: [
+        ...corners(bounds),
+        // A label shared by both shots remains attached during the whole camera turn.
+        ...to.annotations.filter((anchor) =>
+          from.annotations.some((other) => other.position.equals(anchor.position)),
+        ),
+      ],
     });
     target.copy(fit.target);
     distance = Math.max(distance, fit.position.distanceTo(fit.target));

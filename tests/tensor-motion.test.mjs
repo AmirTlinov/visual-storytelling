@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   ThreeKit as T,
   arrangeTensorRows,
-  calculateTensorColumns,
+  deliverTensorCells,
   readableFrame,
   geometryFrameAnchors,
 } from '../dist/viewport/index.js';
@@ -28,7 +28,6 @@ function row(count, x, y, cell = 0.65) {
     reveal() {
       for (const c of cells) c.box.scale.setScalar(1);
     },
-    highlight() {},
     titleLabel: { show() {} },
   };
 }
@@ -66,17 +65,22 @@ test('joining preserves the eight original cells, clear lanes, and reverse-seek 
     before,
   );
 });
-test('arithmetic creates results after evaluation and delivers the same cell without intersecting operands', () => {
+test('delivery preserves cell identity, clear lanes and reverse-seek positions', () => {
   const a = row(8, 0, 2.1),
     b = row(8, 0, 0.4),
     out = row(8, 0, -1.55);
-  const animate = calculateTensorColumns([a, b], out, { lift: 0.9 });
+  const animate = deliverTensorCells(out, {
+    from: out.cells.map((c) => [c.base.x, c.base.y + 0.9, c.base.z]),
+    start: 0.38,
+    end: 0.96,
+  });
   const ids = out.cells.map((c) => c.box.uuid);
   for (let step = 0; step <= 240; step++) {
-    const state = animate(step / 240);
+    const progress = step / 240;
+    animate(progress);
     for (const row of [a, b, out]) row.group.updateWorldMatrix(true, true);
-    for (const [i, c] of out.cells.entries()) {
-      if (state.phases[i] <= 0.38) assert.equal(c.box.visible, false);
+    for (const c of out.cells) {
+      if (progress <= 0.38) assert.equal(c.box.visible, false);
       if (!c.box.visible) continue;
       const bounds = new T.Box3().setFromObject(c.box);
       for (const input of [a, b])

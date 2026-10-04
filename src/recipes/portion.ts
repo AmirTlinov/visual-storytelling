@@ -22,7 +22,7 @@ export function portion(
     width: 0,
   });
   const defs = svg('defs'),
-    clipId = `${view.element.id}-${id}-quantity`;
+    clipId = `${fill.element.id}-quantity`;
   const clip = svg('clipPath', { id: clipId });
   const window = svg('rect', { x: -size / 2 - 1, y: 0, width: size + 2, height: size });
   clip.append(window);

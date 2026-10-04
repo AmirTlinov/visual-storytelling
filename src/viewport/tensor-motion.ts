@@ -10,7 +10,6 @@ export interface TensorHandle {
   group: T.Group;
   cells: TensorCell[];
   reveal(progress: number): void;
-  highlight(index: number): void;
   titleLabel?: { show(visible: boolean): void } | null;
 }
 const clamp = (p: number) => Math.max(0, Math.min(1, p));
@@ -66,30 +65,5 @@ export function deliverTensorCells(
     });
     target.titleLabel?.show(phases.every((p) => p >= 0.9));
     return phases.map((p) => p >= 0.9);
-  };
-}
-
-/** Pair -> evaluate -> deliver -> hold. Inputs keep their own slots; only the result travels. */
-export function calculateTensorColumns(
-  inputs: TensorHandle[],
-  output: TensorHandle,
-  { lift = 0.7, parallel = false }: { lift?: number; parallel?: boolean } = {},
-) {
-  const count = output.cells.length;
-  if (!count || inputs.some((row) => row.cells.length !== count))
-    throw new Error('Coordinate-wise arithmetic requires equal, non-empty rows');
-  const deliver = deliverTensorCells(output, {
-    from: output.cells.map((c) => [c.base.x, c.base.y + lift, c.base.z] as Point3),
-    start: 0.38,
-    end: 0.96,
-  });
-  return (progress: number) => {
-    const p = clamp(progress),
-      index = Math.min(count - 1, Math.floor(p * count));
-    const phases = output.cells.map((_, i) => (parallel ? p : clamp(p * count - i)));
-    const active = p > 0 && p < 1;
-    for (const row of inputs) row.highlight(active && !parallel ? index : -1);
-    const arrived = deliver(phases);
-    return { index, phases, arrived, active, evaluated: phases[index]! >= 0.38 };
   };
 }

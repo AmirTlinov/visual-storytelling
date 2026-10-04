@@ -67,3 +67,31 @@ test('hidden future geometry does not shrink a shot; invalid coordinates fail be
     /finite coordinates/,
   );
 });
+
+test('shared annotation anchors fit throughout an authored camera turn', () => {
+  const target = new T.Box3(new T.Vector3(-0.5, -0.5, -0.5), new T.Vector3(0.5, 0.5, 0.5));
+  const anchors = [{ position: new T.Vector3(1.4, 1.8, 1.2), padding: [70, 22] }];
+  for (const width of [375, 960]) {
+    const camera = new T.PerspectiveCamera(36, width / 340, 0.01, 1000);
+    for (let step = 0; step <= 20; step++) {
+      const pose = shotPose(camera, width, 340, {
+        target,
+        anchors,
+        direction: [-1, -0.3, 0],
+        padding: 24,
+        from: { target, anchors, direction: [1, 0.4, 0], padding: 24 },
+        progress: step / 20,
+      });
+      camera.position.copy(pose.position);
+      camera.lookAt(pose.target);
+      camera.updateMatrixWorld(true);
+      const point = anchors[0].position.clone().project(camera);
+      const x = ((point.x + 1) * width) / 2,
+        y = ((1 - point.y) * 340) / 2;
+      assert(
+        x - 70 >= 23.9 && x + 70 <= width - 23.9 && y - 22 >= 23.9 && y + 22 <= 316.1,
+        `annotation clipped at ${width}px, turn ${step / 20}: ${x},${y}`,
+      );
+    }
+  }
+});

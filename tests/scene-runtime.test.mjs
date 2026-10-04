@@ -15,7 +15,7 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
       stdin: {
         resolveDir: process.cwd(),
         contents: `import './dist/style.css';
-          import {SceneShell, surface, token, plot, widgetState} from './dist/index.js';
+          import {SceneShell, surface, token, plot, portion, widgetState} from './dist/index.js';
           import {Viewport3D, ThreeKit as T} from './dist/viewport/index.js';
           window.galleryReady = (async () => {
             await SceneShell.ready();
@@ -55,7 +55,7 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
             shell.setMode('explore');
             const transition = {events:[...events],renders,mode:story.mode};
             shell.onDispose(()=>disposed++);
-            window.lab={shell,story,view,detail,events,model,pigment,disposeCount:()=>disposed};
+            window.lab={shell,story,view,detail,events,model,pigment,paper,chart,portion,disposeCount:()=>disposed};
             return {detailWidth,shortWidth,overflow,cleared,wideWidth:wide.label.width,
               wideError:wide.label.element.dataset.layoutError,invalidColor,transition,
               axisY:chart.point(0,0)[1],tickY:tick.y+tick.height/2};
@@ -104,6 +104,71 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
     assert(result.wideWidth <= 128.5 && !result.wideError);
     assert.match(result.invalidColor, /Unknown 3D pigment: unknown/);
     assert(Math.abs(result.tickY - result.axisY) < 1);
+    const plotLifecycle = await page.evaluate(() => {
+      const { chart, paper } = lab;
+      const trace = chart.trace(
+        'сигнал (x)',
+        [
+          [0, -1],
+          [1, 0],
+          [2, 1],
+        ],
+        'blue',
+      );
+      trace.at(1, 0);
+      const part = lab.portion(paper, 'доля (x)', { x: 40, y: 30, size: 40, pigment: 'orange' });
+      part.set(0.5);
+      const clipping = [trace.element, part.element].every(
+        (element) => getComputedStyle(element.querySelector('[data-stroke]')).clipPath !== 'none',
+      );
+      part.dispose();
+      const withinChart = chart.element.contains(trace.element);
+      const ids = [...chart.element.querySelectorAll('[id]')].map((e) => e.id);
+      chart.show(false);
+      const hidden = getComputedStyle(chart.element).display === 'none';
+      chart.show(true);
+      trace.show(false);
+      const traceHidden = getComputedStyle(trace.element).display === 'none';
+      trace.show(true);
+      const visible = getComputedStyle(trace.element).display !== 'none';
+      const cursor = trace.element.querySelector('[data-plot-point]');
+      const position = [Number(cursor.getAttribute('cx')), Number(cursor.getAttribute('cy'))];
+      trace.dispose();
+      const recreated = chart.trace(
+        'сигнал (x)',
+        [
+          [0, 0],
+          [2, 1],
+        ],
+        'orange',
+      );
+      recreated.at(2, 1);
+      chart.dispose();
+      return {
+        withinChart,
+        clipping,
+        uniqueIds: ids.length === new Set(ids).size,
+        hidden,
+        traceHidden,
+        visible,
+        position,
+        expected: chart.point(1, 0),
+        removed: !recreated.element.isConnected,
+        remaining: paper.element.querySelectorAll('[data-object^="axis"]').length,
+      };
+    });
+    assert.deepEqual(plotLifecycle, {
+      withinChart: true,
+      clipping: true,
+      uniqueIds: true,
+      hidden: true,
+      traceHidden: true,
+      visible: true,
+      position: [280, 120],
+      expected: [280, 120],
+      removed: true,
+      remaining: 0,
+    });
     assert.deepEqual(result.transition, { events: ['explore'], renders: 1, mode: 'explore' });
     // The same model-derived pigment survives input and a theme change while paused.
     await page.evaluate(() => {

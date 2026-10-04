@@ -19,12 +19,37 @@ export async function buildOutput(source, output, build) {
   if (!inside || (!isAbsolute(inside) && inside.split(sep)[0] !== '..'))
     throw new Error('The build output must not contain scene sources');
   await mkdir(dirname(output), { recursive: true });
-  const staging = await mkdtemp(join(dirname(output), '.visual-story-build-'));
+  const transaction = await mkdtemp(join(dirname(output), '.visual-story-build-'));
+  const staging = join(transaction, 'next'),
+    previous = join(transaction, 'previous');
+  let preservePrevious = false;
   try {
+    await mkdir(staging);
     await build(staging);
-    await rm(output, { recursive: true, force: true });
-    await rename(staging, output);
+    let replaced = false;
+    try {
+      await rename(output, previous);
+      replaced = true;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    try {
+      await rename(staging, output);
+    } catch (error) {
+      if (replaced) {
+        try {
+          await rename(previous, output);
+        } catch (restoreError) {
+          preservePrevious = true;
+          throw new AggregateError(
+            [error, restoreError],
+            `Build publication and rollback failed; the previous delivery remains at ${previous}`,
+          );
+        }
+      }
+      throw error;
+    }
   } finally {
-    await rm(staging, { recursive: true, force: true });
+    if (!preservePrevious) await rm(transaction, { recursive: true, force: true });
   }
 }

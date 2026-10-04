@@ -8,8 +8,31 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 import { buildScene } from '../tools/build-pages.mjs';
+import { buildOutput } from '../tools/build-output.mjs';
 import { packDirectory } from '../tools/standalone.mjs';
 import { serve } from '../tools/site.mjs';
+
+test('failed publication restores the previous delivery and removes temporary output', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'story-publish-'));
+  const source = join(directory, 'source'),
+    output = join(directory, 'dist');
+  try {
+    await mkdir(source);
+    await mkdir(output);
+    await writeFile(join(output, 'index.html'), 'last working scene');
+    await assert.rejects(
+      buildOutput(source, output, async (staging) => {
+        // A completed builder can still leave an unavailable output at publication time.
+        await rm(staging, { recursive: true });
+      }),
+      { code: 'ENOENT' },
+    );
+    assert.equal(await readFile(join(output, 'index.html'), 'utf8'), 'last working scene');
+    assert.deepEqual((await readdir(directory)).sort(), ['dist', 'source']);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('CLI scene builds preserve the prior delivery on failure and remove stale assets on success', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'story-scene-build-'));
@@ -22,6 +45,7 @@ test('CLI scene builds preserve the prior delivery on failure and remove stale a
       '<!doctype html><html><head></head><body><script type="module">window.answer = 42;</script></body></html>';
     await writeFile(join(source, 'index.html'), html);
     await writeFile(join(source, 'old.json'), '{}');
+    await assert.rejects(run('--no-audio'), /Unknown option '--no-audio'/);
     await run();
     const before = await readFile(join(source, 'dist/index.js'), 'utf8');
     await writeFile(

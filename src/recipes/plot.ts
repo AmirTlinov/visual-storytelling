@@ -27,7 +27,8 @@ export function plot(view: Surface, id: string, options: PlotOptions) {
     o.x + ((x - o.xDomain[0]) / (o.xDomain[1] - o.xDomain[0])) * o.width,
     o.y + o.height - ((y - o.yDomain[0]) / (o.yDomain[1] - o.yDomain[0])) * o.height,
   ];
-  const axes = object(view.layer, `${id}:axes`);
+  const chart = object(view.layer, id);
+  const axes = object(chart.content, `${id}:axes`);
   const zero = point(
     Math.max(o.xDomain[0], Math.min(o.xDomain[1], 0)),
     Math.max(o.yDomain[0], Math.min(o.yDomain[1], 0)),
@@ -54,16 +55,18 @@ export function plot(view: Surface, id: string, options: PlotOptions) {
     lettering(axes.content, tick.label, { x: zero[0] - 9, y: y + 5, anchor: 'end', size: 15 });
   }
   return {
+    ...chart,
     point,
     trace(name: string, samples: readonly Point[], pigment: Pigment) {
-      const mark = object(view.layer, `${id}:${name}`, pigment);
+      const mark = object(chart.content, `${id}:${name}`, pigment);
       const d = samples.map(([x, y], i) => `${i ? 'L' : 'M'}${point(x, y).join(' ')}`).join(' ');
       const shape = view.pen.path(mark.content, `${id}:${name}:curve`, d, { width: 1.8 });
       const context = shape.element.cloneNode(true) as SVGGElement;
       context.removeAttribute('data-stroke');
+      context.removeAttribute('id');
       context.style.opacity = '.18';
       mark.content.prepend(context);
-      const clipId = `${view.element.id}-${id}-${name}-time`;
+      const clipId = `${shape.element.id}-time`;
       const defs = svg('defs'),
         clip = svg('clipPath', { id: clipId });
       const window = svg('rect', { x: o.x - 2, y: o.y - 4, width: 0, height: o.height + 8 });
@@ -74,6 +77,9 @@ export function plot(view: Surface, id: string, options: PlotOptions) {
       const cursor = svg('circle', { r: 3.2, fill: 'currentColor', 'data-plot-point': name });
       mark.content.append(cursor);
       return {
+        element: mark.element,
+        show: mark.show,
+        dispose: mark.dispose,
         at(x: number, y: number) {
           const pixel = point(x, y);
           window.setAttribute(

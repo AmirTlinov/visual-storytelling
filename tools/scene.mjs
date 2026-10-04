@@ -19,24 +19,33 @@ if (process.argv[2] === 'review') {
   process.exit(code);
 }
 const root = fileURLToPath(new URL('../', import.meta.url));
-const { values, positionals } = parseArgs({
-  allowPositionals: true,
-  options: {
+const outputOption = { out: { type: 'string' } };
+const serverOptions = { port: { type: 'string', default: '8793' } };
+const commandOptions = {
+  new: {
     example: { type: 'string', default: 'explorer-svg' },
-    help: { type: 'boolean', short: 'h' },
-    out: { type: 'string' },
-    port: { type: 'string', default: '8793' },
     'no-audio': { type: 'boolean', default: false },
     audio: { type: 'boolean', default: false },
-    inline: { type: 'boolean', default: false },
-    cdn: { type: 'boolean', default: false },
-    cue: { type: 'string', multiple: true },
-    theme: { type: 'string' },
-    width: { type: 'string', default: '960' },
-    reduced: { type: 'boolean', default: false },
+  },
+  examples: {
     json: { type: 'boolean', default: false },
     group: { type: 'string' },
     recommended: { type: 'boolean', default: false },
+  },
+  build: { ...outputOption, cdn: { type: 'boolean', default: false } },
+  dev: serverOptions,
+  preview: serverOptions,
+  pack: {
+    ...outputOption,
+    inline: { type: 'boolean', default: false },
+    theme: { type: 'string' },
+  },
+};
+const { values, positionals } = parseArgs({
+  allowPositionals: true,
+  options: {
+    help: { type: 'boolean', short: 'h' },
+    ...commandOptions[process.argv[2]],
   },
 });
 const [command, directory = '.'] = positionals,

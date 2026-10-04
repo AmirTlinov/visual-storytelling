@@ -6,7 +6,7 @@ type ColorMaterial = Material & { color: Color };
 /** A derived pigment is resolved on each invalidated frame and on theme changes. */
 type MaterialInk = string | ((palette: Palette) => Color);
 import { projectedLabels, type LabelInsets } from './labels.js';
-import { shotPose, type ShotTransition3D } from './shots.js';
+import { shotPose, type Shot3D, type ShotTransition3D } from './shots.js';
 import * as ThreeKit from './engine.js';
 import { orbitControls, orbitHelp } from './orbit.js';
 /* Camera, GPU resources and projected labels belong to this surface. */
@@ -193,8 +193,11 @@ function mount(
   function shot(options: ShotTransition3D) {
     lastShot = options;
     if (!following || !stage.clientWidth || !stage.clientHeight) return;
+    const anchors = (shot: Shot3D) => [...labels.anchors(shot.target), ...(shot.anchors ?? [])];
     const pose = shotPose(camera, stage.clientWidth, stage.clientHeight, {
       ...options,
+      anchors: anchors(options),
+      from: options.from && { ...options.from, anchors: anchors(options.from) },
       reduced: options.reduced ?? matchMedia('(prefers-reduced-motion: reduce)').matches,
     });
     camera.position.copy(pose.position);
