@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MathMorph } from '../dist/morph/math.js';
-import { cellLayout } from '../dist/morph/layout.js';
+import { cellLayout, cellViewport } from '../dist/morph/layout.js';
 import { mathMotionFrame, morphTiming } from '../dist/morph/timing.js';
 import { cueSheet } from '../dist/story/cues.js';
 
@@ -12,6 +12,87 @@ const operation = () =>
     { operator: 'apply', label: 'ReLU', value: (x) => Math.max(0, x) },
     { operator: 'multiply', value: 2 },
   );
+
+function layoutHost(layout = null, height = '', priority = '') {
+  const attributes = new Map(),
+    properties = new Map();
+  const host = {
+    getAttribute: (key) => attributes.get(key) ?? null,
+    setAttribute: (key, value) => attributes.set(key, value),
+    removeAttribute: (key) => attributes.delete(key),
+    style: {
+      getPropertyValue: (key) => properties.get(key)?.value ?? '',
+      getPropertyPriority: (key) => properties.get(key)?.priority ?? '',
+      setProperty: (key, value, priority = '') => properties.set(key, { value, priority }),
+      removeProperty: (key) => properties.delete(key),
+    },
+    snapshot: () => [
+      host.getAttribute('data-math-layout'),
+      host.style.getPropertyValue('--ve-math-height'),
+      host.style.getPropertyPriority('--ve-math-height'),
+    ],
+  };
+  if (layout !== null) host.setAttribute('data-math-layout', layout);
+  if (height) host.style.setProperty('--ve-math-height', height, priority);
+  return host;
+}
+
+test('shared arithmetic height survives either disposal order and restores its original CSS once', () => {
+  for (const original of [
+    [null, '', ''],
+    ['authored', '52vh', 'important'],
+  ]) {
+    for (const order of [
+      [0, 1],
+      [1, 0],
+    ]) {
+      const host = layoutHost(...original),
+        clients = [cellViewport(host)];
+      clients[0].resize(284);
+      clients.push(cellViewport(host));
+      clients[1].resize(400);
+      clients[0].resize(284);
+      assert.deepEqual(host.snapshot(), ['cells', '400px', '']);
+      clients[0].resize(460);
+      assert.equal(host.snapshot()[1], '460px');
+      clients[0].resize(284);
+      clients[order[0]].dispose();
+      clients[order[0]].dispose();
+      clients[order[0]].resize(900);
+      assert.deepEqual(host.snapshot(), ['cells', `${order[0] === 0 ? 400 : 284}px`, '']);
+      clients[order[1]].dispose();
+      assert.deepEqual(host.snapshot(), original);
+    }
+  }
+});
+
+test('releasing a height keeps other clients, permits reactivation and leaves other hosts intact', () => {
+  const host = layoutHost(),
+    other = layoutHost('other', '30vh');
+  const first = cellViewport(host),
+    second = cellViewport(host),
+    separate = cellViewport(other);
+  first.resize(500);
+  second.resize(300);
+  separate.resize(700);
+  first.resize();
+  first.resize();
+  assert.deepEqual(host.snapshot(), ['cells', '300px', '']);
+  first.resize(600);
+  assert.equal(host.snapshot()[1], '600px');
+  second.resize();
+  second.dispose();
+  assert.equal(host.snapshot()[1], '600px');
+  first.resize();
+  assert.deepEqual(host.snapshot(), [null, '', '']);
+  assert.deepEqual(other.snapshot(), ['cells', '700px', '']);
+  host.style.setProperty('--ve-math-height', '45vh', 'important');
+  first.resize(320);
+  first.dispose();
+  assert.deepEqual(host.snapshot(), [null, '45vh', 'important']);
+  separate.dispose();
+  assert.deepEqual(other.snapshot(), ['other', '30vh', '']);
+});
 
 test('a computed result becomes the same body and provenance at every following step', () => {
   const plan = MathMorph.plan(operation());
