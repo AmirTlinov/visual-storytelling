@@ -123,8 +123,8 @@ ${indices}<path d="M35 120H29V327H35M474 120H480V327H474" fill="none" stroke="va
 <g id="calculation" transform="translate(0 102)">
 <text id="input-heading" x="250" y="56" text-anchor="middle" class="small">Вход xᵢ</text><text id="weight-heading" x="515" y="56" text-anchor="middle" class="small">Вес → q₃</text><text id="term-heading" x="815" y="56" text-anchor="middle" class="small">Вклад</text>
 ${rows}
-<path id="gather" fill="none" stroke="var(--ve-green)" stroke-width="1.6" pathLength="100" visibility="hidden"/>
-<text id="operation" x="550" y="315" text-anchor="middle" class="small purple">Умножаем каждую компоненту на её вес</text>
+<g id="gather" fill="none" stroke="var(--ve-green)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" visibility="hidden"><path id="gather-bracket" pathLength="100"/><g id="gather-arrow" visibility="hidden"><path id="gather-shaft" pathLength="100"/><path id="gather-head" visibility="hidden"/></g></g>
+<text id="operation" x="550" y="315" text-anchor="middle" class="small purple">Умножаем входы на веса</text>
 <g id="partial" visibility="hidden"><path id="partial-box" d="${inkBox(38, 336, 1024, 64, 50)}" fill="var(--ve-green-wash)"/><text id="partial-label" x="60" y="379">Первые 4 вклада</text><text id="partial-value" x="1038" y="379" text-anchor="end" class="green">${decimal(values.partial)}</text></g>
 <text id="plus" x="550" y="429" text-anchor="middle" visibility="hidden">+</text>
 <g id="rest" visibility="hidden"><path id="rest-box" d="${inkBox(38, 440, 1024, 64, 51)}" fill="var(--ve-purple-wash)"/><text id="rest-label" x="60" y="483" class="small">Остальные 252 + b</text><text id="rest-value" x="1038" y="483" text-anchor="end" class="purple">${decimal(values.rest)}</text></g>

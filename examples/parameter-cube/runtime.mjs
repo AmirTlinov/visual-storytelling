@@ -53,14 +53,14 @@ export function mountCube(initial, start, api, model, cubeScene) {
     const ends = [1, 1.55, 2.1, 2.65];
     const phase =
       t < 2.65
-        ? 'Умножаем каждую компоненту на её вес'
+        ? 'Умножаем входы на веса'
         : t < 3.7
-          ? 'Складываем четыре полученных вклада'
+          ? 'Складываем четыре вклада'
           : t < 5
-            ? 'Учитываем остальные компоненты и смещение'
+            ? 'Учитываем 252 входа и b'
             : t < 6.3
-              ? 'Собираем полный результат проекции'
-              : 'Одна компонента запроса готова';
+              ? 'Собираем полный результат'
+              : 'Компонента запроса готова';
     text('operation', phase);
     text('calculation-title', `2. Соберём q${'₁₂₃₄'[h]},${'₁₂₃₄'[j]} для токена`);
     text('weight-heading', `Вес → q${'₁₂₃₄'[j]}`);
@@ -76,8 +76,13 @@ export function mountCube(initial, start, api, model, cubeScene) {
       attr(path, 'visibility', !reducedMotion.matches && p > 0 && p < 1 ? 'visible' : 'hidden');
     }
     const gather = Math.max(0, Math.min(1, (t - 2.8) / 0.9));
-    attr(byID('gather'), 'stroke-dasharray', `${gather * 100} 100`);
-    show('gather', reducedMotion.matches ? t >= 3.7 : gather > 0);
+    attr(byID('gather-bracket'), 'stroke-dasharray', `${Math.min(1, gather / 0.6) * 100} 100`);
+    const arrow = Math.max(0, (gather - 0.6) / 0.4);
+    const gatherVisible = reducedMotion.matches ? t >= 3.7 : gather > 0;
+    attr(byID('gather-shaft'), 'stroke-dasharray', `${arrow * 100} 100`);
+    show('gather-arrow', gatherVisible && arrow > 0);
+    show('gather-head', gatherVisible && arrow >= 1);
+    show('gather', gatherVisible);
     show('partial', t >= 3.7);
     show('rest', t >= 5);
     show('plus', t >= 5);
@@ -201,7 +206,11 @@ export function mountCube(initial, start, api, model, cubeScene) {
     );
     attr(byID('operation'), 'x', width / 2);
     attr(byID('operation'), 'font-size', small ? 21 : 25);
-    attr(byID('gather'), 'd', `M${xs[5] + 57} 84V286Q${xs[5] + 57} 325 ${width / 2} 332`);
+    const edge = xs[5] + 59,
+      rail = edge + 10;
+    attr(byID('gather-bracket'), 'd', `M${edge} 79H${rail}Q${rail + 0.6} 184 ${rail} 289H${edge}`);
+    attr(byID('gather-shaft'), 'd', `M${xs[5]} 298Q${xs[5] + 0.3} 315 ${xs[5]} 331`);
+    attr(byID('gather-head'), 'd', `M${xs[5] - 4.5} 325L${xs[5]} 331L${xs[5] + 4.5} 325`);
     ['partial', 'rest'].forEach((key, index) => {
       const y = 371 + index * 104;
       attr(byID(`${key}-box`), 'd', inkBox(38, y - 35, width - 76, 64, 50 + index));
