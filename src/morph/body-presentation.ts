@@ -24,6 +24,8 @@ export function mountBodies(
   root.className = 've-math-view';
   controls.className = 've-math-projection';
   flatStage.className = volumeStage.className = 've-math-stage';
+  flatStage.dataset.projection = '2d';
+  volumeStage.dataset.projection = '3d';
   root.append(controls, volumeStage, flatStage);
   parent.append(root);
   let projection = options.projection ?? '3d',

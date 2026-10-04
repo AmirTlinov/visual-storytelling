@@ -1,4 +1,4 @@
-import { access, cp, mkdir, readFile, readdir, writeFile, rm } from 'node:fs/promises';
+import { access, cp, mkdir, readdir, writeFile, rm } from 'node:fs/promises';
 import { join, resolve, relative, sep } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -9,7 +9,8 @@ import { buildNarration } from './narration.mjs';
 import { packDirectory } from './standalone.mjs';
 import { exportVideo } from './video-export.mjs';
 import { captionTrack } from '../dist/story/captions.js';
-import { pinSceneProject } from './scene-project.mjs';
+import { captionSource } from './caption-source.mjs';
+import { pinSceneProject, closeSceneDependencies } from './scene-project.mjs';
 import { diagnosePackage } from './build-info.mjs';
 const execute = promisify(execFile);
 
@@ -72,7 +73,7 @@ export async function deliver(
       receipt.files.push('story.html');
     }
     if (wanted.has('srt') || wanted.has('vtt')) {
-      const track = captionTrack(JSON.parse(await readFile(join(built, 'timeline.json'), 'utf8')));
+      const track = captionTrack(await captionSource(built, { signal }));
       for (const format of ['srt', 'vtt'])
         if (wanted.has(format)) {
           await writeFile(join(staging, `story.${format}`), track.serialize(format));
@@ -120,8 +121,9 @@ export async function deliver(
           () => true,
           () => false,
         ))
-      )
+      ) {
         await pinSceneProject(sourceCopy, { signal });
+      } else await closeSceneDependencies(source, sourceCopy, { signal });
       await execute('tar', ['-czf', join(staging, 'source.tar.gz'), '-C', staging, 'source'], {
         signal,
       });

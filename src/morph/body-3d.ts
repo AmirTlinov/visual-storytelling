@@ -3,6 +3,7 @@ import type { Viewport3D } from '../viewport/three.js';
 import { surfaceInscriptions } from './ink.js';
 import type { MorphFrame } from './objects.js';
 import { Vector3 } from 'three';
+import { objectVisible } from '../viewport/visibility.js';
 
 /** Shared presentation of generic and mathematical bodies; no proxy label geometry. */
 export function morphBody3D(
@@ -14,6 +15,10 @@ export function morphBody3D(
   const reading = document.createElement('span');
   reading.className = 've-surface-label';
   reading.setAttribute('data-morph-ink', '');
+  const syncVisibility = () => {
+    reading.hidden = !objectVisible(surface.object);
+  };
+  const offRender = view.onRender(syncVisibility);
   view.renderer.domElement.parentElement!.append(reading);
   const center = new Vector3(),
     scale = new Vector3(),
@@ -25,6 +30,7 @@ export function morphBody3D(
     previous = '';
   function render(frame: MorphFrame) {
     if (disposed) return;
+    syncVisibility();
     latest = frame;
     if (!canvas.clientWidth || !canvas.clientHeight) return;
     const key = JSON.stringify(frame);
@@ -68,6 +74,7 @@ export function morphBody3D(
   view.controls.addEventListener('change', refresh);
   surface.onDispose(() => {
     disposed = true;
+    offRender();
     observer.disconnect();
     view.controls.removeEventListener('change', refresh);
     reading.remove();

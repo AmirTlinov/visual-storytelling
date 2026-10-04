@@ -1,9 +1,10 @@
+import { doorPassage } from './doorway.js';
 import type { StageSet } from '../types.js';
 import type { Destination, Furniture, GroundPoint, RelativePlace, Staging } from './types.js';
-import { footprint, supportPoint } from './objects.js';
+import { footprint, supportPoint, stairEnd } from './objects.js';
 import { project } from './space.js';
 
-/** Resolve authored relations once. Rendering and action planning use the resulting metres. */
+/** Resolve a place using the current arrangement. Rendering and action planning use metres. */
 export function destination(staging: Staging, place: Destination): GroundPoint {
   let at: GroundPoint | undefined;
   if (typeof place === 'string') {
@@ -22,13 +23,24 @@ export function destination(staging: Staging, place: Destination): GroundPoint {
     const box = item && footprint(item);
     at = { ...origin };
     if (place.side === 'on') {
-      if (!item || item.kind !== 'table') throw new Error('Only a table supports on placement');
+      if (!item) throw new Error('On placement needs a physical support');
       at = supportPoint(item);
+    } else if (place.side === 'inside' || place.side === 'outside') {
+      if (!item || item.kind !== 'door') throw new Error('Inside/outside placement needs a door');
+      at = doorPassage(item, place.side);
+    } else if (place.side === 'landing') {
+      if (!item || item.kind !== 'stairs') throw new Error('Landing placement needs stairs');
+      at = stairEnd(item);
     } else if (place.side === 'left') at.x = (box?.left ?? origin.x) - gap;
     else if (place.side === 'right') at.x = (box?.right ?? origin.x) + gap;
     else if (place.side === 'front') at.z = (box?.front ?? origin.z) - gap;
     else if (place.side === 'back') at.z = (box?.back ?? origin.z) + gap;
     else throw new Error(`Unknown placement side: ${String(place.side)}`);
+    if (place.offset) {
+      at.x += place.offset.x;
+      at.z += place.offset.z;
+      at.height = (at.height ?? 0) + (place.offset.height ?? 0);
+    }
   } else at = place;
   if (!at || ![at.x, at.z, at.height ?? 0].every(Number.isFinite))
     throw new Error(
@@ -53,7 +65,7 @@ export function arrange(base: StageSet, layout: SetLayout): StageSet {
     spots: Object.create(null),
   };
   const objects: Record<string, (Omit<Furniture, 'at'> & { at: Destination }) | null> =
-    Object.assign(Object.create(null), base.staging.objects);
+    Object.assign(Object.create(null), base.staging.layout?.objects ?? base.staging.objects);
   for (const [id, change] of Object.entries(layout.objects ?? {})) {
     if (change === null) {
       objects[id] = null;
@@ -63,7 +75,18 @@ export function arrange(base: StageSet, layout: SetLayout): StageSet {
     if (!item.kind || !item.at) throw new Error(`New stage object ${id} needs kind and at`);
     objects[id] = item as Omit<Furniture, 'at'> & { at: Destination };
   }
-  const spots = { ...base.staging.spots, ...layout.spots };
+  const spots = { ...(base.staging.layout?.spots ?? base.staging.spots), ...layout.spots };
+  staging.layout = {
+    objects: Object.fromEntries(
+      Object.entries(objects).filter(
+        (entry): entry is [string, Omit<Furniture, 'at'> & { at: Destination }] =>
+          entry[1] !== null,
+      ),
+    ),
+    spots: Object.fromEntries(
+      Object.entries(spots).filter((entry): entry is [string, Destination] => entry[1] !== null),
+    ),
+  };
   const visiting = new Set<string>(),
     done = new Set<string>();
   const solve = (kind: 'objects' | 'spots', id: string) => {

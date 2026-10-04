@@ -8,10 +8,17 @@ import type { CharacterPack } from './types.js';
 
 /** One context and atlas for every chapter. A cut changes stage state, never the graphics owner. */
 export async function characterRenderer(pack: CharacterPack) {
-  const source = await unpackCharacter(pack),
-    image = new Image();
-  image.src = source.texture;
-  await image.decode();
+  const source = await unpackCharacter(pack);
+  const images = new Map(
+    await Promise.all(
+      Object.entries(source.textures).map(async ([name, url]) => {
+        const image = new Image();
+        image.src = url;
+        await image.decode();
+        return [name, image] as const;
+      }),
+    ),
+  );
   const { atlas, data } = readSkeleton(source),
     canvas = document.createElement('canvas');
   const context = new ManagedWebGLRenderingContext(canvas, {
@@ -24,13 +31,22 @@ export async function characterRenderer(pack: CharacterPack) {
     disposed = false;
   try {
     renderer = new SceneRenderer(canvas, context);
-    for (const page of atlas.pages) page.setTexture(new GLTexture(context, image, false));
+    const maxTextureSize = context.gl.getParameter(context.gl.MAX_TEXTURE_SIZE) as number;
+    for (const page of atlas.pages) {
+      const image = images.get(page.name);
+      if (!image) throw new Error(`Missing character atlas page: ${page.name}`);
+      if (image.width > maxTextureSize || image.height > maxTextureSize)
+        throw new Error(
+          `Character atlas page exceeds this GPU's ${maxTextureSize}px texture limit: ${page.name}`,
+        );
+      page.setTexture(new GLTexture(context, image, false));
+    }
     return {
       canvas,
       context,
       renderer,
       data,
-      maxTextureSize: context.gl.getParameter(context.gl.MAX_TEXTURE_SIZE) as number,
+      maxTextureSize,
       activate(element: HTMLElement, front: Element) {
         if (active !== element) {
           if (active) active.hidden = true;

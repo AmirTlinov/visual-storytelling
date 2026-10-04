@@ -1,29 +1,35 @@
 import * as T from '../viewport/engine.js';
 import { Viewport3D } from '../viewport/three.js';
 import { coverTexture } from './cover.js';
-import { paperSize, type PaperPage } from './paper.js';
-import type { BookState } from './stage.js';
+import { bookSize } from './geometry.js';
 const clamp = (n: number) => Math.max(0, Math.min(1, n));
+interface BookFrame {
+  page: number;
+  open: number;
+  focus: number;
+  turn: number;
+  reduced: boolean;
+}
 
 /** Ephemeral narrative scenery; it never owns exploration or the story clock. */
 export function bookTransition(
   parent: HTMLElement,
-  options: { topic: string; current: PaperPage; previous: PaperPage },
+  options: { topic: string; current: HTMLCanvasElement; previous: HTMLCanvasElement },
 ) {
   const view = Viewport3D.mount(parent, { label: `Tlinov · ${options.topic}` });
   view.controls.enabled = false;
   view.renderer.domElement.tabIndex = -1;
   view.renderer.domElement.style.cssText = 'width:100%;height:100%;pointer-events:none';
   const root = new T.Group(),
-    { width: w, height: h } = paperSize;
+    { width: w, height: h } = bookSize;
   const texture = (canvas: HTMLCanvasElement) => {
     const t = new T.CanvasTexture(canvas);
     t.colorSpace = T.SRGBColorSpace;
     t.anisotropy = 4;
     return t;
   };
-  const currentMap = texture(options.current.canvas),
-    previousMap = texture(options.previous.canvas);
+  const currentMap = texture(options.current),
+    previousMap = texture(options.previous);
   const blank = document.createElement('canvas');
   blank.width = blank.height = 2;
   const blankMap = texture(blank),
@@ -113,7 +119,7 @@ export function bookTransition(
     direction: [0, 0, 10] as const,
     padding: 0,
   };
-  let state: BookState | undefined;
+  let state: BookFrame | undefined;
   root.traverse((node) => {
     if (!(node instanceof T.Mesh)) return;
     node.userData.visualReview = () => ({
@@ -123,15 +129,13 @@ export function bookTransition(
           : 'subject',
     });
   });
-  const render = (next: BookState) => {
+  const render = (next: BookFrame) => {
     if (!Number.isInteger(next.page) || next.page < 0) throw new Error('Unknown book page');
-    if (![next.time, next.progress, next.open, next.focus, next.turn].every(Number.isFinite))
+    if (![next.open, next.focus, next.turn].every(Number.isFinite))
       throw new Error('Book state must be finite');
     state = { ...next };
     const open = next.reduced ? Number(next.open > 0) : clamp(next.open),
       turn = next.reduced ? 1 : clamp(next.turn);
-    currentMap.needsUpdate = true;
-    if (next.page > 0) previousMap.needsUpdate = true;
     hinge.rotation.y = -Math.PI * open;
     left.visible = open > 0.55;
     right.material.map = currentMap;
@@ -215,5 +219,12 @@ export function bookTransition(
     for (const map of [currentMap, previousMap, blankMap, coverMap])
       if (!active.has(map)) map.dispose();
   });
-  return { render, dispose: view.dispose };
+  return {
+    render,
+    pagesChanged() {
+      currentMap.needsUpdate = true;
+      previousMap.needsUpdate = true;
+    },
+    dispose: view.dispose,
+  };
 }

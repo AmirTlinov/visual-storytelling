@@ -1,5 +1,6 @@
 import * as T from './engine.js';
 import { localFaceCorners, type Face } from './label-faces.js';
+import { objectVisible } from './visibility.js';
 import type { Camera } from 'three';
 
 export interface SurfaceOptions {
@@ -130,11 +131,9 @@ export function surfaceLettering(
     group.visible = !!value && opacity > 0 && options.visible?.() !== false;
     if (typeof anchor === 'function') group.position.copy(anchor());
     group.updateWorldMatrix(true, true);
-    let shown = group.visible;
-    for (let node = group.parent; node; node = node.parent) if (!node.visible) shown = false;
     const eye = camera.getWorldPosition(new T.Vector3());
     element.hidden =
-      !shown ||
+      !objectVisible(group) ||
       !planes.some((plane) => {
         const normal = new T.Vector3(0, 0, 1).transformDirection(plane.matrixWorld);
         return normal.dot(eye.clone().sub(plane.getWorldPosition(new T.Vector3()))) > 0;

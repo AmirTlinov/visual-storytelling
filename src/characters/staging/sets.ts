@@ -4,6 +4,7 @@ import { floorGrid, ground, project } from './space.js';
 import { projectedParts } from './geometry.js';
 import { doorPassage } from './doorway.js';
 import { objectShape } from './objects.js';
+import { arrange } from './layout.js';
 
 export type StagePerspective = 'stage' | 'overview';
 export interface RoomOptions {
@@ -47,24 +48,30 @@ export function readingRoom(options: RoomOptions = {}): StageSet {
       ? shelf(44) + shelf(720)
       : `<g stroke="#344b4c" stroke-width="5"><path fill="#b4a27a" d="M50 80h190v240H50z"/><path fill="#314f4e" d="M64 94h162v212H64z"/></g><g stroke="#d9d7b7" stroke-width="3" fill="none"><path d="M83 227h119M101 221V158m42 63V128m42 93V177"/><circle cx="153" cy="135" r="35"/></g><g transform="translate(742 115)" stroke="#bfbb98" fill="none" stroke-width="4"><circle cx="60" cy="60" r="51"/><path d="M60 17v48l29 21"/></g>`;
   const svg = `<defs><linearGradient id="$id-room" x2="0" y2="1"><stop stop-color="${wall}"/><stop offset="1" stop-color="#455f5c"/></linearGradient></defs><path fill="url(#$id-room)" d="M0 0h960v650H0z"/><path d="M0 ${backY}h960v${650 - backY}H0z" fill="#b8a581"/><path d="M0 ${backY}h960" stroke="#d1c5a0" stroke-width="9"/>${floorGrid(space, '#6e7565', 14.3)}<g transform="translate(0 ${backY - 425})">${wallArt}<path fill="#aec3b7" stroke="#34504f" stroke-width="6" d="M323 46h310v265H323z"/><path d="M326 267q61-109 125-51 76-110 178-19v110H326z" fill="#73958a"/><circle cx="562" cy="109" r="28" fill="#f1ddb0"/><path d="M479 49v260M326 181h305" stroke="#34504f" stroke-width="7"/><path d="M311 310h333v12H311z" fill="${wood}" stroke="#34504f" stroke-width="4"/></g>`;
-  return prepareSet(
-    svg,
-    space,
-    {
-      entry: ground(-3.5, depth),
-      reader: ground(0.2, depth - objectShape.chair.halfDepth * furnitureScale - 0.75),
-      exit: ground(3.5, depth),
-      partner: ground(2.7, depth),
-    },
-    {
-      seat: { kind: seat, at: ground(0.2, depth), scale: furnitureScale, color: wood },
-      book: {
-        kind: 'book',
-        at: ground(2.8, depth + 0.9, 1.86 * 0.8 + 0.04),
-        color: theme === 'laboratory' ? '#b08b57' : '#8d4c4d',
+  return arrange(
+    prepareSet(
+      svg,
+      space,
+      {
+        entry: ground(-3.5, depth),
+        reader: ground(0.2, depth - objectShape.chair.halfDepth * furnitureScale - 0.75),
+        exit: ground(3.5, depth),
+        partner: ground(2.7, depth),
       },
-      sideTable: { kind: 'table', at: ground(2.8, depth + 0.9), scale: 0.8, color: wood },
-      plant: { kind: 'tree', at: ground(-3.8, depth + 3), scale: 0.65 },
+      {
+        seat: { kind: seat, at: ground(0.2, depth), scale: furnitureScale, color: wood },
+        book: {
+          kind: 'book',
+          at: ground(2.8, depth + 0.9, 1.86 * 0.8 + 0.04),
+          color: theme === 'laboratory' ? '#b08b57' : '#8d4c4d',
+        },
+        sideTable: { kind: 'table', at: ground(2.8, depth + 0.9), scale: 0.8, color: wood },
+        plant: { kind: 'tree', at: ground(-3.8, depth + 3), scale: 0.65 },
+      },
+    ),
+    {
+      objects: { book: { at: { of: 'sideTable', side: 'on' } } },
+      spots: { reader: { of: 'seat', side: 'front', gap: 0.75 } },
     },
   );
 }
@@ -201,16 +208,26 @@ export function courtyard(options: CourtyardOptions = {}): StageSet {
     <g fill="#e4e5cf"><path d="M20 91q31-30 67-3 40-45 71-5l50 25H9Z"/><path d="M715 56q28-32 60-7 38-27 57 10l49 15H684Z"/></g>
     <path fill="#88a48e" d="M0 239Q71 117 142 219Q214 115 279 234Q374 149 463 241Q618 134 693 239Q820 133 960 245V390H0Z"/>
     <path fill="#a9ad92" d="M0 395h960v255H0z"/>${parts.map((p) => p.svg).join('')}`;
-  return prepareSet(
-    svg,
-    space,
+  return arrange(
+    prepareSet(
+      svg,
+      space,
+      {
+        entry: ground(-1.25, 0.7),
+        door: doorPassage(door, 'outside'),
+        inside: doorPassage(door, 'inside'),
+        stairs: { ...stairs.at },
+        exit: ground(-4.4, 0.7),
+      },
+      { door, stairs, plant: { kind: 'tree', at: ground(5.4, 8.3), scale: 0.85 } },
+    ),
     {
-      entry: ground(-1.25, 0.7),
-      door: doorPassage(door, 'outside'),
-      inside: doorPassage(door, 'inside'),
-      stairs: { ...stairs.at },
-      exit: ground(-4.4, 0.7),
+      spots: {
+        door: { of: 'door', side: 'outside' },
+        inside: { of: 'door', side: 'inside' },
+        stairs: { of: 'stairs', side: 'front', gap: 0 },
+        landing: { of: 'stairs', side: 'landing' },
+      },
     },
-    { door, stairs, plant: { kind: 'tree', at: ground(5.4, 8.3), scale: 0.85 } },
   );
 }

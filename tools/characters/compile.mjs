@@ -2,6 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import sharp from 'sharp';
+import { characterAtlas } from './atlas.mjs';
+import { measureReach } from './measure.mjs';
 
 /** The rig owns topology and draw order. A skin supplies artwork in that rig's UV frames. */
 export async function compileCharacterPack(template, directories, { id = 'chibi-custom' } = {}) {
@@ -118,39 +120,13 @@ export async function compileCharacterPack(template, directories, { id = 'chibi-
       sprites.push({ path, buffer, w, h });
     }
   }
-  sprites.sort((a, b) => b.h - a.h || a.path.localeCompare(b.path));
-  const width = 1024,
-    pad = 3;
-  let x = pad,
-    y = pad,
-    rowHeight = 0;
-  for (const sprite of sprites) {
-    if (sprite.w + 2 * pad > width)
-      throw new Error(`Artwork is wider than the atlas: ${sprite.path}`);
-    if (x + sprite.w + pad > width) {
-      x = pad;
-      y += rowHeight + pad;
-      rowHeight = 0;
-    }
-    sprite.x = x;
-    sprite.y = y;
-    x += sprite.w + pad;
-    rowHeight = Math.max(rowHeight, sprite.h);
-  }
-  const height = y + rowHeight + pad;
-  const texture = await sharp({ create: { width, height, channels: 4, background: '#00000000' } })
-    .composite(sprites.map((s) => ({ input: s.buffer, left: s.x, top: s.y })))
-    .webp({ quality: 88, alphaQuality: 100 })
-    .toBuffer();
-  const atlas =
-    `characters.webp\nsize: ${width},${height}\nfilter: Linear,Linear\nrepeat: none\n` +
-    sprites.map((s) => `${s.path}\nbounds: ${s.x},${s.y},${s.w},${s.h}\n`).join('');
+  const { atlas, textures } = await characterAtlas(sprites);
   const gzip = gzipSync(
     Buffer.from(
       JSON.stringify({
         data,
         atlas,
-        texture: 'data:image/webp;base64,' + texture.toString('base64'),
+        textures,
       }),
     ),
     { level: 9 },
@@ -162,7 +138,7 @@ export async function compileCharacterPack(template, directories, { id = 'chibi-
     actions: spec.actions,
     anchors: spec.anchors,
     credit: spec.credit,
-    rig: spec.rig,
+    rig: spec.rig && { ...spec.rig, reach: measureReach(data, atlas, spec.rig, skins[0]) },
     viewSkins,
   };
 }

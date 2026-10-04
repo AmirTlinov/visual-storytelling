@@ -200,6 +200,7 @@ export function queryEvidence(data, query = {}) {
       state: f.state,
       cueReads: f.cueReads,
       diagnostics: f.diagnostics,
+      presentation: f.presentation,
       objects: (f.objects ?? [])
         .filter((o) => (wanted ? o.id === wanted : visible(o)))
         .slice(0, wanted ? 32 : 12)

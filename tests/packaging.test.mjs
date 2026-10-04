@@ -12,6 +12,84 @@ import { buildOutput } from '../tools/build-output.mjs';
 import { packDirectory } from '../tools/standalone.mjs';
 import { serve } from '../tools/site.mjs';
 
+test('a production-only installation of the packed public API typechecks outside the repository', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'story-package-types-'));
+  const root = fileURLToPath(new URL('../', import.meta.url));
+  const execute = promisify(execFile);
+  try {
+    const packed = await execute(
+      'npm',
+      ['pack', '--ignore-scripts', '--json', '--pack-destination', directory],
+      { cwd: root },
+    );
+    const archive = JSON.parse(packed.stdout)[0].filename;
+    const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+    await writeFile(
+      join(directory, 'package.json'),
+      JSON.stringify({
+        private: true,
+        type: 'module',
+        dependencies: { [pkg.name]: `file:./${archive}` },
+      }),
+    );
+    await execute(
+      'npm',
+      ['install', '--omit=dev', '--offline', '--ignore-scripts', '--no-audit', '--no-fund'],
+      { cwd: directory },
+    );
+    await writeFile(
+      join(directory, 'index.ts'),
+      Object.keys(pkg.exports)
+        .filter((key) => key !== './style.css')
+        .map((key) => `import '${pkg.name}${key === '.' ? '' : key.slice(1)}';`)
+        .join('\n'),
+    );
+    await writeFile(
+      join(directory, 'tsconfig.json'),
+      JSON.stringify({
+        compilerOptions: {
+          noEmit: true,
+          strict: true,
+          skipLibCheck: false,
+          target: 'ES2022',
+          module: 'NodeNext',
+          moduleResolution: 'NodeNext',
+          types: [],
+        },
+        files: ['index.ts'],
+      }),
+    );
+    await execute(
+      process.execPath,
+      [join(root, 'node_modules/typescript/bin/tsc'), '-p', directory],
+      { cwd: directory },
+    );
+    // The installed agent gets the catalog, exact declarations and editable template,
+    // without reaching back into the authoring checkout.
+    const installed = join(directory, 'node_modules/@visual-storytelling/core');
+    const cli = join(installed, 'tools/scene.mjs');
+    const entries = JSON.parse(
+      (
+        await execute(process.execPath, [cli, 'examples', 'interaction-studio', '--json'], {
+          cwd: directory,
+        })
+      ).stdout,
+    );
+    assert.equal(entries.length, 1);
+    for (const file of [entries[0].source, ...entries[0].guides, join(installed, 'skill/SKILL.md')])
+      assert.ok((await readFile(file, 'utf8')).length > 0);
+    const scene = join(directory, 'new-scene');
+    await execute(process.execPath, [cli, 'new', scene, '--example', 'explorer-svg'], {
+      cwd: directory,
+    });
+    assert.match(await readFile(join(scene, 'index.html'), 'utf8'), /data-silent="true"/);
+    await execute(process.execPath, [cli, 'build', scene], { cwd: directory });
+    assert.ok((await readFile(join(scene, 'dist/index.js'), 'utf8')).length > 1000);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('failed publication restores the previous delivery and removes temporary output', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'story-publish-'));
   const source = join(directory, 'source'),
@@ -86,16 +164,18 @@ test('a failed package build preserves the last complete delivery', async () => 
   const run = () =>
     promisify(execFile)(process.execPath, ['tools/build-package.mjs'], { cwd: directory });
   try {
-    for (const folder of ['tools', 'src/assets', 'src/styles', 'src/viewport'])
-      await mkdir(join(directory, folder), { recursive: true });
-    for (const file of [
-      'build-package.mjs',
-      'api.mjs',
-      'build-output.mjs',
-      'build-info.mjs',
-      'asset-urls.mjs',
+    for (const folder of [
+      'tools',
+      'src/assets',
+      'src/styles',
+      'src/viewport',
+      'src/characters/packs',
     ])
-      await cp(join(root, 'tools', file), join(directory, 'tools', file));
+      await mkdir(join(directory, folder), { recursive: true });
+    await cp(join(root, 'tools'), join(directory, 'tools'), { recursive: true });
+    await cp(join(root, 'src/assets/characters'), join(directory, 'src/assets/characters'), {
+      recursive: true,
+    });
     await symlink(join(root, 'node_modules'), join(directory, 'node_modules'), 'dir');
     const put = (name, data) => writeFile(join(directory, name), data);
     await put(

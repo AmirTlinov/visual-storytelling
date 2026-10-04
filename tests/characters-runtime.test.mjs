@@ -7,9 +7,13 @@ import {
   Physics,
   RegionAttachment,
   VertexAttachment,
+  BoundingBoxAttachment,
+  Slot,
+  SlotData,
 } from '@esotericsoftware/spine-webgl';
 import { performance, readSkeleton, unpackCharacter } from '../dist/characters/performance.js';
 import { chibi } from '../dist/characters/packs/chibi.js';
+import { characterDetails } from '../dist/characters/framing.js';
 
 const source = await unpackCharacter(chibi);
 const { data } = readSkeleton(source);
@@ -17,6 +21,48 @@ const at = { x: 320, y: 650 },
   height = 780;
 const make = (track, actor = {}, blend = 0.22) =>
   performance(data, chibi, { skin: 'tesla', at, ...actor }, track, at, height, blend);
+
+test('camera details count drawn attachments and ignore invisible rig hit regions', () => {
+  const actor = make([{ action: 'idle', start: 0 }]);
+  actor.sample(0);
+  const expected = characterDetails(actor.skeleton, chibi.rig, height);
+  const face = actor.skeleton.findBone(chibi.rig.face);
+  const slot = new Slot(
+    new SlotData(actor.skeleton.slots.length, 'hit-region', face.data),
+    actor.skeleton,
+  );
+  const hit = new BoundingBoxAttachment('interaction-region');
+  hit.worldVerticesLength = 8;
+  hit.vertices = [-2000, -2000, 2000, -2000, 2000, 2000, -2000, 2000];
+  slot.appliedPose.attachment = hit;
+  actor.skeleton.slots.push(slot);
+  assert.ok(expected.face.width > 0);
+  assert.deepEqual(characterDetails(actor.skeleton, chibi.rig, height), expected);
+});
+test('semantic hand shots follow weighted arm meshes in every native view and remain addressable when hidden', () => {
+  for (const skin of ['tesla-workshop', 'mira-scholar']) {
+    const actor = make([{ action: 'idle', start: 0 }], { skin });
+    for (const [view, clip] of Object.entries(chibi.rig.views)) {
+      actor.sample(6.1, false, { at, scale: 0.8, view, clip });
+      const details = characterDetails(actor.skeleton, chibi.rig, height);
+      for (const side of ['left', 'right']) {
+        const bounds = details[`hand-${side}`];
+        assert.ok(
+          bounds.width > 10 && bounds.height > 10,
+          `${skin}/${view}/${side} misses weighted artwork`,
+        );
+      }
+    }
+    for (const slot of actor.skeleton.slots) slot.appliedPose.color.a = 0;
+    const hidden = characterDetails(actor.skeleton, chibi.rig, height);
+    assert.deepEqual(Object.keys(hidden).sort(), ['face', 'hand-left', 'hand-right']);
+    for (const bounds of Object.values(hidden)) {
+      assert.ok([bounds.x, bounds.y].every(Number.isFinite));
+      assert.equal(bounds.width, 0);
+      assert.equal(bounds.height, 0);
+    }
+  }
+});
 const matrix = (b) => [
   b.appliedPose.a,
   b.appliedPose.b,

@@ -18,10 +18,34 @@ export interface Projected extends Point {
   depth: number;
 }
 export interface Furniture {
-  kind: 'chair' | 'bench' | 'book' | 'table' | 'board' | 'tree' | 'lamp' | 'door' | 'stairs';
+  kind:
+    | 'chair'
+    | 'bench'
+    | 'book'
+    | 'table'
+    | 'board'
+    | 'tree'
+    | 'lamp'
+    | 'door'
+    | 'stairs'
+    | 'prop';
   at: GroundPoint;
   scale?: number;
   color?: string;
+  /** Portable vector artwork in local drawing units, origin at its resting contact. */
+  art?: {
+    svg: string;
+    activeSvg?: string;
+    width: number;
+    height: number;
+    grip: { x: number; y: number };
+  };
+  /** Surface height in metres. Chairs, benches and tables provide defaults. */
+  support?: { height: number };
+  /** Local seat offsets. A bench provides two places by default. */
+  seats?: readonly GroundPoint[];
+  /** Local physical control and its deterministic state change. */
+  trigger?: { at: GroundPoint; initial?: number; effect: 'toggle' | 'on' | 'off' };
   /** Initial door opening, 0 closed to 1 open. */
   open?: number;
   /** An entrance includes its wall and room; colors change without changing contacts. */
@@ -31,20 +55,29 @@ export interface Staging {
   projection: Projection;
   spots: Readonly<Record<string, GroundPoint>>;
   objects: Readonly<Record<string, Furniture>>;
+  /** Raised walkable surfaces. Ground level and prepared stair landings are implicit. */
+  supports?: Readonly<Record<string, { at: GroundPoint; width: number; depth: number }>>;
+  /** Authored relationships survive variants; resolved coordinates remain render-only data. */
+  layout?: {
+    objects: Readonly<Record<string, Omit<Furniture, 'at'> & { at: Destination }>>;
+    spots: Readonly<Record<string, Destination>>;
+  };
 }
 export interface RelativePlace {
   of: string;
-  side: 'left' | 'right' | 'front' | 'back' | 'on';
+  side: 'left' | 'right' | 'front' | 'back' | 'on' | 'inside' | 'outside' | 'landing';
+  /** Local offset from the resolved contact, in metres. */
+  offset?: GroundPoint;
   /** Clear distance from the physical edge, in metres. */
   gap?: number;
 }
 export type Destination = string | GroundPoint | RelativePlace;
 export type StageAction =
   | { action: 'walk' | 'run' | 'flee'; actor: string; to: Destination }
-  | { action: 'sit'; actor: string; seat: string }
+  | { action: 'sit'; actor: string; seat: string; slot?: number }
   | { action: 'read'; actor: string; seat?: string; book: string; pages?: number }
   | { action: 'stand'; actor: string }
-  | { action: 'take'; actor: string; object: string }
+  | { action: 'take'; actor: string; object: string; hand?: 'left' | 'right' }
   | { action: 'put'; actor: string; onto: string }
   | { action: 'openDoor' | 'closeDoor'; actor: string; door: string }
   | {
@@ -74,6 +107,15 @@ export interface BipedRig {
   torso: string;
   face: string;
   arms: Record<'left' | 'right', { upper: string; lower: string }>;
+  /** Compiled native units relative to the standing support, including breathing clearance. */
+  reach?: Record<
+    'left' | 'right',
+    {
+      shoulder: { x: number; height: number };
+      min: number;
+      max: number;
+    }
+  >;
   feet: Record<'left' | 'right', string>;
   legs: Record<'left' | 'right', { upper: string; lower: string }>;
   faceSlots: readonly string[];

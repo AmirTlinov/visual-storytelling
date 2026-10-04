@@ -26,7 +26,7 @@ export async function runCharacters(args) {
   const [command = 'list', ...inputs] = positionals;
   if (values.help) {
     console.log(`visual-story characters [list] [--json]
-visual-story characters new ID --from tesla|mira [--outfit lab-coat|field-coat] --out DIRECTORY
+visual-story characters new ID --from tesla|mira [--outfit NAME] --out DIRECTORY
 visual-story characters build DIRECTORY [DIRECTORY ...] --out pack.json
 
 new copies editable SVG artwork and its rig-compatible frames; existing files are preserved.

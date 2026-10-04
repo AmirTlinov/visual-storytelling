@@ -92,6 +92,7 @@ export async function captureScene({
         ? await capture.capture.evaluate((s) => s.review().observed)
         : undefined;
       const diagnostics = await capture.capture.evaluate((s) => s.diagnostics());
+      const presentation = await capture.capture.evaluate((s) => s.presentation());
       const objects = await identities.evaluate((cache) => {
         const root = document.querySelector('.ve-scene'),
           origin = root?.getBoundingClientRect() ?? { x: 0, y: 0 };
@@ -167,6 +168,7 @@ export async function captureScene({
         state,
         cueReads,
         diagnostics,
+        presentation,
         objects,
         digest: createHash('sha256').update(png).digest('hex'),
         subjects,

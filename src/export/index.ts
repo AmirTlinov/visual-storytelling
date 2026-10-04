@@ -43,7 +43,6 @@ const paint = (value: string) =>
 
 /** Resolve the current theme and bundle the font; exported SVG has no runtime dependency. */
 export async function exportSVG(source: SVGSVGElement): Promise<string> {
-  await document.fonts.ready;
   const clone = source.cloneNode(true) as SVGSVGElement;
   const originals = [source, ...source.querySelectorAll<SVGElement>('*')];
   const copies = [clone, ...clone.querySelectorAll<SVGElement>('*')];
@@ -83,20 +82,6 @@ export async function exportSVG(source: SVGSVGElement): Promise<string> {
     .querySelectorAll('animate,animateTransform,animateMotion,set,script')
     .forEach((node) => node.remove());
   const definitions = svg('defs');
-  for (const font of fonts) {
-    const response = await fetch(font.url);
-    if (!response.ok) throw new Error('Could not bundle lettering font');
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    let binary = '';
-    for (const byte of bytes) binary += String.fromCharCode(byte);
-    definitions.append(
-      svg(
-        'style',
-        {},
-        `@font-face{font-family:${font.name};src:url(data:font/woff2;base64,${btoa(binary)}) format('woff2')}`,
-      ),
-    );
-  }
   clone.prepend(definitions);
   const viewBox = source.viewBox.baseVal;
   clone.setAttribute('width', String(viewBox.width));
@@ -143,7 +128,45 @@ export async function exportSVG(source: SVGSVGElement): Promise<string> {
   }
   clone.style.width = `${viewBox.width}px`;
   clone.style.height = `${viewBox.height}px`;
+  // Freeze geometry, raster layers and computed style before waiting for font bytes.
+  // A caller may render the next frame as soon as this function returns its promise.
+  await document.fonts.ready;
+  for (const font of fonts) {
+    const response = await fetch(font.url);
+    if (!response.ok) throw new Error('Could not bundle lettering font');
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    definitions.append(
+      svg(
+        'style',
+        {},
+        `@font-face{font-family:${font.name};src:url(data:font/woff2;base64,${btoa(binary)}) format('woff2')}`,
+      ),
+    );
+  }
   return new XMLSerializer().serializeToString(clone);
+}
+
+/** Capture the current SVG frame atomically, then decode its self-contained image asynchronously. */
+export async function snapshotSVG(source: SVGSVGElement, scale = 2): Promise<HTMLCanvasElement> {
+  const { width, height } = source.viewBox.baseVal;
+  if (![width, height, scale].every((value) => Number.isFinite(value) && value > 0))
+    throw new Error('SVG capture needs a positive viewBox and scale');
+  const serialized = exportSVG(source);
+  const image = new Image(),
+    url = URL.createObjectURL(new Blob([await serialized], { type: 'image/svg+xml' }));
+  try {
+    image.src = url;
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    canvas.getContext('2d')!.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 export function download(content: string | Blob, name: string, type = 'image/svg+xml') {
   const url = URL.createObjectURL(

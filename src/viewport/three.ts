@@ -62,9 +62,9 @@ function mount(
     palette: Palette = {};
   const cleanups = new Set<() => void>();
   const removals = new Set<(object: ThreeKit.Object3D) => void>();
+  const renderListeners = new Set<() => void>();
   let pending = 0,
-    disposed = false,
-    afterRender = () => {};
+    disposed = false;
   let object: ThreeKit.Object3D | undefined,
     home: { position: ThreeKit.Vector3; target: ThreeKit.Vector3 } | undefined;
   let following = true,
@@ -84,7 +84,7 @@ function mount(
     renderer.render(scene, camera);
     frameSequence++;
     renderedAt = performance.now();
-    afterRender();
+    for (const listener of renderListeners) listener();
   }
   function invalidate() {
     if (!pending && !disposed) pending = requestAnimationFrame(render);
@@ -325,7 +325,11 @@ function mount(
       return result;
     },
     onRender(callback: () => void) {
-      afterRender = callback;
+      if (disposed) throw new Error('3D viewport has been disposed');
+      renderListeners.add(callback);
+      return () => {
+        renderListeners.delete(callback);
+      };
     },
     onDispose(cleanup: () => void) {
       if (disposed) throw new Error('3D viewport has been disposed');
@@ -344,6 +348,7 @@ function mount(
     dispose() {
       if (disposed) return;
       disposed = true;
+      renderListeners.clear();
       void gltf?.then(
         (owner) => owner.dispose(),
         () => {},

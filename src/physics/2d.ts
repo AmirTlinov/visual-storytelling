@@ -11,4 +11,4 @@ export const Physics2D = {
 export type { PhysicalFusionOptions } from './fusion.js';
 export type { PhysicalMorph2DOptions, MorphSurface2D } from './morph-2d.js';
 export type { World2D, Body2D, Shape2D, BodyOptions2D, Vec2 } from './world2d.js';
-export { PhysicsPlayer, physicalMaterials } from './index.js';
+export { PhysicsPlayer, PhysicsReplay, physicalMaterials } from './index.js';

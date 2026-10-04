@@ -1,3 +1,4 @@
+import { portableArt, portableBounds, type CarriedFrame } from './portable.js';
 import type { ManagedWebGLRenderingContext, SceneRenderer } from '@esotericsoftware/spine-webgl';
 import type { CharacterStageOptions } from '../types.js';
 import type { performance } from '../performance.js';
@@ -19,36 +20,46 @@ export async function world(
 ) {
   const { staging } = blocking,
     { height } = options.set;
-  const furniture = await loadFurniture(
-    context,
-    options.background === false ? {} : staging.objects,
-    staging.projection,
-  );
   const bodies = Object.fromEntries(
     Object.entries(actors).map(([id, perf]) => [
       id,
       body(perf, options.cast[id]!, options.pack.rig!, staging.projection, height),
     ]),
   );
-  let books: Record<string, BookFrame> = {},
-    frames = blockAt(blocking, 0);
+  let frames = blockAt(blocking, 0);
+  const furniture = await loadFurniture(
+    context,
+    options.background === false ? {} : staging.objects,
+    staging.projection,
+  );
+  let props: Awaited<ReturnType<typeof portableArt>> | undefined;
+  try {
+    if (context) props = await portableArt(context, staging.objects);
+  } catch (error) {
+    furniture.dispose();
+    throw error;
+  }
+  type ItemFrame = BookFrame | CarriedFrame;
+  const drawItem = (renderer: SceneRenderer, frame: ItemFrame) => {
+    if ('portable' in frame) props?.draw(renderer, frame, height, frames.objects[frame.id] ?? 0);
+    else drawBook(renderer, frame, height);
+  };
+  let heldItems: Record<string, ItemFrame> = {};
   return {
     sample(time: number, reduced: boolean) {
       frames = blockAt(blocking, time, reduced);
-      books = {};
+      heldItems = {};
       const actions = Object.fromEntries(
         Object.entries(bodies).map(([id, b]) => [id, b.sample(time, frames.actors[id]!, reduced)]),
       );
       for (const pair of frames.pairs) connect(bodies, pair);
       for (const [id, b] of Object.entries(bodies)) {
         const transfer = b.frame.transfer,
-          bookId = transfer?.id ?? b.frame.book;
-        if (bookId) {
-          const item = staging.objects[bookId]!,
+          itemId = transfer?.id ?? b.frame.holding;
+        if (itemId) {
+          const item = staging.objects[itemId]!,
             target = transfer && project(staging.projection, transfer.at);
-          books[id] = b.book(
-            bookId,
-            item.color ?? '#855057',
+          const placement =
             transfer && target
               ? {
                   x: target.x,
@@ -57,8 +68,11 @@ export async function world(
                   weight: transfer.taking ? 1 - transfer.progress : transfer.progress,
                   grip: transfer.grip,
                 }
-              : undefined,
-          );
+              : undefined;
+          heldItems[id] =
+            item.kind === 'prop'
+              ? b.carry(itemId, item.art!, placement)
+              : b.book(itemId, item.color ?? '#855057', placement);
         }
       }
       return actions;
@@ -76,9 +90,9 @@ export async function world(
           if (item.kind === 'door')
             for (const part of furnitureParts(item, staging.projection, frames.objects[id] ?? 0))
               items.push({ depth: part.depth, draw: () => drawFurniture(renderer, part, height) });
-      const held = new Set(Object.values(books).map((b) => b.id));
+      const held = new Set(Object.values(heldItems).map((b) => b.id));
       if (options.background !== false)
-        for (const [id, at] of Object.entries(frames.books))
+        for (const [id, at] of Object.entries(frames.items))
           if (!held.has(id)) {
             const item = staging.objects[id]!,
               p = project(staging.projection, at),
@@ -92,7 +106,8 @@ export async function world(
                 handTurn: 0,
                 color: item.color ?? '#855057',
               };
-            items.push({ depth: at.z - 0.01, draw: () => drawBook(renderer, book, height) });
+            const frame: ItemFrame = item.kind === 'prop' ? { ...book, portable: true } : book;
+            items.push({ depth: at.z - 0.01, draw: () => drawItem(renderer, frame) });
           }
       for (const [id, b] of Object.entries(bodies))
         items.push({
@@ -124,7 +139,7 @@ export async function world(
                 );
             }
             const skeleton = b.perf.skeleton,
-              book = books[id];
+              book = heldItems[id];
             if (book) {
               const order = skeleton.drawOrder.appliedPose,
                 torso = order.findIndex((slot) => slot.data.name === options.pack.rig!.bodySlot),
@@ -135,7 +150,7 @@ export async function world(
                   .filter((index) => index >= 0),
                 index = arms.find((index) => index > torso) ?? arms[0] ?? -1;
               if (index > 0) renderer.drawSkeleton(skeleton, -1, order[index - 1]!.data.index);
-              drawBook(renderer, book, height);
+              drawItem(renderer, book);
               renderer.drawSkeleton(skeleton, index < 0 ? -1 : order[index]!.data.index, -1);
             } else renderer.drawSkeleton(skeleton);
           },
@@ -154,16 +169,19 @@ export async function world(
           if (item.kind === 'door')
             for (const part of furnitureParts(item, staging.projection, frames.objects[id] ?? 0))
               add(id, part.bounds);
-      const bookBounds = (b: BookFrame) => ({
-        x: b.x - 89 * b.scale,
-        y: b.y - 99 * b.scale,
-        width: 178 * b.scale,
-        height: 129 * b.scale,
-      });
-      const held = new Set(Object.values(books).map((b) => b.id));
-      for (const b of Object.values(books)) add(b.id, bookBounds(b));
+      const bookBounds = (b: ItemFrame) =>
+        'portable' in b
+          ? portableBounds(b, staging.objects[b.id]!.art!)
+          : {
+              x: b.x - 89 * b.scale,
+              y: b.y - 99 * b.scale,
+              width: 178 * b.scale,
+              height: 129 * b.scale,
+            };
+      const held = new Set(Object.values(heldItems).map((b) => b.id));
+      for (const b of Object.values(heldItems)) add(b.id, bookBounds(b));
       if (options.background !== false)
-        for (const [id, at] of Object.entries(frames.books))
+        for (const [id, at] of Object.entries(frames.items))
           if (!held.has(id)) {
             const p = project(staging.projection, at);
             add(
@@ -177,6 +195,7 @@ export async function world(
                 open: 0,
                 handTurn: 0,
                 color: '',
+                ...(staging.objects[id]!.kind === 'prop' ? { portable: true as const } : {}),
               }),
             );
           }
@@ -184,8 +203,12 @@ export async function world(
     },
     snapshot: () => ({
       actors: Object.fromEntries(Object.entries(bodies).map(([id, b]) => [id, b.snapshot()])),
-      books: structuredClone(books),
+      items: structuredClone(heldItems),
+      objects: { ...frames.objects },
     }),
-    dispose: furniture.dispose,
+    dispose() {
+      props?.dispose();
+      furniture.dispose();
+    },
   };
 }

@@ -1,6 +1,30 @@
 [
-  { "id": "tesla", "from": "tesla" },
-  { "id": "mira", "from": "mira" },
-  { "id": "mira-lab", "from": "mira", "outfit": "lab-coat" },
-  { "id": "tesla-field", "from": "tesla", "outfit": "field-coat" }
+  {
+    "id": "tesla",
+    "from": "tesla"
+  },
+  {
+    "id": "mira",
+    "from": "mira"
+  },
+  {
+    "id": "mira-lab",
+    "from": "mira",
+    "outfit": "lab-coat"
+  },
+  {
+    "id": "tesla-field",
+    "from": "tesla",
+    "outfit": "field-coat"
+  },
+  {
+    "id": "mira-scholar",
+    "from": "mira",
+    "outfit": "scholar"
+  },
+  {
+    "id": "tesla-workshop",
+    "from": "tesla",
+    "outfit": "work-apron"
+  }
 ]

@@ -1,5 +1,5 @@
 import { SceneShell, surface, lettering, SketchControls } from '@visual-storytelling/core';
-import { Physics2D, PhysicsPlayer } from '@visual-storytelling/core/physics/2d';
+import { Physics2D, PhysicsPlayer, PhysicsReplay } from '@visual-storytelling/core/physics/2d';
 import '@visual-storytelling/core/style.css';
 
 window.galleryReady = (async () => {
@@ -45,20 +45,19 @@ window.galleryReady = (async () => {
   const player = PhysicsPlayer.mount(footer, world);
   const reset = SketchControls.action('Сначала', () => player.reset());
   shell.actions.append(reset);
-  const initial = world.snapshot();
+  const replay = PhysicsReplay.create(world, {
+    duration: 5,
+    beforeSeek: () => player.pause(false),
+    afterSeek: player.update,
+  });
   Object.assign(root, {
     scene: {
       world,
       bodies,
       view: drawing,
-      duration: 5,
+      duration: replay.duration,
       pause: player.pause,
-      seek(time: number) {
-        player.pause(false);
-        world.restore(initial);
-        world.step(Math.round(Math.max(0, time) * 120));
-        player.update();
-      },
+      seek: replay.seek,
       snapshot: () =>
         bodies.map((b) => ({
           id: b.id,

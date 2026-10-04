@@ -108,7 +108,7 @@ test('prepared actions reject invalid participants, places and competing physica
       (s) => {
         s.cast.a.holding = 'seat';
       },
-      /Unknown held book/,
+      /Unknown held portable object/,
     ],
     [
       (s) => {
@@ -187,8 +187,7 @@ test('completed plans clear transient movement and preserve book, facing and pla
   ]);
   options.cast.a.holding = 'book';
   // Isolate a height-only transfer to a seat on a raised platform.
-  options.set.staging.spots.reader = { ...options.set.staging.objects.seat.at };
-  options.set.staging.objects.seat.at.height = 1.5;
+  // A chair rests on the same supported floor as the reader.
   const blocking = compileScore(options).blocking;
   const baseline = new Map(
     [0, 1, 2, 3, 4, 5.1, 6, 7, 8, 9, 10].map((t) => [t, blockAt(blocking, t)]),
@@ -198,18 +197,13 @@ test('completed plans clear transient movement and preserve book, facing and pla
   for (const t of [4, 6, 10]) {
     const a = blockAt(blocking, t).actors.a;
     assert.equal(a.travel, undefined, `no stale travel at ${t}`);
-    assert.equal(a.book, 'book');
+    assert.equal(a.holding, 'book');
   }
-  assert.equal(
-    blockAt(blocking, 2).actors.a.travel.length,
-    1.5,
-    'sitting starts a new path up to the platform',
-  );
   assert.equal(blockAt(blocking, 8).actors.a.travel.progress, 0, 'the next walk starts a new path');
   assert.equal(blockAt(blocking, 6).actors.a.facing, 'front');
   assert.equal(
-    blockAt(blocking, 8).actors.a.at.height,
-    1.5,
+    blockAt(blocking, 8).actors.a.at.height ?? 0,
+    0,
     'standing stays on the chair’s platform',
   );
   for (const [start, end] of [
@@ -226,10 +220,10 @@ test('completed plans clear transient movement and preserve book, facing and pla
   for (const t of [NaN, Infinity]) assert.throws(() => blockAt(blocking, t), /time must be finite/);
 
   const pair = compileScore(
-    scene([beat({ action: 'walkTogether', actors: ['a', 'b'], to: ground(0, 2, 1.5) })]),
+    scene([beat({ action: 'walkTogether', actors: ['a', 'b'], to: ground(0, 2) })]),
   ).blocking;
-  for (const id of ['a', 'b']) assert.equal(blockAt(pair, 2).actors[id].at.height, 1.5);
-  assert.ok(Math.abs(blockAt(pair, 2 - 1e-5).actors.a.at.height - 1.5) < 1e-8);
+  for (const id of ['a', 'b']) assert.equal(blockAt(pair, 2).actors[id].at.height ?? 0, 0);
+  assert.ok(Math.abs(blockAt(pair, 2 - 1e-5).actors.a.at.height ?? 0) < 1e-8);
   const standingReader = scene([
     beat({ action: 'walk', actor: 'a', to: 'exit' }),
     beat({ action: 'read', actor: 'a', book: 'book' }),
@@ -244,10 +238,7 @@ test('completed plans clear transient movement and preserve book, facing and pla
   );
 
   const vertical = scene([beat({ action: 'walk', actor: 'a', to: ground(-3.5, 1, 2) })]);
-  const rising = compileScore(vertical).blocking;
-  assert.equal(blockAt(rising, 0).actors.a.at.height, 0, 'a height-only path does not teleport');
-  assert.equal(blockAt(rising, 1).actors.a.at.height, 1);
-  assert.equal(blockAt(rising, 2).actors.a.at.height, 2);
+  assert.throws(() => compileScore(vertical), /support/);
 });
 
 function performer(options) {
@@ -269,7 +260,7 @@ function performer(options) {
     const frame = blockAt(score.blocking, time, reduced);
     for (const [id, b] of Object.entries(bodies)) b.sample(time, frame.actors[id], reduced);
     for (const pair of frame.pairs) connect(bodies, pair);
-    for (const b of Object.values(bodies)) if (b.frame.book) b.book(b.frame.book, '#855057');
+    for (const b of Object.values(bodies)) if (b.frame.holding) b.book(b.frame.holding, '#855057');
     return Object.fromEntries(
       Object.entries(bodies).map(([id, b]) => [
         id,
@@ -297,9 +288,10 @@ test('native prepared poses, view skins and contacts survive backward seeks and 
   const options = scene([
     beat({ action: 'walk', actor: 'a', to: 'exit' }),
     beat({ action: 'run', actor: 'a', to: 'entry' }),
-    beat({ action: 'flee', actor: 'a', to: 'partner' }),
+    beat({ action: 'flee', actor: 'a', to: ground(2.7, -0.6) }),
     beat({ action: 'openDoor', actor: 'a', door: 'door' }),
     beat({ action: 'climb', actor: 'a', stairs: 'stairs' }),
+    beat({ action: 'descend', actor: 'a', stairs: 'stairs' }),
     beat({ action: 'point', actor: 'a', target: ground(0, 1, 2) }),
     beat({ action: 'press', actor: 'a', target: ground(0, 1, 2) }),
     beat({ action: 'highFive', actors: ['a', 'b'] }),
@@ -501,11 +493,19 @@ test('an opened entrance guides different actors around its leaf and through the
     options.cast.b = { skin: 'tesla', at: 'entry', scale: 0.8 };
     assert.throws(() => compileScore(options), /Open door/);
   }
-  for (const [beats, error] of [
-    [[beat(open), beat(enter), beat(enter)], /already inside/],
-    [[beat(open), beat(leave)], /already outside/],
-  ])
-    assert.throws(() => compileScore(entranceScene('mira', 0.64, 1, beats)), error);
+  for (const beats of [
+    [beat(open), beat(enter), beat(enter)],
+    [beat(open), beat(leave)],
+  ]) {
+    const score = compileScore(entranceScene('mira', 0.64, 1, beats));
+    const end = score.script.duration;
+    assert.ok(
+      separation(
+        blockAt(score.blocking, end - 1e-5).actors.a.at,
+        blockAt(score.blocking, end).actors.a.at,
+      ) < 1e-7,
+    );
+  }
 
   const competing = entranceScene('mira', 0.64, 1, [
     beat(open),
@@ -541,15 +541,15 @@ test('take and put preserve one book owner and its last resting place across rew
   ]);
   const score = compileScore(options),
     blocking = score.blocking;
-  assert.equal(blockAt(blocking, 0).actors.a.book, undefined);
-  assert.equal(blockAt(blocking, 2).actors.a.book, 'book');
-  assert.equal(blockAt(blocking, 6).actors.a.book, undefined);
-  assert.equal(blockAt(blocking, 8).actors.b.book, 'book');
-  const resting = blockAt(blocking, 6).books.book;
+  assert.equal(blockAt(blocking, 0).actors.a.holding, undefined);
+  assert.equal(blockAt(blocking, 2).actors.a.holding, 'book');
+  assert.equal(blockAt(blocking, 6).actors.a.holding, undefined);
+  assert.equal(blockAt(blocking, 8).actors.b.holding, 'book');
+  const resting = blockAt(blocking, 6).items.book;
   assert.equal(resting.x, options.set.staging.objects.sideTable.at.x);
   assert.ok(resting.height > options.set.staging.objects.sideTable.at.height);
   assert.deepEqual(blockAt(blocking, 6).actors.b.transfer.at, resting);
-  assert.deepEqual(blockAt(blocking, 10).books.book, resting);
+  assert.deepEqual(blockAt(blocking, 10).items.book, resting);
   const times = [0, 0.7, 1.25, 1.99999, 2, 4, 5.6, 5.99999, 6, 7.9, 8, 9.5, 10];
   const fresh = times.map((t) => blockAt(blocking, t));
   for (const [i, t] of [...times.entries()].reverse())
@@ -588,15 +588,15 @@ test('take and put preserve one book owner and its last resting place across rew
       assert.deepEqual(subject.snapshot(), expected[i], `native transfer rewind @ ${t}`);
     }
     subject.sample(1.99999, false);
-    const before = subject.snapshot().books.a;
+    const before = subject.snapshot().items.a;
     subject.sample(2, false);
-    const after = subject.snapshot().books.a;
+    const after = subject.snapshot().items.a;
     assert.ok(
       Math.hypot(after.x - before.x, after.y - before.y) < 0.01,
       'take ends without teleporting the book',
     );
     subject.sample(5.99999, false);
-    const put = subject.snapshot().books.a,
+    const put = subject.snapshot().items.a,
       position = project(options.set.staging.projection, resting);
     assert.ok(
       Math.hypot(put.x - position.x, put.y - position.y) < 0.01,
@@ -604,7 +604,7 @@ test('take and put preserve one book owner and its last resting place across rew
     );
     subject.sample(6, false);
     assert.equal(
-      subject.snapshot().books.a,
+      subject.snapshot().items.a,
       undefined,
       'the actor no longer draws a released book',
     );
@@ -626,10 +626,10 @@ test('take and put preserve one book owner and its last resting place across rew
   }
 
   for (const [actions, held, error] of [
-    [[{ action: 'put', actor: 'a', onto: 'sideTable' }], false, /no book to put/],
+    [[{ action: 'put', actor: 'a', onto: 'sideTable' }], false, /no object to put/],
     [[{ action: 'take', actor: 'b', object: 'book' }], true, /already has a holder/],
-    [[{ action: 'take', actor: 'a', object: 'book' }], true, /already holds a book/],
-    [[{ action: 'put', actor: 'a', onto: 'seat' }], true, /must be table/],
+    [[{ action: 'take', actor: 'a', object: 'book' }], true, /already holds an object/],
+    [[{ action: 'put', actor: 'a', onto: 'plant' }], true, /no support surface/],
     [
       [
         { action: 'put', actor: 'a', onto: 'sideTable' },

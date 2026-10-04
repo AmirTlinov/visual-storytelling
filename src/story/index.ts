@@ -22,3 +22,15 @@ export type {
   MorphPresentation,
 } from '../morph/story.js';
 export type { MorphProgress } from '../morph/timing.js';
+export { SceneStory } from './composition.js';
+export type {
+  SceneStoryOptions,
+  SceneChapter,
+  ChapterFrame,
+  ChapterPresentation,
+  ChapterTransition,
+} from './composition.js';
+export { composeChapters } from './composition-plan.js';
+
+export { inkChapter } from './ink-chapter.js';
+export type { InkDrawing, InkViewport } from './ink-chapter.js';

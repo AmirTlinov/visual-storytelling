@@ -18,7 +18,7 @@ import type { Actor, CharacterPack, Point } from './types.js';
 export interface PackData {
   data: unknown;
   atlas: string;
-  texture: string;
+  textures: Record<string, string>;
 }
 export async function unpackCharacter(pack: CharacterPack): Promise<PackData> {
   const bytes = Uint8Array.from(atob(pack.gzip), (c) => c.charCodeAt(0));

@@ -1,3 +1,5 @@
+/// <reference lib="esnext.disposable" preserve="true" />
+
 interface SnapshotWorld {
   timestep: number;
   step(): void;
@@ -58,6 +60,9 @@ export function physicsRuntime<W extends SnapshotWorld>(
     },
     get time() {
       return time;
+    },
+    get stepSeconds() {
+      return dt;
     },
     get sleeping() {
       return [...participants.values()].every((body) => !body.awake());

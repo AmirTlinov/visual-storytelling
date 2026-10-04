@@ -32,8 +32,22 @@ export function doorHandle(item: Furniture, open: number): GroundPoint {
   );
 }
 /** Pull from the free edge, outside the leaf's swept area. */
-export function doorApproach(item: Furniture, scale: number, open = 0): GroundPoint {
+export function doorApproach(
+  item: Furniture,
+  scale: number,
+  open = 0,
+  side: 'inside' | 'outside' = 'outside',
+): GroundPoint {
   const handle = doorHandle(item, open);
+  if (side === 'inside') {
+    // Push from the inner face while remaining in the doorway's clear aperture.
+    const angle = -open * doorway.swing;
+    return {
+      x: handle.x - 0.62 * scale * Math.cos(angle) - 0.72 * scale * Math.sin(angle),
+      z: handle.z - 0.62 * scale * Math.sin(angle) + 0.72 * scale * Math.cos(angle),
+      height: item.at.height ?? 0,
+    };
+  }
   return { x: handle.x + 0.88 * scale, z: handle.z - 0.72 * scale, height: item.at.height ?? 0 };
 }
 export function doorPassage(item: Furniture, side: 'inside' | 'outside'): GroundPoint {

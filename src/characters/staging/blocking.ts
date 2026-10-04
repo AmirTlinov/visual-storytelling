@@ -1,12 +1,15 @@
+import { blockAt } from './motion.js';
 import { stagingCatalog } from './catalog.js';
 import type { CharacterStageOptions } from '../types.js';
 import type { Script } from '../../story/cues.js';
 import type { Destination, Facing, GroundPoint, StageAction } from './types.js';
-import { stairEnd, objectShape, supportPoint } from './objects.js';
+import { stairEnd, objectShape, supportPoint, seatPlaces, triggerPoint } from './objects.js';
 import { doorApproach, doorPassage, doorWaypoint } from './doorway.js';
 import { distance, interpolate, project, facing } from './space.js';
 import { destination } from './layout.js';
 import { route, meetingPoint } from './navigation.js';
+import { coordinateTraffic } from './traffic.js';
+import { pressApproach } from './press.js';
 
 export interface Placement {
   at: GroundPoint;
@@ -14,7 +17,10 @@ export interface Placement {
   seated: number;
   seatHeight: number;
   seat?: string;
-  book?: string;
+  holding?: string;
+  hands?: 1 | 2;
+  holdingHand?: 'left' | 'right';
+  seatSlot?: number;
   bookOpen?: number;
 }
 export interface BlockingActor extends Placement {
@@ -33,7 +39,13 @@ export interface BlockingActor extends Placement {
   bookBlend?: number;
   turn?: number;
   handTurn?: number;
-  reach?: { at: GroundPoint; weight: number; press: number };
+  reach?: {
+    at: GroundPoint;
+    weight: number;
+    press: number;
+    gesture?: 'press';
+    side?: 'left' | 'right';
+  };
 }
 export interface PairContact {
   actors: readonly [string, string];
@@ -52,6 +64,10 @@ export interface Plan {
   via?: GroundPoint[];
   approaches?: Record<string, GroundPoint[]>;
   meeting?: GroundPoint;
+  doorSide?: 'inside' | 'outside';
+  effect?: { id: string; from: number; to: number };
+  target?: GroundPoint;
+  reachSide?: 'left' | 'right';
 }
 function participants(a: StageAction) {
   if (!a || typeof a !== 'object') throw new Error('A prepared action is required');
@@ -80,10 +96,34 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
   project(staging.projection, { x: 0, z: 0 });
   const point = (to: Destination): GroundPoint => destination(staging, to);
   for (const spot of Object.values(staging.spots)) point(spot);
+  for (const [id, support] of Object.entries(staging.supports ?? {})) {
+    point(support.at);
+    if (![support.width, support.depth].every((n) => Number.isFinite(n) && n > 0))
+      throw new Error(`Invalid floor support: ${id}`);
+  }
   for (const [id, item] of Object.entries(staging.objects)) {
     if (!stagingCatalog.objects.includes(item.kind))
       throw new Error(`Unknown stage object kind: ${id}`);
     point(item.at);
+    if (
+      item.kind === 'prop' &&
+      (!item.art ||
+        ![item.art.width, item.art.height, item.art.grip.x, item.art.grip.y].every(
+          Number.isFinite,
+        ) ||
+        item.art.width <= 0 ||
+        item.art.height <= 0)
+    )
+      throw new Error(`Portable object ${id} needs valid artwork and a grip`);
+    if (item.support && (!Number.isFinite(item.support.height) || item.support.height < 0))
+      throw new Error(`Invalid support: ${id}`);
+    for (const seat of item.seats ?? []) point(seat);
+    if (
+      item.trigger &&
+      (!['toggle', 'on', 'off'].includes(item.trigger.effect) ||
+        ![0, 1].includes(item.trigger.initial ?? 0))
+    )
+      throw new Error(`Invalid control state: ${id}`);
     if (item.scale !== undefined && (!Number.isFinite(item.scale) || item.scale <= 0))
       throw new Error(`Invalid object scale: ${id}`);
     if (
@@ -97,35 +137,42 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
   for (const [id, a] of Object.entries(options.cast)) {
     if (typeof a.at === 'object' && 'y' in a.at)
       throw new Error(`Actor ${id}: prepared sets use ground coordinates or a named place`);
+    if (a.holdingHand !== undefined && !['left', 'right'].includes(a.holdingHand))
+      throw new Error(`Actor ${id}: holdingHand must be left or right`);
     initial[id] = {
       at: point(a.at),
       facing: 'front',
       seated: 0,
       seatHeight: 0,
-      book: a.holding,
+      holding: a.holding,
+      hands: a.holding && staging.objects[a.holding]?.kind === 'book' ? 2 : 1,
+      holdingHand: a.holdingHand ?? 'left',
       bookOpen: 0,
     };
     if (a.holding !== undefined) {
-      if (!Object.hasOwn(staging.objects, a.holding) || staging.objects[a.holding]?.kind !== 'book')
-        throw new Error(`Unknown held book: ${a.holding}`);
-      if (held.has(a.holding)) throw new Error(`Book ${a.holding} already has a holder`);
+      if (
+        !Object.hasOwn(staging.objects, a.holding) ||
+        !['book', 'prop'].includes(staging.objects[a.holding]?.kind ?? '')
+      )
+        throw new Error(`Unknown held portable object: ${a.holding}`);
+      if (held.has(a.holding)) throw new Error(`Object ${a.holding} already has a holder`);
       held.add(a.holding);
     }
   }
   const initialObjects = Object.fromEntries(
     Object.entries(staging.objects)
-      .filter(([, item]) => item.kind === 'door')
-      .map(([id, item]) => [id, item.open ?? 0]),
+      .filter(([, item]) => item.kind === 'door' || item.trigger)
+      .map(([id, item]) => [id, item.trigger?.initial ?? item.open ?? 0]),
   );
   const state = structuredClone(initial),
     plans: Plan[] = [],
     objectStates: Record<string, number> = { ...initialObjects };
-  const initialBooks = Object.fromEntries(
+  const initialItems = Object.fromEntries(
     Object.entries(staging.objects)
-      .filter(([, v]) => v.kind === 'book')
+      .filter(([, v]) => v.kind === 'book' || v.kind === 'prop')
       .map(([id, v]) => [id, { ...v.at }]),
   );
-  const bookPositions = structuredClone(initialBooks);
+  const itemPositions = structuredClone(initialItems);
   const object = (id: string, kind: string[]) => {
     const item = Object.hasOwn(staging.objects, id) ? staging.objects[id] : undefined;
     if (!item || !kind.includes(item.kind))
@@ -133,6 +180,8 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
     return item;
   };
   for (const beat of options.beats) {
+    const before = structuredClone(state),
+      firstPlan = plans.length;
     const startingObjects = { ...objectStates };
     const used = new Set<string>(),
       usedObjects = new Set<string>();
@@ -152,32 +201,44 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
         transfer: Plan['transfer'],
         via: Plan['via'],
         meeting: Plan['meeting'];
+      let effect: Plan['effect'], target: GroundPoint | undefined, reachSide: Plan['reachSide'];
+      let doorSide: Plan['doorSide'];
       const approaches: Record<string, GroundPoint[]> = {};
       const approach = (id: string, at: GroundPoint) =>
         route(staging, from[id]!.at, at, (options.cast[id]!.scale ?? 0.77) * 0.46);
       if ('actor' in action) {
         const p = to[action.actor]!;
-        if (p.book && ['point', 'press', 'openDoor', 'closeDoor'].includes(action.action))
+        if (
+          p.holding &&
+          p.hands === 2 &&
+          ['point', 'press', 'openDoor', 'closeDoor'].includes(action.action)
+        )
           throw new Error(
             `${action.action} needs a free hand; actor ${action.actor} is holding a book`,
           );
         if (action.action === 'take' || action.action === 'put') {
           let id: string, at: GroundPoint;
           if (action.action === 'take') {
-            object(action.object, ['book']);
+            object(action.object, ['book', 'prop']);
+            if (action.hand !== undefined && !['left', 'right'].includes(action.hand))
+              throw new Error('A taking hand must be left or right');
             id = action.object;
-            at = bookPositions[id]!;
-            if (p.book) throw new Error(`Actor ${action.actor} already holds a book`);
-            if (Object.values(state).some((actor) => actor.book === id))
-              throw new Error(`Book ${id} already has a holder`);
-            p.book = id;
+            at = itemPositions[id]!;
+            if (p.holding) throw new Error(`Actor ${action.actor} already holds an object`);
+            if (Object.values(state).some((actor) => actor.holding === id))
+              throw new Error(`Object ${id} already has a holder`);
+            p.holding = id;
+            p.hands = staging.objects[id]!.kind === 'book' ? 2 : 1;
+            p.holdingHand = action.hand ?? options.cast[action.actor]!.holdingHand ?? 'left';
             p.bookOpen = 0;
           } else {
-            if (!p.book) throw new Error(`Actor ${action.actor} has no book to put`);
-            id = p.book;
-            at = supportPoint(object(action.onto, ['table']));
-            bookPositions[id] = { ...at };
-            p.book = undefined;
+            if (!p.holding) throw new Error(`Actor ${action.actor} has no object to put`);
+            id = p.holding;
+            const support = staging.objects[action.onto];
+            if (!support) throw new Error(`Unknown support: ${action.onto}`);
+            at = supportPoint(support);
+            itemPositions[id] = { ...at };
+            p.holding = undefined;
             p.bookOpen = 0;
           }
           if (usedObjects.has(id))
@@ -204,7 +265,30 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
           const chair = object(action.seat!, ['chair', 'bench']);
           if (p.seat && p.seat !== action.seat)
             throw new Error(`Actor ${action.actor} must stand before changing seats`);
-          p.at = { ...chair.at };
+          const places = seatPlaces(chair);
+          const occupied = new Set(
+            Object.entries(state)
+              .filter(
+                ([id, actor]) =>
+                  id !== action.actor &&
+                  actor.seat === action.seat &&
+                  !(beat.perform ?? []).some(
+                    (a) =>
+                      'actor' in a &&
+                      a.actor === id &&
+                      ['stand', 'walk', 'run', 'flee'].includes(a.action),
+                  ),
+              )
+              .map(([, actor]) => actor.seatSlot ?? 0),
+          );
+          const slot =
+            'slot' in action && action.slot !== undefined
+              ? action.slot
+              : places.findIndex((_, i) => !occupied.has(i));
+          if (!Number.isInteger(slot) || slot < 0 || slot >= places.length || occupied.has(slot))
+            throw new Error(`Seat ${action.seat} is occupied by two actors or has no free slot`);
+          p.at = { ...places[slot]! };
+          p.seatSlot = slot;
           p.facing = 'front';
           p.seated = 1;
           p.seat = action.seat;
@@ -212,11 +296,11 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
         }
         if (action.action === 'read') {
           object(action.book, ['book']);
-          if (from[action.actor]!.book !== action.book)
+          if (from[action.actor]!.holding !== action.book)
             throw new Error(
               'A reader must hold the book: take it first or set cast[actor].holding',
             );
-          p.book = action.book;
+          p.holding = action.book;
           p.bookOpen = 1;
           p.facing = 'front';
           if (
@@ -226,7 +310,7 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
             throw new Error('Read pages must be an integer in [1,50]');
         }
         if (action.action === 'openBook' || action.action === 'closeBook') {
-          if (p.book !== action.book)
+          if (p.holding !== action.book)
             throw new Error(`${action.action} needs the held book ${action.book}`);
           p.bookOpen = action.action === 'openBook' ? 1 : 0;
         }
@@ -240,15 +324,22 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
           if (usedObjects.has(action.door))
             throw new Error(`Two actions own object ${action.door} in beat ${beat.id}`);
           usedObjects.add(action.door);
-          if (p.at.z >= door.at.z) throw new Error('Operate the door from its outside handle');
+          doorSide = p.at.z >= door.at.z ? 'inside' : 'outside';
           objectFrom = objectStates[action.door] ?? 0;
-          approaches[action.actor] = approach(
-            action.actor,
-            point(doorApproach(door, options.cast[action.actor]!.scale ?? 0.77, objectFrom)),
+          approaches[action.actor] = route(
+            staging,
+            from[action.actor]!.at,
+            point(
+              doorApproach(door, options.cast[action.actor]!.scale ?? 0.77, objectFrom, doorSide),
+            ),
+            (options.cast[action.actor]!.scale ?? 0.77) * 0.46,
+            doorSide === 'inside' ? [action.door] : [],
           );
           objectTo = action.action === 'openDoor' ? 1 : 0;
           objectStates[action.door] = objectTo;
-          p.at = point(doorApproach(door, options.cast[action.actor]!.scale ?? 0.77, objectTo));
+          p.at = point(
+            doorApproach(door, options.cast[action.actor]!.scale ?? 0.77, objectTo, doorSide),
+          );
           p.facing = 'left';
           p.seated = 0;
           p.seat = undefined;
@@ -265,10 +356,9 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
             throw new Error(`Two actions own object ${action.door} in beat ${beat.id}`);
           usedObjects.add(action.door);
           const inside = from[action.actor]!.at.z > door.at.z;
-          if (inside === (action.to === 'inside'))
-            throw new Error(`Actor ${action.actor} is already ${action.to} door ${action.door}`);
           p.at = point(doorPassage(door, action.to));
-          const waypoint = point(doorWaypoint(door, action.to));
+          const waypoint =
+            inside === (action.to === 'inside') ? p.at : point(doorWaypoint(door, action.to));
           via = [
             ...route(
               staging,
@@ -303,9 +393,50 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
           p.seated = 0;
           p.seat = undefined;
         }
-        if (action.action === 'point' || action.action === 'press') point(action.target);
+        if (action.action === 'point' || action.action === 'press') {
+          const item =
+            typeof action.target === 'string' ? staging.objects[action.target] : undefined;
+          if (
+            item &&
+            (Object.values(before).some((actor) => actor.holding === action.target) ||
+              (beat.perform ?? []).some((a) => a.action === 'take' && a.object === action.target))
+          )
+            throw new Error(
+              `Put object ${action.target} on a support before pointing at or pressing it`,
+            );
+          target = item?.trigger
+            ? triggerPoint({ ...item, at: itemPositions[String(action.target)] ?? item.at })
+            : point(action.target);
+          if (action.action === 'press') {
+            const approach = pressApproach(
+              staging.projection,
+              options.cast[action.actor]!,
+              p,
+              target,
+              options.pack.rig,
+            );
+            p.at = approach.at;
+            reachSide = approach.side;
+            p.facing = 'front';
+            p.seated = 0;
+            p.seat = undefined;
+          }
+          if (action.action === 'press' && item?.trigger && typeof action.target === 'string') {
+            const id = action.target;
+            if (usedObjects.has(id))
+              throw new Error(`Two actions own object ${id} in beat ${beat.id}`);
+            usedObjects.add(id);
+            const value = objectStates[id] ?? 0;
+            effect = {
+              id,
+              from: value,
+              to: item.trigger.effect === 'on' ? 1 : item.trigger.effect === 'off' ? 0 : 1 - value,
+            };
+            objectStates[id] = effect.to;
+          }
+        }
       } else {
-        if (ids.some((id) => from[id]!.book))
+        if (ids.some((id) => from[id]!.holding && from[id]!.hands === 2))
           throw new Error('A paired action needs free hands; a participant is holding a book');
         const [a, b] = ids,
           sa = options.cast[a!]!.scale ?? 0.77,
@@ -339,7 +470,7 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
       if (
         'actor' in action &&
         !via &&
-        ['walk', 'run', 'flee', 'sit', 'read', 'take', 'put'].includes(action.action)
+        ['walk', 'run', 'flee', 'sit', 'read', 'take', 'put', 'press'].includes(action.action)
       ) {
         const omit = 'seat' in action && action.seat ? [action.seat] : [];
         via = route(
@@ -363,19 +494,46 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
         via,
         approaches,
         meeting,
+        doorSide,
+        effect,
+        target,
+        reachSide,
       });
       Object.assign(state, to);
     }
+    const scales = Object.fromEntries(
+      Object.entries(options.cast).map(([id, a]) => [id, a.scale ?? 0.77]),
+    );
+    coordinateTraffic(
+      staging,
+      plans.slice(firstPlan),
+      before,
+      scales,
+      (plan, progress) =>
+        blockAt(
+          {
+            staging,
+            initial: before,
+            initialItems,
+            initialObjects: startingObjects,
+            plans: [plan],
+            point,
+            scales,
+          },
+          plan.start + progress * (plan.end - plan.start),
+        ).actors,
+    );
     const seats = new Set<string>();
     for (const p of Object.values(state))
       if (p.seat) {
-        if (seats.has(p.seat)) throw new Error(`Seat ${p.seat} is occupied by two actors`);
-        seats.add(p.seat);
+        if (seats.has(`${p.seat}:${p.seatSlot ?? 0}`))
+          throw new Error(`Seat ${p.seat} is occupied by two actors`);
+        seats.add(`${p.seat}:${p.seatSlot ?? 0}`);
       }
   }
   return {
     staging,
-    initialBooks,
+    initialItems,
     initialObjects,
     initial,
     plans,

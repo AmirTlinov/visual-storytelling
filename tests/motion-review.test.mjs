@@ -556,6 +556,7 @@ test('CLI scans a plain PNG manifest interval and exports complete photometry an
           '0,0,16,8',
           '--slice',
           'x,4,3',
+          '--verbose',
           '--out',
           out,
         ],

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { readFile, writeFile, mkdir, readdir, cp } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, cp, access } from 'node:fs/promises';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildScene } from './build-pages.mjs';
@@ -76,8 +76,10 @@ if (process.argv[2] === 'characters') {
   });
   const [command, directory = '.'] = positionals,
     destination = resolve(directory);
-  const catalog = await readCatalog({ optional: true });
-  const help = `${catalog ? 'visual-story new DIRECTORY --example NAME [--no-audio | --silent | --audio]\nvisual-story examples [QUERY] [--json] [--recommended] [--group explanations|techniques]\n' : ''}visual-story info [DIRECTORY] [--json]        actual packages, build identity and stale sources
+  const catalog = ['examples', 'new'].includes(command) ? await readCatalog() : undefined;
+  const help = `visual-story new DIRECTORY --example NAME [--no-audio | --silent | --audio]
+visual-story examples [QUERY] [--json] [--recommended] [--group explanations|techniques]
+visual-story info [DIRECTORY] [--json]        actual packages, build identity and stale sources
 visual-story api [NAME.member ... | ./SUBPATH] [--full]       public names or exact shipped declarations
 visual-story characters --help              prepared actors, actions and editable SVG skin kits
 visual-story dev DIRECTORY [--port 8793]       rebuild + reload at the current story time
@@ -92,7 +94,7 @@ visual-story deliver DIRECTORY --out artifacts/release --formats mp4,html [--job
 visual-story export --help                       MP4, stills and subtitle files
 visual-story pack DIST --out artifacts/story.html [--inline]
 
-${catalog ? `Authoring: ${join(root, 'skill/SKILL.md')}` : 'Authoring templates: use the installed visual-explainer skill workspace.'}`;
+Authoring: ${join(root, 'skill/SKILL.md')}`;
   if (values.help && command === 'info')
     console.log(`visual-story info [DIRECTORY] [--json]
 
@@ -119,7 +121,6 @@ Re-run the same command after changing a line; unchanged voice segments use the 
     const report = await diagnosePackage(root, destination);
     console.log(values.json ? JSON.stringify(report, null, 2) : formatPackageInfo(report));
   } else if (command === 'examples') {
-    if (!catalog) await readCatalog();
     console.log(describeExamples(catalog, { query: positionals.slice(1).join(' '), ...values }));
   } else if (command === 'api') {
     const { describeAPI } = await import('./api.mjs');
@@ -131,7 +132,6 @@ Re-run the same command after changing a line; unchanged voice segments use the 
     console.log(text);
     if (missing.length) process.exitCode = 1;
   } else if (command === 'new') {
-    if (!catalog) await readCatalog();
     if ([values.audio, values['no-audio'], values.silent].filter(Boolean).length > 1)
       throw new Error('Choose one of --audio, --no-audio or --silent');
     if (!catalog[values.example])
@@ -166,7 +166,11 @@ Re-run the same command after changing a line; unchanged voice segments use the 
     }
     if (values.silent) await silenceSceneCopy(destination);
     await pinSceneProject(destination);
-    if (values['no-audio'])
+    const hasAudio = await access(join(destination, 'audio.wav')).then(
+      () => true,
+      () => false,
+    );
+    if (values['no-audio'] || (!values.audio && !hasAudio))
       for (const name of await readdir(destination))
         if (name.endsWith('.html')) {
           const file = join(destination, name);

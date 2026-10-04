@@ -7,19 +7,21 @@ import { transform } from 'esbuild';
 import { parse } from 'parse5';
 import { inlineResources } from './inline-resources.mjs';
 import { readCatalog } from './catalog.mjs';
+import { standaloneAssetURLs } from './asset-urls.mjs';
 
 const execute = promisify(execFile);
 const attribute = (node, name) => node.attrs?.find((attr) => attr.name === name)?.value;
-function audioElements(html) {
+function elements(html, tag) {
   const nodes = [];
   const visit = (node) => {
-    if (node.tagName === 'audio') nodes.push(node);
+    if (node.tagName === tag) nodes.push(node);
     for (const child of node.childNodes ?? []) visit(child);
     if (node.content) visit(node.content);
   };
   visit(parse(html, { sourceCodeLocationInfo: true }));
   return nodes;
 }
+const audioElements = (html) => elements(html, 'audio');
 function replaceSpans(html, edits) {
   const unique = [...new Map(edits.map((edit) => [edit[0].startOffset, edit])).values()];
   for (const [span, text] of unique.sort((a, b) => b[0].startOffset - a[0].startOffset))
@@ -85,16 +87,31 @@ export async function packDirectory(
   if (page.endsWith('.svg'))
     html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}body>svg{display:block;width:100%;height:auto}</style></head><body>${html.replace(/<\?xml[^>]*>/, '')}</body></html>`;
   html = await resources.markup(html, base);
-  for (const match of [
-    ...html.matchAll(/<script\b([^>]*?)\ssrc=(["'])([^"']+)\2[^>]*>\s*<\/script>/gi),
-  ]) {
-    let code = await readFile(local(match[3]), 'utf8');
+  const scriptEdits = [];
+  for (const node of elements(html, 'script')) {
+    if (
+      !['', 'module', 'text/javascript', 'application/javascript'].includes(
+        (attribute(node, 'type') ?? '').trim().toLowerCase(),
+      )
+    )
+      continue;
+    const location = node.sourceCodeLocation;
+    if (!location) continue;
+    const src = attribute(node, 'src');
+    let code = src
+      ? await readFile(local(src), 'utf8')
+      : html.slice(location.startTag.endOffset, location.endTag?.startOffset ?? location.endOffset);
+    code = await standaloneAssetURLs(code, resources, base);
     if (inline) code = (await transform(code, { minify: true, legalComments: 'inline' })).code;
-    html = html.replace(
-      match[0],
-      () => `<script ${match[1]}>${code.replaceAll('</script', '<\\/script')}</script>`,
-    );
+    const startTag = html.slice(location.startTag.startOffset, location.startTag.endOffset);
+    const span = location.attrs?.src;
+    const opening = span
+      ? startTag.slice(0, span.startOffset - location.startOffset) +
+        startTag.slice(span.endOffset - location.startOffset)
+      : startTag;
+    scriptEdits.push([location, `${opening}${code.replace(/<\/script/gi, '<\\/script')}</script>`]);
   }
+  html = replaceSpans(html, scriptEdits);
   const escape = (value) =>
     value
       .replaceAll('&', '&amp;')

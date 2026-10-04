@@ -6,6 +6,8 @@ import { world } from './staging/world.js';
 import { performance } from './performance.js';
 import { compileScore, smooth, type CharacterScore } from './score.js';
 import type { CharacterStageOptions, Place, Point } from './types.js';
+import { fitFrame } from '../scene-frame.js';
+import { characterDetails } from './framing.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 let nextStage = 0;
@@ -16,6 +18,7 @@ export async function characterStage(
   score: CharacterScore,
   shared?: CharacterRenderer,
 ) {
+  const { snapshotSVG } = await import('../export/index.js');
   const { set, pack, cast } = options;
   const background = options.background !== false;
   const scope = `character-stage-${++nextStage}`;
@@ -23,28 +26,45 @@ export async function characterStage(
   const { canvas, context, renderer, data, maxTextureSize } = graphics;
   const element = document.createElement('div');
   element.className = 've-character-stage';
+  const aperture = document.createElement('div');
+  aperture.className = 've-character-aperture';
+  element.append(aperture);
+  const resize = () => {
+    const width = element.clientWidth || set.width,
+      height = element.clientHeight || set.height,
+      fit = fitFrame(set.width, set.height, width, height);
+    Object.assign(aperture.style, {
+      width: `${fit.width}px`,
+      height: `${fit.height}px`,
+      left: `${(width - fit.width) / 2}px`,
+      top: `${(height - fit.height) / 2}px`,
+    });
+  };
+  const observer = new ResizeObserver(resize);
+  observer.observe(element);
   const layer = (markup = '') => {
     const svg = document.createElementNS(NS, 'svg');
     svg.setAttribute('viewBox', `0 0 ${set.width} ${set.height}`);
     svg.setAttribute('aria-hidden', 'true');
     svg.innerHTML = markup.replaceAll('$id', scope);
-    element.append(svg);
+    aperture.append(svg);
     return svg;
   };
   const back = layer(background ? set.svg : '');
   canvas.setAttribute('role', 'img');
-  canvas.setAttribute('aria-label', options.description ?? 'Characters');
   canvas.dataset.reviewId = 'cast';
-  element.append(canvas);
   const front = layer();
   parent.append(element);
+  resize();
   let prepared: Awaited<ReturnType<typeof world>> | undefined;
   let disposed = false;
+  let inspect: (() => unknown) | undefined;
   const inspected = canvas as HTMLCanvasElement & { __visualReview?: () => unknown };
   const dispose = () => {
     if (disposed) return;
     disposed = true;
-    delete inspected.__visualReview;
+    observer.disconnect();
+    if (inspected.__visualReview === inspect) delete inspected.__visualReview;
     prepared?.dispose();
     if (!shared) graphics.dispose();
     element.remove();
@@ -105,31 +125,34 @@ export async function characterStage(
     let snapshot: unknown;
     let camera: FrameBox = { x: 0, y: 0, width: set.width, height: set.height },
       bounds: Record<string, FrameBox> = {};
-    const inspect = () => {
+    let details: Record<string, FrameBox> = {};
+    let focus: readonly string[] | undefined;
+    let changingShot = false;
+    inspect = () => {
       const rect = canvas.getBoundingClientRect();
       return {
         camera,
-        objects: Object.entries(bounds).map(([id, b]) => ({
+        changingShot,
+        objects: Object.entries(focus ? { ...bounds, ...details } : bounds).map(([id, b]) => ({
           id,
           x: rect.x + ((b.x - camera.x) / camera.width) * rect.width,
           y: rect.y + ((b.y - camera.y) / camera.height) * rect.height,
           width: (b.width / camera.width) * rect.width,
           height: (b.height / camera.height) * rect.height,
           visible: !element.hidden,
-          data: { framing: 'subject' },
+          data: {
+            framing: !changingShot && (!focus || focus.includes(id)) ? 'subject' : 'background',
+          },
         })),
       };
     };
-    const backgroundImage = new Image();
-    backgroundImage.src =
-      'data:image/svg+xml;charset=utf-8,' +
-      encodeURIComponent(new XMLSerializer().serializeToString(back));
-    await backgroundImage.decode();
+
     const stage = {
       canvas,
       render(time: number, reduced = false) {
         if (disposed) return;
-        graphics.activate(element, front);
+        graphics.activate(aperture, front);
+        aperture.hidden = false;
         canvas.setAttribute('aria-label', options.description ?? 'Characters');
         inspected.__visualReview = inspect;
         const actions =
@@ -137,6 +160,38 @@ export async function characterStage(
           Object.fromEntries(
             Object.entries(actors).map(([id, actor]) => [id, actor.sample(time, reduced)]),
           );
+        const propState: Record<string, unknown> = {};
+        for (const [id, prop] of Object.entries(score.props)) {
+          const key = score.propTracks[id]!.findLast((key) => key.start <= time);
+          const from = key?.from ?? prop,
+            to = key?.to ?? prop;
+          const p = key
+            ? reduced
+              ? 1
+              : smooth((time - key.start) / Math.max(0.001, key.end - key.start))
+            : 1;
+          const a = resolve(from.at!),
+            b = resolve(to.at!);
+          const at = {
+            x: a.x + (b.x - a.x) * p,
+            y: a.y + (b.y - a.y) * p - (key?.arc ?? 0) * 4 * p * (1 - p),
+          };
+          const opacity = (from.opacity ?? 1) + ((to.opacity ?? 1) - (from.opacity ?? 1)) * p;
+          const values = Object.fromEntries(
+            Object.keys({ ...from.values, ...to.values }).map((name) => {
+              const a = from.values?.[name] ?? 0,
+                b = to.values?.[name] ?? a;
+              return [name, a + (b - a) * p];
+            }),
+          );
+          const node = nodes[id];
+          if (node) {
+            node.setAttribute('transform', `translate(${at.x} ${at.y}) scale(${prop.scale ?? 1})`);
+            node.setAttribute('opacity', String(opacity));
+            prop.art.paint?.(node, values);
+          }
+          propState[id] = { at, opacity, values };
+        }
         bounds = {
           ...prepared?.bounds(),
           ...Object.fromEntries(
@@ -149,19 +204,52 @@ export async function characterStage(
             }),
           ),
         };
+        for (const [id, node] of Object.entries(nodes)) {
+          if (Number(node.getAttribute('opacity')) <= 0) continue;
+          const box = node.getBBox(),
+            prop = score.props[id]!,
+            state = propState[id] as { at: Point };
+          const scale = prop.scale ?? 1;
+          bounds[id] = {
+            x: state.at.x + box.x * scale,
+            y: state.at.y + box.y * scale,
+            width: box.width * scale,
+            height: box.height * scale,
+          };
+        }
+        details = Object.fromEntries(
+          Object.entries(actors).flatMap(([id, actor]) =>
+            Object.entries(characterDetails(actor.skeleton, pack.rig, set.height)).map(
+              ([part, box]) => [`${id}.${part}`, box],
+            ),
+          ),
+        );
         const index = Math.max(
           0,
           options.beats.findLastIndex((b) => score.script.cues[b.id]!.start <= time),
         );
         const beat = options.beats[index]!;
-        const current = stageFrame(set.width, set.height, bounds, beat.shot);
+        focus = beat.shot?.focus;
+        const current = stageFrame(
+          set.width,
+          set.height,
+          beat.shot ? { ...bounds, ...details } : bounds,
+          beat.shot,
+        );
         const previous = stageFrame(
           set.width,
           set.height,
-          bounds,
+          options.beats[Math.max(0, index - 1)]!.shot ? { ...bounds, ...details } : bounds,
           options.beats[Math.max(0, index - 1)]!.shot,
         );
         const mix = reduced ? 1 : smooth((time - score.script.cues[beat.id]!.start) / 0.45);
+        // A deliberate shot change reveals/crops artwork while travelling. Judge
+        // subject fit once it arrives; retain the actual bounds throughout the move.
+        changingShot =
+          mix < 1 &&
+          (Object.keys(current) as (keyof FrameBox)[]).some(
+            (key) => Math.abs(current[key] - previous[key]) > 0.01,
+          );
         camera = Object.fromEntries(
           Object.keys(current).map((k) => {
             const key = k as keyof FrameBox;
@@ -196,47 +284,18 @@ export async function characterStage(
         if (prepared) prepared.draw(renderer!);
         else for (const id of order) renderer!.drawSkeleton(actors[id]!.skeleton);
         renderer!.end();
-        const propState: Record<string, unknown> = {};
-        for (const [id, prop] of Object.entries(score.props)) {
-          const key = score.propTracks[id]!.findLast((key) => key.start <= time);
-          const from = key?.from ?? prop,
-            to = key?.to ?? prop;
-          const p = key
-            ? reduced
-              ? 1
-              : smooth((time - key.start) / Math.max(0.001, key.end - key.start))
-            : 1;
-          const a = resolve(from.at!),
-            b = resolve(to.at!);
-          const at = {
-            x: a.x + (b.x - a.x) * p,
-            y: a.y + (b.y - a.y) * p - (key?.arc ?? 0) * 4 * p * (1 - p),
-          };
-          const opacity = (from.opacity ?? 1) + ((to.opacity ?? 1) - (from.opacity ?? 1)) * p;
-          const values = Object.fromEntries(
-            Object.keys({ ...from.values, ...to.values }).map((name) => {
-              const a = from.values?.[name] ?? 0,
-                b = to.values?.[name] ?? a;
-              return [name, a + (b - a) * p];
-            }),
-          );
-          const node = nodes[id];
-          if (node) {
-            node.setAttribute('transform', `translate(${at.x} ${at.y}) scale(${prop.scale ?? 1})`);
-            node.setAttribute('opacity', String(opacity));
-            prop.art.paint?.(node, values);
-          }
-          propState[id] = { at, opacity, values };
-        }
         snapshot = {
           time,
           camera,
           bounds,
+          details,
           framing: {
             focus: beat.shot?.focus ?? Object.keys(bounds),
-            clipped: Object.entries(bounds)
+            changingShot,
+            clipped: Object.entries(beat.shot ? { ...bounds, ...details } : bounds)
               .filter(
                 ([id, b]) =>
+                  !changingShot &&
                   (!beat.shot || beat.shot.focus.includes(id)) &&
                   (b.x < camera.x - 0.1 ||
                     b.y < camera.y - 0.1 ||
@@ -259,28 +318,27 @@ export async function characterStage(
         };
       },
       snapshot: () => snapshot,
-      /** Paint the prepared scene into a book page or another host-owned canvas. */
-      paintTo(target: CanvasRenderingContext2D, box: FrameBox) {
-        if (Object.keys(score.props).length)
-          throw new Error(
-            'Canvas chapters use prepared stage objects; SVG props remain in CharacterStage',
-          );
-        target.save();
-        target.beginPath();
-        target.rect(box.x, box.y, box.width, box.height);
-        target.clip();
-        target.drawImage(
-          backgroundImage,
-          box.x - (camera.x / camera.width) * box.width,
-          box.y - (camera.y / camera.height) * box.height,
-          (set.width / camera.width) * box.width,
-          (set.height / camera.height) * box.height,
-        );
-        target.drawImage(canvas, box.x, box.y, box.width, box.height);
-        target.restore();
+      /** Flatten only a requested transition boundary; live content keeps all DOM layers. */
+      async capture() {
+        const cast = document.createElement('canvas');
+        cast.width = canvas.width;
+        cast.height = canvas.height;
+        cast.getContext('2d')!.drawImage(canvas, 0, 0);
+        const images = await Promise.all([back, front].map((svg) => snapshotSVG(svg, 1)));
+        const result = document.createElement('canvas');
+        result.width = cast.width;
+        result.height = cast.height;
+        const c = result.getContext('2d')!;
+        c.drawImage(images[0]!, 0, 0, result.width, result.height);
+        c.drawImage(cast, 0, 0);
+        c.drawImage(images[1]!, 0, 0, result.width, result.height);
+        return result;
       },
       show(visible: boolean) {
-        if (!disposed) element.hidden = !visible;
+        if (!disposed) {
+          element.hidden = !visible;
+          if (visible) resize();
+        }
       },
       dispose,
     };

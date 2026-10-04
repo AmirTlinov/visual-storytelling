@@ -4,8 +4,12 @@
   height: 100%;
   overflow: hidden;
 }
-.ve-character-stage > svg,
-.ve-character-stage > canvas {
+.ve-character-aperture {
+  position: absolute;
+  overflow: hidden;
+}
+.ve-character-aperture > svg,
+.ve-character-aperture > canvas {
   position: absolute;
   inset: 0;
   display: block;

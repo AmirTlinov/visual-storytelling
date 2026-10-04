@@ -167,6 +167,7 @@ export function lettering(
         element.dataset.layoutError = `Label "${value}" needs a larger ${bounds.shape ?? 'rect'} at ${nominalSize * scale}px.`;
       else delete element.dataset.layoutError;
     }
+    element.dataset.letteringSize = String(Number(label.getAttribute('font-size')) * scale);
     position();
   };
   text(initial);

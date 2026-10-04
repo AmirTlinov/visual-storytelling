@@ -1,3 +1,4 @@
+import type { CarriedFrame } from './portable.js';
 import {
   IkConstraint,
   Physics,
@@ -8,11 +9,12 @@ import {
 } from '@esotericsoftware/spine-webgl';
 import type { Actor, Point } from '../types.js';
 import type { performance } from '../performance.js';
-import type { BipedRig, Projection, GroundPoint } from './types.js';
+import type { BipedRig, Projection, GroundPoint, Furniture } from './types.js';
 import type { BlockingActor, PairContact } from './blocking.js';
 import { ease } from './space.js';
 import { project, interpolate, alongPath } from './space.js';
 import { bookHands, type BookFrame } from './book.js';
+import { pressTravel } from './press.js';
 
 type Performer = ReturnType<typeof performance>;
 const sides = ['left', 'right'] as const;
@@ -88,7 +90,8 @@ export function body(
       arm.lower.appliedPose,
       target.x,
       height - target.y,
-      -1,
+      // Press from below the control, keeping the forearm clear of its readout.
+      kind === 'press' ? 1 : -1,
       false,
       ScaleYMode.None,
       0,
@@ -138,7 +141,7 @@ export function body(
       const constrained =
         state.travel ||
         state.seated > 0 ||
-        state.book ||
+        state.holding ||
         state.reach ||
         state.transfer ||
         state.contact ||
@@ -257,13 +260,46 @@ export function body(
       if (state.reach) {
         const target = project(space, state.reach.at);
         reach(
-          this.sideToward(target),
-          { x: target.x, y: target.y + state.reach.press * 4 * scale },
+          state.reach.side ??
+            (state.holding && state.hands === 1
+              ? state.holdingHand === 'left'
+                ? 'right'
+                : 'left'
+              : this.sideToward(target)),
+          { x: target.x, y: target.y + state.reach.press * pressTravel * scale },
           state.reach.weight,
-          'point',
+          state.reach.gesture ?? 'point',
         );
       }
       return action;
+    },
+    carry(
+      id: string,
+      art: NonNullable<Furniture['art']>,
+      placement?: { x: number; y: number; scale: number; weight: number; grip: number },
+    ): CarriedFrame {
+      const side = frame.holdingHand ?? 'left',
+        hand = shoulder(side);
+      const root = hips.appliedPose.localToWorld(vector.set(0, 27));
+      const item: CarriedFrame = {
+        id,
+        portable: true,
+        x: hand.x - art.grip.x * scale,
+        y: height - root.y - art.grip.y * scale,
+        scale,
+      };
+      if (placement) {
+        item.x += (placement.x - item.x) * placement.weight;
+        item.y += (placement.y - item.y) * placement.weight;
+        item.scale += (placement.scale - item.scale) * placement.weight;
+      }
+      reach(
+        side,
+        { x: item.x + art.grip.x * item.scale, y: item.y + art.grip.y * item.scale },
+        placement?.grip ?? 1,
+        'carry',
+      );
+      return item;
     },
     book(
       id: string,
@@ -311,8 +347,14 @@ export type Body = ReturnType<typeof body>;
 /** One shared target for both hands. Reachability is determined by the two actual rigs. */
 export function connect(bodies: Record<string, Body>, pair: PairContact) {
   const [a, b] = pair.actors.map((id) => bodies[id]!);
-  const sideA = a!.sideToward(b!.shoulder('left')),
-    sideB = b!.sideToward(a!.shoulder('right'));
+  const freeSide = (body: Body, target: Point): Side =>
+    body.frame.holding && body.frame.hands === 1
+      ? body.frame.holdingHand === 'left'
+        ? 'right'
+        : 'left'
+      : body.sideToward(target);
+  const sideA = freeSide(a!, b!.shoulder('left')),
+    sideB = freeSide(b!, a!.shoulder('right'));
   const sa = a!.shoulder(sideA),
     sb = b!.shoulder(sideB),
     ra = a!.radius(sideA),

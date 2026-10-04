@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { exampleGroups, selectExamples } from './catalog-query.mjs';
@@ -8,11 +9,12 @@ const quote = (value) => `'${value.replaceAll("'", "'\"'\"'")}'`;
 
 export function exampleDetails(entry) {
   const directory = resolve(workspace, 'examples', entry.id);
+  const built = resolve(workspace, 'site', entry.id, entry.page);
   return {
     ...entry,
     directory,
     source: resolve(directory, entry.source),
-    page: resolve(workspace, 'site', entry.id, entry.page),
+    page: existsSync(built) ? built : resolve(directory, entry.page),
     preview: resolve(directory, 'preview.png'),
     guides: (entry.guides ?? []).map((path) => resolve(workspace, path)),
     create: `node ${quote(resolve(workspace, 'tools/scene.mjs'))} new ./my-story --example ${entry.id}`,
@@ -61,15 +63,7 @@ export function describeExamples(catalog, { query = '', group, recommended, json
   );
 }
 
-/** Examples belong to the authoring workspace, never to the scene's runtime dependency. */
-export async function readCatalog({ optional = false } = {}) {
-  try {
-    return JSON.parse(await readFile(new URL('../examples/catalog.json', import.meta.url), 'utf8'));
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-    if (optional) return undefined;
-    throw new Error(
-      'Examples live in the visual-explainer workspace. Create scenes with its tools/scene.mjs; the installed CLI builds and serves existing scene directories.',
-    );
-  }
+/** The same versioned authoring catalog ships with the runtime and CLI. */
+export async function readCatalog() {
+  return JSON.parse(await readFile(new URL('../examples/catalog.json', import.meta.url), 'utf8'));
 }

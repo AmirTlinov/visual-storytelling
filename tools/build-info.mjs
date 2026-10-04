@@ -58,7 +58,13 @@ const packageDigest = async (root, runtime) =>
   createHash('sha256')
     .update(runtime)
     .update('\0')
-    .update(await contentDigest(root, ['package.json', 'tools']))
+    .update(
+      await contentDigest(
+        root,
+        ['package.json', 'tools', 'examples', 'skill', 'docs', 'PHILOSOPHY.md', 'AGENTS.md'],
+        (name) => name.startsWith('examples/') && name.endsWith('.wav'),
+      ),
+    )
     .digest('hex');
 
 /** Written inside the build transaction, alongside the actual emitted declarations. */

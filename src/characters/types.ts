@@ -9,7 +9,7 @@ export interface Point {
 export type Place = string | Point | { actor: string; anchor: string };
 export interface CharacterPack {
   id: string;
-  /** gzip JSON: { data: Spine skeleton JSON, atlas: string, texture: data URL }. */
+  /** gzip JSON: { data: Spine skeleton JSON, atlas: string, textures: page-name → data URL }. */
   gzip: string;
   skins: readonly string[];
   actions: Readonly<Record<string, { animation: string; loop?: boolean; pose?: number }>>;
@@ -28,6 +28,8 @@ export interface Actor {
   action?: string;
   /** Prepared prop already carried when the story begins. */
   holding?: string;
+  /** Preferred hand for one-handed portable objects. */
+  holdingHand?: 'left' | 'right';
 }
 export interface PropArt {
   /** Local SVG, with its contact point at (0,0). Source must be trusted authored artwork. */

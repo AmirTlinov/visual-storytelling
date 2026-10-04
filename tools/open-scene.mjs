@@ -17,7 +17,7 @@ export async function openScene(page, url) {
   await page.waitForFunction(
     () =>
       typeof document.querySelector('.ve-scene')?.scene?.seek === 'function' ||
-      document.querySelector('svg,canvas') ||
+      document.querySelector('.ve-scene,svg,canvas,audio') ||
       [...document.querySelectorAll('object,iframe[data-scene-svg]')].some((element) =>
         element.contentDocument?.querySelector('svg'),
       ),
@@ -101,6 +101,7 @@ export async function openScene(page, url) {
         return handle.review();
       },
       snapshot: () => owner('snapshot')?.snapshot(),
+      presentation: () => owner('presentation')?.presentation(),
       diagnostics: () =>
         documents().flatMap((doc) =>
           [...doc.querySelectorAll('[data-layout-error]')].map((element) =>

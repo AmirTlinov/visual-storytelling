@@ -15,7 +15,7 @@ export function orderedInsights(report) {
         detail: `Appearance changes and returns ${returns.length} times across the recording. This can be an intended pulse; inspect the brightness graph and frames. Individual times remain in motion.json.`,
       },
     ];
-  return [...(report.runtime?.insights ?? []), ...signals].sort(
+  return [...(report.runtime?.insights ?? []), ...(report.presentation ?? []), ...signals].sort(
     (a, b) =>
       Number(b.kind === 'action-error') - Number(a.kind === 'action-error') ||
       Number(inside(b)) - Number(inside(a)),
@@ -29,6 +29,8 @@ const labels = {
   'brief-disappearance': ['Элемент исчезает и возвращается', 'runtime', 85],
   'long-animation-frame': ['Долгий кадр основного потока', 'runtime', 80],
   'content-clipped': ['Содержимое обрезается', 'runtime', 65],
+  'unreadable-text': ['Текст слишком мелкий', 'runtime', 65],
+  'uninspected-canvas': ['Содержимое Canvas не проверено', 'runtime', 60],
   'outside-viewport': ['Элемент выходит за окно', 'runtime', 65],
   'brief-reversal': ['Изображение меняется и возвращается', 'frames', 60],
   'repeated-appearance-return': ['Повторяющиеся изменения', 'photometry', 60],

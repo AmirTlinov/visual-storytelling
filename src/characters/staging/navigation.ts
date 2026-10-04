@@ -1,5 +1,5 @@
 import type { GroundPoint, Staging } from './types.js';
-import { footprint, type Footprint } from './objects.js';
+import { footprint, stairEnd, objectShape, type Footprint } from './objects.js';
 import { distance } from './space.js';
 
 const inside = (p: GroundPoint, b: Footprint) =>
@@ -69,7 +69,7 @@ export function meetingPoint(
 }
 
 /** A small visibility graph around physical furniture. No per-scene waypoint tuning. */
-export function route(
+function flatRoute(
   staging: Staging,
   from: GroundPoint,
   to: GroundPoint,
@@ -142,4 +142,128 @@ export function route(
     }
   }
   throw new Error('No clear stage route; move the destination or its blocking furniture');
+}
+
+/** A raised destination must belong to a floor or a stair landing. */
+function floorSupports(staging: Staging) {
+  return [
+    ...Object.values(staging.supports ?? {}),
+    ...Object.values(staging.objects)
+      .filter((item) => item.kind === 'stairs')
+      .map((item) => {
+        const at = stairEnd(item),
+          s = item.scale ?? 1;
+        return {
+          at: { ...at, z: at.z + (objectShape.stairs.landing * s) / 2 },
+          width: objectShape.stairs.halfWidth * 2 * s,
+          depth: objectShape.stairs.landing * s,
+        };
+      }),
+  ];
+}
+export function supported(staging: Staging, p: GroundPoint): boolean {
+  if (Math.abs(p.height ?? 0) < 0.05) return true;
+  return floorSupports(staging).some(
+    (f) =>
+      Math.abs((f.at.height ?? 0) - (p.height ?? 0)) < 0.05 &&
+      Math.abs(p.x - f.at.x) <= f.width / 2 + 0.001 &&
+      Math.abs(p.z - f.at.z) <= f.depth / 2 + 0.001,
+  );
+}
+/** Exact interval coverage catches small gaps that point sampling would miss. */
+function supportedSegment(staging: Staging, a: GroundPoint, b: GroundPoint) {
+  if (Math.abs(a.height ?? 0) < 0.05) return true;
+  const intervals: [number, number][] = [];
+  for (const floor of floorSupports(staging)) {
+    if (Math.abs((floor.at.height ?? 0) - (a.height ?? 0)) > 0.05) continue;
+    let lo = 0,
+      hi = 1;
+    for (const [origin, delta, center, extent] of [
+      [a.x, b.x - a.x, floor.at.x, floor.width / 2],
+      [a.z, b.z - a.z, floor.at.z, floor.depth / 2],
+    ]) {
+      if (Math.abs(delta!) < 1e-10) {
+        if (Math.abs(origin! - center!) > extent! + 1e-8) hi = -1;
+      } else {
+        const p = (center! - extent! - origin!) / delta!,
+          q = (center! + extent! - origin!) / delta!;
+        lo = Math.max(lo, Math.min(p, q));
+        hi = Math.min(hi, Math.max(p, q));
+      }
+    }
+    if (lo <= hi) intervals.push([lo, hi]);
+  }
+  intervals.sort((a, b) => a[0] - b[0]);
+  let end = 0;
+  for (const [lo, hi] of intervals) {
+    if (lo > end + 1e-8) return false;
+    end = Math.max(end, hi);
+  }
+  return end >= 1 - 1e-8;
+}
+
+/** Connect floor routes through prepared stairs; height never interpolates through empty space. */
+export function route(
+  staging: Staging,
+  from: GroundPoint,
+  to: GroundPoint,
+  radius: number,
+  omit: readonly string[] = [],
+): GroundPoint[] {
+  if (!supported(staging, from) || !supported(staging, to))
+    throw new Error('A walking destination needs a floor or stair landing support');
+  const levelRoute = (a: GroundPoint, b: GroundPoint, excluded: readonly string[]) => {
+    const via = flatRoute(staging, a, b, radius, excluded),
+      path = [a, ...via, b];
+    for (let i = 1; i < path.length; i++) {
+      const p = path[i - 1]!,
+        q = path[i]!;
+      if (!supportedSegment(staging, p, q))
+        throw new Error('Walking route leaves its floor support');
+    }
+    return via;
+  };
+  if (Math.abs((from.height ?? 0) - (to.height ?? 0)) < 0.05) return levelRoute(from, to, omit);
+  const nodes: { at: GroundPoint; stairs?: string }[] = [{ at: from }, { at: to }];
+  for (const [id, item] of Object.entries(staging.objects))
+    if (item.kind === 'stairs')
+      nodes.push({ at: item.at, stairs: id }, { at: stairEnd(item), stairs: id });
+  const costs = nodes.map(() => Infinity),
+    paths: GroundPoint[][] = nodes.map(() => []),
+    visited = new Set<number>();
+  costs[0] = 0;
+  while (visited.size < nodes.length) {
+    let index = -1;
+    for (let i = 0; i < nodes.length; i++)
+      if (!visited.has(i) && (index < 0 || costs[i]! < costs[index]!)) index = i;
+    if (index < 0 || !Number.isFinite(costs[index])) break;
+    if (index === 1) return paths[index]!.slice(0, -1);
+    visited.add(index);
+    const a = nodes[index]!;
+    for (const [i, b] of nodes.entries()) {
+      if (visited.has(i)) continue;
+      let leg: GroundPoint[];
+      if (a.stairs && a.stairs === b.stairs) leg = [b.at];
+      else if (Math.abs((a.at.height ?? 0) - (b.at.height ?? 0)) < 0.05) {
+        try {
+          leg = [
+            ...levelRoute(a.at, b.at, [
+              ...omit,
+              ...[a.stairs, b.stairs].filter((id): id is string => !!id),
+            ]),
+            b.at,
+          ];
+        } catch {
+          continue;
+        }
+      } else continue;
+      const points = [a.at, ...leg],
+        cost = costs[index]! + leg.reduce((n, p, j) => n + distance(points[j]!, p), 0);
+      if (cost < costs[i]!) {
+        costs[i] = cost;
+        paths[i] = [...paths[index]!, ...leg];
+      }
+    }
+  }
+  throw new Error('No connected walking route between floors; add a stair or landing support');
 }

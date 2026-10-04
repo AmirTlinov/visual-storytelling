@@ -1,6 +1,6 @@
 import { SceneShell, SketchControls } from '@visual-storytelling/core';
 import { Viewport3D, ThreeKit as T } from '@visual-storytelling/core/three';
-import { Physics3D, PhysicsPlayer } from '@visual-storytelling/core/physics/3d';
+import { Physics3D, PhysicsPlayer, PhysicsReplay } from '@visual-storytelling/core/physics/3d';
 import '@visual-storytelling/core/style.css';
 
 window.galleryReady = (async () => {
@@ -52,20 +52,19 @@ window.galleryReady = (async () => {
   footer.hidden = false;
   const player = PhysicsPlayer.mount(footer, world);
   shell.actions.append(SketchControls.action('Сначала', () => player.reset()));
-  const initial = world.snapshot();
+  const replay = PhysicsReplay.create(world, {
+    duration: 5,
+    beforeSeek: () => player.pause(false),
+    afterSeek: player.update,
+  });
   Object.assign(root, {
     scene: {
       world,
       bodies,
       view,
-      duration: 5,
+      duration: replay.duration,
       pause: player.pause,
-      seek(time: number) {
-        player.pause(false);
-        world.restore(initial);
-        world.step(Math.round(Math.max(0, time) * 120));
-        player.update();
-      },
+      seek: replay.seek,
       snapshot: () =>
         bodies.map((b) => ({ id: b.id, position: b.position, soft: Boolean(b.soft) })),
       dispose() {

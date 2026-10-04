@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { cancellableCommand } from './cancellable-command.mjs';
 import { parseArgs } from 'node:util';
-import { writeFile, mkdir, readFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { writeFile, mkdir } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { exportVideo } from './video-export.mjs';
 import { captionTrack } from '../dist/story/captions.js';
+import { captionSource } from './caption-source.mjs';
 import { renderer } from './render.mjs';
 import { standalone, packDirectory } from './standalone.mjs';
 
@@ -34,7 +35,7 @@ visual-story export --scene NAME --format png|svg|html|mp4 [--out FILE]
 
 Still image: --time SECONDS --width 960 --theme light|dark
 Video:       --from SECONDS --to SECONDS --fps 30 --width 960 [--height PIXELS] [--jobs 2]
-Captions:    --format srt|vtt reads the built timeline; presentation stays opt-in
+Captions:    --format srt|vtt reads the mounted story (Chromium), or an audio-only timeline
 HTML:        --theme auto|light|dark; embeds code, fonts and audio for offline use
 
 From a created scene: npm run export -- --format png --time 4
@@ -72,7 +73,7 @@ Video uses the scene's media timeline and narration. PNG/MP4 need Chromium; MP4 
   await cancellableCommand('Export', async (signal) => {
     if (format === 'srt' || format === 'vtt') {
       if (!values.directory) throw new Error('Caption export needs --directory DIST');
-      const script = JSON.parse(await readFile(join(values.directory, 'timeline.json'), 'utf8'));
+      const script = await captionSource(values.directory, { signal });
       await writeFile(output, captionTrack(script).serialize(format));
       console.log(output);
     } else if (format === 'mp4') {
@@ -100,7 +101,7 @@ Video uses the scene's media timeline and narration. PNG/MP4 need Chromium; MP4 
       );
       console.log(output);
     } else {
-      const render = await renderer({ scene, theme, width, directory: values.directory });
+      const render = await renderer({ scene, theme, width, directory: values.directory, signal });
       try {
         if (format === 'png') {
           await render.seek(time);

@@ -26,6 +26,11 @@ export const routines = {
   leave(id: string, actor: string, door = 'door', close = true) {
     return sequence(id, [
       {
+        action: { action: 'openDoor', actor, door },
+        seconds: 4.5,
+        text: 'Открыть дверь для выхода',
+      },
+      {
         action: { action: 'passDoor', actor, door, to: 'outside' },
         seconds: 3,
         text: 'Выйти во двор',

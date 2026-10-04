@@ -6,7 +6,7 @@ import { videoFrames, saveCapture } from './media.mjs';
 import { captureBrowser } from './browser.mjs';
 import { captureScene } from './scene-capture.mjs';
 import { scanTimeline, selectDetail, overviewSamples } from './timeline.mjs';
-import { summarizeRuntime } from './runtime.mjs';
+import { summarizeRuntime, presentationInsights } from './runtime.mjs';
 import { compareMotion } from './comparison.mjs';
 import { loadCapture, saveSession } from './session.mjs';
 import { queryEvidence } from './inspection.mjs';
@@ -276,6 +276,7 @@ export async function reviewMotion({
     timeline,
     photometry,
     runtime,
+    presentation: telemetry ? undefined : presentationInsights(samples),
     overview,
     captureManifest,
     replayPath,

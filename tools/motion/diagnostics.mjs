@@ -67,7 +67,11 @@ export function graph(points, key, title, markers = [], options = {}) {
 }
 export function observationsMarkup(report, { playerId } = {}) {
   const { runtime, timeline } = report;
-  const signals = [...(runtime?.insights ?? []), ...(timeline?.signals ?? [])];
+  const signals = [
+    ...(runtime?.insights ?? []),
+    ...(report.presentation ?? []),
+    ...(timeline?.signals ?? []),
+  ];
   const rows = runtime
     ? [
         [

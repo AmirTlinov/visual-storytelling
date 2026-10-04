@@ -8,7 +8,7 @@ test('a hidden 2D view starts safely and shows the latest sought operation when 
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/math-morph/index.html');
   await page.evaluate(() => window.galleryReady);
-  const flat = page.locator('.math-flat');
+  const flat = page.locator('[data-projection="2d"]');
   await expect(flat).toBeHidden();
   await page.locator('[data-seek]').fill('26');
   await page.getByRole('radio', { name: 'Плоскость', exact: true }).check();
@@ -38,9 +38,11 @@ test('the largest authored power remains a visible measured area after changing 
   await page.getByRole('slider', { name: 'Первое число', exact: true }).fill('6');
   await page.getByRole('slider', { name: 'Второе число', exact: true }).fill('4');
   await page.getByRole('slider', { name: 'Переход', exact: true }).fill('1');
-  await expect(page.locator('.math-volume')).toContainText('6^4 = 1296');
+  await expect(page.locator('[data-projection="3d"]')).toContainText('6^4 = 1296');
   // Read displayed pixels: a formula alone cannot satisfy this visible-area regression.
-  const { data, info } = await sharp(await page.locator('.math-volume canvas').screenshot())
+  const { data, info } = await sharp(
+    await page.locator('[data-projection="3d"] canvas').screenshot(),
+  )
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });

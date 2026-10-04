@@ -18,7 +18,7 @@
       "spots": ["entry", "door", "inside", "stairs", "exit"]
     }
   },
-  "objects": ["chair", "bench", "table", "book", "board", "tree", "lamp", "door", "stairs"],
+  "objects": ["chair", "bench", "table", "book", "board", "tree", "lamp", "door", "stairs", "prop"],
   "actions": {
     "walk": {
       "actor": "hero",
@@ -127,7 +127,7 @@
       "side": "front",
       "gap": 0.8
     },
-    "sides": ["left", "right", "front", "back", "on"],
+    "sides": ["left", "right", "front", "back", "on", "inside", "outside", "landing"],
     "arrange": "Compose props and named places around an existing set; sizes determine clearances."
   },
   "perspectives": ["stage", "overview"],
@@ -138,7 +138,7 @@
     },
     "leave": {
       "args": ["id", "actor", "door?", "close?"],
-      "actions": ["passDoor", "closeDoor"]
+      "actions": ["openDoor", "passDoor", "closeDoor"]
     },
     "read": {
       "args": [

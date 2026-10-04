@@ -1,3 +1,5 @@
+import { inkChapter } from '@visual-storytelling/core/story';
+import { areaDiagram } from '@visual-storytelling/core/recipes';
 import { Storybook } from '@visual-storytelling/core/book';
 import {
   chibi,
@@ -59,41 +61,15 @@ window.galleryReady = Storybook.mount(document.getElementById('story-workshop'),
         { id: 'idea', seconds: 2.5, text: 'Нужна одна понятная мера!', actors: { hero: 'idea' } },
       ],
     },
-    {
+    inkChapter({
       id: 'measure',
       title: 'Сколько места занимает идея?',
       text: 'Квадратный сантиметр занимает четыре маленькие клетки.',
       seconds: 9,
       controls: ['width', 'height'],
       valuesAt: () => ({ width: 3, height: 2 }),
-      describe: ({ values }) =>
-        `Прямоугольник ${values.width} × ${values.height} см: ${Number(values.width) * Number(values.height)} см².`,
-      draw(page, frame) {
-        const w = Number(frame.values.width),
-          h = Number(frame.values.height);
-        const count =
-          frame.mode === 'explore'
-            ? w * h
-            : Math.min(w * h, Math.floor(frame.progress * (w * h + 2)));
-        page.rect('area', { x: 2, y: 2, width: w, height: h }, page.ink('blue', 0.06));
-        for (let i = 0; i < count; i++)
-          page.rect('unit-' + i, { x: 2 + (i % w), y: 2 + Math.floor(i / w), width: 1, height: 1 });
-        page.line('measure', [2, h + 2.5], [w + 2, h + 2.5]);
-        page.text('width', `${w} см`, 2 + w / 2, h + 3.2, { align: 'center', size: 0.5 });
-        page.text('formula', `${w} × ${h} = ${w * h} см²`, 9.5, 3.5, {
-          size: 0.75,
-          color: page.ink('blue'),
-        });
-        page.rect(
-          'one-cm',
-          { x: 10, y: 5.5, width: 1, height: 1 },
-          page.ink('orange', 0.18),
-          page.ink('orange'),
-        );
-        page.text('four-cells', '1 см² = 4 клетки', 9.5, 7.5, { size: 0.55 });
-        page.text('try', 'Проверьте сами: измените стороны.', 2, 10.5, { size: 0.58 });
-      },
-    },
+      create: areaDiagram,
+    }),
     {
       id: 'courtyard',
       title: 'Проверить с другой высоты',

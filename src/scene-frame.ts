@@ -84,10 +84,14 @@ interface Rectangle {
   width: number;
   height: number;
 }
-interface InspectedObject extends Rectangle {
+export interface InspectedObject extends Rectangle {
   id: string;
   visible?: boolean;
-  data?: { framing?: 'background' | 'subject' };
+  data?: {
+    framing?: 'background' | 'subject';
+    /** Rendered screen pixels, after all viewport and camera transforms. */
+    text?: { pixels: number; minimum?: number };
+  };
 }
 export interface ScenePresentation {
   viewport: { width: number; height: number };
@@ -95,6 +99,7 @@ export interface ScenePresentation {
   outsideViewport: boolean;
   clipped: { id: string; bounds: Rectangle; clip: Rectangle }[];
   uninspectedCanvases: number;
+  unreadableText: { id: string; pixels: number; minimum: number }[];
 }
 
 /** Geometric evidence for review, computed on demand without another render loop. */
@@ -112,6 +117,7 @@ export function inspectPresentation(stage: HTMLElement): ScenePresentation {
     outsideViewport: false,
     clipped: [],
     uninspectedCanvases: 0,
+    unreadableText: [],
   };
   const outside = (a: Rectangle, b: Rectangle) =>
     a.x < b.x - 1 ||
@@ -127,6 +133,13 @@ export function inspectPresentation(stage: HTMLElement): ScenePresentation {
       ![object.x, object.y, object.width, object.height].every(Number.isFinite)
     )
       return;
+    const text = object.data?.text;
+    if (text && Number.isFinite(text.pixels) && text.pixels < (text.minimum ?? 14) - 0.1)
+      result.unreadableText.push({
+        id: object.id,
+        pixels: text.pixels,
+        minimum: text.minimum ?? 14,
+      });
     let clip = { ...frame };
     for (
       let ancestor: Element | null = canvas ? node : node.parentElement;
@@ -152,12 +165,25 @@ export function inspectPresentation(stage: HTMLElement): ScenePresentation {
       result.clipped.push({ id: object.id, bounds: rectangle(object), clip });
   };
   const nodes = stage.querySelectorAll<HTMLElement | SVGElement>(
-    '[data-review-id], [data-camera-world], svg text, canvas',
+    '[data-review-id], [data-camera-world], svg text, [data-lettering-size], canvas',
   );
   for (const [index, node] of [...nodes].entries()) {
     if (!node.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
     const id = node.dataset.reviewId || node.id || `${node.localName}:${index}`;
-    inspect(node, { id, ...rectangle(node.getBoundingClientRect()) });
+    let text: InspectedObject['data'];
+    if ((node.localName === 'text' || node.dataset.letteringSize) && 'getScreenCTM' in node) {
+      const matrix = (node as SVGGraphicsElement).getScreenCTM();
+      if (matrix)
+        text = {
+          text: {
+            pixels:
+              (Number(node.dataset.letteringSize) || parseFloat(getComputedStyle(node).fontSize)) *
+              Math.hypot(matrix.c, matrix.d),
+            minimum: Number(node.dataset.minimumFontSize) || 14,
+          },
+        };
+    }
+    inspect(node, { id, ...rectangle(node.getBoundingClientRect()), data: text });
     if (node instanceof HTMLCanvasElement) {
       const inspection = (
         node as HTMLCanvasElement & { __visualReview?: () => { objects?: InspectedObject[] } }

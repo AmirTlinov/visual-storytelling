@@ -11,3 +11,5 @@ export { matrix } from './matrix.js';
 export { vector } from './vector.js';
 export { node } from './node.js';
 export type { NodeOptions } from './node.js';
+
+export { areaDiagram } from './area.js';

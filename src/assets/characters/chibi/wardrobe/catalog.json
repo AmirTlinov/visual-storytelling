@@ -1,4 +1,22 @@
 {
-  "lab-coat": { "title": "Лабораторный халат", "parts": ["body", "arm"], "back": ["body"] },
-  "field-coat": { "title": "Полевой жилет", "parts": ["body", "arm"], "back": ["body"] }
+  "lab-coat": {
+    "title": "Лабораторный халат",
+    "parts": ["body", "arm"],
+    "back": ["body"]
+  },
+  "field-coat": {
+    "title": "Полевой жилет",
+    "parts": ["body", "arm"],
+    "back": ["body"]
+  },
+  "scholar": {
+    "title": "Учёный или рассказчик",
+    "parts": ["body", "arm"],
+    "back": ["body"]
+  },
+  "work-apron": {
+    "title": "Мастерская",
+    "parts": ["body", "arm"],
+    "back": ["body"]
+  }
 }

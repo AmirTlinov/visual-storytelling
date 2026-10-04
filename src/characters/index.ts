@@ -40,3 +40,5 @@ export type {
   CourtyardOptions,
   StagePerspective,
 } from './staging/sets.js';
+
+export { portable } from './staging/portable.js';

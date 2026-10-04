@@ -1,3 +1,51 @@
+/** The same geometric evidence applies to live frames and model checkpoints. */
+export function presentationInsights(samples) {
+  const observations = new Map();
+  for (const { time, presentation } of samples) {
+    if (!presentation) continue;
+    const items = [
+      ...(presentation.outsideViewport
+        ? [
+            {
+              kind: 'outside-viewport',
+              target: 'scene:frame',
+              detail: 'The scene frame extends beyond the visible viewport',
+            },
+          ]
+        : []),
+      ...(presentation.clipped ?? []).map((item) => ({
+        kind: 'content-clipped',
+        target: item.id,
+        detail: 'Artwork exceeds its frame or clipping container',
+        bounds: item.bounds,
+        clip: item.clip,
+      })),
+      ...(presentation.unreadableText ?? []).map(({ id, pixels, minimum }) => ({
+        kind: 'unreadable-text',
+        target: id,
+        pixels,
+        minimum,
+        detail: `Text is ${pixels.toFixed(1)} CSS px; its declared minimum is ${minimum.toFixed(1)} CSS px`,
+      })),
+      ...(presentation.uninspectedCanvases > 0
+        ? [
+            {
+              kind: 'uninspected-canvas',
+              target: 'scene:canvas',
+              count: presentation.uninspectedCanvases,
+              detail: `${presentation.uninspectedCanvases} visible canvas surface(s) expose no artwork bounds; clipping inspection is incomplete`,
+            },
+          ]
+        : []),
+    ];
+    for (const item of items) {
+      const key = `${item.kind}:${item.target}`;
+      if (!observations.has(key)) observations.set(key, { ...item, time });
+    }
+  }
+  return [...observations.values()];
+}
+
 export function summarizeRuntime(telemetry, viewport) {
   if (!telemetry) return undefined;
   const trajectories = [];
@@ -76,33 +124,7 @@ export function summarizeRuntime(telemetry, viewport) {
   const events = telemetry.events.filter((entry) => Number.isFinite(entry.duration));
   const clicks = telemetry.events.filter((entry) => entry.type === 'click' && entry.trusted);
   const insights = [
-    ...[
-      ...new Map(
-        (telemetry.scene ?? []).flatMap((sample) => {
-          const presentation = sample.presentation;
-          return [
-            ...(presentation?.outsideViewport
-              ? [
-                  {
-                    kind: 'outside-viewport',
-                    target: 'scene:frame',
-                    time: sample.time,
-                    detail: 'The scene frame extends beyond the visible viewport',
-                  },
-                ]
-              : []),
-            ...(presentation?.clipped ?? []).map((item) => ({
-              kind: 'content-clipped',
-              target: item.id,
-              time: sample.time,
-              detail: 'Artwork exceeds its frame or clipping container',
-              bounds: item.bounds,
-              clip: item.clip,
-            })),
-          ].map((item) => [`${item.kind}:${item.target}`, item]);
-        }),
-      ).values(),
-    ],
+    ...presentationInsights(telemetry.scene ?? []),
     ...(telemetry.error ? [{ kind: 'action-error', detail: telemetry.error }] : []),
     ...telemetry.messages
       .filter(

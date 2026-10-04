@@ -20,6 +20,7 @@ export function footprint(item: Furniture): Footprint | undefined {
     a = item.at;
   let w: number, front: number, back: number;
   switch (item.kind) {
+    case 'prop':
     case 'book':
       return undefined;
     case 'table':
@@ -71,9 +72,41 @@ export function stairEnd(item: Furniture): GroundPoint {
   };
 }
 export function supportPoint(item: Furniture): GroundPoint {
-  if (item.kind !== 'table') throw new Error('A book needs a table support');
+  const height =
+    item.support?.height ??
+    (item.kind === 'table'
+      ? objectShape.table.top
+      : item.kind === 'chair' || item.kind === 'bench'
+        ? objectShape.chair.seat
+        : undefined);
+  if (height === undefined) throw new Error(`Object ${item.kind} has no support surface`);
+  return { ...item.at, height: (item.at.height ?? 0) + height * (item.scale ?? 1) + 0.04 };
+}
+export function seatPlaces(item: Furniture): GroundPoint[] {
+  const local =
+    item.seats ??
+    (item.kind === 'bench'
+      ? [
+          { x: -0.72, z: 0 },
+          { x: 0.72, z: 0 },
+        ]
+      : item.kind === 'chair'
+        ? [{ x: 0, z: 0 }]
+        : []);
+  const scale = item.scale ?? 1;
+  return local.map((p) => ({
+    x: item.at.x + p.x * scale,
+    z: item.at.z + p.z * scale,
+    height: (item.at.height ?? 0) + (p.height ?? 0) * scale,
+  }));
+}
+export function triggerPoint(item: Furniture): GroundPoint {
+  if (!item.trigger) throw new Error('Object has no pressable control');
+  const p = item.trigger.at,
+    s = item.scale ?? 1;
   return {
-    ...item.at,
-    height: (item.at.height ?? 0) + objectShape.table.top * (item.scale ?? 1) + 0.04,
+    x: item.at.x + p.x * s,
+    z: item.at.z + p.z * s,
+    height: (item.at.height ?? 0) + (p.height ?? 0) * s,
   };
 }

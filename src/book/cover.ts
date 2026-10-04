@@ -1,10 +1,10 @@
-import { paperSize } from './paper.js';
+import { bookSize } from './geometry.js';
 export function coverTexture(topic: string) {
   const canvas = document.createElement('canvas');
   canvas.width = 1440;
   canvas.height = 960;
   const c = canvas.getContext('2d')!,
-    { width: w, height: h } = paperSize;
+    { width: w, height: h } = bookSize;
   c.scale(80, 80);
   const background = c.createLinearGradient(0, 0, w, h);
   background.addColorStop(0, '#243f43');

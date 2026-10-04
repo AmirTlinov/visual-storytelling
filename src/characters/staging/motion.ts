@@ -26,26 +26,62 @@ function moving(
     ? facing(alongPath(path, Math.max(0, t - 0.01)), alongPath(path, Math.min(1, t + 0.01)))
     : facing(from, to);
   actor.travel = { from, to, progress: t, length, path };
+  // Routing connects levels only through prepared stairs. Keep the root on that
+  // route while the gait finishes each floor section and uses real tread contacts.
+  const points = path ?? [from, to],
+    breaks = [0];
+  for (let i = 1; i < points.length; i++) {
+    if (Math.abs((points[i]!.height ?? 0) - (points[i - 1]!.height ?? 0)) < 0.05) continue;
+    if (breaks.at(-1) !== i - 1) breaks.push(i - 1);
+    breaks.push(i);
+  }
+  if (breaks.length === 1) return;
+  if (breaks.at(-1) !== points.length - 1) breaks.push(points.length - 1);
+  let left = t * length;
+  for (let i = 1; i < breaks.length; i++) {
+    const section = points.slice(breaks[i - 1], breaks[i]! + 1);
+    const span = section.slice(1).reduce((sum, p, j) => sum + distance(section[j]!, p), 0);
+    if (span < 0.001) continue;
+    if (left <= span || i === breaks.length - 1) {
+      const start = section[0]!,
+        end = section.at(-1)!;
+      actor.travel = {
+        from: start,
+        to: end,
+        progress: clamp(left / span),
+        length: span,
+        path: section.length > 2 ? section : undefined,
+        steps:
+          Math.abs((end.height ?? 0) - (start.height ?? 0)) >= 0.05
+            ? objectShape.stairs.steps
+            : undefined,
+      };
+      return;
+    }
+    left -= span;
+  }
 }
 export function blockAt(blocking: Blocking, time: number, reduced = false) {
   if (!Number.isFinite(time)) throw new Error('Stage time must be finite');
   const actors: Record<string, BlockingActor> = structuredClone(blocking.initial);
   const pairs: PairContact[] = [],
     objects: Record<string, number> = { ...blocking.initialObjects },
-    books = structuredClone(blocking.initialBooks);
+    items = structuredClone(blocking.initialItems);
   for (const plan of blocking.plans) {
     if (time < plan.start) continue;
     if (time >= plan.end || reduced) {
       Object.assign(actors, structuredClone(plan.to));
-      if (plan.transfer && !plan.transfer.taking) books[plan.transfer.id] = { ...plan.transfer.at };
+      if (plan.transfer && !plan.transfer.taking) items[plan.transfer.id] = { ...plan.transfer.at };
       if (plan.action.action === 'openDoor' || plan.action.action === 'closeDoor')
         objects[plan.action.door] = plan.objectTo!;
+      if (plan.effect) objects[plan.effect.id] = plan.effect.to;
       continue;
     }
     const span = plan.end - plan.start,
       t = clamp((time - plan.start) / span),
       a = plan.action;
     Object.assign(actors, structuredClone(plan.from));
+    if (plan.effect) objects[plan.effect.id] = t < 0.5 ? plan.effect.from : plan.effect.to;
     if ('actor' in a) {
       const p = actors[a.actor]!,
         before = plan.from[a.actor]!,
@@ -86,7 +122,7 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
           moving(
             p,
             before.at,
-            doorApproach(door, scale, plan.objectFrom!),
+            doorApproach(door, scale, plan.objectFrom!, plan.doorSide),
             t / 0.3,
             plan.approaches?.[a.actor],
           );
@@ -96,9 +132,16 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
               door,
               scale,
               plan.objectFrom! + ((plan.objectTo! - plan.objectFrom!) * (i + 1)) / 16,
+              plan.doorSide,
             ),
           );
-          moving(p, doorApproach(door, scale, plan.objectFrom!), after.at, (t - 0.35) / 0.45, arc);
+          moving(
+            p,
+            doorApproach(door, scale, plan.objectFrom!, plan.doorSide),
+            after.at,
+            (t - 0.35) / 0.45,
+            arc,
+          );
           p.facing = 'left';
         }
         p.seated = before.seated * (1 - ease(t / 0.15));
@@ -119,7 +162,6 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
         if (t < 0.24) moving(p, before.at, start, t / 0.24, plan.approaches?.[a.actor]);
         else {
           moving(p, start, after.at, (t - 0.24) / 0.76);
-          if (p.travel) p.travel.steps = objectShape.stairs.steps;
         }
         p.seated = before.seated * (1 - ease(t / 0.15));
       }
@@ -140,7 +182,7 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
           before.seated +
           (after.seated - before.seated) * ease((t - approach) / Math.max(0.01, settle));
         if (a.action === 'read') {
-          p.book = a.book;
+          p.holding = a.book;
           p.bookBlend = 1;
           p.bookOpen = (before.bookOpen ?? 0) + (1 - (before.bookOpen ?? 0)) * ease(t / 0.16);
           const reading = clamp((t - approach - settle) / Math.max(0.01, 1 - approach - settle));
@@ -152,9 +194,19 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
         }
       }
       if (a.action === 'point' || a.action === 'press') {
+        if (a.action === 'press') {
+          moving(p, before.at, after.at, t / 0.3, plan.via);
+          p.seated = before.seated * (1 - ease(t / 0.15));
+          if (t >= 0.3) {
+            p.travel = undefined;
+            p.facing = 'front';
+          }
+        }
         p.reach = {
-          at: blocking.point(a.target),
-          weight: ease(t / 0.2) * (1 - ease((t - 0.8) / 0.2)),
+          at: plan.target!,
+          gesture: a.action === 'press' ? 'press' : undefined,
+          side: plan.reachSide,
+          weight: ease((t - (a.action === 'press' ? 0.3 : 0)) / 0.15) * (1 - ease((t - 0.8) / 0.2)),
           press: a.action === 'press' ? Math.sin(Math.PI * clamp((t - 0.35) / 0.25)) : 0,
         };
       }
@@ -200,5 +252,5 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
       });
     }
   }
-  return { actors, pairs, objects, books };
+  return { actors, pairs, objects, items };
 }

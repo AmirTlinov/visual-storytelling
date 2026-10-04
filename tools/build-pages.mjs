@@ -9,7 +9,7 @@ import { sourceAliases } from './source-package.mjs';
 import { sceneAsset } from './assets.mjs';
 import { generateScene } from './generate-scene.mjs';
 import { buildOutput } from './build-output.mjs';
-import { assetURLs } from './asset-urls.mjs';
+import { assetURLs, moduleAssetURLs } from './asset-urls.mjs';
 import { setNarrationMode } from './narration.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -84,22 +84,41 @@ export async function buildPage(
   let html = suppliedHTML ?? (await readFile(source, 'utf8'));
   if (silent) html = setNarrationMode(html, true);
   await checkNarration(html, dirname(source));
-  const attribute = (attrs, name) =>
-    new RegExp(`\\b${name}\\s*=\\s*(["'])(.*?)\\1`, 'i').exec(attrs)?.[2];
-  const scriptPattern = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
-  const scripts = [...html.matchAll(scriptPattern)].filter(([, attrs]) =>
-    ['', 'module', 'text/javascript', 'application/javascript'].includes(
-      attribute(attrs, 'type') ?? '',
-    ),
-  );
+  const document = parse(html, { sourceCodeLocationInfo: true });
+  const scripts = [],
+    edits = [];
+  let head, body;
+  const visit = (node) => {
+    if (node.tagName === 'head') head = node;
+    if (node.tagName === 'body') body = node;
+    if (node.tagName === 'script') {
+      const attrs = Object.fromEntries(node.attrs.map(({ name, value }) => [name, value]));
+      if (
+        ['', 'module', 'text/javascript', 'application/javascript'].includes(
+          (attrs.type ?? '').trim().toLowerCase(),
+        )
+      )
+        scripts.push({ attrs, location: node.sourceCodeLocation });
+    }
+    // Template contents are inert until the scene inserts them into the document.
+    for (const child of node.childNodes ?? []) visit(child);
+  };
+  visit(document);
   const code = scripts
-    .map(([, attrs, body]) => {
-      const src = attribute(attrs, 'src');
-      return src ? `import ${JSON.stringify(resolve(dirname(source), src))};` : body;
+    .map(({ attrs, location }) => {
+      const src = attrs.src;
+      if (src && /^(?:[a-z][\w+.-]*:|\/\/)/i.test(src))
+        throw new Error(`Import a local script before building: ${src}`);
+      return src
+        ? `import ${JSON.stringify(resolve(dirname(source), decodeURIComponent(src.split(/[?#]/)[0])))};`
+        : html.slice(
+            location.startTag.endOffset,
+            location.endTag?.startOffset ?? location.endOffset,
+          );
     })
     .join('\n');
-  const bundled = new Set(scripts.map(([markup]) => markup));
-  html = html.replace(scriptPattern, (markup) => (bundled.has(markup) ? '' : markup));
+  for (const { location } of scripts)
+    edits.push({ start: location.startOffset, end: location.endOffset, value: '' });
   const name = basename(source).replace(/\.html$/, '.js');
   const out = resolve(target, name);
   await mkdir(target, { recursive: true });
@@ -109,7 +128,7 @@ export async function buildPage(
       : undefined;
     const result = await build({
       stdin: {
-        contents: code,
+        contents: await moduleAssetURLs(code, source),
         resolveDir: dirname(source),
         loader: 'js',
         sourcefile: 'page-entry.js',
@@ -117,7 +136,7 @@ export async function buildPage(
       outfile: out,
       bundle: true,
       format: cdn ? 'esm' : 'iife',
-      // Bundled assets share the page's base; IIFEs have no native import.meta.
+      // Asset URLs were resolved against each module above; IIFEs use the page for other metadata.
       ...(cdn ? {} : { define: { 'import.meta.url': 'document.baseURI' } }),
       target: 'es2022',
       ...(tsconfig ? { tsconfig } : { tsconfigRaw: { compilerOptions: {} } }),
@@ -158,16 +177,24 @@ export async function buildPage(
       legalComments: 'inline',
       metafile: true,
     });
-    if (Object.values(result.metafile.outputs).some((output) => output.cssBundle))
-      html = html.replace(
-        '</head>',
-        `<link rel="stylesheet" href="${name.replace(/\.js$/, '.css')}"></head>`,
-      );
-    html = html.replace(
-      '</body>',
-      `<script${cdn ? ' type="module"' : ''} src="${name}"></script></body>`,
-    );
+    if (Object.values(result.metafile.outputs).some((output) => output.cssBundle)) {
+      const at =
+        head?.sourceCodeLocation?.endTag?.startOffset ?? body?.sourceCodeLocation?.startOffset ?? 0;
+      edits.push({
+        start: at,
+        end: at,
+        value: `<link rel="stylesheet" href="${name.replace(/\.js$/, '.css')}">`,
+      });
+    }
+    const at = body?.sourceCodeLocation?.endTag?.startOffset ?? html.length;
+    edits.push({
+      start: at,
+      end: at,
+      value: `<script${cdn ? ' type="module"' : ''} src="${name}"></script>`,
+    });
   }
+  for (const edit of edits.sort((a, b) => b.start - a.start))
+    html = html.slice(0, edit.start) + edit.value + html.slice(edit.end);
   await writeFile(resolve(target, basename(source)), html);
 }
 

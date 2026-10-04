@@ -50,6 +50,7 @@ export interface CueReview {
     targets?: string[];
   })[];
   segments: readonly Chapter[];
+  captionAliases?: Script['captionAliases'];
 }
 export const progress = (time: number, range: Cue, lead = 0, tail = 0) => {
   const start = range.start - lead,
@@ -114,6 +115,7 @@ export function cueSheet<K extends string>(script: Script<K>) {
         duration: script.duration,
         observed: { time: observedTime, reads: [...reads.values()] },
         segments: script.segments ?? [],
+        captionAliases: script.captionAliases,
         cues: Object.entries<Cue>(script.cues)
           .map(([id, cue]): CueReview['cues'][number] => ({
             ...cue,

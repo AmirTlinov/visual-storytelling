@@ -4,6 +4,7 @@ import { annotation, type LabelFrame } from './label-annotation.js';
 import { surfaceLettering, type SurfaceOptions, type LabelAnchor } from './surface-lettering.js';
 import type { FrameAnchor } from './framing.js';
 import { placeLabels } from '../layout/labels.js';
+import { objectVisible } from './visibility.js';
 export type { Face } from './label-faces.js';
 
 export interface LabelOptions extends SurfaceOptions {
@@ -30,10 +31,7 @@ type ScreenLabel = {
 };
 type Surface = ReturnType<typeof surfaceLettering>;
 function visible(anchor: LabelAnchor) {
-  if (typeof anchor === 'function') return true;
-  for (let node: T.Object3D | null = anchor; node; node = node.parent)
-    if (!node.visible) return false;
-  return true;
+  return typeof anchor === 'function' || objectVisible(anchor);
 }
 function belongs(anchor: LabelAnchor, roots: readonly T.Object3D[]) {
   if (typeof anchor === 'function') return false;

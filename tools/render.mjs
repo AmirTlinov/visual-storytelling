@@ -14,20 +14,30 @@ export async function renderer({
   directory,
   entry = 'index.html',
   reduced = false,
+  signal,
 }) {
+  signal?.throwIfAborted();
   const catalog = directory ? undefined : await readCatalog();
   if (!directory && !catalog[scene]) throw new Error('Unknown example');
   const server = await serve(directory ?? resolve(root, 'site'));
-  let browser;
-  const close = async () => {
-    try {
-      await browser?.close();
-    } finally {
-      await server.close();
-    }
+  let launched, closing;
+  const close = () =>
+    (closing ??= (async () => {
+      signal?.removeEventListener('abort', abort);
+      try {
+        await (await launched)?.close();
+      } finally {
+        await server.close();
+      }
+    })());
+  const abort = () => {
+    void close().catch(() => {});
   };
   try {
-    browser = await chromium.launch();
+    launched = chromium.launch();
+    signal?.addEventListener('abort', abort, { once: true });
+    const browser = await launched;
+    signal?.throwIfAborted();
     const context = await browser.newContext({
       viewport: { width, height: 1200 },
       deviceScaleFactor: 1,
@@ -101,6 +111,7 @@ export async function renderer({
       if (errors.length) throw new Error(`Scene failed: ${errors.join('; ')}`);
     };
     await seek(0);
+    signal?.throwIfAborted();
     return {
       page,
       capture,
