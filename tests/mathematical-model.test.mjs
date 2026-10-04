@@ -346,3 +346,111 @@ test('automatic framing preserves visual scale when mathematical units change', 
   for (const unit of [1e-6, 1e6])
     bounds(unit).forEach((value, index) => assert.ok(Math.abs(value - reference[index]) < 1e-9));
 });
+
+test('curve preparation preserves every oscillation instead of aliasing a periodic curve to a line', () => {
+  const model = MathMorph.model({ t: 0 });
+  const wave = (t) => 0.15 * Math.sin(384 * Math.PI * t);
+  const plan = explain(model, [model.curve((t) => [t, wave(t)], { domain: [0, 1] })]);
+  const points = plan.sample(0.4).panels[0].paths[0].points;
+  assert.deepEqual(points[0], [0, 0]);
+  close(points.at(-1)[0], 1);
+  let crests = 0;
+  for (let i = 1; i < points.length - 1; i++) {
+    const [x, y] = points[i];
+    assert.ok(x > points[i - 1][0], 'curve parameters retain their order');
+    if (y > 0.14 && y > points[i - 1][1] && y > points[i + 1][1]) crests++;
+  }
+  assert.equal(crests, 192, 'all mathematical periods remain visible');
+  // Independently measure distance to the delivered polyline, including between
+  // its vertices. Amplitude alone would miss incorrectly joined oscillations.
+  let segment = 1,
+    worst = 0;
+  for (let i = 0; i <= 49152; i++) {
+    const x = i / 49152,
+      y = wave(x);
+    while (segment < points.length - 1 && points[segment][0] < x) segment++;
+    const a = points[segment - 1],
+      b = points[segment];
+    const dx = b[0] - a[0],
+      dy = b[1] - a[1],
+      vx = x - a[0],
+      vy = y - a[1];
+    const along = Math.max(0, Math.min(1, (vx * dx + vy * dy) / (dx * dx + dy * dy)));
+    worst = Math.max(worst, Math.hypot(vx - along * dx, vy - along * dy));
+  }
+  assert.ok(worst < 0.001, `geometric error relative to the unit domain: ${worst}`);
+});
+
+test('a moving curve uses one prepared topology with deterministic seek and no playback refinement', () => {
+  const model = MathMorph.model({ phase: 0 });
+  let calls = 0;
+  const plan = model.explain({
+    panels: [
+      {
+        title: '',
+        objects: [
+          model.curve(
+            (t, { phase }) => {
+              calls++;
+              return [t, 0.15 * Math.sin(384 * Math.PI * t + phase)];
+            },
+            { domain: [0, 1] },
+          ),
+        ],
+      },
+    ],
+    steps: [{ to: { phase: 1 }, explanation: '' }],
+  });
+  const sample = (progress) => {
+    const before = calls;
+    const points = plan.sample(progress).panels[0].paths[0].points;
+    assert.equal(calls - before, points.length, 'each displayed coordinate is evaluated once');
+    assert.ok(points.every((p) => p.every(Number.isFinite)));
+    assert.ok(Math.max(...points.map((p) => p[1])) > 0.149);
+    return points;
+  };
+  const before = sample(0.37),
+    parameters = before.map((p) => p[0]);
+  for (const progress of [1, 0, 0.7, 0.17])
+    assert.deepEqual(
+      sample(progress).map((p) => p[0]),
+      parameters,
+    );
+  assert.deepEqual(sample(0.37), before);
+});
+
+test('preparation catches curvature that appears between narrative states', () => {
+  const model = MathMorph.model({ phase: 0 });
+  const plan = model.explain({
+    panels: [
+      {
+        title: '',
+        objects: [
+          model.curve(
+            (t, { phase }) => [
+              t,
+              0.15 * Math.sin(16 * Math.PI * phase) * Math.sin(384 * Math.PI * t),
+            ],
+            { domain: [0, 1] },
+          ),
+        ],
+      },
+    ],
+    steps: [{ to: { phase: 1 }, formula: model.parameter('phase').map(String), explanation: '' }],
+  });
+  // Seek the state through the public plan instead of coupling the test to its easing.
+  let lo = 0,
+    hi = 1;
+  for (let i = 0; i < 50; i++) {
+    const progress = (lo + hi) / 2;
+    if (Number(plan.sample(progress).formula) < 1 / 32) lo = progress;
+    else hi = progress;
+  }
+  const frame = plan.sample((lo + hi) / 2);
+  close(Number(frame.formula), 1 / 32);
+  const points = frame.panels[0].paths[0].points;
+  assert.ok(
+    Math.max(...points.map((p) => p[1])) > 0.149,
+    'a genuine intermediate wave cannot collapse to a straight line',
+  );
+});

@@ -55,7 +55,7 @@ test(
             title:'Число и форма', presenter:MathMorph, initial:{amount:6}, script,
             parameters:[{key:'amount',label:'Количество',min:3,max:12,step:1}],
             chapters:[
-              {id:'first',title:'Сложение',operation:p=>{prepared.first++; return MathMorph.add(p.amount,2);}},
+              {id:'first',title:'Сложение',descriptions:{amount:{disabled:true}},operation:p=>{prepared.first++; return MathMorph.add(p.amount,2);}},
               {id:'second',title:'Деление',operation:p=>{prepared.second++; return MathMorph.divide(p.amount,3);}},
             ],
           });
@@ -89,6 +89,13 @@ test(
         snapshot: document.querySelector('#math').scene.snapshot(),
       }));
       assert.deepEqual(initial.prepared, { first: 1, second: 0 });
+      assert.equal(
+        await page
+          .locator('#math')
+          .locator('input[aria-label="Количество"]')
+          .isDisabled(),
+        true,
+      );
       const work = await page.evaluate(() => {
         const started = performance.now();
         for (let i = 0; i < 100; i++) lab.math.story.seek((i % 80) / 10);

@@ -7,6 +7,8 @@ import { placeLabels, type LabelBox, type LabelLimits } from '../../layout/label
 import { contentViewport } from '../../layout/content.js';
 import { materialDrawing } from './material.js';
 import { spatialPanelRenderer } from './spatial.js';
+import { constructionCamera } from './camera.js';
+import { preparedAnnotations } from './plan.js';
 import {
   mathMotionFrame,
   morphTiming,
@@ -32,6 +34,7 @@ type AnnotationLayout = {
   right: number;
   order: string[];
   inkSides: Map<string, 'top' | 'bottom'>;
+  camera?: ReturnType<typeof constructionCamera>;
 };
 
 /** Reserve measured annotation space for the entire operation, so changing digits never move the drawing. */
@@ -40,16 +43,24 @@ function annotationLayout(plan: ConstructionPlan) {
     positions = new Map<string, Map<string, { sum: number; count: number }>>(),
     widths = new Map<string, number>();
   const differences = new Map<string, number>();
-  for (let i = 0; i <= plan.stages * 24; i++) {
-    for (const panel of plan.sample(i / (plan.stages * 24)).panels) {
+  const prepared =
+    preparedAnnotations(plan) ??
+    Array.from(
+      { length: plan.stages * 24 + 1 },
+      (_, i) => plan.sample(i / (plan.stages * 24)).panels,
+    );
+  for (const panels of prepared) {
+    for (const panel of panels) {
       const entry = margins.get(panel.id) ?? {
         left: 44,
         right: 44,
         order: [],
         inkSides: new Map(),
+        camera: panel.space === '3d' ? constructionCamera(panel) : undefined,
       };
       const [lo, hi] = panel.bounds,
         span = hi[0] - lo[0];
+      if (panel.space === '3d') entry.camera ??= constructionCamera(panel);
       const anchors = positions.get(panel.id) ?? new Map();
       positions.set(panel.id, anchors);
       for (const label of panel.labels ?? []) {
@@ -490,6 +501,7 @@ export function mountConstruction(parent: HTMLElement, operation: ConstructionPl
     string,
     {
       space: '2d' | '3d';
+      up: string;
       renderer: ReturnType<typeof panelRenderer> | ReturnType<typeof spatialPanelRenderer>;
     }
   >();
@@ -509,7 +521,9 @@ export function mountConstruction(parent: HTMLElement, operation: ConstructionPl
         ...frame.panels.map((panel, i) => {
           let entry = panels.get(panel.id);
           const space = panel.space ?? '2d';
-          if (entry && entry.space !== space) {
+          const up = margins.get(panel.id)?.camera?.up;
+          const upKey = String(up ?? [0, 1, 0]);
+          if (entry && (entry.space !== space || entry.up !== upKey)) {
             entry.renderer.dispose();
             panels.delete(panel.id);
             entry = undefined;
@@ -517,9 +531,10 @@ export function mountConstruction(parent: HTMLElement, operation: ConstructionPl
           if (!entry) {
             entry = {
               space,
+              up: upKey,
               renderer:
                 space === '3d'
-                  ? spatialPanelRenderer(sheet, panel.id)
+                  ? spatialPanelRenderer(sheet, panel.id, up)
                   : panelRenderer(sheet, panel.id),
             };
             panels.set(panel.id, entry);

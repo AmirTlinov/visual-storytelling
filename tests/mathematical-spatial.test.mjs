@@ -18,7 +18,7 @@ window.ready = (async () => {
   function plan(kind) {
     const m = MathMorph.model({fade:0});
     let objects;
-    if (kind === 'material') objects = [m.material(([u,v]) => [u,v,.15*u*v], {
+    if (['material','z-up'].includes(kind)) objects = [m.material(([u,v]) => [u,v,.15*u*v], {
       domain:[[-1.2,-.9],[1.2,.9]], pigment:'blue', grid:[3,3],
     })];
     if (kind === 'point') objects = [m.point([.4,.3,.2], {pigment:'orange'})];
@@ -36,8 +36,23 @@ window.ready = (async () => {
       m.label('LOWER',[0,-.03,0]),
       m.label('UPPER',[0,.03,0],{visible:m.parameter('fade')}),
     ];
+    if (['surface-ink','ink-only','hidden-ink'].includes(kind)) {
+      const map = ([u,v]) => [u,v,.3*u*u + .2*v*v];
+      objects = [m.curve(t => kind === 'hidden-ink' ? [t,.13,-.3] : map([t,.13]), {
+        domain:[-1.2,1.2], pigment:'orange',
+      })];
+      if (kind !== 'ink-only') objects.unshift(m.material(map, {
+        domain:[[-1.4,-.9],[1.4,.9]],pigment:'blue',
+      }));
+    }
+    if (['growing-sheet','complete-sheet'].includes(kind)) objects = [m.material(
+      ([u,v], {fade}) => { const size = kind === 'growing-sheet' ? fade : 1; return [size*u,0,size*v]; },
+      {domain:[[-1.2,-.9],[1.2,.9]],pigment:'blue',text:'S',grid:[3,3]},
+    )];
     return m.explain({
-      panels:[{title:'Mathematics',space:'3d',bounds,objects}],
+      panels:[{title:'Mathematics',space:'3d',bounds,objects,
+        ...(kind === 'z-up' ? {camera:{direction:[3,-4,2],up:[0,0,1]}} : {}),
+        ...(['surface-ink','ink-only','hidden-ink'].includes(kind) ? {camera:{direction:[0,0,1]}} : {})}],
       steps:[{to:{fade:1},explanation:''}],
     });
   }
@@ -45,12 +60,12 @@ window.ready = (async () => {
   let fresh;
   window.lab = {
     reused,
-    async replace(kind, reference=kind) {
+    async replace(kind, reference=kind, progress=.4) {
       reused.setOperation(plan(kind));
-      reused.render(.4);
+      reused.render(progress);
       fresh?.dispose();
       fresh = await MathMorph.mount(document.querySelector('#fresh'), plan(reference));
-      fresh.render(.4);
+      fresh.render(progress);
     },
     labels(progress) {
       if (progress === undefined) reused.setOperation(plan('labels'));
@@ -140,6 +155,67 @@ test('public 3D models replace subjects, preserve concavity and keep fading anno
     assert.ok(
       intersection / union > 0.94,
       `concave fill agrees with its rectangular decomposition: ${intersection}/${union}`,
+    );
+
+    // A curve defined by the same surface map stays legible without an author-authored
+    // z offset. A genuinely hidden path must still be covered by the surface.
+    await page.evaluate(() => lab.replace('surface-ink', 'ink-only'));
+    await settle(page);
+    const orangePixels = (image) => {
+      let count = 0;
+      for (let i = 0; i < image.data.length; i += 4)
+        if (image.data[i] > image.data[i + 2] * 1.3 && image.data[i] > image.data[i + 1] * 1.08)
+          count++;
+      return count;
+    };
+    const attached = orangePixels(await image(page, 'reused'));
+    const floating = orangePixels(await image(page, 'fresh'));
+    assert.ok(floating > 100, 'the reference stroke is comfortably readable');
+    assert.ok(
+      attached > floating * 0.9,
+      `${attached}/${floating} ink pixels survive surface depth`,
+    );
+    await page.evaluate(() => lab.replace('hidden-ink'));
+    await settle(page);
+    assert.equal(
+      orangePixels(await image(page, 'reused')),
+      0,
+      'the depth tolerance does not reveal hidden ink',
+    );
+    await page.evaluate(() => lab.replace('growing-sheet', 'complete-sheet', 1));
+    await settle(page);
+    const grown = await image(page, 'reused'),
+      complete = await image(page, 'fresh');
+    let cameraDifference = 0;
+    for (let i = 0; i < grown.data.length; i += 4)
+      if ([0, 1, 2].some((c) => Math.abs(grown.data[i + c] - complete.data[i + c]) > 16))
+        cameraDifference++;
+    assert.ok(
+      cameraDifference < 10,
+      'a collapsed opening cannot choose the wrong face of the eventual sheet',
+    );
+
+    await page.evaluate(() => lab.replace('z-up'));
+    await settle(page);
+    const camera = () =>
+      page.locator('#reused canvas').evaluate((el) => el.__visualReview().camera.matrix);
+    const initialCamera = await camera();
+    await page.locator('#reused canvas').press('ArrowRight');
+    await settle(page);
+    const orbited = await camera();
+    assert.ok(
+      Math.abs(orbited[14] - initialCamera[14]) < 1e-7,
+      'horizontal orbit preserves elevation along the authored Z-up axis',
+    );
+    assert.ok(
+      Math.abs(orbited[12] - initialCamera[12]) > 0.01,
+      'keyboard input rotates the camera',
+    );
+    await page.locator('#reused canvas').press('Home');
+    await settle(page);
+    assert.ok(
+      (await camera()).every((v, i) => Math.abs(v - initialCamera[i]) < 1e-7),
+      'Home restores the same authored view',
     );
 
     await page.evaluate(() => lab.labels());

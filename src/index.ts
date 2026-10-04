@@ -33,6 +33,7 @@ export type {
   ConstructionFrame,
   DiagramPoint,
   DiagramBounds,
+  DiagramCamera,
   Matrix2,
   ScalarFunction,
 } from './morph/construction/types.js';

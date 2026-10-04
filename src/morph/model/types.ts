@@ -1,6 +1,7 @@
 import type { Pigment } from '../../ink/palette.js';
 import type { MathValue } from '../formula/types.js';
 import type { Input, MathState, Value } from './values.js';
+import type { DiagramCamera } from '../construction/types.js';
 
 /** Two or three finite coordinates. Array inference works without tuple casts in author code. */
 export type Coordinate = readonly number[];
@@ -37,6 +38,8 @@ export interface ModelPanel<S extends MathState> {
   /** Optional mathematical envelope for maps with narrow extrema. Never screen coordinates. */
   bounds?: readonly [Coordinate, Coordinate];
   space?: '2d' | '3d';
+  /** Optional authored view. Surfaces otherwise open from their material's front side. */
+  camera?: DiagramCamera;
 }
 export interface Explanation<S extends MathState> {
   panels: readonly ModelPanel<S>[];
@@ -61,6 +64,7 @@ export type ModelObject<S extends MathState> =
   | {
       kind: 'curve';
       id: string;
+      map: Value<S, (t: number) => Coordinate>;
       at: (t: Input<S, number>) => Value<S, Coordinate>;
       style: CurveStyle<S>;
     }

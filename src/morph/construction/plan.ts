@@ -1,9 +1,19 @@
 import { smooth } from '../numbers.js';
-import type { ConstructionModel, ConstructionPlan } from './types.js';
+import type { ConstructionModel, ConstructionPlan, DiagramPanel } from './types.js';
+
+const annotations = new WeakMap<ConstructionPlan, readonly (readonly DiagramPanel[])[]>();
+
+/** Compiler measurements stay internal and share the plan's lifetime. */
+export function preparedAnnotations(plan: ConstructionPlan) {
+  return annotations.get(plan);
+}
 
 /** One narrative cadence for authored relations and the supplied mathematical recipes. */
-export function stagedConstruction(model: ConstructionModel): ConstructionPlan {
-  return {
+export function stagedConstruction(
+  model: ConstructionModel,
+  prepared?: readonly (readonly DiagramPanel[])[],
+): ConstructionPlan {
+  const plan: ConstructionPlan = {
     encoding: 'construction',
     stages: model.stages,
     result: model.result,
@@ -21,4 +31,6 @@ export function stagedConstruction(model: ConstructionModel): ConstructionPlan {
       };
     },
   };
+  if (prepared) annotations.set(plan, prepared);
+  return plan;
 }

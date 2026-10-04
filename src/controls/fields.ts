@@ -20,7 +20,7 @@ export interface ControlParameter {
   format?: (value: ControlValue) => string;
   options?: { value: ControlValue; label: string; color?: string }[];
 }
-export type ControlDescription = Partial<Pick<ControlParameter, 'label' | 'format'>>;
+export type ControlDescription = Partial<Pick<ControlParameter, 'label' | 'format' | 'disabled'>>;
 
 /* One factory owns the fields, their pencil marks and keyboard behavior. */
 
@@ -124,6 +124,7 @@ function selectControl(
     }
   };
   const choose = (index: number) => {
+    if (p.disabled) return;
     close();
     emit((p.options ?? [])[index]!.value);
   };
@@ -237,6 +238,7 @@ function selectControl(
       );
       trigger.textContent = (p.options ?? [])[selected]?.label || 'Нет вариантов';
       trigger.disabled = Boolean(p.disabled) || !rows.length;
+      if (trigger.disabled) close();
       rows.forEach((row, i) => row.setAttribute('aria-selected', String(i === selected)));
       if (!isOpen()) mark(selected);
     },
@@ -358,17 +360,17 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
       element.append(row);
     } else element.append(inkField(input));
   } else throw new Error(`Unknown control type: ${type}`);
-  function update(editedInput?: HTMLInputElement) {
+  function update(editedInput?: HTMLInputElement, preserveDraft = false) {
     select?.setValue(value);
     if (textarea) {
-      textarea.value = String(value);
+      if (!preserveDraft) textarea.value = String(value);
       textarea.disabled = Boolean(p.disabled);
     }
     for (const input of inputs) {
       if (type === 'choice') input.checked = input.value === String(value);
       else if (type === 'toggle' || type === 'checkbox') input.checked = Boolean(value);
       // Preserve intermediate numeric input such as "-0" until the edit is complete.
-      else if (input !== editedInput) input.value = String(value);
+      else if (input !== editedInput && !preserveDraft) input.value = String(value);
       input.disabled = Boolean(p.disabled);
     }
     if (output) output.textContent = p.format ? p.format(value) : String(value);
@@ -392,6 +394,7 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
     describe(next: ControlDescription) {
       if (next.label !== undefined) p.label = next.label;
       if ('format' in next) p.format = next.format;
+      if ('disabled' in next) p.disabled = next.disabled;
       titleText.textContent = p.label;
       if (textarea) textarea.setAttribute('aria-label', p.label);
       for (const input of inputs) {
@@ -402,7 +405,7 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
         buttons[0]!.setAttribute('aria-label', `Уменьшить: ${p.label}`);
         buttons[1]!.setAttribute('aria-label', `Увеличить: ${p.label}`);
       }
-      if (output) output.textContent = p.format ? p.format(value) : String(value);
+      update(undefined, true);
     },
     dispose() {
       abort.abort();

@@ -5,6 +5,8 @@
 [самостоятельные надписи](../examples/ink-story/scene.js) и
 [математические конструкции](../examples/formula-objects/scene.js).
 Материал, письмо, камера и компоновка остаются у `MathMorph` / `InkMorph`.
+В `operation` можно возвращать собственный план `model.explain(...)`:
+[градиентный спуск](../examples/gradient-descent/scene.js) связывает 2D/3D, параметры и озвучку без ручного `stateAt` или `render`.
 
 ```js
 import { MorphStory, MathMorph } from '@visual-storytelling/core';
@@ -36,7 +38,7 @@ window.galleryReady = MorphStory.mount(document.querySelector('main'), {
   По умолчанию используются действия `id_*`, затем собственная метка `id`.
   Заголовок и начало главы берутся из одноимённого сегмента сценария.
 - `chapter.initial` задаёт параметры рассказа этой главы. `descriptions` меняет
-  подписи и формат полей; сами поля сохраняют фокус и незавершённый ввод.
+  подписи, формат и `disabled` полей; сами поля сохраняют фокус и незавершённый ввод.
 - `audio` подключает существующую озвучку; `captions` включает общие субтитры.
   При исследовании сохраняются длительность действия и reduced motion.
 - Результат содержит `shell`, `story`, `presentation`, `dispose`. Дополнительные

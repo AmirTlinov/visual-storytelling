@@ -426,5 +426,17 @@
     "source": "models.js",
     "guides": ["docs/morphing.md"],
     "recommended": true
+  },
+  "gradient-descent": {
+    "title": "Почему градиентный спуск идёт зигзагом?",
+    "page": "index.html",
+    "time": 84,
+    "checkpoints": [0, 18, 39, 53, 68, 84, 100, 113, 134],
+    "group": "explanations",
+    "summary": "Одна квадратичная модель связывает 3D-поверхность, линии уровня и предобусловленный шаг; независимая проверка авторства через публичные MathMorph и MorphStory.",
+    "tags": ["градиент", "производная", "оптимизация", "3d", "MathMorph", "MorphStory"],
+    "source": "scene.js",
+    "guides": ["docs/morphing.md", "docs/morph-stories.md"],
+    "recommended": true
   }
 }

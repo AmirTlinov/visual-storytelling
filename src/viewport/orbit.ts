@@ -3,6 +3,7 @@ import {
   MOUSE,
   Spherical,
   Vector3,
+  Quaternion,
   type PerspectiveCamera,
   type OrthographicCamera,
 } from './engine.js';
@@ -30,6 +31,10 @@ export function orbitControls(
     listen = { signal: abort.signal };
   const touchAction = element.style.touchAction;
   const controls = new OrbitControls(camera, element as HTMLElement);
+  const toUpright = new Quaternion().setFromUnitVectors(
+    camera.up.clone().normalize(),
+    new Vector3(0, 1, 0),
+  );
   controls.enableDamping = false;
   controls.enablePan = true;
   controls.mouseButtons.MIDDLE = MOUSE.PAN;
@@ -60,7 +65,7 @@ export function orbitControls(
       if (event.key === 'Home') return reset();
       started();
       const offset = camera.position.clone().sub(controls.target);
-      const sphere = new Spherical().setFromVector3(offset);
+      const sphere = new Spherical().setFromVector3(offset.clone().applyQuaternion(toUpright));
       const orthographic = 'isOrthographicCamera' in camera;
       if (['+', '=', '-', '_'].includes(event.key)) {
         const factor = ['+', '='].includes(event.key) ? 0.9 : 1.1;
@@ -89,7 +94,7 @@ export function orbitControls(
         if (event.key === 'ArrowDown') sphere.phi += 0.12;
         sphere.phi = Math.max(controls.minPolarAngle, Math.min(controls.maxPolarAngle, sphere.phi));
         sphere.makeSafe();
-        offset.setFromSpherical(sphere);
+        offset.setFromSpherical(sphere).applyQuaternion(toUpright.clone().invert());
       }
       offset.clampLength(controls.minDistance, controls.maxDistance);
       camera.position.copy(controls.target).add(offset);

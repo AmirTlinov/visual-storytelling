@@ -204,9 +204,33 @@ export async function describeAPI(root, ...queries) {
       );
     }
     if (!matches.length) {
-      const candidates = [...new Set(Object.values(modules).flatMap(Object.keys))].filter(
-        (symbol) => symbol.toLowerCase().includes(query.toLowerCase()),
-      );
+      const words = (name) =>
+        name
+          .replace(/([a-z])([A-Z])/g, '$1 $2')
+          .toLowerCase()
+          .split(/[^a-z0-9]+/);
+      const requestedWords = words(requestedName);
+      const candidates = [...new Set(Object.values(modules).flatMap(Object.keys))]
+        .map((symbol) => ({
+          symbol,
+          score: symbol.toLowerCase().includes(requestedName.toLowerCase())
+            ? 10
+            : words(symbol).reduce(
+                (score, word) =>
+                  score +
+                  (word === requestedWords.at(-1) ? 4 : requestedWords.includes(word) ? 1 : 0),
+                0,
+              ),
+        }))
+        .filter((candidate) => candidate.score > 0)
+        .sort(
+          (a, b) =>
+            b.score - a.score ||
+            a.symbol.length - b.symbol.length ||
+            a.symbol.localeCompare(b.symbol),
+        )
+        .slice(0, 8)
+        .map((candidate) => candidate.symbol);
       missing.push(
         `No public symbol "${query}". ${candidates.length ? `Matches: ${candidates.join(', ')}.` : 'Run visual-story api to list the public API.'}`,
       );

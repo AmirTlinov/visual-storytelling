@@ -5,6 +5,11 @@ export type DiagramPoint = readonly [number, number] | readonly [number, number,
 export type DiagramBounds = readonly [DiagramPoint, DiagramPoint];
 export type ScalarFunction = string | ((x: number) => number);
 export type Matrix2 = readonly [readonly [number, number], readonly [number, number]];
+export interface DiagramCamera {
+  /** Direction from the subject towards the viewer; mathematical coordinates, not pixels. */
+  direction: readonly [number, number, number];
+  up?: readonly [number, number, number];
+}
 
 /** Mathematical coordinates, never pixels. Material coordinates identify the same ink over time. */
 export interface MaterialPatch {
@@ -48,6 +53,7 @@ export interface DiagramPanel {
   labels?: readonly DiagramLabel[];
   marks?: readonly { id: string; at: DiagramPoint; pigment?: Pigment; opacity?: number }[];
   space?: '2d' | '3d';
+  camera?: DiagramCamera;
 }
 export interface ConstructionFrame {
   stage: number;

@@ -207,6 +207,7 @@ async function mount<P extends Record<string, unknown>, O, F>(
             shell.describeParameter(parameter.key, {
               label: parameter.label,
               format: parameter.format,
+              disabled: parameter.disabled,
               ...description,
             });
           }

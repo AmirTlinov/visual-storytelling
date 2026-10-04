@@ -17,12 +17,21 @@ function mount(
     onInteract = () => {},
     label = 'Объёмная сцена',
     labelInsets = () => ({}),
-  }: { onInteract?: () => void; label?: string; labelInsets?: () => LabelInsets } = {},
+    up = [0, 1, 0],
+  }: {
+    onInteract?: () => void;
+    label?: string;
+    labelInsets?: () => LabelInsets;
+    up?: readonly [number, number, number];
+  } = {},
 ) {
   let gltf: Promise<ReturnType<(typeof import('./gltf.js'))['gltfLoader']>> | undefined;
   const T = ThreeKit,
     scene = new T.Scene();
   const camera = new T.PerspectiveCamera(36, 1, 0.01, 1000);
+  if (up.length !== 3 || !up.every(Number.isFinite) || Math.hypot(...up) === 0)
+    throw new Error('A viewport needs a finite nonzero up vector');
+  camera.up.set(...up).normalize();
   const renderer = new T.WebGLRenderer({ alpha: true, antialias: true });
   renderer.setClearColor(0, 0);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));

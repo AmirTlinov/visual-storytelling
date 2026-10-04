@@ -1,5 +1,6 @@
 import { svg } from './dom.js';
 import { lettering } from './lettering.js';
+import { measureText } from './text-measure.js';
 
 /** Measured lines keep a readable pen size as the available width changes. */
 export function paragraph(
@@ -12,9 +13,16 @@ export function paragraph(
     leading = size * (options.lineHeight ?? 1.4);
   if (![size, leading].every((v) => Number.isFinite(v) && v > 0))
     throw new Error('Paragraph size and leading must be positive');
-  const measure = lettering(element, '', { size, anchor: 'start' });
-  measure.element.style.opacity = '0';
-  measure.element.setAttribute('aria-hidden', 'true');
+  // Wrapping candidates need font advances, not hundreds of invisible pen strokes.
+  // Only the final rows become lettering; their actual ink is checked below.
+  const measure = svg('text', {
+    'font-size': size,
+    'font-family': 'SketchPencil,SketchShantell,sans-serif',
+    'aria-hidden': 'true',
+    opacity: 0,
+  });
+  measure.style.whiteSpace = 'pre';
+  element.append(measure);
   const widths = new Map<string, number>();
   const rows: ReturnType<typeof lettering>[] = [];
   let previous = '',
@@ -22,8 +30,12 @@ export function paragraph(
   let bounds = { x: 0, y: 0, width: 0, height: 0 };
   const widthOf = (text: string) => {
     if (!widths.has(text)) {
-      measure.text(text);
-      widths.set(text, measure.bounds.width);
+      measure.textContent = text;
+      if (widths.size >= 512) widths.delete(widths.keys().next().value!);
+      widths.set(
+        text,
+        measureText(measure, (text) => text.getComputedTextLength()),
+      );
     }
     return widths.get(text)!;
   };
@@ -58,12 +70,24 @@ export function paragraph(
           }
           lines.push(line);
         }
-        while (rows.length > lines.length) rows.pop()!.dispose();
-        lines.forEach((line, i) => {
+        for (let i = 0; i < lines.length; i++) {
           rows[i] ??= lettering(element, '', { size });
-          rows[i]!.text(line);
+          rows[i]!.text(lines[i]!);
+          // Font advances and visible pencil overhang differ slightly. Repair the
+          // rare overfull row using the rendered ink, never by shrinking the text.
+          let remainder = '';
+          while (rows[i]!.bounds.width > width && [...lines[i]!].length > 1) {
+            const line = lines[i]!;
+            const space = line.lastIndexOf(' ');
+            const cut = space > 0 ? space : line.length - [...line].at(-1)!.length;
+            remainder = line.slice(cut) + remainder;
+            lines[i] = line.slice(0, cut).trimEnd();
+            rows[i]!.text(lines[i]!);
+          }
+          if (remainder) lines.splice(i + 1, 0, remainder.trim());
           rows[i]!.at(0, i * leading);
-        });
+        }
+        while (rows.length > lines.length) rows.pop()!.dispose();
         const boxes = rows.map((row) => row.bounds);
         const left = Math.min(...boxes.map((b) => b.x)),
           top = Math.min(...boxes.map((b) => b.y));
@@ -75,15 +99,14 @@ export function paragraph(
         };
         count = lines.length;
         previous = key;
-        measure.text('');
-        widths.clear();
+        measure.textContent = '';
       }
       element.setAttribute('transform', `translate(${x} ${y})`);
       return count * leading;
     },
     dispose() {
       rows.forEach((row) => row.dispose());
-      measure.dispose();
+      measure.remove();
       element.remove();
     },
   };

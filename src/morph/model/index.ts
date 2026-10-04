@@ -18,17 +18,20 @@ export function createModel<S extends MathState>(initial: S) {
   const curve = (
     fn: Input<S, (t: number, state: Readonly<S>) => Coordinate>,
     style: CurveStyle<S>,
-  ) => ({
-    kind: 'curve' as const,
-    id: id(),
-    style,
-    at: (t: Input<S, number>) => {
-      checkOwner(owner, t, fn);
-      return new Value<S, Coordinate>(owner, (context) =>
-        read(fn, context)(read(t, context), context.state),
-      );
-    },
-  });
+  ) => {
+    checkOwner(owner, fn);
+    const mapping = new Value<S, (t: number) => Coordinate>(owner, (context) => {
+      const map = read(fn, context);
+      return (t) => map(t, context.state);
+    });
+    return {
+      kind: 'curve' as const,
+      id: id(),
+      style,
+      map: mapping,
+      at: (t: Input<S, number>) => mapping.join(t, (map, parameter) => map(parameter)),
+    };
+  };
   return {
     value,
     parameter: <K extends keyof S>(key: K): Value<S, S[K]> => value((state) => state[key]),
@@ -107,22 +110,17 @@ export function createModel<S extends MathState>(initial: S) {
         throw new Error('A trace parameter must be scalar');
       const start = style.from ?? (initial[parameter] as number);
       if (!Number.isFinite(start)) throw new Error('A trace origin must be finite');
-      return {
-        kind: 'curve' as const,
-        id: id(),
-        style: { ...style, domain: [0, 1] as const },
-        at: (fraction: Input<S, number>) => {
-          checkOwner(owner, fraction);
-          return new Value<S, Coordinate>(owner, (context) => {
-            const end = context.state[parameter] as number;
-            const state = {
-              ...context.state,
-              [parameter]: start + (end - start) * read(fraction, context),
-            };
-            return at.read({ state: snapshot(state), cache: new Map() });
-          });
+      return curve(
+        (fraction, current) => {
+          const end = current[parameter] as number;
+          const state = {
+            ...current,
+            [parameter]: start + (end - start) * fraction,
+          };
+          return at.read({ state: snapshot(state), cache: new Map() });
         },
-      };
+        { ...style, domain: [0, 1] },
+      );
     },
     explain: (specification: Explanation<S>) => compileModel(initial, specification, owner),
   };

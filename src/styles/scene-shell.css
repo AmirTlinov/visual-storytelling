@@ -45,3 +45,9 @@
 .ve-scene .ve-frame [aria-selected=true]{outline:2px solid var(--ve-blue);outline-offset:3px}
 .ve-scene [data-story-pressed=true]:not([data-story-reduced=true]){scale:.97}
 @media(prefers-reduced-motion:reduce){.ve-scene [data-story-pressed=true]{scale:none}}
+
+/* Keep the active input beside a long, stacked mathematical explanation. */
+@media(max-width:480px){
+  .ve-scene .ve-parameters{position:sticky;top:0;z-index:20;background:var(--ve-surface);grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(240px,85%);gap:16px;overflow-x:auto;scroll-snap-type:x proximity;padding:8px 4px;scroll-padding:4px}
+  .ve-scene .ve-parameters>.ve-control{scroll-snap-align:start;min-width:0}
+}

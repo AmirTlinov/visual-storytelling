@@ -1,0 +1,17 @@
+.premise {
+  text-align: center;
+  margin: 0 auto 12px;
+  max-width: 48rem;
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+.ve-scene {
+  max-width: 1060px;
+  margin: auto;
+}
+@media (max-width: 500px) {
+  .premise {
+    font-size: 1rem;
+    padding: 0 8px;
+  }
+}

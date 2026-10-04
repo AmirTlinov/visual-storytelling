@@ -1,10 +1,11 @@
 import * as T from '../../viewport/engine.js';
 import { Viewport3D } from '../../viewport/three.js';
+import { inkLine, updateInkLine } from '../../viewport/ink-line.js';
 import { svg } from '../../ink/dom.js';
 import { paragraph } from '../../ink/paragraph.js';
 import type { Surface } from '../../ink/surface.js';
 import { materialDrawing, type UV } from './material.js';
-import type { DiagramPanel, DiagramPoint, MaterialPatch } from './types.js';
+import type { DiagramCamera, DiagramPanel, DiagramPoint, MaterialPatch } from './types.js';
 
 const vector = (p: DiagramPoint) => new T.Vector3(p[0], p[1], p[2] ?? 0);
 const positions = (geometry: T.BufferGeometry, points: readonly DiagramPoint[]) => {
@@ -19,7 +20,7 @@ const positions = (geometry: T.BufferGeometry, points: readonly DiagramPoint[]) 
 };
 
 /** Parametric surfaces keep fixed material topology. Depth and orbit belong to Viewport3D. */
-export function spatialPanelRenderer(sheet: Surface, id: string) {
+export function spatialPanelRenderer(sheet: Surface, id: string, up?: DiagramCamera['up']) {
   const root = svg('g', { 'data-subject': id }),
     foreign = svg('foreignObject', { x: 0, y: 42, width: 400, height: 280 });
   const host = document.createElement('div');
@@ -28,15 +29,12 @@ export function spatialPanelRenderer(sheet: Surface, id: string) {
   root.append(foreign);
   sheet.layer.append(root);
   const heading = paragraph(root, { size: 20 });
-  const view = Viewport3D.mount(host),
+  const view = Viewport3D.mount(host, { up }),
     scene = new T.Group();
   view.renderer.domElement.style.cssText =
     'display:block;width:100%;height:100%;touch-action:none;cursor:grab';
   view.setObject(scene, { fitView: false });
-  const objects = new Map<
-    string,
-    T.Mesh<T.BufferGeometry, T.MeshBasicMaterial> | T.Line<T.BufferGeometry, T.LineBasicMaterial>
-  >();
+  const objects = new Map<string, T.Mesh<T.BufferGeometry, T.MeshBasicMaterial> | T.Line2>();
   const kinds = new Map<string, 'line' | 'dashed' | 'mesh' | 'ink' | 'mark'>();
   const labels = new Map<
     string,
@@ -60,39 +58,26 @@ export function spatialPanelRenderer(sheet: Surface, id: string) {
     closed = false,
     dashed = false,
     unit = 1,
+    weight = 1.8,
   ) {
     used.add(id);
-    let entry = objects.get(id);
+    let entry = objects.get(id) as T.Line2 | undefined;
     const kind = dashed ? 'dashed' : 'line';
     if (entry && kinds.get(id) !== kind) {
       remove(id);
       entry = undefined;
     }
     if (!entry) {
-      entry = new T.Line(
-        new T.BufferGeometry(),
-        view.ink(
-          dashed
-            ? new T.LineDashedMaterial({
-                transparent: true,
-                dashSize: unit * 0.018,
-                gapSize: unit * 0.012,
-              })
-            : new T.LineBasicMaterial({ transparent: true }),
-          pigment,
-        ),
-      );
+      entry = inkLine(dashed);
+      view.ink(entry.material, pigment);
       scene.add(entry);
       objects.set(id, entry);
       kinds.set(id, kind);
     }
-    positions(entry.geometry, closed ? [...points, points[0]!] : points);
-    if (dashed && entry instanceof T.Line) {
-      const material = entry.material as T.LineDashedMaterial;
-      material.dashSize = unit * 0.018;
-      material.gapSize = unit * 0.012;
-      entry.computeLineDistances();
-    }
+    updateInkLine(entry, closed ? [...points, points[0]!] : points);
+    entry.material.linewidth = weight;
+    entry.material.dashSize = unit * 0.018;
+    entry.material.gapSize = unit * 0.012;
     view.ink(entry.material, pigment);
     entry.material.opacity = opacity;
     entry.visible = opacity > 0;
@@ -106,7 +91,7 @@ export function spatialPanelRenderer(sheet: Surface, id: string) {
     ink = false,
   ) {
     used.add(id);
-    let entry = objects.get(id);
+    let entry = objects.get(id) as T.Mesh<T.BufferGeometry, T.MeshBasicMaterial> | undefined;
     const kind = ink ? 'ink' : 'mesh';
     if (entry && kinds.get(id) !== kind) {
       remove(id);
@@ -181,13 +166,26 @@ export function spatialPanelRenderer(sheet: Surface, id: string) {
       drawings.set(patch.id, drawing);
     }
     const art = drawing(patch);
-    line(`${patch.id}-boundary`, art.boundary.map(patch.map), 'pencil', patch.opacity, true);
+    line(
+      `${patch.id}-boundary`,
+      art.boundary.map(patch.map),
+      'pencil',
+      patch.opacity,
+      true,
+      false,
+      1,
+      1,
+    );
     art.grid.forEach((points, i) =>
       line(
         `${patch.id}-grid-${i}`,
         points.map(patch.map),
         patch.pigment,
         (patch.opacity ?? 1) * 0.3,
+        false,
+        false,
+        1,
+        0.85,
       ),
     );
     art.strokes.forEach((stroke, index) => {
@@ -219,7 +217,7 @@ export function spatialPanelRenderer(sheet: Surface, id: string) {
       y: number,
       width: number,
       height: number,
-      layout: { order: string[] },
+      layout: { order: string[]; camera?: DiagramCamera },
     ) {
       used = new Set();
       root.setAttribute('transform', `translate(${x} ${y})`);
@@ -239,6 +237,7 @@ export function spatialPanelRenderer(sheet: Surface, id: string) {
           path.closed,
           path.dashed,
           vector(panel.bounds[1]).sub(vector(panel.bounds[0])).length(),
+          path.quiet ? 1 : 1.8,
         );
         if (path.fill && path.points.length >= 3) {
           const vertices = path.points;
@@ -299,7 +298,9 @@ export function spatialPanelRenderer(sheet: Surface, id: string) {
       }
       for (const mark of panel.marks ?? []) {
         used.add(mark.id);
-        let entry = objects.get(mark.id);
+        let entry = objects.get(mark.id) as
+          | T.Mesh<T.BufferGeometry, T.MeshBasicMaterial>
+          | undefined;
         if (entry && kinds.get(mark.id) !== 'mark') {
           remove(mark.id);
           entry = undefined;
@@ -376,8 +377,8 @@ export function spatialPanelRenderer(sheet: Surface, id: string) {
         if (!panel.patches?.some((p) => p.id === key)) drawings.delete(key);
       view.shot({
         target: new T.Box3(vector(panel.bounds[0]), vector(panel.bounds[1])),
-        direction: [2, 1.2, 5],
-        padding: 30,
+        direction: layout.camera?.direction,
+        padding: 18,
       });
       view.invalidate();
       return height;

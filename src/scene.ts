@@ -131,7 +131,7 @@ function mount(
     status = node('p', { class: 've-status', role: 'alert' });
   const composition = frame ? sceneFrame(stage, frame) : undefined;
   if (composition) cleanups.add(composition.dispose);
-  root.append(heading, modes, actions, composition?.element ?? stage, fields, controls, status);
+  root.append(heading, modes, actions, fields, composition?.element ?? stage, controls, status);
   if (captions && composition) stage.append(caption);
   else root.append(caption);
   composition?.resize();

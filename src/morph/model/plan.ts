@@ -16,6 +16,7 @@ import {
   type ModelContext,
 } from './values.js';
 import type { Coordinate, Explanation, ModelObject } from './types.js';
+import { curveParameters, interiorProbes } from './curve.js';
 
 function finite(value: MathValue): void {
   if (typeof value === 'number' && Number.isFinite(value)) return;
@@ -35,10 +36,12 @@ function coordinate(value: Coordinate): DiagramPoint {
   if (
     !Array.isArray(value) ||
     (value.length !== 2 && value.length !== 3) ||
-    !value.every(Number.isFinite)
+    !Number.isFinite(value[0]) ||
+    !Number.isFinite(value[1]) ||
+    (value.length === 3 && !Number.isFinite(value[2]))
   )
     throw new Error('A mathematical object must return two or three finite coordinates');
-  return [...value] as unknown as DiagramPoint;
+  return value.length === 2 ? [value[0]!, value[1]!] : [value[0]!, value[1]!, value[2]!];
 }
 const center = (points: readonly DiagramPoint[]): DiagramPoint =>
   Array.from(
@@ -76,7 +79,28 @@ export function compileModel<S extends MathState>(
         ]),
       ) as S,
     );
+  // Retain endpoints and midpoints, with nonuniform probes between them: a periodic
+  // deformation must not disappear merely because its zeros coincide with key states.
+  const moments = [
+    0,
+    ...Array.from({ length: 8 }, (_, i) =>
+      [...interiorProbes, 1].map((fraction) => (i + fraction) / 8),
+    ).flat(),
+  ];
+  const preparation = explanation.steps.flatMap((_, stage) =>
+    moments.map((progress) => contextFor<S>(stateAt(stage, progress))),
+  );
+  const annotations: DiagramPanel[][] = preparation.map(() => []);
   const panels = explanation.panels.map((panel, index) => {
+    if (panel.camera) {
+      const { direction, up = [0, 1, 0] } = panel.camera;
+      if (
+        [direction, up].some(
+          (v) => v.length !== 3 || !v.every(Number.isFinite) || Math.hypot(...v) === 0,
+        )
+      )
+        throw new Error('A mathematical camera needs finite nonzero direction and up vectors');
+    }
     if (!panel.objects.length) throw new Error('A mathematical panel needs visible objects');
     const ids = new Set<string>();
     for (const object of panel.objects) {
@@ -97,7 +121,6 @@ export function compileModel<S extends MathState>(
           b <= a
         )
           throw new Error('A curve needs an increasing finite domain');
-        checkOwner(owner, object.at(a));
       }
       if (object.kind === 'material') {
         const [a, b] = object.style.domain;
@@ -120,22 +143,25 @@ export function compileModel<S extends MathState>(
       }
     }
     // Stable material/curve coordinates survive every frame. Authors never choose vertices or tessellation.
-    const readers = panel.objects.map((object) => prepare(object));
+    const readers = panel.objects.map((object) =>
+      prepare(object, preparation, panel.aspect !== 'free'),
+    );
     let bounds: DiagramPoint[] = [],
       space = panel.space;
-    const build = (context: ModelContext<S>): DiagramPanel => {
+    const build = (context: ModelContext<S>, preparing = false): DiagramPanel => {
       const frame: DiagramPanel = {
         id: `panel-${index}`,
         title: panel.title,
         bounds: [bounds[0]!, bounds[1]!],
         aspect: panel.aspect,
         space,
+        camera: panel.camera,
         paths: [],
         patches: [],
         labels: [],
         marks: [],
       };
-      for (const reader of readers) reader(context, frame);
+      for (const reader of readers) reader(context, frame, preparing);
       return frame;
     };
     const locations = (frame: DiagramPanel) => [
@@ -154,9 +180,11 @@ export function compileModel<S extends MathState>(
       ),
     ];
     const envelope: DiagramPoint[] = [];
-    for (let stage = 0; stage < explanation.steps.length; stage++)
-      for (let t = 0; t <= 16; t++)
-        envelope.push(...locations(build(contextFor<S>(stateAt(stage, t / 16)))));
+    const prepared = preparation.map((context) => {
+      const frame = build(context, true);
+      envelope.push(...locations(frame));
+      return frame;
+    });
     const dimension = envelope.some((p) => p.length === 3) ? 3 : 2;
     space ??= dimension === 3 ? '3d' : '2d';
     if (space === '2d' && dimension === 3)
@@ -178,16 +206,29 @@ export function compileModel<S extends MathState>(
         throw new Error('A mathematical envelope needs increasing bounds');
       bounds = extent([...bounds, a!, b!]);
     }
+    const frameBounds = (lo: DiagramPoint, hi: DiagramPoint): DiagramPanel['bounds'] => {
+      const span = Math.max(...hi.map((v, i) => v - lo[i]!)) || 1;
+      const padding = hi.map((v, i) => Math.max(span * 0.04, v - lo[i]!) * 0.12);
+      return [
+        lo.map((v, i) => v - padding[i]!),
+        hi.map((v, i) => v + padding[i]!),
+      ] as unknown as DiagramPanel['bounds'];
+    };
+    const preparedBounds = frameBounds(bounds[0]!, bounds[1]!);
+    prepared.forEach((frame, i) =>
+      annotations[i]!.push({
+        ...frame,
+        space,
+        bounds: preparedBounds,
+        paths: undefined,
+        marks: undefined,
+      }),
+    );
     return (context: ModelContext<S>) => {
       const frame = build(context);
       const [lo, hi] = extent([...bounds, ...locations(frame)]);
-      const span = Math.max(...hi!.map((v, i) => v - lo![i]!)) || 1;
-      // Framing is independent of mathematical units: micrometres and metres read alike.
-      const padding = hi!.map((v, i) => Math.max(span * 0.04, v - lo![i]!) * 0.12);
-      frame.bounds = [
-        lo!.map((v, i) => v - padding[i]!),
-        hi!.map((v, i) => v + padding[i]!),
-      ] as unknown as DiagramPanel['bounds'];
+      // Framing is independent of mathematical units.
+      frame.bounds = frameBounds(lo!, hi!);
       if (panel.axes) {
         const paths = [...frame.paths!];
         for (let axis = 0; axis < (space === '3d' ? 3 : 2); axis++) {
@@ -214,31 +255,40 @@ export function compileModel<S extends MathState>(
       ? undefined
       : snapshot(read(explanation.result, contextFor<S>(states.at(-1)!)));
   if (result !== undefined) finite(result);
-  return stagedConstruction({
-    stages: explanation.steps.length,
-    result,
-    sample(stage, progress) {
-      const context = contextFor<S>(stateAt(stage, progress)),
-        step = explanation.steps[stage]!;
-      return {
-        panels: panels.map((panel) => panel(context)),
-        formula: step.formula === undefined ? '' : read(step.formula, context),
-        explanation: step.explanation,
-      };
+  return stagedConstruction(
+    {
+      stages: explanation.steps.length,
+      result,
+      sample(stage, progress) {
+        const context = contextFor<S>(stateAt(stage, progress)),
+          step = explanation.steps[stage]!;
+        return {
+          panels: panels.map((panel) => panel(context)),
+          formula: step.formula === undefined ? '' : read(step.formula, context),
+          explanation: step.explanation,
+        };
+      },
     },
-  });
+    annotations,
+  );
 }
 
-function prepare<S extends MathState>(object: ModelObject<S>) {
-  const curve =
-    object.kind === 'curve'
-      ? Array.from({ length: 193 }, (_, i) =>
-          object.at(
-            object.style.domain[0] + ((object.style.domain[1] - object.style.domain[0]) * i) / 192,
-          ),
-        )
-      : undefined;
-  return (context: ModelContext<S>, panel: DiagramPanel) => {
+function prepare<S extends MathState>(
+  object: ModelObject<S>,
+  contexts: readonly ModelContext<S>[],
+  equalAspect: boolean,
+) {
+  let curve: ReturnType<typeof curveParameters> | undefined;
+  const preparedIndices = new Map(contexts.map((context, i) => [context, i]));
+  if (object.kind === 'curve') {
+    const maps = contexts.map((context) => object.map.read(context));
+    curve = curveParameters(
+      object.style.domain,
+      (t) => maps.map((map) => coordinate(map(t))),
+      equalAspect,
+    );
+  }
+  return (context: ModelContext<S>, panel: DiagramPanel, preparing = false) => {
     const { id, style } = object,
       pigment = style.pigment ?? 'blue';
     const opacity = style.visible === undefined ? 1 : read(style.visible, context);
@@ -294,10 +344,17 @@ function prepare<S extends MathState>(object: ModelObject<S>) {
         dashed: style.dashed,
       });
     } else if (object.kind === 'polygon' || object.kind === 'curve') {
-      const points = (object.kind === 'polygon' ? object.vertices : curve!).map((p) =>
-        coordinate(p.read(context)),
-      );
-      anchor = points.at(-1)!;
+      const map = object.kind === 'curve' ? object.map.read(context) : undefined;
+      const points =
+        object.kind === 'polygon'
+          ? object.vertices.map((p) => coordinate(p.read(context)))
+          : preparing
+            ? curve!.bounds[preparedIndices.get(context)!]!.map(coordinate)
+            : curve!.parameters.map((t) => coordinate(map!(t)));
+      anchor =
+        object.kind === 'curve' && preparing
+          ? coordinate(curve!.ends[preparedIndices.get(context)!]!)
+          : points.at(-1)!;
       paths.push({
         id,
         points,

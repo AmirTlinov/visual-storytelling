@@ -23,6 +23,8 @@ test('one morph lookup explains its inputs without unrelated implementation help
   const unknown = await describeAPI(root, 'Viewport');
   assert.equal(unknown.missing.length, 1);
   assert.match(unknown.text, /Viewport3D/);
+  const panel = await describeAPI(root, 'MathPanel');
+  assert.match(panel.text, /ModelPanel/);
   const method = await describeAPI(root, 'SceneMount.attachStory');
   assert.match(method.text, /import type \{ SceneMount \}/);
   assert.doesNotMatch(

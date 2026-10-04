@@ -55,6 +55,33 @@ test('public presentation preserves material paint, narrow layout, focused input
       multiline.measured >= multiline.drawn && multiline.measured - multiline.drawn < 2,
       `wrapped bounds include each line offset once: ${JSON.stringify(multiline)}`,
     );
+    const wrapped = await page.evaluate(() =>
+      [13, 47, 80].map((width) => {
+        lab.lines.render('ДЛИННОЕСЛОВО\n\nБ', width, 0, 150);
+        return {
+          width,
+          rows: [...lab.lines.element.querySelectorAll('.vs-lettering')].map((row) => ({
+            text: row.getAttribute('aria-label'),
+            width: row.getBBox().width,
+          })),
+        };
+      }),
+    );
+    for (const { width, rows } of wrapped) {
+      assert.deepEqual(
+        rows.slice(-2).map((row) => row.text),
+        ['', 'Б'],
+      );
+      assert.equal(
+        rows
+          .slice(0, -2)
+          .map((row) => row.text)
+          .join(''),
+        'ДЛИННОЕСЛОВО',
+      );
+      for (const row of rows)
+        if (row.text.length > 1) assert.ok(row.width <= width + 0.01, 'visible ink fits its row');
+    }
     const originalInput = page.getByRole('spinbutton', { name: 'Значение', exact: true });
     await originalInput.fill('');
     await originalInput.pressSequentially('-0');
