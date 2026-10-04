@@ -1,3 +1,4 @@
+import { sceneAccess } from './scene-access.js';
 import { story, type Story, type StoryOptions } from './story/story.js';
 import { chapterHeading } from './story/chapters.js';
 import { captionTrack, type CaptionOptions } from './story/captions.js';
@@ -325,6 +326,19 @@ function mount(
       setReduced: controller.setReduced,
       dispose,
     };
+    Object.assign(
+      handle,
+      sceneAccess(handle, {
+        playing: () => controller.player.state.playing,
+        mode: () => mode,
+        values: () => ({ ...values }),
+        parameters,
+        visible: (key) => !inputs.get(key)!.element.hidden,
+        setMode,
+        setValues: (next) => controller.explore(next as P),
+        assertLive,
+      }),
+    );
     Object.assign(root, { scene: handle });
     return handle;
     function preparePlayback() {

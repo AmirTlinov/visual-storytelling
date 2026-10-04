@@ -9,6 +9,7 @@ import torch
 
 from resources import ALIGN_MODEL, ALIGN_REVISION, CACHE, digest
 from script import words
+from quality import AlignmentQualityError, validate_alignment
 
 
 def ctc_path(logp, tokens, blank):
@@ -33,7 +34,7 @@ def ctc_path(logp, tokens, blank):
         previous = candidates[choice, np.arange(count)] + logp[t, states]
     state = count - 1 if previous[-1] > previous[-2] else count - 2
     if not np.isfinite(previous[state]):
-        raise RuntimeError("Speech is too short to align the supplied text")
+        raise AlignmentQualityError("Speech is too short to align the supplied text")
     path = np.empty(len(logp), dtype=np.int32)
     for t in range(len(logp) - 1, -1, -1):
         path[t] = state
@@ -53,7 +54,7 @@ class Aligner:
         key = digest({"v": 1, "audio": audio_key, "text": text, "model": ALIGN_REVISION})
         destination = CACHE / "alignment" / f"{key}.json"
         if destination.exists():
-            return json.loads(destination.read_text()), {"cached": True, "seconds": 0.0}
+            return validate_alignment(json.loads(destination.read_text())), {"cached": True, "seconds": 0.0}
         if self.model is None:
             os.environ["HF_HUB_OFFLINE"] = "1"
             os.environ["TRANSFORMERS_OFFLINE"] = "1"
@@ -85,14 +86,12 @@ class Aligner:
             token_indices = [j for j, owner in enumerate(owners) if owner == index]
             frames = np.flatnonzero(np.isin(path, [2 * j + 1 for j in token_indices]))
             if not len(frames):
-                raise RuntimeError(f"No acoustic alignment for {word!r}")
+                raise AlignmentQualityError(f"No acoustic alignment for {word!r}")
             probs = [np.exp(logp[t, tokens[(path[t] - 1) // 2]]) for t in frames]
             result.append({"text": word, "start": round(float(frames[0] * frame_seconds), 5),
                            "end": round(float((frames[-1] + 1) * frame_seconds), 5),
                            "score": round(float(np.mean(probs)), 3)})
-        quality = float(np.mean([w["score"] for w in result]))
-        if quality < .2:
-            raise RuntimeError(f"Alignment confidence is too low ({quality:.2f}); check the spoken text")
+        validate_alignment(result)
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(json.dumps(result, ensure_ascii=False) + "\n")
         return result, {"cached": False, "seconds": round(time.perf_counter() - started, 4)}

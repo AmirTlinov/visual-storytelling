@@ -1,10 +1,9 @@
 import { Storybook } from '@visual-storytelling/core/book';
 import { inkChapter } from '@visual-storytelling/core/story';
 import { areaDiagram } from '@visual-storytelling/core/recipes';
-import { surface, lettering } from '@visual-storytelling/core';
-import { snapshotSVG } from '@visual-storytelling/core/export';
+import { lettering } from '@visual-storytelling/core';
 import { chibi, readingRoom, arrange, portable } from '@visual-storytelling/core/characters';
-import { Physics2D, PhysicsReplay } from '@visual-storytelling/core/physics/2d';
+import { physicsChapter } from '@visual-storytelling/core/physics/2d';
 import '@visual-storytelling/core/style.css';
 
 const alternate = new URL(location.href).searchParams.get('variant') === 'mira';
@@ -38,22 +37,12 @@ const cast = {
 };
 
 // The simulation uses the same chapter clock, controls, capture and replay as the cast.
-const experiment = {
+const experiment = physicsChapter({
   id: 'experiment',
   title: 'Три материала',
   seconds: 5,
   text: 'Одинаковая высота. Разные материалы. Посмотрите, как они отскакивают.',
-  async mount(parent) {
-    const view = surface(parent, {
-      id: 'materials-chapter',
-      width: 960,
-      height: 640,
-      title: 'Материалы',
-      description: this.text,
-      grid: { step: 40 },
-    });
-    const world = await Physics2D.create(),
-      ink = Physics2D.ink(world, view, { scale: 100 });
+  setup(world, ink, view) {
     ink.body('floor', { shape: { box: [8.5, 0.16] }, at: [4.8, 5.2], fixed: true, pigment: 'ink' });
     const bodies = ['solid', 'rubber', 'jelly'].map((material, i) =>
       ink.body(material, {
@@ -67,21 +56,11 @@ const experiment = {
     ['Твёрдый', 'Упругий', 'Мягкий'].forEach((label, i) =>
       lettering(view.layer, label, { x: 230 + i * 250, y: 65, size: 42 }),
     );
-    const replay = PhysicsReplay.create(world, { duration: this.seconds });
     return {
-      render: (frame) => replay.seek(frame.time),
-      capture: () => snapshotSVG(view.element),
-      snapshot: () => ({
-        time: replay.currentTime,
-        bodies: bodies.map((b) => ({ id: b.id, position: b.position })),
-      }),
-      dispose() {
-        world.dispose();
-        view.dispose();
-      },
+      snapshot: () => ({ bodies: bodies.map((b) => ({ id: b.id, position: b.position })) }),
     };
   },
-};
+});
 window.galleryReady = Storybook.mount(document.getElementById('interaction-studio'), {
   topic: 'Письмо из мастерской',
   pack: chibi,

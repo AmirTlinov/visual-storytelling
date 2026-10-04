@@ -34,3 +34,6 @@ export { composeChapters } from './composition-plan.js';
 
 export { inkChapter } from './ink-chapter.js';
 export type { InkDrawing, InkViewport } from './ink-chapter.js';
+
+export { authoredChapter, documentNarration, documentScript } from './document.js';
+export type { StoryDocument, AuthoredBeat } from './document.js';

@@ -15,16 +15,28 @@ const run = (file, args, cwd = consumer) =>
   execFileSync(file, args, { cwd, stdio: 'pipe', maxBuffer: 16 * 1024 * 1024 });
 try {
   run(process.execPath, [resolve('tools/scene.mjs'), 'new', consumer, '--example', 'area-story']);
-  run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund']);
+  run('npm', ['install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund']);
   const runtime = join(consumer, 'node_modules/@visual-storytelling/core');
   const skill = resolve('skill');
   const cli = join(runtime, 'tools/scene.mjs');
-  for (const name of ['examples', 'skill', 'src'])
-    await assert.rejects(access(join(runtime, name)), { code: 'ENOENT' });
+  const installed = JSON.parse(run(process.execPath, [cli, 'info', '--json']).toString());
+  assert.equal(installed.cli.status, 'packaged');
+  for (const name of ['examples/catalog.json', 'skill/SKILL.md', 'docs/book.md'])
+    await access(join(runtime, name));
+  await assert.rejects(access(join(runtime, 'src')), { code: 'ENOENT' });
   const packed = JSON.parse(
     run('npm', ['pack', '--dry-run', '--ignore-scripts', '--json'], runtime),
   )[0];
-  assert(packed.size < 5_000_000, `Runtime archive grew to ${packed.size} bytes`);
+  assert(
+    !packed.files.some(({ path }) => path.startsWith('examples/') && /\.(wav|mp3|mp4)$/.test(path)),
+    'Generated gallery media should not travel in the authoring package',
+  );
+  assert(
+    !packed.files.some(({ path }) =>
+      /^examples\/.*\/(dist|site|artifacts|review|node_modules)\//.test(path),
+    ),
+    'Generated example builds should not travel in the authoring package',
+  );
   const signature = run(process.execPath, [cli, 'api', 'Viewport3D']).toString();
   assert.match(signature, /@visual-storytelling\/core\/three/);
   assert.match(signature, /ShotTransition3D/);
@@ -73,10 +85,14 @@ try {
     import * as recipes from '@visual-storytelling/core/recipes';
     import * as output from '@visual-storytelling/core/export';
     import {Viewport3D} from '@visual-storytelling/core/three';
+    import {IllustratedStory} from '@visual-storytelling/core/book';
+    import {physicsChapter} from '@visual-storytelling/core/physics/2d';
     window.publicAPI = [
       core.SketchMotion === ink.SketchMotion, typeof core.story === 'function' && core.story === story.story,
       core.PlayerControls === controls.PlayerControls, core.vector === recipes.vector,
-      core.exportSVG === output.exportSVG, typeof Viewport3D.mount === 'function'
+      core.exportSVG === output.exportSVG, typeof Viewport3D.mount === 'function',
+      typeof IllustratedStory.mount === 'function', typeof physicsChapter === 'function',
+      typeof story.documentNarration === 'function', typeof recipes.circuitDiagram === 'function'
     ];
   </script></body></html>`,
   );
@@ -97,7 +113,7 @@ try {
     errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(server.url + '/api.html');
-  assert.deepEqual(await page.evaluate(() => window.publicAPI), Array(6).fill(true));
+  assert.deepEqual(await page.evaluate(() => window.publicAPI), Array(10).fill(true));
   assert.equal(await page.locator('link[rel="stylesheet"]').count(), 0);
   await page.goto(server.url);
   await page.locator('[data-square]').first().waitFor({ state: 'attached' });
@@ -166,6 +182,36 @@ try {
   await page.locator('[data-seek]').fill('15');
   assert.equal(await page.locator('canvas').evaluate((c) => c.width > 0 && c.height > 0), true);
   assert.deepEqual(errors, []);
+  // The installed kit can author a new character story without this checkout or dev dependencies.
+  await page.context().setOffline(false);
+  const illustrated = join(consumer, 'illustrated');
+  run(process.execPath, [cli, 'new', illustrated, '--example', 'tesla-circuit', '--silent']);
+  run('npm', ['install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], illustrated);
+  run('npm', ['run', 'build'], illustrated);
+  const illustratedServer = await serve(join(illustrated, 'dist'));
+  try {
+    await page.goto(illustratedServer.url);
+    await page.evaluate(() => window.galleryReady);
+    const state = await page.evaluate(async () => {
+      const scene = document.querySelector('#story').scene;
+      await scene.control([{ type: 'cue', id: 'workshop.explain', progress: 0.8 }]);
+      return scene.inspect();
+    });
+    assert.equal(state.snapshot.content.surfaces.board.visible, true);
+    assert.deepEqual(state.presentation.clipped, []);
+    assert.deepEqual(state.presentation.unreadableText, []);
+    await page
+      .getByRole('button', { name: 'Замкнуть или разомкнуть цепь' })
+      .filter({ visible: true })
+      .click();
+    assert.equal(
+      await page.evaluate(() => document.querySelector('#story').scene.inspect().mode),
+      'explore',
+    );
+    assert.deepEqual(errors, []);
+  } finally {
+    await illustratedServer.close();
+  }
   // A generated scene uses its installed library on every build, without source SVG copies.
   const generated = join(consumer, 'generated');
   await mkdir(generated);
@@ -197,12 +243,13 @@ try {
     consumer: 'created, installed, built and rendered',
     runtimeBytes: packed.size,
     generation:
-      'build regenerates SVG with the installed styles; no source SVG or template catalog in the runtime',
+      'build regenerates SVG with the installed styles; the package includes its authoring catalog',
     review:
       'installed CLI stores a session and plays its frames with narration offline; episode end and close pause audio',
     offline: 'narration, compact HTML, LC native SVG seek and 3D work without network',
     inlineBytes: Buffer.byteLength(compact),
     silent: 'same clock/player, sound control hidden',
+    authoring: 'installed production-only kit creates, builds and controls a new illustrated story',
     errors,
   };
   await writeFile('artifacts/delivery.json', JSON.stringify(report, null, 2));

@@ -57,6 +57,13 @@ export const progress = (time: number, range: Cue, lead = 0, tail = 0) => {
     end = range.end + tail;
   return end <= start ? Number(time >= start) : clamp((time - start) / (end - start));
 };
+/** Latest started semantic operation, including its hold until the next cue. */
+export function activeCue(script: Script | undefined, time: number) {
+  const entry = Object.entries(script?.cues ?? {})
+    .filter(([, c]) => c.start <= time)
+    .sort((a, b) => b[1].start - a[1].start)[0];
+  return entry ? { id: entry[0], progress: progress(time, entry[1]) } : undefined;
+}
 const ease = gsap.parseEase('power1.inOut');
 export const interpolate = (from: number, to: number, p: number) =>
   gsap.utils.interpolate(from, to, ease(clamp(p)));

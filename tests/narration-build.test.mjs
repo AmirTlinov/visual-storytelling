@@ -48,6 +48,14 @@ test('scene builds reject stale generated narration while silent and independent
     );
     await put('index.html', html.replace('src="audio.wav"', 'data-src="audio/audio.wav"'));
     await buildScene(source, output); // The unused template at root cannot reject current nested audio.
+    await rm(join(source, 'audio/timeline.json'));
+    await put(
+      'timeline.json',
+      JSON.stringify({ audio: 'audio/audio.wav', source_sha256: stdout.trim() }),
+    );
+    await buildScene(source, output); // A root receipt may describe a nested WAV.
+    await put('timeline.json', receipt);
+    await assert.rejects(buildScene(source, output), /no matching timeline/);
     await put(
       'audio/timeline.json',
       JSON.stringify({ audio: 'audio.wav', source_sha256: 'stale-nested' }),
@@ -76,9 +84,9 @@ test('scene builds reject stale generated narration while silent and independent
     await buildScene(source, output); // External audio with no authored narration.
     await put('narration.json', narration);
     await put('timeline.json', '{"duration":1,"cues":{}}');
-    await buildScene(source, output); // Authored timing without generated speech.
+    await assert.rejects(buildScene(source, output), /no matching timeline/);
     await rm(join(source, 'timeline.json'));
-    await buildScene(source, output); // No generated timeline.
+    await assert.rejects(buildScene(source, output), /no matching timeline/);
 
     await put('timeline.json', receipt);
     await assert.rejects(

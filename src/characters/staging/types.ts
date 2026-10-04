@@ -18,6 +18,11 @@ export interface Projected extends Point {
   depth: number;
 }
 export interface Furniture {
+  /** Drawable plane in local metres, reading order TL, TR, BR, BL. Boards supply an inset. */
+  surface?: {
+    corners?: readonly [GroundPoint, GroundPoint, GroundPoint, GroundPoint];
+    theme?: 'light' | 'dark';
+  };
   kind:
     | 'chair'
     | 'bench'
@@ -73,7 +78,7 @@ export interface RelativePlace {
 }
 export type Destination = string | GroundPoint | RelativePlace;
 export type StageAction =
-  | { action: 'walk' | 'run' | 'flee'; actor: string; to: Destination }
+  | { action: 'walk' | 'run' | 'flee'; actor: string; to: Destination; speed?: number }
   | { action: 'sit'; actor: string; seat: string; slot?: number }
   | { action: 'read'; actor: string; seat?: string; book: string; pages?: number }
   | { action: 'stand'; actor: string }
@@ -90,9 +95,13 @@ export type StageAction =
   | { action: 'climb' | 'descend'; actor: string; stairs: string }
   | { action: 'turn'; actor: string; facing: Facing }
   | { action: 'openBook' | 'closeBook'; actor: string; book: string }
-  | { action: 'point' | 'press'; actor: string; target: Destination }
+  | { action: 'point'; actor: string; target: Destination; hand?: 'left' | 'right' }
+  | { action: 'press'; actor: string; target: Destination }
+  | { action: 'look'; actor: string; target: Destination }
+  | { action: 'mood'; actor: string; name: string }
   | { action: 'highFive' | 'handTap'; actors: readonly [string, string] }
   | { action: 'walkTogether'; actors: readonly [string, string]; to: Destination };
+export type ActionChannel = 'locomotion' | 'left-hand' | 'right-hand' | 'gaze' | 'expression';
 export interface Shot {
   focus: readonly string[];
   framing?: 'wide' | 'medium' | 'detail';
@@ -106,6 +115,8 @@ export interface BipedRig {
   hips: string;
   torso: string;
   face: string;
+  /** Whole head pivot for a gaze independent of locomotion. */
+  head?: string;
   arms: Record<'left' | 'right', { upper: string; lower: string }>;
   /** Compiled native units relative to the standing support, including breathing clearance. */
   reach?: Record<

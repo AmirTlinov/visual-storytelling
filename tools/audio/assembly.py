@@ -13,6 +13,7 @@ from mixing import mix
 from resources import ALIGN_REPO, ALIGN_REVISION, digest
 from script import read_script, timed_cues
 from speech import SAMPLE_RATE, Speaker
+from quality import complete_take
 
 
 def build_audio(script_path, output, device, *, speaker=None, aligner=None, report=True):
@@ -29,14 +30,13 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
     warnings = []
     for segment in spec["segments"]:
         print(f'Voice + word timing: {segment["id"]}', flush=True)
-        audio, key, synthesis = speaker.synthesize(segment)
-        aligned, timing = aligner.align(audio, segment["spoken"], key)
+        take, audio, aligned, synthesis, timing, retries = complete_take(speaker, aligner, segment)
         offset = cursor / SAMPLE_RATE
         words = [{**w, "start": round(w["start"] + offset, 5), "end": round(w["end"] + offset, 5)} for w in aligned]
         record = {
             "id": segment["id"], "text": segment["spoken"], "start": words[0]["start"], "end": words[-1]["end"],
             "audio_start": offset, "audio_end": (cursor + len(audio)) / SAMPLE_RATE, "words": words,
-            "seed": segment["seed"], "delivery": segment["delivery"],
+            "seed": take["seed"], "delivery": segment["delivery"],
         }
         if "title" in segment:
             record["title"] = segment["title"]
@@ -49,7 +49,7 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
         pause = round(segment["pause_after"] * SAMPLE_RATE)
         chunks.append(np.zeros(pause, dtype=np.float32))
         cursor += len(audio) + pause
-        stats.append({"id": segment["id"], "synthesis": synthesis, "alignment": timing})
+        stats.append({"id": segment["id"], "synthesis": synthesis, "alignment": timing, "retries": retries})
     chunks.append(np.zeros(round(spec["outro"] * SAMPLE_RATE), dtype=np.float32))
     voice = np.concatenate(chunks)
     output.parent.mkdir(parents=True, exist_ok=True)

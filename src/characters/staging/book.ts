@@ -1,5 +1,6 @@
 import type { SceneRenderer } from '@esotericsoftware/spine-webgl';
 import { color } from './furniture.js';
+import type { Quad } from '../../ink/projective.js';
 import { stageInk } from './geometry.js';
 
 export interface BookFrame {
@@ -39,7 +40,32 @@ export function bookHands(book: BookFrame) {
     },
   };
 }
-export function drawBook(renderer: SceneRenderer, book: BookFrame, height: number) {
+export function bookPage(book: BookFrame): Quad | undefined {
+  const { open, h, cx, edge, lift } = fold(book);
+  if (open < 0.55) return undefined;
+  const cy = book.y,
+    inset = 0.1;
+  const corners = [
+    { x: cx, y: cy - h * 0.65 },
+    { x: cx + edge, y: cy - h - lift },
+    { x: cx + edge, y: cy + h * 0.15 - lift },
+    { x: cx, y: cy + h * 0.42 },
+  ];
+  const center = {
+    x: corners.reduce((n, p) => n + p.x, 0) / 4,
+    y: corners.reduce((n, p) => n + p.y, 0) / 4,
+  };
+  return corners.map((p) => ({
+    x: p.x + (center.x - p.x) * inset,
+    y: p.y + (center.y - p.y) * inset,
+  })) as unknown as Quad;
+}
+export function drawBook(
+  renderer: SceneRenderer,
+  book: BookFrame,
+  height: number,
+  content?: () => void,
+) {
   const { open, w, h, cx, edge, lift } = fold(book),
     s = book.scale,
     cy = book.y;
@@ -101,7 +127,7 @@ export function drawBook(renderer: SceneRenderer, book: BookFrame, height: numbe
     ],
     open < 0.5 ? book.color : '#f6f4e9',
   );
-  if (open > 0.92) {
+  if (open > 0.92 && !content) {
     for (const side of [-1, 1])
       for (let row = 0; row < 4; row++) {
         const y = -h * 0.43 + row * 8 * s;
@@ -128,6 +154,7 @@ export function drawBook(renderer: SceneRenderer, book: BookFrame, height: numbe
       '#c9ad70',
     );
   }
+  content?.();
   if (book.turn > 0.001 && book.turn < 0.999 && open > 0.99) {
     const x = Math.cos(Math.PI * book.turn) * w,
       raise = Math.sin(Math.PI * book.turn) * h * 1.3;

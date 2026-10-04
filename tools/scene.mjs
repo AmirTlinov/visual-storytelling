@@ -45,6 +45,12 @@ if (process.argv[2] === 'characters') {
       group: { type: 'string' },
       recommended: { type: 'boolean', default: false },
     },
+    session: {
+      view: { type: 'string' },
+      revision: { type: 'string' },
+      query: { type: 'string' },
+      commands: { type: 'string' },
+    },
     api: { full: { type: 'boolean', default: false } },
     info: { json: { type: 'boolean', default: false } },
     build: { ...outputOption, cdn: { type: 'boolean', default: false } },
@@ -82,9 +88,10 @@ visual-story examples [QUERY] [--json] [--recommended] [--group explanations|tec
 visual-story info [DIRECTORY] [--json]        actual packages, build identity and stale sources
 visual-story api [NAME.member ... | ./SUBPATH] [--full]       public names or exact shipped declarations
 visual-story characters --help              prepared actors, actions and editable SVG skin kits
-visual-story dev DIRECTORY [--port 8793]       rebuild + reload at the current story time
+visual-story dev DIRECTORY [--port 8793]       rebuild + restore the selected semantic cue
+visual-story session URL [status|inspect|find|control] [--query TEXT] [--commands JSON] [--view ID] [--revision HASH]
 visual-story build DIRECTORY [--cdn]          build dist/; CDN mode loads pinned Rapier remotely
-visual-story audio DIRECTORY                  voice + aligned cues from narration.json
+visual-story audio DIRECTORY                  voice + aligned cues from story.json or narration.json
 visual-story preview DIST [--port 8793]        serve an existing build
 visual-story review DIST --out review [--cue ID] [--width 375] [--theme dark] [--reduced]
 visual-story review URL --click SELECTOR --target CSS  capture an interaction
@@ -116,7 +123,19 @@ Re-run the same command after changing a line; unchanged voice segments use the 
             ? 'visual-story pack DIST --out story.html [--inline] [--theme auto|light|dark] [--audio compressed|original]\nStandalone audio is compressed by default; --inline additionally applies the chat fragment limit.'
             : help,
     );
-  else if (command === 'info') {
+  else if (command === 'session') {
+    const { requestSession } = await import('./dev-session.mjs');
+    console.log(
+      JSON.stringify(
+        await requestSession(directory, positionals[2] ?? 'inspect', {
+          ...values,
+          commands: values.commands ? JSON.parse(values.commands) : undefined,
+        }),
+        null,
+        2,
+      ),
+    );
+  } else if (command === 'info') {
     const { diagnosePackage, formatPackageInfo } = await import('./build-info.mjs');
     const report = await diagnosePackage(root, destination);
     console.log(values.json ? JSON.stringify(report, null, 2) : formatPackageInfo(report));

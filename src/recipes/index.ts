@@ -13,3 +13,10 @@ export { node } from './node.js';
 export type { NodeOptions } from './node.js';
 
 export { areaDiagram } from './area.js';
+
+export { flowDiagram } from './flow.js';
+export type { FlowOptions } from './flow.js';
+export { comparisonDiagram } from './comparison.js';
+export type { ComparisonOptions } from './comparison.js';
+
+export { circuitDiagram } from './circuit.js';

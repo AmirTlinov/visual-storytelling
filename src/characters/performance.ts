@@ -64,6 +64,17 @@ export function performance(
     }),
   );
   const vector = new Vector2();
+  const sampleTime = (
+    definition: Pick<CharacterPack['actions'][string], 'loop' | 'pose'>,
+    animation: Animation,
+    time: number,
+    reduced: boolean,
+  ) => {
+    if (reduced) return Math.min(definition.pose ?? 1.2, animation.duration);
+    return !definition.loop && definition.pose !== undefined
+      ? Math.min(Math.max(0, time), definition.pose, animation.duration)
+      : Math.max(0, time);
+  };
   const stateData = new AnimationStateData(data);
   stateData.defaultMix = blend;
   const faceBones = new Set<number>();
@@ -100,7 +111,7 @@ export function performance(
       current.animation.apply(
         skeleton,
         -1,
-        Math.min(current.pose ?? 1.2, current.animation.duration),
+        sampleTime(current, current.animation, time, true),
         false,
         null,
         1,
@@ -123,6 +134,9 @@ export function performance(
       const key = track[i]!,
         entry = animations.get(key.action)!;
       const native = state.setAnimation(0, entry.animation, !!entry.loop);
+      // Spine holds the authored settle frame while track/mix time keeps advancing.
+      if (!entry.loop && entry.pose !== undefined)
+        native.animationEnd = Math.min(entry.pose, entry.animation.duration);
       native.mixInterpolation = Interpolation.smooth;
       const until = i < index ? track[i + 1]!.start : Math.max(time, key.start);
       state.update(until - key.start);
@@ -140,6 +154,7 @@ export function performance(
         scale: number;
         clip?: string;
         mood?: string;
+        moodTime?: number;
         view?: import('./staging/types.js').Facing;
       },
     ) {
@@ -172,23 +187,24 @@ export function performance(
           false,
           false,
         );
-        const key = track[index]!,
-          entry = animations.get(key.action)!;
-        faces
-          .get(pose.mood ?? key.action)!
-          .apply(
-            skeleton,
-            -1,
-            reduced ? (entry.pose ?? 1.2) : Math.max(0, time - key.start),
-            !!entry.loop,
-            null,
-            1,
-            MixFrom.setup,
-            false,
-            false,
-            false,
-          );
       } else apply(index, time, reduced);
+      if (pose?.clip || pose?.mood) {
+        const key = track[index]!,
+          entry = pose.mood ? pack.actions[pose.mood]! : animations.get(key.action)!,
+          face = faces.get(pose.mood ?? key.action)!;
+        face.apply(
+          skeleton,
+          -1,
+          sampleTime(entry, face, pose.moodTime ?? time - key.start, reduced),
+          !reduced && !!entry.loop,
+          null,
+          1,
+          MixFrom.setup,
+          false,
+          false,
+          false,
+        );
+      }
       skeleton.updateWorldTransform(Physics.reset);
       return track[index]!.action;
     },

@@ -1,3 +1,4 @@
+import { boardPlane } from './drawing-plane.js';
 import { doorPassage } from './doorway.js';
 import type { StageSet } from '../types.js';
 import type { Destination, Furniture, GroundPoint, RelativePlace, Staging } from './types.js';
@@ -13,6 +14,19 @@ export function destination(staging: Staging, place: Destination): GroundPoint {
       : Object.hasOwn(staging.objects, place)
         ? staging.objects[place]!.at
         : undefined;
+    if (!at && place.endsWith('.content')) {
+      const item = staging.objects[place.slice(0, -8)];
+      const corners = item?.surface?.corners ?? (item?.kind === 'board' ? boardPlane : undefined);
+      if (item && corners) {
+        const s = item.scale ?? 1;
+        at = {
+          x: item.at.x + (corners.reduce((n, p) => n + p.x, 0) / 4) * s,
+          z: item.at.z + (corners.reduce((n, p) => n + p.z, 0) / 4) * s,
+          height:
+            (item.at.height ?? 0) + (corners.reduce((n, p) => n + (p.height ?? 0), 0) / 4) * s,
+        };
+      }
+    }
   } else if (place && typeof place === 'object' && 'of' in place) {
     const item = Object.hasOwn(staging.objects, place.of) ? staging.objects[place.of] : undefined;
     const origin =
@@ -106,14 +120,16 @@ export function arrange(base: StageSet, layout: SetLayout): StageSet {
     if (ref) {
       // Names denote spots first; a spatial relation denotes physical furniture first.
       // Use the same precedence as destination, including while dependencies are unresolved.
+      const reference =
+        typeof place === 'string' && ref.endsWith('.content') ? ref.slice(0, -8) : ref;
       const owners =
         typeof place === 'string'
           ? (['spots', 'objects'] as const)
           : (['objects', 'spots'] as const);
       for (const owner of owners) {
         const entries = owner === 'objects' ? objects : spots;
-        if (Object.hasOwn(entries, ref) && entries[ref]) {
-          solve(owner, ref);
+        if (Object.hasOwn(entries, reference) && entries[reference]) {
+          solve(owner, reference);
           break;
         }
       }

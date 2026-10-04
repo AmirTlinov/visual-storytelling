@@ -1,3 +1,4 @@
+import { activeCue } from './cues.js';
 import type { ControlValue } from '../controls/fields.js';
 import type { SceneChapter, ChapterPresentation, ChapterFrame } from './composition.js';
 
@@ -48,6 +49,7 @@ export function chapterPreviews(
               reduced: false,
               mode: 'story',
               values: defaults,
+              beat: activeCue(chapter.script, end ? chapter.seconds : 0),
             };
             frame.values = { ...defaults, ...chapter.valuesAt?.(frame) };
             drawing.render(frame);

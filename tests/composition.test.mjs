@@ -211,6 +211,14 @@ test('shared character chapters capture their own dimensions and keep the active
       const b = sequence.render(1, 0),
         active = sequence.canvas.__visualReview;
       const second = b.capture();
+      const layout = [];
+      for (const index of [0, 1, 0, 1]) {
+        sequence.render(index, 0.5);
+        const visible = [...document.querySelector('main').children].filter(
+          (element) => !element.hidden,
+        );
+        layout.push({ count: visible.length, top: visible[0]?.getBoundingClientRect().top });
+      }
       a.dispose();
       const keepsInspector = active === sequence.canvas.__visualReview;
       const images = await Promise.all([first, second]);
@@ -223,6 +231,7 @@ test('shared character chapters capture their own dimensions and keep the active
       sequence.dispose();
       return {
         results,
+        layout,
         keepsInspector,
         children: document.querySelector('main').childElementCount,
       };
@@ -232,6 +241,8 @@ test('shared character chapters capture their own dimensions and keep the active
       { width: 240, height: 320, pixel: [20, 170, 220, 255] },
     ]);
     assert.equal(result.keepsInspector, true);
+    assert.ok(result.layout.every((frame) => frame.count === 1));
+    assert.ok(result.layout.every((frame) => frame.top === result.layout[0].top));
     assert.equal(result.children, 0);
   } finally {
     await capture?.close();

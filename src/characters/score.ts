@@ -96,26 +96,30 @@ export function compileScore(options: CharacterStageOptions) {
     states[id] = { at: prop.at, opacity: prop.opacity ?? 1, values: { ...prop.values } };
     propTracks[id] = [];
   }
+  const ids = new Set<string>();
+  for (const beat of beats) {
+    if (!beat.id.trim() || ids.has(beat.id)) throw new Error(`Duplicate or empty beat: ${beat.id}`);
+    if (beat.seconds !== undefined && (!finite(beat.seconds) || beat.seconds <= 0))
+      throw new Error(`Invalid beat duration: ${beat.id}`);
+    if (!beat.text.trim()) throw new Error(`Beat needs its visible action: ${beat.id}`);
+    ids.add(beat.id);
+  }
+  if (options.script) cueSheet(options.script);
+  const blocking = compileBlocking(options, options.script);
   const script: Script = options.script ?? {
-    duration: beats.reduce((n, b) => n + b.seconds, 0),
+    duration: 0,
     cues: {},
     segments: [],
   };
   let time = 0,
     previousEnd = 0;
-  const ids = new Set<string>();
   for (const beat of beats) {
-    if (!beat.id.trim() || ids.has(beat.id)) throw new Error(`Duplicate or empty beat: ${beat.id}`);
-    if (!finite(beat.seconds) || beat.seconds <= 0)
-      throw new Error(`Invalid beat duration: ${beat.id}`);
-    if (!beat.text.trim()) throw new Error(`Beat needs its visible action: ${beat.id}`);
-    ids.add(beat.id);
     if (!options.script) {
-      script.cues[beat.id] = { start: time, end: time + beat.seconds, action: beat.text };
+      const span = blocking?.cues[beat.id] ?? { start: time, end: time + (beat.seconds ?? 2.5) };
+      script.cues[beat.id] = { ...span, action: beat.text };
       (script.segments as Array<unknown>).push({
         id: beat.id,
-        start: time,
-        end: time + beat.seconds,
+        ...span,
         text: beat.text,
         title: beat.title ?? beat.text,
       });
@@ -156,9 +160,10 @@ export function compileScore(options: CharacterStageOptions) {
       });
       states[id] = to;
     }
-    time += beat.seconds;
+    time = cue.end;
   }
+  if (!options.script) script.duration = time;
   cueSheet(script);
-  return { script, tracks, props, propTracks, blocking: compileBlocking(options, script) };
+  return { script, tracks, props, propTracks, blocking };
 }
 export type CharacterScore = ReturnType<typeof compileScore>;

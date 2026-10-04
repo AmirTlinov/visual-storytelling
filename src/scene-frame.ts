@@ -168,7 +168,11 @@ export function inspectPresentation(stage: HTMLElement): ScenePresentation {
     '[data-review-id], [data-camera-world], svg text, [data-lettering-size], canvas',
   );
   for (const [index, node] of [...nodes].entries()) {
-    if (!node.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+    if (
+      !node.checkVisibility({ opacityProperty: true, visibilityProperty: true }) ||
+      node.closest('[data-review-framing="background"]')
+    )
+      continue;
     const id = node.dataset.reviewId || node.id || `${node.localName}:${index}`;
     let text: InspectedObject['data'];
     if ((node.localName === 'text' || node.dataset.letteringSize) && 'getScreenCTM' in node) {

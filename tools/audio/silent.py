@@ -7,6 +7,11 @@ from credits import authored_credits
 
 
 def silence_copy(directory):
+    story_path = directory / "story.json"
+    if story_path.exists():
+        story = json.loads(story_path.read_text())
+        story.setdefault("narration", {})["enabled"] = False
+        story_path.write_text(json.dumps(story, ensure_ascii=False, indent=2) + "\n")
     timeline_path = directory / "timeline.json"
     timeline = json.loads(timeline_path.read_text()) if timeline_path.exists() else {}
     credits_path = directory / "CREDITS.txt"

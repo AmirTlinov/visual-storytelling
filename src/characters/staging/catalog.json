@@ -111,12 +111,25 @@
     },
     "handTap": {
       "actors": ["hero", "friend"]
+    },
+    "look": {
+      "actor": "hero",
+      "target": {
+        "x": 1,
+        "z": 1,
+        "height": 2
+      }
+    },
+    "mood": {
+      "actor": "hero",
+      "name": "think"
     }
   },
   "rules": [
     "Use named ground spots for cast.at.",
-    "One prepared action owns each actor per beat. actors selects the expression alongside it.",
-    "Take the book before read; put it on a table before a free-hand interaction.",
+    "Omit beat.seconds for natural route/contact timing. walk/run/flee accept speed in metres per second. A longer narrated cue holds the completed pose; a shorter cue needs a narration pause. Explicit seconds fits the phases to the supplied interval.",
+    "walk/run can share a beat with point, look and mood. Locomotion, each hand, gaze and expression have one owner; point.hand selects a free hand. look/mood last for that beat; actors keeps a lasting expression.",
+    "Take an object before using it. One-handed props leave the other hand free; books occupy both hands.",
     "Open the door before passDoor. The entrance owns the threshold route; do not walk through its wall with a free destination.",
     "shot.focus names actors or prepared objects; the camera fits their actual bounds.",
     "Use scene.presentation() and review screenshots to inspect clipping at action boundaries."

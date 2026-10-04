@@ -70,3 +70,5 @@ export type {
 } from './morph/objects.js';
 
 export type { DeformationOptions } from './morph/construction/deformation.js';
+
+export type { SceneCommand, SceneInspection } from './scene-access.js';

@@ -1,0 +1,73 @@
+{
+  "title": "Тесла · Путь к свету",
+  "chapters": [
+    {
+      "id": "workshop",
+      "title": "В мастерской",
+      "view": "cast",
+      "drawing": "circuit",
+      "beats": [
+        {
+          "id": "approach",
+          "say": "Проследим путь энергии. Источник создаёт напряжение, а замкнутая цепь позволяет току идти через лампу.",
+          "text": "Герой подходит к доске; показана цепочка источник — цепь — лампа.",
+          "perform": [
+            {
+              "action": "walk",
+              "actor": "hero",
+              "to": "presenter"
+            }
+          ]
+        },
+        {
+          "id": "explain",
+          "say": "Разомкнём цепь. Путь прервался, и лампа погасла.",
+          "text": "Герой указывает на цепь.",
+          "perform": [
+            {
+              "action": "point",
+              "actor": "hero",
+              "target": "board.content"
+            }
+          ],
+          "shot": {
+            "focus": ["board.content"],
+            "framing": "detail"
+          }
+        },
+        {
+          "id": "idea",
+          "say": "Вернём контакт. Теперь ток снова проходит через лампу, и она светится.",
+          "text": "Герой замечает результат.",
+          "perform": [
+            {
+              "action": "turn",
+              "actor": "hero",
+              "facing": "front"
+            }
+          ],
+          "actors": {
+            "hero": "idea"
+          },
+          "shot": {
+            "focus": ["hero"],
+            "framing": "medium"
+          }
+        }
+      ]
+    },
+    {
+      "id": "experiment",
+      "title": "Попробуйте сами",
+      "view": "paper",
+      "drawing": "circuit",
+      "beats": [
+        {
+          "id": "change",
+          "say": "Теперь попробуйте сами: замыкайте и размыкайте цепь. Источник остаётся тем же, меняется только путь тока.",
+          "text": "Исследуем состояние выключателя."
+        }
+      ]
+    }
+  ]
+}

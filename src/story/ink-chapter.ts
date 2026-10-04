@@ -16,7 +16,8 @@ let instance = 0;
 export function inkChapter(
   options: ChapterTiming &
     Pick<SceneChapter, 'controls' | 'valuesAt'> & {
-      create(view: Surface): InkDrawing;
+      size?: InkViewport;
+      create(view: Surface): InkDrawing | Promise<InkDrawing>;
     },
 ): SceneChapter {
   return {
@@ -27,8 +28,8 @@ export function inkChapter(
         id: `chapter-${++instance}`,
         title: options.title,
         description: options.text,
-        width: 960,
-        height: 640,
+        width: options.size?.width ?? 960,
+        height: options.size?.height ?? 640,
         grid: false,
       });
       Object.assign(view.element.style, {
@@ -37,12 +38,18 @@ export function inkChapter(
         width: '100%',
         height: '100%',
       });
-      const drawing = options.create(view);
+      let drawing: InkDrawing;
+      try {
+        drawing = await options.create(view);
+      } catch (error) {
+        view.dispose();
+        throw error;
+      }
       let latest: ChapterFrame | undefined;
       const render = (frame: ChapterFrame) => {
         latest = frame;
         const box = parent.getBoundingClientRect();
-        const size = { width: box.width || 960, height: box.height || 640 };
+        const size = options.size ?? { width: box.width || 960, height: box.height || 640 };
         const current = view.element.viewBox.baseVal;
         if (current.width !== size.width || current.height !== size.height)
           view.resize(size.width, size.height, false);
@@ -58,8 +65,11 @@ export function inkChapter(
         capture: () => snapshotSVG(view.element),
         dispose() {
           observer.disconnect();
-          drawing.dispose?.();
-          view.dispose();
+          try {
+            drawing.dispose?.();
+          } finally {
+            view.dispose();
+          }
         },
       };
     },

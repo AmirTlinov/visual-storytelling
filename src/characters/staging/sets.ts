@@ -231,3 +231,19 @@ export function courtyard(options: CourtyardOptions = {}): StageSet {
     },
   );
 }
+
+/** Ready blocking for explaining a diagram: a presenter, a clear board and optional reading props. */
+export function teachingRoom(options: RoomOptions = {}): StageSet {
+  return arrange(readingRoom(options), {
+    objects: {
+      seat: { at: { x: -3.8, z: 4.5 }, scale: 0.8 },
+      sideTable: { at: { x: 3.8, z: 4.5 }, scale: 0.65 },
+      board: { kind: 'board', at: { x: 1.1, z: 4.4 }, scale: 1.3 },
+      plant: null,
+    },
+    spots: {
+      presenter: { of: 'board', side: 'left', gap: 1.6, offset: { x: 0, z: -1.3 } },
+      entry: { of: 'board', side: 'left', gap: 2, offset: { x: 0, z: -2 } },
+    },
+  });
+}

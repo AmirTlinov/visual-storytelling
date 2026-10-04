@@ -5,7 +5,9 @@ import type { CharacterPack, CharacterStageOptions } from '../characters/types.j
 import { SceneStory, type SceneChapter, type SceneStoryOptions } from '../story/composition.js';
 import { bookChapters } from './chapters.js';
 
-export interface CastChapter extends Omit<CharacterStageOptions, 'pack' | 'background'> {
+export interface CastChapter
+  extends Omit<CharacterStageOptions, 'pack' | 'background'>,
+    Pick<SceneChapter, 'controls' | 'valuesAt'> {
   id: string;
   title: string;
   text?: string;
@@ -35,16 +37,19 @@ async function mount(parent: HTMLElement, options: StorybookOptions) {
         text: chapter.text ?? chapter.title,
         seconds: score.script.duration,
         script: score.script,
-        controls: [],
+        controls: chapter.controls ?? [],
+        valuesAt: chapter.valuesAt,
         async mount(host) {
           graphics ??= await characterRenderer(entry.pack);
           const drawing = await characterStage(host, entry, score, graphics);
           return {
             render(frame) {
               drawing.show(true);
-              drawing.render(frame.time, frame.reduced);
+              drawing.render(frame.time, frame.reduced, frame);
             },
             snapshot: drawing.snapshot,
+            focus: drawing.focus,
+            reset: drawing.reset,
             capture: drawing.capture,
             dispose: drawing.dispose,
           };

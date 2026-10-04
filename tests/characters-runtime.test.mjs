@@ -119,7 +119,11 @@ function nativePose(action, time, skin, reduced = false, flip = false) {
   animation.apply(
     skeleton,
     -1,
-    reduced ? Math.min(definition.pose ?? 1.2, animation.duration) : time,
+    reduced
+      ? Math.min(definition.pose ?? 1.2, animation.duration)
+      : definition.loop
+        ? time
+        : Math.min(time, definition.pose ?? animation.duration),
     !reduced && !!definition.loop,
     null,
     1,
@@ -214,6 +218,53 @@ test('idea-to-celebration mixes unkeyed channels back to setup without an end-of
       ...before.flatMap((bone, i) => bone.map((n, j) => Math.abs(n - after[i][j]))),
     );
     assert.ok(delta < 0.02, `world-transform jump ${delta} at ${boundary}`);
+  }
+});
+
+test('a completed idea holds its smile through long speech, then mixes into a full native wave and rewinds', () => {
+  const track = [
+    { start: 0, action: 'idea' },
+    { start: 8, action: 'wave' },
+  ];
+  for (const skin of ['tesla', 'mira']) {
+    const actor = make(track, { skin });
+    for (const time of [2, 3.1, 7.9]) {
+      actor.sample(time);
+      assert.deepEqual(pose(actor.skeleton), nativePose('idea', 2, skin));
+      assert.match(
+        actor.skeleton.findSlot('mouth').appliedPose.attachment.name,
+        /mouth-open-smile$/,
+      );
+    }
+    actor.sample(8.22 - 0.00001);
+    const before = actor.skeleton.bones.map(matrix);
+    actor.sample(8.22 + 0.00001);
+    const delta = Math.max(
+      ...actor.skeleton.bones
+        .map(matrix)
+        .flatMap((bone, i) => bone.map((n, j) => Math.abs(n - before[i][j]))),
+    );
+    assert.ok(delta < 0.02, `held idea leaves the native mix without a jump: ${delta}`);
+    for (const time of [9.3, 12.7, 8.8]) {
+      actor.sample(time);
+      assert.deepEqual(pose(actor.skeleton), nativePose('wave', time - 8, skin));
+    }
+    actor.sample(1.2);
+    assert.match(actor.skeleton.findSlot('mouth').appliedPose.attachment.name, /mouth-doubt$/);
+    const prepared = make([{ start: 0, action: 'idle' }], { skin });
+    for (const time of [2, 21.3, 1.2, 7, 3]) {
+      prepared.sample(time, false, {
+        at,
+        scale: 0.77,
+        clip: chibi.rig.views.front,
+        mood: 'idea',
+        moodTime: time,
+      });
+      assert.match(
+        prepared.skeleton.findSlot('mouth').appliedPose.attachment.name,
+        time < 1.4 ? /mouth-doubt$/ : /mouth-open-smile$/,
+      );
+    }
   }
 });
 

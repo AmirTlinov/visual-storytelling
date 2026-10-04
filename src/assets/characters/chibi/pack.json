@@ -95,7 +95,7 @@
     },
     "burp": {
       "animation": "emotes/burp",
-      "pose": 1.2
+      "pose": 1.6
     },
     "faint": {
       "animation": "emotes/dead",
@@ -153,19 +153,8 @@
       "left": "leg-target-l",
       "right": "leg-target-r"
     },
-    "faceSlots": [
-      "mouth",
-      "eye-r",
-      "eye-l",
-      "eyebrow-r",
-      "eyebrow-l",
-      "blush-r",
-      "blush-l"
-    ],
-    "frontArms": [
-      "arm-r",
-      "arm-l"
-    ],
+    "faceSlots": ["mouth", "eye-r", "eye-l", "eyebrow-r", "eyebrow-l", "blush-r", "blush-l"],
+    "frontArms": ["arm-r", "arm-l"],
     "views": {
       "front": "movement/idle-front",
       "left": "movement/idle-left",
@@ -173,6 +162,7 @@
       "back": "movement/idle-back"
     },
     "shadow": "shadow",
-    "bodySlot": "body"
+    "bodySlot": "body",
+    "head": "head-base"
   }
 }

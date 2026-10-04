@@ -1,6 +1,6 @@
 {
   "name": "@visual-storytelling/core",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "license": "0BSD",
   "type": "module",
@@ -9,6 +9,7 @@
     "dist",
     "tools",
     "examples/**/*.{html,js,mjs,ts,json,css,svg,png,jpg,webp,woff2,py,txt,md,command}",
+    "!examples/**/{dist,site,artifacts,review,node_modules}/**",
     "skill",
     "docs",
     "PHILOSOPHY.md",

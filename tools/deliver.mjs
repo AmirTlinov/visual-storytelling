@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { buildOutput } from './build-output.mjs';
 import { buildScene } from './build-pages.mjs';
+import { narrationSource } from './story-document.mjs';
 import { buildNarration } from './narration.mjs';
 import { packDirectory } from './standalone.mjs';
 import { exportVideo } from './video-export.mjs';
@@ -40,14 +41,7 @@ export async function deliver(
     throw new Error('Delivery formats: mp4,html,srt,vtt,source');
   if (!['light', 'dark'].includes(theme))
     throw new Error('Choose light or dark for the video; the HTML follows the viewer’s theme');
-  if (
-    !silent &&
-    (await access(join(source, 'narration.json')).then(
-      () => true,
-      () => false,
-    ))
-  )
-    await buildNarration(source, { signal });
+  if (!silent && (await narrationSource(source))) await buildNarration(source, { signal });
   const built = join(source, 'dist');
   await buildScene(source, built, { silent, exclude: [out] });
   signal?.throwIfAborted();

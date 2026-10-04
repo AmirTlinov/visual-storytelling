@@ -16,3 +16,17 @@
   width: 100%;
   height: 100%;
 }
+
+.ve-character-aperture > canvas {
+  pointer-events: none;
+}
+.ve-character-surface {
+  contain: layout style;
+}
+.ve-character-surface > svg {
+  overflow: hidden;
+}
+/* Chalk must keep its stroke against a textured dark physical prop. */
+.ve-character-surface[data-theme='dark'] [data-written-text] path {
+  stroke-width: 1.05;
+}

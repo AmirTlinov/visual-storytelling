@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { findPackageJSON } from 'node:module';
 import { readFile, readdir, writeFile, realpath } from 'node:fs/promises';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, join, matchesGlob, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const receiptName = 'build-info.json';
@@ -54,18 +54,25 @@ export const sourceDigest = (root) =>
     'tsconfig.build.json',
   ]);
 const runtimeDigest = (root) => contentDigest(root, ['.'], (name) => name === receiptName);
-const packageDigest = async (root, runtime) =>
-  createHash('sha256')
+const packageDigest = async (root, runtime) => {
+  const pkg = await json(join(root, 'package.json'));
+  const excluded = (pkg.files ?? [])
+    .filter((pattern) => pattern.startsWith('!'))
+    .map((pattern) => pattern.slice(1));
+  return createHash('sha256')
     .update(runtime)
     .update('\0')
     .update(
       await contentDigest(
         root,
         ['package.json', 'tools', 'examples', 'skill', 'docs', 'PHILOSOPHY.md', 'AGENTS.md'],
-        (name) => name.startsWith('examples/') && name.endsWith('.wav'),
+        (name) =>
+          (name.startsWith('examples/') && name.endsWith('.wav')) ||
+          excluded.some((pattern) => matchesGlob(name, pattern)),
       ),
     )
     .digest('hex');
+};
 
 /** Written inside the build transaction, alongside the actual emitted declarations. */
 export async function writeBuildInfo(root, output, source = undefined) {

@@ -7,6 +7,9 @@ import { performance } from './performance.js';
 import { compileScore, smooth, type CharacterScore } from './score.js';
 import type { CharacterStageOptions, Place, Point } from './types.js';
 import { fitFrame } from '../scene-frame.js';
+import { characterSurfaces } from './surfaces.js';
+import type { Shot } from './staging/types.js';
+import type { ChapterFrame } from '../story/composition.js';
 import { characterDetails } from './framing.js';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -27,6 +30,7 @@ export async function characterStage(
   const element = document.createElement('div');
   element.className = 've-character-stage';
   const aperture = document.createElement('div');
+  let surfaces: ReturnType<typeof characterSurfaces> | undefined;
   aperture.className = 've-character-aperture';
   element.append(aperture);
   const resize = () => {
@@ -39,6 +43,7 @@ export async function characterStage(
       left: `${(width - fit.width) / 2}px`,
       top: `${(height - fit.height) / 2}px`,
     });
+    surfaces?.resize();
   };
   const observer = new ResizeObserver(resize);
   observer.observe(element);
@@ -46,6 +51,7 @@ export async function characterStage(
     const svg = document.createElementNS(NS, 'svg');
     svg.setAttribute('viewBox', `0 0 ${set.width} ${set.height}`);
     svg.setAttribute('aria-hidden', 'true');
+    svg.style.pointerEvents = 'none';
     svg.innerHTML = markup.replaceAll('$id', scope);
     aperture.append(svg);
     return svg;
@@ -65,6 +71,7 @@ export async function characterStage(
     disposed = true;
     observer.disconnect();
     if (inspected.__visualReview === inspect) delete inspected.__visualReview;
+    surfaces?.dispose();
     prepared?.dispose();
     if (!shared) graphics.dispose();
     element.remove();
@@ -90,6 +97,10 @@ export async function characterStage(
       ]),
     );
     if (score.blocking) prepared = await world(options, score.blocking, actors, context);
+    if (Object.keys(options.surfaces ?? {}).length) {
+      if (!prepared) throw new Error('Drawing surfaces need a prepared world');
+      surfaces = characterSurfaces(aperture, options, graphics, snapshotSVG);
+    }
     for (const actor of background && !prepared ? Object.values(cast) : []) {
       const at = point(actor.at),
         scale = actor.scale ?? 0.77;
@@ -123,6 +134,8 @@ export async function characterStage(
       }),
     );
     let snapshot: unknown;
+    let manualShot: Shot | undefined;
+    let latest: [number, boolean, ChapterFrame | undefined] = [0, false, undefined];
     let camera: FrameBox = { x: 0, y: 0, width: set.width, height: set.height },
       bounds: Record<string, FrameBox> = {};
     let details: Record<string, FrameBox> = {};
@@ -148,9 +161,16 @@ export async function characterStage(
     };
 
     const stage = {
-      canvas,
-      render(time: number, reduced = false) {
+      get canvas() {
+        if (surfaces)
+          throw new Error(
+            'This stage has live Ink surfaces. Use await stage.capture() for a complete image; canvas is available for canvas-only stages.',
+          );
+        return canvas;
+      },
+      render(time: number, reduced = false, frame?: ChapterFrame) {
         if (disposed) return;
+        latest = [time, reduced, frame];
         graphics.activate(aperture, front);
         aperture.hidden = false;
         canvas.setAttribute('aria-label', options.description ?? 'Characters');
@@ -228,7 +248,8 @@ export async function characterStage(
           0,
           options.beats.findLastIndex((b) => score.script.cues[b.id]!.start <= time),
         );
-        const beat = options.beats[index]!;
+        const authoredBeat = options.beats[index]!;
+        const beat = manualShot ? { ...authoredBeat, shot: manualShot } : authoredBeat;
         focus = beat.shot?.focus;
         const current = stageFrame(
           set.width,
@@ -242,7 +263,8 @@ export async function characterStage(
           options.beats[Math.max(0, index - 1)]!.shot ? { ...bounds, ...details } : bounds,
           options.beats[Math.max(0, index - 1)]!.shot,
         );
-        const mix = reduced ? 1 : smooth((time - score.script.cues[beat.id]!.start) / 0.45);
+        const mix =
+          reduced || manualShot ? 1 : smooth((time - score.script.cues[beat.id]!.start) / 0.45);
         // A deliberate shot change reveals/crops artwork while travelling. Judge
         // subject fit once it arrives; retain the actual bounds throughout the move.
         changingShot =
@@ -280,10 +302,26 @@ export async function characterStage(
         renderer!.camera.update();
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
+        surfaces?.begin(
+          frame ?? {
+            time,
+            progress: time / score.script.duration,
+            reduced,
+            mode: 'story',
+            values: {},
+          },
+          camera,
+          focus,
+          !frame,
+          current,
+        );
         renderer!.begin();
-        if (prepared) prepared.draw(renderer!);
-        else for (const id of order) renderer!.drawSkeleton(actors[id]!.skeleton);
-        renderer!.end();
+        try {
+          if (prepared) prepared.draw(renderer!, surfaces?.place);
+          else for (const id of order) renderer!.drawSkeleton(actors[id]!.skeleton);
+        } finally {
+          renderer!.end();
+        }
         snapshot = {
           time,
           camera,
@@ -307,6 +345,7 @@ export async function characterStage(
           actions,
           world: prepared?.snapshot(),
           props: propState,
+          surfaces: surfaces?.snapshot(),
           anchors: Object.fromEntries(
             Object.entries(actors).map(([id, actor]) => [
               id,
@@ -317,21 +356,37 @@ export async function characterStage(
           ),
         };
       },
+      focus(ids: readonly string[]) {
+        if (ids.some((id) => !Object.hasOwn({ ...bounds, ...details }, id)))
+          throw new Error('Unknown camera subject');
+        manualShot = { focus: ids, framing: 'detail' };
+        stage.render(...latest);
+      },
+      reset() {
+        manualShot = undefined;
+      },
       snapshot: () => snapshot,
       /** Flatten only a requested transition boundary; live content keeps all DOM layers. */
       async capture() {
+        if (disposed || !snapshot || canvas.parentElement !== aperture)
+          throw new Error('Render the active character stage before capture');
         const cast = document.createElement('canvas');
         cast.width = canvas.width;
         cast.height = canvas.height;
         cast.getContext('2d')!.drawImage(canvas, 0, 0);
-        const images = await Promise.all([back, front].map((svg) => snapshotSVG(svg, 1)));
+        const [background, layers, foreground] = await Promise.all([
+          snapshotSVG(back, 1),
+          surfaces?.capture(),
+          snapshotSVG(front, 1),
+        ]);
         const result = document.createElement('canvas');
         result.width = cast.width;
         result.height = cast.height;
         const c = result.getContext('2d')!;
-        c.drawImage(images[0]!, 0, 0, result.width, result.height);
+        c.drawImage(background, 0, 0, result.width, result.height);
+        if (layers) c.drawImage(layers, 0, 0);
         c.drawImage(cast, 0, 0);
-        c.drawImage(images[1]!, 0, 0, result.width, result.height);
+        c.drawImage(foreground, 0, 0, result.width, result.height);
         return result;
       },
       show(visible: boolean) {
@@ -342,7 +397,6 @@ export async function characterStage(
       },
       dispose,
     };
-    stage.render(0);
     return stage;
   } catch (error) {
     dispose();
@@ -362,6 +416,7 @@ export const CharacterStage = {
     const scores = options.map(compileScore),
       graphics = await characterRenderer(pack);
     const stages: Awaited<ReturnType<typeof characterStage>>[] = [];
+    let active: Awaited<ReturnType<typeof characterStage>> | undefined;
     try {
       for (const [i, entry] of options.entries()) {
         const stage = await characterStage(parent, entry, scores[i]!, graphics);
@@ -369,12 +424,20 @@ export const CharacterStage = {
         stages.push(stage);
       }
       return {
-        canvas: graphics.canvas,
+        get canvas() {
+          if (options.some((o) => Object.keys(o.surfaces ?? {}).length))
+            throw new Error(
+              'This cast sequence has live Ink surfaces. Capture its rendered stage for a complete image.',
+            );
+          return graphics.canvas;
+        },
         render(index: number, time: number, reduced = false) {
           const stage = stages[index];
           if (!stage) throw new Error(`Unknown character chapter: ${index}`);
+          if (active !== stage) active?.show(false);
           stage.show(true);
           stage.render(time, reduced);
+          active = stage;
           return stage;
         },
         dispose() {

@@ -4,6 +4,7 @@ import math
 from pathlib import Path
 import re
 from resources import DEFAULT_DELIVERY, REFERENCE_AUDIO, REFERENCE_TEXT, digest
+from quality import validate_alignment
 
 WORD = re.compile(r"[А-Яа-яЁё]+(?:[-‑][А-Яа-яЁё]+)*")
 ID = re.compile(r"[a-z][a-z0-9_.-]*\Z")
@@ -22,6 +23,9 @@ def check_timeline(script_path, timeline_path):
     timeline = json.loads(Path(timeline_path).read_text(encoding="utf-8"))
     if timeline.get("source_sha256") != digest(source):
         raise ValueError("Narration changed after audio generation; run visual-story audio . before building")
+    for segment in timeline.get("segments", []):
+        if segment.get("words") and all("score" in word for word in segment["words"]):
+            validate_alignment(segment["words"])
 
 
 def without_controls(text):

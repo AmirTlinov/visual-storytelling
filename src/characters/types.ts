@@ -1,3 +1,4 @@
+import type { CharacterSurface } from './surfaces.js';
 import type { Script } from '../story/cues.js';
 import type { BipedRig, Destination, Facing, Shot, StageAction, Staging } from './staging/types.js';
 
@@ -12,6 +13,7 @@ export interface CharacterPack {
   /** gzip JSON: { data: Spine skeleton JSON, atlas: string, textures: page-name → data URL }. */
   gzip: string;
   skins: readonly string[];
+  /** pose is the reduced-motion frame and the settle/hold time for a non-looping action. */
   actions: Readonly<Record<string, { animation: string; loop?: boolean; pose?: number }>>;
   anchors: Readonly<Record<string, { bone: string; x: number; y: number }>>;
   /** Readable source and license notice. */
@@ -66,7 +68,8 @@ export interface PropChange {
 }
 export interface Beat {
   id: string;
-  seconds: number;
+  /** Omit to use the longest action's route and contact phases. */
+  seconds?: number;
   text: string;
   title?: string;
   /** Omitted actors continue their last performance. */
@@ -77,13 +80,15 @@ export interface Beat {
   shot?: Shot;
 }
 export interface CharacterStageOptions {
+  /** Live Ink drawings attached to prepared furniture; share the chapter time and values. */
+  surfaces?: Readonly<Record<string, CharacterSurface>>;
   description?: string;
   pack: CharacterPack;
   set: StageSet;
   cast: Readonly<Record<string, Actor>>;
   props?: Readonly<Record<string, Prop>>;
   beats: readonly Beat[];
-  /** Aligned narration may replace beat durations; cue IDs must match beat IDs. */
+  /** Cue IDs match beat IDs. Natural actions finish inside each cue, then hold; seconds opts into fitting. */
   script?: Script;
   /** Crossfade between authored poses in seconds. */
   blend?: number;

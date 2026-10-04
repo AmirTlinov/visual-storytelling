@@ -48,7 +48,22 @@ for (const variant of ['', '?variant=mira'])
         scene.seek(t);
         return { state: scene.snapshot(), presentation: scene.presentation() };
       }, time);
-    const contact = await sample(10.3);
+    const contact = await page.evaluate(() => {
+      const scene = (document.querySelector('.ve-scene') as any).scene;
+      const cue = scene.review().cues.find((cue: { id: string }) => cue.id === 'letter.switch');
+      // Route length determines approach time. Observe activation during real hand contact.
+      for (let step = 1; step < 24; step++) {
+        const time = cue.start + ((cue.end - cue.start) * step) / 24;
+        scene.seek(time);
+        const state = scene.snapshot();
+        const press = state.content.world.actors.hero.contacts.find(
+          (c: { kind: string }) => c.kind === 'press',
+        );
+        if (state.content.world.objects.meter === 1 && press?.error < 0.01)
+          return { time, state, presentation: scene.presentation() };
+      }
+      throw new Error('The device never activated during hand contact');
+    });
     expect(contact.state.chapter).toBe('letter');
     expect(contact.state.content.world.objects.meter).toBe(1);
     expect(contact.state.content.world.items.hero.id).toBe('letter');
@@ -73,6 +88,6 @@ for (const variant of ['', '?variant=mira'])
     await sample(33.8);
     const rewound = await sample(30.8);
     expect(rewound.state.content).toEqual(first.state.content);
-    expect((await sample(10.3)).state).toEqual(contact.state);
+    expect((await sample(contact.time)).state).toEqual(contact.state);
     expect(errors).toEqual([]);
   });

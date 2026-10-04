@@ -3,6 +3,64 @@ import assert from 'node:assert/strict';
 import * as T from '../dist/viewport/engine.js';
 import { shotPose } from '../dist/viewport/shots.js';
 import { readableFrame } from '../dist/viewport/framing.js';
+import { stageFrame } from '../dist/characters/staging/camera.js';
+
+test('character shots stay inside a finite room at its edges without clipping the subject', () => {
+  const width = 960,
+    height = 650,
+    shot = { focus: ['hero'], framing: 'medium' };
+  for (const x of [0, 440, 880])
+    for (const y of [0, 235, 470]) {
+      const hero = { x, y, width: 80, height: 180 },
+        objects = { hero, backdrop: { x: -200, y: -200, width: 1360, height: 1050 } },
+        frame = stageFrame(width, height, objects, shot);
+      assert(frame.x >= 0 && frame.y >= 0);
+      assert(frame.x + frame.width <= width && frame.y + frame.height <= height);
+      assert(frame.x <= x && frame.y <= y);
+      assert(frame.x + frame.width >= x + hero.width);
+      assert(frame.y + frame.height >= y + hero.height);
+      assert(Math.abs(frame.width / frame.height - width / height) < 1e-12);
+      assert.deepEqual(stageFrame(width, height, objects, shot), frame);
+      if (x === 440 && y === 235) {
+        assert.equal(frame.x + frame.width / 2, width / 2);
+        assert.equal(frame.y + frame.height / 2, height / 2);
+      }
+    }
+});
+
+test('character shots preserve outside-set subjects and oversized compositions', () => {
+  const width = 960,
+    height = 650,
+    shot = { focus: ['hero'], framing: 'detail' };
+  for (const hero of [
+    { x: -40, y: 220, width: 80, height: 180 },
+    { x: 920, y: 220, width: 80, height: 180 },
+    { x: 440, y: -40, width: 80, height: 180 },
+    { x: 440, y: 610, width: 80, height: 180 },
+    { x: 0, y: 0, width, height },
+  ]) {
+    const frame = stageFrame(width, height, { hero }, shot);
+    for (const [position, size, extent] of [
+      ['x', 'width', width],
+      ['y', 'height', height],
+    ]) {
+      assert(frame[position] <= hero[position]);
+      assert(frame[position] + frame[size] >= hero[position] + hero[size]);
+      if (hero[position] < 0) assert(frame[position] < 0);
+      if (hero[position] + hero[size] > extent) assert(frame[position] + frame[size] > extent);
+    }
+  }
+  // Crossing the set boundary or changing between a smaller/larger frame must
+  // not suddenly enable/disable a different camera position.
+  for (const subject of [
+    (delta) => ({ x: delta, y: 220, width: 80, height: 180 }),
+    (delta) => ({ x: 10, y: 16, width: 80, height: height - 32 + delta }),
+  ]) {
+    const a = stageFrame(width, height, { hero: subject(-1e-5) }, shot),
+      b = stageFrame(width, height, { hero: subject(1e-5) }, shot);
+    assert(Math.abs(a.x - b.x) < 1e-3 && Math.abs(a.y - b.y) < 1e-3);
+  }
+});
 
 test('camera turns join their endpoint shots continuously with asymmetric interface insets', () => {
   const target = new T.Box3(new T.Vector3(-0.5, -0.2, -2.5), new T.Vector3(0.5, 0.2, 2.5));

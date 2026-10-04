@@ -2,7 +2,7 @@ import { blockAt } from './motion.js';
 import { stagingCatalog } from './catalog.js';
 import type { CharacterStageOptions } from '../types.js';
 import type { Script } from '../../story/cues.js';
-import type { Destination, Facing, GroundPoint, StageAction } from './types.js';
+import type { ActionChannel, Destination, Facing, GroundPoint, StageAction } from './types.js';
 import { stairEnd, objectShape, supportPoint, seatPlaces, triggerPoint } from './objects.js';
 import { doorApproach, doorPassage, doorWaypoint } from './doorway.js';
 import { distance, interpolate, project, facing } from './space.js';
@@ -10,6 +10,7 @@ import { destination } from './layout.js';
 import { route, meetingPoint } from './navigation.js';
 import { coordinateTraffic } from './traffic.js';
 import { pressApproach } from './press.js';
+import { actionTiming, durationOf, type ActionTiming } from './timing.js';
 
 export interface Placement {
   at: GroundPoint;
@@ -36,16 +37,18 @@ export interface BlockingActor extends Placement {
   transfer?: { id: string; at: GroundPoint; progress: number; taking: boolean; grip: number };
   contact?: boolean;
   mood?: string;
+  moodTime?: number;
+  gaze?: { at: GroundPoint; weight: number };
   bookBlend?: number;
   turn?: number;
   handTurn?: number;
-  reach?: {
+  reaches?: {
     at: GroundPoint;
     weight: number;
     press: number;
     gesture?: 'press';
     side?: 'left' | 'right';
-  };
+  }[];
 }
 export interface PairContact {
   actors: readonly [string, string];
@@ -68,7 +71,11 @@ export interface Plan {
   effect?: { id: string; from: number; to: number };
   target?: GroundPoint;
   reachSide?: 'left' | 'right';
+  channels: readonly ActionChannel[];
+  timing: ActionTiming;
 }
+export const overlayAction = (action: StageAction) =>
+  ['point', 'look', 'mood'].includes(action?.action);
 function participants(a: StageAction) {
   if (!a || typeof a !== 'object') throw new Error('A prepared action is required');
   if (['highFive', 'handTap', 'walkTogether'].includes(a.action)) {
@@ -83,7 +90,7 @@ function participants(a: StageAction) {
   return [a.actor];
 }
 
-export function compileBlocking(options: CharacterStageOptions, script: Script) {
+export function compileBlocking(options: CharacterStageOptions, script?: Script) {
   const staging = options.set.staging;
   const active =
     options.beats.some((b) => b.perform?.length) ||
@@ -179,20 +186,30 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
       throw new Error(`Object ${id} must be ${kind.join(' or ')}`);
     return item;
   };
+  const scales = Object.fromEntries(
+    Object.entries(options.cast).map(([id, a]) => [id, a.scale ?? 0.77]),
+  );
+  const cues: Record<string, { start: number; end: number }> = {};
+  let cursor = 0;
   for (const beat of options.beats) {
     const before = structuredClone(state),
       firstPlan = plans.length;
     const startingObjects = { ...objectStates };
-    const used = new Set<string>(),
+    const used = new Map<string, Set<ActionChannel>>(),
       usedObjects = new Set<string>();
-    for (const action of beat.perform ?? []) {
+    const cue = script?.cues[beat.id];
+    const start = cue?.start ?? cursor;
+    if (script && !cue) throw new Error(`Narration is missing cue: ${beat.id}`);
+    // Locomotion first, then independent gesture/gaze/expression overlays. Input order has no effect.
+    const actions = [...(beat.perform ?? [])].sort(
+      (a, b) => Number(overlayAction(a)) - Number(overlayAction(b)),
+    );
+    for (const action of actions) {
       const ids = participants(action);
       if (new Set(ids).size !== ids.length)
         throw new Error('An interaction needs distinct participants');
       for (const id of ids) {
         if (!Object.hasOwn(state, id)) throw new Error(`Unknown action participant: ${id}`);
-        if (used.has(id)) throw new Error(`Two actions own ${id} in beat ${beat.id}`);
-        used.add(id);
       }
       const from = Object.fromEntries(ids.map((id) => [id, structuredClone(state[id]!)]));
       const to = structuredClone(from);
@@ -204,10 +221,38 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
       let effect: Plan['effect'], target: GroundPoint | undefined, reachSide: Plan['reachSide'];
       let doorSide: Plan['doorSide'];
       const approaches: Record<string, GroundPoint[]> = {};
+      let channels: ActionChannel[] = ['locomotion', 'left-hand', 'right-hand'];
       const approach = (id: string, at: GroundPoint) =>
         route(staging, from[id]!.at, at, (options.cast[id]!.scale ?? 0.77) * 0.46);
       if ('actor' in action) {
         const p = to[action.actor]!;
+        if (action.action === 'walk' || action.action === 'run' || action.action === 'flee') {
+          channels = ['locomotion'];
+          if (action.speed !== undefined && (!Number.isFinite(action.speed) || action.speed <= 0))
+            throw new Error('Walking speed must be positive metres per second');
+        }
+        if (action.action === 'point') {
+          if (action.hand !== undefined && !['left', 'right'].includes(action.hand))
+            throw new Error('A pointing hand must be left or right');
+          reachSide =
+            action.hand ?? (p.holding ? (p.holdingHand === 'left' ? 'right' : 'left') : 'right');
+          if (p.holding && (p.hands === 2 || p.holdingHand === reachSide))
+            throw new Error(`Point needs the free ${reachSide} hand of ${action.actor}`);
+          channels = [`${reachSide}-hand`];
+        }
+        if (action.action === 'look') {
+          if (!options.pack.rig.head)
+            throw new Error('Look needs the semantic head bone; rebuild the character pack');
+          channels = ['gaze'];
+          target = point(action.target);
+        }
+        if (action.action === 'mood') {
+          channels = ['expression'];
+          if (!Object.hasOwn(options.pack.actions, action.name))
+            throw new Error(`Unknown mood: ${action.name}`);
+          if (beat.actors?.[action.actor] !== undefined)
+            throw new Error(`Two expressions own ${action.actor} in beat ${beat.id}`);
+        }
         if (
           p.holding &&
           p.hands === 2 &&
@@ -481,10 +526,18 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
           omit,
         );
       }
-      const cue = script.cues[beat.id]!;
-      plans.push({
-        start: cue.start,
-        end: cue.end,
+      for (const id of ids) {
+        const owned = used.get(id) ?? new Set<ActionChannel>();
+        for (const channel of channels) {
+          if (owned.has(channel))
+            throw new Error(`Two actions own ${id}.${channel} in beat ${beat.id}`);
+          owned.add(channel);
+        }
+        used.set(id, owned);
+      }
+      const plan: Plan = {
+        start,
+        end: cue?.end ?? start + (beat.seconds ?? 1),
         action,
         from,
         to,
@@ -498,31 +551,54 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
         effect,
         target,
         reachSide,
-      });
+        channels,
+        timing: { rise: 0, approach: 0, engage: 0, act: 1, release: 0 },
+      };
+      plan.timing = actionTiming(plan, staging, scales, options.pack.actions);
+      plans.push(plan);
       Object.assign(state, to);
     }
-    const scales = Object.fromEntries(
-      Object.entries(options.cast).map(([id, a]) => [id, a.scale ?? 0.77]),
-    );
-    coordinateTraffic(
-      staging,
-      plans.slice(firstPlan),
-      before,
-      scales,
-      (plan, progress) =>
-        blockAt(
-          {
-            staging,
-            initial: before,
-            initialItems,
-            initialObjects: startingObjects,
-            plans: [plan],
-            point,
-            scales,
-          },
-          plan.start + progress * (plan.end - plan.start),
-        ).actors,
-    );
+    const beatPlans = plans.slice(firstPlan);
+    const resolveTiming = () => {
+      for (const plan of beatPlans)
+        plan.timing = actionTiming(plan, staging, scales, options.pack.actions);
+      const natural = Math.max(
+        beatPlans.length || cue ? 0 : 2.5,
+        ...beatPlans.map((p) => durationOf(p.timing)),
+        ...Object.values(beat.props ?? {}).map((p) => (p.delay ?? 0) + (p.over ?? 0)),
+      );
+      const end = cue?.end ?? start + (beat.seconds ?? natural);
+      if (cue && beat.seconds === undefined && end - start < natural - 1e-6)
+        throw new Error(
+          `Cue ${beat.id} gives ${(end - start).toFixed(2)}s; actions need ${natural.toFixed(2)}s. Add a narration pause or set beat.seconds to explicitly fit the action.`,
+        );
+      for (const plan of beatPlans)
+        if (beat.seconds !== undefined) plan.end = end;
+        else if (overlayAction(plan.action)) {
+          plan.timing.act += Math.max(0, end - start - durationOf(plan.timing));
+          plan.end = end;
+        } else plan.end = start + durationOf(plan.timing);
+      return end;
+    };
+    resolveTiming();
+    coordinateTraffic(staging, beatPlans, before, scales, (plan, progress) => {
+      const end = resolveTiming();
+      return blockAt(
+        {
+          staging,
+          initial: before,
+          initialItems,
+          initialObjects: startingObjects,
+          plans: [plan],
+          cues,
+          point,
+          scales,
+        },
+        start + progress * (end - start),
+      ).actors;
+    });
+    cursor = resolveTiming();
+    cues[beat.id] = { start, end: cursor };
     const seats = new Set<string>();
     for (const p of Object.values(state))
       if (p.seat) {
@@ -537,10 +613,9 @@ export function compileBlocking(options: CharacterStageOptions, script: Script) 
     initialObjects,
     initial,
     plans,
+    cues,
     point,
-    scales: Object.fromEntries(
-      Object.entries(options.cast).map(([id, a]) => [id, a.scale ?? 0.77]),
-    ),
+    scales,
   };
 }
 export type Blocking = NonNullable<ReturnType<typeof compileBlocking>>;

@@ -6,7 +6,9 @@ import type { Blocking } from './blocking.js';
 import { blockAt } from './motion.js';
 import { body, connect } from './pose.js';
 import { drawFurniture, furnitureParts, loadFurniture, color } from './furniture.js';
-import { drawBook, type BookFrame } from './book.js';
+import { drawBook, bookPage, type BookFrame } from './book.js';
+import { drawingPlane } from './drawing-plane.js';
+import type { Quad } from '../../ink/projective.js';
 import { project } from './space.js';
 import { union, type FrameBox } from './camera.js';
 
@@ -40,9 +42,30 @@ export async function world(
     throw error;
   }
   type ItemFrame = BookFrame | CarriedFrame;
-  const drawItem = (renderer: SceneRenderer, frame: ItemFrame) => {
-    if ('portable' in frame) props?.draw(renderer, frame, height, frames.objects[frame.id] ?? 0);
-    else drawBook(renderer, frame, height);
+  const drawItem = (
+    renderer: SceneRenderer,
+    frame: ItemFrame,
+    surface?: (id: string, quad: Quad) => void,
+  ) => {
+    if ('portable' in frame) {
+      props?.draw(renderer, frame, height, frames.objects[frame.id] ?? 0);
+      if (options.surfaces?.[frame.id])
+        surface?.(
+          frame.id,
+          drawingPlane(staging.objects[frame.id]!, staging.projection, undefined, frame).quad,
+        );
+    } else
+      drawBook(
+        renderer,
+        frame,
+        height,
+        options.surfaces?.[frame.id]
+          ? () => {
+              const quad = bookPage(frame);
+              if (quad) surface?.(frame.id, quad);
+            }
+          : undefined,
+      );
   };
   let heldItems: Record<string, ItemFrame> = {};
   return {
@@ -77,7 +100,7 @@ export async function world(
       }
       return actions;
     },
-    draw(renderer: SceneRenderer) {
+    draw(renderer: SceneRenderer, surface?: (id: string, quad: Quad) => void) {
       const items: { depth: number; draw: () => void }[] = furniture.parts.map((part) => ({
         depth: part.depth,
         draw: () => {
@@ -90,6 +113,13 @@ export async function world(
           if (item.kind === 'door')
             for (const part of furnitureParts(item, staging.projection, frames.objects[id] ?? 0))
               items.push({ depth: part.depth, draw: () => drawFurniture(renderer, part, height) });
+      for (const id of Object.keys(options.surfaces ?? {})) {
+        const object = staging.objects[id]!;
+        if (object.kind !== 'book' && object.kind !== 'prop' && options.background !== false) {
+          const plane = drawingPlane(object, staging.projection, frames.items[id] ?? object.at);
+          items.push({ depth: plane.depth, draw: () => surface?.(id, plane.quad) });
+        }
+      }
       const held = new Set(Object.values(heldItems).map((b) => b.id));
       if (options.background !== false)
         for (const [id, at] of Object.entries(frames.items))
@@ -107,7 +137,7 @@ export async function world(
                 color: item.color ?? '#855057',
               };
             const frame: ItemFrame = item.kind === 'prop' ? { ...book, portable: true } : book;
-            items.push({ depth: at.z - 0.01, draw: () => drawItem(renderer, frame) });
+            items.push({ depth: at.z - 0.01, draw: () => drawItem(renderer, frame, surface) });
           }
       for (const [id, b] of Object.entries(bodies))
         items.push({
@@ -150,7 +180,7 @@ export async function world(
                   .filter((index) => index >= 0),
                 index = arms.find((index) => index > torso) ?? arms[0] ?? -1;
               if (index > 0) renderer.drawSkeleton(skeleton, -1, order[index - 1]!.data.index);
-              drawItem(renderer, book);
+              drawItem(renderer, book, surface);
               renderer.drawSkeleton(skeleton, index < 0 ? -1 : order[index]!.data.index, -1);
             } else renderer.drawSkeleton(skeleton);
           },
@@ -199,6 +229,27 @@ export async function world(
               }),
             );
           }
+      for (const id of Object.keys(options.surfaces ?? {})) {
+        const object = staging.objects[id]!;
+        const held = Object.values(heldItems).find((b) => b.id === id);
+        if (options.background === false && !held) continue;
+        const quad =
+          object.kind === 'book'
+            ? held && !('portable' in held)
+              ? bookPage(held)
+              : undefined
+            : drawingPlane(object, staging.projection, frames.items[id] ?? object.at, held).quad;
+        if (quad) {
+          const x = Math.min(...quad.map((p) => p.x)),
+            y = Math.min(...quad.map((p) => p.y));
+          add(`${id}.content`, {
+            x,
+            y,
+            width: Math.max(...quad.map((p) => p.x)) - x,
+            height: Math.max(...quad.map((p) => p.y)) - y,
+          });
+        }
+      }
       return Object.fromEntries(Object.entries(grouped).map(([id, boxes]) => [id, union(boxes)]));
     },
     snapshot: () => ({

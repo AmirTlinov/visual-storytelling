@@ -34,13 +34,14 @@ export function areaDiagram(
           'Area sides must be positive integers within the prepared diagram capacity',
         );
       const { width: w, height: h } = viewport,
-        compact = w < 540;
+        compact = w < 540,
+        short = h < 220;
       const unit =
         Math.floor(
           Math.min(
             56,
             (w * (compact ? 1 : 0.55) - 70) / maxColumns,
-            (h - (compact ? 114 : 140)) / maxRows,
+            (h - (compact ? (short ? 80 : 114) : 140)) / maxRows,
           ) / 2,
         ) * 2;
       if (unit < 10)
@@ -51,9 +52,9 @@ export function areaDiagram(
       if (key !== signature) {
         clear();
         signature = key;
-        const font = Math.max(15, Math.min(25, w / 28));
+        const font = compact ? 20 : Math.max(20, Math.min(25, w / 28));
         const x = (Math.round((compact ? (w - columns * unit) / 2 : 70) / (unit / 2)) * unit) / 2;
-        const y = (Math.round((compact ? 43 : 70) / (unit / 2)) * unit) / 2;
+        const y = (Math.round((compact ? (short ? 36 : 43) : 70) / (unit / 2)) * unit) / 2;
         view.grid({ step: unit / 2 });
         const diagram = object(view.layer, 'area', 'blue');
         cleanups.push(diagram.dispose);
@@ -100,7 +101,13 @@ export function areaDiagram(
           const text = lettering(mark.content, value, { x: lx, y: ly, size });
           cleanups.push(text.dispose);
         };
-        label('width', `${columns} см`, x + (columns * unit) / 2, y + rows * unit + font + 5, font);
+        label(
+          'width',
+          `${columns} см`,
+          x + (columns * unit) / 2,
+          y + rows * unit + font + (short ? 1 : 5),
+          font,
+        );
         label('height', `${rows} см`, x - font * 1.05, y + (rows * unit) / 2, font);
         label(
           'formula',
@@ -114,7 +121,7 @@ export function areaDiagram(
           'unit-fact',
           '1 см² = 4 клетки',
           compact ? w / 2 : w * 0.77,
-          compact ? h - 14 : h * 0.65,
+          compact ? h - (short ? 2 : 14) : h * 0.65,
           font,
           'orange',
         );

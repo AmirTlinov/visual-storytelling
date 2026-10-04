@@ -1,0 +1,73 @@
+{
+  "title": "Мастерская · Как решает термостат",
+  "chapters": [
+    {
+      "id": "workshop",
+      "title": "В мастерской",
+      "view": "cast",
+      "drawing": "thermostat",
+      "beats": [
+        {
+          "id": "approach",
+          "say": "Термостат получает температуру от датчика и сравнивает её с заданным порогом.",
+          "text": "Герой подходит к схеме термостата.",
+          "perform": [
+            {
+              "action": "walk",
+              "actor": "hero",
+              "to": "presenter"
+            }
+          ]
+        },
+        {
+          "id": "explain",
+          "say": "Если температура ниже порога, включаем нагрев.",
+          "text": "Герой указывает на условие.",
+          "perform": [
+            {
+              "action": "point",
+              "actor": "hero",
+              "target": "board.content"
+            }
+          ],
+          "shot": {
+            "focus": ["board.content"],
+            "framing": "detail"
+          }
+        },
+        {
+          "id": "idea",
+          "say": "Достаточно изменить входное число, и прежнее правило даст другое решение.",
+          "text": "Герой замечает результат сравнения.",
+          "perform": [
+            {
+              "action": "turn",
+              "actor": "hero",
+              "facing": "front"
+            }
+          ],
+          "actors": {
+            "hero": "idea"
+          },
+          "shot": {
+            "focus": ["hero"],
+            "framing": "medium"
+          }
+        }
+      ]
+    },
+    {
+      "id": "experiment",
+      "title": "Попробуйте сами",
+      "view": "paper",
+      "drawing": "comparison",
+      "beats": [
+        {
+          "id": "change",
+          "say": "Поменяйте температуру. Сравните её с порогом на одной шкале. Если температура меньше порога, нагрев включён. При равенстве он выключен.",
+          "text": "Сравниваем температуру с порогом на общей шкале."
+        }
+      ]
+    }
+  ]
+}

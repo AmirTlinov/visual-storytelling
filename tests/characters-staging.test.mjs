@@ -319,7 +319,13 @@ test('native prepared poses, view skins and contacts survive backward seeks and 
     { action: 'highFive', actors: ['a', 'b'] },
     { action: 'walkTogether', actors: ['a', 'b'], to: ground(0, 2) },
   ]) {
-    const contact = performer(scene([beat(action)]))(1.2);
+    const options = scene([beat(action)]),
+      plan = compileScore(options).blocking.plans[0];
+    const t = plan.timing,
+      total = Object.values(t).reduce((n, v) => n + v, 0);
+    const time =
+      plan.start + ((plan.end - plan.start) * (t.rise + t.approach + t.engage + t.act / 2)) / total;
+    const contact = performer(options)(time);
     for (const pose of Object.values(contact))
       for (const hand of pose.contacts)
         assert.ok(
@@ -410,7 +416,7 @@ test('an opened entrance guides different actors around its leaf and through the
           `${skin}: stance intersects swinging leaf @ ${time}`,
         );
       }
-      if (actor.reach?.weight === 1) {
+      if (actor.reaches?.some((reach) => reach.weight === 1)) {
         const target = project(
             options.set.staging.projection,
             doorHandle(door, frame.objects.door),
@@ -608,18 +614,20 @@ test('take and put preserve one book owner and its last resting place across rew
       undefined,
       'the actor no longer draws a released book',
     );
-    for (const [start, end] of [
-      [0.96, 2],
-      [4, 5.66],
-      [6.96, 8],
-      [8, 9.66],
-    ])
+    for (const plan of blocking.plans.filter((p) => p.transfer)) {
+      const t = plan.timing,
+        factor = (plan.end - plan.start) / Object.values(t).reduce((n, v) => n + v, 0);
+      const start = plan.transfer.taking
+        ? plan.start + (t.rise + t.approach + t.engage) * factor
+        : plan.start;
+      const end = plan.transfer.taking ? plan.end : plan.end - t.release * factor;
       for (let time = start; time <= end; time += 0.03) {
         subject.sample(time, false);
         for (const pose of Object.values(subject.snapshot().actors))
           for (const hand of pose.contacts)
             assert.ok(hand.error < 1, `a full-grip transfer misses by ${hand.error} at ${time}`);
       }
+    }
   } finally {
     subject.dispose();
     reference.dispose();

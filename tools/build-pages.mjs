@@ -2,79 +2,14 @@ import { build } from 'esbuild';
 import { readdir, readFile, writeFile, mkdir, cp, access } from 'node:fs/promises';
 import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { parse } from 'parse5';
 import { sourceAliases } from './source-package.mjs';
 import { sceneAsset } from './assets.mjs';
 import { generateScene } from './generate-scene.mjs';
 import { buildOutput } from './build-output.mjs';
 import { assetURLs, moduleAssetURLs } from './asset-urls.mjs';
-import { setNarrationMode } from './narration.mjs';
+import { checkNarration, setNarrationMode } from './narration.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
-
-async function checkNarration(html, directory) {
-  const audioFiles = new Set();
-  const local = (url, base = directory) => {
-    if (typeof url !== 'string') return;
-    url = url.trim();
-    if (!url || /^(?:[a-z][\w+.-]*:|\/\/|#)/i.test(url)) return;
-    const path = decodeURIComponent(url.split(/[?#]/)[0]);
-    return path.startsWith('/') ? resolve(directory, '.' + path) : resolve(base, path);
-  };
-  function visit(node) {
-    if (node.tagName === 'audio') {
-      const attrs = Object.fromEntries(node.attrs.map(({ name, value }) => [name, value]));
-      if (attrs['data-silent'] === 'true') return;
-      const urls =
-        attrs.src || attrs['data-src']
-          ? [attrs.src || attrs['data-src']]
-          : (node.childNodes ?? [])
-              .filter((child) => child.tagName === 'source')
-              .map((child) => child.attrs.find(({ name }) => name === 'src')?.value);
-      for (const url of urls) {
-        const path = local(url);
-        if (path) audioFiles.add(path);
-      }
-    }
-    for (const child of node.childNodes ?? []) visit(child);
-  }
-  visit(parse(html));
-  if (!audioFiles.size) return;
-  const script = resolve(directory, 'narration.json');
-  try {
-    await access(script);
-  } catch (error) {
-    if (error.code === 'ENOENT') return;
-    throw error;
-  }
-  for (const audio of audioFiles) {
-    // Aligned cues live with their generated audio; an old template may remain at the root.
-    for (const folder of new Set([dirname(audio), directory])) {
-      const timeline = resolve(folder, 'timeline.json');
-      let receipt;
-      try {
-        receipt = JSON.parse(await readFile(timeline, 'utf8'));
-      } catch (error) {
-        if (error.code === 'ENOENT') continue;
-        throw error;
-      }
-      if (!receipt.source_sha256 || local(receipt.audio, folder) !== audio) continue;
-      try {
-        await promisify(execFile)(
-          'python3',
-          [resolve(root, 'tools/audio/cli.py'), 'check', script, '--timeline', timeline],
-          { env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } },
-        );
-      } catch (error) {
-        if (error.code === 'ENOENT')
-          throw new Error('Checking generated narration requires python3 (standard library only).');
-        throw new Error(`${timeline}: ${error.stderr?.trim() || error.message}`);
-      }
-      break;
-    }
-  }
-}
 
 export async function buildPage(
   source,

@@ -1,7 +1,7 @@
 import { SceneShell, type SceneOptions } from '../scene.js';
 import { theme, type Theme } from '../ink/palette.js';
 import type { ControlValue } from '../controls/fields.js';
-import type { Script } from './cues.js';
+import { activeCue, type Script } from './cues.js';
 import { composeChapters, chapterTime, type ChapterTiming } from './composition-plan.js';
 import { chapterPreviews, type MountedChapter } from './composition-previews.js';
 import type { Story } from './story.js';
@@ -12,6 +12,10 @@ export interface ChapterFrame {
   reduced: boolean;
   mode: 'story' | 'explore';
   values: Readonly<Record<string, ControlValue>>;
+  /** Latest started local cue; narration alignment supplies its boundaries. */
+  beat?: { id: string; progress: number };
+  /** A live drawing can manipulate the same model controls as the shell. */
+  input?(values: Record<string, ControlValue>): void;
 }
 export interface ChapterPresentation {
   render(frame: ChapterFrame): void;
@@ -19,6 +23,7 @@ export interface ChapterPresentation {
   /** Freeze the current frame before returning; decoding its boundary image may be asynchronous. */
   capture?(): Promise<HTMLCanvasElement> | HTMLCanvasElement;
   reset?(): void;
+  focus?(ids: readonly string[]): void;
   dispose(): void;
 }
 export interface SceneChapter extends ChapterTiming {
@@ -153,6 +158,7 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
           reduced,
           mode: 'story' as const,
           values: defaults,
+          beat: activeCue(options.chapters[index]!.script, progress * timing.seconds),
         },
       };
     };
@@ -184,8 +190,20 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
         current = index;
         const presentation = mounted[index]!;
         presentation.element.hidden = false;
-        latest = { ...state.frame, progress, time: progress * chapter.seconds, mode, values };
+        latest = {
+          ...state.frame,
+          progress,
+          time: progress * chapter.seconds,
+          mode,
+          values,
+          beat: activeCue(chapter.script, progress * chapter.seconds),
+          input: (changes) => story!.explore({ ...story!.values, ...changes }),
+        };
         presentation.drawing.render(latest);
+        if (parent.scene) {
+          if (presentation.drawing.focus) parent.scene.focus = presentation.drawing.focus;
+          else delete parent.scene.focus;
+        }
         shell.showParameters([
           'chapter',
           'sceneTime',
@@ -216,9 +234,17 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
       },
     });
     const scene = parent.scene!;
+    if (mounted[current]!.drawing.focus) scene.focus = mounted[current]!.drawing.focus;
     scene.snapshot = () => ({
       chapter: options.chapters[current]!.id,
-      frame: latest,
+      frame: latest && {
+        time: latest.time,
+        progress: latest.progress,
+        reduced: latest.reduced,
+        mode: latest.mode,
+        values: latest.values,
+        beat: latest.beat,
+      },
       content: mounted[current]!.drawing.snapshot?.(),
     });
     scene.checkpoints = [

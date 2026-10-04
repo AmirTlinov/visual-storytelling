@@ -51,7 +51,9 @@ export function body(
     return b;
   };
   const hips = bone(rig.hips),
-    torso = bone(rig.torso);
+    torso = bone(rig.torso),
+    face = bone(rig.face),
+    head = rig.head ? bone(rig.head) : undefined;
   const arms = Object.fromEntries(
     sides.map((side) => [
       side,
@@ -113,6 +115,21 @@ export function body(
     b.pose.x = local.x;
     b.pose.y = local.y;
   }
+  function look(state: BlockingActor) {
+    if (!state.gaze || !head || state.facing === 'back') return;
+    const target = project(space, state.gaze.at),
+      origin = face.appliedPose;
+    const dx = target.x - origin.worldX,
+      dy = height - target.y - origin.worldY;
+    // Tilt the whole head while preserving the body's native or planned action.
+    const tilt = (Math.atan2(dy, Math.max(40 * scale, Math.abs(dx))) * 180) / Math.PI;
+    head.pose.rotation +=
+      Math.max(-18, Math.min(18, tilt)) *
+      (dx < 0 ? -1 : 1) *
+      (actor.flip ? -1 : 1) *
+      state.gaze.weight;
+    skeleton.updateWorldTransform(Physics.reset);
+  }
   return {
     perf,
     actor,
@@ -142,7 +159,7 @@ export function body(
         state.travel ||
         state.seated > 0 ||
         state.holding ||
-        state.reach ||
+        state.reaches ||
         state.transfer ||
         state.contact ||
         state.facing !== 'front';
@@ -151,6 +168,7 @@ export function body(
         scale,
         clip: constrained ? rig.views[state.facing] : undefined,
         mood: state.mood,
+        moodTime: state.moodTime,
         view: state.facing,
       });
       if (rig.shadow) {
@@ -160,7 +178,10 @@ export function body(
           slot.appliedPose.color.a = 0;
         }
       }
-      if (!constrained) return action;
+      if (!constrained) {
+        look(state);
+        return action;
+      }
       // Seat height belongs to the furniture, not to a hand-tuned actor pose.
       const restingHips = hips.pose.y;
       hips.pose.y +=
@@ -249,6 +270,7 @@ export function body(
         }
       }
       skeleton.updateWorldTransform(Physics.reset);
+      look(state);
       if (state.facing === 'back')
         for (const name of rig.faceSlots) {
           const slot = skeleton.findSlot(name);
@@ -257,18 +279,18 @@ export function body(
             slot.appliedPose.color.a = 0;
           }
         }
-      if (state.reach) {
-        const target = project(space, state.reach.at);
+      for (const gesture of state.reaches ?? []) {
+        const target = project(space, gesture.at);
         reach(
-          state.reach.side ??
+          gesture.side ??
             (state.holding && state.hands === 1
               ? state.holdingHand === 'left'
                 ? 'right'
                 : 'left'
               : this.sideToward(target)),
-          { x: target.x, y: target.y + state.reach.press * pressTravel * scale },
-          state.reach.weight,
-          state.reach.gesture ?? 'point',
+          { x: target.x, y: target.y + gesture.press * pressTravel * scale },
+          gesture.weight,
+          gesture.gesture ?? 'point',
         );
       }
       return action;

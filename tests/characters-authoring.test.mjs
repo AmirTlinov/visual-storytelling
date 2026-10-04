@@ -19,6 +19,16 @@ import { world } from '../dist/characters/staging/world.js';
 import { performance, readSkeleton, unpackCharacter } from '../dist/characters/performance.js';
 
 const { data } = readSkeleton(await unpackCharacter(chibi));
+const actionTime = (plan, phase, progress = 0.5) => {
+  const order = ['rise', 'approach', 'engage', 'act', 'release'];
+  const elapsed =
+    order.slice(0, order.indexOf(phase)).reduce((n, key) => n + plan.timing[key], 0) +
+    plan.timing[phase] * progress;
+  return (
+    plan.start +
+    ((plan.end - plan.start) * elapsed) / order.reduce((n, key) => n + plan.timing[key], 0)
+  );
+};
 const inside = (p, box) =>
   p.x > box.left + 1e-6 &&
   p.x < box.right - 1e-6 &&
@@ -127,7 +137,9 @@ test('an arranged reading routine reaches the book, opens and closes it, then re
   );
   for (const action of ['openBook', 'closeBook']) {
     const plan = plans[action];
-    assert.equal(blockAt(blocking, (plan.start + plan.end) / 2).actors.hero.bookOpen, 0.5);
+    assert.ok(
+      Math.abs(blockAt(blocking, (plan.start + plan.end) / 2).actors.hero.bookOpen - 0.5) < 1e-10,
+    );
     assert.equal(blockAt(blocking, plan.end).actors.hero.bookOpen, action === 'openBook' ? 1 : 0);
   }
   const final = blockAt(blocking, score.script.duration);
@@ -142,12 +154,14 @@ test('an arranged reading routine reaches the book, opens and closes it, then re
     ),
   }).blocking;
   const put = returning.plans.at(-1),
-    span = put.end - put.start;
+    closeSpan = Math.max(0.35, put.timing.approach);
   assert.equal(blockAt(returning, put.start).actors.hero.bookOpen, 1);
   assert.ok(
-    Math.abs(blockAt(returning, put.start + span * 0.15).actors.hero.bookOpen - 0.5) < 1e-10,
+    Math.abs(
+      blockAt(returning, put.start + put.timing.rise + closeSpan / 2).actors.hero.bookOpen - 0.5,
+    ) < 1e-10,
   );
-  assert.equal(blockAt(returning, put.start + span * 0.3).actors.hero.bookOpen, 0);
+  assert.equal(blockAt(returning, put.start + put.timing.rise + closeSpan).actors.hero.bookOpen, 0);
   assert.equal(
     blockAt(returning, put.end).actors.hero.bookOpen,
     0,
@@ -291,11 +305,11 @@ test('a hand tap joins different-height actors for a shared route around furnitu
   const subject = await actorWorld(options, score);
   try {
     for (const [plan, progress] of [
-      [blocking.plans[0], 0.46],
+      [blocking.plans[0], 0.5],
       [walk, 0.4],
       [walk, 0.65],
     ]) {
-      const time = plan.start + (plan.end - plan.start) * progress;
+      const time = actionTime(plan, 'act', progress);
       subject.sample(time, false);
       const expected = subject.snapshot();
       for (const actor of Object.values(expected.actors)) {
@@ -609,8 +623,9 @@ test('portable art, support surfaces, free hands, device state and bench slots s
     assert.equal(taken.holding, 'letter');
     assert.equal(taken.hands, 1);
     assert.equal(taken.holdingHand, 'right');
-    assert.equal(blockAt(score.blocking, 5.9).objects.meter, 0);
-    assert.equal(blockAt(score.blocking, 6.1).objects.meter, 1);
+    const contactTime = actionTime(score.blocking.plans[1], 'act');
+    assert.equal(blockAt(score.blocking, contactTime - 0.001).objects.meter, 0);
+    assert.equal(blockAt(score.blocking, contactTime + 0.001).objects.meter, 1);
     const final = blockAt(score.blocking, 16);
     assert.equal(final.actors.a.holding, undefined);
     assert.equal(final.actors.a.seatSlot, 0);
@@ -625,7 +640,7 @@ test('portable art, support surfaces, free hands, device state and bench slots s
       subject.sample(t, false);
       assert.deepEqual(subject.snapshot(), expected[i]);
     }
-    subject.sample(6.4, false);
+    subject.sample(contactTime, false);
     const hands = subject.snapshot().actors.a.contacts;
     assert.equal(new Set(hands.map((h) => h.side)).size, 2, 'carry and press use different hands');
     for (const hand of hands) assert.ok(hand.error < 1, `${hand.kind} error: ${hand.error}`);
@@ -688,7 +703,9 @@ test('press plans reachable shoulders for different support heights, free hands 
           const subject = await world(options, score.blocking, { hero: perf }, undefined);
           try {
             const expected = [];
-            for (const time of [2.8, 2.9, 3.1, 3.6, 4.1]) {
+            for (const time of [0, 0.2, 0.5, 0.8, 1].map((p) =>
+              actionTime(score.blocking.plans[1], 'act', p),
+            )) {
               subject.sample(time, false);
               const snapshot = subject.snapshot();
               assert.equal(snapshot.actors.hero.seated, 0, 'stand up before reaching the control');
@@ -736,5 +753,243 @@ test('press plans reachable shoulders for different support heights, free hands 
           }),
         /Cannot reach a press control at height/,
       );
+  }
+});
+
+test('natural action time follows route length and speed while authored and narrated intervals stay authoritative', () => {
+  const room = readingRoom();
+  const set = { ...room, staging: { ...room.staging, spots: {}, objects: {}, layout: undefined } };
+  const options = { pack: chibi, set, cast: { hero: { skin: 'tesla', at: ground(-2, 1) } } };
+  const walk = (x, extra = {}) =>
+    compileScore({
+      ...options,
+      beats: [
+        {
+          id: 'go',
+          text: 'Идём',
+          ...extra,
+          perform: [{ action: 'walk', actor: 'hero', to: ground(x, 1), ...extra.motion }],
+        },
+      ],
+    });
+  assert.equal(walk(0).script.duration, 2 / 1.25);
+  assert.equal(walk(2).script.duration, 4 / 1.25);
+  const idea = {
+    ...options,
+    beats: [
+      { id: 'eureka', text: 'Эврика', perform: [{ action: 'mood', actor: 'hero', name: 'idea' }] },
+    ],
+  };
+  assert.equal(compileScore(idea).script.duration, chibi.actions.idea.pose);
+  const spokenIdea = compileScore({
+    ...idea,
+    script: { duration: 6, cues: { eureka: { start: 0, end: 6 } } },
+  });
+  assert.equal(blockAt(spokenIdea.blocking, 5).actors.hero.moodTime, 5);
+  assert.throws(
+    () =>
+      compileScore({
+        ...idea,
+        script: { duration: 1.2, cues: { eureka: { start: 0, end: 1.2 } } },
+      }),
+    /actions need 2.00s/,
+  );
+  assert.equal(walk(2, { motion: { speed: 2 } }).script.duration, 2);
+  const paced = walk(2, { seconds: 8 });
+  assert.equal(paced.script.duration, 8);
+  assert.ok(Math.abs(blockAt(paced.blocking, 4).actors.hero.at.x) < 1e-9);
+  const narrated = compileScore({
+    ...options,
+    script: { duration: 9, cues: { go: { start: 3, end: 9, action: 'Идём' } } },
+    beats: [
+      { id: 'go', text: 'Идём', perform: [{ action: 'walk', actor: 'hero', to: ground(2, 1) }] },
+    ],
+  });
+  assert.equal(narrated.blocking.plans[0].start, 3);
+  assert.equal(narrated.blocking.plans[0].end, 3 + 4 / 1.25);
+  assert.ok(Math.abs(blockAt(narrated.blocking, 3 + 2 / 1.25).actors.hero.at.x) < 1e-9);
+  assert.deepEqual(
+    blockAt(narrated.blocking, 7).actors.hero.at,
+    blockAt(narrated.blocking, 9).actors.hero.at,
+    'long speech holds the completed walk without slowing it',
+  );
+  assert.throws(
+    () =>
+      compileScore({
+        ...options,
+        script: { duration: 1, cues: { go: { start: 0, end: 1, action: 'Идём' } } },
+        beats: [
+          {
+            id: 'go',
+            text: 'Идём',
+            perform: [{ action: 'walk', actor: 'hero', to: ground(2, 1) }],
+          },
+        ],
+      }),
+    /actions need 3.20s/,
+  );
+  assert.throws(() => walk(2, { motion: { speed: 0 } }), /speed must be positive/);
+
+  const crossing = compileScore({
+    pack: chibi,
+    set,
+    cast: {
+      a: { skin: 'tesla', at: ground(-2, 1) },
+      b: { skin: 'mira', at: ground(1, 1), scale: 0.64 },
+    },
+    beats: [
+      {
+        id: 'cross',
+        text: 'Разойтись',
+        perform: [
+          { action: 'walk', actor: 'a', to: ground(3, 1) },
+          { action: 'run', actor: 'b', to: ground(-3, 1) },
+        ],
+      },
+    ],
+  });
+  const duration = crossing.script.duration;
+  assert.notEqual(crossing.blocking.plans[0].end, crossing.blocking.plans[1].end);
+  for (let i = 0; i <= 200; i++) {
+    const { a, b } = blockAt(crossing.blocking, (duration * i) / 200).actors;
+    assert.ok(
+      Math.hypot(a.at.x - b.at.x, a.at.z - b.at.z) >= 0.52 * (0.77 + 0.64) - 0.001,
+      `natural traffic @ ${i}`,
+    );
+  }
+});
+
+test('walking combines independent hands, gaze and mood without changing its route or carrying grip', async () => {
+  const { portable } = await import('../dist/characters/staging/portable.js');
+  const room = readingRoom();
+  const set = {
+    ...room,
+    staging: {
+      ...room.staging,
+      spots: {},
+      layout: undefined,
+      objects: { letter: portable('letter', ground(0, 1)) },
+    },
+  };
+  const cast = {
+    hero: { skin: 'tesla', scale: 0.8, at: ground(-2, 1), holding: 'letter', holdingHand: 'left' },
+  };
+  const walk = { action: 'walk', actor: 'hero', to: ground(2, 1) };
+  const layers = [
+    { action: 'point', actor: 'hero', target: ground(0, 1, 2), hand: 'right' },
+    { action: 'look', actor: 'hero', target: ground(0, 1, 3) },
+    { action: 'mood', actor: 'hero', name: 'think' },
+  ];
+  const options = {
+    pack: chibi,
+    set,
+    cast,
+    beats: [{ id: 'show', text: 'Показать дорогу', perform: [walk, ...layers] }],
+  };
+  const score = compileScore(options),
+    reference = compileScore({ ...options, beats: [{ ...options.beats[0], perform: [walk] }] });
+  const reversed = compileScore({
+    ...options,
+    beats: [{ ...options.beats[0], perform: [...layers].reverse().concat(walk) }],
+  });
+  const time = score.script.duration / 2;
+  const frame = blockAt(score.blocking, time);
+  assert.deepEqual(frame, blockAt(reversed.blocking, time));
+  assert.deepEqual(frame.actors.hero.at, blockAt(reference.blocking, time).actors.hero.at);
+  assert.equal(frame.actors.hero.mood, 'think');
+  assert.equal(frame.actors.hero.gaze.weight, 1);
+  assert.equal(frame.actors.hero.reaches[0].side, 'right');
+  assert.equal(frame.actors.hero.holdingHand, 'left');
+  const subject = await actorWorld(options, score);
+  try {
+    subject.sample(time, false);
+    const expected = subject.snapshot();
+    const contacts = expected.actors.hero.contacts;
+    assert.equal(new Set(contacts.map((c) => c.side)).size, 2);
+    for (const c of contacts) assert.ok(c.error < 1, `${c.kind} contact ${c.error}`);
+    subject.sample(score.script.duration, true);
+    subject.sample(0, false);
+    subject.sample(time, false);
+    assert.deepEqual(subject.snapshot(), expected);
+  } finally {
+    subject.dispose();
+  }
+  const end = blockAt(score.blocking, score.script.duration).actors.hero;
+  assert.equal(end.reaches, undefined);
+  assert.equal(end.gaze, undefined);
+  assert.equal(end.mood, undefined);
+  for (const [extra, message] of [
+    [{ ...walk, action: 'run' }, /locomotion/],
+    [{ ...layers[0] }, /right-hand/],
+    [{ ...layers[1] }, /gaze/],
+    [{ ...layers[2] }, /expression/],
+  ])
+    assert.throws(
+      () =>
+        compileScore({
+          ...options,
+          beats: [{ ...options.beats[0], perform: [walk, ...layers, extra] }],
+        }),
+      message,
+    );
+  assert.throws(
+    () =>
+      compileScore({
+        ...options,
+        beats: [{ ...options.beats[0], perform: [{ ...layers[0], hand: 'left' }] }],
+      }),
+    /free left hand/,
+  );
+  assert.throws(
+    () =>
+      compileScore({
+        ...options,
+        beats: [{ ...options.beats[0], perform: [{ ...layers[2], name: 'missing' }] }],
+      }),
+    /Unknown mood/,
+  );
+  const twoHands = compileScore({
+    ...options,
+    cast: { hero: { ...cast.hero, holding: undefined } },
+    beats: [{ ...options.beats[0], perform: [walk, { ...layers[0], hand: 'left' }, layers[0]] }],
+  });
+  assert.equal(
+    blockAt(twoHands.blocking, twoHands.script.duration / 2).actors.hero.reaches.length,
+    2,
+  );
+
+  // A face or gaze cue must not replace a native speaking gesture with idle-front.
+  const actor = { ...cast.hero, holding: undefined, action: 'wave' };
+  const gestureOptions = {
+    ...options,
+    background: false,
+    cast: { hero: actor },
+    beats: [{ id: 'show', text: 'Объясняет', perform: layers.slice(1) }],
+  };
+  const gestureScore = compileScore(gestureOptions),
+    at = project(set.staging.projection, actor.at);
+  const make = () => performance(data, chibi, actor, gestureScore.tracks.hero, at, set.height);
+  const actual = make(),
+    native = make(),
+    gestureWorld = await world(gestureOptions, gestureScore.blocking, { hero: actual });
+  const matrix = (perf, name) => {
+    const p = perf.skeleton.findBone(name).appliedPose;
+    return [p.a, p.b, p.c, p.d, p.worldX, p.worldY];
+  };
+  try {
+    gestureWorld.sample(0.9, false);
+    native.sample(0.9, false, {
+      at,
+      scale: (at.scale * actor.scale * set.staging.projection.unit) / 100,
+    });
+    for (const name of [
+      chibi.rig.hips,
+      chibi.rig.torso,
+      ...Object.values(chibi.rig.arms).flatMap((arm) => [arm.upper, arm.lower]),
+    ])
+      assert.deepEqual(matrix(actual, name), matrix(native, name), `native gesture ${name}`);
+    assert.notDeepEqual(matrix(actual, chibi.rig.head), matrix(native, chibi.rig.head));
+  } finally {
+    gestureWorld.dispose();
   }
 });

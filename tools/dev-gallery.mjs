@@ -12,6 +12,7 @@ const server = await develop(path('examples'), 8793, {
     const { stdout } = await promisify(execFile)(process.execPath, [
       path('tools/build.mjs'),
       output,
+      '--prepare-narration',
     ]);
     process.stdout.write(stdout);
   },

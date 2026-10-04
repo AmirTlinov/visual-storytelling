@@ -1,8 +1,9 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { join } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { narrationSource } from './story-document.mjs';
 import { parse } from 'parse5';
 
 function editAudioTags(html, edit) {
@@ -61,10 +62,12 @@ export async function silenceSceneCopy(directory) {
 /** The same cached synthesis/alignment route for audio, scaffolding and delivery. */
 export async function buildNarration(directory, { signal } = {}) {
   signal?.throwIfAborted();
+  const source = await narrationSource(directory);
+  if (!source) throw new Error('Provide story.json or narration.json for speech');
   await new Promise((resolve, reject) => {
     const child = spawn(
       fileURLToPath(new URL('sketch-audio', import.meta.url)),
-      ['build', join(directory, 'narration.json'), '--out', directory],
+      ['build', source, '--out', directory],
       { signal, stdio: 'inherit' },
     );
     child.on('error', reject);
@@ -79,5 +82,88 @@ export async function buildNarration(directory, { signal } = {}) {
       html = await readFile(file, 'utf8');
     const audible = setNarrationMode(html, false);
     if (audible !== html) await writeFile(file, audible);
+  }
+}
+
+const root = fileURLToPath(new URL('../', import.meta.url));
+export async function checkNarration(html, directory) {
+  const audioFiles = new Set();
+  const local = (url, base = directory) => {
+    if (typeof url !== 'string') return;
+    url = url.trim();
+    if (!url || /^(?:[a-z][\w+.-]*:|\/\/|#)/i.test(url)) return;
+    const path = decodeURIComponent(url.split(/[?#]/)[0]);
+    return path.startsWith('/') ? resolve(directory, '.' + path) : resolve(base, path);
+  };
+  function visit(node) {
+    if (node.tagName === 'audio') {
+      const attrs = Object.fromEntries(node.attrs.map(({ name, value }) => [name, value]));
+      if (attrs['data-silent'] === 'true') return;
+      const urls =
+        attrs.src || attrs['data-src']
+          ? [attrs.src || attrs['data-src']]
+          : (node.childNodes ?? [])
+              .filter((child) => child.tagName === 'source')
+              .map((child) => child.attrs.find(({ name }) => name === 'src')?.value);
+      for (const url of urls) {
+        const path = local(url);
+        if (path) audioFiles.add(path);
+      }
+    }
+    for (const child of node.childNodes ?? []) visit(child);
+  }
+  visit(parse(html));
+  if (!audioFiles.size) return;
+  const script = await narrationSource(directory);
+  if (!script) return;
+  for (const audio of audioFiles) {
+    let matched = false;
+    // Receipts may live beside the audio or at the authored scene root.
+    for (const folder of new Set([dirname(audio), directory])) {
+      const timeline = resolve(folder, 'timeline.json');
+      let receipt;
+      try {
+        receipt = JSON.parse(await readFile(timeline, 'utf8'));
+      } catch (error) {
+        if (error.code === 'ENOENT') continue;
+        throw error;
+      }
+      if (local(receipt.audio, folder) !== audio) continue;
+      matched = true;
+      if (!receipt.source_sha256)
+        throw new Error('Generated narration has no source receipt. Run visual-story audio.');
+      try {
+        await promisify(execFile)(
+          'python3',
+          [resolve(root, 'tools/audio/cli.py'), 'check', script, '--timeline', timeline],
+          { env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } },
+        );
+      } catch (error) {
+        if (error.code === 'ENOENT')
+          throw new Error('Checking generated narration requires python3 (standard library only).');
+        throw new Error(`${timeline}: ${error.stderr?.trim() || error.message}`);
+      }
+      break;
+    }
+    if (!matched)
+      throw new Error(
+        `Generated narration has no matching timeline for ${audio}. Run visual-story audio.`,
+      );
+  }
+}
+
+/** Reuse the receipt check and speech cache before an audible development rebuild. */
+export async function prepareNarration(directory) {
+  for (const name of await readdir(directory)) {
+    if (!name.endsWith('.html')) continue;
+    const html = await readFile(join(directory, name), 'utf8');
+    try {
+      await checkNarration(html, directory);
+    } catch (error) {
+      if (!(await narrationSource(directory))) throw error;
+      await buildNarration(directory);
+      await checkNarration(html, directory);
+      return;
+    }
   }
 }

@@ -46,7 +46,8 @@ export function coordinateTraffic(
       const action = plans.find((plan) => Object.hasOwn(plan.from, id));
       return {
         id,
-        path: action ? trace(action, id) : Array.from({ length: samples + 1 }, () => p.at),
+        plan: action,
+        at: p.at,
       };
     });
   for (const plan of walkers) {
@@ -57,9 +58,16 @@ export function coordinateTraffic(
     const free = (path: GroundPoint[]) =>
       reserved.every(
         (other) =>
-          other.id === id || !crossing(path, other.path, 0.52 * (scales[id]! + scales[other.id]!)),
+          other.id === id ||
+          !crossing(
+            path,
+            other.plan
+              ? trace(other.plan, other.id)
+              : Array.from({ length: samples + 1 }, () => other.at),
+            0.52 * (scales[id]! + scales[other.id]!),
+          ),
       );
-    let path = trace(plan, id);
+    const path = trace(plan, id);
     if (!free(path)) {
       const dx = to.x - from.x,
         dz = to.z - from.z,
@@ -97,8 +105,7 @@ export function coordinateTraffic(
         throw new Error(
           `No clear passing route for ${id}; the destination or corridor is occupied`,
         );
-      path = trace(plan, id);
     }
-    reserved.push({ id, path });
+    reserved.push({ id, plan, at: to });
   }
 }

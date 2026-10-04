@@ -3,43 +3,22 @@ import { join, resolve, sep } from 'node:path';
 import { buildScene } from './build-pages.mjs';
 import { serve } from './site.mjs';
 
-// Only the development server injects this client; exported pages stay independent.
-const client = `<script type="module">
-const key = 'visual-story:' + location.pathname;
-let handle;
-addEventListener('load', async () => { try {
-  await window.galleryReady;
-  await document.fonts.ready;
-  handle = document.querySelector('.ve-scene')?.scene;
-  const query = new URLSearchParams(location.search);
-  const stored = sessionStorage.getItem(key);
-  sessionStorage.removeItem(key);
-  const cue = query.get('cue');
-  const time = stored !== null ? Number(stored) : cue ? handle?.review?.().cues.find(c => c.id === cue)?.start :
-    query.has('t') ? Number(query.get('t')) : undefined;
-  if (cue && stored === null && time === undefined) throw new Error('Неизвестная метка: ' + cue + '. Проверьте timeline.json.');
-  if (Number.isFinite(time)) { handle?.pause?.(); handle?.seek?.(time); }
-} catch (error) { showError(error.message); } });
-const events = new EventSource('/__visual_story_events');
-events.addEventListener('built', () => {
-  const time = handle?.currentTime ?? document.querySelector('[data-seek]')?.value;
-  if (time !== undefined) sessionStorage.setItem(key, String(time));
-  location.reload();
-});
-events.addEventListener('build-error', event => showError('Сборка не удалась. Исправьте исходник; сцена обновится автоматически.\\n' + JSON.parse(event.data)));
-addEventListener('error', event => showError(event.message));
-addEventListener('unhandledrejection', event => showError(event.reason?.message ?? String(event.reason)));
-function showError(message) {
-  let error = document.getElementById('visual-story-build-error');
-  if (!error) {
-    error = document.createElement('pre'); error.id = 'visual-story-build-error';
-    error.setAttribute('role', 'alert');
-    error.style.cssText = 'position:fixed;inset:auto 8px 8px;z-index:99999;padding:12px;white-space:pre-wrap;background:#321d22;color:#fff;font:13px/1.5 monospace;max-height:35vh;overflow:auto';
-    document.body.append(error);
-  }
-  error.textContent = message;
+import { readFile } from 'node:fs/promises';
+import { contentDigest } from './build-info.mjs';
+import { previewSessions } from './dev-session.mjs';
+import { prepareNarration } from './narration.mjs';
+import { parse } from 'parse5';
+const clientSource = await readFile(new URL('./dev-client.mjs', import.meta.url));
+const client = (revision) =>
+  `<script type="module" src="/__visual_story_client.mjs" data-visual-story-client data-revision="${revision ?? ''}"></script>`;
+function attachClient(html, revision) {
+  const document = parse(html, { sourceCodeLocationInfo: true });
+  const body = document.childNodes
+    .find((n) => n.tagName === 'html')
+    ?.childNodes.find((n) => n.tagName === 'body');
+  const offset = body?.sourceCodeLocation?.endTag?.startOffset ?? html.length;
+  return html.slice(0, offset) + client(revision) + html.slice(offset);
 }
-</script>`;
 
 /** Reuse the production builder; publish only a complete successful revision. */
 export async function develop(
@@ -49,7 +28,9 @@ export async function develop(
 ) {
   const source = resolve(directory),
     destination = output ? resolve(output) : join(source, 'dist');
-  const clients = new Set();
+  const clients = new Set(),
+    sessions = previewSessions();
+  let revision;
   let hasBuild = existsSync(join(destination, 'index.html'));
   let closed = false,
     dirty = false,
@@ -67,12 +48,17 @@ export async function develop(
       while (dirty && !closed) {
         dirty = false;
         try {
+          await prepareNarration(source);
           await builder(source, destination, buildOptions);
+          revision = await contentDigest(destination, ['.']);
+          const receipt = { revision, builtAt: new Date().toISOString() };
+          sessions.publish(receipt);
           hasBuild = true;
           buildError = undefined;
-          broadcast('built', null);
+          broadcast('built', receipt);
         } catch (error) {
           buildError = error.message;
+          sessions.fail(buildError);
           broadcast('build-error', error.message);
           console.error(error.message);
         }
@@ -82,22 +68,37 @@ export async function develop(
     });
     return running;
   }
+  if (hasBuild) {
+    revision = await contentDigest(destination, ['.']);
+    sessions.publish({ revision });
+  }
   await rebuild();
   const server = await serve(destination, port, {
-    html: (html) => html.replace('</body>', `${client}</body>`),
-    handle(req, res) {
+    html: (html) => attachClient(html, revision),
+    async handle(req, res) {
+      if (await sessions.handle(req, res)) return true;
       const pathname = new URL(req.url, 'http://localhost').pathname;
+      if (pathname === '/__visual_story_client.mjs') {
+        res
+          .writeHead(200, { 'Content-Type': 'text/javascript', 'Cache-Control': 'no-store' })
+          .end(clientSource);
+        return true;
+      }
       if (!hasBuild && (pathname === '/' || pathname === '/index.html')) {
         res.writeHead(200, {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'no-store',
         });
         res.end(
-          `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Сборка сцены</title></head><body>${client}</body></html>`,
+          `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Сборка сцены</title></head><body>${client(revision)}</body></html>`,
         );
         return true;
       }
-      if (req.url !== '/__visual_story_events') return false;
+      if (pathname !== '/__visual_story_events') return false;
+      const detach = sessions.connect(
+        new URL(req.url, 'http://localhost').searchParams.get('view'),
+        res,
+      );
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-store',
@@ -106,7 +107,10 @@ export async function develop(
       res.write(': connected\n\n');
       if (buildError) res.write(`event: build-error\ndata: ${JSON.stringify(buildError)}\n\n`);
       clients.add(res);
-      req.on('close', () => clients.delete(res));
+      req.on('close', () => {
+        clients.delete(res);
+        detach();
+      });
       return true;
     },
   });
@@ -126,6 +130,7 @@ export async function develop(
       clearTimeout(timer);
       for (const watcher of watchers) watcher.close();
       await running;
+      sessions.dispose();
       for (const response of clients) response.end();
       await server.close();
     },
