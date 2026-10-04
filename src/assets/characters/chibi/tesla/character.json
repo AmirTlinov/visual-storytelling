@@ -1,0 +1,103 @@
+{
+  "id": "tesla",
+  "template": "chibi",
+  "parts": {
+    "back-hair": {
+      "path": "nate/back-hair",
+      "file": "back-hair.svg"
+    },
+    "hair-front": {
+      "path": "nate/hair-front",
+      "file": "hair-front.svg"
+    },
+    "head-base": {
+      "path": "nate/head-base",
+      "file": "head-base.svg"
+    },
+    "ear": {
+      "path": "nate/ear",
+      "file": "ear.svg"
+    },
+    "body": {
+      "path": "nate/body",
+      "file": "body.svg"
+    },
+    "arm": {
+      "path": "nate/arm",
+      "file": "arm.svg"
+    },
+    "leg": {
+      "path": "nate/leg",
+      "file": "leg.svg"
+    },
+    "eyebrow": {
+      "path": "nate/eyebrow",
+      "file": "eyebrow.svg"
+    },
+    "mouth-neutral": {
+      "path": "common/mouth-neutral",
+      "file": "mouth-neutral.svg",
+      "y": 9
+    },
+    "mouth-doubt": {
+      "path": "common/mouth-doubt",
+      "file": "mouth-doubt.svg",
+      "y": 9
+    },
+    "mouth-open-smile": {
+      "path": "common/mouth-open-smile",
+      "file": "mouth-open-smile.svg",
+      "y": 9
+    },
+    "mouth-3": {
+      "path": "common/mouth-3",
+      "file": "mouth-3.svg",
+      "y": 9
+    },
+    "mouth-bracket": {
+      "path": "common/mouth-bracket",
+      "file": "mouth-bracket.svg",
+      "y": 9
+    },
+    "mouth-line": {
+      "path": "common/mouth-line",
+      "file": "mouth-line.svg",
+      "y": 9
+    },
+    "mouth-rectangle": {
+      "path": "common/mouth-rectangle",
+      "file": "mouth-rectangle.svg",
+      "y": 9
+    },
+    "mouth-reverse-v": {
+      "path": "common/mouth-reverse-v",
+      "file": "mouth-reverse-v.svg",
+      "y": 9
+    },
+    "mouth-s": {
+      "path": "common/mouth-s",
+      "file": "mouth-s.svg",
+      "y": 9
+    },
+    "mouth-toungue-sticking-out": {
+      "path": "common/mouth-toungue-sticking-out",
+      "file": "mouth-toungue-sticking-out.svg",
+      "y": 9
+    },
+    "mouth-u": {
+      "path": "common/mouth-u",
+      "file": "mouth-u.svg",
+      "y": 9
+    },
+    "mouth-v": {
+      "path": "common/mouth-v",
+      "file": "mouth-v.svg",
+      "y": 9
+    },
+    "mouth-x": {
+      "path": "common/mouth-x",
+      "file": "mouth-x.svg",
+      "y": 9
+    }
+  }
+}

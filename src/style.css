@@ -3,6 +3,7 @@
 @import './styles/scene-shell.css';
 @import './styles/interface.css';
 @import './styles/morph.css';
+@import './styles/characters.css';
 .vs-notebook{max-width:900px;margin:auto}
 .vs-subtitle{text-align:center;font-size:16px}
 .vs-canvas{width:100%;height:auto;display:block;overflow:visible;color:var(--ve-ink);font-family:var(--ve-font)}

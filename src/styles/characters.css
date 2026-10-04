@@ -1,0 +1,21 @@
+.ve-scene.ve-character-story {
+  max-width: min(100%, calc(650px * var(--ve-character-aspect)));
+  margin-inline: auto;
+}
+.ve-standalone .ve-scene.ve-character-story {
+  max-width: min(100%, calc(max(240px, 100svh - 220px) * var(--ve-character-aspect)));
+}
+.ve-character-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.ve-character-stage > svg,
+.ve-character-stage > canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}

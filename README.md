@@ -45,6 +45,12 @@ import { Viewport3D, ThreeKit } from '@visual-storytelling/core/three';
 
 Общие владельцы перечислены в [архитектуре](docs/architecture.md), правила сцены — в [контракте автора](docs/authoring.md), визуальный характер — в [PHILOSOPHY.md](PHILOSOPHY.md).
 
+[Персонажи и постановка](docs/characters.md) связывают готовый Chibi-риг, SVG-облики,
+декорации и предметы с раскадровкой `CharacterStory`. [Тесла](examples/chibi-tesla/scene.js),
+[Мира](examples/chibi-garden/scene.js) и [общая идея](examples/chibi-transfer/scene.js)
+показывают один API на разных историях. `visual-story characters` перечисляет набор;
+`characters new/build` создаёт редактируемый облик и автоматически собирает атлас.
+
 [Физические объекты](docs/physics.md) добавляют SVG и Three.js столкновения, упругие материалы, деформацию и захват. Rapier подключается через отдельные `./physics/2d` и `./physics/3d`; почерк, пигменты, материалы и плеер остаются общими.
 
 [Согласованный морфинг](docs/morphing.md) связывает формы, числа, надписи и физический контакт. Автор задаёт операцию, объекты и время; [«Форма несёт смысл»](examples/written-morph/scene.js) показывает общий API в 2D/3D, на словах и абзацах. [Общий граф связей](examples/mathematical-relations/models.js) превращает формулы в связанные точки, материалы, траектории и измерения в 2D/3D. [Математика меняет форму](examples/formula-objects/scene.js) показывает площадь, линейное преобразование, синусоиду, касательную, интеграл, энергию и объёмную цепочку через общий `MathMorph.mount`.

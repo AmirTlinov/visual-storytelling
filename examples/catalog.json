@@ -1,4 +1,50 @@
 {
+  "chibi-stage": {
+    "title": "От идеи к опыту",
+    "page": "index.html",
+    "time": 4.4,
+    "checkpoints": [0, 4.4, 7, 8, 9, 11],
+    "group": "techniques",
+    "summary": "Прозрачный CharacterStage внутри Viewport3D: один плеер ведёт героев, текстуру, уход и приближение камеры.",
+    "tags": ["CharacterStage", "персонажи", "3d", "CanvasTexture"],
+    "source": "scene.js",
+    "guides": ["docs/characters.md"]
+  },
+  "chibi-tesla": {
+    "title": "Тесла · Момент открытия",
+    "page": "index.html",
+    "time": 4.6,
+    "checkpoints": [0, 2, 3.2, 4.6, 6.5, 7.8],
+    "group": "explanations",
+    "summary": "Принятый персонаж на готовом риге: три эпизода, свет и декорация без ручного скелета.",
+    "tags": ["персонажи", "Chibi", "CharacterStory", "рассказ"],
+    "source": "scene.js",
+    "guides": ["docs/characters.md"],
+    "recommended": true,
+    "reference": true
+  },
+  "chibi-garden": {
+    "title": "Мира · Дать ростку время",
+    "page": "index.html",
+    "time": 5.6,
+    "checkpoints": [0, 2.6, 4, 5.6, 7.2],
+    "group": "explanations",
+    "summary": "Другой персонаж и окружение на том же риге; рост растения связан с эпизодом.",
+    "tags": ["персонажи", "Chibi", "CharacterStory", "рассказ"],
+    "source": "scene.js",
+    "guides": ["docs/characters.md"]
+  },
+  "chibi-transfer": {
+    "title": "Идея становится общей",
+    "page": "index.html",
+    "time": 7.7,
+    "checkpoints": [0, 2.5, 4.5, 5.3, 6.5, 7.7, 9, 10.2],
+    "group": "explanations",
+    "summary": "Два героя и один предмет: привязка к ладоням, полёт и совместная реакция.",
+    "tags": ["персонажи", "Chibi", "CharacterStory", "рассказ"],
+    "source": "scene.js",
+    "guides": ["docs/characters.md"]
+  },
   "morph-story": {
     "title": "Те же части, новое целое",
     "page": "index.html",
@@ -412,7 +458,7 @@
     "page": "index.html",
     "time": 94,
     "checkpoints": [0, 10, 25, 42.3, 65, 85, 94, 103],
-    "group": "math",
+    "group": "techniques",
     "summary": "Общий математический граф: комплексный квадрат, нелинейная карта, фазовый портрет и подписанная поверхность в 3D. Сцена задаёт зависимости без новых методов движка.",
     "tags": [
       "математика",

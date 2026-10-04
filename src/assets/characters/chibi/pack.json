@@ -1,0 +1,128 @@
+{
+  "id": "chibi",
+  "baseSkin": "nate",
+  "actions": {
+    "idle": {
+      "animation": "movement/idle-front",
+      "loop": true,
+      "pose": 1.2
+    },
+    "think": {
+      "animation": "emotes/thinking",
+      "pose": 1.2
+    },
+    "idea": {
+      "animation": "emotes/idea",
+      "pose": 2
+    },
+    "celebrate": {
+      "animation": "emotes/hooray",
+      "loop": true,
+      "pose": 1.2
+    },
+    "wave": {
+      "animation": "emotes/wave",
+      "loop": true,
+      "pose": 1.2
+    },
+    "confused": {
+      "animation": "emotes/confused",
+      "pose": 1.2
+    },
+    "laugh": {
+      "animation": "emotes/laugh",
+      "pose": 1.2
+    },
+    "shrug": {
+      "animation": "emotes/shrug",
+      "pose": 1.2
+    },
+    "determined": {
+      "animation": "emotes/determined",
+      "pose": 1.2
+    },
+    "excited": {
+      "animation": "emotes/excited",
+      "pose": 1.2
+    },
+    "angry": {
+      "animation": "emotes/angry",
+      "pose": 1.2
+    },
+    "cry": {
+      "animation": "emotes/crying",
+      "pose": 1.2
+    },
+    "scared": {
+      "animation": "emotes/scared",
+      "pose": 1.2
+    },
+    "love": {
+      "animation": "emotes/love",
+      "pose": 1.2
+    },
+    "blush": {
+      "animation": "emotes/flushed",
+      "pose": 1.2
+    },
+    "proud": {
+      "animation": "emotes/just-right",
+      "pose": 1.2
+    },
+    "stare": {
+      "animation": "emotes/dramatic-stare",
+      "pose": 1.2
+    },
+    "admire": {
+      "animation": "emotes/fawning",
+      "pose": 1.2
+    },
+    "sulk": {
+      "animation": "emotes/sulk",
+      "pose": 1.2
+    },
+    "sweat": {
+      "animation": "emotes/sweat",
+      "pose": 1.2
+    },
+    "hide": {
+      "animation": "emotes/see-no-evil",
+      "pose": 1.2
+    },
+    "silly": {
+      "animation": "emotes/tongue-out",
+      "pose": 1.2
+    },
+    "burp": {
+      "animation": "emotes/burp",
+      "pose": 1.2
+    },
+    "faint": {
+      "animation": "emotes/dead",
+      "pose": 1.2
+    }
+  },
+  "anchors": {
+    "hand-left": {
+      "bone": "arm-down-l",
+      "x": 69.46668,
+      "y": 0
+    },
+    "hand-right": {
+      "bone": "arm-down-r",
+      "x": 69.46668,
+      "y": 0
+    },
+    "head": {
+      "bone": "head-base",
+      "x": 230,
+      "y": 0
+    },
+    "feet": {
+      "bone": "root",
+      "x": 0,
+      "y": 0
+    }
+  },
+  "credit": "Chibi Stickers rig: Esoteric Software, project file public domain. Original example images: Copyright (c) 2022 Esoteric Software LLC, redistribution with notice, no commercial use. Original SVG drawings: this project, 0BSD. SVG files embedding original sample images retain the sample image restrictions. Spine runtime: Spine Runtimes License; integration and SDK use require the applicable Spine Editor license. https://esotericsoftware.com/spine-runtimes-license"
+}

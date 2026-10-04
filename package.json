@@ -53,6 +53,10 @@
     "./physics/3d": {
       "types": "./dist/physics/3d.d.ts",
       "import": "./dist/physics/3d.js"
+    },
+    "./characters": {
+      "types": "./dist/characters/index.d.ts",
+      "import": "./dist/characters/index.js"
     }
   },
   "sideEffects": [
@@ -73,11 +77,13 @@
     "profile": "node tools/profile.mjs",
     "format": "prettier --write src examples tools tests *.ts *.json README.md PHILOSOPHY.md AGENTS.md THIRD_PARTY.md docs",
     "prepack": "npm run build",
-    "test:visual": "node tools/visual-regression.mjs compare site artifacts/migrated"
+    "test:visual": "node tools/visual-regression.mjs compare site artifacts/migrated",
+    "build:characters": "node tools/characters/build-builtin.mjs"
   },
   "dependencies": {
     "@dimforge/rapier2d-compat": "0.21.0",
     "@dimforge/rapier3d-compat": "0.21.0",
+    "@esotericsoftware/spine-webgl": "4.3.13",
     "esbuild": "0.28.2",
     "gsap": "3.15.0",
     "mathjs": "15.2.0",

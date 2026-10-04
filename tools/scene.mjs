@@ -10,7 +10,10 @@ import { readCatalog, describeExamples } from './catalog.mjs';
 import { buildNarration, setNarrationMode, silenceSceneCopy } from './narration.mjs';
 import { pinSceneProject } from './scene-project.mjs';
 import { cancellableCommand } from './cancellable-command.mjs';
-if (process.argv[2] === 'export') {
+if (process.argv[2] === 'characters') {
+  const { runCharacters } = await import('./characters/cli.mjs');
+  await runCharacters(process.argv.slice(3));
+} else if (process.argv[2] === 'export') {
   const { runExport } = await import('./export.mjs');
   await runExport(process.argv.slice(3));
   process.exitCode ??= 0;
@@ -76,6 +79,7 @@ if (process.argv[2] === 'export') {
   const catalog = await readCatalog({ optional: true });
   const help = `${catalog ? 'visual-story new DIRECTORY --example NAME [--no-audio | --silent | --audio]\nvisual-story examples [QUERY] [--json] [--recommended] [--group explanations|techniques]\n' : ''}visual-story info [DIRECTORY] [--json]        actual packages, build identity and stale sources
 visual-story api [NAME.member ... | ./SUBPATH] [--full]       public names or exact shipped declarations
+visual-story characters --help              prepared actors, actions and editable SVG skin kits
 visual-story dev DIRECTORY [--port 8793]       rebuild + reload at the current story time
 visual-story build DIRECTORY [--cdn]          build dist/; CDN mode loads pinned Rapier remotely
 visual-story audio DIRECTORY                  voice + aligned cues from narration.json

@@ -6,9 +6,11 @@ import { buildAPI } from './api.mjs';
 import { buildOutput } from './build-output.mjs';
 import { sourceDigest, writeBuildInfo } from './build-info.mjs';
 import { embedRuntimeAssets } from './asset-urls.mjs';
+import { buildBuiltinCharacters } from './characters/build-builtin.mjs';
 export async function buildPackage() {
   const root = fileURLToPath(new URL('../', import.meta.url));
   const output = join(root, 'dist');
+  await buildBuiltinCharacters();
   await buildOutput(root, output, async (staging) => {
     const source = await sourceDigest(root);
     execFileSync(

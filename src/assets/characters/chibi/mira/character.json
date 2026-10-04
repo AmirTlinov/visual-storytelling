@@ -1,0 +1,46 @@
+{
+  "id": "mira",
+  "template": "chibi",
+  "parts": {
+    "back-hair": {
+      "path": "nate/back-hair",
+      "file": "back-hair.svg"
+    },
+    "hair-front": {
+      "path": "nate/hair-front",
+      "file": "hair-front.svg"
+    },
+    "head-base": {
+      "path": "nate/head-base",
+      "file": "head-base.svg"
+    },
+    "ear": {
+      "path": "nate/ear",
+      "file": "ear.svg"
+    },
+    "body": {
+      "path": "nate/body",
+      "file": "body.svg"
+    },
+    "arm": {
+      "path": "nate/arm",
+      "file": "arm.svg"
+    },
+    "leg": {
+      "path": "nate/leg",
+      "file": "leg.svg"
+    },
+    "eyebrow": {
+      "path": "nate/eyebrow",
+      "file": "eyebrow.svg"
+    }
+  },
+  "palette": {
+    "#242b38": "#493734",
+    "#51667a": "#9c7152",
+    "#34475b": "#407878",
+    "#ffdac3": "#f0c49c",
+    "#e9b694": "#d4a077",
+    "#c58b76": "#b4795f"
+  }
+}
