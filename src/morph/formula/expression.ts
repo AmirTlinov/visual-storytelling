@@ -16,6 +16,44 @@ import { integrate } from './calculus.js';
 
 // One mathematics owner, isolated from the global mathjs instance and from the scene.
 let engine: ReturnType<typeof create> | undefined;
+const mathematics = () => (engine ??= create(all!, { matrix: 'Array' }));
+function mathematicalNode(expression: string) {
+  const root = mathematics().parse(expression);
+  let count = 0;
+  root.traverse((node) => {
+    if (++count > 128)
+      throw new Error('Split a formula longer than 128 nodes into narrative steps');
+    if (
+      ![
+        'OperatorNode',
+        'FunctionNode',
+        'SymbolNode',
+        'ConstantNode',
+        'ParenthesisNode',
+        'ArrayNode',
+      ].includes(node.type)
+    )
+      throw new Error(`Formula syntax “${node.type}” is not a mathematical value expression`);
+  });
+  return root;
+}
+/** Curves and numerical bodies share the same expression engine and syntax boundary. */
+export function scalarExpression(expression: string, variable = 'x') {
+  const root = mathematicalNode(expression),
+    code = root.compile();
+  let slope: ReturnType<typeof root.compile> | undefined;
+  const evaluate = (compiled: typeof code, x: number) => {
+    if (!Number.isFinite(x)) throw new Error('A curve argument must be finite');
+    const value = real(compiled.evaluate(new Map([[variable, x]])), expression);
+    if (typeof value !== 'number') throw new Error('A curve must return one real number');
+    return value;
+  };
+  return {
+    value: (x: number) => evaluate(code, x),
+    derivative: (x: number) =>
+      evaluate((slope ??= mathematics().derivative(root, variable).compile()), x),
+  };
+}
 export const valuesOf = (value: MathValue): number[] =>
   typeof value === 'number' ? [value] : value.flatMap(valuesOf);
 function real(value: unknown, expression: string): MathValue {
@@ -47,7 +85,7 @@ export interface ExpressionStep {
 /** Compile data flow once. Playback never evaluates a user function or parses an expression. */
 export function compileExpression(operation: FormulaOperation) {
   if (!operation.expression.trim()) throw new Error('A formula needs an expression');
-  const math = (engine ??= create(all!, { matrix: 'Array' }));
+  const math = mathematics();
   const scope = new Map<string, unknown>();
   const bodies = new Map<string, FormulaBody>();
   Object.entries(operation.inputs).forEach(([key, input]) => {
@@ -68,23 +106,7 @@ export function compileExpression(operation: FormulaOperation) {
       throw new Error(`Invalid formula function “${key}”`);
     scope.set(key, fn);
   }
-  const root = math.parse(operation.expression);
-  let nodeCount = 0;
-  root.traverse((node) => {
-    if (++nodeCount > 128)
-      throw new Error('Split a formula longer than 128 nodes into narrative steps');
-    if (
-      ![
-        'OperatorNode',
-        'FunctionNode',
-        'SymbolNode',
-        'ConstantNode',
-        'ParenthesisNode',
-        'ArrayNode',
-      ].includes(node.type)
-    )
-      throw new Error(`Formula syntax “${node.type}” is not a mathematical value expression`);
-  });
+  const root = mathematicalNode(operation.expression);
   const initial: ExpressionBody[] = [],
     steps: ExpressionStep[] = [];
   let serial = 0;

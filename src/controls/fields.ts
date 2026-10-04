@@ -20,6 +20,7 @@ export interface ControlParameter {
   format?: (value: ControlValue) => string;
   options?: { value: ControlValue; label: string; color?: string }[];
 }
+export type ControlDescription = Partial<Pick<ControlParameter, 'label' | 'format'>>;
 
 /* One factory owns the fields, their pencil marks and keyboard behavior. */
 
@@ -252,8 +253,9 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
   const title = make(
     type === 'choice' ? 'legend' : ['stepper', 'select'].includes(type) ? 'label' : 'span',
     { class: 've-control-title' },
-    p.label,
   );
+  const titleText = document.createTextNode(p.label);
+  title.append(titleText);
   let value = p.value;
   let inputs: HTMLInputElement[] = [],
     textarea: HTMLTextAreaElement | undefined,
@@ -385,6 +387,22 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
     setValue(next: ControlValue) {
       value = next;
       update();
+    },
+    /** Change a field's meaning without replacing its focused input or event listeners. */
+    describe(next: ControlDescription) {
+      if (next.label !== undefined) p.label = next.label;
+      if ('format' in next) p.format = next.format;
+      titleText.textContent = p.label;
+      if (textarea) textarea.setAttribute('aria-label', p.label);
+      for (const input of inputs) {
+        if (type !== 'choice') input.setAttribute('aria-label', p.label);
+      }
+      if (type === 'stepper') {
+        const buttons = element.querySelectorAll('button');
+        buttons[0]!.setAttribute('aria-label', `Уменьшить: ${p.label}`);
+        buttons[1]!.setAttribute('aria-label', `Увеличить: ${p.label}`);
+      }
+      if (output) output.textContent = p.format ? p.format(value) : String(value);
     },
     dispose() {
       abort.abort();

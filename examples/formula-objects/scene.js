@@ -1,105 +1,114 @@
 import { SceneShell, MathMorph, Morph } from '@visual-storytelling/core';
 import '@visual-storytelling/core/style.css';
+import script from './timeline.json';
 
 const chapters = [
   {
-    id: 'parts',
-    title: 'Разделить, удвоить, собрать',
-    input: 6,
-    expression: 'sum(partition(x, 3) * 2)',
-    inputs: (x) => ({ x: MathMorph.body(x, Morph.capsule(0.62, 2.8)) }),
-    text: 'Разделим целое на три равные части. Удвоим каждую, затем соединим их.',
+    id: 'distribute',
+    parameter: 'Высота прямоугольника',
+    value: 3,
+    range: [1, 5],
+    operation: (a) => MathMorph.distribute(a, 2, 3),
   },
   {
-    id: 'length',
-    title: 'Из двух величин — одна',
-    input: 3,
-    expression: 'sqrt(a^2 + b^2)',
-    inputs: (a) => ({
-      a: MathMorph.body(a, Morph.box([1.4, 1.4, 1.4])),
-      b: MathMorph.body(4, Morph.sphere(0.7)),
-    }),
-    text: 'Возведём обе величины в квадрат, сложим и извлечём корень. Объём здесь показывает величину числа.',
+    id: 'shear',
+    parameter: 'Сдвиг каждого ряда',
+    value: 0.8,
+    range: [-1.2, 1.2],
+    operation: (s) =>
+      MathMorph.linear([
+        [1, s],
+        [0, 1],
+      ]),
   },
   {
-    id: 'response',
-    title: 'Плавный нелинейный отклик',
-    input: 2,
-    expression: '1 / (1 + exp(-x))',
-    inputs: (x) => ({ x: MathMorph.body(x, Morph.sphere(0.7)) }),
-    text: 'Сигмоида преобразует вход в число между нулём и единицей. Надписи показывают знаковые значения; размер фишки остаётся постоянным.',
+    id: 'projection',
+    parameter: 'Угол поворота',
+    unit: '°',
+    value: 60,
+    range: [20, 140],
+    operation: (degrees) => MathMorph.project((degrees * Math.PI) / 180),
   },
   {
-    id: 'slope',
-    title: 'Формула скорости изменения',
-    input: 2,
-    expression: 'diff(x^3, x)',
-    inputs: (x) => ({ x: MathMorph.body(x, Morph.box([1.4, 1.4, 1.4])) }),
-    text: 'Производная куба в выбранной точке равна трём квадратам её координаты. Проверь другую точку.',
+    id: 'derivative',
+    parameter: 'Точка на оси x',
+    value: 1.5,
+    range: [0.3, 2.4],
+    operation: (x) => MathMorph.derivative('x^2', x),
   },
   {
-    id: 'area',
-    title: 'Накопленная величина',
-    input: 3,
-    expression: 'integral(t^2, t, 0, x)',
-    inputs: (x) => ({ x: MathMorph.body(x, Morph.capsule(0.6, 2.1)) }),
-    text: 'Интеграл квадратичной функции от нуля до выбранной границы становится величиной результата.',
+    id: 'integral',
+    parameter: 'Правая граница',
+    value: 3,
+    range: [1, 4],
+    operation: (end) => MathMorph.integral('x^2', 0, end),
   },
   {
-    id: 'matrix',
-    title: 'Функция целой матрицы',
-    input: 2,
-    expression: 'det(A)',
-    inputs: (x) => ({
-      A: MathMorph.body(
-        [
-          [x, 1],
-          [1, 3],
+    id: 'energy',
+    parameter: 'Растяжение пружины',
+    unit: ' м',
+    value: 1,
+    range: [0.5, 1.6],
+    operation: (amplitude) => MathMorph.spring({ mass: 1, stiffness: 4, amplitude }),
+  },
+  {
+    id: 'bend',
+    parameter: 'Кривизна полоски',
+    value: 0.55,
+    range: [0.15, 0.8],
+    operation: (bend) =>
+      MathMorph.deform({
+        domain: [
+          [-2, -1],
+          [2, 1],
         ],
-        Morph.box([1.4, 1.4, 1.4]),
-      ),
-    }),
-    text: 'Четыре числа матрицы участвуют в вычислении её определителя. Измени первый элемент.',
+        parameter: [0, bend],
+        grid: [8, 4],
+        text: 'ФОРМА',
+        label: 'Сгибаем материал вместе с нанесённым рисунком',
+        map: ([x, y], k) =>
+          Math.abs(k) < 1e-8
+            ? [x, y]
+            : [(1 / k + y) * Math.sin(k * x), (1 / k + y) * Math.cos(k * x) - 1 / k],
+      }),
+  },
+  {
+    id: 'bodies',
+    parameter: 'Количество в целом',
+    value: 6,
+    range: [3, 12],
+    operation: (value) =>
+      MathMorph.formula('sum(partition(x, 3) * 2)', {
+        x: MathMorph.body(value, Morph.capsule(0.62, 2.8)),
+      }),
   },
 ];
-const operation = (chapter, x) => MathMorph.formula(chapter.expression, chapter.inputs(x));
-let total = 0;
 for (const chapter of chapters) {
-  chapter.plan = MathMorph.plan(operation(chapter, chapter.input));
-  chapter.start = total;
-  chapter.end = total += 1.4 + chapter.plan.stages * 4.2;
+  chapter.title = script.segments.find((segment) => segment.id === chapter.id).title;
+  chapter.cues = Object.keys(script.cues).filter((id) => id.startsWith(`${chapter.id}_`));
 }
-const script = {
-  duration: total,
-  segments: chapters.map((c) => ({
-    id: c.id,
-    title: c.title,
-    text: c.text,
-    start: c.start,
-    end: c.end,
-  })),
-  cues: Object.fromEntries(
-    chapters.flatMap((c) => [
-      [c.id, { start: c.start, end: c.end, text: c.text }],
-      [`${c.id}_move`, { start: c.start + 0.7, end: c.end - 0.7, action: c.text }],
-    ]),
-  ),
-};
-
 window.galleryReady = (async () => {
   await SceneShell.ready();
   const root = document.getElementById('formula-objects');
   const shell = SceneShell.mount(root, {
-    title: 'Формула действует на предметы',
+    title: 'Математика меняет форму',
     parameters: [
       {
         key: 'chapter',
         type: 'select',
-        label: 'Формула',
-        value: 'parts',
+        label: 'Механизм',
+        value: 'distribute',
         options: chapters.map((c) => ({ value: c.id, label: c.title })),
       },
-      { key: 'x', label: 'Вход', min: 0.5, max: 6, step: 0.5, value: 6 },
+      {
+        key: 'input',
+        label: chapters[0].parameter,
+        min: 0,
+        max: 1,
+        step: 0.01,
+        value: 0.5,
+        format: (x) => `${Math.round(x * 100)}%`,
+      },
       {
         key: 'progress',
         label: 'Преобразование',
@@ -107,33 +116,40 @@ window.galleryReady = (async () => {
         max: 1,
         step: 0.005,
         value: 0,
-        format: (v) => `${Math.round(Number(v) * 100)}%`,
+        format: (x) => `${Math.round(x * 100)}%`,
       },
     ],
   });
-  const math = await MathMorph.mount(shell.stage, chapters[0].plan);
-  shell.attachView(math.view);
-  let key = 'parts/6';
-  const story = shell.attachStory({
+  const audio = root.querySelector('audio');
+  const drawing = await MathMorph.mount(shell.stage, chapters[0].operation(3));
+  shell.attachView(drawing.view);
+  let previous = '';
+  shell.attachStory({
     script,
+    audio,
     stateAt(frame) {
       const chapter = chapters.findLast((c) => frame.has(c.id)) ?? chapters[0];
       return {
         chapter: chapter.id,
-        x: chapter.input,
-        progress: frame.progress(`${chapter.id}_move`),
+        input: (chapter.value - chapter.range[0]) / (chapter.range[1] - chapter.range[0]),
+        progress: MathMorph.timing(frame, chapter.cues, chapter.cues.length).progress,
       };
     },
     render(state, frame, mode) {
-      const next = `${state.chapter}/${state.x}`;
-      if (key !== next) {
-        const chapter = chapters.find((c) => c.id === state.chapter);
-        math.setOperation(operation(chapter, state.x));
-        key = next;
+      const chapter = chapters.find((c) => c.id === state.chapter);
+      const key = `${state.chapter}/${state.input}`;
+      if (previous !== key) {
+        shell.describeParameter('input', {
+          label: chapter.parameter,
+          format: (p) =>
+            `${+(chapter.range[0] + p * (chapter.range[1] - chapter.range[0])).toFixed(2)}${chapter.unit ?? ''}`,
+        });
+        drawing.setOperation(
+          chapter.operation(chapter.range[0] + state.input * (chapter.range[1] - chapter.range[0])),
+        );
+        previous = key;
       }
-      math.render(mode === 'story' ? frame : state.progress, `${state.chapter}_move`);
+      drawing.render(mode === 'story' ? frame : state.progress, chapter.cues);
     },
   });
-  Object.assign(root.scene, { math, story });
-  shell.onDispose(math.dispose);
 })();

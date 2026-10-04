@@ -20,8 +20,8 @@ export function springSettings(a: readonly number[], b: readonly number[], optio
 export function dampedSpring(frequency: number, dampingRatio: number) {
   const omega = 2 * Math.PI * positive(frequency, 'Spring frequency'),
     stiffness = positive(omega * omega, 'Spring stiffness');
-  if (!(dampingRatio > 0 && dampingRatio < 1))
-    throw new Error('An elastic response needs a damping ratio between zero and one');
+  if (!(dampingRatio >= 0 && dampingRatio < 1))
+    throw new Error('An elastic response needs a damping ratio in [0, 1)');
   const decay = dampingRatio * omega,
     rotation = omega * Math.sqrt(1 - dampingRatio * dampingRatio);
   return {

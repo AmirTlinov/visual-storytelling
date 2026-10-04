@@ -186,7 +186,12 @@ function mount(
   const observer = new ResizeObserver(refresh);
   const unwatchMotion = watchMotion(refresh);
   observer.observe(parent);
-  render(0);
+  try {
+    render(0);
+  } catch (error) {
+    dispose();
+    throw error;
+  }
   return {
     element: sheet.element,
     render,

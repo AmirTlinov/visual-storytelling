@@ -235,8 +235,13 @@ function mount(
         break;
       }
   });
-  prepare();
-  render(0);
+  try {
+    prepare();
+    render(0);
+  } catch (error) {
+    dispose();
+    throw error;
+  }
   return {
     object,
     bounds,

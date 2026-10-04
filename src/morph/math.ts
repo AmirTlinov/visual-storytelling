@@ -1,3 +1,4 @@
+import { morphTiming } from './timing.js';
 import type {
   Arithmetic,
   MathOperation,
@@ -19,6 +20,13 @@ import type {
 } from './formula/types.js';
 import type { MorphObject } from './objects.js';
 import { mountMath } from './presentation.js';
+import { constructionPlan } from './construction/plan.js';
+import type {
+  ConstructionOperation,
+  ConstructionPlan,
+  Matrix2,
+  ScalarFunction,
+} from './construction/types.js';
 import { clamp, smooth, mix, mathNumber, equation } from './numbers.js';
 const expression = (formula: string) => formula.split(/ [=≈] /)[0]!;
 function quantity(n: number) {
@@ -101,6 +109,7 @@ function resize(from: MorphPoint, to: MorphPoint, formula: string, preserve = fa
     },
   };
 }
+export function mathPlan(operation: ConstructionOperation | ConstructionPlan): ConstructionPlan;
 export function mathPlan<O extends MathOperation>(
   operation: O,
 ): MathMorphPlan<
@@ -111,8 +120,14 @@ export function mathPlan<O extends MathOperation>(
       : number
 >;
 export function mathPlan(operation: MathOperation | MathMorphPlan): MathMorphPlan;
-export function mathPlan(operation: MathOperation | MathMorphPlan): MathMorphPlan {
+export function mathPlan(
+  operation: MathOperation | MathMorphPlan | ConstructionOperation | ConstructionPlan,
+): MathMorphPlan | ConstructionPlan;
+export function mathPlan(
+  operation: MathOperation | MathMorphPlan | ConstructionOperation | ConstructionPlan,
+): MathMorphPlan | ConstructionPlan {
   if ('sample' in operation) return operation;
+  if (operation.kind === 'construction') return constructionPlan(operation);
   if (operation.kind === 'formula') return formulaPlan(operation);
   if (
     operation.kind === 'calculate' ||
@@ -254,6 +269,50 @@ export function mathPlan(operation: MathOperation | MathMorphPlan): MathMorphPla
 }
 export const MathMorph = {
   mount: mountMath,
+  timing: morphTiming,
+  distribute: (a: number, b: number, c: number): ConstructionOperation => ({
+    kind: 'construction',
+    model: 'distribute',
+    a,
+    b,
+    c,
+  }),
+  linear: (matrix: Matrix2): ConstructionOperation => ({
+    kind: 'construction',
+    model: 'linear',
+    matrix,
+  }),
+  project: (angle: number): ConstructionOperation => ({
+    kind: 'construction',
+    model: 'projection',
+    angle,
+  }),
+  derivative: (
+    fn: ScalarFunction,
+    at: number,
+    options: { span?: number; label?: string } = {},
+  ): ConstructionOperation => ({ kind: 'construction', model: 'derivative', fn, at, ...options }),
+  integral: (
+    fn: ScalarFunction,
+    from: number,
+    to: number,
+    options: { label?: string } = {},
+  ): ConstructionOperation => ({
+    kind: 'construction',
+    model: 'integral',
+    fn,
+    from,
+    to,
+    ...options,
+  }),
+  spring: (options: {
+    mass: number;
+    stiffness: number;
+    amplitude: number;
+  }): ConstructionOperation => ({ kind: 'construction', model: 'spring', ...options }),
+  deform: (
+    options: Omit<Extract<ConstructionOperation, { model: 'deform' }>, 'kind' | 'model'>,
+  ): ConstructionOperation => ({ kind: 'construction', model: 'deform', ...options }),
   body: (value: MathValue, body: MorphObject): FormulaBody => ({ value, body }),
   formula: (
     expression: string,

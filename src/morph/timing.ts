@@ -1,5 +1,4 @@
 import type { Frame } from '../story/cues.js';
-import type { MathMorphPlan } from './types.js';
 
 export type MorphTime = number | Frame;
 export type MorphCues = string | readonly string[];
@@ -54,11 +53,16 @@ export function morphTiming(input: MorphTime, cues?: MorphCues, stages = 1) {
   return { progress: Math.max(0, Math.min(1, progress)), reduced, duration };
 }
 
-export function mathMotionFrame(
-  plan: MathMorphPlan,
+export function mathMotionFrame<
+  F extends { stage: number; phase: string; formula: string; result?: unknown },
+>(
+  plan: {
+    stages: number;
+    sample(progress: number, layout?: { columns?: number; duration?: number }): F;
+  },
   time: ReturnType<typeof morphTiming>,
   columns?: number,
-) {
+): F & { motionProgress: number } {
   const frame = plan.sample(time.progress, {
     columns,
     duration: time.duration === undefined ? undefined : time.duration / plan.stages,
@@ -77,7 +81,7 @@ export function mathMotionFrame(
     phase: settled ? ('hold' as const) : pose.phase,
     formula: settled ? frame.formula : pose.formula,
     motionProgress,
-  };
+  } as F & { motionProgress: number };
 }
 
 export function watchMotion(refresh: () => void) {

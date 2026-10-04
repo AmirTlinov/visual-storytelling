@@ -15,6 +15,15 @@ export * from './host/widget-state.js';
 
 export { MathMorph, mathPlan } from './morph/math.js';
 export type {
+  ConstructionOperation,
+  ConstructionPlan,
+  ConstructionFrame,
+  DiagramPoint,
+  DiagramBounds,
+  Matrix2,
+  ScalarFunction,
+} from './morph/construction/types.js';
+export type {
   MathValue,
   FormulaBody,
   FormulaInput,

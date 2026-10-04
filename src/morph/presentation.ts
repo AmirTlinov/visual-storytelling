@@ -1,108 +1,105 @@
-import { MathMorph2D } from './svg.js';
 import { mathPlan } from './math.js';
-import { SketchControls } from '../controls/index.js';
+import { constructionPlan } from './construction/plan.js';
 import type { MathOperation, MathMorphPlan } from './types.js';
+import type { ConstructionOperation, ConstructionPlan } from './construction/types.js';
 import type { MorphCues, MorphTime } from './timing.js';
 
-let serial = 0;
-/** One public presentation owns projection, framing and disposal; callers supply math and time. */
+type Operation = MathOperation | MathMorphPlan | ConstructionOperation | ConstructionPlan;
+const isConstruction = (value: Operation): value is ConstructionOperation | ConstructionPlan =>
+  'kind' in value ? value.kind === 'construction' : value.encoding === 'construction';
+
+/** One mounted owner survives changes between numerical bodies and geometric explanations. */
 export async function mountMath(
   parent: HTMLElement,
-  operation: MathOperation | MathMorphPlan,
-  options: {
-    projection?: '2d' | '3d';
-    pigment?: string;
-  } = {},
+  operation: Operation,
+  options: { projection?: '2d' | '3d'; pigment?: string } = {},
 ) {
-  const plan = mathPlan(operation);
-  const [{ Viewport3D }, { MathMorph3D }] = await Promise.all([
-    import('../viewport/three.js'),
-    import('./three.js'),
+  const [{ mountBodies }, { mountConstruction }] = await Promise.all([
+    import('./body-presentation.js'),
+    import('./construction/render.js'),
   ]);
-  const root = document.createElement('div'),
-    controls = document.createElement('div');
-  const flatStage = document.createElement('div'),
-    volumeStage = document.createElement('div');
-  root.className = 've-math-view';
-  controls.className = 've-math-projection';
-  flatStage.className = volumeStage.className = 've-math-stage';
-  root.append(controls, volumeStage, flatStage);
-  parent.append(root);
-  let projection = options.projection ?? '3d',
-    disposed = false;
-  flatStage.hidden = projection !== '2d';
-  volumeStage.hidden = projection !== '3d';
-  const view = Viewport3D.mount(volumeStage, {
-    label: 'Формула преобразует тела и надписи. Фигуры можно поворачивать.',
-  });
-  const volume = MathMorph3D.mount(view, plan, options);
-  const flat = MathMorph2D.mount(flatStage, plan, { ...options, id: `math-${serial++}` });
-  view.setObject(volume.object, { fitView: false });
-  let lastTime: MorphTime = 0,
-    lastCues: MorphCues | undefined;
-  const choice = SketchControls.field(
-    {
-      type: 'choice',
-      label: 'Рисунок',
-      value: projection,
-      options: [
-        { value: '3d', label: 'Объём' },
-        { value: '2d', label: 'Плоскость' },
-      ],
-    },
-    (value) => {
-      projection = String(value) as '2d' | '3d';
-      flatStage.hidden = projection !== '2d';
-      volumeStage.hidden = projection !== '3d';
-      render(lastTime, lastCues);
-    },
-  );
-  controls.append(choice.element);
-  function render(time: MorphTime, cues?: MorphCues) {
-    if (disposed) return;
-    const frame = volume.render(time, cues);
-    flat.render(time, cues);
-    lastTime = time;
-    lastCues = cues;
-    view.shot({
-      target: volume.bounds,
-      direction: [-2.4, 1.8, 9],
-      padding: 30,
-      reduced: typeof time === 'number' ? undefined : time.reduced,
-    });
-    return frame;
+  const element = document.createElement('div');
+  element.className = 've-math-presentation';
+  parent.append(element);
+  let host: HTMLDivElement | undefined;
+  let body: ReturnType<typeof mountBodies> | undefined;
+  let construction: ReturnType<typeof mountConstruction> | undefined;
+  let disposed = false;
+  const current = () => (body ?? construction)!;
+  function setOperation(next: Operation) {
+    if (disposed) throw new Error('Math presentation has been disposed');
+    // Same-kind edits reuse the owner. A different presentation is mounted before retiring it.
+    if (isConstruction(next)) {
+      const prepared = constructionPlan(next);
+      if (construction) return construction.setOperation(prepared);
+      replace((target) => {
+        const mounted = mountConstruction(target, prepared);
+        return () => {
+          construction = mounted;
+          body = undefined;
+        };
+      });
+    } else {
+      const prepared = mathPlan(next);
+      if (body) return body.setOperation(prepared);
+      replace((target) => {
+        const mounted = mountBodies(target, prepared, options);
+        return () => {
+          body = mounted;
+          construction = undefined;
+        };
+      });
+    }
   }
-  const resize = new ResizeObserver(() => render(lastTime, lastCues));
-  const unbind = view.onDispose(dispose);
+  function replace(mount: (target: HTMLDivElement) => () => void) {
+    const target = document.createElement('div');
+    target.style.visibility = 'hidden';
+    element.append(target);
+    try {
+      const publish = mount(target);
+      current()?.dispose();
+      host?.remove();
+      host = target;
+      publish();
+      target.style.removeProperty('visibility');
+    } catch (error) {
+      target.remove();
+      throw error;
+    }
+  }
   function dispose() {
     if (disposed) return;
     disposed = true;
-    resize.disconnect();
-    choice.dispose();
-    flat.dispose();
-    unbind();
-    view.dispose();
-    root.remove();
+    current().dispose();
+    element.remove();
   }
-  resize.observe(parent);
-  render(0);
+  try {
+    setOperation(operation);
+  } catch (error) {
+    body?.dispose();
+    construction?.dispose();
+    element.remove();
+    throw error;
+  }
   return {
-    element: root,
-    view,
-    render,
+    element,
+    view: {
+      reset() {
+        body?.view.reset();
+        construction?.view.reset();
+      },
+      dispose,
+    },
+    render(time: MorphTime, cues?: MorphCues) {
+      if (!disposed) return current().render(time, cues);
+    },
     get plan() {
-      return volume.plan;
+      return current().plan;
     },
     get projection() {
-      return projection;
+      return current().projection;
     },
-    setOperation(next: MathOperation | MathMorphPlan) {
-      if (disposed) throw new Error('Math morph has been disposed');
-      const prepared = mathPlan(next);
-      volume.setOperation(prepared);
-      flat.setOperation(prepared);
-      render(0);
-    },
+    setOperation,
     dispose,
   };
 }

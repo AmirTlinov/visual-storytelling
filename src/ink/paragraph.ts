@@ -19,6 +19,7 @@ export function paragraph(
   const rows: ReturnType<typeof lettering>[] = [];
   let previous = '',
     count = 0;
+  let bounds = { x: 0, y: 0, width: 0, height: 0 };
   const widthOf = (text: string) => {
     if (!widths.has(text)) {
       measure.text(text);
@@ -28,6 +29,9 @@ export function paragraph(
   };
   return {
     element,
+    get bounds() {
+      return { ...bounds };
+    },
     render(text: string, width: number, x: number, y: number) {
       if (!(width > 0) || ![width, x, y].every(Number.isFinite))
         throw new Error('Paragraph needs a finite position and positive width');
@@ -60,6 +64,15 @@ export function paragraph(
           rows[i]!.text(line);
           rows[i]!.at(0, i * leading);
         });
+        const boxes = rows.map((row) => row.bounds);
+        const left = Math.min(...boxes.map((b) => b.x)),
+          top = Math.min(...boxes.map((b) => b.y));
+        bounds = {
+          x: left,
+          y: top,
+          width: Math.max(...boxes.map((b) => b.x + b.width)) - left,
+          height: Math.max(...boxes.map((b) => b.y + b.height)) - top,
+        };
         count = lines.length;
         previous = key;
         measure.text('');

@@ -34,6 +34,7 @@ export interface SceneMount {
   readonly mode: 'story' | 'explore';
   setMode(mode: 'story' | 'explore'): void;
   setParameters(values: Record<string, ControlValue>): void;
+  describeParameter(key: string, description: ControlDescription): void;
   attachStory<P, K extends string, S = P>(options: StoryOptions<P, K, S>): Story<P, K, S>;
   attachController<P, K extends string, S>(controller: Story<P, K, S>): SceneHandle;
   /** Register subject-owned observers, animations and subscriptions for removal. */
@@ -42,7 +43,12 @@ export interface SceneMount {
   attachView(view: { reset(): void; dispose(): void }): void;
   dispose(): void;
 }
-import { SketchControls, type ControlParameter, type ControlValue } from './controls/fields.js';
+import {
+  SketchControls,
+  type ControlDescription,
+  type ControlParameter,
+  type ControlValue,
+} from './controls/fields.js';
 /* Shared presentation shell. Subject state and rendering stay in scene.js. */
 
 const node = <K extends keyof HTMLElementTagNameMap>(
@@ -172,6 +178,11 @@ function mount(
         Object.assign(values, next);
         refresh();
       }
+    },
+    describeParameter(key: string, description: ControlDescription) {
+      const control = inputs.get(key);
+      if (!control) throw new Error(`Unknown scene parameter: ${key}`);
+      control.describe(description);
     },
     attachStory<P, K extends string, S = P>(options: StoryOptions<P, K, S>): Story<P, K, S> {
       assertLive();

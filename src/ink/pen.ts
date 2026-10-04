@@ -16,9 +16,12 @@ export interface PenStyle {
 type Bounds = { x: number; y: number; width: number; height: number };
 
 /** Measured boundaries keep one quiet hand, independent of tessellation or traversal order. */
-export function contourGeometry(points: readonly Point[], id: string, width = 1.65) {
-  if (points.length < 3 || points.some((p) => !Number.isFinite(p[0]) || !Number.isFinite(p[1])))
-    throw new Error('A contour needs at least three finite points');
+export function contourGeometry(points: readonly Point[], id: string, width = 1.65, closed = true) {
+  if (
+    points.length < (closed ? 3 : 2) ||
+    points.some((p) => !Number.isFinite(p[0]) || !Number.isFinite(p[1]))
+  )
+    throw new Error('A contour or trace needs finite points');
   let left = Infinity,
     top = Infinity,
     right = -Infinity,
@@ -36,7 +39,7 @@ export function contourGeometry(points: readonly Point[], id: string, width = 1.
   const phase = ((seed(id) % 65536) / 65536) * Math.PI * 2;
   const amplitude = width * 0.18;
   const ink: string[] = [];
-  for (let i = 0; i < points.length; i++) {
+  for (let i = 0; i < points.length - (closed ? 0 : 1); i++) {
     const a = points[i]!,
       b = points[(i + 1) % points.length]!;
     const steps = Math.max(
@@ -61,9 +64,10 @@ export function contourGeometry(points: readonly Point[], id: string, width = 1.
       ink.push(`${ink.length ? 'L' : 'M'}${px} ${py}`);
     }
   }
+  if (!closed) ink.push(`L${points.at(-1)![0]} ${points.at(-1)![1]}`);
   return {
-    path: points.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join('') + 'Z',
-    outline: ink.join('') + 'Z',
+    path: points.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join('') + (closed ? 'Z' : ''),
+    outline: ink.join('') + (closed ? 'Z' : ''),
     bounds,
   };
 }
@@ -137,7 +141,7 @@ export function pen(canvas: SVGSVGElement) {
       definitions.append(clip);
       element.append(definitions);
       if (fill === 'marker') {
-        const bounds =
+        const geometryBounds =
           initialBounds ??
           (() => {
             const geometry = svg('path', { d: path });
@@ -146,6 +150,14 @@ export function pen(canvas: SVGSVGElement) {
             geometry.remove();
             return bounds;
           })();
+        // A material region may start with zero area (energy, integral, split).
+        // Keep a non-degenerate brush and let the actual contour clip it to zero.
+        const bounds = {
+          x: geometryBounds.x,
+          y: geometryBounds.y,
+          width: Math.max(1, geometryBounds.width),
+          height: Math.max(1, geometryBounds.height),
+        };
         const revealClip = svg('clipPath', { id: `${clipId}-reveal` });
         const window = svg('rect', {
           x: bounds.x,
@@ -190,7 +202,8 @@ export function pen(canvas: SVGSVGElement) {
     element.append(outline);
     // Paint order keeps outlines on top; drawing order traces before filling.
     let trace = strokes([...outline.querySelectorAll('path'), ...fillPaths]);
-    let revealed: number | undefined;
+    let revealed: number | undefined,
+      traceDirty = false;
     return {
       element,
       /** A moving boundary keeps its seeded pen and marker; callers supply geometric bounds. */
@@ -208,12 +221,20 @@ export function pen(canvas: SVGSVGElement) {
             node.setAttribute('d', nextPaths[i]!.getAttribute('d')!),
           );
         else outline.replaceChildren(...next.childNodes);
-        trace = strokes([...outline.querySelectorAll('path'), ...fillPaths]);
-        if (revealed !== undefined) trace(revealed);
+        traceDirty = true;
+        if (revealed !== undefined) {
+          trace = strokes([...outline.querySelectorAll('path'), ...fillPaths]);
+          traceDirty = false;
+          trace(revealed);
+        }
         if (bounds) moveWash(bounds);
       },
       reveal(progress: number) {
-        if (revealed === progress) return;
+        if (revealed === progress && !traceDirty) return;
+        if (traceDirty) {
+          trace = strokes([...outline.querySelectorAll('path'), ...fillPaths]);
+          traceDirty = false;
+        }
         revealed = progress;
         trace(progress);
         paint(progress);
@@ -224,6 +245,25 @@ export function pen(canvas: SVGSVGElement) {
     };
   }
   return {
+    /** Open measured geometry shares the contour's stable hand and efficient update path. */
+    polyline(parent: SVGElement, id: string, points: readonly Point[], style: PenStyle = {}) {
+      let geometry = contourGeometry(points, id, style.width, false);
+      const drawing = draw(
+        parent,
+        id,
+        geometry.path,
+        style,
+        () => geometry.outline,
+        geometry.bounds,
+      );
+      return {
+        ...drawing,
+        update(next: readonly Point[]) {
+          geometry = contourGeometry(next, id, style.width, false);
+          drawing.update(geometry.path, geometry.bounds);
+        },
+      };
+    },
     path(parent: SVGElement, id: string, path: string, style: PenStyle = {}) {
       return draw(parent, id, path, style);
     },
