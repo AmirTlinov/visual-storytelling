@@ -157,9 +157,6 @@ window.galleryReady = (async () => {
       );
     },
   });
-  const observer = new ResizeObserver(() => story.update());
-  observer.observe(shell.stage);
-  shell.onDispose(() => observer.disconnect());
   shell.onDispose(() => drawing.dispose());
   function restore(snapshot) {
     const value = snapshot?.privateContent;

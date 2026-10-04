@@ -19,8 +19,7 @@ export async function scanTimeline(samples, threshold = 8, options = {}) {
     previousDelta = 0;
   for (const [i, sample] of samples.entries()) {
     const original = await sharp(sample.png).metadata();
-    // Resize in linear light, then share the bounded sRGB raster with both analyzers.
-    let pipeline = sharp(sample.png).pipelineColourspace('scrgb').toColourspace('srgb');
+    let pipeline = sharp(sample.png);
     if (options.crop) {
       const { x: left, y: top, width, height } = options.crop;
       if (
@@ -35,7 +34,22 @@ export async function scanTimeline(samples, threshold = 8, options = {}) {
         throw new Error('Crop must fit inside every source frame');
       pipeline = pipeline.extract({ left, top, width, height });
     }
+    // ICC screenshots need an explicit sRGB decode before entering linear light.
+    // Combining the profile conversion with scRGB resizing can quantize them to black.
+    if (original.icc) {
+      const { data, info } = await pipeline
+        .toColourspace('srgb')
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      pipeline = sharp(data, {
+        raw: { width: info.width, height: info.height, channels: info.channels },
+      });
+    }
+    // Resize in linear light, then share the bounded sRGB raster with both analyzers.
     const { data: pixels, info } = await pipeline
+      .pipelineColourspace('scrgb')
+      .toColourspace('srgb')
       .resize(240, 160, { fit: 'inside', withoutEnlargement: true })
       .ensureAlpha()
       .raw()

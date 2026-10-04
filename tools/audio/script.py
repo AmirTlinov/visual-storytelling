@@ -3,7 +3,7 @@ import json
 import math
 from pathlib import Path
 import re
-from resources import DEFAULT_DELIVERY, REFERENCE_AUDIO, REFERENCE_TEXT
+from resources import DEFAULT_DELIVERY, REFERENCE_AUDIO, REFERENCE_TEXT, digest
 
 WORD = re.compile(r"[А-Яа-яЁё]+(?:[-‑][А-Яа-яЁё]+)*")
 ID = re.compile(r"[a-z][a-z0-9_.-]*\Z")
@@ -14,6 +14,14 @@ CONTROLS = {
     "prosody": set("speed_very_slow speed_slow speed_fast speed_very_fast pause long_pause pitch_low pitch_high expressive_high expressive_low".split()),
     "sfx": set("cough laughter crying screaming burping humming sigh sniff sneeze".split()),
 }
+
+
+def check_timeline(script_path, timeline_path):
+    """Keep generated speech and cues attached to the exact authored source."""
+    source = json.loads(Path(script_path).read_text(encoding="utf-8"))
+    timeline = json.loads(Path(timeline_path).read_text(encoding="utf-8"))
+    if timeline.get("source_sha256") != digest(source):
+        raise ValueError("Narration changed after audio generation; run visual-story audio . before building")
 
 
 def without_controls(text):

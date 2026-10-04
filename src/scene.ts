@@ -130,7 +130,7 @@ function mount(
         refresh();
       }
     },
-    attachStory<P, K extends string>(options: StoryOptions<P, K>) {
+    attachStory<P, K extends string, S = P>(options: StoryOptions<P, K, S>) {
       const controller = story(options);
       try {
         attachController(controller);
@@ -157,7 +157,7 @@ function mount(
     dispose,
   };
 
-  function attachController<P, K extends string>(controller: Story<P, K>) {
+  function attachController<P, K extends string, S>(controller: Story<P, K, S>) {
     for (const { key } of parameters) {
       if (
         !controller.values ||
@@ -192,9 +192,22 @@ function mount(
       view?.reset();
       setMode('story');
     });
+    // Layout can change the stage height. Render outside ResizeObserver delivery so
+    // that surface.resize() cannot create a same-frame observation loop.
+    let layoutFrame = 0;
+    const layout = new ResizeObserver(() => {
+      if (layoutFrame) return;
+      layoutFrame = requestAnimationFrame(() => {
+        layoutFrame = 0;
+        controller.update();
+      });
+    });
+    layout.observe(stage);
     let unsubscribe = () => {};
     player = {
       dispose() {
+        layout.disconnect();
+        cancelAnimationFrame(layoutFrame);
         unsubscribe();
         ui.dispose();
         chapters.dispose();
@@ -223,7 +236,7 @@ function mount(
       get currentTime() {
         return controller.currentTime;
       },
-      snapshot: () => controller.values,
+      snapshot: () => controller.state,
       setReduced: controller.setReduced,
       dispose,
     };

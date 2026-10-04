@@ -133,6 +133,32 @@ test('shared downsampling preserves light energy and tiny frames retain their re
   assert.deepEqual(pixelAt(await decoded(dark.kymograph.image), 0, 0), [1, 1, 1]);
 });
 
+test('ICC-tagged browser frames retain their colour and visible changes after cropping', async () => {
+  for (const profile of ['srgb', 'p3']) {
+    const pngs = await Promise.all(
+      [128, 192].map(async (gray) =>
+        sharp(await raster(480, 320, () => [gray, gray, gray, 255]))
+          .withIccProfile(profile)
+          .png()
+          .toBuffer(),
+      ),
+    );
+    const result = await scanTimeline(samples(pngs), 8, {
+      crop: { x: 80, y: 40, width: 320, height: 200 },
+    });
+    assert.equal(result.intervals[0].changedPercent, 100);
+    assert.equal(result.intervals[0].duplicate, false);
+    for (const [i, gray] of [128, 192].entries()) {
+      close(result.photometry.points[i].luminance, linear(gray) * 100, 0.5);
+      close(result.photometry.points[i].red, gray, 1);
+    }
+    assert.deepEqual(
+      pixelAt(await decoded(result.photometry.reference.image), 0, 0),
+      [128, 128, 128],
+    );
+  }
+});
+
 test('kymograph follows horizontal and vertical motion and honours an explicit strip', async () => {
   for (const axis of ['x', 'y']) {
     const positions = [2, 8, 14];

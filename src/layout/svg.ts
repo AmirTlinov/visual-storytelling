@@ -92,10 +92,16 @@ function edge(bounds: Bounds, toward: Point, { shape = 'rect', gap = 0 } = {}) {
   return { x: cx + dx * factor + (dx / length) * gap, y: cy + dy * factor + (dy / length) * gap };
 }
 
+/** Endpoints are in `space`, the link parent's coordinates (surface.layer under a camera). */
 function connect(
   from: SVGGraphicsElement,
   to: SVGGraphicsElement,
-  { fromShape = 'rect', toShape = 'rect', gap = 3, space = from.ownerSVGElement! } = {},
+  {
+    fromShape = 'rect',
+    toShape = 'rect',
+    gap = 3,
+    space = from.ownerSVGElement!,
+  }: { fromShape?: string; toShape?: string; gap?: number; space?: SVGGraphicsElement } = {},
 ) {
   const a = box(from, space),
     b = box(to, space);

@@ -13,6 +13,9 @@ def main():
     prep = commands.add_parser("setup", help="Download local models and a credited example music track once")
     prep.add_argument("--music-from", type=Path)
     commands.add_parser("doctor", help="Inspect local resources")
+    check = commands.add_parser("check", help="Check a generated timeline against its narration without loading models")
+    check.add_argument("script", type=Path)
+    check.add_argument("--timeline", type=Path, required=True)
     build = commands.add_parser("build", help="Build audio.wav, voice.wav and timeline.json from a JSON script")
     build.add_argument("script", type=Path)
     build.add_argument("--out", type=Path, required=True)
@@ -23,6 +26,9 @@ def main():
             setup(args.music_from)
         elif args.command == "doctor":
             print(json.dumps(doctor(), ensure_ascii=False, indent=2))
+        elif args.command == "check":
+            from script import check_timeline
+            check_timeline(args.script, args.timeline)
         else:
             from assembly import build_audio
             build_audio(args.script.resolve(), args.out.resolve(), args.device)

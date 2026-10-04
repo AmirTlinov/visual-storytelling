@@ -32,7 +32,7 @@ export function notebook(
     parameters: shell.fields,
     footer: element.querySelector<HTMLElement>('[data-player]')!,
     theme: appearance.set,
-    attach<P, K extends string>(story: Story<P, K>) {
+    attach<P, K extends string, S>(story: Story<P, K, S>) {
       return shell.attachController(story);
     },
     onDispose: shell.onDispose,

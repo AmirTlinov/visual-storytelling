@@ -7,8 +7,8 @@ import unittest
 import wave
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools' / 'audio'))
-from script import read_script, timed_cues
-from resources import digest, SPEECH_REPO, SPEECH_REVISION
+from script import read_script, timed_cues, check_timeline
+from resources import SPEECH_REPO, SPEECH_REVISION
 
 
 class NarrationCues(unittest.TestCase):
@@ -21,7 +21,7 @@ class NarrationCues(unittest.TestCase):
                 continue
             with self.subTest(scene=name):
                 timeline = json.loads((source.parent / 'timeline.json').read_text())
-                self.assertEqual(timeline['source_sha256'], digest(json.loads(source.read_text())), 'Rebuild changed narration')
+                check_timeline(source, source.parent / 'timeline.json')
                 self.assertEqual(timeline['synthesis']['model'], SPEECH_REPO)
                 self.assertEqual(timeline['synthesis']['revision'], SPEECH_REVISION)
                 script = read_script(source)

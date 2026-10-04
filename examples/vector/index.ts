@@ -75,6 +75,7 @@ export function mount(parent: HTMLElement): Example {
         : interpolate(1, 1.8, frame.progress('stretch')),
       b: interpolate(1, 0.5, frame.progress('flatten')),
     }),
+    derive: (input) => ({ ...input, output: transform(input) }),
     render: (state) => layout.current.render(state),
   });
   book.onDispose(layout.dispose);
@@ -82,6 +83,6 @@ export function mount(parent: HTMLElement): Example {
     checkpoints: [0, 5, 10, 16],
     setTheme: book.theme,
     svg: () => layout.current.view.element,
-    snapshot: () => ({ input: controller.values, output: transform(controller.values) }),
+    snapshot: () => ({ input: controller.values, output: controller.state.output }),
   });
 }

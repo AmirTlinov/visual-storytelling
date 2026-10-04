@@ -7,7 +7,7 @@ import {
   vector,
   plot,
 } from '@visual-storytelling/core';
-import { transform, type VectorState } from './model';
+import type { VectorState } from './model';
 
 export function drawing(parent: HTMLElement, width: number) {
   const small = width < 480,
@@ -121,8 +121,8 @@ export function drawing(parent: HTMLElement, width: number) {
   return {
     view,
     dispose: view.dispose,
-    render(state: VectorState) {
-      const out = transform(state),
+    render(state: VectorState & { output: { x: number; y: number } }) {
+      const out = state.output,
         origin = axes.point(0, 0);
       input.set(origin, axes.point(state.x, state.y));
       output.set(origin, axes.point(out.x, out.y));
