@@ -1,6 +1,7 @@
-import { writeFile } from 'node:fs/promises';
+import { writeFile, copyFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { join, dirname, basename } from 'node:path';
+import { join, dirname, basename, resolve, sep } from 'node:path';
 import { renderer } from '../render.mjs';
 import { captureWriter } from './session.mjs';
 import { storyEpisodes, selectEpisode } from './episodes.mjs';
@@ -179,9 +180,20 @@ export async function captureScene({
     const context = { review, messages: capture.messages };
     if (capture.info.audioURL) {
       try {
-        const response = await capture.page.request.get(capture.info.audioURL);
-        if (response.ok()) {
-          await writeFile(join(out, 'narration.audio'), await response.body());
+        const url = new URL(capture.info.audioURL);
+        const destination = join(out, 'narration.audio');
+        if (url.origin === new URL(capture.url).origin) {
+          const root = resolve(directory ? input : dirname(input));
+          const file = resolve(root, '.' + decodeURIComponent(url.pathname));
+          if (!file.startsWith(root + sep)) throw new Error('Audio is outside the scene directory');
+          // Copy-on-write snapshots share storage where supported, but remain independent
+          // when the authored WAV changes. Node falls back to a regular copy elsewhere.
+          await copyFile(file, destination, constants.COPYFILE_FICLONE);
+          context.audio = 'narration.audio';
+        } else {
+          const response = await capture.page.request.get(url.href);
+          if (!response.ok()) throw new Error(`Audio request failed: ${response.status()}`);
+          await writeFile(destination, await response.body());
           context.audio = 'narration.audio';
         }
       } catch (e) {

@@ -6,6 +6,7 @@ async function ready(page: Page, path: string) {
   await page.goto(path);
   await page.waitForFunction(
     () =>
+      !!document.querySelector<HTMLElement>('.ve-scene')?.scene ||
       !!document.querySelector('svg.canvas,svg.vs-canvas,canvas') ||
       document.querySelector('object')?.contentDocument?.documentElement.tagName === 'svg',
   );
@@ -308,7 +309,7 @@ for (const name of ['explorer-svg', 'explorer-3d'])
       });
     const expected = await pose();
     expect(expected.following).toBe(true);
-    await seek.fill('25');
+    await seek.fill((await seek.getAttribute('max'))!);
     await seek.fill('0');
     await seek.fill('12');
     expect(await pose()).toEqual(expected);

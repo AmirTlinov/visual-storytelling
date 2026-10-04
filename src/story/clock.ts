@@ -10,6 +10,7 @@ export interface MediaClock extends EventTarget {
 export function mediaTimeline(audio: MediaClock, duration: number, render: () => void) {
   let frame = 0,
     disposed = false;
+  let sought: { requested: number; reported: number } | undefined;
   const update = () => {
     cancelAnimationFrame(frame);
     frame = 0;
@@ -21,6 +22,10 @@ export function mediaTimeline(audio: MediaClock, duration: number, render: () =>
     const next = Math.min(duration, Math.max(0, time));
     // A redundant seek at preload=metadata can leave native media waiting indefinitely.
     if (audio.currentTime !== next) audio.currentTime = next;
+    // Native media quantizes its readback (Chromium truncates to microseconds).
+    // Keep the authored boundary through seeked/timeupdate echoes; advancing media
+    // immediately resumes ownership of time, without a second running clock.
+    sought = { requested: next, reported: audio.currentTime };
     update();
   };
   const events = [
@@ -34,6 +39,12 @@ export function mediaTimeline(audio: MediaClock, duration: number, render: () =>
     'timeupdate',
   ];
   const api = {
+    get time() {
+      const time = audio.currentTime;
+      if (sought && time === sought.reported) return sought.requested;
+      sought = undefined;
+      return time;
+    },
     seek,
     update,
     dispose() {

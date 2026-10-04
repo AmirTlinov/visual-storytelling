@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, realpath, rename, rm } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readdir, realpath, rename, rm } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 async function canonical(path) {
@@ -12,7 +12,7 @@ async function canonical(path) {
 }
 
 /** Keep the last delivery until its complete replacement is ready. */
-export async function buildOutput(source, output, build) {
+export async function buildOutput(source, output, build, { ownedFiles, commitFile } = {}) {
   output = resolve(output);
   const [destination, sources] = await Promise.all([canonical(output), canonical(resolve(source))]);
   const inside = relative(destination, sources);
@@ -26,6 +26,62 @@ export async function buildOutput(source, output, build) {
   try {
     await mkdir(staging);
     await build(staging);
+    if (ownedFiles) {
+      // A release may share its directory with an excerpt or an active exporter.
+      // Publish only owned files; never move or delete that surrounding directory.
+      const entries = await readdir(staging, { withFileTypes: true });
+      const names = entries.map((entry) => entry.name);
+      const owned = new Set(ownedFiles);
+      if (
+        entries.some((entry) => !entry.isFile()) ||
+        (commitFile && !names.includes(commitFile)) ||
+        [...owned].some((name) => !name || basename(name) !== name || name === '.' || name === '..')
+      )
+        throw new Error('A file delivery must contain only named files');
+      for (const name of new Set([...owned, ...names])) {
+        const entry = await lstat(join(output, name)).catch((error) => {
+          if (error.code === 'ENOENT') return false;
+          throw error;
+        });
+        if (entry && (!owned.has(name) || !entry.isFile()))
+          throw new Error(
+            `Delivery does not own ${join(output, name)}; choose a new output directory`,
+          );
+      }
+      await mkdir(output, { recursive: true });
+      await mkdir(previous);
+      const replaced = [],
+        published = [];
+      try {
+        for (const name of new Set([...owned, ...names])) {
+          try {
+            await rename(join(output, name), join(previous, name));
+            replaced.push(name);
+          } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+          }
+        }
+        for (const name of names.sort(
+          (a, b) => Number(a === commitFile) - Number(b === commitFile),
+        )) {
+          await rename(join(staging, name), join(output, name));
+          published.push(name);
+        }
+      } catch (error) {
+        try {
+          for (const name of published) await rm(join(output, name));
+          for (const name of replaced) await rename(join(previous, name), join(output, name));
+        } catch (restoreError) {
+          preservePrevious = true;
+          throw new AggregateError(
+            [error, restoreError],
+            `Delivery publication and rollback failed; the previous files remain at ${previous}`,
+          );
+        }
+        throw error;
+      }
+      return;
+    }
     let replaced = false;
     try {
       await rename(output, previous);

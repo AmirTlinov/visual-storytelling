@@ -10,9 +10,24 @@ import soundfile as sf
 
 from resources import (CACHE, SPEECH_MODEL,
                        SPEECH_REPO, SPEECH_REVISION, digest, file_digest, speech_ready)
+from script import without_controls, words
 
 SAMPLE_RATE = 48000
-GENERATION = {"temperature": .8, "top_k": 50, "max_new_tokens": 1200}
+GENERATION = {"temperature": .8, "top_k": 50}
+MAX_TOKENS = 4096
+
+
+class SpeechLimitError(RuntimeError):
+    pass
+
+
+def generation_parameters(text):
+    # One native token is one codec frame. Leave room for normal pauses and long
+    # Russian words, while preserving the accepted 1200-token short-take cache.
+    spoken = without_controls(text)
+    count = len(words(spoken))
+    limit = 1200 if count <= 40 else min(MAX_TOKENS, max(1200, 128 + 24 * count, 128 + 3 * len(spoken)))
+    return {**GENERATION, "max_new_tokens": limit}
 
 
 def load_model():
@@ -29,19 +44,19 @@ def resample(audio, source_rate, target_rate):
     return resample_poly(audio, target_rate // common, source_rate // common).astype(np.float32)
 
 
-def render(model, text, seed, ref_audio_codes, ref_text):
+def render(model, text, seed, ref_audio_codes, ref_text, parameters):
     import mlx.core as mx
     mx.random.seed(seed)
-    chunks = [np.array(result.audio, dtype=np.float32).reshape(-1) for result in model.generate(
-        text=text, ref_audio_codes=ref_audio_codes, ref_text=ref_text, **GENERATION,
-    )]
-    if len(chunks) != 1:
+    results = list(model.generate(
+        text=text, ref_audio_codes=ref_audio_codes, ref_text=ref_text, **parameters,
+    ))
+    if len(results) != 1:
         raise RuntimeError("Higgs must return one continuous narration segment")
-    audio = np.concatenate(chunks)
+    if results[0].token_count >= parameters["max_new_tokens"]:
+        raise SpeechLimitError(f'Higgs reached its {parameters["max_new_tokens"]}-token budget before completing speech')
+    audio = np.array(results[0].audio, dtype=np.float32).reshape(-1)
     if not len(audio) or not np.isfinite(audio).all() or np.max(np.abs(audio)) < .001:
         raise RuntimeError("Higgs returned invalid or silent audio")
-    if len(audio) / model.sample_rate > 40:
-        raise ValueError("Speech exceeds 40 seconds; split at a sentence boundary")
     return resample(audio, model.sample_rate, SAMPLE_RATE)
 
 
@@ -71,18 +86,35 @@ class Speaker:
                          "parameters": GENERATION}
 
     def synthesize(self, segment):
-        key = digest({"v": 3, **self.identity, "reference_text": self.voice["reference_text"],
-                      "seed": segment["seed"], "text": segment["text"],
-                      "delivery": segment["delivery"], "sample_rate": SAMPLE_RATE})
-        wav = CACHE / "clips" / f"{key}.wav"
-        if wav.exists():
-            return sf.read(wav, dtype="float32")[0], key, {"cached": True, "seconds": 0.0}
+        parameters = generation_parameters(segment["delivery"] + segment["text"])
+        candidates = []
+        while True:
+            key = digest({"v": 3, **self.identity, "parameters": parameters,
+                          "reference_text": self.voice["reference_text"],
+                          "seed": segment["seed"], "text": segment["text"],
+                          "delivery": segment["delivery"], "sample_rate": SAMPLE_RATE})
+            wav = CACHE / "clips" / f"{key}.wav"
+            candidates.append((parameters, key, wav))
+            if parameters["max_new_tokens"] == MAX_TOKENS:
+                break
+            parameters = {**parameters, "max_new_tokens": min(MAX_TOKENS, parameters["max_new_tokens"] * 2)}
+        # Look for a previously completed larger-budget take before repeating a
+        # known short budget. Failed/truncated generations are never cached.
+        for parameters, key, wav in candidates:
+            if wav.exists():
+                return sf.read(wav, dtype="float32")[0], key, {"cached": True, "seconds": 0.0, "parameters": parameters}
         started = time.perf_counter()
         if self.model is None:
             model = load_model()
             reference_codes = model.encode_reference_audio(self.reference_path)
             self.model, self.reference_codes = model, reference_codes
-        audio = render(self.model, segment["delivery"] + segment["text"], segment["seed"],
-                       self.reference_codes, self.voice["reference_text"])
-        audio = save_clip(wav, audio)
-        return audio, key, {"cached": False, "seconds": round(time.perf_counter() - started, 4)}
+        for parameters, key, wav in candidates:
+            try:
+                audio = render(self.model, segment["delivery"] + segment["text"], segment["seed"],
+                               self.reference_codes, self.voice["reference_text"], parameters)
+            except SpeechLimitError:
+                if parameters["max_new_tokens"] == MAX_TOKENS:
+                    raise
+                continue
+            audio = save_clip(wav, audio)
+            return audio, key, {"cached": False, "seconds": round(time.perf_counter() - started, 4), "parameters": parameters}

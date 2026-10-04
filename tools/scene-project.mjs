@@ -141,14 +141,15 @@ export async function closeSceneDependencies(source, destination, { signal } = {
 }
 
 /** New scenes and editable deliveries use the same immutable runtime dependency. */
-export async function pinSceneProject(destination, { signal } = {}) {
+export async function pinSceneProject(destination, { signal, build = true } = {}) {
   const root = fileURLToPath(new URL('../', import.meta.url));
   signal?.throwIfAborted();
   if (
-    await access(join(root, 'src/index.ts')).then(
+    build &&
+    (await access(join(root, 'src/index.ts')).then(
       () => true,
       () => false,
-    )
+    ))
   ) {
     const { buildPackage } = await import('./build-package.mjs');
     await buildPackage();

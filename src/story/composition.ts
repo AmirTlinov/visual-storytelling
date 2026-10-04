@@ -111,6 +111,7 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
     for (const chapter of options.chapters) {
       const element = document.createElement('div');
       element.dataset.chapter = chapter.id;
+      element.inert = true;
       Object.assign(element.style, { position: 'absolute', inset: '0' });
       shell.stage.append(element);
       const drawing = await chapter.mount(element);
@@ -186,7 +187,10 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
           progress = mode === 'explore' ? Number(values.sceneTime) : state.frame.progress;
         if (!Number.isFinite(progress) || progress < 0 || progress > 1)
           throw new Error('Chapter progress must be between zero and one');
-        if (index !== current) mounted[current]!.element.hidden = true;
+        if (index !== current) {
+          mounted[current]!.element.hidden = true;
+          mounted[current]!.element.inert = true;
+        }
         current = index;
         const presentation = mounted[index]!;
         presentation.element.hidden = false;
@@ -225,6 +229,10 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
                 ),
           reduced: frame.reduced,
         };
+        // A covered page is still rendered for the transition, but cannot receive input or focus.
+        presentation.element.inert = Boolean(
+          transition && (transitionState.open < 1 || transitionState.progress < 1),
+        );
         transition?.render(transitionState);
         for (const id of Object.keys(plan.script.cues))
           if (id === chapter.id || id.startsWith(chapter.id + '.')) {

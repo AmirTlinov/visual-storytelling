@@ -11,6 +11,7 @@ export async function buildPackage() {
   const root = fileURLToPath(new URL('../', import.meta.url));
   const output = join(root, 'dist');
   await buildBuiltinCharacters();
+  let receipt;
   await buildOutput(root, output, async (staging) => {
     const source = await sourceDigest(root);
     execFileSync(
@@ -24,10 +25,13 @@ export async function buildPackage() {
     await cp(join(root, 'src/style.css'), join(staging, 'style.css'));
     await embedRuntimeAssets(staging);
     await buildAPI(root, staging);
-    if (await sourceDigest(root) !== source)
-      throw new Error('Library sources changed during the build. Run the build again; the previous package is preserved.');
-    await writeBuildInfo(root, staging, source);
+    if ((await sourceDigest(root)) !== source)
+      throw new Error(
+        'Library sources changed during the build. Run the build again; the previous package is preserved.',
+      );
+    receipt = await writeBuildInfo(root, staging, source);
   });
+  return receipt;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))

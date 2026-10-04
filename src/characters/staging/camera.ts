@@ -36,7 +36,9 @@ export function stageFrame(
     width: subject.width + 2 * margin,
     height: subject.height + 2 * margin,
   };
-  if (!shot) b = union([{ x: 0, y: 0, width, height }, b]);
+  // The complete set already supplies context. Extra portrait padding would
+  // pull the default camera beyond its painted edges for an otherwise fitting prop.
+  if (!shot) b = union([{ x: 0, y: 0, width, height }, subject]);
   const w = Math.max(b.width, (b.height * width) / height),
     h = (w * height) / width;
   const frame = { x: b.x + (b.width - w) / 2, y: b.y + (b.height - h) / 2, width: w, height: h };

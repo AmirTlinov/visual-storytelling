@@ -7,14 +7,21 @@ import { readCatalog } from './catalog.mjs';
 import { buildGalleryIndex } from './gallery/render.mjs';
 import { prepareNarration } from './narration.mjs';
 import { parseArgs } from 'node:util';
+import { sourceDigest, writeBuildInfo } from './build-info.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 export async function buildGallery(target = resolve(root, 'site'), { narration = false } = {}) {
-  await buildPackage();
+  const receipt = await buildPackage();
   const catalog = await readCatalog();
-  if (narration)
+  if (narration) {
     for (const name of Object.keys(catalog))
       await prepareNarration(resolve(root, 'examples', name));
+    if ((await sourceDigest(root)) !== receipt.source)
+      throw new Error('Library sources changed while preparing narration. Run the build again.');
+    // Narration is prepared against the fresh runtime above; its generated
+    // timelines are also part of the shipped authoring kit.
+    await writeBuildInfo(root, resolve(root, 'dist'), receipt.source);
+  }
   await buildOutput(root, target, async (output) => {
     await buildPages(output);
     await buildGalleryIndex(output, catalog);

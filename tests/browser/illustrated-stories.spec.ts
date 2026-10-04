@@ -1,5 +1,53 @@
 import { test, expect } from '@playwright/test';
 
+test('book transitions suspend page input and restore it for explore, rewind and reduced motion', async ({
+  page,
+}) => {
+  await page.goto('/tesla-circuit/index.html');
+  await page.evaluate(() => window.galleryReady);
+  const control = (commands: unknown[]) =>
+    page.evaluate(async (commands) => {
+      await (document.querySelector('#story') as any).scene.control(commands);
+    }, commands);
+  const active = page.locator('[data-chapter]:not([hidden])');
+  const switchButton = page.getByRole('button', { name: 'Замкнуть или разомкнуть цепь' });
+  const coveredInput = async () => {
+    // Browser input and focus honor inert; a DOM role query still finds the covered SVG.
+    const pressed = await switchButton.getAttribute('aria-pressed');
+    expect(
+      await switchButton.evaluate((element: SVGElement) => {
+        element.focus();
+        return document.activeElement === element;
+      }),
+    ).toBe(false);
+    const box = (await switchButton.boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(switchButton).toHaveAttribute('aria-pressed', pressed!);
+  };
+  await control([{ type: 'pause' }, { type: 'seek', time: 0 }]);
+  await expect(active).toHaveAttribute('inert', '');
+  await coveredInput();
+  await control([{ type: 'cue', id: 'workshop.explain', progress: 0.7 }]);
+  await expect(active).not.toHaveAttribute('inert');
+  await expect(switchButton).toHaveCount(1);
+  await switchButton.focus();
+  await control([{ type: 'cue', id: 'experiment', progress: 0 }]);
+  await expect(active).toHaveAttribute('inert', '');
+  await coveredInput();
+  await page.locator('[data-mode=explore]').click();
+  await expect(active).not.toHaveAttribute('inert');
+  await expect(switchButton).toHaveCount(1);
+  const before = await switchButton.getAttribute('aria-pressed');
+  await switchButton.press('Enter');
+  await expect(switchButton).toHaveAttribute('aria-pressed', before === 'true' ? 'false' : 'true');
+  await control([{ type: 'seek', time: 0 }]);
+  await expect(active).toHaveAttribute('inert', '');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await control([{ type: 'seek', time: 0 }]);
+  await expect(active).not.toHaveAttribute('inert');
+  await expect(switchButton).toHaveCount(1);
+});
+
 for (const [name, values] of [
   ['tesla-circuit', { closed: false }],
   ['area-notebook', { width: 6, height: 5 }],

@@ -10,11 +10,13 @@ const post = (data) =>
   });
 let handle,
   restoring = false,
-  acknowledged = false;
+  acknowledged = false,
+  failedBuild = false;
 const rendered = () =>
   new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 const events = new EventSource('/__visual_story_events?view=' + view);
-function showError(message) {
+function showError(message, build = false) {
+  failedBuild = build;
   let node = document.getElementById('visual-story-build-error');
   if (!node) {
     node = document.createElement('pre');
@@ -51,6 +53,10 @@ function refresh() {
 }
 events.addEventListener('built', (event) => {
   const next = JSON.parse(event.data);
+  if (failedBuild) {
+    document.getElementById('visual-story-build-error')?.remove();
+    failedBuild = false;
+  }
   if (next.revision === revision) return;
   if (!handle?.inspect?.().playing) refresh();
   else {
@@ -69,7 +75,7 @@ events.addEventListener('built', (event) => {
   }
 });
 events.addEventListener('build-error', (event) =>
-  showError('Сборка не удалась. Открытая сцена сохранена.\n' + JSON.parse(event.data)),
+  showError('Сборка не удалась. Открытая сцена сохранена.\n' + JSON.parse(event.data), true),
 );
 let commands = Promise.resolve();
 events.addEventListener('request', (event) => {

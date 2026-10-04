@@ -1,5 +1,3 @@
-import pencilURL from '../assets/pencil.woff2';
-import fallbackURL from '../assets/shantell.woff2';
 import { svg } from '../ink/dom.js';
 import { snapshotRaster } from './raster.js';
 
@@ -28,10 +26,6 @@ const properties = [
   'text-anchor',
   'paint-order',
 ] as const;
-const fonts = [
-  { name: 'SketchPencil', url: pencilURL },
-  { name: 'SketchShantell', url: fallbackURL },
-];
 
 // CSS Color 4 is resolved by Chromium, but SVG renderers also need CSS 3 paint.
 const paint = (value: string) =>
@@ -43,6 +37,10 @@ const paint = (value: string) =>
 
 /** Resolve the current theme and bundle the font; exported SVG has no runtime dependency. */
 export async function exportSVG(source: SVGSVGElement): Promise<string> {
+  const fonts = [
+    { name: 'SketchPencil', url: new URL('../assets/pencil.woff2', import.meta.url).href },
+    { name: 'SketchShantell', url: new URL('../assets/shantell.woff2', import.meta.url).href },
+  ];
   const clone = source.cloneNode(true) as SVGSVGElement;
   const originals = [source, ...source.querySelectorAll<SVGElement>('*')];
   const copies = [clone, ...clone.querySelectorAll<SVGElement>('*')];

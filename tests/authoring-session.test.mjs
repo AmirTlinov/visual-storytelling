@@ -168,6 +168,17 @@ test('a preview session pins shown content, controls semantics and restores a cu
     });
     assert.equal(explore.result.mode, 'explore');
     assert.equal(explore.result.parameters.find((p) => p.key === 'x').value, 7);
+    await writeFile(join(source, 'scene.js'), 'export const = ;');
+    await page.locator('#visual-story-build-error').waitFor();
+    await writeFile(join(source, 'scene.js'), code(9));
+    await page.waitForFunction(() => !document.querySelector('#visual-story-build-error'));
+    const recovered = await requestSession(server.url);
+    assert.equal(
+      recovered.revision,
+      after.revision,
+      'returning to identical output needs no reload',
+    );
+    assert.equal(recovered.result.parameters.find((p) => p.key === 'x').value, 7);
     const foreign = await fetch(server.url + '/__visual_story_session', {
       method: 'POST',
       headers: { Origin: 'https://example.com', 'Content-Type': 'application/json' },

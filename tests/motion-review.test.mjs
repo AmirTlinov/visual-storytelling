@@ -10,6 +10,20 @@ import { analyzeMotionFrames, parseCrop } from '../tools/motion/frames.mjs';
 import { reviewMotion } from '../tools/motion/review.mjs';
 import { compareMotion } from '../tools/motion/comparison.mjs';
 import { writeMotionReport } from '../tools/motion/report.mjs';
+import { captureWriter } from '../tools/motion/session.mjs';
+
+test('stored evidence stays independent when the source image is overwritten', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'motion-snapshot-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const original = square(4),
+    input = join(directory, 'source.png');
+  await writeFile(input, original);
+  const writer = await captureWriter(join(directory, 'review'));
+  await writer.append({ id: 'first', time: 0, file: input });
+  await writeFile(input, square(12));
+  assert.deepEqual(await readFile(writer.frames[0].file), original);
+  assert.notDeepEqual(await readFile(input), original);
+});
 
 test('offline CLI analysis keeps evidence when Chromium is unavailable and removes stale previews', async () => {
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'motion-without-browser-')));

@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { serve } from './site.mjs';
 import { openScene, seekScene } from './open-scene.mjs';
 import { readCatalog } from './catalog.mjs';
+import { assetURLs } from './asset-urls.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 export async function renderer({
   scene,
@@ -101,7 +102,7 @@ export async function renderer({
       format: 'iife',
       globalName: 'VisualExport',
       write: false,
-      loader: { '.woff2': 'dataurl' },
+      plugins: [assetURLs()],
     });
     await page.addScriptTag({ content: exporter.outputFiles[0].text });
     const info = await capture.evaluate((scene) => scene.info());

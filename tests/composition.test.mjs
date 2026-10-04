@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { composeChapters, chapterTime } from '../dist/story/composition-plan.js';
 import { renderer } from '../tools/render.mjs';
+import { assetURLs } from '../tools/asset-urls.mjs';
 
 test('narrated local cues retain intervening pauses, words and reversible chapter time', () => {
   const chapter = {
@@ -77,6 +78,7 @@ test('boundary capture, fast theme changes and disposal preserve the current pre
   let capture;
   try {
     const bundle = await build({
+      plugins: [assetURLs()],
       stdin: {
         contents: `
       import { SceneStory } from './dist/story/composition.js';
@@ -171,6 +173,7 @@ test('shared character chapters capture their own dimensions and keep the active
   let capture;
   try {
     const bundle = await build({
+      plugins: [assetURLs()],
       stdin: {
         contents: `
       import { CharacterStage } from './dist/characters/stage.js';

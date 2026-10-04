@@ -11,6 +11,16 @@ import { buildScene } from '../tools/build-pages.mjs';
 import { buildOutput } from '../tools/build-output.mjs';
 import { packDirectory } from '../tools/standalone.mjs';
 import { serve } from '../tools/site.mjs';
+import { runInNewContext } from 'node:vm';
+import { svgRuntime } from '../tools/svg-runtime.mjs';
+
+test('bundled root and subpath APIs initialize shared values before the scene uses them', async () => {
+  const code = await svgRuntime({ '': ['transport'], '/ink': ['SketchInk'] });
+  const context = { EventTarget };
+  runInNewContext(code, context);
+  assert.equal(typeof context.VisualStory.transport, 'function');
+  assert.match(context.VisualStory.SketchInk.inkBox(0, 0, 10, 10), /^M.*Z$/);
+});
 
 test('a production-only installation of the packed public API typechecks outside the repository', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'story-package-types-'));

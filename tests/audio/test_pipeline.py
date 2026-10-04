@@ -4,6 +4,8 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools" / "audio"))
 import numpy as np
@@ -12,12 +14,101 @@ import soundfile as sf
 from alignment import ctc_path
 from assembly import build_audio
 from audition import audition
-from resources import REFERENCE_AUDIO, REFERENCE_TEXT
+from resources import REFERENCE_AUDIO, REFERENCE_TEXT, digest
+from script import read_script, words, check_timeline
+from speech import Speaker, GENERATION, SAMPLE_RATE, SpeechLimitError, generation_parameters
 
 EXAMPLE = Path(__file__).resolve().parents[2] / "examples" / "remainder-story" / "narration.json"
 
 
 class AudioChecks(unittest.TestCase):
+    def test_complete_sentences_share_cues_and_keep_a_cached_receipt_byte_stable(self):
+        class FakeSpeaker:
+            identity = {"model": "fixture"}
+            cached = False
+            def synthesize(self, segment):
+                return np.full(SAMPLE_RATE, .1, dtype=np.float32), segment["text"], {"cached": self.cached, "seconds": 0 if self.cached else 1}
+        class FakeAligner:
+            device = "cpu"
+            def align(self, audio, text, key):
+                tokens = words(text)
+                return [{"text": word, "start": .05 + .85 * i / len(tokens),
+                         "end": .05 + .85 * (i + 1) / len(tokens), "score": .9}
+                        for i, word in enumerate(tokens)], {"cached": speaker.cached, "seconds": 0}
+        text = " ".join(start + " слово" * 28 + " " + end for start, end in [
+            ("Первое", "завершено."), ("Второе", "готово."), ("Третье", "проверено."),
+        ])
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            script, output = root / "narration.json", root / "output"
+            spec = {"version": 3, "intro": 0, "outro": 0, "segments": [
+                {"id": "thought", "text": text, "pause_after": .3,
+                 "cues": [{"id": "boundary", "quote": "завершено Второе", "action": "Следующее предложение"}]},
+            ]}
+            script.write_text(json.dumps(spec, ensure_ascii=False))
+            speaker = FakeSpeaker()
+            speaker.voice = read_script(script)["voice"]
+            first = build_audio(script, output, "cpu", speaker=speaker, aligner=FakeAligner(), report=False)
+            aligned = first["segments"][0]["words"]
+            self.assertEqual([w["text"] for w in aligned], words(text))
+            self.assertEqual([p["word_end"] for p in first["segments"][0]["passages"]], [30, 60, 90])
+            self.assertAlmostEqual(aligned[30]["start"] - aligned[29]["end"], .2, places=5)
+            self.assertAlmostEqual(aligned[60]["start"] - aligned[59]["end"], .2, places=5)
+            self.assertAlmostEqual(first["duration"], 3.4, places=5)  # 3 clips, two .05 gaps, one .3 pause.
+            self.assertEqual(first["cues"]["boundary"]["start"], aligned[29]["start"])
+            self.assertEqual(first["cues"]["boundary"]["end"], aligned[30]["end"])
+            check_timeline(script, output / "timeline.json")
+            before = {p.name: p.read_bytes() for p in output.iterdir()}
+            speaker.cached = True
+            build_audio(script, output, "cpu", speaker=speaker, aligner=FakeAligner(), report=False)
+            self.assertEqual({p.name: p.read_bytes() for p in output.iterdir()}, before)
+            spec["segments"][0]["text"] = "слово " * 51
+            spec["segments"][0]["cues"] = []
+            script.write_text(json.dumps(spec, ensure_ascii=False))
+            with self.assertRaisesRegex(ValueError, 'natural sentence boundary'):
+                build_audio(script, output, "cpu", speaker=speaker, aligner=FakeAligner(), report=False)
+            self.assertEqual({p.name: p.read_bytes() for p in output.iterdir()}, before)
+
+    def test_token_budget_keeps_short_keys_and_reuses_a_completed_larger_take(self):
+        speaker = Speaker.__new__(Speaker)
+        speaker.identity = {"model": "fixture", "parameters": GENERATION}
+        speaker.voice = {"reference_text": "Точный образец."}
+        speaker.reference_codes = None
+        calls = []
+        capped = False
+        def generate(**options):
+            limit = options["max_new_tokens"]
+            calls.append(limit)
+            yield SimpleNamespace(audio=np.full(2400, .1), token_count=limit if capped or limit == 1200 else 10)
+        speaker.model = SimpleNamespace(generate=generate, sample_rate=24000)
+        segment = {"seed": 42, "text": "Цепь замкнута.", "delivery": ""}
+        legacy = {**GENERATION, "max_new_tokens": 1200}
+        self.assertEqual(generation_parameters(segment["text"]), legacy)
+        self.assertGreater(generation_parameters("слово " * 100)["max_new_tokens"], 1200)
+        with tempfile.TemporaryDirectory() as folder, patch('speech.CACHE', Path(folder)):
+            key = digest({"v": 3, **speaker.identity, "parameters": legacy,
+                          "reference_text": speaker.voice["reference_text"], **segment, "sample_rate": SAMPLE_RATE})
+            path = Path(folder) / "clips" / f"{key}.wav"
+            path.parent.mkdir()
+            sf.write(path, np.full(4800, .1), SAMPLE_RATE, subtype="PCM_16")
+            self.assertEqual(speaker.synthesize(segment)[1], key)
+            self.assertEqual(calls, [])
+            segment["seed"] = 43
+            first = speaker.synthesize(segment)
+            self.assertEqual(calls, [1200, 2400])
+            second = speaker.synthesize(segment)
+            self.assertEqual(calls, [1200, 2400])
+            self.assertEqual(first[1], second[1])
+            self.assertTrue(second[2]["cached"])
+            self.assertTrue(np.array_equal(first[0], second[0]))
+            self.assertEqual(len(list(path.parent.glob('*.wav'))), 2)
+            capped = True
+            segment["seed"] = 44
+            with self.assertRaisesRegex(SpeechLimitError, '4096-token budget'):
+                speaker.synthesize(segment)
+            self.assertEqual(calls[-3:], [1200, 2400, 4096])
+            self.assertEqual(len(list(path.parent.glob('*.wav'))), 2)
+
     def test_selected_whole_take_reuses_audio_and_preserves_other_segments(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

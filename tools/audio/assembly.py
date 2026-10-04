@@ -11,15 +11,46 @@ from credits import audio_credits
 from listening import write_listening_page
 from mixing import mix
 from resources import ALIGN_REPO, ALIGN_REVISION, digest
-from script import read_script, timed_cues
+from script import read_script, timed_cues, speech_passages
 from speech import SAMPLE_RATE, Speaker
 from quality import complete_take
+
+
+def prepared_take(speaker, aligner, segment, passages):
+    if len(passages) == 1:
+        return complete_take(speaker, aligner, segment)
+    chunks, words, records, failures = [], [], [], []
+    cursor = 0
+    for index, passage in enumerate(passages):
+        take, audio, aligned, synthesis, timing, retries = complete_take(speaker, aligner, passage)
+        if words:
+            # Existing head/tail silence already contributes to the sentence pause.
+            silence = cursor / SAMPLE_RATE - words[-1]["end"] + aligned[0]["start"]
+            pause = max(0, round((.2 - silence) * SAMPLE_RATE))
+            if pause:
+                chunks.append(np.zeros(pause, dtype=np.float32))
+                cursor += pause
+        offset = cursor / SAMPLE_RATE
+        records.append({"seed": take["seed"], "word_start": len(words),
+                        "word_end": len(words) + len(aligned),
+                        "synthesis": synthesis, "alignment": timing})
+        words.extend({**word, "start": word["start"] + offset, "end": word["end"] + offset}
+                     for word in aligned)
+        chunks.append(audio)
+        cursor += len(audio)
+        failures.extend({**retry, "passage": index} for retry in retries)
+    def summary(kind):
+        return {"cached": all(record[kind]["cached"] for record in records),
+                "seconds": round(sum(record[kind].get("seconds", 0) for record in records), 4)}
+    return ({**segment, "passages": records}, np.concatenate(chunks), words,
+            summary("synthesis"), summary("alignment"), failures)
 
 
 def build_audio(script_path, output, device, *, speaker=None, aligner=None, report=True):
     started = time.perf_counter()
     source_digest = digest(json.loads(script_path.read_text()))
     spec = read_script(script_path)
+    passages = [speech_passages(segment) for segment in spec["segments"]]
     if speaker is not None and speaker.voice != spec["voice"]:
         raise ValueError("A shared speaker must use the same voice settings")
     speaker = speaker or Speaker(spec["voice"])
@@ -28,9 +59,9 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
     cursor = round(spec["intro"] * SAMPLE_RATE)
     chunks.append(np.zeros(cursor, dtype=np.float32))
     warnings = []
-    for segment in spec["segments"]:
+    for segment, prepared in zip(spec["segments"], passages, strict=True):
         print(f'Voice + word timing: {segment["id"]}', flush=True)
-        take, audio, aligned, synthesis, timing, retries = complete_take(speaker, aligner, segment)
+        take, audio, aligned, synthesis, timing, retries = prepared_take(speaker, aligner, segment, prepared)
         offset = cursor / SAMPLE_RATE
         words = [{**w, "start": round(w["start"] + offset, 5), "end": round(w["end"] + offset, 5)} for w in aligned]
         record = {
@@ -40,6 +71,9 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
         }
         if "title" in segment:
             record["title"] = segment["title"]
+        if "passages" in take:
+            record["passages"] = [{key: part[key] for key in ("seed", "word_start", "word_end")}
+                                  for part in take["passages"]]
         segments.append(record)
         cues.update(timed_cues(segment, words))
         for w in words:
@@ -49,7 +83,8 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
         pause = round(segment["pause_after"] * SAMPLE_RATE)
         chunks.append(np.zeros(pause, dtype=np.float32))
         cursor += len(audio) + pause
-        stats.append({"id": segment["id"], "synthesis": synthesis, "alignment": timing, "retries": retries})
+        stats.append({"id": segment["id"], "synthesis": synthesis, "alignment": timing, "retries": retries,
+                      **({"passages": take["passages"]} if "passages" in take else {})})
     chunks.append(np.zeros(round(spec["outro"] * SAMPLE_RATE), dtype=np.float32))
     voice = np.concatenate(chunks)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -60,10 +95,12 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
         mix_info = mix(voice, spec.get("music"), staging)
         credits = output / "CREDITS.txt"
         previous = output / "timeline.json"
-        previous_mix = json.loads(previous.read_text()).get("mix", {}) if previous.exists() else {}
+        previous_timeline = json.loads(previous.read_text()) if previous.exists() else None
+        previous_mix = previous_timeline.get("mix", {}) if previous_timeline else {}
         (staging / "CREDITS.txt").write_text(audio_credits(
             credits.read_text() if credits.exists() else "", mix_info["music"], previous_mix.get("music"),
         ))
+        build = {"seconds": round(time.perf_counter() - started, 3), "segments": stats}
         timeline = {
             "version": 1, "sample_rate": SAMPLE_RATE, "duration": len(voice) / SAMPLE_RATE,
             "source_sha256": source_digest,
@@ -73,11 +110,19 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
             "alignment": {"method": "ctc-forced-alignment", "model": ALIGN_REPO, "revision": ALIGN_REVISION,
                           "device": aligner.device, "nominal_frame_seconds": .02},
             "mix": mix_info, "warnings": warnings,
-            "build": {"seconds": round(time.perf_counter() - started, 3), "segments": stats},
+            "build": build,
         }
         if "captionAliases" in spec:
             timeline["captionAliases"] = spec["captionAliases"]
-        (staging / "timeline.json").write_text(json.dumps(timeline, ensure_ascii=False, indent=2) + "\n")
+        # Rechecking cached speech must not change the authored package identity.
+        # Keep the original receipt when only this run's timings/cache hits differ;
+        # current build statistics are still reported below.
+        if previous_timeline and ({k: v for k, v in previous_timeline.items() if k != "build"} ==
+                                  {k: v for k, v in timeline.items() if k != "build"}):
+            timeline = previous_timeline
+            (staging / "timeline.json").write_bytes(previous.read_bytes())
+        else:
+            (staging / "timeline.json").write_text(json.dumps(timeline, ensure_ascii=False, indent=2) + "\n")
         (staging / "narration.txt").write_text("\n\n".join(s["spoken"] for s in spec["segments"]) + "\n")
         write_listening_page(staging / "voice-preview.html", title="Озвучка рассказа",
                              transcript="\n\n".join(s["spoken"] for s in spec["segments"]),
@@ -95,7 +140,7 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
                 (output / name).unlink(missing_ok=True)
     if report:
         print(json.dumps({"output": str(output), "preview": str(output / "voice-preview.html"),
-                          "duration": timeline["duration"], "build_seconds": timeline["build"]["seconds"],
+                          "duration": timeline["duration"], "build_seconds": build["seconds"],
                           "cached_segments": sum(s["synthesis"]["cached"] and s["alignment"]["cached"] for s in stats),
                           "warnings": warnings}, ensure_ascii=False, indent=2), flush=True)
     return timeline

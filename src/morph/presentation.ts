@@ -2,6 +2,8 @@ import { mathPlan } from './math.js';
 import type { MathOperation, MathMorphPlan } from './types.js';
 import type { ConstructionPlan } from './construction/types.js';
 import type { MorphCues, MorphTime } from './timing.js';
+import { mountBodies } from './body-presentation.js';
+import { mountConstruction } from './construction/render.js';
 
 type Operation = MathOperation | MathMorphPlan | ConstructionPlan;
 const isConstruction = (value: Operation): value is ConstructionPlan =>
@@ -13,10 +15,6 @@ export async function mountMath(
   operation: Operation,
   options: { projection?: '2d' | '3d'; pigment?: string } = {},
 ) {
-  const [{ mountBodies }, { mountConstruction }] = await Promise.all([
-    import('./body-presentation.js'),
-    import('./construction/render.js'),
-  ]);
   const element = document.createElement('div');
   element.className = 've-math-presentation';
   parent.append(element);

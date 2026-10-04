@@ -11,6 +11,7 @@ import { characterSurfaces } from './surfaces.js';
 import type { Shot } from './staging/types.js';
 import type { ChapterFrame } from '../story/composition.js';
 import { characterDetails } from './framing.js';
+import { snapshotSVG } from '../export/index.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 let nextStage = 0;
@@ -21,7 +22,6 @@ export async function characterStage(
   score: CharacterScore,
   shared?: CharacterRenderer,
 ) {
-  const { snapshotSVG } = await import('../export/index.js');
   const { set, pack, cast } = options;
   const background = options.background !== false;
   const scope = `character-stage-${++nextStage}`;

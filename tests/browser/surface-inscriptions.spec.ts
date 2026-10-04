@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { build } from 'esbuild';
+import { assetURLs } from '../../tools/asset-urls.mjs';
 import type { verifyInscriptions } from '../fixtures/surface-inscriptions.js';
 
 test('material inscriptions fit their surface and retain their strokes during scale and seek', async ({
@@ -17,6 +18,7 @@ test('material inscriptions fit their surface and retain their strokes during sc
     outfile: 'inscriptions.js',
     write: false,
     loader: { '.woff2': 'dataurl' },
+    plugins: [assetURLs()],
   });
   await page.setContent('<!doctype html><title>Material inscriptions</title>');
   await page.addStyleTag({

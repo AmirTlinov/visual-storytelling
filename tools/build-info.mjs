@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { findPackageJSON } from 'node:module';
-import { readFile, readdir, writeFile, realpath } from 'node:fs/promises';
+import { readFile, readdir, writeFile, realpath, stat } from 'node:fs/promises';
 import { dirname, join, matchesGlob, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -19,6 +20,7 @@ async function json(path) {
 export async function contentDigest(root, paths, exclude = () => false) {
   const files = [];
   async function visit(path) {
+    if (exclude(relative(root, path).split(sep).join('/'))) return;
     try {
       for (const entry of (await readdir(path, { withFileTypes: true })).sort((a, b) =>
         a.name.localeCompare(b.name),
@@ -38,8 +40,9 @@ export async function contentDigest(root, paths, exclude = () => false) {
   for (const file of [...new Set(files)].sort()) {
     const name = relative(root, file).split(sep).join('/');
     if (exclude(name)) continue;
-    const bytes = await readFile(file);
-    hash.update(`${name}\0${bytes.length}\0`).update(bytes);
+    const { size } = await stat(file);
+    hash.update(`${name}\0${size}\0`);
+    for await (const bytes of createReadStream(file)) hash.update(bytes);
   }
   return hash.digest('hex');
 }

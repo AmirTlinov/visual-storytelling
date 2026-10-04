@@ -104,6 +104,66 @@ export interface ScenePresentation {
 
 /** Geometric evidence for review, computed on demand without another render loop. */
 export function inspectPresentation(stage: HTMLElement): ScenePresentation {
+  const styles = new Map<Element, CSSStyleDeclaration>();
+  const styleOf = (node: Element) => {
+    if (!styles.has(node)) styles.set(node, getComputedStyle(node));
+    return styles.get(node)!;
+  };
+  const visible = (node: Element) => {
+    if (!node.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return false;
+    // Chromium's checkVisibility currently returns true for SVG under display:none.
+    const style = styleOf(node);
+    if (style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+    for (let parent: Element | null = node; parent; parent = parent.parentElement) {
+      const parentStyle = styleOf(parent);
+      if (parentStyle.display === 'none' || Number(parentStyle.opacity) === 0) return false;
+    }
+    return true;
+  };
+  const projected = new Map<Element, boolean>();
+  const hasPerspective = (node: Element): boolean => {
+    if (projected.has(node)) return projected.get(node)!;
+    const style = styleOf(node);
+    const own =
+      (style.perspective && style.perspective !== 'none') ||
+      (style.transform && style.transform !== 'none' && !new DOMMatrix(style.transform).is2D);
+    const result = Boolean(own || (node.parentElement && hasPerspective(node.parentElement)));
+    projected.set(node, result);
+    return result;
+  };
+  const textPixels = (node: SVGGraphicsElement, size: number) => {
+    const matrix = node.getScreenCTM();
+    if (!matrix) return 0;
+    if (!hasPerspective(node)) return size * Math.hypot(matrix.c, matrix.d);
+    // getScreenCTM drops the projective denominator. Measure three transformed
+    // vertical strokes in the same coordinate space; the smallest is the far edge.
+    const box = node.getBBox(),
+      group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    const style = styleOf(node);
+    group.style.transform = style.transform;
+    group.style.transformOrigin = style.transformOrigin;
+    group.style.visibility = 'hidden';
+    group.setAttribute('aria-hidden', 'true');
+    for (const x of [box.x, box.x + box.width / 2, box.x + box.width]) {
+      const line = document.createElementNS(group.namespaceURI, 'line');
+      line.setAttribute('x1', String(x));
+      line.setAttribute('x2', String(x));
+      line.setAttribute('y1', String(box.y + (box.height - size) / 2));
+      line.setAttribute('y2', String(box.y + (box.height + size) / 2));
+      group.append(line);
+    }
+    node.parentElement!.append(group);
+    try {
+      return Math.min(
+        ...[...group.children].map((line) => {
+          const { width, height } = line.getBoundingClientRect();
+          return Math.hypot(width, height);
+        }),
+      );
+    } finally {
+      group.remove();
+    }
+  };
   const rectangle = (box: Rectangle): Rectangle => ({
     x: box.x,
     y: box.y,
@@ -124,7 +184,7 @@ export function inspectPresentation(stage: HTMLElement): ScenePresentation {
     a.y < b.y - 1 ||
     a.x + a.width > b.x + b.width + 1 ||
     a.y + a.height > b.y + b.height + 1;
-  if (!stage.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return result;
+  if (!visible(stage)) return result;
   result.outsideViewport = outside(frame, { x: 0, y: 0, width: innerWidth, height: innerHeight });
   const inspect = (node: Element, object: InspectedObject, canvas = false) => {
     if (
@@ -146,7 +206,7 @@ export function inspectPresentation(stage: HTMLElement): ScenePresentation {
       ancestor && ancestor !== stage.parentElement;
       ancestor = ancestor.parentElement
     ) {
-      const style = getComputedStyle(ancestor),
+      const style = styleOf(ancestor),
         box = ancestor.getBoundingClientRect();
       const clips = (axis: string) =>
         (canvas && ancestor === node) || ['hidden', 'clip', 'scroll', 'auto'].includes(axis);
@@ -168,24 +228,19 @@ export function inspectPresentation(stage: HTMLElement): ScenePresentation {
     '[data-review-id], [data-camera-world], svg text, [data-lettering-size], canvas',
   );
   for (const [index, node] of [...nodes].entries()) {
-    if (
-      !node.checkVisibility({ opacityProperty: true, visibilityProperty: true }) ||
-      node.closest('[data-review-framing="background"]')
-    )
-      continue;
+    if (!visible(node) || node.closest('[data-review-framing="background"]')) continue;
     const id = node.dataset.reviewId || node.id || `${node.localName}:${index}`;
     let text: InspectedObject['data'];
     if ((node.localName === 'text' || node.dataset.letteringSize) && 'getScreenCTM' in node) {
-      const matrix = (node as SVGGraphicsElement).getScreenCTM();
-      if (matrix)
-        text = {
-          text: {
-            pixels:
-              (Number(node.dataset.letteringSize) || parseFloat(getComputedStyle(node).fontSize)) *
-              Math.hypot(matrix.c, matrix.d),
-            minimum: Number(node.dataset.minimumFontSize) || 14,
-          },
-        };
+      text = {
+        text: {
+          pixels: textPixels(
+            node as SVGGraphicsElement,
+            Number(node.dataset.letteringSize) || parseFloat(styleOf(node).fontSize),
+          ),
+          minimum: Number(node.dataset.minimumFontSize) || 14,
+        },
+      };
     }
     inspect(node, { id, ...rectangle(node.getBoundingClientRect()), data: text });
     if (node instanceof HTMLCanvasElement) {

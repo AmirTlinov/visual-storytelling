@@ -10,6 +10,7 @@ import {
 } from 'node:fs/promises';
 import { resolve, join, dirname, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
 
 /** Raw images are written immediately. Only frame references remain in memory. */
 export async function captureWriter(out) {
@@ -28,7 +29,8 @@ export async function captureWriter(out) {
         frame.height = png.readUInt32BE(20);
       }
       if (png) await writeFile(file, png);
-      else if (resolve(input) !== resolve(file)) await copyFile(input, file);
+      else if (resolve(input) !== resolve(file))
+        await copyFile(input, file, constants.COPYFILE_FICLONE);
       await appendFile(
         join(folder, 'frames.jsonl'),
         JSON.stringify({ ...frame, file: relative(folder, file) }) + '\n',

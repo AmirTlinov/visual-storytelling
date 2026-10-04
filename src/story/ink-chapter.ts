@@ -1,6 +1,7 @@
 import { surface, type Surface } from '../ink/surface.js';
 import type { SceneChapter, ChapterFrame } from './composition.js';
 import type { ChapterTiming } from './composition-plan.js';
+import { snapshotSVG } from '../export/index.js';
 
 export interface InkViewport {
   width: number;
@@ -23,7 +24,6 @@ export function inkChapter(
   return {
     ...options,
     async mount(parent) {
-      const { snapshotSVG } = await import('../export/index.js');
       const view = surface(parent, {
         id: `chapter-${++instance}`,
         title: options.title,

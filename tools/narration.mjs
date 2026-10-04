@@ -86,7 +86,8 @@ export async function buildNarration(directory, { signal } = {}) {
 }
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-export async function checkNarration(html, directory) {
+export async function checkNarration(html, directory, { signal } = {}) {
+  signal?.throwIfAborted();
   const audioFiles = new Set();
   const local = (url, base = directory) => {
     if (typeof url !== 'string') return;
@@ -136,7 +137,7 @@ export async function checkNarration(html, directory) {
         await promisify(execFile)(
           'python3',
           [resolve(root, 'tools/audio/cli.py'), 'check', script, '--timeline', timeline],
-          { env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } },
+          { signal, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } },
         );
       } catch (error) {
         if (error.code === 'ENOENT')
@@ -153,17 +154,24 @@ export async function checkNarration(html, directory) {
 }
 
 /** Reuse the receipt check and speech cache before an audible development rebuild. */
-export async function prepareNarration(directory) {
+export async function prepareNarration(directory, { audible = false, signal } = {}) {
+  let rebuilt = false;
   for (const name of await readdir(directory)) {
+    signal?.throwIfAborted();
     if (!name.endsWith('.html')) continue;
-    const html = await readFile(join(directory, name), 'utf8');
+    const file = join(directory, name);
+    let html = await readFile(file, 'utf8');
     try {
-      await checkNarration(html, directory);
+      await checkNarration(audible ? setNarrationMode(html, false) : html, directory, { signal });
     } catch (error) {
-      if (!(await narrationSource(directory))) throw error;
-      await buildNarration(directory);
-      await checkNarration(html, directory);
-      return;
+      signal?.throwIfAborted();
+      if (rebuilt || !(await narrationSource(directory))) throw error;
+      await buildNarration(directory, { signal });
+      rebuilt = true;
+      html = await readFile(file, 'utf8');
+      await checkNarration(html, directory, { signal });
     }
+    const next = audible ? setNarrationMode(html, false) : html;
+    if (next !== html) await writeFile(file, next);
   }
 }

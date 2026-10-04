@@ -96,9 +96,9 @@ export async function moduleAssetURLs(source, file) {
       encodeURIComponent(basename(path)) + url.hash,
     );
     edits.push({
-      start: node.arguments[0].start,
-      end: node.arguments[0].end,
-      text: JSON.stringify(data),
+      start: node.start,
+      end: node.end,
+      text: `new URL(${JSON.stringify(data)})`,
     });
   }
   for (const edit of edits.sort((a, b) => b.start - a.start))

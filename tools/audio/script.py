@@ -3,6 +3,7 @@ import json
 import math
 from pathlib import Path
 import re
+import wave
 from resources import DEFAULT_DELIVERY, REFERENCE_AUDIO, REFERENCE_TEXT, digest
 from quality import validate_alignment
 
@@ -23,9 +24,47 @@ def check_timeline(script_path, timeline_path):
     timeline = json.loads(Path(timeline_path).read_text(encoding="utf-8"))
     if timeline.get("source_sha256") != digest(source):
         raise ValueError("Narration changed after audio generation; run visual-story audio . before building")
-    for segment in timeline.get("segments", []):
-        if segment.get("words") and all("score" in word for word in segment["words"]):
-            validate_alignment(segment["words"])
+    spec = read_script(Path(script_path))
+    segments = timeline.get("segments")
+    if (not isinstance(segments, list) or any(not isinstance(s, dict) for s in segments) or
+            [s.get("id") for s in segments] != [s["id"] for s in spec["segments"]]):
+        raise ValueError("Narration has incomplete aligned segments; run visual-story audio")
+    cues, previous = {}, 0.0
+    for source_segment, segment in zip(spec["segments"], segments, strict=True):
+        aligned = validate_alignment(segment.get("words"))
+        if normalized(" ".join(w["text"] for w in aligned)) != normalized(source_segment["spoken"]):
+            raise ValueError(f'{segment["id"]}: aligned words do not match the complete narration')
+        for word in aligned:
+            start, end = word.get("start"), word.get("end")
+            if (any(type(value) not in (int, float) or not math.isfinite(value) for value in (start, end))
+                    or start < previous or end <= start):
+                raise ValueError(f'{segment["id"]}: invalid aligned word times')
+            previous = end
+        if (segment.get("text") != source_segment["spoken"] or
+                segment.get("title") != source_segment.get("title") or
+                segment.get("start") != aligned[0]["start"] or segment.get("end") != aligned[-1]["end"]):
+            raise ValueError(f'{segment["id"]}: narration segment differs from its aligned words')
+        cues.update(timed_cues(source_segment, aligned))
+    if timeline.get("cues") != cues:
+        raise ValueError("Narration cues differ from the aligned script; run visual-story audio")
+    audio = timeline.get("audio")
+    if not isinstance(audio, str) or not audio:
+        raise ValueError("Narration has no generated audio; run visual-story audio")
+    try:
+        with wave.open(str(Path(timeline_path).parent / audio), 'rb') as wav:
+            count, rate = wav.getnframes(), wav.getframerate()
+            if (count < 1 or rate < 1 or timeline.get("sample_rate") != rate or
+                    type(timeline.get("duration")) not in (int, float) or
+                    not math.isfinite(timeline["duration"]) or
+                    abs(timeline["duration"] - count / rate) > 1 / rate or
+                    previous > count / rate + 1 / rate):
+                raise ValueError("Narration audio does not match its timeline; run visual-story audio")
+            # Check the advertised final frame without loading a full narrated film.
+            wav.setpos(count - 1)
+            if len(wav.readframes(1)) != wav.getnchannels() * wav.getsampwidth():
+                raise ValueError("Narration audio does not match its timeline; run visual-story audio")
+    except (FileNotFoundError, wave.Error, EOFError) as error:
+        raise ValueError("Narration audio is missing or invalid; run visual-story audio") from error
 
 
 def without_controls(text):
@@ -47,6 +86,35 @@ def words(text):
 
 def normalized(text):
     return [w.lower().replace("ё", "е").replace("‑", "-") for w in words(text)]
+
+
+def speech_passages(segment):
+    """Prepare whole sentences while retaining one authored segment and its cues."""
+    if len(words(segment["spoken"])) <= 40:
+        return [segment]
+    text = segment["text"]
+    ends = [match.end() for match in re.finditer(r'[.!?…][»”\"\']*(?:\s+|$)', text)]
+    if not ends or ends[-1] < len(text):
+        ends.append(len(text))
+    groups, group, count, start = [], [], 0, 0
+    for end in ends:
+        sentence = text[start:end].strip()
+        start = end
+        size = len(words(sentence))
+        if size > 50:
+            raise ValueError(f'{segment["id"]}: one spoken sentence has {size} words; '
+                             'add a natural sentence boundary (at most 50 words per sentence)')
+        if group and count + size > 40:
+            groups.append(" ".join(group))
+            group, count = [], 0
+        group.append(sentence)
+        count += size
+    if group:
+        groups.append(" ".join(group))
+    if len(groups) == 1:
+        return [segment]
+    return [{**segment, "text": text, "spoken": " ".join(without_controls(text).split())}
+            for text in groups]
 
 
 def number(value, label, low, high):

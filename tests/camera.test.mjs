@@ -5,6 +5,15 @@ import { shotPose } from '../dist/viewport/shots.js';
 import { readableFrame } from '../dist/viewport/framing.js';
 import { stageFrame } from '../dist/characters/staging/camera.js';
 
+test('the default character frame preserves the painted set when props approach its edges', () => {
+  const set = { x: 0, y: 0, width: 960, height: 650 };
+  for (const x of [0, 1, 32, 858, 860])
+    for (const y of [0, 1, 32, 448, 450])
+      assert.deepEqual(stageFrame(960, 650, { door: { x, y, width: 100, height: 200 } }), set);
+  const outside = stageFrame(960, 650, { hero: { x: -40, y: 200, width: 100, height: 200 } });
+  assert(outside.x <= -40 && outside.x + outside.width >= 960);
+});
+
 test('character shots stay inside a finite room at its edges without clipping the subject', () => {
   const width = 960,
     height = 650,

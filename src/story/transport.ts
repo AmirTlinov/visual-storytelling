@@ -24,7 +24,7 @@ export function transport({ duration, audio }: TransportOptions) {
     request = 0,
     error: string | null = null;
   const state = (): Playback => ({
-    time: media.currentTime,
+    time: clock.time,
     duration,
     playing: pending || !media.paused,
     muted: media.muted,

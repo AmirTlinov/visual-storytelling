@@ -115,6 +115,7 @@ test('intentional background geometry stays inspectable without being reported a
   class Canvas {
     parentElement = stage;
     dataset = { reviewId: 'canvas' };
+    closest = () => null;
     getBoundingClientRect = () => bounds;
     checkVisibility = () => true;
     __visualReview = () => ({ objects });

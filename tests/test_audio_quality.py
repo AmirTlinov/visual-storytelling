@@ -12,7 +12,7 @@ class SpeechQuality(unittest.TestCase):
             with self.assertRaises(AlignmentQualityError):
                 validate_alignment(words)
         validate_alignment(good + [{'text': 'термин', 'score': .02}])
-        for score in [float('nan'), float('inf'), -1, 1.2]:
+        for score in [float('nan'), float('inf'), -1, 1.2, True, None]:
             with self.assertRaisesRegex(AlignmentQualityError, 'invalid alignment scores'):
                 validate_alignment([{'text': 'слово', 'score': score}])
 

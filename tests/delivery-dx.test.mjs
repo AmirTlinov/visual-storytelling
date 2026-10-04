@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -277,6 +277,10 @@ test('a nested release keeps editable sources, captions and silent HTML together
       }),
     );
     const out = join(directory, 'artifacts/release');
+    await mkdir(out, { recursive: true });
+    const activeExport = await mkdtemp(join(out, '.visual-story-video-'));
+    await writeFile(join(activeExport, 'parts.txt'), 'active excerpt');
+    await writeFile(join(out, 'neuron-excerpt.mp4'), 'previous independent excerpt');
     const receipt = await deliver(directory, {
       out,
       formats: ['html', 'srt', 'vtt', 'source'],
@@ -307,6 +311,21 @@ test('a nested release keeps editable sources, captions and silent HTML together
       /cancelled before release/,
     );
     assert.deepEqual(await readFile(join(out, 'delivery.json')), previous);
+    await deliver(directory, { out, formats: ['html'], silent: true });
+    assert.equal(await readFile(join(activeExport, 'parts.txt'), 'utf8'), 'active excerpt');
+    await writeFile(join(activeExport, 'finished.mp4'), 'export continued in the same directory');
+    assert.equal(
+      await readFile(join(out, 'neuron-excerpt.mp4'), 'utf8'),
+      'previous independent excerpt',
+    );
+    await assert.rejects(readFile(join(out, 'story.srt')), { code: 'ENOENT' });
+    const priorHTML = await readFile(join(out, 'story.html'));
+    await rm(join(out, 'delivery.json'));
+    await assert.rejects(
+      deliver(directory, { out, formats: ['html'], silent: true }),
+      /does not own/,
+    );
+    assert.deepEqual(await readFile(join(out, 'story.html')), priorHTML);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

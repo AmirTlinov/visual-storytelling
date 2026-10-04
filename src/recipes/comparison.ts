@@ -64,16 +64,16 @@ export function comparisonDiagram(view: Surface, options: ComparisonOptions): In
       }
       const values = options.values(frame),
         drawn: Record<string, number> = {};
+      const p =
+        frame.mode === 'explore' || frame.reduced
+          ? 1
+          : Math.min(1, Math.max(0, frame.progress * 1.4));
       for (const [i, item] of options.items.entries()) {
         const value = values[item.id];
         if (value === undefined || !Number.isFinite(value) || value < 0 || value > options.maximum)
           throw new Error(
             `Comparison ${item.id} is outside the shared [0, ${options.maximum}] scale`,
           );
-        const p =
-          frame.mode === 'explore' || frame.reduced
-            ? 1
-            : Math.min(1, Math.max(0, frame.progress * 1.4));
         const visible = value * p,
           w = Math.max(0.001, (span * visible) / options.maximum),
           y = top + ((bottom - top) * (i + 0.5)) / marks.length;
@@ -91,7 +91,7 @@ export function comparisonDiagram(view: Surface, options: ComparisonOptions): In
         );
         drawn[item.id] = visible;
       }
-      const result = options.conclusion?.(frame) ?? '';
+      const result = p === 1 ? (options.conclusion?.(frame) ?? '') : '';
       conclusion.text(result);
       conclusion.at(width / 2, height - 9);
       snapshot = { values, drawn, maximum: options.maximum, conclusion: result };

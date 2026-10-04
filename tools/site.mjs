@@ -1,5 +1,7 @@
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 import { resolve, sep } from 'node:path';
 import { mediaType } from './assets.mjs';
 export async function serve(directory = 'site', port = 0, { handle, html } = {}) {
@@ -13,30 +15,47 @@ export async function serve(directory = 'site', port = 0, { handle, html } = {})
         res.writeHead(403).end();
         return;
       }
-      let bytes = await readFile(file);
-      if (html && file.endsWith('.html')) bytes = Buffer.from(html(bytes.toString()));
+      const info = await stat(file);
+      if (!info.isFile()) {
+        res.writeHead(404).end('Not found');
+        return;
+      }
+      const bytes =
+        html && file.endsWith('.html')
+          ? Buffer.from(html(await readFile(file, 'utf8')))
+          : undefined;
+      const size = bytes?.length ?? info.size;
       res.setHeader('Content-Type', mediaType(file));
       res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Cache-Control', 'no-store');
-      const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range ?? '');
+      const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '');
+      let start = 0,
+        end = size - 1;
       if (range) {
-        const start = Number(range[1]),
-          end = Math.min(bytes.length - 1, range[2] ? Number(range[2]) : bytes.length - 1);
-        if (start > end) {
-          res.writeHead(416).end();
+        start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+        end = range[1] && range[2] ? Math.min(size - 1, Number(range[2])) : size - 1;
+        if (
+          (!range[1] && !range[2]) ||
+          !Number.isSafeInteger(start) ||
+          !Number.isSafeInteger(end) ||
+          start > end
+        ) {
+          res.writeHead(416, { 'Content-Range': `bytes */${size}` }).end();
           return;
         }
         res.writeHead(206, {
-          'Content-Range': `bytes ${start}-${end}/${bytes.length}`,
+          'Content-Range': `bytes ${start}-${end}/${size}`,
           'Content-Length': end - start + 1,
         });
-        res.end(bytes.subarray(start, end + 1));
       } else {
-        res.writeHead(200, { 'Content-Length': bytes.length });
-        res.end(bytes);
+        res.writeHead(200, { 'Content-Length': size });
       }
+      if (req.method === 'HEAD' || !size) res.end();
+      else if (bytes) res.end(bytes.subarray(start, end + 1));
+      else await pipeline(createReadStream(file, { start, end }), res);
     } catch {
-      res.writeHead(404).end('Not found');
+      if (res.headersSent) res.destroy();
+      else res.writeHead(404).end('Not found');
     }
   });
   await new Promise((resolve, reject) => {

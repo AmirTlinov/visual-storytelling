@@ -6,10 +6,12 @@ class AlignmentQualityError(RuntimeError):
 
 
 def validate_alignment(words):
-    if not words:
+    if not isinstance(words, list) or not words:
         raise AlignmentQualityError('Speech has no aligned words')
-    scores = [word['score'] for word in words]
-    if any(not isinstance(score, (int, float)) or not math.isfinite(score) or not 0 <= score <= 1 for score in scores):
+    if any(not isinstance(word, dict) or not isinstance(word.get('text'), str) or not word['text'].strip() for word in words):
+        raise AlignmentQualityError('Speech has invalid aligned words')
+    scores = [word.get('score') for word in words]
+    if any(type(score) not in (int, float) or not math.isfinite(score) or not 0 <= score <= 1 for score in scores):
         raise AlignmentQualityError('Speech has invalid alignment scores')
     mean = sum(scores) / len(scores)
     if mean < .2:
