@@ -17,6 +17,7 @@ npm run preview         # http://127.0.0.1:8793
 ## Создание сцены
 
 ```sh
+node tools/scene.mjs examples --recommended    # готовые основы SVG и 3D
 node tools/scene.mjs new /absolute/output/my-story --example explorer-svg
 cd /absolute/output/my-story
 npm install
@@ -25,7 +26,7 @@ npm run build
 npm run dev
 ```
 
-Команда копирует предметный исходник и точную упакованную зависимость библиотеки. Принятые рассказы включают готовый голос; `--no-audio` включает тихое время, `npm run audio` пересобирает изменённый `narration.json` и включает озвучку. Встроенный мужской образец, модели и акустическое выравнивание принадлежат `tools/audio/`.
+`examples нейрон` ищет по теме и API; `examples explorer-svg` показывает кадр, исходник и команду создания. `new` копирует предметный исходник и точную упакованную зависимость библиотеки. Принятые рассказы включают готовый голос; `--no-audio` включает тихое время, `npm run audio` пересобирает изменённый `narration.json` и включает озвучку. Встроенный мужской образец, модели и акустическое выравнивание принадлежат `tools/audio/`.
 
 Исполняемый пакет содержит библиотеку и CLI; каталог примеров, инструкции навыка и исходные референсы остаются в авторском репозитории. `new` и `examples` запускаются из этого репозитория; в созданной сцене работают `build`, `dev`, `audio`, `review`, `pack`, `api` и экспорт.
 
@@ -37,7 +38,9 @@ import { SceneShell, SketchMotion, SvgLayout } from '@visual-storytelling/core';
 import { Viewport3D, ThreeKit } from '@visual-storytelling/core/three';
 ```
 
-Готовые композиции и работающие вызовы — в [examples](examples). Все страницы импортируют этот пакет. Общие владельцы перечислены в [архитектуре](docs/architecture.md), правила сцены — в [контракте автора](docs/authoring.md), визуальный характер — в [PHILOSOPHY.md](PHILOSOPHY.md).
+Исходники сцен — в [examples](examples). Их [каталог](examples/catalog.json) задаёт подбор в галерее, CLI и навыке: описание, раздел, метки поиска, исходник и справки. `recommended` отмечает основу новой сцены, `reference` — визуально принятый эталон. Обновляй сведения и превью вместе со сценой.
+
+Общие владельцы перечислены в [архитектуре](docs/architecture.md), правила сцены — в [контракте автора](docs/authoring.md), визуальный характер — в [PHILOSOPHY.md](PHILOSOPHY.md).
 
 [Физические объекты](docs/physics.md) добавляют SVG и Three.js столкновения, упругие материалы, деформацию и захват. Rapier подключается через отдельные `./physics/2d` и `./physics/3d`; почерк, пигменты, материалы и плеер остаются общими.
 

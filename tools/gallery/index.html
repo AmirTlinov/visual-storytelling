@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Наглядные объяснения</title>
+    <script type="module">
+      import { mountGallery } from './client.mjs';
+      mountGallery();
+    </script>
+  </head>
+  <body class="ve-standalone">
+    <main class="ve-scene gallery" data-paper="false">
+      <header class="gallery-heading">
+        <h1>Наглядные объяснения</h1>
+        <p>Исследуйте пример или возьмите его за основу своей сцены.</p>
+      </header>
+      <form class="gallery-search" role="search">
+        <label class="ve-control">
+          <span class="sr-only">Найти пример</span>
+          <input
+            type="search"
+            name="q"
+            placeholder="Найти: нейрон, 3D, морфинг"
+            autocomplete="off"
+            aria-controls="examples"
+          />
+        </label>
+        <button type="reset" aria-label="Сбросить" title="Сбросить поиск и раздел" hidden>×</button>
+      </form>
+      <div class="gallery-toolbar">
+        <div class="gallery-filters" role="group" aria-label="Раздел примеров">
+          <!-- filters -->
+        </div>
+        <output id="result-count" aria-live="polite"></output>
+      </div>
+      <div id="examples"><!-- examples --></div>
+      <p id="empty" hidden>Совпадений нет. Попробуйте другое слово или сбросьте поиск.</p>
+      <p id="copy-status" class="sr-only" role="status"></p>
+    </main>
+    <!-- catalog -->
+  </body>
+</html>

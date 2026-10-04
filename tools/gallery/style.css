@@ -1,0 +1,227 @@
+.ve-standalone main.gallery {
+  max-width: 1160px;
+  padding-top: 12px;
+}
+.gallery .gallery-heading {
+  margin-bottom: 30px;
+}
+.gallery .gallery-heading h1 {
+  text-align: left;
+  margin-bottom: 6px;
+  font-size: clamp(28px, 4vw, 38px);
+}
+.gallery .gallery-heading p {
+  margin: 0;
+  color: var(--ve-muted);
+  font-size: 18px;
+}
+.gallery-search {
+  position: relative;
+}
+.gallery-search input[type='search'] {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 52px 10px 0;
+  border: 0;
+  border-bottom: 1px solid var(--ve-pencil);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: 18px/1.4 var(--ve-font);
+}
+.gallery-search input::-webkit-search-cancel-button {
+  appearance: none;
+}
+.gallery .gallery-search button[type='reset'] {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  width: 44px;
+  padding: 0;
+  font-size: 25px;
+}
+.gallery-search input::placeholder {
+  color: var(--ve-muted);
+  opacity: 1;
+}
+.gallery-search input:focus-visible {
+  outline: 2px solid var(--ve-blue);
+  outline-offset: 4px;
+}
+.gallery-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 14px 0 22px;
+}
+.gallery-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.gallery .gallery-filters button {
+  padding: 8px 6px;
+}
+.gallery .gallery-filters [aria-pressed='true'] {
+  color: var(--ve-blue);
+}
+.gallery #result-count {
+  color: var(--ve-muted);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.gallery section + section {
+  margin-top: 44px;
+}
+.gallery h2 {
+  margin: 0 0 22px;
+  font-size: 25px;
+  font-weight: 400;
+}
+.example-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: 36px 30px;
+}
+.example {
+  min-width: 0;
+}
+.gallery a {
+  color: inherit;
+  text-decoration: none;
+}
+.gallery a:focus-visible,
+.gallery summary:focus-visible {
+  outline: 2px solid var(--ve-blue);
+  outline-offset: 5px;
+}
+.example-open {
+  display: block;
+}
+.example-open img {
+  display: block;
+  width: 100%;
+  height: 215px;
+  object-fit: contain;
+  object-position: center;
+}
+.gallery .example h3 {
+  margin: 15px 0 5px;
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1.25;
+}
+.example h3 span {
+  font-size: 17px;
+  color: var(--ve-pencil);
+  white-space: nowrap;
+}
+.example-open:hover h3 {
+  color: var(--ve-blue);
+}
+.example-badge {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--ve-green);
+  font-size: 15px;
+}
+.example-badge[data-recommended='true'] {
+  color: var(--ve-blue);
+}
+.gallery .example-summary {
+  margin: 8px 0 10px;
+  font-size: 17px;
+  line-height: 1.45;
+}
+.example-create {
+  border-top: 1px solid color-mix(in srgb, var(--ve-pencil) 35%, transparent);
+}
+.example-create summary {
+  min-height: 44px;
+  width: fit-content;
+  padding: 10px 0;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--ve-blue);
+}
+.gallery .example-setup p {
+  margin: 3px 0 10px;
+  font-size: 15px;
+  color: var(--ve-muted);
+}
+.example-setup code {
+  font-size: 13px;
+}
+.example-setup textarea {
+  display: block;
+  width: 100%;
+  min-height: 180px;
+  padding: 10px;
+  border: 1px solid var(--ve-pencil);
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font:
+    14px/1.6 ui-monospace,
+    monospace;
+  resize: vertical;
+  overflow-wrap: anywhere;
+}
+.example-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.gallery .example-actions button {
+  padding: 8px;
+  font-size: 15px;
+}
+.example-actions a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 15px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+@media (max-width: 900px) {
+  .example-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .ve-standalone main.gallery {
+    padding: 8px 10px;
+  }
+  .gallery .gallery-heading {
+    margin-bottom: 22px;
+  }
+  .gallery .gallery-heading p {
+    font-size: 17px;
+  }
+  .gallery-search input[type='search'] {
+    font-size: 16px;
+  }
+  .gallery-toolbar {
+    margin-bottom: 20px;
+    gap: 8px;
+  }
+  .gallery-filters {
+    gap: 4px 6px;
+  }
+  .gallery .gallery-filters button {
+    font-size: 16px;
+  }
+  .example-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+  }
+  .example-open img {
+    height: 220px;
+  }
+}

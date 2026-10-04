@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { buildScene } from './build-pages.mjs';
 import { serve } from './site.mjs';
 import { packDirectory } from './standalone.mjs';
-import { readCatalog } from './catalog.mjs';
+import { readCatalog, describeExamples } from './catalog.mjs';
 const reviewArgs = process.argv.slice(3);
 if (process.argv[2] === 'review') {
   const { runMotionCLI } = await import('./motion/cli.mjs');
@@ -34,12 +34,15 @@ const { values, positionals } = parseArgs({
     theme: { type: 'string' },
     width: { type: 'string', default: '960' },
     reduced: { type: 'boolean', default: false },
+    json: { type: 'boolean', default: false },
+    group: { type: 'string' },
+    recommended: { type: 'boolean', default: false },
   },
 });
 const [command, directory = '.'] = positionals,
   destination = resolve(directory);
 const catalog = await readCatalog({ optional: true });
-const help = `${catalog ? 'visual-story new DIRECTORY --example NAME [--no-audio]\nvisual-story examples                         list supported starting points\n' : ''}visual-story api [NAME ... | ./SUBPATH]       public names or exact shipped declarations
+const help = `${catalog ? 'visual-story new DIRECTORY --example NAME [--no-audio]\nvisual-story examples [QUERY] [--json] [--recommended] [--group explanations|techniques]\n' : ''}visual-story api [NAME ... | ./SUBPATH]       public names or exact shipped declarations
 visual-story dev DIRECTORY [--port 8793]       rebuild + reload at the current story time
 visual-story build DIRECTORY [--cdn]          build dist/; CDN mode loads pinned Rapier remotely
 visual-story audio DIRECTORY                  voice + aligned cues from narration.json
@@ -54,8 +57,7 @@ ${catalog ? `Authoring: ${join(root, 'skill/SKILL.md')}` : 'Authoring templates:
 if (values.help || command === 'help' || !command) console.log(help);
 else if (command === 'examples') {
   if (!catalog) await readCatalog();
-  for (const [name, entry] of Object.entries(catalog))
-    console.log(`${name.padEnd(22)} ${entry.title}`);
+  console.log(describeExamples(catalog, { query: positionals.slice(1).join(' '), ...values }));
 } else if (command === 'api') {
   const { describeAPI } = await import('./api.mjs');
   const { text, missing } = await describeAPI(root, ...positionals.slice(1));

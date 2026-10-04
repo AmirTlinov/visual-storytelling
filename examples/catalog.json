@@ -3,142 +3,263 @@
     "title": "Почему 4 × 5 = 20?",
     "page": "index.html",
     "time": 61.929,
-    "checkpoints": [0, 5.189, 8.195, 23.709, 40.669, 61.729, 75.83]
+    "checkpoints": [0, 5.189, 8.195, 23.709, 40.669, 61.729, 75.83],
+    "group": "explanations",
+    "summary": "Одна клетка → ряд → площадь. Рисунок раскрывает смысл умножения.",
+    "tags": ["площадь", "умножение", "рассказ", "озвучка", "story"],
+    "source": "scene.js",
+    "guides": ["skill/references/scene-template.md"],
+    "reference": true
   },
   "remainder-story": {
     "title": "Откуда берётся остаток",
     "page": "index.html",
     "time": 32.927,
-    "checkpoints": [0, 9.827, 19.619, 28.929, 32.727]
+    "checkpoints": [0, 9.827, 19.619, 28.929, 32.727],
+    "group": "explanations",
+    "summary": "23 предмета собираются в семь троек; два остаются за пределами групп.",
+    "tags": ["деление", "остаток", "рассказ", "озвучка", "story"],
+    "source": "scene.js",
+    "guides": ["skill/references/scene-template.md"],
+    "reference": true
   },
   "fraction-of-a-set": {
     "title": "Доля от двенадцати",
     "page": "index.html",
-    "time": 0
+    "time": 0,
+    "group": "explanations",
+    "summary": "Те же 12 фишек делятся на равные группы и показывают выбранную долю.",
+    "tags": ["дроби", "доля", "группировка", "интерактив"],
+    "source": "scene.js"
   },
   "equation-balance": {
     "title": "Равновесие уравнения",
     "page": "index.html",
     "time": 2,
-    "checkpoints": [0, 2, 4]
+    "checkpoints": [0, 2, 4],
+    "group": "explanations",
+    "summary": "Одинаковые действия с обеих сторон весов приводят к решению уравнения.",
+    "tags": ["алгебра", "уравнение", "весы", "шаги"],
+    "source": "scene.js"
   },
   "threshold-neuron": {
     "title": "Когда нейрон включается",
     "page": "index.html",
-    "time": 0
+    "time": 0,
+    "group": "explanations",
+    "summary": "Взвешенные входы складываются и проверяются на пороге включения.",
+    "tags": ["нейрон", "веса", "сумма", "порог", "числа", "формулы"],
+    "source": "scene.js"
   },
   "bubble-sort": {
     "title": "Пузырьковая сортировка",
     "page": "index.html",
     "time": 3,
-    "checkpoints": [0, 3, 9]
+    "checkpoints": [0, 3, 9],
+    "group": "explanations",
+    "summary": "Сравнивайте соседние числа и следите за обменами до готового порядка.",
+    "tags": ["алгоритм", "сортировка", "массив", "шаги"],
+    "source": "scene.js"
   },
   "shared-memory": {
     "title": "Общая память CPU и GPU",
     "page": "index.html",
     "time": 2,
-    "checkpoints": [0, 2, 5]
+    "checkpoints": [0, 2, 5],
+    "group": "explanations",
+    "summary": "Проследите передачу данных между процессорами и общей памятью.",
+    "tags": ["cpu", "gpu", "память", "передача", "данные"],
+    "source": "scene.js"
   },
   "explorer-3d": {
     "title": "Сколько места внутри коробки?",
     "page": "index.html",
     "time": 63.31,
-    "checkpoints": [0, 17.347, 30.769, 44.666, 63.31, 72.929, 84.624, 99.525]
+    "checkpoints": [0, 17.347, 30.769, 44.666, 63.31, 72.929, 84.624, 99.525],
+    "group": "explanations",
+    "summary": "Кубик → ряд → слой → объём. Рассказ с вращением и исследованием коробки.",
+    "tags": ["объём", "3d", "рассказ", "камера", "SceneShell"],
+    "source": "scene.js",
+    "guides": ["skill/references/scene-template.md"],
+    "recommended": true
   },
   "explorer-svg": {
     "title": "Сложение перемещений",
     "page": "index.html",
     "time": 18.828,
-    "checkpoints": [0, 9.178, 13.338, 18.628]
+    "checkpoints": [0, 9.178, 13.338, 18.628],
+    "group": "explanations",
+    "summary": "Перемещения складываются на плоскости. Готовая основа рассказа с камерой.",
+    "tags": ["вектор", "сложение", "svg", "2d", "рассказ", "камера", "SceneShell"],
+    "source": "scene.js",
+    "guides": ["skill/references/scene-template.md"],
+    "recommended": true
   },
   "controls": {
     "title": "Рисованные элементы управления",
     "page": "index.html",
-    "time": 0
+    "time": 0,
+    "group": "techniques",
+    "summary": "Кнопки, поля, ползунки и выбор в общем рисованном стиле.",
+    "tags": ["управление", "кнопки", "ползунки", "поля", "controls"],
+    "source": "scene.js",
+    "guides": ["skill/references/scene-authoring.md"]
   },
   "ink-fusion": {
     "title": "Живые чернила",
     "page": "index.html",
     "time": 2.2,
-    "checkpoints": [0, 0.5, 0.9, 1.3, 1.9, 2.4, 3.6, 4]
+    "checkpoints": [0, 0.5, 0.9, 1.3, 1.9, 2.4, 3.6, 4],
+    "group": "techniques",
+    "summary": "Буквы и маски соединяются, сохраняя характер рисованных штрихов.",
+    "tags": ["морфинг", "текст", "чернила", "InkMorph", "InkFusion"],
+    "source": "scene.js",
+    "guides": ["examples/ink-fusion/README.md"]
   },
   "volume-morph": {
     "title": "Как меняется объёмная форма?",
     "page": "index.html",
     "time": 17,
-    "checkpoints": [0, 6.8, 9.5, 17, 20, 26.5, 34, 42, 50]
+    "checkpoints": [0, 6.8, 9.5, 17, 20, 26.5, 34, 42, 50],
+    "group": "techniques",
+    "summary": "Объёмные формы соединяются и разделяются вместе с надписями.",
+    "tags": ["морфинг", "объём", "3d", "Morph3D"],
+    "source": "scene.js",
+    "guides": ["examples/volume-morph/README.md"]
   },
   "math-morph": {
     "title": "Собрать, разделить, умножить",
     "page": "index.html",
     "time": 22,
-    "checkpoints": [0, 7, 12, 17, 22, 26, 35, 40, 48, 54, 63, 69]
+    "checkpoints": [0, 7, 12, 17, 22, 26, 35, 40, 48, 54, 63, 69],
+    "group": "techniques",
+    "summary": "Сложение, деление и умножение показаны превращением самих величин.",
+    "tags": ["морфинг", "математика", "арифметика", "2d", "3d", "MathMorph"],
+    "source": "scene.js",
+    "guides": ["docs/morphing.md"]
   },
   "neuron-morph": {
     "title": "Как нейрон собирает сигнал",
     "page": "index.html",
     "time": 11,
-    "checkpoints": [0, 6, 9.5, 11, 16.8, 19.5, 21]
+    "checkpoints": [0, 6, 9.5, 11, 16.8, 19.5, 21],
+    "group": "techniques",
+    "summary": "Умножение входов на веса и сумма проходят через общий API вычислений.",
+    "tags": ["морфинг", "нейрон", "веса", "вычисление", "MathMorph"],
+    "source": "scene.js",
+    "guides": ["examples/neuron-morph/README.md"]
   },
   "morph-contact": {
     "title": "Форма становится опорой",
     "page": "index.html",
-    "time": 0
+    "time": 0,
+    "group": "techniques",
+    "summary": "Меняющаяся форма остаётся опорой для соприкасающихся объектов.",
+    "tags": ["морфинг", "контакт", "физика", "Morph"],
+    "source": "scene.js",
+    "guides": ["examples/morph-contact/README.md"]
   },
   "logic-gates": {
     "title": "Логические элементы",
     "page": "logic-gates.svg",
-    "time": 0
+    "time": 0,
+    "group": "explanations",
+    "summary": "Восемь логических элементов с одинаковым порядком входов и таблицами истинности.",
+    "tags": ["логика", "элементы", "таблица", "схема", "svg"],
+    "source": "build.py"
   },
   "geometric-tensor": {
     "title": "Геометрия тензора",
     "page": "index.html",
-    "time": 0
+    "time": 0,
+    "group": "explanations",
+    "summary": "Оси, срезы и компоненты помогают прочитать многомерный массив.",
+    "tags": ["тензор", "массив", "геометрия", "svg"],
+    "source": "build.mjs",
+    "guides": ["skill/references/interactive-tensors.md"]
   },
   "parameter-cube": {
     "title": "Как веса BERT собирают запрос",
     "page": "preview.html",
     "time": 7.2,
-    "checkpoints": [0, 1, 2.65, 3.7, 5, 6.3, 7.2]
+    "checkpoints": [0, 1, 2.65, 3.7, 5, 6.3, 7.2],
+    "group": "explanations",
+    "summary": "Выберите вес BERT и проследите вклады входов до компоненты запроса.",
+    "tags": ["bert", "параметры", "веса", "матрица", "тензор", "нейрон", "проекция"],
+    "source": "cube.mjs",
+    "guides": ["skill/references/interactive-tensors.md"]
   },
   "lc-oscillator": {
     "title": "Колебательный LC-контур",
     "page": "preview.html",
     "time": 0.75,
-    "checkpoints": [0, 0.75, 1.5, 2.25]
+    "checkpoints": [0, 0.75, 1.5, 2.25],
+    "group": "explanations",
+    "summary": "Заряд и ток связывают электрическое и магнитное поля колебательного контура.",
+    "tags": ["физика", "lc", "колебания", "электричество", "поле"],
+    "source": "build.py",
+    "guides": ["skill/references/lc-oscillator.md"]
   },
   "vector": {
     "title": "Матрица меняет вектор",
     "page": "index.html",
     "time": 16,
-    "checkpoints": [0, 8, 16]
+    "checkpoints": [0, 8, 16],
+    "group": "explanations",
+    "summary": "Изменяйте матрицу и наблюдайте, как она преобразует вектор на плоскости.",
+    "tags": ["матрица", "вектор", "линейная алгебра", "2d"],
+    "source": "index.ts"
   },
   "materials": {
     "title": "Инструменты одного почерка",
     "page": "index.html",
     "time": 4,
-    "checkpoints": [0, 2, 4]
+    "checkpoints": [0, 2, 4],
+    "group": "techniques",
+    "summary": "Перо, маркер, штриховка и подписи на одной поверхности.",
+    "tags": ["материалы", "палитра", "перо", "маркер", "штриховка", "SketchInk"],
+    "source": "index.ts"
   },
   "computer-explorer": {
     "title": "Внутри компьютера",
     "page": "index.html",
-    "time": 0
+    "time": 0,
+    "group": "explanations",
+    "summary": "Раскройте компьютер от устройств до ячеек памяти и транзисторов.",
+    "tags": ["компьютер", "cpu", "gpu", "ssd", "ram", "lcd", "вложенность", "камера"],
+    "source": "scenes.js",
+    "guides": ["skill/references/nested-explorer.md"]
   },
   "neuron-explorer": {
     "title": "Внутри нейрона",
     "page": "index.html",
-    "time": 0
+    "time": 0,
+    "group": "explanations",
+    "summary": "Исследуйте устройство нейрона, переходя от целого к деталям сигнала.",
+    "tags": ["нейрон", "вложенность", "камера", "сигнал"],
+    "source": "scene.js",
+    "guides": ["skill/references/nested-explorer.md"]
   },
   "physical-objects": {
     "title": "Физические материалы",
     "page": "index.html",
     "time": 0.65,
-    "checkpoints": [0, 0.5, 0.65, 1.0, 2.0]
+    "checkpoints": [0, 0.5, 0.65, 1.0, 2.0],
+    "group": "techniques",
+    "summary": "Столкновения, упругость, деформация и захват объектов в 2D и 3D.",
+    "tags": ["физика", "материалы", "2d", "3d", "Physics2D", "Physics3D"],
+    "source": "index.ts",
+    "guides": ["docs/physics.md"]
   },
   "written-morph": {
     "title": "Форма несёт смысл",
     "page": "index.html",
     "time": 23,
-    "checkpoints": [0, 4, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38, 42, 49, 53]
+    "checkpoints": [0, 4, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38, 42, 49, 53],
+    "group": "techniques",
+    "summary": "Формы, числа, слова и абзацы меняются согласованно в 2D и 3D.",
+    "tags": ["морфинг", "текст", "числа", "абзацы", "Morph", "InkMorph"],
+    "source": "scene.js",
+    "guides": ["docs/morphing.md"]
   }
 }
