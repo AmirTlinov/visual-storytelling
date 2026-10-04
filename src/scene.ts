@@ -103,9 +103,17 @@ function mount(
   const inputs = new Map<string, ReturnType<typeof SketchControls.field>>();
   for (const p of parameters) {
     const control = SketchControls.field(p, (value) => {
+      const previous = values[p.key];
       values[p.key] = value;
-      if (inputStory) inputStory(p.key, value);
-      else setMode('explore');
+      try {
+        if (inputStory) inputStory(p.key, value);
+        else setMode('explore');
+      } catch (error) {
+        values[p.key] = previous!;
+        status.textContent = error instanceof Error ? error.message : String(error);
+        return;
+      }
+      status.textContent = '';
       refresh();
       onInput({ ...values });
     });
@@ -284,6 +292,7 @@ function mount(
     storyButton.hidden = false;
     modes.hidden = !parameters.length && !view;
     unsubscribe = controller.subscribe((next, state) => {
+      if (next === 'story') status.textContent = '';
       if (exploration === 'model') setMode(next);
       for (const { key } of parameters) values[key] = (state as Record<string, ControlValue>)[key]!;
       refresh();

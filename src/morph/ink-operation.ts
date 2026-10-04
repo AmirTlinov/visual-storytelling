@@ -15,13 +15,25 @@ export interface InkOperation {
   readonly sources: readonly (string | FusionShape)[];
   readonly targets: readonly (string | FusionShape)[];
 }
+/** Validate before a story publishes edited parameters or allocates its renderer. */
+function plan(operation: InkOperation) {
+  if (
+    !operation.sources.length ||
+    !operation.targets.length ||
+    [...operation.sources, ...operation.targets].some(
+      (value) => typeof value === 'string' && !value.trim(),
+    )
+  )
+    throw new Error('Ink morph needs visible sources and targets');
+  return operation;
+}
 /** Default written transition: readable layout, stroke transport, contact and Rapier elasticity. */
 async function mount(
   parent: HTMLElement,
   operation: InkOperation,
   options: { color?: string } = {},
 ) {
-  let current = operation,
+  let current = plan(operation),
     progress = 0,
     disposed = false,
     tension = 36,
@@ -97,13 +109,7 @@ async function mount(
   }
   function setOperation(next: InkOperation) {
     if (disposed) throw new Error('Ink morph has been disposed');
-    if (
-      !next.sources.length ||
-      !next.targets.length ||
-      [...next.sources, ...next.targets].some((value) => typeof value === 'string' && !value.trim())
-    )
-      throw new Error('Ink morph needs visible sources and targets');
-    rebuild(next, true);
+    rebuild(plan(next), true);
   }
   const observer = new ResizeObserver(() => {
     if (
@@ -149,4 +155,4 @@ async function mount(
     },
   };
 }
-export const InkMorph = { mount };
+export const InkMorph = { mount, plan };

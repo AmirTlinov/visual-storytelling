@@ -1,4 +1,4 @@
-import { SceneShell, MathMorph, Morph } from '@visual-storytelling/core';
+import { MorphStory, MathMorph, Morph } from '@visual-storytelling/core';
 import '@visual-storytelling/core/style.css';
 import script from './timeline.json';
 
@@ -83,73 +83,24 @@ const chapters = [
       }),
   },
 ];
-for (const chapter of chapters) {
-  chapter.title = script.segments.find((segment) => segment.id === chapter.id).title;
-  chapter.cues = Object.keys(script.cues).filter((id) => id.startsWith(`${chapter.id}_`));
-}
-window.galleryReady = (async () => {
-  await SceneShell.ready();
-  const root = document.getElementById('formula-objects');
-  const shell = SceneShell.mount(root, {
-    title: 'Математика меняет форму',
-    parameters: [
-      {
-        key: 'chapter',
-        type: 'select',
-        label: 'Механизм',
-        value: 'distribute',
-        options: chapters.map((c) => ({ value: c.id, label: c.title })),
+window.galleryReady = MorphStory.mount(document.getElementById('formula-objects'), {
+  title: 'Математика меняет форму',
+  presenter: MathMorph,
+  script,
+  audio: document.querySelector('audio'),
+  initial: { input: 0.5 },
+  parameters: [{ key: 'input', label: 'Параметр', min: 0, max: 1, step: 0.01 }],
+  chapters: chapters.map((chapter) => ({
+    id: chapter.id,
+    initial: { input: (chapter.value - chapter.range[0]) / (chapter.range[1] - chapter.range[0]) },
+    descriptions: {
+      input: {
+        label: chapter.parameter,
+        format: (p) =>
+          `${+(chapter.range[0] + p * (chapter.range[1] - chapter.range[0])).toFixed(2)}${chapter.unit ?? ''}`,
       },
-      {
-        key: 'input',
-        label: chapters[0].parameter,
-        min: 0,
-        max: 1,
-        step: 0.01,
-        value: 0.5,
-        format: (x) => `${Math.round(x * 100)}%`,
-      },
-      {
-        key: 'progress',
-        label: 'Преобразование',
-        min: 0,
-        max: 1,
-        step: 0.005,
-        value: 0,
-        format: (x) => `${Math.round(x * 100)}%`,
-      },
-    ],
-  });
-  const audio = root.querySelector('audio');
-  const drawing = await MathMorph.mount(shell.stage, chapters[0].operation(3));
-  shell.attachView(drawing.view);
-  let previous = '';
-  shell.attachStory({
-    script,
-    audio,
-    stateAt(frame) {
-      const chapter = chapters.findLast((c) => frame.has(c.id)) ?? chapters[0];
-      return {
-        chapter: chapter.id,
-        input: (chapter.value - chapter.range[0]) / (chapter.range[1] - chapter.range[0]),
-        progress: MathMorph.timing(frame, chapter.cues, chapter.cues.length).progress,
-      };
     },
-    render(state, frame, mode) {
-      const chapter = chapters.find((c) => c.id === state.chapter);
-      const key = `${state.chapter}/${state.input}`;
-      if (previous !== key) {
-        shell.describeParameter('input', {
-          label: chapter.parameter,
-          format: (p) =>
-            `${+(chapter.range[0] + p * (chapter.range[1] - chapter.range[0])).toFixed(2)}${chapter.unit ?? ''}`,
-        });
-        drawing.setOperation(
-          chapter.operation(chapter.range[0] + state.input * (chapter.range[1] - chapter.range[0])),
-        );
-        previous = key;
-      }
-      drawing.render(mode === 'story' ? frame : state.progress, chapter.cues);
-    },
-  });
-})();
+    operation: ({ input }) =>
+      chapter.operation(chapter.range[0] + input * (chapter.range[1] - chapter.range[0])),
+  })),
+});

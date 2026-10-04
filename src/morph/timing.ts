@@ -1,12 +1,20 @@
 import type { Frame } from '../story/cues.js';
 
-export type MorphTime = number | Frame;
+export interface MorphProgress {
+  progress: number;
+  /** Physical duration of the complete operation, including its stages. */
+  duration?: number;
+  reduced?: boolean;
+}
+export type MorphTime = number | Frame | MorphProgress;
 export type MorphCues = string | readonly string[];
 
 let preference: MediaQueryList | undefined;
 const motionPreference = () =>
   (preference ??=
     typeof matchMedia === 'undefined' ? undefined : matchMedia('(prefers-reduced-motion: reduce)'));
+const isProgress = (input: Frame | MorphProgress): input is MorphProgress =>
+  typeof input.progress === 'number';
 
 export const motionProgress = (time: ReturnType<typeof morphTiming>, completeAt: number) =>
   time.reduced ? Number(time.progress >= completeAt) : time.progress;
@@ -17,7 +25,12 @@ export function morphTiming(input: MorphTime, cues?: MorphCues, stages = 1) {
   if (typeof input === 'number') {
     progress = input;
     reduced = motionPreference()?.matches ?? false;
+  } else if (isProgress(input)) {
+    progress = input.progress;
+    duration = input.duration;
+    reduced = input.reduced ?? motionPreference()?.matches ?? false;
   } else {
+    const frame = input;
     const ids = typeof cues === 'string' ? [cues] : cues;
     if (!ids?.length || (ids.length !== 1 && ids.length !== stages))
       throw new Error(`Provide one cue for the operation or ${stages} cues for its stages`);
@@ -28,28 +41,30 @@ export function morphTiming(input: MorphTime, cues?: MorphCues, stages = 1) {
       seen.add(id);
     }
     if (ids.length === 1) {
-      progress = input.progress(ids[0]!);
-      const cue = input.cue(ids[0]!);
+      progress = frame.progress(ids[0]!);
+      const cue = frame.cue(ids[0]!);
       duration = cue.end - cue.start;
     } else {
       // A completed cue holds its result until the next operation actually starts.
       // Repeating a cue allocates consecutive stages within that same speech interval.
-      const active = ids.findLastIndex((id) => input.has(id));
+      const active = ids.findLastIndex((id) => frame.has(id));
       if (active < 0) progress = 0;
       else {
         let first = active;
         while (first > 0 && ids[first - 1] === ids[active]) first--;
-        const amount = input.progress(ids[active]!);
+        const amount = frame.progress(ids[active]!);
         const end = active + 1;
-        const cue = input.cue(ids[active]!);
+        const cue = frame.cue(ids[active]!);
         duration = ((cue.end - cue.start) * stages) / (end - first);
         progress =
           (first + amount * (end - first) - (amount === 1 && end < stages ? 1e-10 : 0)) / stages;
       }
     }
-    reduced = input.reduced;
+    reduced = frame.reduced;
   }
   if (!Number.isFinite(progress)) throw new Error('Morph progress must be finite');
+  if (duration !== undefined && (!Number.isFinite(duration) || duration < 0))
+    throw new Error('Morph duration must be finite and non-negative');
   return { progress: Math.max(0, Math.min(1, progress)), reduced, duration };
 }
 

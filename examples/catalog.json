@@ -1,4 +1,27 @@
 {
+  "morph-story": {
+    "title": "Те же части, новое целое",
+    "page": "index.html",
+    "time": 14.5,
+    "checkpoints": [0, 2.5, 4.5, 7.5, 9.5, 12.5, 14.5],
+    "group": "explanations",
+    "summary": "Деление, удвоение и сборка через MorphStory: параметры, операция и метки времени без ручной обвязки.",
+    "tags": ["морфинг", "MorphStory", "авторский API", "деление", "3d"],
+    "source": "scene.js",
+    "guides": ["docs/morph-stories.md"],
+    "recommended": true
+  },
+  "ink-story": {
+    "title": "Как складывается образ",
+    "page": "index.html",
+    "time": 5.5,
+    "checkpoints": [0, 1.5, 3, 5.5],
+    "group": "explanations",
+    "summary": "Слова соединяются через тот же MorphStory; текст, поля и время ведут существующие владельцы.",
+    "tags": ["текст", "морфинг", "MorphStory", "InkMorph"],
+    "source": "scene.js",
+    "guides": ["docs/morph-stories.md"]
+  },
   "area-story": {
     "title": "Почему 4 × 5 = 20?",
     "page": "index.html",

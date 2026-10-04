@@ -14,3 +14,11 @@ export { storyActions } from './actions.js';
 export type { StoryAction, StoryActionsOptions } from './actions.js';
 export { captionTrack } from './captions.js';
 export type { Caption, CaptionOptions, CaptionTrack } from './captions.js';
+export { MorphStory } from '../morph/story.js';
+export type {
+  MorphStoryOptions,
+  MorphChapter,
+  MorphPresenter,
+  MorphPresentation,
+} from '../morph/story.js';
+export type { MorphProgress } from '../morph/timing.js';
