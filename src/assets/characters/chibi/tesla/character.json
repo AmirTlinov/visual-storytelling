@@ -99,5 +99,13 @@
       "file": "mouth-x.svg",
       "y": 9
     }
+  },
+  "views": {
+    "back": {
+      "body": {
+        "path": "nate/body",
+        "file": "body-back.svg"
+      }
+    }
   }
 }

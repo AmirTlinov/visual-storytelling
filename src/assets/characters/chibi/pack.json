@@ -124,5 +124,55 @@
       "y": 0
     }
   },
-  "credit": "Chibi Stickers rig: Esoteric Software, project file public domain. Original example images: Copyright (c) 2022 Esoteric Software LLC, redistribution with notice, no commercial use. Original SVG drawings: this project, 0BSD. SVG files embedding original sample images retain the sample image restrictions. Spine runtime: Spine Runtimes License; integration and SDK use require the applicable Spine Editor license. https://esotericsoftware.com/spine-runtimes-license"
+  "credit": "Chibi Stickers rig: Esoteric Software, project file public domain. Original example images: Copyright (c) 2022 Esoteric Software LLC, redistribution with notice, no commercial use. Original SVG drawings: this project, 0BSD. SVG files embedding original sample images retain the sample image restrictions. Spine runtime: Spine Runtimes License; integration and SDK use require the applicable Spine Editor license. https://esotericsoftware.com/spine-runtimes-license",
+  "rig": {
+    "hips": "hips",
+    "torso": "body-up",
+    "face": "face-holder",
+    "arms": {
+      "left": {
+        "upper": "arm-up-l",
+        "lower": "arm-down-l"
+      },
+      "right": {
+        "upper": "arm-up-r",
+        "lower": "arm-down-r"
+      }
+    },
+    "legs": {
+      "left": {
+        "upper": "leg-up-l",
+        "lower": "leg-down-l"
+      },
+      "right": {
+        "upper": "leg-up-r",
+        "lower": "leg-down-r"
+      }
+    },
+    "feet": {
+      "left": "leg-target-l",
+      "right": "leg-target-r"
+    },
+    "faceSlots": [
+      "mouth",
+      "eye-r",
+      "eye-l",
+      "eyebrow-r",
+      "eyebrow-l",
+      "blush-r",
+      "blush-l"
+    ],
+    "frontArms": [
+      "arm-r",
+      "arm-l"
+    ],
+    "views": {
+      "front": "movement/idle-front",
+      "left": "movement/idle-left",
+      "right": "movement/idle-right",
+      "back": "movement/idle-back"
+    },
+    "shadow": "shadow",
+    "bodySlot": "body"
+  }
 }

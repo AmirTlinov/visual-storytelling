@@ -484,5 +484,50 @@
     "source": "scene.js",
     "guides": ["docs/morphing.md", "docs/morph-stories.md"],
     "recommended": true
+  },
+  "chibi-reading": {
+    "title": "Тесла · Тихая глава",
+    "summary": "Взять книгу, подойти, сесть, листать, встать и вернуть её. Тот же сценарий у Теслы и Миры (?variant=mira), с разным ростом и мебелью.",
+    "time": 13,
+    "checkpoints": [0, 2.5, 4.8, 7, 9.5, 11, 13, 16, 18, 21.5, 23.5, 26],
+    "page": "index.html",
+    "group": "explanations",
+    "tags": ["персонажи", "действия", "постановка", "CharacterStory"],
+    "source": "scene.js",
+    "guides": ["docs/characters.md"]
+  },
+  "chibi-partners": {
+    "title": "Тесла и Мира · Вместе",
+    "summary": "Общая точка встречи ладоней, герои разного роста и ходьба за руки на подготовленной улице.",
+    "time": 2.6,
+    "checkpoints": [0, 2.6, 4, 5, 6, 8, 10],
+    "page": "index.html",
+    "group": "explanations",
+    "tags": ["персонажи", "действия", "постановка", "CharacterStory"],
+    "source": "scene.js",
+    "guides": ["docs/characters.md"]
+  },
+  "chibi-adventure": {
+    "title": "Мира · За следующей дверью",
+    "summary": "Дверь с общей ручкой контакта, бег, страх и подъём по ступеням.",
+    "time": 4.3,
+    "checkpoints": [0, 2, 3, 4.3, 6.7, 9, 12, 14.5, 16.5],
+    "page": "index.html",
+    "group": "explanations",
+    "tags": ["персонажи", "действия", "постановка", "лестница", "дверь"],
+    "source": "scene.js",
+    "guides": ["docs/characters.md"]
+  },
+  "tlinov-book": {
+    "title": "Tlinov · Как измерить идею",
+    "summary": "Книга сопровождает вступление и смену глав. Прозрачная сетка 5 мм и исследование площади с изменением сторон.",
+    "time": 14,
+    "checkpoints": [0, 1.5, 3.5, 4.2, 8, 10.2, 10.75, 11.3, 17.5, 18.85, 19.4, 25.5],
+    "page": "index.html",
+    "group": "explanations",
+    "tags": ["Tlinov", "книга", "бумага", "сетка", "BookStory", "рассказ"],
+    "source": "scene.js",
+    "guides": ["docs/book.md"],
+    "recommended": true
   }
 }

@@ -57,6 +57,10 @@
     "./characters": {
       "types": "./dist/characters/index.d.ts",
       "import": "./dist/characters/index.js"
+    },
+    "./book": {
+      "types": "./dist/book/index.d.ts",
+      "import": "./dist/book/index.js"
     }
   },
   "sideEffects": [

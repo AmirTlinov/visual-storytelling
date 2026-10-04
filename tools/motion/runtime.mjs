@@ -76,6 +76,33 @@ export function summarizeRuntime(telemetry, viewport) {
   const events = telemetry.events.filter((entry) => Number.isFinite(entry.duration));
   const clicks = telemetry.events.filter((entry) => entry.type === 'click' && entry.trusted);
   const insights = [
+    ...[
+      ...new Map(
+        (telemetry.scene ?? []).flatMap((sample) => {
+          const presentation = sample.presentation;
+          return [
+            ...(presentation?.outsideViewport
+              ? [
+                  {
+                    kind: 'outside-viewport',
+                    target: 'scene:frame',
+                    time: sample.time,
+                    detail: 'The scene frame extends beyond the visible viewport',
+                  },
+                ]
+              : []),
+            ...(presentation?.clipped ?? []).map((item) => ({
+              kind: 'content-clipped',
+              target: item.id,
+              time: sample.time,
+              detail: 'Artwork exceeds its frame or clipping container',
+              bounds: item.bounds,
+              clip: item.clip,
+            })),
+          ].map((item) => [`${item.kind}:${item.target}`, item]);
+        }),
+      ).values(),
+    ],
     ...(telemetry.error ? [{ kind: 'action-error', detail: telemetry.error }] : []),
     ...telemetry.messages
       .filter(

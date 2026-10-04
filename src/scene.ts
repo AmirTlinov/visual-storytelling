@@ -1,8 +1,8 @@
 import { story, type Story, type StoryOptions } from './story/story.js';
 import { chapterHeading } from './story/chapters.js';
 import { captionTrack, type CaptionOptions } from './story/captions.js';
-import { sceneFrame, type SceneFrameOptions } from './scene-frame.js';
-export type { SceneFrameOptions } from './scene-frame.js';
+import { sceneFrame, inspectPresentation, type SceneFrameOptions } from './scene-frame.js';
+export type { SceneFrameOptions, ScenePresentation } from './scene-frame.js';
 import { loadFonts } from './ink/fonts.js';
 import { player as statePlayer } from './controls/player.js';
 import type { MediaClock } from './story/clock.js';
@@ -312,6 +312,7 @@ function mount(
         return controller.currentTime;
       },
       snapshot: () => controller.state,
+      presentation: () => inspectPresentation(stage),
       setReduced: controller.setReduced,
       dispose,
     };

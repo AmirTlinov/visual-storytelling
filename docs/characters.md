@@ -2,8 +2,8 @@
 
 `@visual-storytelling/core/characters` — готовые риги, SVG-облики, декорации и предметы.
 Начальная семья **Chibi** сохраняет принятый рисунок Теслы: 44 родные кости,
-ограничения, сетки и порядок деталей. Доступны Tesla/Mira, 24 действия,
-три декорации и четыре предмета. [Каталог возможностей](../src/assets/characters/chibi/pack.json)
+ограничения, сетки и порядок деталей. Доступны Tesla/Mira, 24 родных клипа и 14 подготовленных действий.
+Три плоских фона и три семейства декораций с общей перспективой переиспользуют тот же риг. [Каталог возможностей](../src/assets/characters/chibi/pack.json)
 и `visual-story characters --json` дают точные имена.
 
 ```sh
@@ -23,12 +23,18 @@ import { CharacterStory, chibi, laboratory } from '@visual-storytelling/core/cha
 window.galleryReady = CharacterStory.mount(root, {
   title: 'Нашлось решение',
   description: 'Учёный размышляет, находит решение и радуется.',
-  pack: chibi, set: laboratory(),
+  pack: chibi,
+  set: laboratory(),
   cast: { scientist: { skin: 'tesla', at: 'center' } },
   beats: [
     { id: 'question', seconds: 3, text: 'Ищет решение.', actors: { scientist: 'think' } },
-    { id: 'answer', seconds: 3, text: 'Лампа загорается.', actors: { scientist: 'idea' },
-      props: { lamp: { values: { light: 1 } } } },
+    {
+      id: 'answer',
+      seconds: 3,
+      text: 'Лампа загорается.',
+      actors: { scientist: 'idea' },
+      props: { lamp: { values: { light: 1 } } },
+    },
     { id: 'joy', seconds: 2, text: 'Радуется.', actors: { scientist: 'celebrate' } },
   ],
 });
@@ -41,6 +47,94 @@ window.galleryReady = CharacterStory.mount(root, {
 пропущенный предмет сохраняет состояние. `remember` включает сохранение позиции.
 У изменения предмета `delay` и `over` задают задержку и длительность внутри метки:
 `{delay: .35, over: .25, values: {light: 1}}` быстро зажигает лампу и удерживает результат.
+
+## Размещение и действия
+
+Для новой истории с движением начни с `new --example chibi-reading`,
+`chibi-partners` или `chibi-adventure`. `visual-story characters --json` возвращает
+точные имена, предметы, точки и аргументы действий из общего `stagingCatalog`.
+
+```js
+import { CharacterStory, chibi, readingRoom } from '@visual-storytelling/core/characters';
+await CharacterStory.mount(root, {
+  title: 'Тихая глава',
+  pack: chibi,
+  set: readingRoom({ theme: 'library', seat: 'chair' }),
+  cast: { reader: { skin: 'tesla', at: 'entry', scale: 0.8 } },
+  beats: [
+    {
+      id: 'take',
+      seconds: 5,
+      text: 'Берёт книгу.',
+      perform: [{ action: 'take', actor: 'reader', object: 'book' }],
+    },
+    {
+      id: 'sit',
+      seconds: 4,
+      text: 'Устраивается поудобнее.',
+      perform: [{ action: 'sit', actor: 'reader', seat: 'seat' }],
+    },
+    {
+      id: 'read',
+      seconds: 7,
+      text: 'Листает страницы.',
+      actors: { reader: 'think' },
+      perform: [{ action: 'read', actor: 'reader', book: 'book', pages: 3 }],
+    },
+    {
+      id: 'put',
+      seconds: 5,
+      text: 'Возвращает книгу.',
+      perform: [{ action: 'put', actor: 'reader', onto: 'sideTable' }],
+    },
+  ],
+});
+```
+
+| Намерение                    | `perform`                                                                |
+| ---------------------------- | ------------------------------------------------------------------------ |
+| Идти, бежать, убегать        | `action: 'walk' / 'run' / 'flee', actor, to`                             |
+| Сесть / встать               | `action: 'sit', actor, seat` / `action: 'stand', actor`                  |
+| Взять, читать, вернуть книгу | `take: actor, object` / `read: actor, book, pages?` / `put: actor, onto` |
+| Открыть дверь                | `action: 'openDoor', actor, door`                                        |
+| Подняться по лестнице        | `action: 'climb', actor, stairs`                                         |
+| Указать / нажать             | `action: 'point' / 'press', actor, target`                               |
+| Дать пять / идти за руки     | `action: 'highFive', actors: ['a','b']` / `walkTogether: actors, to`     |
+
+`actors` задаёт выражение вместе с движением: `scared` — страх, `cry` — отчаяние,
+`think`, `idea`, `celebrate` и остальные имена есть в каталоге. Свободный герой
+исполняет весь родной клип; при контакте движение сохраняет опору и захват, а эмоция
+управляет лицом. На эпизод у героя один владелец `perform`.
+
+`readingRoom` принимает `theme: library | laboratory | classroom`, `seat: chair | bench`,
+`furnitureScale`, `depth`; `street` — `theme: town | park`, `depth`; `courtyard`
+содержит дверь и лестницу. [Одна цепочка для двух разных героев](../examples/chibi-reading/scene.js)
+выбирает Миру через `?variant=mira`, меняя только облик, рост и декорацию.
+
+Готовые декорации задают `staging`: `projection`, именованные `spots`, `objects`.
+`ground(x,z,height)` использует метры: x вправо, z в глубину, height над землёй.
+`prepareSet(svg, projection, spots, objects)` собирает собственную площадку 960×650;
+`project(projection, ground(...))` даёт координаты для её фонового рисунка.
+Одни размеры предметов определяют контуры, сиденье, ручку, ступени и точки контакта.
+Руки находят предмет, стопы ставятся на опору, перекрытия следуют глубине.
+
+Называй места в декорации и используй их в `cast.at` и `to`. Книгу нужно взять или
+сразу объявить через `cast.reader.holding`; после `put` она остаётся на столе.
+Два владельца одной книги/сиденья, неизвестные точки и конфликтующие действия
+отклоняются при подготовке. Новый предмет с собственным действием получает общую
+геометрию и контакты в библиотеке один раз.
+
+`shot: {focus: ['reader', 'book'], framing: 'medium'}` вписывает действительные
+границы выбранных объектов; без `shot` камера сохраняет всю площадку и расширяет
+кадр для вышедших за него героев. Плеер учитывает доступную высоту окна.
+`scene.presentation()` сообщает обрезание и непроверенные canvas, `scene.snapshot()`
+содержит положения, контакты рук и стоп. Проверяй также видимые переходы: геометрические
+границы не оценивают выразительность позы.
+
+Фронт, два поворота в три четверти и спина принадлежат одному Chibi-ригу.
+Для спины компилятор применяет `character.json.views.back`; одежда сохраняет
+задний рисунок. Сильно другое телосложение или новый ракурс требуют подготовки семьи
+рига. Эти изменения затем переиспользуются всеми сценами.
 
 ## Новый облик
 
@@ -100,10 +194,18 @@ props: { token: { at: { actor: 'bob', anchor: 'hand-right' }, arc: 100 } }
 
 ```js
 const actors = await CharacterStage.mount(host, {
-  pack: chibi, set: workshop(), background: false,
+  pack: chibi,
+  set: workshop(),
+  background: false,
   cast: { narrator: { skin: 'tesla', at: 'left' } },
-  beats: [{ id: 'intro', seconds: 15, text: 'Учёный приветствует зрителя.',
-    actors: { narrator: 'wave' } }],
+  beats: [
+    {
+      id: 'intro',
+      seconds: 15,
+      text: 'Учёный приветствует зрителя.',
+      actors: { narrator: 'wave' },
+    },
+  ],
 });
 shell.onDispose(actors.dispose);
 // В существующем render(state, frame):
@@ -123,7 +225,9 @@ actors.render(frame.time, frame.reduced);
 
 `score.ts` связывает эпизоды с существующими метками, `performance.ts` сэмплирует
 родные клипы по абсолютному времени, `stage.ts` рисует весь состав одним WebGL-контекстом,
-`story.ts` подключает общую оболочку. Сборщик обликов — `tools/characters/compile.mjs`.
+`story.ts` подключает общую оболочку. `staging/blocking.ts` планирует действия,
+`motion.ts` вычисляет их по времени, `pose.ts` решает контакты, `world.ts` рисует
+предметы и героев в общем порядке. Сборщик обликов — `tools/characters/compile.mjs`.
 
 Проверь характерные позы и переходы вперёд/назад, контакт с предметом и узкую ширину.
 Новый облик проходит те же движения: подумать, озарение, радость, поднятая рука.

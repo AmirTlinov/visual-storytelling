@@ -1,5 +1,6 @@
 import {
   Skeleton,
+  Animation,
   SkeletonJson,
   TextureAtlas,
   AtlasAttachmentLoader,
@@ -65,6 +66,34 @@ export function performance(
   const vector = new Vector2();
   const stateData = new AnimationStateData(data);
   stateData.defaultMix = blend;
+  const faceBones = new Set<number>();
+  const faceRoot = pack.rig && skeleton.findBone(pack.rig.face);
+  const collect = (bone: typeof faceRoot) => {
+    if (!bone) return;
+    faceBones.add(bone.data.index);
+    for (const child of bone.children) collect(child);
+  };
+  if (faceRoot) for (const child of faceRoot.children) collect(child);
+  const faceSlots = new Set(
+    (pack.rig?.faceSlots ?? []).map((name) => skeleton.findSlot(name)?.data.index),
+  );
+  const faces = new Map(
+    Object.entries(pack.actions).map(([id, definition]) => {
+      const entry = { animation: data.findAnimation(definition.animation)! };
+      return [
+        id,
+        new Animation(
+          id + '-face',
+          entry.animation.timelines.filter(
+            (t) =>
+              ('boneIndex' in t && faceBones.has(t.boneIndex as number)) ||
+              ('slotIndex' in t && faceSlots.has(t.slotIndex as number)),
+          ),
+          entry.animation.duration,
+        ),
+      ] as const;
+    }),
+  );
   function apply(index: number, time: number, reduced: boolean): void {
     const current = animations.get(track[index]!.action)!;
     if (reduced) {
@@ -103,14 +132,63 @@ export function performance(
   }
   return {
     skeleton,
-    sample(time: number, reduced = false) {
+    sample(
+      time: number,
+      reduced = false,
+      pose?: {
+        at: Point;
+        scale: number;
+        clip?: string;
+        mood?: string;
+        view?: import('./staging/types.js').Facing;
+      },
+    ) {
       if (!Number.isFinite(time)) throw new Error('Character time must be finite');
+      const skin = pose?.view
+        ? (pack.viewSkins?.[actor.skin]?.[pose.view] ?? actor.skin)
+        : actor.skin;
+      if (skeleton.skin?.name !== skin) skeleton.setSkin(skin);
       skeleton.setupPose();
+      skeleton.x = pose?.at.x ?? at.x;
+      skeleton.y = height - (pose?.at.y ?? at.y);
+      skeleton.scaleX = (pose?.scale ?? actor.scale ?? 0.77) * (actor.flip ? -1 : 1);
+      skeleton.scaleY = pose?.scale ?? actor.scale ?? 0.77;
       const index = Math.max(
         0,
         track.findLastIndex((key) => key.start <= time),
       );
-      apply(index, time, reduced);
+      if (pose?.clip) {
+        const clip = data.findAnimation(pose.clip);
+        if (!clip) throw new Error(`Pack ${pack.id} is missing view: ${pose.clip}`);
+        clip.apply(
+          skeleton,
+          -1,
+          reduced ? 0 : Math.max(0, time),
+          true,
+          null,
+          1,
+          MixFrom.setup,
+          false,
+          false,
+          false,
+        );
+        const key = track[index]!,
+          entry = animations.get(key.action)!;
+        faces
+          .get(pose.mood ?? key.action)!
+          .apply(
+            skeleton,
+            -1,
+            reduced ? (entry.pose ?? 1.2) : Math.max(0, time - key.start),
+            !!entry.loop,
+            null,
+            1,
+            MixFrom.setup,
+            false,
+            false,
+            false,
+          );
+      } else apply(index, time, reduced);
       skeleton.updateWorldTransform(Physics.reset);
       return track[index]!.action;
     },

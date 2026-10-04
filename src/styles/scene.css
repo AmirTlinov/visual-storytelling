@@ -1,6 +1,8 @@
 @import url('./ink.css');
 @import url('./range.css');
 html:has(>body.ve-standalone){color-scheme:light dark}
+html:has(>body.ve-standalone>.ve-scene[data-theme=light]){color-scheme:light}
+html:has(>body.ve-standalone>.ve-scene[data-theme=dark]){color-scheme:dark}
 .ve-scene *{box-sizing:border-box}
 .ve-scene{padding:12px 20px 16px}
 .ve-scene .canvas:not(:where(.ve-frame *)){display:block;width:100%;overflow:hidden}

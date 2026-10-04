@@ -27,4 +27,6 @@
   background-color:transparent;background-image:var(--ve-grid);background-size:var(--ve-grid-step) var(--ve-grid-step);background-position:var(--ve-grid-x) var(--ve-grid-y)
 }
 .ve-scene[data-paper=false]{background-image:none}
+.ve-scene:has(>.ve-frame),.ve-scene:has(.vs-grid>path){background-image:none}
+.ve-scene:not([data-paper=false])>.ve-frame>.ve-frame-content:not(:has(.vs-grid>path)){background-image:var(--ve-grid);background-size:var(--ve-grid-step) var(--ve-grid-step);background-position:var(--ve-grid-x) var(--ve-grid-y)}
 svg.ve-scene{color-scheme:light dark}

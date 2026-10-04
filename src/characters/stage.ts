@@ -3,6 +3,8 @@ import {
   SceneRenderer,
   GLTexture,
 } from '@esotericsoftware/spine-webgl';
+import { stageFrame, type FrameBox } from './staging/camera.js';
+import { world } from './staging/world.js';
 import { unpackCharacter, readSkeleton, performance } from './performance.js';
 import { compileScore, smooth, type CharacterScore } from './score.js';
 import type { CharacterStageOptions, Place, Point } from './types.js';
@@ -43,10 +45,14 @@ export async function characterStage(
   parent.append(element);
   let context: ManagedWebGLRenderingContext | undefined;
   let renderer: SceneRenderer | undefined;
+  let prepared: Awaited<ReturnType<typeof world>> | undefined;
   let disposed = false;
+  const inspected = canvas as HTMLCanvasElement & { __visualReview?: () => unknown };
   const dispose = () => {
     if (disposed) return;
     disposed = true;
+    delete inspected.__visualReview;
+    prepared?.dispose();
     atlas.dispose();
     renderer?.dispose();
     context?.dispose();
@@ -80,7 +86,8 @@ export async function characterStage(
         ),
       ]),
     );
-    for (const actor of background ? Object.values(cast) : []) {
+    if (score.blocking) prepared = await world(options, score.blocking, actors, context);
+    for (const actor of background && !prepared ? Object.values(cast) : []) {
       const at = point(actor.at),
         scale = actor.scale ?? 0.77;
       const shadow = document.createElementNS(NS, 'ellipse');
@@ -113,13 +120,71 @@ export async function characterStage(
       }),
     );
     let snapshot: unknown;
+    let camera: FrameBox = { x: 0, y: 0, width: set.width, height: set.height },
+      bounds: Record<string, FrameBox> = {};
+    inspected.__visualReview = () => {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        camera,
+        objects: Object.entries(bounds).map(([id, b]) => ({
+          id,
+          x: rect.x + ((b.x - camera.x) / camera.width) * rect.width,
+          y: rect.y + ((b.y - camera.y) / camera.height) * rect.height,
+          width: (b.width / camera.width) * rect.width,
+          height: (b.height / camera.height) * rect.height,
+          visible: !element.hidden,
+          data: { framing: 'subject' },
+        })),
+      };
+    };
     const stage = {
       canvas,
       render(time: number, reduced = false) {
         if (disposed) return;
-        const actions = Object.fromEntries(
-          Object.entries(actors).map(([id, actor]) => [id, actor.sample(time, reduced)]),
+        const actions =
+          prepared?.sample(time, reduced) ??
+          Object.fromEntries(
+            Object.entries(actors).map(([id, actor]) => [id, actor.sample(time, reduced)]),
+          );
+        bounds = {
+          ...prepared?.bounds(),
+          ...Object.fromEntries(
+            Object.entries(actors).map(([id, actor]) => {
+              const b = actor.skeleton.getBoundsRect();
+              return [
+                id,
+                { x: b.x, y: set.height - b.y - b.height, width: b.width, height: b.height },
+              ];
+            }),
+          ),
+        };
+        const index = Math.max(
+          0,
+          options.beats.findLastIndex((b) => score.script.cues[b.id]!.start <= time),
         );
+        const beat = options.beats[index]!;
+        const current = stageFrame(set.width, set.height, bounds, beat.shot);
+        const previous = stageFrame(
+          set.width,
+          set.height,
+          bounds,
+          options.beats[Math.max(0, index - 1)]!.shot,
+        );
+        const mix = reduced ? 1 : smooth((time - score.script.cues[beat.id]!.start) / 0.45);
+        camera = Object.fromEntries(
+          Object.keys(current).map((k) => {
+            const key = k as keyof FrameBox;
+            return [key, previous[key] + (current[key] - previous[key]) * mix];
+          }),
+        ) as unknown as FrameBox;
+        for (const svg of [back, front])
+          svg.setAttribute('viewBox', `${camera.x} ${camera.y} ${camera.width} ${camera.height}`);
+        renderer!.camera.position.set(
+          camera.x + camera.width / 2,
+          set.height - camera.y - camera.height / 2,
+          0,
+        );
+        renderer!.camera.setViewport(camera.width, camera.height);
         // Logical dimensions also work when the host is hidden or detached.
         const dpr = Math.min(
           devicePixelRatio || 1,
@@ -137,7 +202,8 @@ export async function characterStage(
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
         renderer!.begin();
-        for (const id of order) renderer!.drawSkeleton(actors[id]!.skeleton);
+        if (prepared) prepared.draw(renderer!);
+        else for (const id of order) renderer!.drawSkeleton(actors[id]!.skeleton);
         renderer!.end();
         const propState: Record<string, unknown> = {};
         for (const [id, prop] of Object.entries(score.props)) {
@@ -173,7 +239,9 @@ export async function characterStage(
         }
         snapshot = {
           time,
+          camera,
           actions,
+          world: prepared?.snapshot(),
           props: propState,
           anchors: Object.fromEntries(
             Object.entries(actors).map(([id, actor]) => [

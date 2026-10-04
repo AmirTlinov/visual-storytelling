@@ -1,4 +1,5 @@
 import type { Script } from '../story/cues.js';
+import type { BipedRig, Facing, Shot, StageAction, Staging } from './staging/types.js';
 
 /** Stage coordinates: x right, y down; every position uses this one space. */
 export interface Point {
@@ -15,6 +16,8 @@ export interface CharacterPack {
   anchors: Readonly<Record<string, { bone: string; x: number; y: number }>>;
   /** Readable source and license notice. */
   credit: string;
+  rig?: BipedRig;
+  viewSkins?: Readonly<Record<string, Partial<Record<Facing, string>>>>;
 }
 export interface Actor {
   skin: string;
@@ -23,6 +26,8 @@ export interface Actor {
   /** Mirror the whole rig, including attachments and anchors. */
   flip?: boolean;
   action?: string;
+  /** Prepared prop already carried when the story begins. */
+  holding?: string;
 }
 export interface PropArt {
   /** Local SVG, with its contact point at (0,0). Source must be trusted authored artwork. */
@@ -44,6 +49,7 @@ export interface StageSet {
   svg: string;
   spots: Readonly<Record<string, Point>>;
   props?: Readonly<Record<string, Prop>>;
+  staging?: Staging;
 }
 export interface PropChange {
   at?: Place;
@@ -65,6 +71,8 @@ export interface Beat {
   actors?: Readonly<Record<string, string>>;
   /** Omitted props and channels retain their last value. */
   props?: Readonly<Record<string, PropChange>>;
+  perform?: readonly StageAction[];
+  shot?: Shot;
 }
 export interface CharacterStageOptions {
   description?: string;

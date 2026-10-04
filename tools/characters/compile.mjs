@@ -8,9 +8,10 @@ export async function compileCharacterPack(template, directories, { id = 'chibi-
   const spec = JSON.parse(await readFile(resolve(template, 'pack.json'), 'utf8'));
   const data = JSON.parse(await readFile(resolve(template, 'rig.json'), 'utf8'));
   const base = data.skins.find((skin) => skin.name === spec.baseSkin);
-  const originalSkins = data.skins;
+  const originalSkins = [...data.skins];
   const replacements = new Map(),
-    skins = [];
+    skins = [],
+    viewSkins = {};
   for (const directory of directories) {
     const root = resolve(directory);
     const profile = JSON.parse(await readFile(resolve(root, 'character.json'), 'utf8'));
@@ -21,51 +22,63 @@ export async function compileCharacterPack(template, directories, { id = 'chibi-
       originalSkins.some((s) => s.name === profile.id)
     )
       throw new Error(`Invalid or duplicate skin ID: ${profile.id}`);
-    const skin = structuredClone(base);
-    skin.name = profile.id;
-    const known = new Set(
-      Object.values(skin.attachments).flatMap((entries) =>
-        Object.entries(entries).map(([name, a]) => a.path || a.name || name),
-      ),
-    );
-    for (const [part, entry] of Object.entries(profile.parts)) {
-      if (!known.has(entry.path)) throw new Error(`Unknown attachment in ${part}: ${entry.path}`);
-      const file = resolve(root, entry.file);
-      if (!file.startsWith(root + sep))
-        throw new Error(`Artwork must be inside the character directory: ${part}`);
-      let svg = await readFile(file, 'utf8');
-      for (const [from, to] of Object.entries(profile.palette ?? {}))
-        svg = svg.replaceAll(from, to);
-      const buffer = await sharp(Buffer.from(svg)).png().toBuffer();
-      const { width: w, height: h } = await sharp(buffer).metadata();
-      const path = profile.id + '/' + entry.path;
-      if (replacements.has(path)) throw new Error(`Duplicate artwork: ${entry.path}`);
-      let matches = 0;
-      for (const entries of Object.values(skin.attachments))
-        for (const [name, a] of Object.entries(entries))
-          if ((a.path || a.name || name) === entry.path) {
-            const mesh = a.type === 'mesh' || a.type === 'linkedmesh';
-            if (mesh && (a.width !== w || a.height !== h))
-              throw new Error(
-                `${part}: preserve the mesh's ${a.width} × ${a.height} drawing frame (got ${w} × ${h})`,
-              );
-            if (entry.y !== undefined && (!Number.isFinite(entry.y) || mesh))
-              throw new Error(`${part}: only region attachments accept a finite y offset`);
-            a.path = path;
-            a.name = path;
-            if (!mesh) {
-              a.width = w;
-              a.height = h;
-              a.y = (a.y || 0) + (entry.y || 0);
+    const variants = [
+      ['front', profile.parts],
+      ...Object.entries(profile.views ?? {}).map(([view, parts]) => [
+        view,
+        { ...profile.parts, ...parts },
+      ]),
+    ];
+    for (const [view, parts] of variants) {
+      if (!['front', 'left', 'right', 'back'].includes(view))
+        throw new Error(`Unknown view: ${view}`);
+      const skin = structuredClone(base);
+      skin.name = view === 'front' ? profile.id : profile.id + '@' + view;
+      if (view !== 'front') (viewSkins[profile.id] ??= {})[view] = skin.name;
+      const known = new Set(
+        Object.values(skin.attachments).flatMap((entries) =>
+          Object.entries(entries).map(([name, a]) => a.path || a.name || name),
+        ),
+      );
+      for (const [part, entry] of Object.entries(parts)) {
+        if (!known.has(entry.path)) throw new Error(`Unknown attachment in ${part}: ${entry.path}`);
+        const file = resolve(root, entry.file);
+        if (!file.startsWith(root + sep))
+          throw new Error(`Artwork must be inside the character directory: ${part}`);
+        let svg = await readFile(file, 'utf8');
+        for (const [from, to] of Object.entries(profile.palette ?? {}))
+          svg = svg.replaceAll(from, to);
+        const buffer = await sharp(Buffer.from(svg)).png().toBuffer();
+        const { width: w, height: h } = await sharp(buffer).metadata();
+        const path = skin.name + '/' + entry.path;
+        if (replacements.has(path)) throw new Error(`Duplicate artwork: ${entry.path}`);
+        let matches = 0;
+        for (const entries of Object.values(skin.attachments))
+          for (const [name, a] of Object.entries(entries))
+            if ((a.path || a.name || name) === entry.path) {
+              const mesh = a.type === 'mesh' || a.type === 'linkedmesh';
+              if (mesh && (a.width !== w || a.height !== h))
+                throw new Error(
+                  `${part}: preserve the mesh's ${a.width} × ${a.height} drawing frame (got ${w} × ${h})`,
+                );
+              if (entry.y !== undefined && (!Number.isFinite(entry.y) || mesh))
+                throw new Error(`${part}: only region attachments accept a finite y offset`);
+              a.path = path;
+              a.name = path;
+              if (!mesh) {
+                a.width = w;
+                a.height = h;
+                a.y = (a.y || 0) + (entry.y || 0);
+              }
+              if (a.color) a.color = 'ffffff' + a.color.slice(6);
+              matches++;
             }
-            if (a.color) a.color = 'ffffff' + a.color.slice(6);
-            matches++;
-          }
-      if (!matches) throw new Error(`Unused part: ${part}`);
-      replacements.set(path, { path, buffer, w, h });
+        if (!matches) throw new Error(`Unused part: ${part}`);
+        replacements.set(path, { path, buffer, w, h });
+      }
+      data.skins.push(skin);
     }
     skins.push(profile.id);
-    data.skins.push(skin);
   }
   if (!skins.length) throw new Error('Provide at least one character directory');
   // Dependency skins retain the native weighted meshes. Their own textures are never displayed.
@@ -129,5 +142,14 @@ export async function compileCharacterPack(template, directories, { id = 'chibi-
     ),
     { level: 9 },
   ).toString('base64');
-  return { id, gzip, skins, actions: spec.actions, anchors: spec.anchors, credit: spec.credit };
+  return {
+    id,
+    gzip,
+    skins,
+    actions: spec.actions,
+    anchors: spec.anchors,
+    credit: spec.credit,
+    rig: spec.rig,
+    viewSkins,
+  };
 }

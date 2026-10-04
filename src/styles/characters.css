@@ -1,10 +1,3 @@
-.ve-scene.ve-character-story {
-  max-width: min(100%, calc(650px * var(--ve-character-aspect)));
-  margin-inline: auto;
-}
-.ve-standalone .ve-scene.ve-character-story {
-  max-width: min(100%, calc(max(240px, 100svh - 220px) * var(--ve-character-aspect)));
-}
 .ve-character-stage {
   position: relative;
   width: 100%;

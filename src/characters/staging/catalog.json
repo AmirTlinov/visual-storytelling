@@ -1,0 +1,44 @@
+{
+  "coordinates": "metres: x right, z away, height above ground; projection is shared by actors, scenery and contacts",
+  "views": ["front", "left", "right", "back"],
+  "sets": {
+    "readingRoom": {
+      "themes": ["library", "laboratory", "classroom"],
+      "objects": ["seat", "book", "sideTable", "plant"],
+      "spots": ["entry", "reader", "partner", "exit"]
+    },
+    "street": {
+      "themes": ["town", "park"],
+      "objects": ["tree", "light", "bench"],
+      "spots": ["entry", "left", "right", "exit", "far", "near"]
+    },
+    "courtyard": {
+      "objects": ["door", "stairs", "light"],
+      "spots": ["entry", "door", "stairs", "exit"]
+    }
+  },
+  "objects": ["chair", "bench", "table", "book", "board", "tree", "lamp", "door", "stairs"],
+  "actions": {
+    "walk": { "actor": "hero", "to": "exit" },
+    "run": { "actor": "hero", "to": "exit" },
+    "flee": { "actor": "hero", "to": "exit" },
+    "sit": { "actor": "hero", "seat": "seat" },
+    "stand": { "actor": "hero" },
+    "take": { "actor": "hero", "object": "book" },
+    "read": { "actor": "hero", "book": "book", "pages": 3 },
+    "put": { "actor": "hero", "onto": "sideTable" },
+    "openDoor": { "actor": "hero", "door": "door" },
+    "climb": { "actor": "hero", "stairs": "stairs" },
+    "point": { "actor": "hero", "target": { "x": 1, "z": 1, "height": 2 } },
+    "press": { "actor": "hero", "target": { "x": 1, "z": 1, "height": 2 } },
+    "highFive": { "actors": ["hero", "friend"] },
+    "walkTogether": { "actors": ["hero", "friend"], "to": "near" }
+  },
+  "rules": [
+    "Use named ground spots for cast.at.",
+    "One prepared action owns each actor per beat. actors selects the expression alongside it.",
+    "Take the book before read; put it on a table before a free-hand interaction.",
+    "shot.focus names actors or prepared objects; the camera fits their actual bounds.",
+    "Use scene.presentation() and review screenshots to inspect clipping at action boundaries."
+  ]
+}

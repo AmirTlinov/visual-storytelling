@@ -222,7 +222,9 @@ async function observe(svg: SVGSVGElement, layout: (width: number) => number | v
     disposed = false;
   const update = (force = true) => {
     if (disposed) return;
-    const width = Math.round(svg.getBoundingClientRect().width);
+    // Layout uses local CSS units. A film frame or paper camera may transform
+    // the entire SVG afterward; measuring screen pixels would scale it twice.
+    const width = svg.clientWidth;
     if (!width || (!force && width === lastWidth)) return;
     lastWidth = width;
     const height = layout(width);

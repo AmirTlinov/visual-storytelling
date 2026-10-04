@@ -9,12 +9,6 @@ async function mount(root: HTMLElement, options: CharacterStoryOptions) {
   const score = compileScore(options);
   await SceneShell.ready();
   const shell = SceneShell.mount(root, { title: options.title, paper: false, frame: options.set });
-  root.classList.add('ve-character-story');
-  root.style.setProperty('--ve-character-aspect', String(options.set.width / options.set.height));
-  shell.onDispose(() => {
-    root.classList.remove('ve-character-story');
-    root.style.removeProperty('--ve-character-aspect');
-  });
   try {
     const drawing = await characterStage(shell.stage, options, score);
     shell.onDispose(drawing.dispose);

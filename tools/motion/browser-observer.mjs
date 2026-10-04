@@ -212,6 +212,7 @@ export function observeBrowser({ targets, drainBinding }) {
           mediaTime: scene.currentTime,
           state: scene.snapshot?.(),
           cueReads: scene.review?.().observed,
+          presentation: scene.presentation?.(),
           objects,
           inspectionMs: performance.now() - before,
         });

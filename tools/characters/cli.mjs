@@ -34,6 +34,11 @@ The template's native skeleton, skin attachments, constraints and draw order sta
     return;
   }
   if (command === 'list') {
+    const stagingPath = await access(join(root, 'src/characters/staging/catalog.json')).then(
+      () => join(root, 'src/characters/staging/catalog.json'),
+      () => join(root, 'dist/characters/staging/catalog.json'),
+    );
+    const staging = JSON.parse(await readFile(stagingPath, 'utf8'));
     const catalog = {
       pack: spec.id,
       skins: ['tesla', 'mira'],
@@ -41,13 +46,17 @@ The template's native skeleton, skin attachments, constraints and draw order sta
       anchors: Object.keys(spec.anchors),
       sets: ['laboratory', 'conservatory', 'workshop'],
       props: ['bulb', 'workbench', 'seedling', 'spark'],
+      staging,
       credit: spec.credit,
     };
     console.log(
       values.json
         ? JSON.stringify(catalog, null, 2)
         : Object.entries(catalog)
-            .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
+            .map(
+              ([key, value]) =>
+                `${key}: ${Array.isArray(value) ? value.join(', ') : typeof value === 'object' ? JSON.stringify(value, null, 2) : value}`,
+            )
             .join('\n'),
     );
   } else if (command === 'new') {

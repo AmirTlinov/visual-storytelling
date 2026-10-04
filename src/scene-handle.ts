@@ -1,5 +1,6 @@
 import type { Theme } from './ink/palette.js';
 import type { CueReview } from './story/cues.js';
+import type { ScenePresentation } from './scene-frame.js';
 
 declare global {
   interface HTMLElement {
@@ -17,6 +18,8 @@ export interface SceneHandle {
   setReduced(value: boolean): void;
   snapshot(): unknown;
   review(): CueReview;
+  /** On-demand frame and clipping evidence, including inspectable canvas artwork. */
+  presentation?(): ScenePresentation;
   dispose(): void;
   setTheme?(value: Theme): void;
   svg?(): SVGSVGElement;

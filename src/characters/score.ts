@@ -1,5 +1,6 @@
 import { cueSheet, type Script } from '../story/cues.js';
 import type { CharacterStageOptions, Place, PropChange } from './types.js';
+import { compileBlocking } from './staging/blocking.js';
 
 export const smooth = (t: number) => {
   t = Math.max(0, Math.min(1, t));
@@ -149,6 +150,6 @@ export function compileScore(options: CharacterStageOptions) {
     time += beat.seconds;
   }
   cueSheet(script);
-  return { script, tracks, props, propTracks };
+  return { script, tracks, props, propTracks, blocking: compileBlocking(options, script) };
 }
 export type CharacterScore = ReturnType<typeof compileScore>;

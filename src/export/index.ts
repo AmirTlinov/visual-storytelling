@@ -103,7 +103,7 @@ export async function exportSVG(source: SVGSVGElement): Promise<string> {
   clone.setAttribute('height', String(viewBox.height));
   // Notebook paper may belong to the surrounding HTML shell. Preserve its scale
   // and origin when that shell is removed from the exported SVG.
-  const paper = source.closest('.ve-scene');
+  const paper = source.closest<HTMLElement>('.ve-frame-content, .ve-scene');
   if (paper) {
     const style = getComputedStyle(paper);
     if (style.backgroundImage !== 'none') {
@@ -111,12 +111,15 @@ export async function exportSVG(source: SVGSVGElement): Promise<string> {
         origin = paper.getBoundingClientRect();
       const sx = viewBox.width / bounds.width,
         sy = viewBox.height / bounds.height;
+      const paperScaleX = origin.width / (paper.offsetWidth || origin.width),
+        paperScaleY = origin.height / (paper.offsetHeight || origin.height);
       const size = style.backgroundSize.split(',')[0]!.trim().split(/\s+/).map(parseFloat);
       const position = style.backgroundPosition.split(',')[0]!.trim().split(/\s+/).map(parseFloat);
-      const width = size[0]! * sx,
-        height = (size[1] ?? size[0])! * sy;
-      const x = viewBox.x + (origin.left - bounds.left + position[0]!) * sx;
-      const y = viewBox.y + (origin.top - bounds.top + (position[1] ?? position[0])!) * sy;
+      const width = size[0]! * paperScaleX * sx,
+        height = (size[1] ?? size[0])! * paperScaleY * sy;
+      const x = viewBox.x + (origin.left - bounds.left + position[0]! * paperScaleX) * sx;
+      const y =
+        viewBox.y + (origin.top - bounds.top + (position[1] ?? position[0])! * paperScaleY) * sy;
       const probe = svg('rect', { width: 0, height: 0, fill: 'var(--ve-grid-ink)' });
       source.append(probe);
       const ink = paint(getComputedStyle(probe).fill);
@@ -125,8 +128,8 @@ export async function exportSVG(source: SVGSVGElement): Promise<string> {
       while (clone.querySelector(`#${id}`)) id += '-';
       const pattern = svg('pattern', { id, x, y, width, height, patternUnits: 'userSpaceOnUse' });
       pattern.append(
-        svg('rect', { width: sx, height, fill: ink }),
-        svg('rect', { width, height: sy, fill: ink }),
+        svg('rect', { width: sx * paperScaleX, height, fill: ink }),
+        svg('rect', { width, height: sy * paperScaleY, fill: ink }),
       );
       definitions.append(pattern);
       const background = svg('g', { 'aria-hidden': 'true' });
