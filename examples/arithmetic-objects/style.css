@@ -1,0 +1,82 @@
+#arithmetic-objects .operation-choice .ve-control-title {
+  display: none;
+}
+#arithmetic-objects .operation-choice .ve-choices {
+  justify-content: center;
+  gap: 8px 28px;
+}
+#arithmetic-objects .operation-choice .ve-choices label {
+  font-size: 19px;
+}
+#arithmetic-objects .operation-heading {
+  text-align: center;
+  font-size: 27px;
+  line-height: 1.2;
+  font-weight: 400;
+  margin: 12px 0 6px;
+}
+#arithmetic-objects .operation-question {
+  text-align: center;
+  font-size: 20px;
+  margin: 0;
+}
+#arithmetic-objects .operation-equation {
+  text-align: center;
+  font-size: 37px;
+  margin: 4px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+#arithmetic-objects .operation-equation[data-solved='true'] {
+  color: var(--ve-green);
+}
+#arithmetic-objects .operation-conclusion {
+  margin: 0;
+  min-height: 3em;
+  text-align: center;
+  font-size: 19px;
+  max-width: 660px;
+  margin-inline: auto;
+}
+#arithmetic-objects .operation-hint {
+  margin: 12px 0 0;
+  font-size: 15px;
+  color: var(--ve-muted);
+  text-align: center;
+}
+#arithmetic-objects .ve-stage {
+  height: auto;
+}
+@media (min-width: 900px) {
+  #arithmetic-objects {
+    padding-top: 0;
+  }
+  #arithmetic-objects h1 {
+    margin-bottom: 8px;
+  }
+  #arithmetic-objects .ve-view-actions:empty {
+    display: none;
+  }
+}
+@media (max-width: 560px) {
+  #arithmetic-objects .operation-choice .ve-choices {
+    display: grid;
+    grid-template-columns: repeat(2, max-content);
+    gap: 0 20px;
+  }
+  #arithmetic-objects .operation-choice .ve-choices label {
+    font-size: 18px;
+  }
+  #arithmetic-objects .operation-heading {
+    font-size: 23px;
+    margin-top: 14px;
+  }
+  #arithmetic-objects .operation-question {
+    font-size: 18px;
+  }
+  #arithmetic-objects .operation-equation {
+    font-size: 32px;
+  }
+  #arithmetic-objects .operation-conclusion {
+    font-size: 18px;
+  }
+}

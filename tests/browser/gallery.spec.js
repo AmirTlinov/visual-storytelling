@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import catalog from '../../examples/catalog.json' with { type: 'json' };
 
 test('search, sections and the return from a scene preserve the chosen context', async ({
   page,
@@ -13,7 +14,7 @@ test('search, sections and the return from a scene preserve the chosen context',
   await expect(page.locator('#empty')).toBeVisible();
   await page.getByRole('button', { name: 'Сбросить' }).click();
   await expect(search).toBeFocused();
-  await expect(page.locator('[data-example]:visible')).toHaveCount(25);
+  await expect(page.locator('[data-example]:visible')).toHaveCount(Object.keys(catalog).length);
   await search.fill('сложение');
   await page.locator('[data-example="explorer-svg"] .example-open').click();
   await expect(page).toHaveURL(/explorer-svg\/index.html/);

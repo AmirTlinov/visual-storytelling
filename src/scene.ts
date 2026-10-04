@@ -216,7 +216,7 @@ function mount(
       },
     };
     storyButton.hidden = false;
-    modes.hidden = false;
+    modes.hidden = !parameters.length && !view;
     unsubscribe = controller.subscribe((next, state) => {
       if (exploration === 'model') setMode(next);
       for (const { key } of parameters) values[key] = (state as Record<string, ControlValue>)[key]!;
