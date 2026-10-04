@@ -11,8 +11,14 @@ SPEECH_REPO = "bosonai/higgs-tts-3-4b"
 SPEECH_REVISION = "239f63fb7b02b1aa085f98d9efae5e35cc5523e8"
 SPEECH_MODEL = CACHE / "models" / "higgs-tts-3-bf16"
 REFERENCE_AUDIO = Path(__file__).resolve().parents[2] / "dist" / "assets" / "audio" / "narrator-male.wav"
-REFERENCE_TEXT = "Всё дело в её медленном вращении. Представляешь: новый год уже наступил, а планета ещё не закончила даже один поворот!"
-DEFAULT_DELIVERY = "<|emotion:enthusiasm|><|prosody:expressive_high|>"
+REFERENCE_TEXT = (
+    "Попробуй представить свой вариант. Может быть, на ковёр? На диван? А может быть, на стул? "
+    "Возможных продолжений очень много. Чтобы выбирать осмысленно, машине нужно учиться на примерах: "
+    "замечать связи между словами и ситуациями, которые они описывают."
+)
+# The accepted performance carries the narrator's energy. Stacking enthusiasm
+# and expressive_high on every take overdrives questions and short openings.
+DEFAULT_DELIVERY = ""
 SPEECH_CREDIT = "This audio was created with Boson AI's Higgs Audio — https://www.boson.ai/higgs-audio\n"
 ALIGN_REPO = "jonatasgrosman/wav2vec2-large-xlsr-53-russian"
 ALIGN_REVISION = "2329100508896c6d9b157019803ab5601e6f3406"

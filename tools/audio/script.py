@@ -51,6 +51,12 @@ def number(value, label, low, high):
     return float(value)
 
 
+def seed(value, label):
+    if type(value) is not int or not 0 <= value < 2**32:
+        raise ValueError(f"{label} must be an integer from 0 to 4294967295")
+    return value
+
+
 def read_script(path):
     spec = json.loads(path.read_text())
     if spec.get("version") != 3:
@@ -61,9 +67,7 @@ def read_script(path):
     if set(voice) - {"delivery", "seed", "reference_audio", "reference_text"}:
         raise ValueError("voice accepts delivery, seed, reference_audio and reference_text")
     voice["delivery"] = delivery(voice.get("delivery", DEFAULT_DELIVERY))
-    voice.setdefault("seed", 42)
-    if type(voice["seed"]) is not int or not 0 <= voice["seed"] < 2**32:
-        raise ValueError("voice.seed must be an integer from 0 to 4294967295")
+    voice["seed"] = seed(voice.get("seed", 42), "voice.seed")
     if bool(voice.get("reference_audio")) != bool(voice.get("reference_text")):
         raise ValueError("Provide both voice.reference_audio and its exact reference_text")
     if voice.get("reference_audio"):
@@ -101,6 +105,7 @@ def read_script(path):
             raise ValueError(f"{sid}: split this narration into shorter semantic phrases (max 1000 characters)")
         segment["spoken"] = text
         segment["delivery"] = delivery(segment.get("delivery", voice["delivery"]))
+        segment["seed"] = seed(segment.get("seed", voice["seed"]), f"{sid}.seed")
         segment["pause_after"] = number(segment.get("pause_after", 0), f"{sid}.pause_after", 0, 30)
         tokens = normalized(text)
         for cue in segment.setdefault("cues", []):

@@ -1,14 +1,19 @@
-"""Cue intent must survive alignment without changing any spoken-word boundaries."""
+"""Script controls, cue intent and audition safety without loading audio models."""
 import json
+from contextlib import redirect_stdout
+import io
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 import wave
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools' / 'audio'))
 from script import read_script, timed_cues, check_timeline
 from resources import SPEECH_REPO, SPEECH_REVISION
+from audition import audition
 
 
 class NarrationCues(unittest.TestCase):
@@ -82,6 +87,100 @@ class NarrationCues(unittest.TestCase):
             self.assertEqual(segment["text"], text)
             self.assertEqual(segment["spoken"], "Сначала тихо. А теперь — два предмета!")
             self.assertEqual((segment["cues"][0]["word_start"], segment["cues"][0]["word_end"]), (4, 6))
+
+    def test_segment_seed_overrides_voice_without_changing_neighbors(self):
+        spec = {"version": 3, "voice": {"seed": 17}, "segments": [
+            {"id": "question", "text": "Сколько здесь предметов?"},
+            {"id": "answer", "text": "Всего шесть.", "seed": 0},
+            {"id": "conclusion", "text": "Теперь проверим вместе."},
+        ]}
+        with tempfile.TemporaryDirectory() as folder:
+            script = Path(folder) / "narration.json"
+            script.write_text(json.dumps(spec, ensure_ascii=False))
+            loaded = read_script(script)
+            self.assertEqual(loaded["voice"]["seed"], 17)
+            self.assertEqual([s["seed"] for s in loaded["segments"]], [17, 0, 17])
+            self.assertEqual(json.loads(script.read_text()), spec)
+
+    def test_voice_and_segment_seeds_reject_non_uint32_values(self):
+        with tempfile.TemporaryDirectory() as folder:
+            script = Path(folder) / "narration.json"
+            for owner in ("voice", "segment"):
+                for value in (True, 42.0, -1, 2**32, "42", None):
+                    with self.subTest(owner=owner, seed=value):
+                        spec = {"version": 3, "voice": {}, "segments": [
+                            {"id": "question", "text": "Сколько здесь предметов?"},
+                        ]}
+                        target = spec["voice"] if owner == "voice" else spec["segments"][0]
+                        target["seed"] = value
+                        script.write_text(json.dumps(spec, ensure_ascii=False))
+                        with self.assertRaisesRegex(ValueError, "seed must be an integer"):
+                            read_script(script)
+
+
+class AuditionSafety(unittest.TestCase):
+    def test_invalid_requests_leave_authored_files_untouched_without_loading_models(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            script = root / "narration.json"
+            script.write_text(json.dumps({"version": 3, "segments": [
+                {"id": "question", "text": "Сколько здесь предметов?"},
+            ]}, ensure_ascii=False))
+            authored = root / "authored"
+            authored.mkdir()
+            (authored / "index.html").write_text("Keep my authored page")
+            before = {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            cases = [
+                ("missing", root / "takes", [42], "Unknown segment"),
+                ("question", root / "takes", [], "at least one"),
+                ("question", root / "takes", [True], "audition seed"),
+                ("question", root / "takes", [2**32], "audition seed"),
+                ("question", root, [42], "separate audition"),
+                ("question", authored, [42], "empty directory"),
+            ]
+            with patch.dict(sys.modules, {"alignment": None, "assembly": None, "speech": None}):
+                for segment, output, seeds, message in cases:
+                    with self.subTest(segment=segment, output=output.name, seeds=seeds):
+                        with self.assertRaisesRegex(ValueError, message):
+                            audition(script, segment, output, seeds)
+            after = {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            self.assertEqual(after, before)
+            self.assertFalse((root / "takes").exists())
+
+    def test_failed_reaudition_preserves_the_complete_previous_comparison(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            script, output = root / "narration.json", root / "takes"
+            spec = {"version": 3, "segments": [
+                {"id": "question", "text": "Сколько здесь предметов?"},
+            ]}
+            script.write_text(json.dumps(spec, ensure_ascii=False))
+            fail_seed = None
+
+            def build_take(source, destination, device, **shared):
+                segment = json.loads(source.read_text())["segments"][0]
+                if segment["seed"] == fail_seed:
+                    raise RuntimeError("Interrupted synthesis")
+                (destination / "audio.wav").write_bytes(segment["text"].encode())
+                return {"duration": 1.0, "warnings": []}
+
+            modules = {
+                "alignment": SimpleNamespace(Aligner=lambda device: object()),
+                "speech": SimpleNamespace(Speaker=lambda voice: object()),
+                "assembly": SimpleNamespace(build_audio=build_take),
+            }
+            with patch.dict(sys.modules, modules), redirect_stdout(io.StringIO()):
+                audition(script, "question", output, [42, 43])
+                before = {p.relative_to(output): p.read_bytes() for p in output.rglob("*") if p.is_file()}
+                spec["segments"][0]["text"] = "А теперь попробуй угадать сам."
+                script.write_text(json.dumps(spec, ensure_ascii=False))
+                fail_seed = 43
+                with self.assertRaisesRegex(RuntimeError, "Interrupted synthesis"):
+                    audition(script, "question", output, [42, 43])
+                after = {p.relative_to(output): p.read_bytes() for p in output.rglob("*") if p.is_file()}
+                changed = [str(p) for p in sorted(before.keys() | after.keys()) if before.get(p) != after.get(p)]
+                self.assertEqual(changed, [], "A failed audition changed these published files")
+                self.assertEqual(json.loads(script.read_text()), spec)
 
 
 if __name__ == '__main__':

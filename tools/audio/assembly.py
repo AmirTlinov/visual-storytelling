@@ -7,18 +7,21 @@ import time
 import numpy as np
 
 from alignment import Aligner
+from listening import write_listening_page
 from mixing import mix
 from resources import ALIGN_REPO, ALIGN_REVISION, SPEECH_CREDIT, digest
 from script import read_script, timed_cues
 from speech import SAMPLE_RATE, Speaker
 
 
-def build_audio(script_path, output, device):
+def build_audio(script_path, output, device, *, speaker=None, aligner=None, report=True):
     started = time.perf_counter()
     source_digest = digest(json.loads(script_path.read_text()))
     spec = read_script(script_path)
-    speaker = Speaker(spec["voice"])
-    aligner = Aligner(device)
+    if speaker is not None and speaker.voice != spec["voice"]:
+        raise ValueError("A shared speaker must use the same voice settings")
+    speaker = speaker or Speaker(spec["voice"])
+    aligner = aligner or Aligner(device)
     segments, cues, chunks, stats = [], {}, [], []
     cursor = round(spec["intro"] * SAMPLE_RATE)
     chunks.append(np.zeros(cursor, dtype=np.float32))
@@ -32,6 +35,7 @@ def build_audio(script_path, output, device):
         record = {
             "id": segment["id"], "text": segment["spoken"], "start": words[0]["start"], "end": words[-1]["end"],
             "audio_start": offset, "audio_end": (cursor + len(audio)) / SAMPLE_RATE, "words": words,
+            "seed": segment["seed"], "delivery": segment["delivery"],
         }
         if "title" in segment:
             record["title"] = segment["title"]
@@ -69,16 +73,23 @@ def build_audio(script_path, output, device):
         }
         (staging / "timeline.json").write_text(json.dumps(timeline, ensure_ascii=False, indent=2) + "\n")
         (staging / "narration.txt").write_text("\n\n".join(s["spoken"] for s in spec["segments"]) + "\n")
+        write_listening_page(staging / "voice-preview.html", title="Озвучка рассказа",
+                             transcript="\n\n".join(s["spoken"] for s in spec["segments"]),
+                             takes=[{"label": "Цельный рассказ", "audio": "audio.wav",
+                                     "duration": timeline["duration"], "warnings": warnings}],
+                             note="Прослушайте начало, вопросы, выводы и переходы между мыслями.")
         if digest(json.loads(script_path.read_text())) != source_digest:
             raise RuntimeError("Narration changed during the build; rerun with the current script")
         output.mkdir(parents=True, exist_ok=True)
         # Own only these output names; keep user-authored JS and illustrations.
-        for name in ("audio.wav", "voice.wav", "music.wav", "CREDITS.txt", "timeline.json", "narration.txt"):
+        for name in ("audio.wav", "voice.wav", "music.wav", "CREDITS.txt", "timeline.json", "narration.txt", "voice-preview.html"):
             if (staging / name).exists():
                 (staging / name).replace(output / name)
             elif name in {"music.wav", "CREDITS.txt"}:
                 (output / name).unlink(missing_ok=True)
-    print(json.dumps({"output": str(output), "duration": timeline["duration"], "build_seconds": timeline["build"]["seconds"],
-                      "cached_segments": sum(s["synthesis"]["cached"] and s["alignment"]["cached"] for s in stats),
-                      "warnings": warnings}, ensure_ascii=False, indent=2), flush=True)
+    if report:
+        print(json.dumps({"output": str(output), "preview": str(output / "voice-preview.html"),
+                          "duration": timeline["duration"], "build_seconds": timeline["build"]["seconds"],
+                          "cached_segments": sum(s["synthesis"]["cached"] and s["alignment"]["cached"] for s in stats),
+                          "warnings": warnings}, ensure_ascii=False, indent=2), flush=True)
     return timeline

@@ -20,6 +20,12 @@ def main():
     build.add_argument("script", type=Path)
     build.add_argument("--out", type=Path, required=True)
     build.add_argument("--device", choices=["auto", "mps", "cpu"], default="auto", help="Word aligner device; speech uses MLX on Apple Silicon")
+    preview = commands.add_parser("audition", help="Compare complete takes of one segment without changing the story")
+    preview.add_argument("script", type=Path)
+    preview.add_argument("--segment", required=True)
+    preview.add_argument("--out", type=Path, required=True)
+    preview.add_argument("--seeds", type=int, nargs="+", help="Take seeds; defaults to the selected seed and its two successors")
+    preview.add_argument("--device", choices=["auto", "mps", "cpu"], default="auto")
     args = parser.parse_args()
     try:
         if args.command == "setup":
@@ -29,6 +35,9 @@ def main():
         elif args.command == "check":
             from script import check_timeline
             check_timeline(args.script, args.timeline)
+        elif args.command == "audition":
+            from audition import audition
+            audition(args.script.resolve(), args.segment, args.out.resolve(), args.seeds, args.device)
         else:
             from assembly import build_audio
             build_audio(args.script.resolve(), args.out.resolve(), args.device)
