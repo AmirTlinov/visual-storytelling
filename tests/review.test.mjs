@@ -17,6 +17,7 @@ test('rendered review detects a frozen operation and unused cue, permits a readi
       stdin: {
         resolveDir: resolve('.'),
         contents: `import { cueSheet } from './dist/story/cues.js';
+          import { mountScene } from './dist/scene-handle.js';
           console.warn('Line geometry has too few points');
           const sheet = cueSheet({duration: 5, segments:[{id:'lesson',start:0,end:5,text:'Explain each change'}], cues: {
             frozen: {start: 0, end: 1, action: 'Move the circle', text: '<em>copy</em>'},
@@ -26,7 +27,7 @@ test('rendered review detects a frozen operation and unused cue, permits a readi
             move: {start: 4, end: 5, action: 'Move the circle to its destination'},
           }});
           const circle = document.querySelector('circle');
-          document.querySelector('.ve-scene').scene = {duration: 5,
+          mountScene(document.querySelector('.ve-scene'), {duration: 5, dispose(){},
             seek(t) {
               const frame = sheet.at(t);
               frame.progress('frozen');
@@ -36,7 +37,7 @@ test('rendered review detects a frozen operation and unused cue, permits a readi
             },
             snapshot: () => ({x: circle.cx.baseVal.value}),
             review: sheet.review,
-          };
+          });
         `,
       },
       outfile: join(directory, 'index.js'),

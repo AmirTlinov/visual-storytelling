@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, cp, rm } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -20,6 +22,7 @@ async function fixture(root) {
       name: '@visual-storytelling/core',
       version: '0.9.0',
       type: 'module',
+      files: ['dist', 'tools', 'examples/**/*.js', 'README.md', 'THIRD_PARTY.md'],
       exports: { '.': { import: './dist/index.js' } },
     }),
   );
@@ -57,6 +60,46 @@ test('package identity survives installation and detects different content at th
     assert.equal(report.cli.version, report.consumer.version);
     assert.notEqual(report.cli.build, report.consumer.build);
     assert(report.issues.some((issue) => issue.includes('different package')));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('package identity follows npm contents, including notices and excluding unshipped outputs', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'story-packlist-'));
+  const root = join(directory, 'library'),
+    installed = join(directory, 'installed');
+  const run = promisify(execFile);
+  try {
+    await fixture(root);
+    await writeFile(join(root, 'README.md'), 'Authored guide');
+    await writeFile(join(root, 'THIRD_PARTY.md'), 'Dependency notices');
+    await writeBuildInfo(root, join(root, 'dist'));
+    const before = await packageInfo(root);
+    await mkdir(join(root, 'examples'));
+    await writeFile(join(root, 'examples/preview.mp4'), 'Unpublished preview');
+    assert.equal((await packageInfo(root)).build, before.build);
+    const { stdout } = await run(
+      'npm',
+      ['pack', '--ignore-scripts', '--json', '--pack-destination', directory],
+      { cwd: root },
+    );
+    await mkdir(installed);
+    await run('tar', [
+      '-xzf',
+      join(directory, JSON.parse(stdout)[0].filename),
+      '-C',
+      installed,
+      '--strip-components=1',
+    ]);
+    const shipped = await packageInfo(installed);
+    assert.equal(shipped.status, 'packaged');
+    assert.equal(shipped.build, before.build);
+    await writeFile(join(root, 'README.md'), 'Changed guide');
+    assert.equal((await packageInfo(root)).status, 'modified');
+    await writeFile(join(root, 'README.md'), 'Authored guide');
+    await writeFile(join(root, 'THIRD_PARTY.md'), 'Changed license');
+    assert.equal((await packageInfo(root)).status, 'modified');
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

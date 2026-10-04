@@ -1,6 +1,6 @@
 /** Selection, responsive composition and narrative time for the BERT parameter view. */
 export function mountCube(initial, start, api, model, cubeScene) {
-  const { SvgOrbit, SketchInk, fitSvgControls, transport } = api;
+  const { SvgOrbit, SketchInk, fitSvgControls, transport, mountScene } = api;
   const { projectionBreakdown, decimal, weightColor, escapeXML } = model;
   const { inkShape, inkBox } = SketchInk;
   const root = document.querySelector('svg.ve-scene'),
@@ -344,13 +344,6 @@ export function mountCube(initial, start, api, model, cubeScene) {
   });
   window.addEventListener('resize', layout, listen);
   reducedMotion.addEventListener('change', drawCalculation, listen);
-  document.addEventListener(
-    'visibilitychange',
-    () => {
-      if (document.hidden) clock.pause();
-    },
-    listen,
-  );
   window.getProjection = () => data;
   window.setPending = (value) => {
     byID('activation-region').classList.toggle('pending', value);
@@ -377,8 +370,12 @@ export function mountCube(initial, start, api, model, cubeScene) {
     );
   };
   const unsubscribe = clock.subscribe(drawCalculation);
-  root.scene = {
+  mountScene(root, {
     transport: clock,
+    svg: () => root,
+    get playing() {
+      return clock.state.playing;
+    },
     duration,
     checkpoints: [0, 1, 2.65, 3.7, 5, 6.3, duration],
     play: clock.play,
@@ -405,12 +402,11 @@ export function mountCube(initial, start, api, model, cubeScene) {
       clock.dispose();
       orbit.dispose();
       cancelAnimationFrame(pending);
-      delete root.scene;
       delete window.getProjection;
       delete window.setPending;
       delete window.setProjection;
     },
-  };
+  });
   drawTokens();
   layout();
   updateSelection();

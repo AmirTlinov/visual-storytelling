@@ -67,7 +67,7 @@ export async function buildNarration(directory, { signal } = {}) {
   await new Promise((resolve, reject) => {
     const child = spawn(
       fileURLToPath(new URL('sketch-audio', import.meta.url)),
-      ['build', source, '--out', directory],
+      ['build', source.file, '--source-directory', source.directory, '--out', directory],
       { signal, stdio: 'inherit' },
     );
     child.on('error', reject);
@@ -136,7 +136,15 @@ export async function checkNarration(html, directory, { signal } = {}) {
       try {
         await promisify(execFile)(
           'python3',
-          [resolve(root, 'tools/audio/cli.py'), 'check', script, '--timeline', timeline],
+          [
+            resolve(root, 'tools/audio/cli.py'),
+            'check',
+            script.file,
+            '--source-directory',
+            script.directory,
+            '--timeline',
+            timeline,
+          ],
           { signal, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } },
         );
       } catch (error) {

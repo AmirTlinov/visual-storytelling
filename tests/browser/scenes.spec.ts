@@ -113,7 +113,7 @@ test('typed stories use the same shell and preserve model state through mode cha
 }) => {
   await ready(page, '/vector/index.html');
   await page.waitForFunction(() => !!document.querySelector<HTMLElement>('.ve-scene')!.scene!);
-  await page.evaluate(() => document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek(10));
+  await page.evaluate(() => document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek!(10));
   const original = await page.evaluate(() =>
     document.querySelector<HTMLElement>('.ve-scene')!.scene!.snapshot(),
   );
@@ -130,18 +130,18 @@ test('typed stories use the same shell and preserve model state through mode cha
   ).toEqual(original);
   for (const time of [0, 5, 10, 16]) {
     await page.evaluate(
-      (t) => document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek(t),
+      (t) => document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek!(t),
       time,
     );
     const state = await page.evaluate(() =>
       document.querySelector<HTMLElement>('.ve-scene')!.scene!.snapshot(),
     );
     await page.evaluate(() => {
-      document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek(18);
-      document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek(0);
+      document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek!(18);
+      document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek!(0);
     });
     await page.evaluate(
-      (t) => document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek(t),
+      (t) => document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek!(t),
       time,
     );
     expect(
@@ -178,7 +178,7 @@ test('vector: intermediate displayed products distinguish approximation from equ
     [13, '≈'],
   ] as const) {
     await page.evaluate(
-      (time) => document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek(time),
+      (time) => document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek!(time),
       time,
     );
     await expect(relation).toHaveAttribute('aria-label', sign);
@@ -224,9 +224,9 @@ for (const name of ['area-story', 'remainder-story'])
     await ready(page, `/${name}/index.html`);
     await page.evaluate(async () => {
       const scene = document.querySelector<HTMLElement>('.ve-scene')!.scene!;
-      scene.seek(1);
+      scene.seek!(1);
       if (scene.currentTime !== 1 || !scene.snapshot()) throw new Error('Incomplete scene handle');
-      await scene.play();
+      await scene.play!();
     });
     await expect
       .poll(() => page.locator('audio').evaluate((a: HTMLAudioElement) => a.paused))

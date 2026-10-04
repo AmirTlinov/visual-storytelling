@@ -40,7 +40,13 @@ test('narrated local cues retain intervening pauses, words and reversible chapte
       'model.second': { start: 6, end: 8 },
     },
   };
-  const plan = composeChapters([chapter], { introduction: 1, script });
+  const plan = composeChapters([chapter], {
+    introduction: { seconds: 1, id: 'opening', title: 'Model', text: 'Introduction' },
+    script,
+  });
+  assert.equal(plan.script.cues.opening.action, 'Introduction');
+  assert.equal(plan.script.cues['book-open'], undefined);
+  assert.doesNotThrow(() => composeChapters([{ ...chapter, id: 'book-open' }]));
   assert.deepEqual(
     [7, 0, 5, 3, 9, 1, 8].map((time) => chapterTime(plan.timings[0], time)),
     [3, 0, 2, 1, 4, 0, 4],
@@ -101,7 +107,7 @@ test('boundary capture, fast theme changes and disposal preserve the current pre
         },
       });
       window.galleryReady = SceneStory.mount(root, { title:'Composition', chapters:[chapter('a'),chapter('b')], frame:{width:80,height:60},
-        transition: { introduction:0, duration:0, mount(parent, previews) {
+        transition: { duration:0, mount(parent, previews) {
           return { render(state) { window.boundaries = previews.map(pair => ['start','end'].map((key,i) => Array.from(pair[key].getContext('2d').getImageData(i?45:5,5,1,1).data))); window.transitionState=state; }, dispose() { window.removed.push('transition'); } };
         } },
       }).then(value => window.lab=value);

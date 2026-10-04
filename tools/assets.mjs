@@ -1,4 +1,9 @@
-import { extname } from 'node:path';
+import { extname, sep } from 'node:path';
+
+const derived = new Set(['node_modules', 'dist', 'site', 'artifacts', 'review', '__pycache__']);
+/** Build, watch, copy and deliver the same authored tree; generated output is never an input. */
+export const sceneInput = (path) =>
+  !path.split(sep).some((part) => part.startsWith('.') || derived.has(part));
 
 /** Resource types shared by scene building, the local server and offline packaging. */
 const mediaTypes = {

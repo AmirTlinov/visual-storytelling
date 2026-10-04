@@ -22,17 +22,17 @@ window.galleryReady = (async () => {
   const editor = ShapeEditor.mount(svg, pencil, geometryChanged, {begin: () => history.begin(), end: () => history.end()}); shell.stage.after(editor.toolbar);
   const history = SceneHistory.mount(root, {
     read: () => ({form, parameters: {...shell.parameters}}),
-    restore: state => {form = state.form; shell.setParameters(state.parameters); render();},
+    restore: state => {form = state.form; shell.syncParameters(state.parameters); render();},
     beforeTravel: () => editor.finish()
   });
   const el = (tag, attrs, text) => {const n = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); if (text !== undefined) n.textContent = text; drawing.append(n); return n;};
   function parametersChanged(v) {
     if (v.shape !== form.kind) form = ShapeModel.create(v.shape, v.width);
     else if (v.width !== measure(ShapeModel.bounds(form).width)) form = ShapeModel.width(form, v.width);
-    shell.setParameters({width: measure(ShapeModel.bounds(form).width)}); render(); history.record();
+    shell.syncParameters({width: measure(ShapeModel.bounds(form).width)}); render(); history.record();
   }
   function geometryChanged(next) {
-    form = next; shell.setParameters({shape: form.kind, width: measure(ShapeModel.bounds(form).width)}); render(); history.record();
+    form = next; shell.syncParameters({shape: form.kind, width: measure(ShapeModel.bounds(form).width)}); render(); history.record();
   }
   function resize() {
     const w = shell.stage.clientWidth, unit = Math.min(60, (w - 36) / 8), h = Math.max(280, unit * 8 + 64), x = (w - unit * 8) / 2, y = 32;
@@ -60,7 +60,7 @@ window.galleryReady = (async () => {
     }
     editor.update(form, layout);
   }
-  const reset = SketchControls.action('Вернуть исходное', () => {editor.finish(); form = ShapeModel.create(initial.shape, initial.width); shell.setParameters(initial); editor.reset(); render(); history.record();});
+  const reset = SketchControls.action('Вернуть исходное', () => {editor.finish(); form = ShapeModel.create(initial.shape, initial.width); shell.syncParameters(initial); editor.reset(); render(); history.record();});
   shell.actions.append(reset); const observer = new ResizeObserver(resize); observer.observe(shell.stage); resize();
-  root.scene = {shell, dispose() {observer.disconnect(); editor.dispose(); history.dispose(); shell.dispose();}};
+  shell.onDispose(() => {observer.disconnect(); editor.dispose(); history.dispose();});
 })();

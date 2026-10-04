@@ -2,6 +2,8 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
+import { resolvePackage } from './build-info.mjs';
 
 /** Project-owned story.json is the source; this generated speech projection is disposable. */
 export async function narrationSource(directory) {
@@ -13,11 +15,12 @@ export async function narrationSource(directory) {
   }
   if (document?.narration?.enabled === false) return;
   if (document) {
-    const { documentNarration } = await import('../dist/story/document.js');
+    const runtime = await resolvePackage('@visual-storytelling/core', directory);
+    const projection = runtime
+      ? pathToFileURL(join(runtime, 'dist/book/document.js'))
+      : new URL('../dist/book/document.js', import.meta.url);
+    const { documentNarration } = await import(projection.href);
     const spec = documentNarration(document);
-    if (spec.voice.reference_audio)
-      spec.voice.reference_audio = resolve(directory, spec.voice.reference_audio);
-    if (spec.music?.path) spec.music.path = resolve(directory, spec.music.path);
     const text = JSON.stringify(spec, null, 2) + '\n';
     const file = join(
       tmpdir(),
@@ -27,12 +30,12 @@ export async function narrationSource(directory) {
     );
     await mkdir(dirname(file), { recursive: true });
     await writeFile(file, text);
-    return file;
+    return { file, directory: resolve(directory) };
   }
   const file = join(directory, 'narration.json');
   try {
     await readFile(file);
-    return file;
+    return { file, directory: resolve(directory) };
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }

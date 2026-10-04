@@ -1,3 +1,4 @@
+import { mountScene } from '@visual-storytelling/core';
 import { esc, P, C, gate } from './drawing/symbols.js';
 import { renderers } from './drawing/catalog-symbols.js';
 import '@visual-storytelling/core/style.css';
@@ -166,7 +167,7 @@ async function exportFigure() {
   svg.style.height = `${height}px`;
   return new XMLSerializer().serializeToString(svg);
 }
-root.scene = {
+mountScene(root, {
   svg: () => hero,
   exportSVG: exportFigure,
   snapshot: () => ({ ...state }),
@@ -178,4 +179,4 @@ root.scene = {
     appearance.dispose();
     root.replaceChildren();
   },
-};
+});

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import { readFile, writeFile, mkdir, readdir, cp, access } from 'node:fs/promises';
-import { resolve, join, dirname } from 'node:path';
+import { resolve, join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildScene } from './build-pages.mjs';
 import { serve } from './site.mjs';
@@ -10,6 +10,7 @@ import { readCatalog, describeExamples } from './catalog.mjs';
 import { buildNarration, setNarrationMode, silenceSceneCopy } from './narration.mjs';
 import { pinSceneProject } from './scene-project.mjs';
 import { cancellableCommand } from './cancellable-command.mjs';
+import { sceneInput } from './assets.mjs';
 if (process.argv[2] === 'characters') {
   const { runCharacters } = await import('./characters/cli.mjs');
   await runCharacters(process.argv.slice(3));
@@ -165,13 +166,15 @@ Re-run the same command after changing a line; unchanged voice segments use the 
     for (const name of await readdir(source)) {
       if (
         (name.startsWith('preview') && name.endsWith('.png')) ||
-        name === '__pycache__' ||
-        name === '.venv' ||
+        !sceneInput(name) ||
         ['voice.wav', 'music.wav'].includes(name) ||
         ((values['no-audio'] || values.silent) && name === 'audio.wav')
       )
         continue;
-      await cp(join(source, name), join(destination, name), { recursive: true });
+      await cp(join(source, name), join(destination, name), {
+        recursive: true,
+        filter: (path) => sceneInput(relative(source, path)),
+      });
     }
     if (catalog[values.example].page !== 'index.html') {
       const page = catalog[values.example].page;

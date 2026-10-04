@@ -11,6 +11,7 @@ import { reviewMotion } from '../tools/motion/review.mjs';
 import { compareMotion } from '../tools/motion/comparison.mjs';
 import { writeMotionReport } from '../tools/motion/report.mjs';
 import { captureWriter } from '../tools/motion/session.mjs';
+import { svgRuntime } from '../tools/svg-runtime.mjs';
 
 test('stored evidence stays independent when the source image is overwritten', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'motion-snapshot-'));
@@ -420,11 +421,13 @@ test('PNG manifest and VFR video produce the same ordered evidence without remov
 test('scene motion uses the existing seek owner and labels its clock as model time', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'motion-scene-'));
   try {
+    const runtime = await svgRuntime({ '': ['mountScene'] });
     await writeFile(
       join(directory, 'index.html'),
       `<!doctype html><main class="ve-scene"><svg width="200" height="100"><circle cx="20" cy="50" r="10"/></svg></main><script>
+      ${runtime}
       const reducedAtStartup = matchMedia('(prefers-reduced-motion: reduce)').matches;
-      document.querySelector('main').scene = {duration:1, pause(){}, seek(t){document.querySelector('circle').setAttribute('cx', reducedAtStartup ? 20 : 20 + 100 * t)}, review(){return {cues:[{id:'move',start:0.4,end:0.6}]}}};
+      VisualStory.mountScene(document.querySelector('main'), {duration:1, dispose(){}, pause(){}, seek(t){document.querySelector('circle').setAttribute('cx', reducedAtStartup ? 20 : 20 + 100 * t)}, review(){return {duration:1, segments:[], cues:[{id:'move',start:0.4,end:0.6}]}}});
       </script>`,
     );
     const result = await reviewMotion({
@@ -466,7 +469,8 @@ test('scene motion uses the existing seek owner and labels its clock as model ti
     await writeFile(
       svg,
       `<svg class="ve-scene" xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100"><circle cx="20" cy="50" r="10"/><script><![CDATA[
-      document.querySelector('svg').scene = {duration:1,pause(){},seek(t){document.querySelector('circle').setAttribute('cx',20+100*t)}};
+      ${runtime}
+      VisualStory.mountScene(document.querySelector('svg'), {duration:1,dispose(){},pause(){},seek(t){document.querySelector('circle').setAttribute('cx',20+100*t)}});
     ]]></script></svg>`,
     );
     const vectorResult = await reviewMotion({

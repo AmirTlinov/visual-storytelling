@@ -14,6 +14,11 @@
 [термостат](../examples/thermostat-story/scene.js). `?variant` меняет одежду, рост,
 декорацию и перспективу с прежними действиями.
 
+`StoryDocument`, `authoredChapter`, `documentNarration` и `documentScript`
+экспортируются из того же `/book`. Время книжного перехода и проекция речи
+используют общий `book/timing.ts`. Самостоятельный `SceneStory` получает
+длительность, ID, заголовок и текст вступления от выбранного transition.
+
 ```js
 import { IllustratedStory } from '@visual-storytelling/core/book';
 import { chibi, teachingRoom } from '@visual-storytelling/core/characters';

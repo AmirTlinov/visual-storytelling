@@ -5,7 +5,8 @@ import {
   documentScript,
   documentNarration,
   type StoryDocument,
-} from '../story/document.js';
+} from './document.js';
+import { bookTiming } from './timing.js';
 import { inkChapter } from '../story/ink-chapter.js';
 import type { CharacterSurface } from '../characters/surfaces.js';
 import type { CharacterStageOptions } from '../characters/types.js';
@@ -37,7 +38,7 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
     if (!content) throw new Error(`Chapter ${chapter.id}: unknown drawing ${chapter.drawing}`);
     const authored = authoredChapter(document, chapter.id);
     const span = aligned?.cues[chapter.id];
-    const offset = span ? span.start + (index ? 1.1 : 0) : 0;
+    const offset = span ? span.start + (index ? bookTiming.turn : 0) : 0;
     let local: Script | undefined = span && {
       duration: span.end - offset,
       cues: Object.fromEntries(

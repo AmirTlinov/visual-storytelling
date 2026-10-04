@@ -89,9 +89,23 @@ test('a production-only installation of the packed public API typechecks outside
     for (const file of [entries[0].source, ...entries[0].guides, join(installed, 'skill/SKILL.md')])
       assert.ok((await readFile(file, 'utf8')).length > 0);
     const scene = join(directory, 'new-scene');
+    // Local development outputs must not become template inputs on the next copy.
+    const template = join(installed, 'examples/explorer-svg');
+    for (const folder of ['dist', 'artifacts', 'nested/review']) {
+      await mkdir(join(template, folder), { recursive: true });
+      await writeFile(join(template, folder, 'old.json'), '{}');
+    }
+    await writeFile(join(template, '.private.html'), '<script src="absent.js"></script>');
     await execute(process.execPath, [cli, 'new', scene, '--example', 'explorer-svg'], {
       cwd: directory,
     });
+    for (const path of [
+      'dist/old.json',
+      'artifacts/old.json',
+      'nested/review/old.json',
+      '.private.html',
+    ])
+      await assert.rejects(readFile(join(scene, path)), { code: 'ENOENT' });
     assert.match(await readFile(join(scene, 'index.html'), 'utf8'), /data-silent="true"/);
     await execute(process.execPath, [cli, 'build', scene], { cwd: directory });
     assert.ok((await readFile(join(scene, 'dist/index.js'), 'utf8')).length > 1000);
@@ -192,6 +206,7 @@ test('a failed package build preserves the last complete delivery', async () => 
       'package.json',
       JSON.stringify({
         name: 'package-build-fixture',
+        version: '1.0.0',
         type: 'module',
         exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' } },
       }),

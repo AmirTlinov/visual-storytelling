@@ -12,6 +12,14 @@ function mount(
   root: HTMLElement,
   { count, render, initial = 0, persist = () => {}, interval = 2200 }: StepOptions,
 ) {
+  if (
+    !Number.isSafeInteger(count) ||
+    count < 1 ||
+    !Number.isFinite(interval) ||
+    interval <= 0 ||
+    !Number.isSafeInteger(initial)
+  )
+    throw new Error('Step playback needs a positive count/interval and an integer initial step');
   const abort = new AbortController(),
     listen = { signal: abort.signal };
   const view = PlayerControls.mount(root.querySelector<HTMLElement>('[data-player]')!, {
@@ -41,6 +49,8 @@ function mount(
     controls();
   }
   function go(value: number, animate = true) {
+    if (abort.signal.aborted) throw new Error('Step playback has been disposed');
+    if (!Number.isSafeInteger(value)) throw new Error('Step index must be an integer');
     const previous = index;
     index = Math.max(0, Math.min(count - 1, value));
     render(index, previous, animate);
@@ -55,20 +65,14 @@ function mount(
       else schedule();
     }, interval);
   }
-  play.addEventListener(
-    'click',
-    () => {
-      if (playing) {
-        stop();
-        return;
-      }
-      if (index === count - 1) go(0, false);
-      playing = true;
-      controls();
-      schedule();
-    },
-    listen,
-  );
+  function start() {
+    if (abort.signal.aborted || playing) return;
+    if (index === count - 1) go(0, false);
+    playing = true;
+    controls();
+    schedule();
+  }
+  play.addEventListener('click', () => (playing ? stop() : start()), listen);
   back!.addEventListener(
     'click',
     () => {
@@ -104,7 +108,13 @@ function mount(
   controls();
   render(index, index, false);
   return {
+    play: start,
+    pause: stop,
+    get playing() {
+      return playing;
+    },
     dispose() {
+      if (abort.signal.aborted) return;
       stop();
       abort.abort();
       view.dispose();

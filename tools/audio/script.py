@@ -4,7 +4,7 @@ import math
 from pathlib import Path
 import re
 import wave
-from resources import DEFAULT_DELIVERY, REFERENCE_AUDIO, REFERENCE_TEXT, digest
+from resources import DEFAULT_DELIVERY, REFERENCE_AUDIO, REFERENCE_TEXT, MUSIC, digest, file_digest
 from quality import validate_alignment
 
 WORD = re.compile(r"[А-Яа-яЁё]+(?:[-‑][А-Яа-яЁё]+)*")
@@ -18,13 +18,26 @@ CONTROLS = {
 }
 
 
-def check_timeline(script_path, timeline_path):
+def dependency_digests(spec):
+    """Resolved input bytes determine whether an accepted mix is still current."""
+    music = Path(spec["music"].get("path", MUSIC)) if spec.get("music") else None
+    return {"reference_audio": file_digest(spec["voice"]["reference_audio"]),
+            # A credited bundled music track need not be installed to reuse a finished mix.
+            "music": file_digest(music) if music and music.is_file() else None}
+
+
+def check_timeline(script_path, timeline_path, *, source_directory=None):
     """Keep generated speech and cues attached to the exact authored source."""
     source = json.loads(Path(script_path).read_text(encoding="utf-8"))
     timeline = json.loads(Path(timeline_path).read_text(encoding="utf-8"))
     if timeline.get("source_sha256") != digest(source):
         raise ValueError("Narration changed after audio generation; run visual-story audio . before building")
-    spec = read_script(Path(script_path))
+    spec = read_script(Path(script_path), source_directory=source_directory)
+    inputs = dependency_digests(spec)
+    if timeline.get("synthesis", {}).get("reference_sha256") != inputs["reference_audio"]:
+        raise ValueError("Voice reference changed after audio generation; run visual-story audio")
+    if inputs["music"] and (timeline.get("mix", {}).get("music") or {}).get("source_sha256") != inputs["music"]:
+        raise ValueError("Music changed after audio generation; run visual-story audio")
     segments = timeline.get("segments")
     if (not isinstance(segments, list) or any(not isinstance(s, dict) for s in segments) or
             [s.get("id") for s in segments] != [s["id"] for s in spec["segments"]]):
@@ -148,7 +161,8 @@ def caption_aliases(value, segments):
             raise ValueError(f"captionAliases phrase is missing from spoken text: {spoken}")
 
 
-def read_script(path):
+def read_script(path, *, source_directory=None):
+    base = Path(source_directory) if source_directory is not None else path.parent
     spec = json.loads(path.read_text())
     if spec.get("version") != 3:
         raise ValueError("Script version must be 3; use native Higgs delivery controls")
@@ -164,7 +178,7 @@ def read_script(path):
     if voice.get("reference_audio"):
         if not isinstance(voice["reference_text"], str) or not voice["reference_text"].strip():
             raise ValueError("voice.reference_text must contain the exact spoken reference transcript")
-        voice["reference_audio"] = str((path.parent / voice["reference_audio"]).resolve())
+        voice["reference_audio"] = str((base / voice["reference_audio"]).resolve())
         if not Path(voice["reference_audio"]).is_file():
             raise ValueError("Voice reference audio does not exist")
     else:
@@ -226,7 +240,7 @@ def read_script(path):
         if not isinstance(music, dict) or not (music.get("path") or music.get("track") == "inspired"):
             raise ValueError("music needs a local path or track: inspired; use null for no music")
         if music.get("path"):
-            music["path"] = str((path.parent / music["path"]).resolve())
+            music["path"] = str((base / music["path"]).resolve())
             if not Path(music["path"]).is_file():
                 raise ValueError("Music file does not exist")
             credit = music.get("credit", {})

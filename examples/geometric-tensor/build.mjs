@@ -6,7 +6,7 @@ import {writeFile} from 'node:fs/promises';
 // One geometry implementation creates both the saved SVG and its live updates.
 import { pathToFileURL } from 'node:url';
 const { svgRuntime } = await import(pathToFileURL(`${process.env.VISUAL_STORY_TOOLS ?? new URL('../../tools',import.meta.url).pathname}/svg-runtime.mjs`));
-const sharedRuntime = await svgRuntime({'/three':['SvgOrbit'], '/controls':['fitSvgControls']});
+const sharedRuntime = await svgRuntime({'':['mountScene'],'/three':['SvgOrbit'], '/controls':['fitSvgControls']});
 
 function tensorScene(t,yaw,pitch) {
   const c=Math.cos(yaw),s=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);
@@ -138,7 +138,7 @@ const script=String.raw`
   const orbit=SvgOrbit.mount(root,viewport,byID('orbit-world'),{
     yaw,pitch,pitchLimits:[-.75,.75],changed(pose){yaw=pose.yaw;pitch=pose.pitch;invalidate();}
   });
-  root.scene={snapshot:()=>({t,view:orbit.pose}),dispose(){lifetime.abort();orbit.dispose();cancelAnimationFrame(pending);delete root.scene;}};
+  mountScene(root,{snapshot:()=>({t,view:orbit.pose}),dispose(){lifetime.abort();orbit.dispose();cancelAnimationFrame(pending);}});
 })();`;
 
 const svg=`<?xml version="1.0" encoding="UTF-8"?>
@@ -181,7 +181,7 @@ ${svgRange({id:'tensor-control', x:373, y:652, width:354, value:1, label:'Пре
 
 <script><![CDATA[
 ${sharedRuntime}
-const {SvgOrbit,fitSvgControls}=VisualStory;
+const {SvgOrbit,fitSvgControls,mountScene}=VisualStory;
 ${tensorScene.toString()}
 ${script}
 ]]></script>

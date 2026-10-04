@@ -1,6 +1,7 @@
 import { existsSync, watch } from 'node:fs';
-import { join, resolve, sep } from 'node:path';
+import { join, resolve } from 'node:path';
 import { buildScene } from './build-pages.mjs';
+import { sceneInput } from './assets.mjs';
 import { serve } from './site.mjs';
 
 import { readFile } from 'node:fs/promises';
@@ -114,11 +115,9 @@ export async function develop(
       return true;
     },
   });
-  const ignored = new Set(['node_modules', 'dist', 'site', 'artifacts', 'review', '__pycache__']);
   const watchers = [source, ...extraWatch].map((directory) =>
     watch(directory, { recursive: true }, (_event, name) => {
-      if (!name || name.split(sep).some((part) => part.startsWith('.') || ignored.has(part)))
-        return;
+      if (!name || !sceneInput(name)) return;
       clearTimeout(timer);
       timer = setTimeout(() => void rebuild(), 120);
     }),

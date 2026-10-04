@@ -1,14 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { narrationSource } from '../tools/story-document.mjs';
 const source = await build({
-  entryPoints: ['src/story/document.ts'],
+  entryPoints: ['src/book/document.ts'],
   bundle: true,
   write: false,
   format: 'esm',
@@ -40,6 +41,35 @@ const document = {
     },
   ],
 };
+test('speech projection follows the scene consumer inherited from its workspace', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'story-projection-owner-'));
+  let projection;
+  try {
+    const consumer = join(directory, 'node_modules/@visual-storytelling/core');
+    const scene = join(directory, 'scenes/circuit');
+    await mkdir(join(consumer, 'dist/book'), { recursive: true });
+    await mkdir(scene, { recursive: true });
+    await writeFile(
+      join(consumer, 'package.json'),
+      JSON.stringify({ name: '@visual-storytelling/core', version: '7.0.0', type: 'module' }),
+    );
+    await writeFile(
+      join(consumer, 'dist/book/document.js'),
+      'export const documentNarration = document => ({ owner: "scene-consumer-7", title: document.title, intro: .75 });',
+    );
+    await writeFile(join(scene, 'story.json'), JSON.stringify(document));
+    projection = await narrationSource(scene);
+    assert.equal(projection.directory, scene);
+    assert.deepEqual(JSON.parse(await readFile(projection.file, 'utf8')), {
+      owner: 'scene-consumer-7',
+      title: document.title,
+      intro: 0.75,
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    if (projection) await rm(projection.file, { force: true });
+  }
+});
 test('one authored document feeds action IDs, speech and aligned page transitions', () => {
   const spec = documentNarration(document);
   assert.equal(spec.segments[0].text, document.chapters[0].beats[0].say);

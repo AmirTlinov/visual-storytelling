@@ -1,4 +1,4 @@
-import { sceneAccess } from './scene-access.js';
+import { mountScene } from './scene-handle.js';
 import { story, type Story, type StoryOptions } from './story/story.js';
 import { chapterHeading } from './story/chapters.js';
 import { captionTrack, type CaptionOptions } from './story/captions.js';
@@ -6,9 +6,9 @@ import { sceneFrame, inspectPresentation, type SceneFrameOptions } from './scene
 export type { SceneFrameOptions, ScenePresentation } from './scene-frame.js';
 import { loadFonts } from './ink/fonts.js';
 import { player as statePlayer } from './controls/player.js';
-import type { MediaClock } from './story/clock.js';
 import type { SceneHandle } from './scene-handle.js';
-export type { SceneHandle } from './scene-handle.js';
+export { mountScene } from './scene-handle.js';
+export type { SceneHandle, SceneRuntime } from './scene-handle.js';
 export interface SceneOptions {
   title: string;
   /** Shared controls can follow a product interface while the subject owns its brand. */
@@ -34,7 +34,8 @@ export interface SceneMount {
   parameters: Record<string, ControlValue>;
   readonly mode: 'story' | 'explore';
   setMode(mode: 'story' | 'explore'): void;
-  setParameters(values: Record<string, ControlValue>): void;
+  /** Reflect subject-owned edits in an editable shell; story inputs use story.explore(). */
+  syncParameters(values: Record<string, ControlValue>): void;
   showParameters(keys?: readonly string[]): void;
   describeParameter(key: string, description: ControlDescription): void;
   attachStory<P, K extends string, S = P>(options: StoryOptions<P, K, S>): Story<P, K, S>;
@@ -78,11 +79,16 @@ function mount(
     captions,
   }: SceneOptions,
 ): SceneMount {
+  if (parameters.some((p, i) => !p.key || parameters.findIndex((q) => q.key === p.key) !== i))
+    throw new Error('Scene parameters need unique, nonempty keys');
+  parameters = parameters.map((p) => ({ ...p }));
+  root.scene?.dispose();
   const abort = new AbortController(),
     options = { signal: abort.signal };
   const cleanups = new Set<() => void>();
   const values = Object.fromEntries(parameters.map((p) => [p.key, p.value]));
-  let inputStory: ((key: string, value: ControlValue) => void) | undefined;
+  let inputStory: ((next: Record<string, ControlValue>) => void) | undefined;
+  let playback: (() => boolean) | undefined;
   let view: { reset(): void; dispose(): void } | undefined;
   const heading = node('h1', { class: 've-heading' }, title),
     modes = node('div', { class: 'modes', role: 'group', 'aria-label': 'Режим сцены' });
@@ -105,19 +111,13 @@ function mount(
   const inputs = new Map<string, ReturnType<typeof SketchControls.field>>();
   for (const p of parameters) {
     const control = SketchControls.field(p, (value) => {
-      const previous = values[p.key];
-      values[p.key] = value;
       try {
-        if (inputStory) inputStory(p.key, value);
-        else setMode('explore');
+        changeValues({ [p.key]: value });
       } catch (error) {
-        values[p.key] = previous!;
         status.textContent = error instanceof Error ? error.message : String(error);
         return;
       }
       status.textContent = '';
-      refresh();
-      onInput({ ...values });
     });
     fields.append(control.element);
     inputs.set(p.key, control);
@@ -139,15 +139,43 @@ function mount(
   composition?.resize();
   let transition: ((mode: 'story' | 'explore') => void) | undefined;
   let mode: 'story' | 'explore' = 'explore';
-  let media: Pick<MediaClock, 'pause'> | undefined, player: { dispose(): void } | undefined;
+  let player: { dispose(): void } | undefined;
   function refresh() {
     for (const [key, control] of inputs)
       if (control.value !== values[key]) control.setValue(values[key]!);
   }
+  function changeValues(next: Record<string, ControlValue>) {
+    assertLive();
+    if (inputStory) {
+      try {
+        inputStory(next);
+      } finally {
+        refresh();
+      }
+      onInput({ ...values });
+      return;
+    }
+    const previous = { ...values };
+    try {
+      Object.assign(values, next);
+      onInput({ ...values });
+    } catch (error) {
+      Object.assign(values, previous);
+      refresh();
+      throw error;
+    }
+    refresh();
+  }
   function setMode(next: 'story' | 'explore') {
     if (next === mode || (next === 'story' && !player)) return;
+    const previous = mode;
     mode = next;
-    transition?.(next);
+    try {
+      transition?.(next);
+    } catch (error) {
+      mode = previous;
+      throw error;
+    }
     controls.hidden = exploration === 'model' && mode !== 'story';
     caption.hidden = controls.hidden;
     fields.hidden = mode === 'story' || !fields.childElementCount;
@@ -162,17 +190,29 @@ function mount(
   }
   storyButton.addEventListener('click', () => selectMode('story'), options);
   exploreButton.addEventListener('click', () => selectMode('explore'), options);
-  document.addEventListener(
-    'visibilitychange',
-    () => {
-      if (document.hidden) media?.pause();
-    },
-    options,
-  );
   refresh();
   root.dataset.sceneMode = mode;
   root.dataset.paper = String(paper ?? appearance === 'sketch');
   root.dataset.appearance = appearance;
+  const handle = mountScene(
+    root,
+    {
+      snapshot: () => ({ ...values }),
+      presentation: () => inspectPresentation(stage),
+      dispose,
+    },
+    {
+      playing: (): boolean => playback?.() ?? handle.playing ?? false,
+      mode: () => mode,
+      values: () => ({ ...values }),
+      parameters,
+      visible: (key) => !inputs.get(key)!.element.hidden,
+      get setMode() {
+        return player ? setMode : undefined;
+      },
+      setValues: changeValues,
+    },
+  );
   return {
     stage,
     fields,
@@ -183,7 +223,9 @@ function mount(
       return mode;
     },
     setMode,
-    setParameters(next: Record<string, ControlValue>) {
+    syncParameters(next: Record<string, ControlValue>) {
+      assertLive();
+      if (inputStory) throw new Error('Story parameters belong to story.explore()');
       if (Object.entries(next).some(([key, value]) => values[key] !== value)) {
         Object.assign(values, next);
         refresh();
@@ -251,8 +293,6 @@ function mount(
       captions === true ? {} : captions,
     );
     player?.dispose();
-    media?.pause();
-    media = { pause: controller.player.pause };
     transition = (next) => {
       if (exploration === 'model' && controller.mode !== next) {
         if (next === 'explore') controller.explore(controller.values);
@@ -266,7 +306,8 @@ function mount(
       onSeek: controller.seek,
       onPlay: preparePlayback,
     });
-    inputStory = (key, value) => controller.explore({ ...controller.values, [key]: value });
+    inputStory = (next) => controller.explore({ ...controller.values, ...next });
+    playback = () => controller.player.state.playing;
     const chapters = chapterHeading(
       heading,
       controller.sheet.script.segments ?? [],
@@ -309,37 +350,25 @@ function mount(
       chapters.update(controller.currentTime, exploration === 'view' || next === 'story');
     });
     setMode('story');
-    const handle: SceneHandle = {
-      play: () => {
-        preparePlayback();
-        return controller.player.play();
-      },
-      seek: controller.seek,
-      pause: controller.pause,
-      review: controller.review,
-      duration: controller.duration,
-      get currentTime() {
-        return controller.currentTime;
-      },
-      snapshot: () => controller.state,
-      presentation: () => inspectPresentation(stage),
-      setReduced: controller.setReduced,
-      dispose,
-    };
-    Object.assign(
+    Object.defineProperties(
       handle,
-      sceneAccess(handle, {
-        playing: () => controller.player.state.playing,
-        mode: () => mode,
-        values: () => ({ ...values }),
-        parameters,
-        visible: (key) => !inputs.get(key)!.element.hidden,
-        setMode,
-        setValues: (next) => controller.explore(next as P),
-        assertLive,
+      Object.getOwnPropertyDescriptors({
+        play: () => {
+          assertLive();
+          preparePlayback();
+          return controller.player.play();
+        },
+        seek: controller.seek,
+        pause: controller.pause,
+        review: controller.review,
+        duration: controller.duration,
+        get currentTime() {
+          return controller.currentTime;
+        },
+        snapshot: () => controller.state,
+        setReduced: controller.setReduced,
       }),
     );
-    Object.assign(root, { scene: handle });
     return handle;
     function preparePlayback() {
       if (controller.currentTime >= controller.duration - 0.02) view?.reset();

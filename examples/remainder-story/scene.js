@@ -1,3 +1,4 @@
+import { mountScene } from '@visual-storytelling/core';
 import {
   SketchMotion,
   captionTrack,
@@ -259,7 +260,10 @@ window.galleryReady = (async () => {
     },
   });
   let disposed = false;
-  root.scene = {
+  mountScene(root, {
+    get playing() {
+      return player.player.state.playing;
+    },
     duration: timing.duration,
     get currentTime() {
       return player.currentTime;
@@ -278,9 +282,8 @@ window.galleryReady = (async () => {
       measured.dispose();
       animation?.kill();
       root.replaceChildren();
-      delete root.scene;
     },
-  };
+  });
 })().catch((error) => {
   const caption = document.querySelector('[data-caption]');
   caption.classList.remove('sr-only');

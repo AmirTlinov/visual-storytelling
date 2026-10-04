@@ -1,3 +1,4 @@
+import { mountScene } from '@visual-storytelling/core';
 import {
   InkFusion,
   InkMorph,
@@ -224,13 +225,6 @@ window.galleryReady = (async () => {
   const saved = persistence.read();
   const restored = saved && restore(saved);
   if (!restored) rebuild();
-  document.addEventListener(
-    'visibilitychange',
-    () => {
-      if (document.hidden) clock.pause();
-    },
-    { signal: abort.signal },
-  );
   reduced.addEventListener(
     'change',
     (event) => {
@@ -238,7 +232,10 @@ window.galleryReady = (async () => {
     },
     { signal: abort.signal },
   );
-  root.scene = {
+  mountScene(root, {
+    get playing() {
+      return clock.state.playing;
+    },
     duration: clock.state.duration,
     get currentTime() {
       return clock.state.time;
@@ -270,9 +267,8 @@ window.galleryReady = (async () => {
       cases.dispose();
       persistence.dispose();
       view.dispose();
-      delete root.scene;
     },
-  };
+  });
   if ((!restored || saved?.privateContent?.motionRevision !== motionRevision) && !reduced.matches)
     void clock.play();
 })().catch((error) => {

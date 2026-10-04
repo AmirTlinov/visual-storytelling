@@ -57,21 +57,28 @@ window.galleryReady = (async () => {
     beforeSeek: () => player.pause(false),
     afterSeek: player.update,
   });
-  Object.assign(root, {
-    scene: {
+  Object.defineProperties(
+    root.scene!,
+    Object.getOwnPropertyDescriptors({
       world,
       bodies,
       view,
       duration: replay.duration,
+      get currentTime() {
+        return world.time;
+      },
+      get playing() {
+        return player.playing;
+      },
+      play: player.play,
       pause: player.pause,
       seek: replay.seek,
       snapshot: () =>
         bodies.map((b) => ({ id: b.id, position: b.position, soft: Boolean(b.soft) })),
-      dispose() {
-        world.dispose();
-        view.dispose();
-        shell.dispose();
-      },
-    },
+    }),
+  );
+  shell.onDispose(() => {
+    world.dispose();
+    view.dispose();
   });
 })();

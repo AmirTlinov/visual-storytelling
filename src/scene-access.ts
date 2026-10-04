@@ -21,39 +21,35 @@ export interface SceneInspection {
   presentation: ReturnType<NonNullable<SceneHandle['presentation']>> | undefined;
   review: ReturnType<SceneHandle['review']>;
 }
-export function sceneAccess(
-  handle: SceneHandle,
-  owner: {
-    playing(): boolean;
-    mode(): 'story' | 'explore';
-    values(): Record<string, ControlValue>;
-    parameters: readonly (ControlParameter & { key: string })[];
-    visible(key: string): boolean;
-    setMode(value: 'story' | 'explore'): void;
-    setValues(values: Record<string, ControlValue>): void;
-    assertLive(): void;
-  },
-) {
+export interface SceneAccessOwner {
+  playing?(): boolean;
+  mode?(): 'story' | 'explore';
+  values?(): Record<string, ControlValue>;
+  parameters?: readonly (ControlParameter & { key: string })[];
+  visible?(key: string): boolean;
+  setMode?(value: 'story' | 'explore'): void;
+  setValues?(values: Record<string, ControlValue>): void;
+  assertLive(): void;
+}
+export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
   const inspect = (): SceneInspection => {
     owner.assertLive();
     return {
-      time: handle.currentTime,
-      duration: handle.duration,
-      playing: owner.playing(),
-      mode: owner.mode(),
-      parameters: owner.parameters.map((p) => ({
+      time: handle.currentTime ?? 0,
+      duration: handle.duration ?? 0,
+      playing: owner.playing?.() ?? false,
+      mode: owner.mode?.() ?? 'explore',
+      parameters: (owner.parameters ?? []).map((p) => ({
         ...p,
-        value: owner.values()[p.key]!,
-        visible: owner.visible(p.key),
+        value: owner.values?.()[p.key] ?? p.value,
+        visible: owner.visible?.(p.key) ?? true,
       })),
       capabilities: [
-        'seek',
-        'cue',
-        'play',
-        'pause',
-        'parameters',
-        'mode',
-        'reduced',
+        ...(['seek', 'play', 'pause'] as const).filter((key) => typeof handle[key] === 'function'),
+        ...(handle.seek && handle.review().cues.length ? ['cue'] : []),
+        ...(owner.setValues && owner.parameters?.length ? ['parameters'] : []),
+        ...(owner.setMode ? ['mode'] : []),
+        ...(handle.setReduced ? ['reduced'] : []),
         ...(handle.focus ? ['focus'] : []),
         ...(handle.setTheme ? ['theme'] : []),
       ],
@@ -96,7 +92,7 @@ export function sceneAccess(
           throw new Error('Parameters need a values object');
         if (
           c.type === 'seek' &&
-          (!Number.isFinite(c.time) || c.time < 0 || c.time > handle.duration)
+          (!Number.isFinite(c.time) || c.time < 0 || c.time > (handle.duration ?? 0))
         )
           throw new Error('Seek is outside story time');
         if (c.type === 'cue') {
@@ -105,7 +101,7 @@ export function sceneAccess(
           if (!Number.isFinite(c.progress ?? 0) || (c.progress ?? 0) < 0 || (c.progress ?? 0) > 1)
             throw new Error('Cue progress must be in [0,1]');
         }
-        if (c.type === 'mode' && !['story', 'explore'].includes(c.value))
+        if (c.type === 'mode' && (!owner.setMode || !['story', 'explore'].includes(c.value)))
           throw new Error('Unknown scene mode');
         if (
           c.type === 'theme' &&
@@ -119,11 +115,17 @@ export function sceneAccess(
             c.ids.some((id: unknown) => typeof id !== 'string' || !id.trim()))
         )
           throw new Error('Focus needs supported object IDs');
-        if (c.type === 'reduced' && typeof c.value !== 'boolean')
+        if (c.type === 'reduced' && (!handle.setReduced || typeof c.value !== 'boolean'))
           throw new Error('Reduced motion needs a boolean');
+        if (c.type === 'parameters' && !owner.setValues)
+          throw new Error('Parameters are unavailable');
+        if ((c.type === 'seek' || c.type === 'cue') && !handle.seek)
+          throw new Error('Seeking is unavailable');
+        if ((c.type === 'play' || c.type === 'pause') && !handle[c.type as 'play' | 'pause'])
+          throw new Error(`Playback ${c.type} is unavailable`);
         if (c.type === 'parameters')
           for (const [key, value] of Object.entries(c.values)) {
-            const p = owner.parameters.find((p) => p.key === key);
+            const p = owner.parameters?.find((p) => p.key === key);
             if (
               !p ||
               typeof value !== typeof p.value ||
@@ -150,27 +152,31 @@ export function sceneAccess(
         )
           throw new Error('Unsupported scene command');
       }
-      for (const c of commands)
+      for (const c of commands) {
+        owner.assertLive();
         switch (c.type) {
           case 'pause':
-            handle.pause();
+            handle.pause!();
             break;
           case 'play':
-            await handle.play();
+            await handle.play!();
             break;
           case 'seek':
-            handle.seek(c.time);
+            handle.seek!(c.time);
             break;
           case 'cue': {
             const q = handle.review().cues.find((q) => q.id === c.id)!;
-            handle.seek(q.start + (q.end - q.start) * (c.progress ?? 0));
+            handle.seek!(q.start + (q.end - q.start) * (c.progress ?? 0));
             break;
           }
           case 'mode':
-            owner.setMode(c.value);
+            owner.setMode!(c.value);
             break;
           case 'parameters':
-            owner.setValues({ ...owner.values(), ...c.values });
+            for (const key of Object.keys(c.values))
+              if (owner.parameters?.find((p) => p.key === key)?.disabled)
+                throw new Error(`Scene parameter is disabled: ${key}`);
+            owner.setValues!({ ...owner.values?.(), ...c.values });
             break;
           case 'focus':
             if (!handle.focus) throw new Error('Focus is unavailable in the current chapter');
@@ -180,9 +186,10 @@ export function sceneAccess(
             await handle.setTheme!(c.value);
             break;
           case 'reduced':
-            handle.setReduced(c.value);
+            handle.setReduced!(c.value);
             break;
         }
+      }
       return inspect();
     },
   };

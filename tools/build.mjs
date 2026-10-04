@@ -23,7 +23,7 @@ export async function buildGallery(target = resolve(root, 'site'), { narration =
     await writeBuildInfo(root, resolve(root, 'dist'), receipt.source);
   }
   await buildOutput(root, target, async (output) => {
-    await buildPages(output);
+    await buildPages(output, catalog);
     await buildGalleryIndex(output, catalog);
   });
   console.log(`Built package and ${Object.keys(catalog).length} examples.`);

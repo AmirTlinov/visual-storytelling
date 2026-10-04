@@ -26,13 +26,16 @@ const localPath = (spec, directory) =>
   spec.startsWith('file://') ? fileURLToPath(spec) : resolve(directory, spec.slice(5));
 
 /** Local dependencies travel as immutable archives; registry versions retain the project's lockfile. */
-export async function closeSceneDependencies(source, destination, { signal } = {}) {
+export async function closeSceneDependencies(source, destination, { signal, runtime } = {}) {
   const file = join(destination, 'package.json');
   const pkg = JSON.parse(await readFile(file, 'utf8'));
   const cache = new Map();
   const temporary = await mkdtemp(join(tmpdir(), 'story-dependencies-'));
   let changed = false,
     next = 0;
+  if (runtime && !dependencyFields.some((field) => pkg[field]?.[runtime.name])) {
+    (pkg.dependencies ??= {})[runtime.name] = `file:${runtime.root}`;
+  }
   async function packed(path, ancestors = []) {
     signal?.throwIfAborted();
     path = await realpath(path);
@@ -107,8 +110,9 @@ export async function closeSceneDependencies(source, destination, { signal } = {
   try {
     for (const field of dependencyFields)
       for (const [name, spec] of Object.entries(pkg[field] ?? {})) {
-        if (typeof spec !== 'string' || !spec.startsWith('file:')) continue;
-        const path = localPath(spec, source);
+        const resolvedRuntime = name === runtime?.name;
+        if (!resolvedRuntime && (typeof spec !== 'string' || !spec.startsWith('file:'))) continue;
+        const path = resolvedRuntime ? runtime.root : localPath(spec, source);
         const result = await packed(path);
         const inside = relative(source, path);
         const copied =
@@ -119,7 +123,13 @@ export async function closeSceneDependencies(source, destination, { signal } = {
             (entry) => entry.isFile(),
             () => false,
           ));
-        if (copied && !(await stat(path)).isDirectory() && !isAbsolute(spec.slice(5))) continue;
+        if (
+          !resolvedRuntime &&
+          copied &&
+          !(await stat(path)).isDirectory() &&
+          !isAbsolute(spec.slice(5))
+        )
+          continue;
         const hash = createHash('sha256').update(result.bytes).digest('hex').slice(0, 16);
         const archive = `dependencies/${name.replace(/[^a-zA-Z0-9._-]/g, '-')}-${hash}.tgz`;
         await mkdir(join(destination, 'dependencies'), { recursive: true });
@@ -141,8 +151,10 @@ export async function closeSceneDependencies(source, destination, { signal } = {
 }
 
 /** New scenes and editable deliveries use the same immutable runtime dependency. */
-export async function pinSceneProject(destination, { signal, build = true } = {}) {
-  const root = fileURLToPath(new URL('../', import.meta.url));
+export async function pinSceneProject(
+  destination,
+  { signal, build = true, root = fileURLToPath(new URL('../', import.meta.url)) } = {},
+) {
   signal?.throwIfAborted();
   if (
     build &&

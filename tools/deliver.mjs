@@ -12,6 +12,7 @@ import { captionTrack } from '../dist/story/captions.js';
 import { captionSource } from './caption-source.mjs';
 import { pinSceneProject, closeSceneDependencies } from './scene-project.mjs';
 import { contentDigest, diagnosePackage, sourceDigest } from './build-info.mjs';
+import { sceneInput } from './assets.mjs';
 const execute = promisify(execFile);
 
 /** Assemble requested deliverables through their owners; publish only a complete release. */
@@ -61,14 +62,8 @@ export async function deliver(
       );
   }
   if (!silent) await prepareNarration(source, { audible: true, signal });
-  const omit = new Set(['node_modules', 'dist', 'site', 'artifacts', 'review', '__pycache__']);
   const include = (path) => {
-    const parts = relative(source, path).split(sep);
-    return (
-      !parts.some((part) => part.startsWith('.') || omit.has(part)) &&
-      path !== out &&
-      !path.startsWith(out + sep)
-    );
+    return sceneInput(relative(source, path)) && path !== out && !path.startsWith(out + sep);
   };
   const signature = () => contentDigest(source, ['.'], (name) => !include(join(source, name)));
   const cliRoot = fileURLToPath(new URL('../', import.meta.url));
@@ -158,8 +153,13 @@ export async function deliver(
             () => false,
           ))
         ) {
-          await pinSceneProject(sourceCopy, { signal, build: false });
-        } else await closeSceneDependencies(source, sourceCopy, { signal });
+          await pinSceneProject(sourceCopy, {
+            signal,
+            build: false,
+            root: packages.consumer?.root,
+          });
+        } else
+          await closeSceneDependencies(source, sourceCopy, { signal, runtime: packages.consumer });
         await execute('tar', ['-czf', join(staging, 'source.tar.gz'), '-C', staging, 'source'], {
           signal,
         });

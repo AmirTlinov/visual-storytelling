@@ -30,31 +30,28 @@ export async function openScene(page, url) {
   });
   // This adapter calls the scene's owners; it never introduces another playback clock.
   return page.evaluateHandle(() => {
-    const handles = () => documents().map((doc) => doc.querySelector('.ve-scene')?.scene);
-    const owner = (method) => handles().find((handle) => typeof handle?.[method] === 'function');
+    const owner = () =>
+      documents()
+        .map((doc) => doc.querySelector('.ve-scene')?.scene)
+        .find(Boolean);
     const documents = () => [
       document,
       ...[...document.querySelectorAll('object,iframe[data-scene-svg]')]
         .map((element) => element.contentDocument)
         .filter(Boolean),
     ];
-    const slider = () =>
-      documents()
-        .map((doc) => doc.querySelector('[data-seek]:not([hidden])'))
-        .find(Boolean);
+    // Unscripted SVG keeps its native SMIL owner. Registered scenes own every command.
+    const nativeSVGs = () => documents().flatMap((doc) => [...doc.querySelectorAll('svg')]);
     function pause() {
-      owner('pause')?.pause();
-      for (const doc of documents()) {
-        for (const audio of doc.querySelectorAll('audio')) audio.pause();
-        for (const svg of doc.querySelectorAll('svg')) svg.pauseAnimations();
-      }
+      const scene = owner();
+      if (scene) scene.pause?.();
+      else for (const svg of nativeSVGs()) svg.pauseAnimations();
     }
     return {
       pause,
       info() {
-        const duration =
-          handles().find((handle) => Number.isFinite(handle?.duration))?.duration ??
-          Number(slider()?.max ?? 0);
+        const scene = owner(),
+          duration = scene?.duration ?? 0;
         const audio = documents()
           .flatMap((doc) => [...doc.querySelectorAll('audio:not([data-silent=true])')])
           .find(
@@ -62,46 +59,38 @@ export async function openScene(page, url) {
           );
         return {
           duration,
-          seekable: duration > 0 && Boolean(owner('seek') || slider()),
+          seekable: duration > 0 && Boolean(scene?.seek),
           audioURL:
-            handles().find((handle) => handle?.audioURL)?.audioURL ??
+            scene?.audioURL ??
             (audio?.currentSrc || audio?.src || audio?.querySelector('source[src]')?.src),
-          checkpoints: handles().find((handle) => handle?.checkpoints)?.checkpoints ?? [0],
+          checkpoints: scene?.checkpoints ?? [0],
         };
       },
       seek(time) {
         if (!Number.isFinite(time) || time < 0)
           throw new Error('Capture time must be finite and non-negative');
         pause();
-        const handle = owner('seek');
-        if (handle) handle.seek(time);
-        else {
-          const button = documents()
-            .map((doc) => doc.querySelector('[data-mode=story]'))
-            .find(Boolean);
-          if (button && !button.hidden) button.click();
-          const input = slider();
-          if (input) {
-            input.value = String(time);
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-          }
-        }
-        for (const doc of documents())
-          for (const svg of doc.querySelectorAll('svg')) {
-            svg.pauseAnimations();
-            svg.setCurrentTime(time);
-          }
+        const scene = owner();
+        if (scene?.seek) scene.seek(time);
+        else if (!scene) for (const svg of nativeSVGs()) svg.setCurrentTime(time);
+        else if (time > 0)
+          throw new Error('This scene has no timeline; capture its current state at time 0');
       },
       review() {
-        const handle = owner('review');
+        const handle = owner();
         if (!handle)
           throw new Error(
-            'Attach the story with SceneShell.attachStory, or expose controller.review on root.scene',
+            'Register the scene with SceneShell or mountScene before reviewing its timeline',
           );
         return handle.review();
       },
-      snapshot: () => owner('snapshot')?.snapshot(),
-      presentation: () => owner('presentation')?.presentation(),
+      snapshot: () => owner()?.snapshot(),
+      control(commands) {
+        const handle = owner();
+        if (!handle) throw new Error('Scene commands need a registered owner');
+        return handle.control(commands);
+      },
+      presentation: () => owner()?.presentation(),
       diagnostics: () =>
         documents().flatMap((doc) =>
           [...doc.querySelectorAll('[data-layout-error]')].map((element) =>
@@ -109,10 +98,10 @@ export async function openScene(page, url) {
           ),
         ),
       async exportSVG() {
-        const handle = owner('exportSVG');
-        if (handle) return handle.exportSVG();
+        const handle = owner();
+        if (handle?.exportSVG) return handle.exportSVG();
         const svg =
-          owner('svg')?.svg() ??
+          handle?.svg?.() ??
           documents()
             .map((doc) => doc.querySelector('svg.canvas,svg.vs-canvas,svg.ve-scene'))
             .find(Boolean);
@@ -130,4 +119,12 @@ export function seekScene(capture, time) {
     scene.seek(time);
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   }, time);
+}
+
+/** Agent, UI and capture change the same registered model. */
+export function controlScene(capture, commands) {
+  return capture.evaluate(async (scene, commands) => {
+    await scene.control(commands);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  }, commands);
 }

@@ -1,3 +1,4 @@
+import { mountScene } from '@visual-storytelling/core';
 import { SvgLayout, rough, gsap, widgetState } from '@visual-storytelling/core';
 window.galleryReady = (async () => {
   const root = document.getElementById('ve-scene'),
@@ -234,7 +235,7 @@ window.galleryReady = (async () => {
     animateNext = false;
     return height;
   });
-  root.scene = {
+  mountScene(root, {
     snapshot: () => ({
       ...state,
       total,
@@ -249,7 +250,6 @@ window.galleryReady = (async () => {
       layout.dispose();
       gsap.killTweensOf(movement);
       root.replaceChildren();
-      delete root.scene;
     },
-  };
+  });
 })();

@@ -33,12 +33,7 @@ export async function captureScene({
   try {
     if (!capture.info.seekable)
       throw new Error('This page has no seekable scene. Use --capture to record the interaction.');
-    let review;
-    try {
-      review = await capture.capture.evaluate((s) => s.review());
-    } catch (e) {
-      if (!e.message.includes('Attach the story')) throw e;
-    }
+    let review = await capture.capture.evaluate((s) => s.review());
     const duration = capture.info.duration;
     const episodes = review ? storyEpisodes(review) : [];
     const selected = cue ? selectEpisode(episodes, cue) : undefined;

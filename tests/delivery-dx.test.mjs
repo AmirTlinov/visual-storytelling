@@ -15,6 +15,7 @@ import { exportVideo } from '../tools/video-export.mjs';
 import { deliver } from '../tools/deliver.mjs';
 import { setNarrationMode } from '../tools/narration.mjs';
 import { packDirectory } from '../tools/standalone.mjs';
+import { svgRuntime } from '../tools/svg-runtime.mjs';
 
 const ffmpeg = (args) =>
   execFileSync('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', ...args], { stdio: 'pipe' });
@@ -103,6 +104,7 @@ test('moving player pixels do not conceal a static subject or a static bound inp
 test('parallel video export has continuous frame indices and audio, and failed output preserves the prior file', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'parallel-film-'));
   try {
+    const runtime = await svgRuntime({ '': ['mountScene'] });
     ffmpeg([
       '-f',
       'lavfi',
@@ -113,7 +115,7 @@ test('parallel video export has continuous frame indices and audio, and failed o
       join(directory, 'audio.wav'),
     ]);
     const html = (fail) =>
-      `<!doctype html><body style="margin:0"><main class="ve-scene" style="position:relative;width:400px;height:240px;background:white"><audio><source src="audio.wav"></audio><output style="font:80px sans-serif"></output><div id="marker" style="position:absolute;top:200px;width:10px;height:10px;background:red"></div></main><script>document.querySelector('main').scene={duration:3,pause(){},seek(t){${fail ? "if(t>1)throw new Error('subject failed');" : ''}document.querySelector('output').textContent=Math.round(t*8);document.querySelector('#marker').style.left=Math.round(t*8)*10+'px'}};</script>`;
+      `<!doctype html><body style="margin:0"><main class="ve-scene" style="position:relative;width:400px;height:240px;background:white"><audio><source src="audio.wav"></audio><output style="font:80px sans-serif"></output><div id="marker" style="position:absolute;top:200px;width:10px;height:10px;background:red"></div></main><script>${runtime};VisualStory.mountScene(document.querySelector('main'),{duration:3,dispose(){},pause(){},seek(t){${fail ? "if(t>1)throw new Error('subject failed');" : ''}document.querySelector('output').textContent=Math.round(t*8);document.querySelector('#marker').style.left=Math.round(t*8)*10+'px'}});</script>`;
     await writeFile(join(directory, 'index.html'), html(false));
     const packed = await packDirectory(directory);
     assert.match(packed, /<source src="data:audio\/mp4;base64,/);
@@ -263,19 +265,22 @@ test('a nested release keeps editable sources, captions and silent HTML together
       '<main class="ve-scene"><audio data-silent=true src="missing.wav"><source src="missing.mp3"></audio></main><script>const example="<audio data-silent=\'true\'>";</script>';
     assert(setNarrationMode(html, false).includes('const example="<audio data-silent=\'true\'>"'));
     assert(!setNarrationMode(html, false).includes('<audio  data-silent'));
-    await writeFile(join(directory, 'index.html'), html);
+    const runtime = await svgRuntime({ '': ['mountScene'] });
+    const script = {
+      duration: 2,
+      cues: [],
+      segments: [{ id: 'one', text: 'Готово.', start: 0, end: 2 }],
+    };
+    await writeFile(join(directory, 'index.html'), html + '<script src="scene.js"></script>');
+    await writeFile(
+      join(directory, 'scene.js'),
+      `${runtime};VisualStory.mountScene(document.querySelector('main'),{dispose(){},review:()=>(${JSON.stringify(script)})});`,
+    );
     await writeFile(
       join(directory, 'package.json'),
       '{"name":"plain-illustration","private":true}',
     );
-    await writeFile(
-      join(directory, 'timeline.json'),
-      JSON.stringify({
-        duration: 2,
-        cues: {},
-        segments: [{ id: 'one', text: 'Готово.', start: 0, end: 2 }],
-      }),
-    );
+    await writeFile(join(directory, 'timeline.json'), JSON.stringify({ ...script, cues: {} }));
     const out = join(directory, 'artifacts/release');
     await mkdir(out, { recursive: true });
     const activeExport = await mkdtemp(join(out, '.visual-story-video-'));

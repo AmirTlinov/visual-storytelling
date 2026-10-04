@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, cp } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildScene } from '../tools/build-pages.mjs';
 import { checkNarration, prepareNarration } from '../tools/narration.mjs';
+import { narrationSource } from '../tools/story-document.mjs';
 
 const run = promisify(execFile);
 test('scene builds reject stale generated narration while silent and independent scenes still build', async () => {
@@ -42,7 +43,7 @@ test('scene builds reject stale generated narration while silent and independent
       'python3',
       [
         '-c',
-        'import json,sys;sys.path.insert(0,sys.argv[1]);from resources import digest;print(digest(json.loads(sys.argv[2])))',
+        'import json,sys;sys.path.insert(0,sys.argv[1]);from resources import digest,file_digest,REFERENCE_AUDIO;print(json.dumps({"source":digest(json.loads(sys.argv[2])),"reference":file_digest(REFERENCE_AUDIO)}))',
         audioTools,
         narration,
       ],
@@ -50,7 +51,8 @@ test('scene builds reject stale generated narration while silent and independent
     );
     const aligned = {
       audio: 'audio.wav',
-      source_sha256: stdout.trim(),
+      source_sha256: JSON.parse(stdout).source,
+      synthesis: { reference_sha256: JSON.parse(stdout).reference },
       sample_rate: 48000,
       duration: 2,
       segments: [
@@ -163,5 +165,82 @@ test('scene builds reject stale generated narration while silent and independent
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('copied story speech retains its receipt and notices changed voice or music bytes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'story-speech-inputs-'));
+  const source = join(root, 'author'),
+    copy = join(root, 'recipient');
+  const html = '<audio src="audio.wav"></audio>';
+  const audioTools = fileURLToPath(new URL('../tools/audio', import.meta.url));
+  try {
+    await mkdir(source);
+    await writeFile(join(source, 'index.html'), html);
+    await writeFile(join(source, 'reference.wav'), 'selected voice');
+    await writeFile(join(source, 'bed.wav'), 'selected music');
+    await writeFile(
+      join(source, 'story.json'),
+      JSON.stringify({
+        title: 'Цепь',
+        narration: {
+          voice: { reference_audio: 'reference.wav', reference_text: 'Два входа.' },
+          music: {
+            path: 'bed.wav',
+            credit: { title: 'Bed', artist: 'Author', source: 'Local', license: '0BSD' },
+          },
+        },
+        chapters: [
+          {
+            id: 'circuit',
+            title: 'Цепь',
+            beats: [{ id: 'close', say: 'Два входа.', text: 'Замкнуто.' }],
+          },
+        ],
+      }),
+    );
+    const projection = await narrationSource(source);
+    const text = await readFile(projection.file, 'utf8');
+    await run(
+      'python3',
+      [
+        '-c',
+        `
+import json,sys,wave
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from script import read_script,timed_cues,dependency_digests
+from resources import digest
+path,root=Path(sys.argv[2]),Path(sys.argv[3])
+spec=read_script(path,source_directory=root)
+segment=spec['segments'][0]
+words=[{'text':'Два','start':1,'end':1.2,'score':.9},{'text':'входа','start':1.2,'end':1.5,'score':.9}]
+inputs=dependency_digests(spec)
+with wave.open(str(root/'audio.wav'),'wb') as wav:
+ wav.setparams((1,2,48000,96000,'NONE','none'));wav.writeframes(bytes(192000))
+(root/'timeline.json').write_text(json.dumps({'audio':'audio.wav','source_sha256':digest(json.loads(path.read_text())),
+ 'sample_rate':48000,'duration':2,'synthesis':{'reference_sha256':inputs['reference_audio']},'mix':{'music':{'source_sha256':inputs['music']}},
+ 'segments':[{'id':segment['id'],'title':segment.get('title'),'text':segment['spoken'],'start':1,'end':1.5,'words':words}],
+ 'cues':timed_cues(segment,words)}))
+`,
+        audioTools,
+        projection.file,
+        source,
+      ],
+      { env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } },
+    );
+    const receipt = await readFile(join(source, 'timeline.json'), 'utf8');
+    await cp(source, copy, { recursive: true });
+    await rm(source, { recursive: true });
+    assert.equal(await readFile((await narrationSource(copy)).file, 'utf8'), text);
+    await prepareNarration(copy, { audible: true });
+    assert.equal(await readFile(join(copy, 'timeline.json'), 'utf8'), receipt);
+    await writeFile(join(copy, 'reference.wav'), 'changed voice');
+    await assert.rejects(checkNarration(html, copy), /Voice reference changed/);
+    await writeFile(join(copy, 'reference.wav'), 'selected voice');
+    await writeFile(join(copy, 'bed.wav'), 'changed music');
+    await assert.rejects(checkNarration(html, copy), /Music changed/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });

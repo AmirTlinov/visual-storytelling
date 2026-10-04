@@ -103,7 +103,7 @@ export interface ScenePresentation {
 }
 
 /** Geometric evidence for review, computed on demand without another render loop. */
-export function inspectPresentation(stage: HTMLElement): ScenePresentation {
+export function inspectPresentation(stage: HTMLElement | SVGSVGElement): ScenePresentation {
   const styles = new Map<Element, CSSStyleDeclaration>();
   const styleOf = (node: Element) => {
     if (!styles.has(node)) styles.set(node, getComputedStyle(node));

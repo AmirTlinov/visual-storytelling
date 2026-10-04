@@ -3,7 +3,7 @@ import { build } from 'esbuild';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { serve } from './site.mjs';
-import { openScene, seekScene } from './open-scene.mjs';
+import { openScene, seekScene, controlScene } from './open-scene.mjs';
 import { readCatalog } from './catalog.mjs';
 import { assetURLs } from './asset-urls.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -122,6 +122,7 @@ export async function renderer({
         return [...messages.values()];
       },
       seek,
+      control: (commands) => controlScene(capture, commands),
       async png() {
         const frame = page.locator('[data-scene-frame]').first();
         if (!controls && (await frame.count())) return frame.screenshot();

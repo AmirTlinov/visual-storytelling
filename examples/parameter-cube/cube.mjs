@@ -11,7 +11,7 @@ import { mountCube } from './runtime.mjs';
 const tools = process.env.VISUAL_STORY_TOOLS ?? new URL('../../tools', import.meta.url).pathname;
 const { svgRuntime } = await import(pathToFileURL(`${tools}/svg-runtime.mjs`));
 const sharedRuntime = await svgRuntime({
-  '': ['transport'],
+  '': ['transport', 'mountScene'],
   '/ink': ['SketchInk'],
   '/three': ['SvgOrbit'],
   '/controls': ['fitSvgControls'],

@@ -1,5 +1,11 @@
 import { cueSheet, type Script, type Cue, type Chapter } from './cues.js';
 
+export interface ChapterIntroduction {
+  seconds: number;
+  id: string;
+  title: string;
+  text: string;
+}
 export interface ChapterTiming {
   id: string;
   title: string;
@@ -43,22 +49,25 @@ export function composeChapters(
   chapters: readonly ChapterTiming[],
   options: {
     script?: Script;
-    introduction?: number;
+    introduction?: ChapterIntroduction;
     transition?: number;
   } = {},
 ) {
   if (!chapters.length) throw new Error('A composition needs at least one chapter');
-  const lead = options.introduction ?? 0,
+  const opening = options.introduction;
+  const lead = opening?.seconds ?? 0,
     transition = options.transition ?? 0;
   if (![lead, transition].every((n) => Number.isFinite(n) && n >= 0))
     throw new Error('Chapter transitions need non-negative durations');
+  if (opening && (!opening.id?.trim() || !opening.title?.trim() || !opening.text?.trim()))
+    throw new Error('Chapter introduction needs an ID, title and text');
   if (options.script) cueSheet(options.script);
   const cues: Record<string, Cue> = Object.create(null),
     segments: Chapter[] = [],
     ids = new Set<string>();
   let cursor = lead;
   const timings: ChapterSpan[] = chapters.map((chapter, index) => {
-    if (!chapter.id || chapter.id === 'book-open' || ids.has(chapter.id))
+    if (!chapter.id || chapter.id === opening?.id || ids.has(chapter.id))
       throw new Error(`Invalid chapter ID: ${chapter.id}`);
     ids.add(chapter.id);
     if (!(chapter.seconds > 0) || !Number.isFinite(chapter.seconds))
@@ -119,13 +128,13 @@ export function composeChapters(
     return { id: chapter.id, start, content, end, seconds: chapter.seconds, clock: unique };
   });
   const introduction = Math.min(lead, timings[0]!.start);
-  if (introduction) {
-    cues['book-open'] = { start: 0, end: introduction, action: 'Открывается тайная книга.' };
+  if (introduction && opening) {
+    cues[opening.id] = { start: 0, end: introduction, action: opening.text };
     segments.push({
-      id: 'book-open',
-      ...cues['book-open'],
-      text: 'Открывается тайная книга.',
-      title: 'Tlinov',
+      id: opening.id,
+      ...cues[opening.id]!,
+      text: opening.text,
+      title: opening.title,
     });
   }
   for (const [index, chapter] of chapters.entries()) {

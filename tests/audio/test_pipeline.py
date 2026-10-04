@@ -14,7 +14,7 @@ import soundfile as sf
 from alignment import ctc_path
 from assembly import build_audio
 from audition import audition
-from resources import REFERENCE_AUDIO, REFERENCE_TEXT, digest
+from resources import REFERENCE_AUDIO, REFERENCE_TEXT, digest, file_digest
 from script import read_script, words, check_timeline
 from speech import Speaker, GENERATION, SAMPLE_RATE, SpeechLimitError, generation_parameters
 
@@ -24,7 +24,7 @@ EXAMPLE = Path(__file__).resolve().parents[2] / "examples" / "remainder-story" /
 class AudioChecks(unittest.TestCase):
     def test_complete_sentences_share_cues_and_keep_a_cached_receipt_byte_stable(self):
         class FakeSpeaker:
-            identity = {"model": "fixture"}
+            identity = {"model": "fixture", "reference_sha256": file_digest(REFERENCE_AUDIO)}
             cached = False
             def synthesize(self, segment):
                 return np.full(SAMPLE_RATE, .1, dtype=np.float32), segment["text"], {"cached": self.cached, "seconds": 0 if self.cached else 1}

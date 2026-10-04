@@ -1,3 +1,4 @@
+import { mountScene } from '@visual-storytelling/core';
 import { gsap, widgetState } from '@visual-storytelling/core';
 (() => {
   const root = document.getElementById('ve-scene');
@@ -248,7 +249,7 @@ import { gsap, widgetState } from '@visual-storytelling/core';
     if (!abort.signal.aborted) draw();
   });
   motion.addEventListener('change', () => draw(''), listen);
-  root.scene = {
+  mountScene(root, {
     snapshot: () => ({
       step,
       complete: movement.progress === 1,
@@ -262,8 +263,7 @@ import { gsap, widgetState } from '@visual-storytelling/core';
       observer.disconnect();
       gsap.killTweensOf(movement);
       root.replaceChildren();
-      delete root.scene;
     },
-  };
+  });
   draw();
 })();

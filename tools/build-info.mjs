@@ -1,11 +1,14 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
+import { execFile } from 'node:child_process';
 import { findPackageJSON } from 'node:module';
+import { promisify } from 'node:util';
 import { readFile, readdir, writeFile, realpath, stat } from 'node:fs/promises';
-import { dirname, join, matchesGlob, relative, resolve, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const receiptName = 'build-info.json';
+const execute = promisify(execFile);
 const ignored = (name) => name.startsWith('.') || name === '__pycache__' || name.endsWith('.pyc');
 async function json(path) {
   try {
@@ -57,21 +60,23 @@ export const sourceDigest = (root) =>
     'tsconfig.build.json',
   ]);
 const runtimeDigest = (root) => contentDigest(root, ['.'], (name) => name === receiptName);
-const packageDigest = async (root, runtime) => {
-  const pkg = await json(join(root, 'package.json'));
-  const excluded = (pkg.files ?? [])
-    .filter((pattern) => pattern.startsWith('!'))
-    .map((pattern) => pattern.slice(1));
+const packageDigest = async (root, runtime, output = join(root, 'dist')) => {
+  // One fresh npm snapshot per identity check. npm owns files/ignore rules and
+  // mandatory files such as README and licenses; do not maintain a second packlist.
+  const { stdout } = await execute('npm', ['pack', '--dry-run', '--ignore-scripts', '--json'], {
+    cwd: root,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  const files = JSON.parse(stdout)[0].files.map((file) => file.path);
+  const staging = relative(root, output).split(sep).join('/') + '/';
   return createHash('sha256')
     .update(runtime)
     .update('\0')
     .update(
+      // The emitted runtime can still be in the build transaction's staging directory.
       await contentDigest(
         root,
-        ['package.json', 'tools', 'examples', 'skill', 'docs', 'PHILOSOPHY.md', 'AGENTS.md'],
-        (name) =>
-          (name.startsWith('examples/') && name.endsWith('.wav')) ||
-          excluded.some((pattern) => matchesGlob(name, pattern)),
+        files.filter((name) => !name.startsWith('dist/') && !name.startsWith(staging)),
       ),
     )
     .digest('hex');
@@ -85,7 +90,7 @@ export async function writeBuildInfo(root, output, source = undefined) {
     schemaVersion: 1,
     package: pkg.name,
     version: pkg.version,
-    build: await packageDigest(root, runtime),
+    build: await packageDigest(root, runtime, output),
     source: source ?? (await sourceDigest(root)),
     runtime,
   };
@@ -137,6 +142,17 @@ export async function packageInfo(root) {
   };
 }
 
+/** Resolve from the importing scene/module, never from the CLI's own installation. */
+export async function resolvePackage(name, directory) {
+  try {
+    const file = findPackageJSON(name, pathToFileURL(join(resolve(directory), 'package.json')));
+    return file ? await realpath(dirname(file)) : null;
+  } catch (error) {
+    if (!['MODULE_NOT_FOUND', 'ERR_MODULE_NOT_FOUND'].includes(error.code)) throw error;
+    return null;
+  }
+}
+
 /** Resolve exactly as code in the consuming scene does, even when this CLI is elsewhere. */
 export async function diagnosePackage(cliRoot, directory = process.cwd()) {
   const cli = await packageInfo(cliRoot);
@@ -144,15 +160,9 @@ export async function diagnosePackage(cliRoot, directory = process.cwd()) {
   const manifest = await json(join(scene, 'package.json'));
   let consumer = null;
   const issues = [];
-  let installed;
-  try {
-    installed = findPackageJSON(cli.name, pathToFileURL(join(scene, 'package.json')));
-  } catch (error) {
-    if (!['MODULE_NOT_FOUND', 'ERR_MODULE_NOT_FOUND'].includes(error.code)) throw error;
-  }
+  const installed = await resolvePackage(cli.name, scene);
   if (installed) {
-    const installedRoot = await realpath(dirname(installed));
-    consumer = installedRoot === cli.root ? cli : await packageInfo(installedRoot);
+    consumer = installed === cli.root ? cli : await packageInfo(installed);
   } else if (
     ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'].some(
       (field) => manifest?.[field]?.[cli.name],

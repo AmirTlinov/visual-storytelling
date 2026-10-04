@@ -112,9 +112,12 @@ test('a preview session pins shown content, controls semantics and restores a cu
     end,
   ) => `import {SceneShell} from '@visual-storytelling/core';import '@visual-storytelling/core/style.css';
     window.galleryReady=(async()=>{await SceneShell.ready();const root=document.querySelector('main');
-      const shell=SceneShell.mount(root,{title:'Session',parameters:[{key:'x',label:'Value',value:1,min:0,max:10}]});
+      const shell=SceneShell.mount(root,{title:'Session',parameters:[{key:'x',label:'Value',value:1,min:0,max:10},
+        {key:'extra',label:'Extra',type:'toggle',value:false},{key:'beta',label:'Beta',value:2,min:0,max:10}]});
       const label=document.createElement('p');shell.stage.append(label);
-      shell.attachStory({script:{duration:${end + 2},cues:{move:{start:1,end:${end},action:'Move the object'}}},stateAt:f=>({x:1+f.progress('move')}),render:v=>label.textContent='Value '+v.x});
+      shell.attachStory({script:{duration:${end + 2},cues:{move:{start:1,end:${end},action:'Move the object'}}},
+        stateAt:f=>({x:1+f.progress('move'),extra:false,beta:2}),
+        render:v=>{label.textContent='Value '+v.x;shell.describeParameter('beta',{disabled:!v.extra});}});
     })();`;
   try {
     await writeFile(
@@ -179,6 +182,30 @@ test('a preview session pins shown content, controls semantics and restores a cu
       'returning to identical output needs no reload',
     );
     assert.equal(recovered.result.parameters.find((p) => p.key === 'x').value, 7);
+    await writeFile(join(source, 'scene.js'), code(10));
+    await page.waitForFunction(
+      (old) => document.documentElement.dataset.visualStoryRevision !== old,
+      recovered.revision,
+    );
+    const disabled = await requestSession(server.url);
+    assert.equal(disabled.result.mode, 'explore');
+    assert.equal(disabled.result.parameters.find((p) => p.key === 'x').value, 7);
+    assert.equal(disabled.result.parameters.find((p) => p.key === 'beta').disabled, true);
+    await requestSession(server.url, 'control', {
+      commands: [
+        { type: 'parameters', values: { extra: true } },
+        { type: 'parameters', values: { beta: 8 } },
+      ],
+    });
+    await writeFile(join(source, 'scene.js'), code(11));
+    await page.waitForFunction(
+      (old) => document.documentElement.dataset.visualStoryRevision !== old,
+      disabled.revision,
+    );
+    const restored = await requestSession(server.url);
+    assert.equal(restored.result.parameters.find((p) => p.key === 'beta').value, 8);
+    assert.equal(restored.result.parameters.find((p) => p.key === 'beta').disabled, false);
+    assert.equal(await page.locator('#visual-story-build-error').count(), 0);
     const foreign = await fetch(server.url + '/__visual_story_session', {
       method: 'POST',
       headers: { Origin: 'https://example.com', 'Content-Type': 'application/json' },

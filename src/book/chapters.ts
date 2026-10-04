@@ -1,13 +1,19 @@
 import { fitFrame } from '../scene-frame.js';
 import { bookTransition } from './transition.js';
 import { bookSize } from './geometry.js';
+import { bookTiming } from './timing.js';
 import type { ChapterTransition } from '../story/composition.js';
 
 /** The book is optional scenery over existing chapter presentations. */
 export function bookChapters(topic: string): ChapterTransition {
   return {
-    introduction: 4.2,
-    duration: 1.1,
+    introduction: {
+      seconds: bookTiming.introduction,
+      id: 'book-open',
+      title: `Tlinov · ${topic}`,
+      text: 'Открывается тайная книга.',
+    },
+    duration: bookTiming.turn,
     mount(parent, previews) {
       const page = () => {
         const canvas = document.createElement('canvas');
@@ -57,8 +63,8 @@ export function bookChapters(topic: string): ChapterTransition {
           drawing.render({
             page: state.chapter,
             reduced: state.reduced,
-            open: Math.max(0, Math.min(1, (state.open * 4.2 - 0.4) / 1.8)),
-            focus: Math.max(0, Math.min(1, (state.open * 4.2 - 2.2) / 2)),
+            open: Math.max(0, Math.min(1, (state.open * bookTiming.introduction - 0.4) / 1.8)),
+            focus: Math.max(0, Math.min(1, (state.open * bookTiming.introduction - 2.2) / 2)),
             turn: state.progress,
           });
         },

@@ -85,14 +85,14 @@ try {
     import * as recipes from '@visual-storytelling/core/recipes';
     import * as output from '@visual-storytelling/core/export';
     import {Viewport3D} from '@visual-storytelling/core/three';
-    import {IllustratedStory} from '@visual-storytelling/core/book';
+    import {IllustratedStory, documentNarration} from '@visual-storytelling/core/book';
     import {physicsChapter} from '@visual-storytelling/core/physics/2d';
     window.publicAPI = [
       core.SketchMotion === ink.SketchMotion, typeof core.story === 'function' && core.story === story.story,
       core.PlayerControls === controls.PlayerControls, core.vector === recipes.vector,
       core.exportSVG === output.exportSVG, typeof Viewport3D.mount === 'function',
       typeof IllustratedStory.mount === 'function', typeof physicsChapter === 'function',
-      typeof story.documentNarration === 'function', typeof recipes.circuitDiagram === 'function'
+      typeof documentNarration === 'function', typeof recipes.circuitDiagram === 'function'
     ];
   </script></body></html>`,
   );

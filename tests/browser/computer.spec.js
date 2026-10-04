@@ -9,7 +9,8 @@ async function ready(page, name = 'computer-explorer/index.html') {
   });
 }
 const state = (page) => page.evaluate(() => document.querySelector('.ve-scene').scene.snapshot());
-const restore = (page, saved) => page.evaluate((saved) => document.querySelector('.ve-scene').scene.restore(saved), saved);
+const restore = (page, saved) =>
+  page.evaluate((saved) => document.querySelector('.ve-scene').scene.restore(saved), saved);
 const idle = (page) =>
   page.waitForFunction(
     () => document.querySelector('#computer-explorer').dataset.moving === 'false',
@@ -105,8 +106,17 @@ test('computer: player completes without redrawing the static board, saves, paus
   await page.evaluate(() => window.galleryReady);
   expect((await state(page)).imageJob.phase).toBe('done');
   await page.locator('[data-job-play]').click();
-  await page.evaluate(() => document.querySelector('.ve-scene').scene.dispose());
-  const disposed = await state(page);
+  await page.evaluate(() => {
+    window.releasedScene = document.querySelector('.ve-scene').scene;
+    window.releasedScene.dispose();
+  });
+  const released = () =>
+    page.evaluate(() => ({
+      registered: !!document.querySelector('.ve-scene').scene,
+      children: document.querySelector('.ve-scene').childElementCount,
+    }));
+  expect(await released()).toEqual({ registered: false, children: 0 });
+  await expect(page.evaluate(() => window.releasedScene.home())).rejects.toThrow(/disposed/);
   await page.waitForTimeout(220);
   await page.evaluate(() =>
     window.dispatchEvent(
@@ -121,7 +131,7 @@ test('computer: player completes without redrawing the static board, saves, paus
       }),
     ),
   );
-  expect(await state(page)).toEqual(disposed);
+  expect(await released()).toEqual({ registered: false, children: 0 });
   expect(errors).toEqual([]);
 });
 

@@ -104,8 +104,7 @@
   "equation-balance": {
     "title": "Равновесие уравнения",
     "page": "index.html",
-    "time": 2,
-    "checkpoints": [0, 2, 4],
+    "time": 0,
     "group": "explanations",
     "summary": "Одинаковые действия с обеих сторон весов приводят к решению уравнения.",
     "tags": ["алгебра", "уравнение", "весы", "шаги"],
@@ -123,8 +122,8 @@
   "bubble-sort": {
     "title": "Пузырьковая сортировка",
     "page": "index.html",
-    "time": 3,
-    "checkpoints": [0, 3, 9],
+    "time": 0,
+    "commands": [{ "type": "parameters", "values": { "step": 3 } }],
     "group": "explanations",
     "summary": "Сравнивайте соседние числа и следите за обменами до готового порядка.",
     "tags": ["алгоритм", "сортировка", "массив", "шаги"],
@@ -133,8 +132,8 @@
   "shared-memory": {
     "title": "Общая память CPU и GPU",
     "page": "index.html",
-    "time": 2,
-    "checkpoints": [0, 2, 5],
+    "time": 0,
+    "commands": [{ "type": "parameters", "values": { "step": 2 } }],
     "group": "explanations",
     "summary": "Проследите передачу данных между процессорами и общей памятью.",
     "tags": ["cpu", "gpu", "память", "передача", "данные"],

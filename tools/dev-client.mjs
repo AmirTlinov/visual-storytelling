@@ -41,7 +41,9 @@ function savePosition() {
       cue: cue?.id,
       progress: cue ? (state.time - cue.start) / (cue.end - cue.start) : 0,
       mode: state.mode,
-      values: Object.fromEntries(state.parameters.map((p) => [p.key, p.value])),
+      values: Object.fromEntries(
+        state.parameters.filter((p) => !p.disabled).map((p) => [p.key, p.value]),
+      ),
     }),
   );
 }
@@ -67,7 +69,7 @@ events.addEventListener('built', (event) => {
       button.textContent = 'Обновить сцену';
       button.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:99999;padding:8px';
       button.onclick = () => {
-        handle.pause();
+        handle.pause?.();
         refresh();
       };
       document.body.append(button);
@@ -117,31 +119,41 @@ async function ready() {
     sessionStorage.removeItem(key);
     const state = stored ? JSON.parse(stored) : null,
       query = new URLSearchParams(location.search);
+    const capabilities = handle.inspect().capabilities;
     const cue = state?.cue ?? query.get('cue'),
-      hasCue = cue && handle.review().cues.some((c) => c.id === cue);
+      hasCue =
+        capabilities.includes('cue') && cue && handle.review().cues.some((c) => c.id === cue);
     if (cue && !state && !hasCue) throw new Error('Unknown cue: ' + cue);
     const time = state?.time ?? (query.has('t') ? Number(query.get('t')) : undefined);
-    const commands = [{ type: 'pause' }];
+    const commands = capabilities.includes('pause') ? [{ type: 'pause' }] : [];
     if (hasCue) commands.push({ type: 'cue', id: cue, progress: state?.progress ?? 0 });
-    else if (Number.isFinite(time))
+    else if (Number.isFinite(time) && capabilities.includes('seek'))
       commands.push({ type: 'seek', time: Math.min(handle.duration, Math.max(0, time)) });
-    if (state?.mode === 'explore') {
-      const valid = handle.inspect().parameters;
-      const values = Object.fromEntries(
-        Object.entries(state.values).filter(([key, value]) =>
-          valid.some(
-            (p) =>
-              p.key === key &&
-              typeof p.value === typeof value &&
-              (typeof value !== 'number' ||
-                (value >= (p.min ?? -Infinity) && value <= (p.max ?? Infinity))) &&
-              (!p.options || p.options.some((o) => o.value === value)),
-          ),
-        ),
-      );
-      commands.push({ type: 'parameters', values });
+    if (state?.mode === 'explore' && capabilities.includes('mode'))
+      commands.push({ type: 'mode', value: 'explore' });
+    if (commands.length) await handle.control(commands);
+    if (state?.mode === 'explore' && capabilities.includes('parameters')) {
+      const pending = new Map(Object.entries(state.values));
+      // Chapter/model selectors may change the next field's range or availability.
+      // Restore in the owner's declared order and inspect again after each input.
+      while (pending.size) {
+        const parameter = handle.inspect().parameters.find((p) => {
+          const value = pending.get(p.key);
+          return (
+            pending.has(p.key) &&
+            !p.disabled &&
+            typeof p.value === typeof value &&
+            (typeof value !== 'number' ||
+              (value >= (p.min ?? -Infinity) && value <= (p.max ?? Infinity))) &&
+            (!p.options || p.options.some((o) => o.value === value))
+          );
+        });
+        if (!parameter) break;
+        const value = pending.get(parameter.key);
+        pending.delete(parameter.key);
+        await handle.control([{ type: 'parameters', values: { [parameter.key]: value } }]);
+      }
     }
-    await handle.control(commands);
     await rendered();
     const current = await fetch('/__visual_story_session').then((r) => r.json());
     if (current.built?.revision !== revision) {

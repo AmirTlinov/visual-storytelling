@@ -1,4 +1,4 @@
-import { StepPlayer, widgetState } from '@visual-storytelling/core';
+import { mountScene, StepPlayer, widgetState } from '@visual-storytelling/core';
 (() => {
   const root = document.getElementById('ve-scene');
   const svg = root.querySelector('.bs-figure');
@@ -208,15 +208,31 @@ import { StepPlayer, widgetState } from '@visual-storytelling/core';
     render: (target, _previous, animate) => moveTo(target, animate),
   });
   mounted = true;
-  root.scene = {
-    dispose() {
-      mounted = false;
-      controller.dispose();
-      observer.disconnect();
-      abort.abort();
-      storage.dispose();
-      if (frame !== null) cancelAnimationFrame(frame);
-      root.replaceChildren();
+  mountScene(
+    root,
+    {
+      play: controller.play,
+      pause: controller.pause,
+      get playing() {
+        return controller.playing;
+      },
+      snapshot: () => ({ step: index, ...steps[index] }),
+      dispose() {
+        mounted = false;
+        controller.dispose();
+        observer.disconnect();
+        abort.abort();
+        storage.dispose();
+        if (frame !== null) cancelAnimationFrame(frame);
+        root.replaceChildren();
+      },
     },
-  };
+    {
+      parameters: [
+        { key: 'step', label: 'Шаг объяснения', value: 0, min: 0, max: steps.length - 1, step: 1 },
+      ],
+      values: () => ({ step: index }),
+      setValues: ({ step }) => controller.go(Number(step)),
+    },
+  );
 })();

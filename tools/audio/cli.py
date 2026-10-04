@@ -16,9 +16,11 @@ def main():
     check = commands.add_parser("check", help="Check a generated timeline against its narration without loading models")
     check.add_argument("script", type=Path)
     check.add_argument("--timeline", type=Path, required=True)
+    check.add_argument("--source-directory", type=Path, help="Base for a generated script's authored relative resources")
     build = commands.add_parser("build", help="Build audio.wav, voice.wav and timeline.json from a JSON script")
     build.add_argument("script", type=Path)
     build.add_argument("--out", type=Path, required=True)
+    build.add_argument("--source-directory", type=Path, help="Base for a generated script's authored relative resources")
     build.add_argument("--device", choices=["auto", "mps", "cpu"], default="auto", help="Word aligner device; speech uses MLX on Apple Silicon")
     preview = commands.add_parser("audition", help="Compare complete takes of one segment without changing the story")
     preview.add_argument("script", type=Path)
@@ -34,13 +36,13 @@ def main():
             print(json.dumps(doctor(), ensure_ascii=False, indent=2))
         elif args.command == "check":
             from script import check_timeline
-            check_timeline(args.script, args.timeline)
+            check_timeline(args.script, args.timeline, source_directory=args.source_directory)
         elif args.command == "audition":
             from audition import audition
             audition(args.script.resolve(), args.segment, args.out.resolve(), args.seeds, args.device)
         else:
             from assembly import build_audio
-            build_audio(args.script.resolve(), args.out.resolve(), args.device)
+            build_audio(args.script.resolve(), args.out.resolve(), args.device, source_directory=args.source_directory)
     except (ValueError, RuntimeError, FileNotFoundError) as error:
         print(f"sketch-audio: {error}", file=sys.stderr)
         return 1

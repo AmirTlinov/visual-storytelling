@@ -2,7 +2,12 @@ import { SceneShell, type SceneOptions } from '../scene.js';
 import { theme, type Theme } from '../ink/palette.js';
 import type { ControlValue } from '../controls/fields.js';
 import { activeCue, type Script } from './cues.js';
-import { composeChapters, chapterTime, type ChapterTiming } from './composition-plan.js';
+import {
+  composeChapters,
+  chapterTime,
+  type ChapterTiming,
+  type ChapterIntroduction,
+} from './composition-plan.js';
 import { chapterPreviews, type MountedChapter } from './composition-previews.js';
 import type { Story } from './story.js';
 
@@ -32,7 +37,7 @@ export interface SceneChapter extends ChapterTiming {
   mount(parent: HTMLElement): ChapterPresentation | Promise<ChapterPresentation>;
 }
 export interface ChapterTransition {
-  introduction: number;
+  introduction?: ChapterIntroduction;
   duration: number;
   mount(
     parent: HTMLElement,

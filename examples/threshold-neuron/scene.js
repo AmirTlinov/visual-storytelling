@@ -1,3 +1,4 @@
+import { mountScene } from '@visual-storytelling/core';
 import { SvgLayout, SketchInk, rough, gsap, widgetState } from '@visual-storytelling/core';
 // Subject model: a threshold neuron. Changing this file changes the explanation.
 window.galleryReady = (async () => {
@@ -345,7 +346,7 @@ window.galleryReady = (async () => {
     width = value;
     return arrange();
   });
-  root.scene = {
+  mountScene(root, {
     snapshot: () => ({
       ...state,
       ...compute(),
@@ -360,9 +361,8 @@ window.galleryReady = (async () => {
       geometry.dispose();
       gsap.killTweensOf(pulse);
       root.replaceChildren();
-      delete root.scene;
     },
-  };
+  });
 })().catch((error) => {
   document.querySelector('[data-result]').textContent = error.message;
   throw error;

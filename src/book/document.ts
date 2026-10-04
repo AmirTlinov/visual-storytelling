@@ -1,5 +1,6 @@
 import type { Beat } from '../characters/types.js';
-import type { Script } from './cues.js';
+import type { Script } from '../story/cues.js';
+import { bookTiming } from './timing.js';
 
 /** One authored thought owns both its spoken words and its visible action. */
 export interface AuthoredBeat extends Beat {
@@ -43,7 +44,7 @@ export function documentNarration(document: StoryDocument) {
   return {
     version: 3,
     voice: { ...(spec.voice ?? { seed: 42 }) },
-    intro: spec.intro ?? 4.2,
+    intro: spec.intro ?? bookTiming.introduction,
     outro: spec.outro ?? 0.8,
     music: spec.music ? structuredClone(spec.music) : null,
     ...(spec.captionAliases ? { captionAliases: { ...spec.captionAliases } } : {}),
@@ -87,7 +88,11 @@ export function documentNarration(document: StoryDocument) {
   };
 }
 /** Make the page transition use the pause preceding speech; words and action cues retain their times. */
-export function documentScript(document: StoryDocument, aligned: Script, transition = 1.1): Script {
+export function documentScript(
+  document: StoryDocument,
+  aligned: Script,
+  transition = bookTiming.turn,
+): Script {
   const cues = { ...aligned.cues };
   let end = 0;
   for (const [index, chapter] of document.chapters.entries()) {

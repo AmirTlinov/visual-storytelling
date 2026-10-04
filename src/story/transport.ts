@@ -36,12 +36,14 @@ export function transport({ duration, audio }: TransportOptions) {
   };
   const clock = mediaTimeline(media, duration, notify);
   function pause() {
+    if (disposed) return;
     request++;
     pending = false;
     media.pause();
     clock.update();
   }
   function seek(time: number) {
+    if (disposed) throw new Error('Playback has been disposed');
     if (!Number.isFinite(time)) throw new Error('Seek time must be finite');
     clock.seek(time);
   }
@@ -90,6 +92,13 @@ export function transport({ duration, audio }: TransportOptions) {
     );
   }
   media.addEventListener('volumechange', notify, { signal: abort.signal });
+  globalThis.document?.addEventListener(
+    'visibilitychange',
+    () => {
+      if (document.hidden) pause();
+    },
+    { signal: abort.signal },
+  );
   return {
     get state() {
       return state();

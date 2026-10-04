@@ -13,9 +13,9 @@ export async function captionSource(directory, { signal } = {}) {
   ) {
     const capture = await renderer({ directory, controls: true, signal });
     try {
-      return await capture.capture.evaluate((scene) => scene.review());
-    } catch (error) {
-      if (!error.message.includes('Attach the story')) throw error;
+      const script = await capture.capture.evaluate((scene) => scene.review());
+      if (!script.segments?.length) throw new Error('The mounted scene has no caption segments');
+      return script;
     } finally {
       await capture.close();
     }

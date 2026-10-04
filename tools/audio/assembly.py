@@ -11,7 +11,7 @@ from credits import audio_credits
 from listening import write_listening_page
 from mixing import mix
 from resources import ALIGN_REPO, ALIGN_REVISION, digest
-from script import read_script, timed_cues, speech_passages
+from script import read_script, timed_cues, speech_passages, dependency_digests
 from speech import SAMPLE_RATE, Speaker
 from quality import complete_take
 
@@ -46,10 +46,11 @@ def prepared_take(speaker, aligner, segment, passages):
             summary("synthesis"), summary("alignment"), failures)
 
 
-def build_audio(script_path, output, device, *, speaker=None, aligner=None, report=True):
+def build_audio(script_path, output, device, *, speaker=None, aligner=None, report=True, source_directory=None):
     started = time.perf_counter()
     source_digest = digest(json.loads(script_path.read_text()))
-    spec = read_script(script_path)
+    spec = read_script(script_path, source_directory=source_directory)
+    inputs = dependency_digests(spec)
     passages = [speech_passages(segment) for segment in spec["segments"]]
     if speaker is not None and speaker.voice != spec["voice"]:
         raise ValueError("A shared speaker must use the same voice settings")
@@ -129,8 +130,8 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
                              takes=[{"label": "Цельный рассказ", "audio": "audio.wav",
                                      "duration": timeline["duration"], "warnings": warnings}],
                              note="Прослушайте начало, вопросы, выводы и переходы между мыслями.")
-        if digest(json.loads(script_path.read_text())) != source_digest:
-            raise RuntimeError("Narration changed during the build; rerun with the current script")
+        if digest(json.loads(script_path.read_text())) != source_digest or dependency_digests(spec) != inputs:
+            raise RuntimeError("Narration or its voice/music inputs changed during the build; rerun with the current script")
         output.mkdir(parents=True, exist_ok=True)
         # Own only these output names; keep user-authored JS and illustrations.
         for name in ("audio.wav", "voice.wav", "music.wav", "CREDITS.txt", "timeline.json", "narration.txt", "voice-preview.html"):

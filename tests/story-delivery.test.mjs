@@ -26,9 +26,11 @@ test('the mounted story supplies aliased captions and presentation evidence to e
       stdin: {
         contents: `
         import { cueSheet } from './src/story/cues.ts';
+        import { mountScene } from './src/scene-handle.ts';
         const sheet = cueSheet(${JSON.stringify(script)});
         let time = 0;
-        document.querySelector('main').scene = {
+        mountScene(document.querySelector('main'), {
+          dispose() {},
           duration: 2, pause() {}, review: () => sheet.review(),
           seek(value) { time = value; sheet.at(time).progress('speech'); },
           presentation() { return {
@@ -37,7 +39,7 @@ test('the mounted story supplies aliased captions and presentation evidence to e
             unreadableText: time >= 1 ? [{ id: 'label', pixels: 9, minimum: 14 }] : [],
             uninspectedCanvases: time >= 1 ? 1 : 0,
           }; },
-        };`,
+        });`,
         resolveDir: fileURLToPath(new URL('../', import.meta.url)),
       },
       bundle: true,

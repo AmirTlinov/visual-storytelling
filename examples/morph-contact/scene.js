@@ -1,6 +1,6 @@
 import { SceneShell, MathMorph } from '@visual-storytelling/core';
 import { Viewport3D, ThreeKit as T, MathMorph3D } from '@visual-storytelling/core/three';
-import { Physics3D, PhysicsPlayer } from '@visual-storytelling/core/physics/3d';
+import { Physics3D, PhysicsPlayer, PhysicsReplay } from '@visual-storytelling/core/physics/3d';
 import '@visual-storytelling/core/style.css';
 import './style.css';
 window.galleryReady = (async () => {
@@ -58,7 +58,11 @@ window.galleryReady = (async () => {
   const controls = document.createElement('div');
   root.append(controls);
   const player = PhysicsPlayer.mount(controls, world);
-  const initial = world.snapshot();
+  const replay = PhysicsReplay.create(world, {
+    duration: 8,
+    beforeSeek: () => player.pause(false),
+    afterSeek: player.update,
+  });
   shell.onDispose(() => {
     player.dispose();
     world.dispose();
@@ -67,26 +71,29 @@ window.galleryReady = (async () => {
     text.remove();
     controls.remove();
   });
-  root.scene = {
-    view,
-    world,
-    model,
-    body,
-    duration: 8,
-    seek(time) {
-      player.pause(false);
-      world.restore(initial);
-      world.step(Math.round(Math.max(0, Math.min(8, time)) * 120));
-      player.pause(false);
-    },
-    play: player.play,
-    pause: () => player.pause(false),
-    snapshot: () => ({
-      time: world.time,
-      ball: body.position,
-      phase: model.plan.sample(Math.max(0, Math.min(1, (world.time - 1) / 4))).phase,
+  Object.defineProperties(
+    root.scene,
+    Object.getOwnPropertyDescriptors({
+      view,
+      world,
+      model,
+      body,
+      duration: replay.duration,
+      get currentTime() {
+        return world.time;
+      },
+      get playing() {
+        return player.playing;
+      },
+      seek: replay.seek,
+      play: player.play,
+      pause: () => player.pause(false),
+      snapshot: () => ({
+        time: world.time,
+        ball: body.position,
+        phase: model.plan.sample(Math.max(0, Math.min(1, (world.time - 1) / 4))).phase,
+      }),
     }),
-    dispose: shell.dispose,
-  };
+  );
   player.play();
 })();

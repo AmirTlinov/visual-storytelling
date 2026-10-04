@@ -5,17 +5,20 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { PNG } from 'pngjs';
+import { svgRuntime } from '../tools/svg-runtime.mjs';
 
 test('MP4 keeps a circle circular when a chapter changes the HTML frame height', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'story-video-'));
   try {
+    const runtime = await svgRuntime({ '': ['mountScene'] });
     await writeFile(
       join(directory, 'index.html'),
       `<!doctype html><html><head><style>
       body{margin:10px}.ve-scene{width:355px}h1{font:30px/1.4 sans-serif;margin:0}
       svg{display:block;width:355px;height:300px}
       </style></head><body><main class="ve-scene"><h1>Short</h1><svg viewBox="0 0 355 300"><circle fill="red" cx="177" cy="150" r="60"/></svg></main><script>
-      document.querySelector('main').scene={duration:2,pause(){},seek(t){document.querySelector('h1').textContent=t<1?'Short':'A much longer chapter heading that wraps into several lines above the same circular shape';}};
+      ${runtime}
+      VisualStory.mountScene(document.querySelector('main'),{duration:2,dispose(){},pause(){},seek(t){document.querySelector('h1').textContent=t<1?'Short':'A much longer chapter heading that wraps into several lines above the same circular shape';}});
       </script></body></html>`,
     );
     for (const height of [undefined, 640]) {

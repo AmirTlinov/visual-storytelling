@@ -163,7 +163,7 @@ window.galleryReady = document.fonts.ready.then(() => {
   function restore(saved) {
     const state = saved?.privateContent;
     if (state?.kind !== 'neuron-explorer-v1') return;
-    shell.setParameters(
+    shell.syncParameters(
       Object.fromEntries(
         ['a', 'b', 'threshold'].map((key) => [
           key,
@@ -188,7 +188,7 @@ window.galleryReady = document.fonts.ready.then(() => {
   paint();
   restore(storage.read());
   observer.observe(viewport);
-  root.scene = {
+  Object.assign(root.scene, {
     svg: () => svg,
     setTheme: (value) => appearance.set(value),
     setReduced: (value) => {
@@ -199,16 +199,15 @@ window.galleryReady = document.fonts.ready.then(() => {
       keys: path.keys,
       ...compute(shell.parameters),
     }),
-    dispose() {
-      observer.disconnect();
-      abort.abort();
-      storage.dispose();
-      gestures.dispose();
-      highlight.dispose();
-      camera.dispose();
-      surface.dispose();
-      appearance.dispose();
-      shell.dispose();
-    },
-  };
+  });
+  shell.onDispose(() => {
+    observer.disconnect();
+    abort.abort();
+    storage.dispose();
+    gestures.dispose();
+    highlight.dispose();
+    camera.dispose();
+    surface.dispose();
+    appearance.dispose();
+  });
 });

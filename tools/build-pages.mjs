@@ -4,11 +4,13 @@ import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'parse5';
 import { sourceAliases } from './source-package.mjs';
-import { sceneAsset } from './assets.mjs';
+import { sceneAsset, sceneInput } from './assets.mjs';
 import { generateScene } from './generate-scene.mjs';
 import { buildOutput } from './build-output.mjs';
 import { assetURLs, moduleAssetURLs } from './asset-urls.mjs';
 import { checkNarration, setNarrationMode } from './narration.mjs';
+import { resolvePackage } from './build-info.mjs';
+import { readCatalog } from './catalog.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 export async function buildPage(
@@ -58,9 +60,6 @@ export async function buildPage(
   const out = resolve(target, name);
   await mkdir(target, { recursive: true });
   if (code.trim()) {
-    const dependencies = cdn
-      ? JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')).dependencies
-      : undefined;
     const result = await build({
       stdin: {
         contents: await moduleAssetURLs(code, source),
@@ -83,10 +82,21 @@ export async function buildPage(
               {
                 name: 'rapier-cdn',
                 setup(build) {
-                  build.onResolve({ filter: /^@dimforge\/rapier[23]d-compat$/ }, ({ path }) => ({
-                    path: `https://cdn.jsdelivr.net/npm/${path}@${dependencies[path]}/dist/rapier.mjs`,
-                    external: true,
-                  }));
+                  build.onResolve(
+                    { filter: /^@dimforge\/rapier[23]d-compat$/ },
+                    async ({ path, importer }) => {
+                      const installed = await resolvePackage(path, dirname(importer || source));
+                      if (!installed)
+                        throw new Error(`Install the scene dependency before building: ${path}`);
+                      const { version } = JSON.parse(
+                        await readFile(resolve(installed, 'package.json'), 'utf8'),
+                      );
+                      return {
+                        path: `https://cdn.jsdelivr.net/npm/${path}@${version}/dist/rapier.mjs`,
+                        external: true,
+                      };
+                    },
+                  );
                 },
               },
             ]
@@ -146,29 +156,20 @@ export async function buildScene(source, target, options = {}) {
       () => undefined,
     ),
   };
-  const ignored = new Set([
-    'node_modules',
-    '__pycache__',
-    'dist',
-    'site',
-    'artifacts',
-    'review',
-    'package.json',
-    'package-lock.json',
-    'scene.json',
-  ]);
+  const configuration = new Set(['package.json', 'package-lock.json', 'scene.json']);
   async function visit(directory, output) {
-    const entries = await readdir(directory, { withFileTypes: true });
+    const entries = (await readdir(directory, { withFileTypes: true })).filter((entry) => {
+      const from = resolve(directory, entry.name);
+      return (
+        sceneInput(entry.name) &&
+        !configuration.has(entry.name) &&
+        from !== target &&
+        !options.exclude?.some((path) => resolve(path) === from)
+      );
+    });
     for (const entry of entries) {
       const from = resolve(directory, entry.name),
         to = resolve(output, entry.name);
-      if (
-        entry.name.startsWith('.') ||
-        ignored.has(entry.name) ||
-        from === target ||
-        options.exclude?.some((path) => resolve(path) === from)
-      )
-        continue;
       if (entry.isDirectory()) await visit(from, to);
       else if (entry.isFile() && sceneAsset(entry.name)) {
         await mkdir(output, { recursive: true });
@@ -183,8 +184,8 @@ export async function buildScene(source, target, options = {}) {
   await buildOutput(source, target, (output) => visit(source, output));
 }
 
-export async function buildPages(target = resolve(root, 'site')) {
-  const catalog = JSON.parse(await readFile(resolve(root, 'examples/catalog.json'), 'utf8'));
+export async function buildPages(target = resolve(root, 'site'), catalog) {
+  catalog ??= await readCatalog();
   for (const name of Object.keys(catalog))
     await buildScene(resolve(root, 'examples', name), resolve(target, name), {
       sourcePackage: true,

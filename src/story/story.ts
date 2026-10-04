@@ -17,6 +17,10 @@ export type StoryOptions<P, K extends string, S = P> = {
 export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>) {
   const sheet = cueSheet(options.script);
   const media = matchMedia('(prefers-reduced-motion: reduce)');
+  let disposed = false;
+  const assertLive = () => {
+    if (disposed) throw new Error('Story has been disposed');
+  };
   let mode: 'story' | 'explore' = 'story';
   let values: P, state: S;
   const player = transport({
@@ -41,7 +45,7 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
     for (const listener of listeners) listener(mode, values);
   }
   function update() {
-    if (changing) return;
+    if (disposed || changing) return;
     const frame = sheet.at(player.state.time, forcedReduced ?? media.matches);
     publish(compute(mode === 'story' ? options.stateAt(frame) : values, frame));
   }
@@ -84,6 +88,7 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
       return mode;
     },
     explore(next: P) {
+      assertLive();
       const computed = compute(next, sheet.at(player.state.time, forcedReduced ?? media.matches));
       change(() => {
         mode = 'explore';
@@ -91,12 +96,14 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
       }, computed);
     },
     resume() {
+      assertLive();
       const frame = sheet.at(player.state.time, forcedReduced ?? media.matches);
       const computed = compute(options.stateAt(frame), frame);
       mode = 'story';
       publish(computed);
     },
     seek(time: number) {
+      assertLive();
       if (!Number.isFinite(time)) throw new Error('Story time must be finite');
       const target = Math.max(0, Math.min(options.script.duration, time));
       const frame = sheet.at(target, forcedReduced ?? media.matches);
@@ -108,21 +115,26 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
       }, computed);
     },
     setReduced(value?: boolean) {
+      assertLive();
       const frame = sheet.at(player.state.time, value ?? media.matches);
       const computed = compute(mode === 'story' ? options.stateAt(frame) : values, frame);
       forcedReduced = value;
       publish(computed);
     },
     subscribe(listener: (mode: 'story' | 'explore', values: P) => void) {
+      assertLive();
       listeners.add(listener);
       listener(mode, values);
       return () => listeners.delete(listener);
     },
     onSeek(listener: (time: number) => void) {
+      assertLive();
       seeks.add(listener);
       return () => seeks.delete(listener);
     },
     dispose() {
+      if (disposed) return;
+      disposed = true;
       unsubscribe();
       player.dispose();
       media.removeEventListener('change', update);
