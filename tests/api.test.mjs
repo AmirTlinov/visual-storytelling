@@ -66,11 +66,16 @@ test('shipped discovery resolves private factories, aliases and recursive argume
       join(root, 'dist/index.d.ts'),
       `
       import { create } from './factory.js';
+      import { externalFn } from '../external.js';
       export declare const Widget: { create: typeof create };
       export type { Input as WidgetInput } from './types.js';
       export { First as Choice } from './shared.js';
+      interface Box<T> { value: T }
+      export declare const DataBox: Box<string>;
+      export declare const CallableBox: Box<typeof externalFn>;
     `,
     );
+    await writeFile(join(root, 'external.d.ts'), 'export declare function externalFn(): void;');
     await writeFile(
       join(root, 'dist/factory.d.ts'),
       `
@@ -114,6 +119,15 @@ test('shipped discovery resolves private factories, aliases and recursive argume
     assert.match(member.text, /create\(options: Options\)/);
     assert.match(member.text, /interface Input/);
     assert.doesNotMatch(member.text, /const Widget|obsoleteHelper|Unrelated/);
+    // Both properties share Box.value's declaration; only its callable instantiation
+    // belongs in unqualified method discovery. Explicit data-property lookup still works.
+    const callable = await describeAPI(root, 'value');
+    assert.deepEqual(callable.missing, []);
+    assert.match(callable.text, /import \{ CallableBox \}/);
+    assert.doesNotMatch(callable.text, /import \{ DataBox \}/);
+    const data = await describeAPI(root, 'DataBox.value');
+    assert.deepEqual(data.missing, []);
+    assert.match(data.text, /import \{ DataBox \}/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

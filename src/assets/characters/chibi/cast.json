@@ -1,0 +1,6 @@
+[
+  { "id": "tesla", "from": "tesla" },
+  { "id": "mira", "from": "mira" },
+  { "id": "mira-lab", "from": "mira", "outfit": "lab-coat" },
+  { "id": "tesla-field", "from": "tesla", "outfit": "field-coat" }
+]

@@ -529,5 +529,26 @@
     "source": "scene.js",
     "guides": ["docs/book.md"],
     "recommended": true
+  },
+  "story-workshop": {
+    "title": "Tlinov · Дом мыслей",
+    "summary": "Пять глав: дверь, чтение, исследование площади, лестница и встреча. Отношения и готовые цепочки; ?variant=tesla меняет одежду, героя, декорации и перспективу.",
+    "time": 25,
+    "checkpoints": [0, 2, 4.2, 8, 12.7, 20, 25, 32, 40, 49, 57, 62, 66, 74, 79, 82.9],
+    "page": "index.html",
+    "group": "explanations",
+    "tags": [
+      "персонажи",
+      "книга",
+      "Tlinov",
+      "Storybook",
+      "routines",
+      "постановка",
+      "одежда",
+      "математика"
+    ],
+    "source": "scene.js",
+    "guides": ["docs/characters.md", "docs/book.md"],
+    "recommended": true
   }
 }

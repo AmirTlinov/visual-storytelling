@@ -149,7 +149,13 @@ export function bookTransition(
         const u = uv.getX(i),
           v = uv.getY(i),
           curl = Math.sin(Math.PI * u) * Math.sin(angle) * 0.65;
-        points.setXYZ(i, u * w * Math.cos(angle), (v - 0.5) * h, u * w * Math.sin(angle) + curl);
+        // A shallow fold keeps the departing illustration within the fixed content frame.
+        points.setXYZ(
+          i,
+          u * w * Math.cos(angle),
+          (v - 0.5) * h,
+          u * w * Math.sin(angle) * 0.12 + curl,
+        );
       }
       points.needsUpdate = true;
       turnGeometry.computeBoundingBox();
@@ -194,7 +200,7 @@ export function bookTransition(
       view.shot({
         ...detail,
         from: spread,
-        progress: next.focus * (flipping ? 1 - 0.95 * Math.sin(Math.PI * turn) : 1),
+        progress: next.focus,
         reduced: next.reduced,
       });
     view.invalidate();

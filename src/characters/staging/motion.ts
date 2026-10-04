@@ -1,6 +1,6 @@
 import type { Blocking, BlockingActor, PairContact } from './blocking.js';
 import type { GroundPoint } from './types.js';
-import { objectShape } from './objects.js';
+import { objectShape, stairEnd } from './objects.js';
 import { doorApproach, doorHandle } from './doorway.js';
 import { clamp, ease, distance, interpolate, facing, alongPath } from './space.js';
 
@@ -31,14 +31,15 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
   if (!Number.isFinite(time)) throw new Error('Stage time must be finite');
   const actors: Record<string, BlockingActor> = structuredClone(blocking.initial);
   const pairs: PairContact[] = [],
-    objects: Record<string, number> = {},
+    objects: Record<string, number> = { ...blocking.initialObjects },
     books = structuredClone(blocking.initialBooks);
   for (const plan of blocking.plans) {
     if (time < plan.start) continue;
     if (time >= plan.end || reduced) {
       Object.assign(actors, structuredClone(plan.to));
       if (plan.transfer && !plan.transfer.taking) books[plan.transfer.id] = { ...plan.transfer.at };
-      if (plan.action.action === 'openDoor') objects[plan.action.door] = plan.objectTo!;
+      if (plan.action.action === 'openDoor' || plan.action.action === 'closeDoor')
+        objects[plan.action.door] = plan.objectTo!;
       continue;
     }
     const span = plan.end - plan.start,
@@ -50,13 +51,14 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
         before = plan.from[a.actor]!,
         after = plan.to[a.actor]!;
       if (plan.transfer) {
-        moving(p, before.at, after.at, t / 0.3);
+        moving(p, before.at, after.at, t / 0.3, plan.via);
         if (t >= 0.3) {
           p.travel = undefined;
           p.facing = 'front';
         }
         p.seated = before.seated * (1 - ease(t / 0.15));
         const tr = plan.transfer;
+        if (!tr.taking) p.bookOpen = (before.bookOpen ?? 0) * (1 - ease(t / 0.3));
         p.transfer = {
           ...tr,
           progress: ease((t - 0.48) / 0.32),
@@ -64,18 +66,30 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
         };
       }
       if (a.action === 'walk' || a.action === 'run' || a.action === 'flee') {
-        moving(p, before.at, after.at, t);
+        moving(p, before.at, after.at, t, plan.via);
         p.seated = before.seated * (1 - ease(t / 0.15));
         if (p.travel) p.travel.running = a.action !== 'walk';
         if (a.action === 'flee') p.mood = 'scared';
       }
-      if (a.action === 'openDoor') {
+      if (a.action === 'openBook' || a.action === 'closeBook') {
+        p.bookOpen =
+          (before.bookOpen ?? 0) + ((after.bookOpen ?? 0) - (before.bookOpen ?? 0)) * ease(t);
+      }
+      if (a.action === 'turn') p.facing = t < 0.5 ? before.facing : after.facing;
+      if (a.action === 'openDoor' || a.action === 'closeDoor') {
         const door = blocking.staging.objects[a.door]!,
           scale = blocking.scales[a.actor]!;
         const open =
           plan.objectFrom! + (plan.objectTo! - plan.objectFrom!) * ease((t - 0.35) / 0.45);
         objects[a.door] = open;
-        if (t < 0.3) moving(p, before.at, doorApproach(door, scale, plan.objectFrom!), t / 0.3);
+        if (t < 0.3)
+          moving(
+            p,
+            before.at,
+            doorApproach(door, scale, plan.objectFrom!),
+            t / 0.3,
+            plan.approaches?.[a.actor],
+          );
         else {
           const arc = Array.from({ length: 15 }, (_, i) =>
             doorApproach(
@@ -99,10 +113,10 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
         p.seated = before.seated * (1 - ease(t / 0.15));
         if (p.travel) p.travel.running = a.gait === 'run';
       }
-      if (a.action === 'climb') {
+      if (a.action === 'climb' || a.action === 'descend') {
         const stairs = blocking.staging.objects[a.stairs]!,
-          start = { ...stairs.at };
-        if (t < 0.24) moving(p, before.at, start, t / 0.24);
+          start = a.action === 'climb' ? { ...stairs.at } : stairEnd(stairs);
+        if (t < 0.24) moving(p, before.at, start, t / 0.24, plan.approaches?.[a.actor]);
         else {
           moving(p, start, after.at, (t - 0.24) / 0.76);
           if (p.travel) p.travel.steps = objectShape.stairs.steps;
@@ -116,7 +130,7 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
         const pathLength = distance(before.at, after.at);
         const approach = pathLength > 0.01 ? Math.min(0.42, pathLength / 1.2 / span) : 0;
         const settle = a.action === 'sit' ? 1 - approach : Math.min(0.18, 1 / span);
-        moving(p, before.at, after.at, approach ? t / approach : 1);
+        moving(p, before.at, after.at, approach ? t / approach : 1, plan.via);
         if (t >= approach) {
           p.travel = undefined;
           p.facing = 'front';
@@ -128,6 +142,7 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
         if (a.action === 'read') {
           p.book = a.book;
           p.bookBlend = 1;
+          p.bookOpen = (before.bookOpen ?? 0) + (1 - (before.bookOpen ?? 0)) * ease(t / 0.16);
           const reading = clamp((t - approach - settle) / Math.max(0.01, 1 - approach - settle));
           const cycle = reading * (a.pages ?? 3);
           // Hold each spread before reaching for and turning a page.
@@ -145,13 +160,13 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
       }
     } else {
       const ids = a.actors;
-      const center = interpolate(plan.from[ids[0]]!.at, plan.from[ids[1]]!.at, 0.5);
+      const center = plan.meeting!;
       for (const id of ids) {
         const p = actors[id]!,
           before = plan.from[id]!,
           after = plan.to[id]!;
-        if (a.action === 'highFive') {
-          moving(p, before.at, after.at, t / 0.28);
+        if (a.action === 'highFive' || a.action === 'handTap') {
+          moving(p, before.at, after.at, t / 0.28, plan.approaches?.[id]);
           if (t >= 0.28) {
             p.travel = undefined;
             p.facing = 'front';
@@ -160,19 +175,28 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
           const destination = interpolate(plan.to[ids[0]]!.at, plan.to[ids[1]]!.at, 0.5);
           const offset = after.at.x - destination.x;
           const joined = { ...center, x: center.x + offset };
-          if (t < 0.2) moving(p, before.at, joined, t / 0.2);
-          else moving(p, joined, after.at, (t - 0.2) / 0.8);
+          if (t < 0.2) moving(p, before.at, joined, t / 0.2, plan.approaches?.[id]);
+          else
+            moving(
+              p,
+              joined,
+              after.at,
+              (t - 0.2) / 0.8,
+              plan.via?.map((p) => ({ ...p, x: p.x + offset })),
+            );
         }
         p.seated = before.seated * (1 - ease(t / 0.15));
         p.contact = true;
       }
       pairs.push({
         actors: ids,
-        high: a.action === 'highFive',
+        gesture: a.action,
         weight:
-          a.action === 'highFive'
-            ? ease((t - 0.28) / 0.22) * (1 - ease((t - 0.66) / 0.25))
-            : ease((t - 0.08) / 0.15) * (1 - ease((t - 0.9) / 0.1)),
+          a.action === 'handTap'
+            ? ease((t - 0.3) / 0.14) * (1 - ease((t - 0.5) / 0.18))
+            : a.action === 'highFive'
+              ? ease((t - 0.28) / 0.22) * (1 - ease((t - 0.66) / 0.25))
+              : ease((t - 0.08) / 0.15) * (1 - ease((t - 0.9) / 0.1)),
       });
     }
   }

@@ -22,6 +22,8 @@ export interface Furniture {
   at: GroundPoint;
   scale?: number;
   color?: string;
+  /** Initial door opening, 0 closed to 1 open. */
+  open?: number;
   /** An entrance includes its wall and room; colors change without changing contacts. */
   facade?: { wall?: string; inside?: string };
 }
@@ -30,7 +32,13 @@ export interface Staging {
   spots: Readonly<Record<string, GroundPoint>>;
   objects: Readonly<Record<string, Furniture>>;
 }
-export type Destination = string | GroundPoint;
+export interface RelativePlace {
+  of: string;
+  side: 'left' | 'right' | 'front' | 'back' | 'on';
+  /** Clear distance from the physical edge, in metres. */
+  gap?: number;
+}
+export type Destination = string | GroundPoint | RelativePlace;
 export type StageAction =
   | { action: 'walk' | 'run' | 'flee'; actor: string; to: Destination }
   | { action: 'sit'; actor: string; seat: string }
@@ -38,7 +46,7 @@ export type StageAction =
   | { action: 'stand'; actor: string }
   | { action: 'take'; actor: string; object: string }
   | { action: 'put'; actor: string; onto: string }
-  | { action: 'openDoor'; actor: string; door: string }
+  | { action: 'openDoor' | 'closeDoor'; actor: string; door: string }
   | {
       action: 'passDoor';
       actor: string;
@@ -46,9 +54,11 @@ export type StageAction =
       to: 'inside' | 'outside';
       gait?: 'walk' | 'run';
     }
-  | { action: 'climb'; actor: string; stairs: string }
+  | { action: 'climb' | 'descend'; actor: string; stairs: string }
+  | { action: 'turn'; actor: string; facing: Facing }
+  | { action: 'openBook' | 'closeBook'; actor: string; book: string }
   | { action: 'point' | 'press'; actor: string; target: Destination }
-  | { action: 'highFive'; actors: readonly [string, string] }
+  | { action: 'highFive' | 'handTap'; actors: readonly [string, string] }
   | { action: 'walkTogether'; actors: readonly [string, string]; to: Destination };
 export interface Shot {
   focus: readonly string[];

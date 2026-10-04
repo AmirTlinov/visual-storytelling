@@ -1,5 +1,6 @@
 import { cueSheet, type Script } from '../story/cues.js';
 import type { CharacterStageOptions, Place, PropChange } from './types.js';
+import { destination } from './staging/layout.js';
 import { compileBlocking } from './staging/blocking.js';
 
 export const smooth = (t: number) => {
@@ -61,7 +62,15 @@ export function compileScore(options: CharacterStageOptions) {
     if (!pack.skins.includes(actor.skin)) throw new Error(`Unknown skin: ${actor.skin}`);
     if (actor.scale !== undefined && (!finite(actor.scale) || actor.scale <= 0))
       throw new Error(`Invalid scale: ${id}`);
-    place(actor.at, true);
+    if (set.staging) {
+      if (typeof actor.at === 'object' && 'y' in actor.at)
+        throw new Error('Prepared actors use ground coordinates');
+      destination(set.staging, actor.at);
+    } else {
+      if (typeof actor.at === 'object' && !('y' in actor.at))
+        throw new Error('Flat sets use screen coordinates');
+      place(actor.at, true);
+    }
     action(actor.action ?? 'idle');
     tracks[id] = [{ start: 0, action: actor.action ?? 'idle' }];
   }

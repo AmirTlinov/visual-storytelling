@@ -34,6 +34,7 @@ export interface SceneMount {
   readonly mode: 'story' | 'explore';
   setMode(mode: 'story' | 'explore'): void;
   setParameters(values: Record<string, ControlValue>): void;
+  showParameters(keys?: readonly string[]): void;
   describeParameter(key: string, description: ControlDescription): void;
   attachStory<P, K extends string, S = P>(options: StoryOptions<P, K, S>): Story<P, K, S>;
   attachController<P, K extends string, S>(controller: Story<P, K, S>): SceneHandle;
@@ -186,6 +187,14 @@ function mount(
         Object.assign(values, next);
         refresh();
       }
+    },
+    showParameters(keys?: readonly string[]) {
+      let count = 0;
+      for (const [key, control] of inputs) {
+        control.element.hidden = keys !== undefined && !keys.includes(key);
+        if (!control.element.hidden) count++;
+      }
+      fields.style.setProperty('--ve-parameter-columns', String(Math.min(3, count) || 1));
     },
     describeParameter(key: string, description: ControlDescription) {
       const control = inputs.get(key);

@@ -1,0 +1,4 @@
+{
+  "lab-coat": { "title": "Лабораторный халат", "parts": ["body", "arm"], "back": ["body"] },
+  "field-coat": { "title": "Полевой жилет", "parts": ["body", "arm"], "back": ["body"] }
+}

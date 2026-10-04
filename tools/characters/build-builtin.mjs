@@ -3,9 +3,14 @@ import { fileURLToPath } from 'node:url';
 import { compileCharacterPack } from './compile.mjs';
 export async function buildBuiltinCharacters() {
   const template = fileURLToPath(new URL('../../src/assets/characters/chibi/', import.meta.url));
-  const pack = await compileCharacterPack(template, [template + '/tesla', template + '/mira'], {
-    id: 'chibi',
-  });
+  const cast = JSON.parse(await readFile(template + '/cast.json', 'utf8'));
+  const pack = await compileCharacterPack(
+    template,
+    cast.map(({ from, ...profile }) => ({ directory: template + '/' + from, profile })),
+    {
+      id: 'chibi',
+    },
+  );
   const output = new URL('../../src/characters/packs/chibi-data.json', import.meta.url),
     text = JSON.stringify(pack) + '\n';
   if (

@@ -30,3 +30,13 @@ export type {
 } from './staging/types.js';
 
 export { stagingCatalog } from './staging/catalog.js';
+export { arrange, destination } from './staging/layout.js';
+export type { SetLayout } from './staging/layout.js';
+export type { Destination, RelativePlace, Facing } from './staging/types.js';
+export { routines } from './routines.js';
+export type {
+  RoomOptions,
+  StreetOptions,
+  CourtyardOptions,
+  StagePerspective,
+} from './staging/sets.js';

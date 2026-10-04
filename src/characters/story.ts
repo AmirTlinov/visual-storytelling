@@ -6,17 +6,60 @@ import type { CharacterStoryOptions } from './types.js';
 
 async function mount(root: HTMLElement, options: CharacterStoryOptions) {
   root.querySelector(':scope > [data-character-error]')?.remove();
-  const score = compileScore(options);
-  await SceneShell.ready();
-  const shell = SceneShell.mount(root, { title: options.title, paper: false, frame: options.set });
+  let cleanup: (() => void) | undefined;
   try {
+    const score = compileScore(options);
+    await SceneShell.ready();
+    const parameters =
+      options.explore === false
+        ? []
+        : [
+            {
+              key: 'beat',
+              label: 'Действие',
+              type: 'select' as const,
+              value: options.beats[0]!.id,
+              options: options.beats.map((b) => ({ value: b.id, label: b.title ?? b.text })),
+            },
+            {
+              key: 'progress',
+              label: 'Момент действия',
+              value: 0,
+              min: 0,
+              max: 1,
+              step: 0.005,
+              format: (value: unknown) => `${Math.round(Number(value) * 100)}%`,
+            },
+          ];
+    const shell = SceneShell.mount(root, {
+      title: options.title,
+      paper: false,
+      frame: options.set,
+      parameters,
+    });
+    cleanup = shell.dispose;
     const drawing = await characterStage(shell.stage, options, score);
     shell.onDispose(drawing.dispose);
     const story = shell.attachStory({
       script: score.script,
       audio: options.audio,
-      stateAt: (frame) => frame.time,
-      render(time, frame) {
+      stateAt: (frame) => {
+        const beat =
+          options.beats.findLast((b) => score.script.cues[b.id]!.start <= frame.time) ??
+          options.beats[0]!;
+        const cue = score.script.cues[beat.id]!;
+        return {
+          beat: beat.id,
+          progress: Math.max(0, Math.min(1, (frame.time - cue.start) / (cue.end - cue.start))),
+        };
+      },
+      render(values, frame, mode) {
+        const cue = score.script.cues[values.beat];
+        if (!cue) throw new Error(`Unknown action: ${values.beat}`);
+        const time =
+          mode === 'explore'
+            ? Math.min(cue.end - 1e-6, cue.start + values.progress * (cue.end - cue.start))
+            : frame.time;
         drawing.render(time, frame.reduced);
         for (const beat of options.beats) {
           frame.has(beat.id);
@@ -69,7 +112,7 @@ async function mount(root: HTMLElement, options: CharacterStoryOptions) {
     }
     return { scene: root.scene!, shell, story };
   } catch (error) {
-    shell.dispose();
+    cleanup?.();
     const message = document.createElement('p');
     message.dataset.characterError = '';
     message.setAttribute('role', 'alert');

@@ -16,7 +16,7 @@ export function furnitureParts(item: Furniture, space: Projection, open?: number
   const { parts, group } = projectedParts(item, space);
   const wood = item.color ?? '#aa8057';
   if (item.kind === 'chair' || item.kind === 'bench') {
-    const w = item.kind === 'bench' ? 1.45 : 0.68;
+    const w = objectShape[item.kind].halfWidth;
     group(0.24, (path) => {
       let out = '';
       for (const x of [-w, w])
@@ -73,7 +73,7 @@ export function furnitureParts(item: Furniture, space: Projection, open?: number
     });
   } else if (item.kind === 'stairs') {
     const d = objectShape.stairs,
-      w = 1.03,
+      w = d.halfWidth,
       top = d.steps * d.rise,
       end = d.steps * d.tread;
     group(
@@ -366,121 +366,6 @@ export const color = (hex: string, alpha = 1) => {
   c.a = alpha;
   return c;
 };
-export interface BookFrame {
-  id: string;
-  x: number;
-  y: number;
-  scale: number;
-  turn: number;
-  handTurn: number;
-  color: string;
-}
-export function bookHands(book: BookFrame) {
-  const w = 82 * book.scale,
-    h = 42 * book.scale;
-  return {
-    left: { x: book.x - w, y: book.y + h * 0.15 },
-    right: {
-      x: book.x + Math.cos(Math.PI * book.handTurn) * w * 0.72,
-      y: book.y + h * 0.2256 - Math.sin(Math.PI * book.handTurn) * h * 1.3 * 0.72,
-    },
-  };
-}
-export function drawBook(renderer: SceneRenderer, book: BookFrame, height: number) {
-  const s = book.scale,
-    w = 82 * s,
-    h = 42 * s,
-    cx = book.x,
-    cy = book.y;
-  const poly = (xy: number[][], fill: string, stroke = ink) => {
-    const points = xy.flatMap(([x, y]) => [cx + x!, height - (cy + y!)]);
-    const fillColor = color(fill);
-    for (let i = 2; i < xy.length; i++)
-      renderer.triangle(
-        true,
-        points[0]!,
-        points[1]!,
-        points[(i - 1) * 2]!,
-        points[(i - 1) * 2 + 1]!,
-        points[i * 2]!,
-        points[i * 2 + 1]!,
-        fillColor,
-        fillColor,
-        fillColor,
-      );
-    for (let i = 0; i < xy.length; i++) {
-      const a = xy[i]!,
-        b = xy[(i + 1) % xy.length]!;
-      renderer.rectLine(
-        true,
-        cx + a[0]!,
-        height - cy - a[1]!,
-        cx + b[0]!,
-        height - cy - b[1]!,
-        2.7 * s,
-        color(stroke),
-      );
-    }
-  };
-  poly(
-    [
-      [-w - 5 * s, -h * 0.9],
-      [0, -h * 0.63],
-      [w + 5 * s, -h * 0.9],
-      [w + 5 * s, h * 0.38],
-      [0, h * 0.62],
-      [-w - 5 * s, h * 0.38],
-    ],
-    book.color,
-  );
-  poly(
-    [
-      [-w, -h],
-      [0, -h * 0.65],
-      [0, h * 0.42],
-      [-w, h * 0.15],
-    ],
-    '#e3d8b6',
-  );
-  poly(
-    [
-      [0, -h * 0.65],
-      [w, -h],
-      [w, h * 0.15],
-      [0, h * 0.42],
-    ],
-    '#f7eccb',
-  );
-  for (const side of [-1, 1])
-    for (let row = 0; row < 4; row++) {
-      const x1 = side * 12 * s,
-        x2 = side * 59 * s,
-        y = -h * 0.43 + row * 8 * s;
-      renderer.rectLine(
-        true,
-        cx + x1,
-        height - cy - y,
-        cx + x2,
-        height - cy - y + (side > 0 ? 6 : -6) * s,
-        1.5 * s,
-        color('#a89e7e'),
-      );
-    }
-  if (book.turn > 0.001 && book.turn < 0.999) {
-    const x = Math.cos(Math.PI * book.turn) * w,
-      raise = Math.sin(Math.PI * book.turn) * h * 1.3;
-    poly(
-      [
-        [0, -h * 0.65],
-        [x, -h - raise],
-        [x, h * 0.15 - raise],
-        [0, h * 0.42],
-      ],
-      book.turn < 0.5 ? '#fff4d6' : '#ddd1af',
-    );
-  }
-}
-
 export function drawFurniture(renderer: SceneRenderer, part: Part, height: number) {
   for (const polygon of part.polygons) {
     const points = polygon.points,

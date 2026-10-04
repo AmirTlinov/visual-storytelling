@@ -34,6 +34,10 @@ async function mount(parent: HTMLElement, options: BookStoryOptions) {
     },
     ...(options.parameters ?? []),
   ];
+  const parameterNames = new Set(parameters.map((p) => p.key));
+  for (const page of options.pages)
+    for (const key of page.controls ?? [])
+      if (!parameterNames.has(key)) throw new Error(`Unknown page control: ${page.id}.${key}`);
   const defaults = Object.fromEntries(parameters.map((p) => [p.key, p.value]));
   await SceneShell.ready();
   const colors = theme(parent, options.theme ?? 'auto');
@@ -109,6 +113,8 @@ async function mount(parent: HTMLElement, options: BookStoryOptions) {
           state.progress = 1;
           state.open = state.focus = state.turn = 1;
         }
+        const controls = options.pages[state.page]!.controls;
+        shell.showParameters(controls ? ['chapter', ...controls] : undefined);
         book.render({ ...state, values, mode });
         for (const id of Object.keys(cues)) {
           frame.has(id);

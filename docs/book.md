@@ -34,6 +34,59 @@ const { scene } = await BookStory.mount(root, {
 `describe(frame)` задаёт доступное текстовое описание текущих значений модели.
 При reduced motion рабочая сцена появляется без полёта и изгиба листа.
 
+## Персонажи и объяснения в одной истории
+
+`Storybook` принимает `chapters`: каждый элемент — обычная `BookPage` или сцена
+с `set`, `cast`, `beats` и необязательным `shot`. Один `pack` обслуживает всех героев.
+[Дом мыслей](../examples/story-workshop/scene.js) — готовый исходник для новой истории.
+
+```js
+import { Storybook } from '@visual-storytelling/core/book';
+import { chibi, courtyard, readingRoom, routines } from '@visual-storytelling/core/characters';
+const cast = { hero: { skin: 'mira-lab', at: 'entry', scale: 0.64 } };
+await Storybook.mount(root, {
+  topic: 'Откуда берутся идеи',
+  pack: chibi,
+  chapters: [
+    {
+      id: 'enter',
+      title: 'За дверью',
+      set: courtyard(),
+      cast,
+      beats: routines.enter('enter', 'hero'),
+    },
+    {
+      id: 'read',
+      title: 'В библиотеке',
+      set: readingRoom(),
+      cast,
+      beats: routines.read('read', { actor: 'hero' }),
+    },
+    {
+      id: 'square',
+      title: 'Одна мера',
+      text: 'Четыре клетки — квадратный сантиметр.',
+      seconds: 5,
+      draw(page) {
+        page.rect('unit', { x: 3, y: 3, width: 1, height: 1 });
+      },
+    },
+  ],
+});
+```
+
+Книга сопровождает вступление и смену глав; содержимое заполняет рабочий кадр.
+«Исследовать» выбирает главу, для персонажей — момент её действия, для объяснения —
+его параметры. `controls: ['width','height']` оставляет у страницы только нужные поля;
+если `controls` пропущен, видны все параметры. `sceneTime` зарезервирован `Storybook`.
+`paper: false` позволяет обычной странице рисовать без сетки и полей.
+
+У всех сцен один графический исполнитель персонажей; действуют общие пути,
+контакты и камера. `scene.snapshot().characters` содержит состояние текущей сцены,
+а `scene.checkpoints` включает середины действий для осмысленного визуального просмотра.
+Перенос в книгу поддерживает подготовленные предметы `staging.objects`.
+Произвольные SVG-слои `PropArt` используй через `CharacterStory` или существующий фильм.
+
 ## Геометрия
 
 Лист — **18×12 модельных сантиметров**, клетка — **0,5 см**. Четыре клетки образуют

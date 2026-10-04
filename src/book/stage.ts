@@ -63,7 +63,7 @@ function mount(
       values: frame.values ?? { ...options.values, ...definition.valuesAt?.(frame) },
       mode: frame.mode ?? 'story',
     };
-    paper.reset(palette);
+    paper.reset(palette, definition.paper !== false);
     paper.context.save();
     try {
       definition.draw(paper, resolved);

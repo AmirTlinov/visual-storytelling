@@ -1,5 +1,5 @@
 import type { Script } from '../story/cues.js';
-import type { BipedRig, Facing, Shot, StageAction, Staging } from './staging/types.js';
+import type { BipedRig, Destination, Facing, Shot, StageAction, Staging } from './staging/types.js';
 
 /** Stage coordinates: x right, y down; every position uses this one space. */
 export interface Point {
@@ -21,7 +21,7 @@ export interface CharacterPack {
 }
 export interface Actor {
   skin: string;
-  at: string | Point;
+  at: Destination | Point;
   scale?: number;
   /** Mirror the whole rig, including attachments and anchors. */
   flip?: boolean;
@@ -92,6 +92,8 @@ export interface CharacterStoryOptions extends CharacterStageOptions {
   title: string;
   description: string;
   audio?: HTMLAudioElement;
+  /** Inspect any prepared beat using the same scene and model. Enabled by default. */
+  explore?: boolean;
   /** Opt-in remembered playback position, shared with the host widget state. */
   remember?: string;
 }

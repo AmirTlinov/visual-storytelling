@@ -4,14 +4,8 @@ import type { performance } from '../performance.js';
 import type { Blocking } from './blocking.js';
 import { blockAt } from './motion.js';
 import { body, connect } from './pose.js';
-import {
-  drawBook,
-  drawFurniture,
-  furnitureParts,
-  loadFurniture,
-  color,
-  type BookFrame,
-} from './furniture.js';
+import { drawFurniture, furnitureParts, loadFurniture, color } from './furniture.js';
+import { drawBook, type BookFrame } from './book.js';
 import { project } from './space.js';
 import { union, type FrameBox } from './camera.js';
 
@@ -94,6 +88,7 @@ export async function world(
                 y: p.y,
                 scale: p.scale * (item.scale ?? 0.72),
                 turn: 0,
+                open: 0,
                 handTurn: 0,
                 color: item.color ?? '#855057',
               };
@@ -179,6 +174,7 @@ export async function world(
                 y: p.y,
                 scale: p.scale * (staging.objects[id]!.scale ?? 0.72),
                 turn: 0,
+                open: 0,
                 handTurn: 0,
                 color: '',
               }),

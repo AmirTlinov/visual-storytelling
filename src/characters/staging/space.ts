@@ -40,15 +40,16 @@ export function alongPath(points: readonly GroundPoint[], progress: number): Gro
   return { ...points.at(-1)! };
 }
 export const ground = (x: number, z = 0, height = 0): GroundPoint => ({ x, z, height });
-export function floorGrid(space: Projection, color: string) {
+export function floorGrid(space: Projection, color: string, depth = 25) {
   const line = (a: GroundPoint, b: GroundPoint) => {
     const p = project(space, a),
       q = project(space, b);
     return `M${p.x} ${p.y}L${q.x} ${q.y}`;
   };
   const lines = [];
-  for (let x = -18; x <= 18; x += 2) lines.push(line(ground(x, -0.3), ground(x, 25)));
-  for (const z of [0, 1.8, 4, 7, 12, 20]) lines.push(line(ground(-20, z), ground(20, z)));
+  for (let x = -18; x <= 18; x += 2) lines.push(line(ground(x, -0.3), ground(x, depth)));
+  for (const z of [0, 1.8, 4, 7, 12, 20].filter((z) => z <= depth))
+    lines.push(line(ground(-20, z), ground(20, z)));
   return `<path d="${lines.join('')}" fill="none" stroke="${color}" stroke-width="1.5" opacity=".55"/>`;
 }
 

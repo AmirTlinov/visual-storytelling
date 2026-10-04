@@ -11,6 +11,7 @@ export async function runCharacters(args) {
     options: {
       out: { type: 'string' },
       from: { type: 'string', default: 'tesla' },
+      outfit: { type: 'string' },
       json: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
@@ -25,7 +26,7 @@ export async function runCharacters(args) {
   const [command = 'list', ...inputs] = positionals;
   if (values.help) {
     console.log(`visual-story characters [list] [--json]
-visual-story characters new ID --from tesla|mira --out DIRECTORY
+visual-story characters new ID --from tesla|mira [--outfit lab-coat|field-coat] --out DIRECTORY
 visual-story characters build DIRECTORY [DIRECTORY ...] --out pack.json
 
 new copies editable SVG artwork and its rig-compatible frames; existing files are preserved.
@@ -41,7 +42,8 @@ The template's native skeleton, skin attachments, constraints and draw order sta
     const staging = JSON.parse(await readFile(stagingPath, 'utf8'));
     const catalog = {
       pack: spec.id,
-      skins: ['tesla', 'mira'],
+      skins: JSON.parse(await readFile(join(template, 'cast.json'), 'utf8')).map((p) => p.id),
+      outfits: JSON.parse(await readFile(join(template, 'wardrobe/catalog.json'), 'utf8')),
       actions: Object.keys(spec.actions),
       anchors: Object.keys(spec.anchors),
       sets: ['laboratory', 'conservatory', 'workshop'],
@@ -64,6 +66,9 @@ The template's native skeleton, skin attachments, constraints and draw order sta
     if (inputs.length !== 1 || !/^[a-z][a-z0-9-]*$/.test(id ?? '') || !values.out)
       throw new Error('Use characters new ID --out DIRECTORY');
     if (!['tesla', 'mira'].includes(values.from)) throw new Error('Choose --from tesla or mira');
+    const outfits = JSON.parse(await readFile(join(template, 'wardrobe/catalog.json'), 'utf8'));
+    if (values.outfit && !Object.hasOwn(outfits, values.outfit))
+      throw new Error(`Unknown outfit: ${values.outfit}`);
     const destination = resolve(values.out);
     if (
       await readdir(destination).then(
@@ -79,6 +84,19 @@ The template's native skeleton, skin attachments, constraints and draw order sta
     await cp(join(template, values.from), destination, { recursive: true });
     const profile = JSON.parse(await readFile(join(destination, 'character.json'), 'utf8'));
     profile.id = id;
+    if (values.outfit) {
+      const outfit = outfits[values.outfit];
+      for (const part of outfit.parts)
+        await cp(
+          join(template, 'wardrobe', values.outfit, `${part}.svg`),
+          join(destination, profile.parts[part].file),
+        );
+      for (const part of outfit.back)
+        await cp(
+          join(template, 'wardrobe', values.outfit, `${part}-back.svg`),
+          join(destination, profile.views.back[part].file),
+        );
+    }
     await writeFile(join(destination, 'character.json'), JSON.stringify(profile, null, 2) + '\n');
     await cp(join(template, 'LICENSE.txt'), join(destination, 'CREDITS.txt'));
     await writeFile(join(destination, 'sheet.svg'), await contactSheet(destination, profile));

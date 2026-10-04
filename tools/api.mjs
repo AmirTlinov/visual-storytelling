@@ -138,10 +138,8 @@ export async function buildAPI(root, output) {
           ts.SignatureKind.Call,
         )[0]
         ?.getDeclaration();
-      properties[property.name] = collect(
-        callable && localFile(callable) !== undefined ? callable : node,
-        true,
-      );
+      const id = collect(callable && localFile(callable) !== undefined ? callable : node, true);
+      properties[property.name] = { id, callable: !!callable };
     }
     if (Object.keys(properties).length) (members[entry] ??= {})[name] = properties;
   }
@@ -189,7 +187,7 @@ export async function describeAPI(root, ...queries) {
           entry,
           symbol,
           file,
-          id: member ? members?.[entry]?.[symbol]?.[member] : signatures[entry][symbol],
+          id: member ? members?.[entry]?.[symbol]?.[member]?.id : signatures[entry][symbol],
         }))
         .filter((match) => match.id),
     );
@@ -198,8 +196,11 @@ export async function describeAPI(root, ...queries) {
       matches = Object.entries(members ?? {}).flatMap(([entry, owners]) =>
         Object.entries(owners).flatMap(([symbol, properties]) =>
           Object.entries(properties)
-            .filter(([name]) => name.toLowerCase() === requestedName.toLowerCase())
-            .map(([, id]) => ({ entry, symbol, id })),
+            .filter(
+              ([name, { callable }]) =>
+                name.toLowerCase() === requestedName.toLowerCase() && callable,
+            )
+            .map(([, { id }]) => ({ entry, symbol, id })),
         ),
       );
     }

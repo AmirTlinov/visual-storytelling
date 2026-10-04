@@ -186,6 +186,8 @@ test('completed plans clear transient movement and preserve book, facing and pla
     beat({ action: 'walk', actor: 'a', to: 'exit' }),
   ]);
   options.cast.a.holding = 'book';
+  // Isolate a height-only transfer to a seat on a raised platform.
+  options.set.staging.spots.reader = { ...options.set.staging.objects.seat.at };
   options.set.staging.objects.seat.at.height = 1.5;
   const blocking = compileScore(options).blocking;
   const baseline = new Map(

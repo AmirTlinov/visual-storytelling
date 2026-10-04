@@ -8,11 +8,11 @@ import {
 } from '@esotericsoftware/spine-webgl';
 import type { Actor, Point } from '../types.js';
 import type { performance } from '../performance.js';
-import type { BipedRig, Projection } from './types.js';
+import type { BipedRig, Projection, GroundPoint } from './types.js';
 import type { BlockingActor, PairContact } from './blocking.js';
 import { ease } from './space.js';
 import { project, interpolate, alongPath } from './space.js';
-import { bookHands, type BookFrame } from './furniture.js';
+import { bookHands, type BookFrame } from './book.js';
 
 type Performer = ReturnType<typeof performance>;
 const sides = ['left', 'right'] as const;
@@ -21,6 +21,18 @@ const vector = new Vector2();
 function descendants(bone: Bone, skeleton: Skeleton) {
   bone.appliedPose.updateWorldTransform(skeleton);
   for (const child of bone.children) descendants(child, skeleton);
+}
+/** Feet rest on tread centers. The root follows the slope while each foot lifts over risers. */
+function stairContact(travel: NonNullable<BlockingActor['travel']>, progress: number): GroundPoint {
+  const count = travel.steps!,
+    index = Math.round(progress * count);
+  if (index === 0) return { ...travel.from };
+  if (index === count) return { ...travel.to };
+  const ascending = (travel.to.height ?? 0) > (travel.from.height ?? 0);
+  const contact = interpolate(travel.from, travel.to, progress);
+  contact.z =
+    travel.from.z + ((travel.to.z - travel.from.z) * (index + (ascending ? -0.5 : 0.5))) / count;
+  return contact;
 }
 /** Bind once to the rig; all scene actions work in semantic contacts and ground coordinates. */
 export function body(
@@ -155,7 +167,7 @@ export function body(
       if (travel && travel.length > 0.001 && !reduced) {
         const depthStep = state.facing === 'front' || state.facing === 'back';
         const count =
-          travel.steps ??
+          (travel.steps ? travel.steps + 1 : undefined) ??
           Math.max(
             2,
             Math.ceil(travel.length / ((travel.running ? 0.5 : 0.32) * (actor.scale ?? 0.77)) / 2) *
@@ -171,19 +183,34 @@ export function body(
         for (const [index, side] of sides.entries()) {
           const step = Math.floor(Math.max(0, phase - index) / 2) * 2 + index;
           const swing = ease((phase - step) / 0.72);
-          const from = step === index ? 0 : Math.min(1, step / count);
-          const to = Math.min(1, (step + 2) / count);
+          const from =
+            step === index
+              ? 0
+              : Math.min(1, travel.steps ? (step - 1) / travel.steps : step / count);
+          const to = Math.min(1, travel.steps ? (step + 1) / travel.steps : (step + 2) / count);
           const progress = phase < index ? 0 : from + (to - from) * swing;
-          const point = travel.path
+          let point = travel.path
             ? alongPath(travel.path, progress)
             : interpolate(travel.from, travel.to, progress);
           const base = feet[side].data.setupPose;
           point.x += ((base.x * (actor.scale ?? 0.77)) / 100) * (actor.flip ? -1 : 1);
-          point.height =
-            (point.height ?? 0) +
-            Math.sin(Math.PI * swing) *
-              (depthStep ? (travel.running ? 0.18 : 0.12) : travel.running ? 0.36 : 0.24) *
-              (actor.scale ?? 0.77);
+          if (travel.steps && phase >= index) {
+            const start = stairContact(travel, from),
+              end = stairContact(travel, to);
+            point = interpolate(start, end, ease((swing - 0.18) / 0.65));
+            point.x += ((base.x * (actor.scale ?? 0.77)) / 100) * (actor.flip ? -1 : 1);
+            const top = Math.max(start.height ?? 0, end.height ?? 0) + 0.12 * (actor.scale ?? 0.77);
+            point.height =
+              swing < 0.3
+                ? (start.height ?? 0) + (top - (start.height ?? 0)) * ease(swing / 0.3)
+                : top + ((end.height ?? 0) - top) * ease((swing - 0.7) / 0.3);
+          } else {
+            point.height =
+              (point.height ?? 0) +
+              Math.sin(Math.PI * swing) *
+                (depthStep ? (travel.running ? 0.18 : 0.12) : travel.running ? 0.36 : 0.24) *
+                (actor.scale ?? 0.77);
+          }
           const target = project(space, point);
           foot(side, target);
           if (depthStep && state.seated < 0.01) {
@@ -250,6 +277,7 @@ export function body(
         y: height - p.y,
         scale,
         turn: frame.turn ?? 0,
+        open: frame.bookOpen ?? 0,
         handTurn: frame.handTurn ?? 0,
         color,
       };
@@ -293,11 +321,19 @@ export function connect(bodies: Record<string, Body>, pair: PairContact) {
     dy = sb.y - sa.y,
     d = Math.hypot(dx, dy);
   const along = d > 0 ? (ra * ra - rb * rb + d * d) / (2 * d) : 0;
-  const cross = Math.sqrt(Math.max(0, ra * ra - along * along)) * (pair.high ? -0.78 : 0.7);
+  const cross =
+    Math.sqrt(Math.max(0, ra * ra - along * along)) *
+    (pair.gesture === 'highFive' ? -0.78 : pair.gesture === 'handTap' ? 0.24 : 0.7);
   const target = {
     x: sa.x + (d ? dx / d : 0) * along - (d ? dy / d : 0) * cross,
     y: sa.y + (d ? dy / d : 0) * along + (d ? dx / d : 0) * cross,
   };
-  a!.reach(sideA, target, pair.weight, pair.high ? 'high-five' : 'hold-hands');
-  b!.reach(sideB, target, pair.weight, pair.high ? 'high-five' : 'hold-hands');
+  const kind =
+    pair.gesture === 'highFive'
+      ? 'high-five'
+      : pair.gesture === 'handTap'
+        ? 'hand-tap'
+        : 'hold-hands';
+  a!.reach(sideA, target, pair.weight, kind);
+  b!.reach(sideB, target, pair.weight, kind);
 }

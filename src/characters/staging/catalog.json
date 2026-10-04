@@ -20,21 +20,98 @@
   },
   "objects": ["chair", "bench", "table", "book", "board", "tree", "lamp", "door", "stairs"],
   "actions": {
-    "walk": { "actor": "hero", "to": "exit" },
-    "run": { "actor": "hero", "to": "exit" },
-    "flee": { "actor": "hero", "to": "exit" },
-    "sit": { "actor": "hero", "seat": "seat" },
-    "stand": { "actor": "hero" },
-    "take": { "actor": "hero", "object": "book" },
-    "read": { "actor": "hero", "book": "book", "pages": 3 },
-    "put": { "actor": "hero", "onto": "sideTable" },
-    "openDoor": { "actor": "hero", "door": "door" },
-    "passDoor": { "actor": "hero", "door": "door", "to": "inside", "gait": "walk" },
-    "climb": { "actor": "hero", "stairs": "stairs" },
-    "point": { "actor": "hero", "target": { "x": 1, "z": 1, "height": 2 } },
-    "press": { "actor": "hero", "target": { "x": 1, "z": 1, "height": 2 } },
-    "highFive": { "actors": ["hero", "friend"] },
-    "walkTogether": { "actors": ["hero", "friend"], "to": "near" }
+    "walk": {
+      "actor": "hero",
+      "to": "exit"
+    },
+    "run": {
+      "actor": "hero",
+      "to": "exit"
+    },
+    "flee": {
+      "actor": "hero",
+      "to": "exit"
+    },
+    "sit": {
+      "actor": "hero",
+      "seat": "seat"
+    },
+    "stand": {
+      "actor": "hero"
+    },
+    "take": {
+      "actor": "hero",
+      "object": "book"
+    },
+    "read": {
+      "actor": "hero",
+      "book": "book",
+      "pages": 3
+    },
+    "put": {
+      "actor": "hero",
+      "onto": "sideTable"
+    },
+    "openDoor": {
+      "actor": "hero",
+      "door": "door"
+    },
+    "passDoor": {
+      "actor": "hero",
+      "door": "door",
+      "to": "inside",
+      "gait": "walk"
+    },
+    "climb": {
+      "actor": "hero",
+      "stairs": "stairs"
+    },
+    "point": {
+      "actor": "hero",
+      "target": {
+        "x": 1,
+        "z": 1,
+        "height": 2
+      }
+    },
+    "press": {
+      "actor": "hero",
+      "target": {
+        "x": 1,
+        "z": 1,
+        "height": 2
+      }
+    },
+    "highFive": {
+      "actors": ["hero", "friend"]
+    },
+    "walkTogether": {
+      "actors": ["hero", "friend"],
+      "to": "near"
+    },
+    "closeDoor": {
+      "actor": "hero",
+      "door": "door"
+    },
+    "descend": {
+      "actor": "hero",
+      "stairs": "stairs"
+    },
+    "turn": {
+      "actor": "hero",
+      "facing": "front"
+    },
+    "openBook": {
+      "actor": "hero",
+      "book": "book"
+    },
+    "closeBook": {
+      "actor": "hero",
+      "book": "book"
+    },
+    "handTap": {
+      "actors": ["hero", "friend"]
+    }
   },
   "rules": [
     "Use named ground spots for cast.at.",
@@ -43,5 +120,46 @@
     "Open the door before passDoor. The entrance owns the threshold route; do not walk through its wall with a free destination.",
     "shot.focus names actors or prepared objects; the camera fits their actual bounds.",
     "Use scene.presentation() and review screenshots to inspect clipping at action boundaries."
-  ]
+  ],
+  "placement": {
+    "relative": {
+      "of": "table",
+      "side": "front",
+      "gap": 0.8
+    },
+    "sides": ["left", "right", "front", "back", "on"],
+    "arrange": "Compose props and named places around an existing set; sizes determine clearances."
+  },
+  "perspectives": ["stage", "overview"],
+  "routines": {
+    "enter": {
+      "args": ["id", "actor", "door?"],
+      "actions": ["openDoor", "passDoor"]
+    },
+    "leave": {
+      "args": ["id", "actor", "door?", "close?"],
+      "actions": ["passDoor", "closeDoor"]
+    },
+    "read": {
+      "args": [
+        "id",
+        {
+          "actor": "hero",
+          "book": "book",
+          "seat": "seat",
+          "table": "sideTable",
+          "pages": 3
+        }
+      ],
+      "actions": ["take", "sit", "openBook", "read", "closeBook", "stand", "put"]
+    },
+    "greet": {
+      "args": ["id", ["hero", "friend"], "to?"],
+      "actions": ["highFive", "walkTogether"]
+    },
+    "stairs": {
+      "args": ["id", "actor", "stairs?"],
+      "actions": ["climb", "turn", "descend"]
+    }
+  }
 }

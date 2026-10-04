@@ -2,7 +2,7 @@
 
 `@visual-storytelling/core/characters` — готовые риги, SVG-облики, декорации и предметы.
 Начальная семья **Chibi** сохраняет принятый рисунок Теслы: 44 родные кости,
-ограничения, сетки и порядок деталей. Доступны Tesla/Mira, 24 родных клипа и 15 подготовленных действий.
+ограничения, сетки и порядок деталей. Доступны Tesla/Mira, четыре встроенных облика, 24 родных клипа и 21 подготовленное действие.
 Три плоских фона и три семейства декораций с общей перспективой переиспользуют тот же риг. [Каталог возможностей](../src/assets/characters/chibi/pack.json)
 и `visual-story characters --json` дают точные имена.
 
@@ -50,8 +50,9 @@ window.galleryReady = CharacterStory.mount(root, {
 
 ## Размещение и действия
 
-Для новой истории с движением начни с `new --example chibi-reading`,
-`chibi-partners` или `chibi-adventure`. `visual-story characters --json` возвращает
+Для истории из нескольких сцен начни с `new --example story-workshop`: она сочетает
+персонажей, книгу Tlinov и исследуемую математику. Для отдельного действия подходят
+`chibi-reading`, `chibi-partners` и `chibi-adventure`. `visual-story characters --json` возвращает
 точные имена, предметы, точки и аргументы действий из общего `stagingCatalog`.
 
 ```js
@@ -91,16 +92,19 @@ await CharacterStory.mount(root, {
 });
 ```
 
-| Намерение                    | `perform`                                                                |
-| ---------------------------- | ------------------------------------------------------------------------ |
-| Идти, бежать, убегать        | `action: 'walk' / 'run' / 'flee', actor, to`                             |
-| Сесть / встать               | `action: 'sit', actor, seat` / `action: 'stand', actor`                  |
-| Взять, читать, вернуть книгу | `take: actor, object` / `read: actor, book, pages?` / `put: actor, onto` |
-| Открыть дверь                | `action: 'openDoor', actor, door`                                        |
+| Намерение                    | `perform`                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------- |
+| Идти, бежать, убегать        | `action: 'walk' / 'run' / 'flee', actor, to`                                       |
+| Сесть / встать               | `action: 'sit', actor, seat` / `action: 'stand', actor`                            |
+| Взять, читать, вернуть книгу | `take: actor, object` / `read: actor, book, pages?` / `put: actor, onto`           |
+| Открыть / закрыть дверь      | `action: 'openDoor' / 'closeDoor', actor, door`                                    |
 | Пройти через проём           | `action: 'passDoor', actor, door, to: 'inside' / 'outside', gait?: 'walk' / 'run'` |
-| Подняться по лестнице        | `action: 'climb', actor, stairs`                                         |
-| Указать / нажать             | `action: 'point' / 'press', actor, target`                               |
-| Дать пять / идти за руки     | `action: 'highFive', actors: ['a','b']` / `walkTogether: actors, to`     |
+| Подняться / спуститься       | `action: 'climb' / 'descend', actor, stairs`                                       |
+| Указать / нажать             | `action: 'point' / 'press', actor, target`                                         |
+| Дать пять / идти за руки     | `action: 'highFive', actors: ['a','b']` / `walkTogether: actors, to`               |
+| Раскрыть / закрыть книгу     | `action: 'openBook' / 'closeBook', actor, book`                                    |
+| Коснуться ладоней            | `action: 'handTap', actors: ['a','b']`                                             |
+| Повернуться                  | `action: 'turn', actor, facing: 'front' / 'left' / 'right' / 'back'`               |
 
 `actors` задаёт выражение вместе с движением: `scared` — страх, `cry` — отчаяние,
 `think`, `idea`, `celebrate` и остальные имена есть в каталоге. Свободный герой
@@ -112,6 +116,45 @@ await CharacterStory.mount(root, {
 принимает `theme: workshop | library`, `entranceScale` и содержит вход с комнатой,
 фасад и лестницу с площадкой. [Одна цепочка для двух разных героев](../examples/chibi-reading/scene.js)
 выбирает Миру через `?variant=mira`, меняя только облик, рост и декорацию.
+Все три семейства принимают `perspective: 'stage' | 'overview'`: контуры, контакты
+и пути используют одну проекцию. В `story-workshop?variant=tesla` изменены одежда,
+герой, окружение и высота взгляда при той же последовательности действий.
+
+### Постановка отношениями и готовые последовательности
+
+```js
+import { arrange, readingRoom, routines } from '@visual-storytelling/core/characters';
+const set = arrange(readingRoom(), {
+  objects: {
+    sideTable: { at: { of: 'seat', side: 'right', gap: 1.35 } },
+    book: { at: { of: 'sideTable', side: 'on' } },
+  },
+});
+const cast = { reader: { skin: 'mira-lab', at: 'entry', scale: 0.64 } };
+const beats = routines.read('reading', { actor: 'reader', pages: 2 });
+```
+
+`arrange` размещает предметы и именованные `spots` по зависимостям; `null` удаляет
+элемент. `cast.at`, `to` и `target` понимают те же отношения `left/right/front/back/on`.
+`gap` — отступ в метрах от физического края предмета. `on` находит поверхность стола.
+Именованная строка сначала обозначает `spot`, `{of, side}` — предмет.
+Пути обходят мебель с зазором под размер героя; пара идёт по общему широкому маршруту.
+Для встречи библиотека выбирает свободное место рядом с обоими героями.
+
+| Последовательность | Аргументы после уникального `id`                                                                   |
+| ------------------ | -------------------------------------------------------------------------------------------------- |
+| `routines.enter`   | `actor, door?` — открыть и войти                                                                   |
+| `routines.leave`   | `actor, door?, close?` — выйти и закрыть снаружи                                                   |
+| `routines.read`    | `{actor, book?, seat?, table?, pages?}` — взять, сесть, открыть, листать, закрыть, встать, вернуть |
+| `routines.stairs`  | `actor, stairs?` — подняться, оглянуться, спуститься                                               |
+| `routines.greet`   | `[actorA, actorB], to?` — дать пять и пойти за руки                                                |
+
+Это обычные массивы `Beat`: их можно соединять, менять тексты и длительности.
+Названные предметы должны существовать в декорации. Для начала внутри помещения
+задай двери `open: 1` и герою `at: 'inside'`; `leave` продолжит это состояние.
+`read` умеет раскрыть закрытую книгу; `put` сначала закрывает оставленную открытой.
+«Исследовать» в `CharacterStory` позволяет выбрать действие и любой его момент.
+`explore: false` отключает этот режим, когда исследованием владеет внешний фильм.
 
 Готовые декорации задают `staging`: `projection`, именованные `spots`, `objects`.
 `ground(x,z,height)` использует метры: x вправо, z в глубину, height над землёй.
@@ -137,7 +180,8 @@ await CharacterStory.mount(root, {
 границы выбранных объектов; без `shot` камера сохраняет всю площадку и расширяет
 кадр для вышедших за него героев. Плеер учитывает доступную высоту окна.
 `scene.presentation()` сообщает обрезание и непроверенные canvas, `scene.snapshot()`
-содержит положения, контакты рук и стоп. Проверяй также видимые переходы: геометрические
+содержит положения, контакты рук и стоп, действительные `bounds` и
+`framing.clipped` для выбранных камерой объектов. Проверяй также видимые переходы: геометрические
 границы не оценивают выразительность позы.
 
 Фронт, два поворота в три четверти и спина принадлежат одному Chibi-ригу.
@@ -148,14 +192,16 @@ await CharacterStory.mount(root, {
 ## Новый облик
 
 ```sh
-npx visual-story characters new scientist --from mira --out art/scientist
+npx visual-story characters new scientist --from mira --outfit lab-coat --out art/scientist
 # Измени SVG или palette в art/scientist/character.json.
 npx visual-story characters build art/scientist --out assets/scientist.json
 ```
 
 В каталоге находятся редактируемые части и `sheet.svg` с их рабочими рамками.
 `--from tesla` включает усы во всех 13 вариантах рта; `--from mira` даёт основу
-без усов. Палитра заменяет цвета сразу в деталях. Для нескольких новых героев
+без усов. `--outfit lab-coat|field-coat` сразу подставляет совместимую одежду,
+включая спину и рукава. Встроенные варианты — `mira-lab` и `tesla-field`.
+Палитра заменяет цвета сразу в деталях. Для нескольких новых героев
 передай несколько каталогов в `build`: они получат общий атлас.
 Импортируй результат как JSON и передай его в `pack`; `skin` — ID из `character.json`.
 
@@ -165,7 +211,8 @@ npx visual-story characters build art/scientist --out assets/scientist.json
 Для нового типа телосложения подготовь собственный совместимый пакет Spine,
 его действия и якоря. Замена картинки сохраняет существующее движение и ракурс.
 
-Исходники встроенных обликов — `src/assets/characters/chibi/{tesla,mira}`.
+Исходники встроенных обликов — `src/assets/characters/chibi/{tesla,mira}`;
+одежда — `wardrobe/`, состав пакета — `cast.json` в той же папке.
 `npm run build` автоматически собирает их тем же компилятором, которым пользуется
 `characters build`; `npm run build:characters` пересобирает только этот набор.
 
@@ -230,11 +277,20 @@ actors.render(frame.time, frame.reduced);
 `background: false` исключает декорации, тени и внешние SVG-предметы из показа;
 они остаются у сценографии фильма. У `CharacterStage` нет своего RAF и часов.
 
+Для нескольких кабинетов используй `CharacterStage.mountMany(host, options[])`:
+один pack, атлас, canvas и WebGL-контекст на все сцены. `pool.render(index,time,reduced)`
+возвращает выбранную сцену; `pool.dispose()` освобождает весь набор. Каждый элемент
+имеет собственные `set`, `cast`, `beats` и `shot`. `stage.paintTo(context, box)`
+переносит готовый кадр с подготовленными предметами в Canvas2D. Внешние `PropArt`
+остаются DOM-слоями `CharacterStory` и не поддерживаются этим переносом.
+
 ## Владельцы и проверка
 
 `score.ts` связывает эпизоды с существующими метками, `performance.ts` сэмплирует
 родные клипы по абсолютному времени, `stage.ts` рисует весь состав одним WebGL-контекстом,
-`story.ts` подключает общую оболочку. `staging/blocking.ts` планирует действия,
+`story.ts` подключает общую оболочку, `renderer.ts` владеет графическими ресурсами.
+`staging/layout.ts` разрешает отношения, `navigation.ts` обходит физические предметы,
+`routines.ts` собирает готовые цепочки, `staging/blocking.ts` планирует действия,
 `motion.ts` вычисляет их по времени, `pose.ts` решает контакты, `doorway.ts` владеет
 геометрией входа и маршрутами через него; `geometry.ts` проецирует общий рисунок. `world.ts` рисует
 предметы и героев в общем порядке. Сборщик обликов — `tools/characters/compile.mjs`.

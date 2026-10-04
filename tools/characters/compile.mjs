@@ -12,9 +12,15 @@ export async function compileCharacterPack(template, directories, { id = 'chibi-
   const replacements = new Map(),
     skins = [],
     viewSkins = {};
-  for (const directory of directories) {
-    const root = resolve(directory);
-    const profile = JSON.parse(await readFile(resolve(root, 'character.json'), 'utf8'));
+  const outfits = JSON.parse(await readFile(resolve(template, 'wardrobe/catalog.json'), 'utf8'));
+  for (const entry of directories) {
+    const root = resolve(typeof entry === 'string' ? entry : entry.directory);
+    const profile = {
+      ...JSON.parse(await readFile(resolve(root, 'character.json'), 'utf8')),
+      ...(typeof entry === 'string' ? {} : entry.profile),
+    };
+    if (profile.outfit && !Object.hasOwn(outfits, profile.outfit))
+      throw new Error(`Unknown outfit: ${profile.outfit}`);
     if (profile.template !== spec.id) throw new Error(`Unknown template: ${profile.template}`);
     if (
       !/^[a-z][a-z0-9-]*$/.test(profile.id) ||
@@ -42,8 +48,15 @@ export async function compileCharacterPack(template, directories, { id = 'chibi-
       );
       for (const [part, entry] of Object.entries(parts)) {
         if (!known.has(entry.path)) throw new Error(`Unknown attachment in ${part}: ${entry.path}`);
-        const file = resolve(root, entry.file);
-        if (!file.startsWith(root + sep))
+        const garment = profile.outfit && outfits[profile.outfit].parts.includes(part);
+        const backGarment =
+          garment && view === 'back' && outfits[profile.outfit].back.includes(part);
+        const owner = garment ? resolve(template, 'wardrobe', profile.outfit) : root;
+        const file = resolve(
+          owner,
+          garment ? `${part}${backGarment ? '-back' : ''}.svg` : entry.file,
+        );
+        if (!file.startsWith(owner + sep))
           throw new Error(`Artwork must be inside the character directory: ${part}`);
         let svg = await readFile(file, 'utf8');
         for (const [from, to] of Object.entries(profile.palette ?? {}))

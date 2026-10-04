@@ -20,6 +20,10 @@ export interface BookPage {
   title: string;
   text: string;
   seconds: number;
+  /** Scenery fills the frame; measured explanations keep the transparent grid. */
+  paper?: boolean;
+  /** Visible model controls in Explore; omitted shows all host parameters. */
+  controls?: readonly string[];
   /** Narrative inputs. The same inputs remain editable in Explore. */
   valuesAt?(frame: PageFrame): Record<string, ControlValue>;
   /** Accessible description of the current model, including edits in Explore. */
@@ -31,7 +35,12 @@ export class PaperPage {
   readonly canvas = document.createElement('canvas');
   readonly context: CanvasRenderingContext2D;
   readonly size = paperSize;
-  readonly safe: PageBox = { x: 0.5, y: 0.5, width: 17, height: 11 };
+  private grid = true;
+  get safe(): PageBox {
+    return this.grid
+      ? { x: 0.5, y: 0.5, width: 17, height: 11 }
+      : { x: 0, y: 0, width: 18, height: 12 };
+  }
   readonly marks: { id: string; box: PageBox }[] = [];
   private palette: PaperPalette = {};
   constructor() {
@@ -39,7 +48,8 @@ export class PaperPage {
     this.canvas.height = paperSize.height * paperSize.pixelsPerCm;
     this.context = this.canvas.getContext('2d')!;
   }
-  reset(palette: PaperPalette) {
+  reset(palette: PaperPalette, grid = true) {
+    this.grid = grid;
     this.palette = palette;
     const c = this.context,
       { width: w, height: h, pixelsPerCm: p, cell } = paperSize;
@@ -48,11 +58,11 @@ export class PaperPage {
     c.strokeStyle = this.ink('grid-ink');
     c.lineWidth = 0.015;
     c.beginPath();
-    for (let x = cell; x < w; x += cell) {
+    for (let x = cell; grid && x < w; x += cell) {
       c.moveTo(x, 0);
       c.lineTo(x, h);
     }
-    for (let y = cell; y < h; y += cell) {
+    for (let y = cell; grid && y < h; y += cell) {
       c.moveTo(0, y);
       c.lineTo(w, y);
     }

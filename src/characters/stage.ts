@@ -1,11 +1,9 @@
-import {
-  ManagedWebGLRenderingContext,
-  SceneRenderer,
-  GLTexture,
-} from '@esotericsoftware/spine-webgl';
+import { characterRenderer, type CharacterRenderer } from './renderer.js';
+import { destination } from './staging/layout.js';
+import { project } from './staging/space.js';
 import { stageFrame, type FrameBox } from './staging/camera.js';
 import { world } from './staging/world.js';
-import { unpackCharacter, readSkeleton, performance } from './performance.js';
+import { performance } from './performance.js';
 import { compileScore, smooth, type CharacterScore } from './score.js';
 import type { CharacterStageOptions, Place, Point } from './types.js';
 
@@ -16,15 +14,13 @@ export async function characterStage(
   parent: HTMLElement,
   options: CharacterStageOptions,
   score: CharacterScore,
+  shared?: CharacterRenderer,
 ) {
   const { set, pack, cast } = options;
   const background = options.background !== false;
   const scope = `character-stage-${++nextStage}`;
-  const source = await unpackCharacter(pack);
-  const texture = new Image();
-  texture.src = source.texture;
-  await texture.decode();
-  const { atlas, data } = readSkeleton(source);
+  const graphics = shared ?? (await characterRenderer(pack));
+  const { canvas, context, renderer, data, maxTextureSize } = graphics;
   const element = document.createElement('div');
   element.className = 've-character-stage';
   const layer = (markup = '') => {
@@ -36,15 +32,12 @@ export async function characterStage(
     return svg;
   };
   const back = layer(background ? set.svg : '');
-  const canvas = document.createElement('canvas');
   canvas.setAttribute('role', 'img');
   canvas.setAttribute('aria-label', options.description ?? 'Characters');
   canvas.dataset.reviewId = 'cast';
   element.append(canvas);
   const front = layer();
   parent.append(element);
-  let context: ManagedWebGLRenderingContext | undefined;
-  let renderer: SceneRenderer | undefined;
   let prepared: Awaited<ReturnType<typeof world>> | undefined;
   let disposed = false;
   const inspected = canvas as HTMLCanvasElement & { __visualReview?: () => unknown };
@@ -53,25 +46,15 @@ export async function characterStage(
     disposed = true;
     delete inspected.__visualReview;
     prepared?.dispose();
-    atlas.dispose();
-    renderer?.dispose();
-    context?.dispose();
-    context?.gl.getExtension('WEBGL_lose_context')?.loseContext();
-    canvas.width = canvas.height = 1;
+    if (!shared) graphics.dispose();
     element.remove();
   };
   try {
-    context = new ManagedWebGLRenderingContext(canvas, {
-      alpha: true,
-      premultipliedAlpha: false,
-      preserveDrawingBuffer: true,
-    });
-    const maxTextureSize = context.gl.getParameter(context.gl.MAX_TEXTURE_SIZE) as number;
-    renderer = new SceneRenderer(canvas, context);
-    for (const page of atlas.pages) page.setTexture(new GLTexture(context, texture, false));
-    renderer.camera.position.set(set.width / 2, set.height / 2, 0);
-    renderer.camera.setViewport(set.width, set.height);
-    const point = (at: string | Point) => (typeof at === 'string' ? set.spots[at]! : at);
+    const point = (at: CharacterStageOptions['cast'][string]['at']): Point => {
+      if (set.staging && !(typeof at === 'object' && 'y' in at))
+        return project(set.staging.projection, destination(set.staging, at));
+      return typeof at === 'string' ? set.spots[at]! : (at as Point);
+    };
     const actors = Object.fromEntries(
       Object.entries(cast).map(([id, actor]) => [
         id,
@@ -122,7 +105,7 @@ export async function characterStage(
     let snapshot: unknown;
     let camera: FrameBox = { x: 0, y: 0, width: set.width, height: set.height },
       bounds: Record<string, FrameBox> = {};
-    inspected.__visualReview = () => {
+    const inspect = () => {
       const rect = canvas.getBoundingClientRect();
       return {
         camera,
@@ -137,10 +120,18 @@ export async function characterStage(
         })),
       };
     };
+    const backgroundImage = new Image();
+    backgroundImage.src =
+      'data:image/svg+xml;charset=utf-8,' +
+      encodeURIComponent(new XMLSerializer().serializeToString(back));
+    await backgroundImage.decode();
     const stage = {
       canvas,
       render(time: number, reduced = false) {
         if (disposed) return;
+        graphics.activate(element, front);
+        canvas.setAttribute('aria-label', options.description ?? 'Characters');
+        inspected.__visualReview = inspect;
         const actions =
           prepared?.sample(time, reduced) ??
           Object.fromEntries(
@@ -240,6 +231,20 @@ export async function characterStage(
         snapshot = {
           time,
           camera,
+          bounds,
+          framing: {
+            focus: beat.shot?.focus ?? Object.keys(bounds),
+            clipped: Object.entries(bounds)
+              .filter(
+                ([id, b]) =>
+                  (!beat.shot || beat.shot.focus.includes(id)) &&
+                  (b.x < camera.x - 0.1 ||
+                    b.y < camera.y - 0.1 ||
+                    b.x + b.width > camera.x + camera.width + 0.1 ||
+                    b.y + b.height > camera.y + camera.height + 0.1),
+              )
+              .map(([id]) => id),
+          },
           actions,
           world: prepared?.snapshot(),
           props: propState,
@@ -254,6 +259,26 @@ export async function characterStage(
         };
       },
       snapshot: () => snapshot,
+      /** Paint the prepared scene into a book page or another host-owned canvas. */
+      paintTo(target: CanvasRenderingContext2D, box: FrameBox) {
+        if (Object.keys(score.props).length)
+          throw new Error(
+            'Canvas chapters use prepared stage objects; SVG props remain in CharacterStage',
+          );
+        target.save();
+        target.beginPath();
+        target.rect(box.x, box.y, box.width, box.height);
+        target.clip();
+        target.drawImage(
+          backgroundImage,
+          box.x - (camera.x / camera.width) * box.width,
+          box.y - (camera.y / camera.height) * box.height,
+          (set.width / camera.width) * box.width,
+          (set.height / camera.height) * box.height,
+        );
+        target.drawImage(canvas, box.x, box.y, box.width, box.height);
+        target.restore();
+      },
       show(visible: boolean) {
         if (!disposed) element.hidden = !visible;
       },
@@ -270,5 +295,39 @@ export async function characterStage(
 export const CharacterStage = {
   mount(parent: HTMLElement, options: CharacterStageOptions) {
     return characterStage(parent, options, compileScore(options));
+  },
+  async mountMany(parent: HTMLElement, options: readonly CharacterStageOptions[]) {
+    if (!options.length) throw new Error('A cast sequence needs at least one stage');
+    const pack = options[0]!.pack;
+    if (options.some((o) => o.pack.gzip !== pack.gzip))
+      throw new Error('Chapters share one character pack');
+    const scores = options.map(compileScore),
+      graphics = await characterRenderer(pack);
+    const stages: Awaited<ReturnType<typeof characterStage>>[] = [];
+    try {
+      for (const [i, entry] of options.entries()) {
+        const stage = await characterStage(parent, entry, scores[i]!, graphics);
+        stage.show(false);
+        stages.push(stage);
+      }
+      return {
+        canvas: graphics.canvas,
+        render(index: number, time: number, reduced = false) {
+          const stage = stages[index];
+          if (!stage) throw new Error(`Unknown character chapter: ${index}`);
+          stage.show(true);
+          stage.render(time, reduced);
+          return stage;
+        },
+        dispose() {
+          for (const stage of stages) stage.dispose();
+          graphics.dispose();
+        },
+      };
+    } catch (error) {
+      for (const stage of stages) stage.dispose();
+      graphics.dispose();
+      throw error;
+    }
   },
 };
