@@ -1,0 +1,93 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { buildAPI, describeAPI } from '../tools/api.mjs';
+
+test('one morph lookup explains its inputs without unrelated implementation helpers', async () => {
+  const root = fileURLToPath(new URL('../', import.meta.url));
+  const { text, missing } = await describeAPI(root, 'Morph3D', 'Morph2D', 'Morph');
+  assert.deepEqual(missing, []);
+  assert.match(text, /import \{ Morph3D \} from '@visual-storytelling\/core\/three'/);
+  for (const name of ['MorphOperation', 'MorphObject', 'MorphFrame', 'Frame', 'Cue'])
+    assert.equal(
+      [...text.matchAll(new RegExp(`export interface ${name}(?:[ <{])`, 'g'))].length,
+      1,
+    );
+  assert.match(text, /export type VolumeShape =/);
+  assert.match(text, /export type MorphTime = number \| Frame/);
+  assert.doesNotMatch(text, /declare function (?:bodySize|shapeSize|motionProgress)\(/);
+  assert.match(text, /Related API: visual-story api Viewport3D/);
+  const unknown = await describeAPI(root, 'Viewport');
+  assert.equal(unknown.missing.length, 1);
+  assert.match(unknown.text, /Viewport3D/);
+});
+
+test('shipped discovery resolves private factories, aliases and recursive argument types', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'story-api-'));
+  try {
+    await mkdir(join(root, 'dist'));
+    await writeFile(
+      join(root, 'package.json'),
+      JSON.stringify({
+        name: 'public-api-fixture',
+        type: 'module',
+        exports: {
+          '.': { types: './dist/index.d.ts' },
+          './alternate': { types: './dist/alternate.d.ts' },
+        },
+      }),
+    );
+    await writeFile(
+      join(root, 'dist/index.d.ts'),
+      `
+      import { create } from './factory.js';
+      export declare const Widget: { create: typeof create };
+      export type { Input as WidgetInput } from './types.js';
+      export { First as Choice } from './shared.js';
+    `,
+    );
+    await writeFile(
+      join(root, 'dist/factory.d.ts'),
+      `
+      import type { Input as Options } from './types.js';
+      export declare function create(options: Options): { dispose(): void };
+      export declare function obsoleteHelper(): void;
+    `,
+    );
+    await writeFile(
+      join(root, 'dist/alternate.d.ts'),
+      "export { Second as Choice } from './shared.js';",
+    );
+    await writeFile(
+      join(root, 'dist/shared.d.ts'),
+      `export declare const First: { first: true };
+       export declare const Second: { second: true };`,
+    );
+    await writeFile(
+      join(root, 'dist/types.d.ts'),
+      `
+      export interface Input { title: string; child?: Input }
+      export interface Unrelated { unused: true }
+    `,
+    );
+    await buildAPI(root, join(root, 'dist'));
+    const { text, missing } = await describeAPI(root, 'Widget');
+    assert.deepEqual(missing, []);
+    assert.match(text, /declare function create\(options: Options\)/);
+    assert.match(text, /Input as Options/);
+    assert.match(text, /import type \{ WidgetInput \} from 'public-api-fixture'/);
+    assert.equal([...text.matchAll(/export interface Input/g)].length, 1);
+    assert.doesNotMatch(text, /obsoleteHelper|Unrelated/);
+    const choices = await describeAPI(root, 'Choice');
+    assert.deepEqual(choices.missing, []);
+    assert.match(choices.text, /import \{ Choice \} from 'public-api-fixture';/);
+    assert.match(choices.text, /import \{ Choice \} from 'public-api-fixture\/alternate';/);
+    assert.match(choices.text, /const First: \{ first: true \}/);
+    assert.match(choices.text, /const Second: \{ second: true \}/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

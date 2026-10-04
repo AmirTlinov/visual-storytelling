@@ -6,14 +6,32 @@ export const cases = [
   { id: 'mixed', title: 'Кубик + шар → капсула' },
 ];
 
+// One operation spans the aligned spoken approach and shape cues. Reading and
+// result pauses remain outside this interval; the morph owns its contact time.
+export const script = {
+  ...timing,
+  cues: {
+    ...timing.cues,
+    ...Object.fromEntries(
+      cases.map(({ id }) => {
+        const approach = timing.cues[`${id}_approach`],
+          shape = timing.cues[`${id}_shape`];
+        return [
+          `${id}_change`,
+          {
+            start: (approach ?? shape).start,
+            end: shape.end,
+            text: [approach?.text, shape.text].filter(Boolean).join('. '),
+            action: shape.action,
+          },
+        ];
+      }),
+    ),
+  },
+};
+
 export function stateAt(frame) {
   const index = frame.has('mixed') ? 2 : frame.has('join') ? 1 : 0;
   const id = cases[index].id;
-  const p = frame.progress(`${id}_shape`);
-  const start = index ? timing.cues[`${id}_approach`].start : 0;
-  const approach = index
-    ? Math.max(0, Math.min(1, (frame.time - start) / (timing.cues[`${id}_shape`].start - start)))
-    : 0;
-  const progress = index ? (frame.has(`${id}_shape`) ? 0.3 + p * 0.7 : approach * 0.3) : p;
-  return { index, progress: frame.reduced ? (frame.finished(`${id}_shape`) ? 1 : 0) : progress };
+  return { index, progress: frame.progress(`${id}_change`) };
 }

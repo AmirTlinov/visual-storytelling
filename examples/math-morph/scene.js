@@ -110,7 +110,7 @@ window.galleryReady = (async () => {
         padding: 35,
         reduced: frame.reduced,
       });
-      current = { ...state, ...measured, mode, result: volume.plan.result };
+      current = { ...state, ...measured, mode };
     },
   });
   const snapshot = root.scene.snapshot;

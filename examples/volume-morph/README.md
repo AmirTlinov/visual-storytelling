@@ -1,6 +1,6 @@
 # Объёмный морфинг
 
-54-секундный рассказ: кубик → шар, два кубика → брусок, кубик и шар → капсула. Голос, главы, вращение и перемотка используют `SceneShell` и `Viewport3D`.
+Рассказ: кубик → шар, два кубика → брусок, кубик и шар → капсула. Голос, главы, вращение и перемотка используют `SceneShell` и `Viewport3D`.
 
 ```js
 import { Morph } from '@visual-storytelling/core';
@@ -12,10 +12,12 @@ const operation = Morph.merge(
 );
 const morph = Morph3D.mount(view, operation, { pigment: 'blue' });
 view.setObject(morph.object, { fitView: false });
-morph.render(frame.progress('join'));
+morph.render(frame, 'join_change');
 ```
 
 Движок задаёт сближение и контакт, сохраняет исходные грани до слияния, переносит штрихи на общую поверхность. GPU находит поверхность по полю расстояний; заливка, рёбра и надписи получают одну глубину. `setOperation` переиспользует компонент в следующей главе. [Общий API, 2D и физический контакт](../../docs/morphing.md).
+
+`model.js` объединяет прочитанные метки сближения и превращения в одну метку операции, сохраняя паузы до действия и после результата. Длительность и reduced motion обрабатывает `Morph3D`.
 
 ```sh
 npm run build

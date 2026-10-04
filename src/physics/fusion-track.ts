@@ -70,7 +70,7 @@ export function fusionTrack(
   const initial = sample(0);
   const merged = new Map<number, { box: Float64Array; offsets: Float32Array; count: number }>();
   const output: InkVertices = initial.map((vertices) => new Float32Array(vertices.length));
-  const cages = motion.patches.map((patch, index) => {
+  const cages = motion.patches.map((patch) => {
     if (!merged.has(patch.target))
       merged.set(patch.target, {
         box: new Float64Array(4),
@@ -100,7 +100,7 @@ export function fusionTrack(
       nodes[row * 3 + column] = i;
     }
     body.setParticlePinned(nodes[4]!, true);
-    const life = bodyLifetime(world, `fusion:${index}`, {
+    const life = bodyLifetime(world, `fusion:${body.handle}`, {
       awake: () => !body.isSleeping(),
       remove: () => world.raw.removeSoftBody(body),
     });

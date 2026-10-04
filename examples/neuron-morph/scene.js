@@ -117,7 +117,6 @@ window.galleryReady = (async () => {
         mode,
         inputs: inputsOf(state),
         weights: weightsOf(state),
-        result: volume.plan.result,
       };
     },
   });

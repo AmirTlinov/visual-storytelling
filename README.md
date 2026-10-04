@@ -21,7 +21,7 @@ node tools/scene.mjs examples --recommended    # готовые основы SVG
 node tools/scene.mjs new /absolute/output/my-story --example explorer-svg
 cd /absolute/output/my-story
 npm install
-npx visual-story api SceneShell  # точный контракт установленной версии
+npx visual-story api SceneShell  # контракт и связанные типы установленной версии
 npm run build
 npm run dev
 ```

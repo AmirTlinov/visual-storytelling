@@ -26,12 +26,13 @@ async function mount(
     tension = 36,
     width = 0;
   let poses: { sources: FusionPose[]; targets: FusionPose[] } = { sources: [], targets: [] };
-  const duration = 4;
+  let duration = 4;
+  const authoredDuration = duration;
   const view = await physicalFusion(parent, {
     color: options.color,
-    duration,
+    duration: authoredDuration,
     frame(time) {
-      const p = time / duration,
+      const p = time / authoredDuration,
         approach = smooth((p - 0.03) / 0.17);
       return {
         sources: poses.sources.map((pose) => ({
@@ -51,6 +52,14 @@ async function mount(
     if (disposed) return;
     const time = morphTiming(input, cues),
       p = time.progress;
+    if (time.duration !== undefined && (!Number.isFinite(time.duration) || time.duration < 0))
+      throw new Error('Ink duration must be finite and non-negative');
+    // A zero-length cue selects an endpoint. Keep the positive physical clock;
+    // fusionTrack returns exact endpoints without running the simulation.
+    if (time.duration !== undefined && time.duration > 0 && time.duration !== duration) {
+      view.setDuration(time.duration);
+      duration = time.duration;
+    }
     lastTime = input;
     lastCues = cues;
     progress = Math.max(0, Math.min(1, p));
