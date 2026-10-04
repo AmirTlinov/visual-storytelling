@@ -35,11 +35,12 @@ function mount(
   function render(input: MorphTime, cues?: MorphCues) {
     if (disposed) return;
     const time = morphTiming(input, cues),
-      p = time.progress;
+      p = time.progress,
+      nextDuration = time.duration ?? duration,
+      frame = plan.sample(motionProgress(time, plan.completeAt), nextDuration);
     lastTime = input;
     lastCues = cues;
-    duration = time.duration ?? duration;
-    const frame = plan.sample(motionProgress(time, plan.completeAt), duration);
+    duration = nextDuration;
     body.render(frame);
     progress = Math.max(0, Math.min(1, p));
     return frame;

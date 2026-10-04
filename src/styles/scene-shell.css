@@ -29,8 +29,8 @@
 
 .ve-scene .ve-surface-label{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;pointer-events:none}
 
-/* Arithmetic owns its intrinsic height; neighbouring captions and controls stay in flow. */
-.ve-scene .ve-stage:has([data-math-layout="cells"]:not([hidden])){height:auto}
-.ve-scene [data-math-layout="cells"]{position:relative;width:100%;height:var(--ve-math-height)}
-.ve-scene [data-math-layout="cells"]>svg{display:block;width:100%;height:auto;max-height:none}
-.ve-scene [data-math-layout="cells"]>canvas{display:block;width:100%;height:100%}
+/* Measured content owns its height; captions and controls stay in flow. */
+.ve-scene .ve-stage:has([data-content-layout="fit"]:not([hidden])){height:auto}
+[data-content-layout="fit"]{position:relative;width:100%}
+[data-content-layout="fit"]>svg{display:block;width:100%;height:auto;max-height:none}
+[data-content-layout="fit"]>canvas{display:block;width:100%;height:100%}

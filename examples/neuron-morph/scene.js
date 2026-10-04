@@ -51,7 +51,7 @@ window.galleryReady = (async () => {
   });
   shell.attachView(view);
   const first = operationFor(initial);
-  const flat = MathMorph2D.mount(flatStage, first, { id: 'neuron-flat', width: 880, height: 430 });
+  const flat = MathMorph2D.mount(flatStage, first, { id: 'neuron-flat' });
   const volume = MathMorph3D.mount(view, first);
   view.setObject(volume.object, { fitView: false });
   const representation = SketchControls.field(

@@ -1,4 +1,5 @@
-import { fusionText } from '../ink/fusion/text.js';
+import { inkLayout } from './ink-layout.js';
+import { contentViewport } from '../layout/content.js';
 import type { FusionShape, FusionPose } from '../ink/fusion/shape.js';
 import { physicalFusion } from '../physics/fusion.js';
 import { smooth } from './numbers.js';
@@ -36,6 +37,7 @@ async function mount(
         approach = smooth((p - 0.03) / 0.17);
       return {
         sources: poses.sources.map((pose) => ({
+          ...pose,
           x: pose.x * (1 - 0.16 * approach),
           y: pose.y * (1 - 0.16 * approach),
         })),
@@ -45,7 +47,7 @@ async function mount(
       };
     },
   });
-  const originalHeight = parent.style.height;
+  const viewport = contentViewport(parent);
   let lastTime: MorphTime = 0,
     lastCues: MorphCues | undefined;
   function render(input: MorphTime, cues?: MorphCues) {
@@ -65,73 +67,14 @@ async function mount(
     progress = Math.max(0, Math.min(1, p));
     view.render(motionProgress(time, 0.9) * duration);
   }
-  function rebuild(candidate = current) {
-    const nextWidth = Math.max(240, parent.getBoundingClientRect().width);
-    const inputs = [...candidate.sources, ...candidate.targets];
-    const block = inputs.some(
-      (value) => typeof value === 'string' && (/\s/.test(value) || value.length > 14),
-    );
-    const letters = inputs.every((value) => typeof value === 'string' && [...value].length === 1);
-    const size = block
-      ? nextWidth < 480
-        ? 25
-        : 30
-      : letters
-        ? Math.min(
-            180,
-            nextWidth / (Math.max(candidate.sources.length, candidate.targets.length) * 1.8),
-          )
-        : Math.min(
-            96,
-            nextWidth / (Math.max(candidate.sources.length, candidate.targets.length) * 7),
-          );
-    const make = (group: InkOperation['sources']) =>
-      group.map((value) =>
-        typeof value !== 'string'
-          ? value
-          : fusionText(value, {
-              size,
-              maxWidth: block
-                ? nextWidth - 36
-                : Math.max(24, (nextWidth - 36 - (group.length - 1) * 48) / group.length),
-              align: block ? 'left' : 'center',
-            }),
-      );
-    const sources = make(candidate.sources),
-      targets = make(candidate.targets),
-      gap = block ? 68 : 48;
-    const arrange = (group: FusionShape[]) => {
-      const extents = group.map((shape) => (block ? shape.bounds.height : shape.bounds.width));
-      let cursor = -(extents.reduce((a, b) => a + b, 0) + gap * (group.length - 1)) / 2;
-      return extents.map((extent) => {
-        const position = cursor + extent / 2;
-        cursor += extent + gap;
-        return block ? { x: 0, y: position } : { x: position, y: 0 };
-      });
-    };
-    const height = block
-      ? Math.max(
-          ...[sources, targets].map(
-            (group) =>
-              group.reduce((n, shape) => n + shape.bounds.height, 0) + gap * (group.length - 1),
-          ),
-        ) + 64
-      : Math.max(215, ...[...sources, ...targets].map((shape) => shape.bounds.height + 100));
-    for (const shape of [...sources, ...targets])
-      if (
-        !shape.paths?.length ||
-        ![shape.bounds?.width, shape.bounds?.height].every((v) => Number.isFinite(v) && v > 0) ||
-        shape.paths.some(
-          (path) =>
-            path.length < 2 ||
-            path.some(
-              (point) => point.length !== 3 || !point.every(Number.isFinite) || point[2] < 0,
-            ),
-        )
-      )
-        throw new Error('Ink objects need finite visible strokes and positive bounds');
+  function rebuild(candidate = current, reset = false) {
+    const nextWidth = Math.max(1, parent.getBoundingClientRect().width || width || 240);
+    const layout = inkLayout(candidate, nextWidth);
+    const sources = layout.sources.shapes,
+      targets = layout.targets.shapes,
+      height = layout.height;
     const oldPoses = poses;
-    poses = { sources: arrange(sources), targets: arrange(targets) };
+    poses = { sources: layout.sources.poses, targets: layout.targets.poses };
     try {
       view.setShapes(sources, targets);
     } catch (error) {
@@ -140,7 +83,7 @@ async function mount(
     }
     current = candidate;
     width = nextWidth;
-    parent.style.height = `${height}px`;
+    viewport.resize(height);
     view.setSize(width, height);
     view.canvas.setAttribute(
       'aria-label',
@@ -150,7 +93,7 @@ async function mount(
         )
         .join(' → '),
     );
-    render(lastTime, lastCues);
+    render(reset ? 0 : lastTime, reset ? undefined : lastCues);
   }
   function setOperation(next: InkOperation) {
     if (disposed) throw new Error('Ink morph has been disposed');
@@ -160,7 +103,7 @@ async function mount(
       [...next.sources, ...next.targets].some((value) => typeof value === 'string' && !value.trim())
     )
       throw new Error('Ink morph needs visible sources and targets');
-    rebuild(next);
+    rebuild(next, true);
   }
   const observer = new ResizeObserver(() => {
     if (
@@ -178,7 +121,7 @@ async function mount(
     observer.disconnect();
     unwatchMotion();
     view.dispose();
-    parent.style.height = originalHeight;
+    viewport.dispose();
     throw error;
   }
   return {
@@ -202,7 +145,7 @@ async function mount(
       observer.disconnect();
       unwatchMotion();
       view.dispose();
-      parent.style.height = originalHeight;
+      viewport.dispose();
     },
   };
 }

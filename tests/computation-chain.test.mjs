@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MathMorph } from '../dist/morph/math.js';
-import { cellLayout, cellViewport } from '../dist/morph/layout.js';
+import { cellLayout } from '../dist/morph/layout.js';
+import { contentViewport } from '../dist/layout/content.js';
 import { mathMotionFrame, morphTiming } from '../dist/morph/timing.js';
 import { cueSheet } from '../dist/story/cues.js';
 
@@ -27,17 +28,17 @@ function layoutHost(layout = null, height = '', priority = '') {
       removeProperty: (key) => properties.delete(key),
     },
     snapshot: () => [
-      host.getAttribute('data-math-layout'),
-      host.style.getPropertyValue('--ve-math-height'),
-      host.style.getPropertyPriority('--ve-math-height'),
+      host.getAttribute('data-content-layout'),
+      host.style.getPropertyValue('--ve-content-height'),
+      host.style.getPropertyPriority('--ve-content-height'),
     ],
   };
-  if (layout !== null) host.setAttribute('data-math-layout', layout);
-  if (height) host.style.setProperty('--ve-math-height', height, priority);
+  if (layout !== null) host.setAttribute('data-content-layout', layout);
+  if (height) host.style.setProperty('--ve-content-height', height, priority);
   return host;
 }
 
-test('shared arithmetic height survives either disposal order and restores its original CSS once', () => {
+test('shared content height survives either disposal order and restores its original CSS once', () => {
   for (const original of [
     [null, '', ''],
     ['authored', '52vh', 'important'],
@@ -47,21 +48,27 @@ test('shared arithmetic height survives either disposal order and restores its o
       [1, 0],
     ]) {
       const host = layoutHost(...original),
-        clients = [cellViewport(host)];
+        clients = [contentViewport(host)];
+      const inlineHeight = original[0] ? '500px' : '';
+      if (inlineHeight) host.style.setProperty('height', inlineHeight, 'important');
       clients[0].resize(284);
-      clients.push(cellViewport(host));
+      clients.push(contentViewport(host));
       clients[1].resize(400);
       clients[0].resize(284);
-      assert.deepEqual(host.snapshot(), ['cells', '400px', '']);
+      assert.deepEqual(host.snapshot(), ['fit', '400px', '']);
+      assert.equal(host.style.getPropertyValue('height'), 'var(--ve-content-height)');
+      assert.equal(host.style.getPropertyPriority('height'), '');
       clients[0].resize(460);
       assert.equal(host.snapshot()[1], '460px');
       clients[0].resize(284);
       clients[order[0]].dispose();
       clients[order[0]].dispose();
       clients[order[0]].resize(900);
-      assert.deepEqual(host.snapshot(), ['cells', `${order[0] === 0 ? 400 : 284}px`, '']);
+      assert.deepEqual(host.snapshot(), ['fit', `${order[0] === 0 ? 400 : 284}px`, '']);
       clients[order[1]].dispose();
       assert.deepEqual(host.snapshot(), original);
+      assert.equal(host.style.getPropertyValue('height'), inlineHeight);
+      assert.equal(host.style.getPropertyPriority('height'), inlineHeight ? 'important' : '');
     }
   }
 });
@@ -69,15 +76,15 @@ test('shared arithmetic height survives either disposal order and restores its o
 test('releasing a height keeps other clients, permits reactivation and leaves other hosts intact', () => {
   const host = layoutHost(),
     other = layoutHost('other', '30vh');
-  const first = cellViewport(host),
-    second = cellViewport(host),
-    separate = cellViewport(other);
+  const first = contentViewport(host),
+    second = contentViewport(host),
+    separate = contentViewport(other);
   first.resize(500);
   second.resize(300);
   separate.resize(700);
   first.resize();
   first.resize();
-  assert.deepEqual(host.snapshot(), ['cells', '300px', '']);
+  assert.deepEqual(host.snapshot(), ['fit', '300px', '']);
   first.resize(600);
   assert.equal(host.snapshot()[1], '600px');
   second.resize();
@@ -85,8 +92,8 @@ test('releasing a height keeps other clients, permits reactivation and leaves ot
   assert.equal(host.snapshot()[1], '600px');
   first.resize();
   assert.deepEqual(host.snapshot(), [null, '', '']);
-  assert.deepEqual(other.snapshot(), ['cells', '700px', '']);
-  host.style.setProperty('--ve-math-height', '45vh', 'important');
+  assert.deepEqual(other.snapshot(), ['fit', '700px', '']);
+  host.style.setProperty('--ve-content-height', '45vh', 'important');
   first.resize(320);
   first.dispose();
   assert.deepEqual(host.snapshot(), [null, '45vh', 'important']);

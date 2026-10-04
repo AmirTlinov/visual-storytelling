@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Euler, Vector3 } from 'three';
 import { surfaceInscriptions } from '../dist/morph/ink.js';
+import { mathBodies } from '../dist/morph/math-bodies.js';
 import {
   volumeBox,
   volumeSphere,
@@ -368,6 +369,47 @@ test('measured material carries its original grid lines through registration', (
     ] as const)
       close(marks.segments[i]!, expected);
   }
+  const strained = volumeField([source], [source]);
+  for (const sx of [1, 1.01, 0.99]) {
+    const sy = 1 / sx,
+      body = { shape: source, position: [0, 0, 0] as const, scale: [sx, sy, 1] as const, grid: 1 },
+      frame = { sources: [body], targets: [body], morph: 0 };
+    strained.update(frame);
+    const marks = ink.sample(frame, 0.01, strained.registration).marks;
+    assert.equal(marks.segments.length, 12, 'Material strain keeps the same two center lines');
+    close(marks.segments[0]!, 0);
+    close(marks.segments[1]!, -sy);
+    close(marks.segments[2]!, 0);
+    close(marks.segments[3]!, sy);
+    close(marks.segments[6]!, -sx);
+    close(marks.segments[7]!, 0);
+    close(marks.segments[8]!, sx);
+    close(marks.segments[9]!, 0);
+  }
+  const quantity = { size: [3, 2, 1] as const, position: [0, 0, 0] as const, value: 6 };
+  const mathematical = mathBodies(
+    { sources: [quantity], targets: [quantity], morph: 0, formula: '', phase: 'hold', stage: 0 },
+    true,
+  );
+  const frame = {
+    ...mathematical,
+    sources: mathematical.sources.map((body) => ({ ...body, text: undefined })),
+    targets: mathematical.targets.map((body) => ({ ...body, text: undefined })),
+  };
+  const measured = volumeField(
+    frame.sources.map((body) => body.shape),
+    frame.targets.map((body) => body.shape),
+  );
+  measured.update(frame);
+  const marks = ink.sample(frame, 0.01, measured.registration).marks;
+  assert.equal(
+    marks.segments.length,
+    18,
+    'A 3 by 2 quantity retains both vertical units and its horizontal unit',
+  );
+  close(marks.segments[0]!, -0.5);
+  close(marks.segments[6]!, 0.5);
+  close(marks.segments[13]!, 0);
 });
 test('shared planes follow rotated boxes and fade continuously under small pose changes', () => {
   const box = volumeBox([2, 2, 2]),

@@ -103,7 +103,6 @@ window.galleryReady = (async () => {
     flatStage = document.createElement('div'),
     inkStage = document.createElement('div');
   volumeStage.className = flatStage.className = 'written-solid';
-  inkStage.className = 'written-ink';
   flatStage.hidden = inkStage.hidden = true;
   shell.stage.append(volumeStage, flatStage, inkStage);
   const view = Viewport3D.mount(volumeStage, {
@@ -111,7 +110,7 @@ window.galleryReady = (async () => {
   });
   shell.attachView(view);
   const morph = Morph3D.mount(view, chapters[0].operation);
-  const flat = Morph2D.mount(flatStage, chapters[0].operation, { id: 'written-flat', height: 430 });
+  const flat = Morph2D.mount(flatStage, chapters[0].operation, { id: 'written-flat' });
   const writing = await InkMorph.mount(inkStage, chapters[4].ink, { color: 'var(--ve-blue)' });
   view.setObject(morph.object, { fitView: false });
   let active = 'round',
@@ -130,8 +129,6 @@ window.galleryReady = (async () => {
     (value) => {
       projection = value;
       show();
-      flat.render(morph.progress);
-      morph.render(morph.progress);
     },
   );
   representation.element.classList.add('written-projection');

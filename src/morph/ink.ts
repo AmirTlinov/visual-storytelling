@@ -2,7 +2,7 @@ import { compileInkMotion, type InkVertices } from '../ink/fusion/motion.js';
 import { inkDetailVisibility } from '../ink/fusion/detail.js';
 import { fusionText } from '../ink/fusion/text.js';
 import type { FusionShape } from '../ink/fusion/shape.js';
-import { bodySize, type MorphBody, type MorphFrame } from './objects.js';
+import { bodySize, shapeSize, type MorphBody, type MorphFrame } from './objects.js';
 
 import type { InkFieldFrame } from '../ink/fusion/geometry.js';
 
@@ -17,6 +17,24 @@ type Group = {
   disappearing: boolean;
 };
 const text = (body: MorphBody) => String(body.text ?? '').trim();
+const numeric = (value: string) => /^[+\-−]?\d[\d\s.,]*(?:[eE][+\-]?\d+)?%?$/.test(value);
+function writingArea(body: MorphBody, rest = false): readonly [number, number] {
+  const size = rest ? shapeSize(body.shape) : bodySize(body);
+  const radius =
+    body.shape.kind === 'box'
+      ? rest
+        ? body.shape.rounding
+        : (body.rounding ?? body.shape.rounding)
+      : body.shape.radius;
+  // Curved end caps turn away from the reader. Keep the writing on their
+  // front patch instead of letting the last letters run onto the silhouette.
+  return [size[0] * 0.74 - radius * (rest ? 1 : (body.scale?.[0] ?? 1)) * 0.3, size[1] * 0.46];
+}
+function layoutKey(body: MorphBody) {
+  const value = text(body),
+    [width, height] = writingArea(body, true);
+  return JSON.stringify([value, numeric(value) ? 0 : width / height]);
+}
 function registered(body: MorphBody, transform: Float64Array, side: number): MorphBody {
   const at = side * 6;
   return {
@@ -39,7 +57,8 @@ function surfaceMarks(frame: MorphFrame, registration: Float64Array) {
     for (const [index, part] of parts.entries()) {
       const step = part.grid;
       if (!step) continue;
-      const [w, h] = bodySize(part),
+      const [w, h] = shapeSize(part.shape),
+        [sx, sy] = part.scale ?? [1, 1, 1],
         [x, y] = part.position;
       const add = (coordinates: number[]) => {
         const at = (offset + index) * 6;
@@ -53,9 +72,9 @@ function surfaceMarks(frame: MorphFrame, registration: Float64Array) {
         else lines.set(key, { coordinates, opacity });
       };
       for (let i = step; i < w - 1e-6; i += step)
-        add([x - w / 2 + i, -y - h / 2, x - w / 2 + i, -y + h / 2]);
+        add([x + (-w / 2 + i) * sx, -y - (h / 2) * sy, x + (-w / 2 + i) * sx, -y + (h / 2) * sy]);
       for (let i = step; i < h - 1e-6; i += step)
-        add([x - w / 2, -y + h / 2 - i, x + w / 2, -y + h / 2 - i]);
+        add([x - (w / 2) * sx, -y + (h / 2 - i) * sy, x + (w / 2) * sx, -y + (h / 2 - i) * sy]);
     }
   }
   const segments = new Float32Array(lines.size * 6),
@@ -74,25 +93,50 @@ export function surfaceInscriptions() {
     groups: Group[] = [];
   function shape(body: MorphBody) {
     const value = text(body);
-    let result = texts.get(value);
+    const [width, height] = writingArea(body, true),
+      aspect = width / height,
+      id = layoutKey(body);
+    let result = texts.get(id);
     if (!result) {
-      result = fusionText(value, { size: 100, maxWidth: 1600, lineHeight: 1.25 });
+      result = fusionText(value, { size: 100, maxWidth: 1e6, lineHeight: 1.25 });
+      // Layout belongs to the authored surface, not its animated scale or the
+      // camera. Choose it once; the same strokes then travel through every seek.
+      if (!numeric(value)) {
+        let fit = Math.min(aspect / result.bounds.width, 1 / result.bounds.height);
+        const unwrappedWidth = result.width,
+          balanced = Math.sqrt(unwrappedWidth * 125 * aspect),
+          narrowest = Math.min(unwrappedWidth, Math.max(60, balanced * 0.55));
+        // Search through the full line width: on a tall surface the longest
+        // intact word can be much wider than the ideally balanced block.
+        for (let i = 0; narrowest < unwrappedWidth && i < 12; i++) {
+          const maxWidth = narrowest * (unwrappedWidth / narrowest) ** (i / 11);
+          const candidate = fusionText(value, { size: 100, maxWidth, lineHeight: 1.25 });
+          // A larger font does not justify turning an ordinary word into
+          // fragments. Every caption has a valid whole-word baseline above.
+          if (
+            candidate.text!.words.some(
+              (word) => new Set(word.glyphs.map((i) => candidate.text!.glyphs[i]!.line)).size > 1,
+            )
+          )
+            continue;
+          const scale = Math.min(aspect / candidate.bounds.width, 1 / candidate.bounds.height);
+          if (scale > fit) {
+            result = candidate;
+            fit = scale;
+          }
+        }
+      }
       if (texts.size >= 96) texts.delete(texts.keys().next().value!);
-      texts.set(value, result);
+      texts.set(id, result);
     }
     return result;
   }
   function pose(body: MorphBody, shape: FusionShape) {
-    const size = bodySize(body);
-    const radius =
-      body.shape.kind === 'box' ? (body.rounding ?? body.shape.rounding) : body.shape.radius;
-    // Curved end caps turn away from the reader. Keep the writing on their
-    // front patch instead of letting the last letters run onto the silhouette.
-    const writingWidth = size[0] * 0.74 - radius * (body.scale?.[0] ?? 1) * 0.3;
+    const [width, height] = writingArea(body);
     return {
       x: body.position[0],
       y: -body.position[1],
-      scale: Math.min(writingWidth / shape.bounds.width, (size[1] * 0.46) / shape.bounds.height),
+      scale: Math.min(width / shape.bounds.width, height / shape.bounds.height),
     };
   }
   return {
@@ -105,7 +149,9 @@ export function surfaceInscriptions() {
         ),
       };
       const next = JSON.stringify(
-        [frame.sources, frame.targets].map((parts) => parts.map((p) => [text(p), p.origins])),
+        [input.sources, input.targets].map((parts) =>
+          parts.map((p) => [text(p) ? layoutKey(p) : '', p.origins]),
+        ),
       );
       if (next !== key) {
         const indices = (parts: readonly MorphBody[]) =>
@@ -135,8 +181,8 @@ export function surfaceInscriptions() {
           .map(({ sources, targets }) => {
             const appearing = !sources.length,
               disappearing = !targets.length;
-            const from = sources.map((i) => shape(frame.sources[i]!));
-            const to = targets.map((i) => shape(frame.targets[i]!));
+            const from = sources.map((i) => shape(input.sources[i]!));
+            const to = targets.map((i) => shape(input.targets[i]!));
             const motion = compileInkMotion(appearing ? to : from, disappearing ? from : to);
             return {
               sources,

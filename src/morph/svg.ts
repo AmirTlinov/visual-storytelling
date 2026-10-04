@@ -2,7 +2,8 @@ import { quantityBounds, quantityStep } from './measure.js';
 import { surface } from '../ink/surface.js';
 import { lettering } from '../ink/lettering.js';
 import { paragraph } from '../ink/paragraph.js';
-import { cellLayout, cellViewport } from './layout.js';
+import { cellLayout } from './layout.js';
+import { contentViewport } from '../layout/content.js';
 import { mathPlan } from './math.js';
 import { mathNumber } from './numbers.js';
 import { morphBody2D } from './body-2d.js';
@@ -34,7 +35,7 @@ function mount(
     grid: false,
   });
   const body = morphBody2D(sheet, options);
-  const viewport = cellViewport(parent);
+  const viewport = contentViewport(parent);
   const formula = paragraph(sheet.layer, { size: 26 });
   formula.element.style.color = 'var(--ve-purple)';
   const stepLabel = lettering(sheet.layer, '', { size: 17, x: width / 2, y: height - 14 });

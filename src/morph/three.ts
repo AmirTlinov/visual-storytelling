@@ -14,7 +14,8 @@ import { morphBody3D } from './body-3d.js';
 import { mathBodies } from './math-bodies.js';
 import { mathPlan } from './math.js';
 import { mathNumber } from './numbers.js';
-import { cellLayout, cellViewport } from './layout.js';
+import { cellLayout } from './layout.js';
+import { contentViewport } from '../layout/content.js';
 import type { MathOperation, MathMorphPlan } from './types.js';
 import {
   morphTiming,
@@ -40,7 +41,7 @@ function mount(
     disposed = false;
   let progress = 0;
   const stage = view.renderer.domElement.parentElement!;
-  const viewport = cellViewport(stage);
+  const viewport = contentViewport(stage);
   let arrangement: ReturnType<typeof cellLayout> | undefined,
     layoutWidth = 0;
   let lastTime: MorphTime = 0,

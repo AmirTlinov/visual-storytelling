@@ -4,14 +4,14 @@ import type { MathMorphFrame, MathPart } from './types.js';
 import type { MorphFrame } from './objects.js';
 import { quantityStep } from './measure.js';
 
-const box = volumeBox([1, 1, 1]);
 /** Arithmetic owns values and lineage; the shared body owns every visible stroke. */
 export function mathBodies(frame: MathMorphFrame, measured: boolean): MorphFrame {
   const body = (part: MathPart) => ({
-    shape: box,
+    // Authored dimensions belong to the material. A pose scale is reserved for
+    // deformation, so local measurement marks deform with their body as well.
+    shape: volumeBox(part.size),
     text: mathNumber(part.value),
     position: part.position,
-    scale: part.size,
     origins: part.origins?.map((o) => `${o.operand}:${o.index}`),
     grid: measured ? quantityStep(part) : undefined,
   });

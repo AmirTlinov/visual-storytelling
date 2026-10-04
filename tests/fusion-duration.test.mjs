@@ -63,8 +63,19 @@ test('InkMorph retimes Rapier from speech while preserving correspondence and se
     if (original) Object.defineProperty(globalThis, 'ResizeObserver', original);
     else delete globalThis.ResizeObserver;
   });
+  const attributes = new Map(),
+    properties = new Map();
   const host = {
-    style: { height: '100px' },
+    getAttribute: (key) => attributes.get(key) ?? null,
+    setAttribute: (key, value) => attributes.set(key, value),
+    removeAttribute: (key) => attributes.delete(key),
+    style: {
+      height: '100px',
+      getPropertyValue: (key) => properties.get(key) ?? '',
+      getPropertyPriority: () => '',
+      setProperty: (key, value) => properties.set(key, value),
+      removeProperty: (key) => properties.delete(key),
+    },
     compilations: 0,
     getBoundingClientRect: () => ({ width: 480 }),
     getClientRects: () => [{}],
@@ -125,6 +136,15 @@ test('InkMorph retimes Rapier from speech while preserving correspondence and se
     assert.deepEqual(host.vertices, endpoint, 'zero-length cues select the exact endpoint');
     assert.equal(ink.stats.steps, cachedSteps, 'an instant cue needs no simulation');
   }
+  const disk = { width: 36, height: 36, bounds: { width: 36, height: 36 }, paths: [[[0, 0, 18]]] };
+  ink.setOperation({ sources: [disk], targets: [shape] });
+  assert.equal(ink.progress, 0, 'replacing an operation starts at its source, like Morph2D/3D');
+  assert.ok(host.vertices.length > 0 && host.vertices.every(Number.isFinite));
+  for (const p of [0.4, 1, 0]) ink.render(p);
+  assert.ok(
+    host.vertices.every(Number.isFinite),
+    'one medial disk point remains valid during morph',
+  );
   ink.dispose();
   assert.equal(host.removed, true);
   assert.equal(host.style.height, '100px');

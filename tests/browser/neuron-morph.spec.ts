@@ -10,7 +10,8 @@ test('the signed neuron keeps its result through orbit, projection changes and r
   await page.goto('/neuron-morph/index.html');
   await page.evaluate(() => window.galleryReady);
   const player = await page.locator('.ve-player').boundingBox();
-  expect(player!.y + player!.height).toBeLessThanOrEqual(720);
+  const stage = (await page.locator('.ve-stage').boundingBox())!;
+  expect(player!.y).toBeGreaterThanOrEqual(stage.y + stage.height);
   // Preparation may itself draw a probe; establish the displayed scene before taking its baseline.
   await page.locator('.neuron-volume canvas').screenshot();
   const rendererInfo = () =>
@@ -62,17 +63,21 @@ test('the signed neuron keeps its result through orbit, projection changes and r
   await page.locator('[data-seek]').fill('21');
   await expect(flat.locator('.vs-lettering[aria-label="(−1) + (−3) + 0 = −4"]')).toBeVisible();
   await page.setViewportSize({ width: 375, height: 720 });
-  let stageY: number | undefined;
-  let playerY: number | undefined;
+  let stageHeight: number | undefined;
   for (const time of ['0', '14', '21']) {
     await page.locator('[data-seek]').fill(time);
     const stage = (await page.locator('.ve-stage').boundingBox())!;
     const player = (await page.locator('.ve-player').boundingBox())!;
-    stageY ??= stage.y;
-    playerY ??= player.y;
-    expect(stage.y).toBeCloseTo(stageY, 1);
-    expect(player.y).toBeCloseTo(playerY, 1);
-    expect(player.y + player.height).toBeLessThanOrEqual(720);
+    stageHeight ??= stage.height;
+    // Readable rows keep their space across operations. Story headings can wrap;
+    // the player follows the composition and remains reachable by scrolling.
+    expect(stage.height).toBeCloseTo(stageHeight, 1);
+    expect(player.y).toBeGreaterThanOrEqual(stage.y + stage.height);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      375,
+    );
+    await page.locator('.ve-player').scrollIntoViewIfNeeded();
+    await expect(page.locator('.ve-player')).toBeInViewport();
   }
   expect(errors).toEqual([]);
 });
