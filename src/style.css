@@ -1,6 +1,7 @@
 @import './styles/explorer.css';
 @import './styles/scene.css';
 @import './styles/scene-shell.css';
+@import './styles/interface.css';
 @import './styles/morph.css';
 .vs-notebook{max-width:900px;margin:auto}
 .vs-subtitle{text-align:center;font-size:16px}

@@ -111,6 +111,8 @@ export async function renderer({
       },
       seek,
       async png() {
+        const frame = page.locator('[data-scene-frame]').first();
+        if (!controls && (await frame.count())) return frame.screenshot();
         const main = page.locator('.ve-scene').first();
         return (await main.count()) ? main.screenshot() : page.screenshot({ fullPage: true });
       },

@@ -1,0 +1,6 @@
+Ортоматика: логотип и изображение модели «Эльбрус» из проекта apps/landing-sites/ortomatica-ru-app; используются в учебной инструкции для этого же продукта.
+Шрифты Noto Sans и Unbounded: лицензии в assets/LICENSE-NotoSans.txt и assets/LICENSE-Unbounded.txt.
+
+=== visual-story:audio ===
+This audio was created with Boson AI's Higgs Audio — https://www.boson.ai/higgs-audio
+=== /visual-story:audio ===

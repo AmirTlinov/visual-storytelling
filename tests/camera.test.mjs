@@ -4,6 +4,31 @@ import * as T from '../dist/viewport/engine.js';
 import { shotPose } from '../dist/viewport/shots.js';
 import { readableFrame } from '../dist/viewport/framing.js';
 
+test('camera turns join their endpoint shots continuously with asymmetric interface insets', () => {
+  const target = new T.Box3(new T.Vector3(-0.5, -0.2, -2.5), new T.Vector3(0.5, 0.2, 2.5));
+  for (const width of [375, 1280]) {
+    const camera = new T.PerspectiveCamera(36, width / 600, 0.01, 1000);
+    const from = {
+      target,
+      direction: [0.35, 1.6, 2.8],
+      padding: 34,
+      insets: { bottom: 84, left: 55 },
+    };
+    const to = { ...from, direction: [1.05, 0.65, 2.8] };
+    const sample = (progress) => shotPose(camera, width, 600, { ...to, from, progress });
+    for (const [edge, near] of [
+      [0, 1e-7],
+      [1, 1 - 1e-7],
+    ]) {
+      const a = sample(edge),
+        b = sample(near);
+      assert(a.target.distanceTo(b.target) < 1e-4, `target jumps at ${edge}`);
+      assert(a.position.distanceTo(b.position) < 1e-4, `camera jumps at ${edge}`);
+    }
+    assert.deepEqual(sample(0.4), sample(0.4), 'seeking never accumulates camera offsets');
+  }
+});
+
 test('authored turns keep an elongated subject in frame, including a view along the up axis', () => {
   const target = new T.Box3(new T.Vector3(-5, -1, -0.5), new T.Vector3(5, 1, 0.5));
   for (const width of [375, 960]) {

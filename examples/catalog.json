@@ -324,5 +324,57 @@
       "docs/morphing.md"
     ],
     "recommended": true
+  },
+  "interface-walkthrough": {
+    "title": "Как промокод меняет заказ",
+    "page": "index.html",
+    "time": 18,
+    "checkpoints": [0, 3, 6, 12, 18, 24],
+    "group": "techniques",
+    "summary": "Рисованный учебный разбор: ввод кода, нажатие, изменение суммы; общие storyActions и постоянный видеокадр.",
+    "tags": [
+      "интерфейс",
+      "инструкция",
+      "видео",
+      "film",
+      "ввод",
+      "нажатие",
+      "субтитры",
+      "walkthrough",
+      "storyActions",
+      "обучение",
+      "промокод",
+      "coupon",
+      "actions"
+    ],
+    "source": "scene.js",
+    "guides": ["skill/references/scene-authoring.md"],
+    "reference": true,
+    "recommended": true
+  },
+  "product-walkthrough": {
+    "title": "Ортоматика · перед оплатой заказа",
+    "page": "index.html",
+    "time": 16,
+    "checkpoints": [0, 5, 8, 12, 16, 22, 28, 34],
+    "group": "techniques",
+    "summary": "Продуктовая инструкция: узнаваемый кабинет и оформление бренда, ввод и переход к оплате на словах рассказчика.",
+    "tags": [
+      "интерфейс",
+      "кабинет",
+      "продукт",
+      "инструкция",
+      "видео",
+      "бренд",
+      "product",
+      "guide",
+      "walkthrough",
+      "storyActions",
+      "ввод",
+      "нажатие"
+    ],
+    "source": "scene.js",
+    "guides": ["skill/references/scene-authoring.md"],
+    "recommended": true
   }
 }

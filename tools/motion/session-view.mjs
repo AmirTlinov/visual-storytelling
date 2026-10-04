@@ -60,12 +60,12 @@ export function sessionMarkup(report, out, player) {
     function inspect(){const evidence=query(data,{at,radius:.3,object:object||undefined,point,limit:3});
       const full=query(data,{at,radius:.3,limit:2});
       const ids=[...new Map([...full.objects,...(evidence.hits??[])].map(o=>[o.id,o])).values()];
-      select.replaceChildren(new Option('Все объекты',''),...ids.map(o=>new Option((o.text||o.id).slice(0,90),o.id)));
+      select.replaceChildren(new Option('Все объекты',''),...ids.map(o=>new Option((o.text||o.id).slice(0,90)+(o.textSource==='dom-text-content'?' · текст DOM':''),o.id)));
       object=evidence.requested.object||object;const missing=object&&!ids.some(o=>o.id===object);if(missing)select.append(new Option(object+' · нет отсчёта',object));select.value=object;
       status.textContent=at.toFixed(3)+' с · '+(object||(point?'область изображения':'общий кадр'))+' · '+evidence.observed.frames+' кадров в выбранной окрестности'+(missing?' · геометрия объекта в этом кадре не наблюдалась':'');
       const speaking=evidence.episodes.filter(e=>e.text&&e.kind!=='chapter');
       const reads=evidence.scene?.cueReads??evidence.frames.find(f=>Math.abs(f.time-at)<.15)?.cueReads;
-      inspector.querySelector('[data-evidence-context]').textContent=speaking.map(e=>e.text).join(' · ')+(reads?' | Код запросил: '+reads.reads.map(r=>r.id+' '+r.operation+' = '+r.value).join('; '):'');
+      inspector.querySelector('[data-evidence-context]').textContent=speaking.map(e=>e.text).join(' · ')+(reads?' | Код запросил: '+reads.reads.map(r=>r.id+' '+r.operation+' = '+r.value).join('; '):'')+(evidence.objects.some(o=>o.textSource==='dom-text-content')?' | Текст DOM может включать скрытые дочерние элементы; видимое содержание показано на кадре.':'');
       inspector.querySelector('[data-inspection-data]').textContent=JSON.stringify(evidence,null,2);
       inspector.querySelector('[data-inspection-command]').textContent=${json("visual-story review inspect '" + out.replaceAll("'", "'\\''") + "'")}+' --at '+at.toFixed(6)+(object?' --object '+quote(object):point?' --point '+point.map(Math.round).join(','):'');
       const owners=inspector.querySelector('[data-evidence-owners]');owners.replaceChildren();

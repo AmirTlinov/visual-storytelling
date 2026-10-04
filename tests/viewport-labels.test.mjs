@@ -7,6 +7,7 @@ import { chromium } from 'playwright';
 import { build } from 'esbuild';
 import { PNG } from 'pngjs';
 import { develop } from '../tools/dev.mjs';
+import { assetURLs } from '../tools/asset-urls.mjs';
 
 test('replacing a 3D subject retains shared resources and their theme until final disposal', async () => {
   const bundle = await build({
@@ -20,6 +21,8 @@ test('replacing a 3D subject retains shared resources and their theme until fina
     write: false,
     format: 'iife',
     platform: 'browser',
+    plugins: [assetURLs()],
+    define: { 'import.meta.url': 'document.baseURI' },
   });
   const browser = await chromium.launch();
   try {

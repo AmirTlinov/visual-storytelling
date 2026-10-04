@@ -57,6 +57,25 @@ def seed(value, label):
     return value
 
 
+def caption_aliases(value, segments):
+    """Display aliases refer to whole spoken phrases; they never alter synthesis."""
+    if not isinstance(value, dict):
+        raise ValueError("captionAliases must map spoken phrases to plain display text")
+    seen = set()
+    for spoken, display in value.items():
+        if any(not isinstance(text, str) or not text.strip() or re.search(r"[<>\x00-\x1f]", text)
+               for text in (spoken, display)):
+            raise ValueError("captionAliases needs non-empty plain spoken phrases and display text")
+        key = " ".join(spoken.lower().replace("ё", "е").split())
+        if key in seen:
+            raise ValueError(f"Duplicate captionAliases phrase: {spoken}")
+        seen.add(key)
+        phrase = r"\s+".join(re.escape(word) for word in key.split())
+        pattern = re.compile(rf"(?<!\w)(?:{phrase})(?!\w)")
+        if not any(pattern.search(segment["spoken"].lower().replace("ё", "е")) for segment in segments):
+            raise ValueError(f"captionAliases phrase is missing from spoken text: {spoken}")
+
+
 def read_script(path):
     spec = json.loads(path.read_text())
     if spec.get("version") != 3:
@@ -128,6 +147,8 @@ def read_script(path):
                 raise ValueError(f"{cid}: occurrence does not exist")
             cue["word_start"] = matches[occurrence - 1]
             cue["word_end"] = cue["word_start"] + len(quote)
+    if "captionAliases" in spec:
+        caption_aliases(spec["captionAliases"], segments)
     music = spec.get("music")
     if music is not None:
         if not isinstance(music, dict) or not (music.get("path") or music.get("track") == "inspired"):

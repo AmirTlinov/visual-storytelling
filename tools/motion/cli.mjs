@@ -32,6 +32,8 @@ Start with session and index.html: complete episode map, playback, objects and o
 image is the overview PNG; framesImage and photometryImage contain detailed measurements.
 inspect returns existing evidence without repeating an interaction. --search filters episode text; --offset/--limit page the index.
 Use --out on inspect to render a focused report; raw capture is reused.
+Capture commands print a compact JSON receipt; --verbose includes detailed measurements.
+The saved report and inspect always retain the complete evidence.
 
 Capture: --scenario FILE, --click SELECTOR (repeatable), --target CSS (repeatable),
   --seconds 2 (time after actions), --ready SELECTOR, --width 960 --height 720,
@@ -90,6 +92,7 @@ export async function runMotionCLI(args) {
         windows: { type: 'boolean' },
         window: { type: 'string' },
         doctor: { type: 'boolean' },
+        verbose: { type: 'boolean' },
       },
     });
     if (v.help) {
@@ -252,7 +255,7 @@ export async function runMotionCLI(args) {
       loop: v.loop,
       seconds: captureRequested ? undefined : numeric('seconds'),
     });
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify(v.verbose ? result : compactReview(result), null, 2));
     return result.insights?.some((entry) => entry.kind === 'action-error') ? 2 : 0;
   } catch (error) {
     const browserFailure = /^browserType\.launch:/.test(error.message);
@@ -275,4 +278,52 @@ export async function runMotionCLI(args) {
     );
     return 1;
   }
+}
+
+/** Keep the next action and evidence paths in context; detailed measurements stay in the report. */
+function compactReview(result) {
+  const { assets, ...source } = result.source ?? {};
+  const paths = Object.fromEntries(
+    [
+      'path',
+      'data',
+      'session',
+      'image',
+      'framesImage',
+      'photometryImage',
+      'framesDirectory',
+      'captureManifest',
+      'replay',
+      'inspect',
+      'preview',
+    ]
+      .filter((key) => result[key] !== undefined)
+      .map((key) => [key, result[key]]),
+  );
+  return {
+    ...paths,
+    source: { ...source, ...(assets ? { assetCount: assets.length } : {}) },
+    focus: result.focus,
+    comparison: result.comparison,
+    previews: result.previews,
+    coverage: result.coverage,
+    recording: result.recording,
+    episodeCount: result.episodeCount,
+    observations: (result.episodes ?? [])
+      .flatMap((episode) =>
+        (episode.observations ?? []).map((detail) => ({ episode: episode.id, detail })),
+      )
+      .slice(0, 5),
+    insights: (result.insights ?? []).map(({ kind, time, target, detail, count, durationMs }) => ({
+      kind,
+      time,
+      target,
+      detail,
+      count,
+      durationMs,
+    })),
+    timingMs: result.timingMs,
+    details:
+      'Full evidence is saved in data/session. Use inspect for an episode or object; --verbose prints all measurements.',
+  };
 }

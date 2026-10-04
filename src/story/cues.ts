@@ -16,11 +16,16 @@ export interface Chapter extends Cue {
   text: string;
   /** Short navigable heading; text remains the spoken paragraph. */
   title?: string;
+  /** Absolute word times produced by the narration aligner. */
+  words?: readonly { text: string; start: number; end: number }[];
 }
 export interface Script<K extends string = string> {
   duration: number;
   cues: Record<K, Cue>;
   segments?: readonly Chapter[];
+  /** Display-only phrases, e.g. { 'пэ дэ эф': 'PDF' }; speech and aligned times stay intact.
+   * Match whole phrases case-insensitively (ё = е), left-to-right, longest first. */
+  captionAliases?: Readonly<Record<string, string>>;
 }
 export interface Frame<K extends string = string> {
   time: number;
@@ -31,6 +36,8 @@ export interface Frame<K extends string = string> {
   has(id: K): boolean;
   finished(id: K): boolean;
   between(from: K, until: K): boolean;
+  /** Bind an operation to a stable drawing/DOM identity for subject-scoped review. */
+  target(id: K, objectId: string): void;
 }
 export interface CueReview {
   /** Values actually requested from the latest frame, not inferred animation progress. */
@@ -40,6 +47,7 @@ export interface CueReview {
     id: string;
     kind: 'action' | 'hold' | 'chapter' | 'unassigned';
     referenced: boolean;
+    targets?: string[];
   })[];
   segments: readonly Chapter[];
 }
@@ -55,6 +63,7 @@ export const interpolate = (from: number, to: number, p: number) =>
 /** Spoken-word cues, or authored silent cues, are the only source of reveal times. */
 export function cueSheet<K extends string>(script: Script<K>) {
   const referenced = new Set<K>();
+  const targets = new Map<K, Set<string>>();
   let observedTime = 0;
   const reads = new Map<string, { id: K; operation: string; value: number | boolean }>();
   const chapters = new Set(script.segments?.map((chapter) => chapter.id));
@@ -110,6 +119,7 @@ export function cueSheet<K extends string>(script: Script<K>) {
             ...cue,
             id,
             referenced: referenced.has(id as K),
+            ...(targets.has(id as K) ? { targets: [...targets.get(id as K)!] } : {}),
             kind: cue.action
               ? 'action'
               : cue.hold
@@ -135,6 +145,12 @@ export function cueSheet<K extends string>(script: Script<K>) {
         reduced,
         cue: get,
         progress: amount,
+        target(id, objectId) {
+          get(id);
+          if (!objectId.trim()) throw new Error('A review target needs a stable identity');
+          if (!targets.has(id)) targets.set(id, new Set());
+          targets.get(id)!.add(objectId);
+        },
         reveal(id) {
           return observe(id, 'reveal', reduced ? Number(time >= get(id).start) : amount(id));
         },

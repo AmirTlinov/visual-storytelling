@@ -18,7 +18,9 @@ export function mediaTimeline(audio: MediaClock, duration: number, render: () =>
     if (!audio.paused && !audio.ended) frame = requestAnimationFrame(update);
   };
   const seek = (time: number) => {
-    audio.currentTime = Math.min(duration, Math.max(0, time));
+    const next = Math.min(duration, Math.max(0, time));
+    // A redundant seek at preload=metadata can leave native media waiting indefinitely.
+    if (audio.currentTime !== next) audio.currentTime = next;
     update();
   };
   const events = [

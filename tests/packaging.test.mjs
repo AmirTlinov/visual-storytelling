@@ -86,9 +86,15 @@ test('a failed package build preserves the last complete delivery', async () => 
   const run = () =>
     promisify(execFile)(process.execPath, ['tools/build-package.mjs'], { cwd: directory });
   try {
-    for (const folder of ['tools', 'src/assets', 'src/styles'])
+    for (const folder of ['tools', 'src/assets', 'src/styles', 'src/viewport'])
       await mkdir(join(directory, folder), { recursive: true });
-    for (const file of ['build-package.mjs', 'api.mjs', 'build-output.mjs'])
+    for (const file of [
+      'build-package.mjs',
+      'api.mjs',
+      'build-output.mjs',
+      'build-info.mjs',
+      'asset-urls.mjs',
+    ])
       await cp(join(root, 'tools', file), join(directory, 'tools', file));
     await symlink(join(root, 'node_modules'), join(directory, 'node_modules'), 'dir');
     const put = (name, data) => writeFile(join(directory, name), data);
@@ -117,6 +123,16 @@ test('a failed package build preserves the last complete delivery', async () => 
       }),
     );
     await put('src/index.ts', 'export const answer: number = 42;');
+    const decoder = Buffer.from([0, 97, 115, 109, 1, 0, 0, 0]);
+    await put('src/assets/decoder.wasm', decoder);
+    await put(
+      'src/assets.d.ts',
+      "declare module '*?url' { const url: string; export default url; }",
+    );
+    await put(
+      'src/viewport/gltf.ts',
+      "import decoder from '../assets/decoder.wasm?url'; export const decoderURL = decoder;",
+    );
     await put('src/assets/voice.wav', 'source asset');
     await put('src/styles/theme.css', ':root { color: black; }');
     await put('src/style.css', '@import "./styles/theme.css";');
@@ -128,11 +144,26 @@ test('a failed package build preserves the last complete delivery', async () => 
       'style.css',
       'styles/theme.css',
       'assets/voice.wav',
+      'build-info.json',
+      'viewport/gltf.js',
+      'viewport/gltf.js.map',
+      'assets/decoder.wasm',
     ];
     const before = await Promise.all(
       files.map((file) => readFile(join(directory, 'dist', file), 'utf8')),
     );
+    await run();
+    assert.deepEqual(
+      await Promise.all(files.map((file) => readFile(join(directory, 'dist', file), 'utf8'))),
+      before,
+      'a repeated build has identical runtime bytes and content identity',
+    );
     assert.deepEqual(JSON.parse(before[2]).modules, { '.': { answer: 'index.d.ts' } });
+    const { decoderURL } = await import(
+      pathToFileURL(join(directory, 'dist/viewport/gltf.js')).href
+    );
+    assert.match(decoderURL, /^data:application\/wasm[;,]/);
+    assert.deepEqual(Buffer.from(await (await fetch(decoderURL)).arrayBuffer()), decoder);
     await put('src/index.ts', 'export const answer: number = "invalid";');
     await assert.rejects(run());
     assert.deepEqual(

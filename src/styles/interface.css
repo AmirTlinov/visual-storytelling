@@ -1,0 +1,96 @@
+/* The same shell/controls, with neutral interface typography and geometry. */
+.ve-scene[data-appearance='interface'] {
+  --ve-font: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--ve-font);
+  line-height: 1.5;
+}
+.ve-scene[data-appearance='interface']
+  :is(.ve-player, .modes, .ve-parameters, .ve-view-actions, .ve-heading)
+  button {
+  font-family: var(--ve-font);
+  border: 1px solid color-mix(in srgb, var(--ve-ink) 18%, transparent);
+  border-radius: 8px;
+}
+.ve-scene[data-appearance='interface']
+  :is(.ve-player, .modes, .ve-parameters, .ve-view-actions, .ve-heading)
+  button::after {
+  display: none;
+}
+.ve-scene[data-appearance='interface'] .ve-player button {
+  border-color: transparent;
+  border-radius: 50%;
+}
+.ve-scene[data-appearance='interface'] .modes button[aria-pressed='true'] {
+  border-color: var(--ve-blue);
+}
+.ve-scene[data-appearance='interface'] .ve-captions {
+  font-family: var(--ve-font);
+  font-size: 24px;
+}
+
+/* Story input is an inert drawing layer; every pose, pulse and caret comes from media time. */
+.ve-story-pointer-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+  z-index: 24;
+  overflow: visible;
+}
+.ve-story-pointer-layer > [hidden] {
+  display: none !important;
+}
+.ve-story-pointer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 26px;
+  height: 34px;
+  filter: drop-shadow(1px 2px 2px #10243c55);
+}
+.ve-story-pointer > svg {
+  display: block;
+  width: 26px;
+  height: 34px;
+  transform-origin: 2px 2px;
+  overflow: visible;
+}
+.ve-story-pointer path {
+  fill: white;
+  stroke: #17314f;
+  stroke-width: 1.7;
+  stroke-linejoin: round;
+}
+.ve-story-click {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 24px;
+  height: 24px;
+  box-sizing: border-box;
+  border: 2px solid var(--ve-blue, #296ce7);
+  border-radius: 50%;
+  transform-origin: center;
+}
+.ve-story-focus {
+  position: absolute;
+  box-sizing: border-box;
+  outline: 2px solid var(--ve-blue, #296ce7);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--ve-blue, #296ce7) 12%, transparent);
+}
+.ve-story-caret {
+  position: absolute;
+  width: 2px;
+  background: currentColor;
+  border-radius: 1px;
+}
+.ve-story-text-measure {
+  position: absolute;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: transparent;
+  visibility: hidden;
+  overflow-wrap: break-word;
+  pointer-events: none;
+}

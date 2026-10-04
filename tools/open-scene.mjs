@@ -16,6 +16,7 @@ export async function openScene(page, url) {
   } else await page.goto(url);
   await page.waitForFunction(
     () =>
+      typeof document.querySelector('.ve-scene')?.scene?.seek === 'function' ||
       document.querySelector('svg,canvas') ||
       [...document.querySelectorAll('object,iframe[data-scene-svg]')].some((element) =>
         element.contentDocument?.querySelector('svg'),
@@ -29,8 +30,7 @@ export async function openScene(page, url) {
   });
   // This adapter calls the scene's owners; it never introduces another playback clock.
   return page.evaluateHandle(() => {
-    const handles = () =>
-      documents().map((doc) => doc.querySelector('.ve-scene')?.scene);
+    const handles = () => documents().map((doc) => doc.querySelector('.ve-scene')?.scene);
     const owner = (method) => handles().find((handle) => typeof handle?.[method] === 'function');
     const documents = () => [
       document,
@@ -55,12 +55,17 @@ export async function openScene(page, url) {
         const duration =
           handles().find((handle) => Number.isFinite(handle?.duration))?.duration ??
           Number(slider()?.max ?? 0);
+        const audio = documents()
+          .flatMap((doc) => [...doc.querySelectorAll('audio:not([data-silent=true])')])
+          .find(
+            (element) => element.currentSrc || element.src || element.querySelector('source[src]'),
+          );
         return {
           duration,
           seekable: duration > 0 && Boolean(owner('seek') || slider()),
           audioURL:
             handles().find((handle) => handle?.audioURL)?.audioURL ??
-            document.querySelector('audio:not([data-silent=true])')?.src,
+            (audio?.currentSrc || audio?.src || audio?.querySelector('source[src]')?.src),
           checkpoints: handles().find((handle) => handle?.checkpoints)?.checkpoints ?? [0],
         };
       },

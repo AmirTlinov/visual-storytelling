@@ -107,6 +107,7 @@ export function queryEvidence(data, query = {}) {
     id: o.id ?? o.selector,
     time: o.time,
     text: o.text,
+    textSource: o.textSource,
     x: o.x,
     y: o.y,
     width: o.width,

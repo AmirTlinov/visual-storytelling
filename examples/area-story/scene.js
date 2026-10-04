@@ -1,5 +1,6 @@
 import {
   SketchMotion,
+  captionTrack,
   SvgLayout,
   story,
   player as storyPlayer,
@@ -424,7 +425,14 @@ window.galleryReady = (async () => {
     onSeek: player.seek,
     captions: {
       element: root.querySelector('[data-caption]'),
-      segments: stops.map(({ time, label }) => ({ start: time, text: label })),
+      track: captionTrack({
+        segments: stops.map(({ time, label }, i) => ({
+          id: String(i),
+          start: time,
+          end: stops[i + 1]?.time ?? timing.duration,
+          text: label,
+        })),
+      }),
     },
   });
   root.scene = {

@@ -21,14 +21,15 @@ node tools/scene.mjs examples --recommended    # готовые основы SVG
 node tools/scene.mjs new /absolute/output/my-story --example explorer-svg
 cd /absolute/output/my-story
 npm install
-npx visual-story api SceneShell  # контракт и связанные типы установленной версии
+npx visual-story api SceneShell.mount SceneOptions  # точный контракт пакета
+npx visual-story info                     # фактическая сборка
 npm run build
 npm run dev
 ```
 
-`examples нейрон` ищет по теме и API; `examples explorer-svg` показывает кадр, исходник и команду создания. `new` копирует предметный исходник и точную упакованную зависимость библиотеки. Принятые рассказы включают готовый голос; `--no-audio` включает тихое время, `npm run audio` пересобирает изменённый `narration.json` и включает озвучку. Встроенный мужской образец, модели и акустическое выравнивание принадлежат `tools/audio/`.
+`examples нейрон` ищет по теме и API; `examples explorer-svg` показывает кадр, исходник и команду создания. `new` копирует предметный исходник и точную упакованную зависимость библиотеки. Принятые рассказы включают готовый голос; `--no-audio` откладывает озвучку до `npm run audio`, `--silent` создаёт сцену без речевых файлов. Встроенный мужской образец, модели и акустическое выравнивание принадлежат `tools/audio/`.
 
-Исполняемый пакет содержит библиотеку и CLI; каталог примеров, инструкции навыка и исходные референсы остаются в авторском репозитории. `new` и `examples` запускаются из этого репозитория; в созданной сцене работают `build`, `dev`, `audio`, `review`, `pack`, `api` и экспорт.
+Исполняемый пакет содержит библиотеку и CLI; каталог примеров, инструкции навыка и исходные референсы остаются в авторском репозитории. `new` и `examples` запускаются из этого репозитория; в созданной сцене работают `build`, `dev`, `audio`, `review`, `pack`, `api`, `info`, `deliver` и экспорт.
 
 `sketch-audio audition narration.json --segment question --out artifacts/voice` сравнивает цельные дубли одной мысли; выбранный `seed` сегмента сохраняет исполнение при следующей сборке. Подача и метки описаны в [озвучке](skill/references/narration.md).
 
@@ -49,6 +50,14 @@ import { Viewport3D, ThreeKit } from '@visual-storytelling/core/three';
 [Согласованный морфинг](docs/morphing.md) связывает формы, числа, надписи и физический контакт. Автор задаёт операцию, объекты и время; [«Форма несёт смысл»](examples/written-morph/scene.js) показывает общий API в 2D/3D, на словах и абзацах. [Формулы над телами](examples/formula-objects/scene.js) показывают цепочки арифметики, функции, матрицы, производную и интеграл через `MathMorph.formula` / `mount`.
 
 ## Экспорт
+
+```sh
+npx visual-story deliver . --out artifacts/release --formats mp4,html,source
+```
+
+Одна команда собирает озвучку с кэшем, страницу и выбранные результаты; после правки реплики повторяется она же. `--jobs 2` ограничивает параллельный рендер; сборка видео и непрерывного звука принадлежит экспортёру. По необходимости доступны `srt,vtt` из общей дорожки слов. Обычный автономный HTML сжимает исходный звук для доставки.
+
+[Учебный разбор](examples/interface-walkthrough/scene.js) и [продуктовая инструкция](examples/product-walkthrough/scene.js) используют одни `storyActions` и фиксированный кадр `SceneShell`, сохраняя разную подачу. [Подключение](skill/references/scene-authoring.md#видеокадр-и-действия).
 
 ```sh
 npm run export -- --scene area-story --format html --out artifacts/area.html

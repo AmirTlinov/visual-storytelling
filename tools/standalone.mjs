@@ -1,40 +1,68 @@
 import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, dirname, extname, join } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { transform } from 'esbuild';
+import { parse } from 'parse5';
 import { inlineResources } from './inline-resources.mjs';
 import { readCatalog } from './catalog.mjs';
 
-async function inlineAudio(file, bitrate) {
+const execute = promisify(execFile);
+const attribute = (node, name) => node.attrs?.find((attr) => attr.name === name)?.value;
+function audioElements(html) {
+  const nodes = [];
+  const visit = (node) => {
+    if (node.tagName === 'audio') nodes.push(node);
+    for (const child of node.childNodes ?? []) visit(child);
+    if (node.content) visit(node.content);
+  };
+  visit(parse(html, { sourceCodeLocationInfo: true }));
+  return nodes;
+}
+function replaceSpans(html, edits) {
+  const unique = [...new Map(edits.map((edit) => [edit[0].startOffset, edit])).values()];
+  for (const [span, text] of unique.sort((a, b) => b[0].startOffset - a[0].startOffset))
+    html = html.slice(0, span.startOffset) + text + html.slice(span.endOffset);
+  return html;
+}
+async function inlineAudio(file, bitrate, signal) {
   const directory = await mkdtemp(join(tmpdir(), 'visual-story-audio-'));
   try {
-    const output = join(directory, 'narration.webm');
+    const output = join(directory, 'narration.m4a');
     // A seekable output lets the muxer finalize duration and cue indexes.
-    execFileSync('ffmpeg', [
-      '-hide_banner',
-      '-loglevel',
-      'error',
-      '-i',
-      file,
-      '-c:a',
-      'libopus',
-      '-b:a',
-      bitrate,
-      output,
-    ]);
-    return `data:audio/webm;base64,${(await readFile(output)).toString('base64')}`;
+    await execute(
+      'ffmpeg',
+      [
+        '-nostdin',
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-i',
+        file,
+        '-c:a',
+        'aac',
+        '-b:a',
+        bitrate,
+        output,
+      ],
+      { signal },
+    );
+    return `data:audio/mp4;base64,${(await readFile(output)).toString('base64')}`;
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 }
-/** Inline a built scene. Compression is opt-in for the chat surface; files preserve the original audio. */
+/** Delivery audio is compressed in both containers. Source recordings stay in the authoring project. */
 export async function packDirectory(
   directory,
   page = 'index.html',
-  { inline = false, theme = 'auto' } = {},
+  { inline = false, theme = 'auto', audio = 'compressed', signal } = {},
 ) {
+  signal?.throwIfAborted();
   if (!['auto', 'light', 'dark'].includes(theme)) throw new Error('Choose auto, light or dark');
+  if (!['compressed', 'original'].includes(audio))
+    throw new Error('Choose compressed or original audio');
   const root = resolve(directory);
   const resources = inlineResources(root);
   const base = dirname(resolve(root, page));
@@ -42,13 +70,18 @@ export async function packDirectory(
   const data = (url) => resources.data(url, base);
   let html = await readFile(join(root, page), 'utf8');
   // A silent draft keeps its media hook, without shipping the sample's unused recording.
-  html = html.replace(
-    /<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>|<audio\b([^>]*)>[\s\S]*?<\/audio\s*>/gi,
-    (markup, raw, attrs) => {
-      if (raw || !/\bdata-silent\s*=\s*(["'])true\1/i.test(attrs)) return markup;
-      return `<audio${attrs.replace(/\s(?:data-)?src\s*=\s*(["'])[\s\S]*?\1/gi, '')}></audio>`;
-    },
-  );
+  const silentEdits = [];
+  for (const node of audioElements(html))
+    if (attribute(node, 'data-silent') === 'true') {
+      for (const name of ['src', 'data-src']) {
+        const span = node.sourceCodeLocation?.attrs?.[name];
+        if (span) silentEdits.push([span, '']);
+      }
+      for (const child of node.childNodes ?? [])
+        if (child.tagName === 'source' && child.sourceCodeLocation)
+          silentEdits.push([child.sourceCodeLocation, '']);
+    }
+  html = replaceSpans(html, silentEdits);
   if (page.endsWith('.svg'))
     html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}body>svg{display:block;width:100%;height:auto}</style></head><body>${html.replace(/<\?xml[^>]*>/, '')}</body></html>`;
   html = await resources.markup(html, base);
@@ -110,17 +143,37 @@ export async function packDirectory(
     }
   }
   html += '\n<!--\n' + notices.join('\n\n').replaceAll('--', '—') + '\n-->\n';
-  const audio = [...html.matchAll(/<audio\b[^>]*\s(?:src|data-src)=(["'])([^"']+)\1[^>]*>/gi)];
-  for (const bitrate of inline ? ['40k', '32k', '24k'] : [null]) {
-    let result = html;
-    for (const match of audio)
-      if (!match[2].startsWith('data:')) {
-        const url =
-          bitrate && extname(match[2]) === '.wav'
-            ? await inlineAudio(local(match[2]), bitrate)
-            : await data(match[2]);
-        result = result.replace(match[0], match[0].replace(match[2], url));
+  const recordings = audioElements(html).flatMap((node) =>
+    [node, ...(node.childNodes ?? []).filter((child) => child.tagName === 'source')].flatMap(
+      (element) =>
+        (element.attrs ?? [])
+          .filter((attr) => ['src', 'data-src'].includes(attr.name))
+          .map((attr) => ({
+            name: attr.name,
+            url: attr.value,
+            span: element.sourceCodeLocation.attrs[attr.name],
+            type: element.sourceCodeLocation.attrs.type,
+          })),
+    ),
+  );
+  for (const bitrate of audio === 'original' ? [null] : inline ? ['40k', '32k', '24k'] : ['96k']) {
+    const edits = [],
+      embedded = new Map();
+    for (const recording of recordings)
+      if (!recording.url.startsWith('data:')) {
+        const file = local(recording.url);
+        const compressed =
+          bitrate && ['.wav', '.aiff', '.aif', '.flac'].includes(extname(file).toLowerCase());
+        if (!embedded.has(file))
+          embedded.set(
+            file,
+            compressed ? await inlineAudio(file, bitrate, signal) : await data(recording.url),
+          );
+        edits.push([recording.span, `${recording.name}="${embedded.get(file)}"`]);
+        if (compressed && recording.type) edits.push([recording.type, 'type="audio/mp4"']);
       }
+    let result = replaceSpans(html, edits);
+    signal?.throwIfAborted();
     if (!inline) return result;
     // The renderer consumes a fragment; keep the same main, styles, scripts and attribution.
     let inHead = false;
@@ -135,18 +188,18 @@ export async function packDirectory(
       },
     );
     if (Buffer.byteLength(result) <= 1_000_000) return result;
-    if (bitrate === '24k')
+    if (bitrate === '24k' || audio === 'original')
       throw new Error(
         `Inline result exceeds 1 MB (${Buffer.byteLength(result)} bytes). Use the standalone HTML file; no output was overwritten.`,
       );
   }
 }
-export async function standalone(scene, theme = 'auto') {
+export async function standalone(scene, theme = 'auto', { signal } = {}) {
   const catalog = await readCatalog();
   if (!catalog[scene]) throw new Error('Unknown scene');
   return packDirectory(
     new URL(`../site/${scene}/`, import.meta.url).pathname,
     catalog[scene].page,
-    { theme },
+    { theme, signal },
   );
 }

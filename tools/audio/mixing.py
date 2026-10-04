@@ -77,10 +77,6 @@ def mix(voice, music_spec, output):
         credit.update(source_sha256=file_digest(source), offset=music_spec["offset"],
                       level_db=music_spec["level_db"], gain=gain, master_gain=headroom,
                       changes="Excerpt, EQ, fades, automatic ducking and mix with narration.")
-        (output / "CREDITS.txt").write_text(
-            f'{credit["title"]} — {credit["artist"]}\n{credit["source"]}\n'
-            f'{credit["license"]} {credit.get("license_url", "")}\n{credit["changes"]}\n'
-        )
     audio, sr = sf.read(output / "audio.wav", dtype="float32")
     if sr != SAMPLE_RATE or len(audio) != len(voice) or not np.isfinite(audio).all():
         raise RuntimeError("The final audio does not match the narration timeline")

@@ -1,5 +1,6 @@
 import { build } from 'esbuild';
 import { fileURLToPath } from 'node:url';
+import { assetURLs } from './asset-urls.mjs';
 
 /** Embed maintained package APIs into a standalone SVG without local copies of their code. */
 export async function svgRuntime(modules) {
@@ -18,6 +19,8 @@ export async function svgRuntime(modules) {
     minify: true,
     write: false,
     target: 'es2022',
+    plugins: [assetURLs()],
+    define: { 'import.meta.url': 'document.baseURI' },
     loader: { '.woff2': 'dataurl' },
     legalComments: 'inline',
   });

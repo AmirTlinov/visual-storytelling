@@ -9,6 +9,8 @@ import { sourceAliases } from './source-package.mjs';
 import { sceneAsset } from './assets.mjs';
 import { generateScene } from './generate-scene.mjs';
 import { buildOutput } from './build-output.mjs';
+import { assetURLs } from './asset-urls.mjs';
+import { setNarrationMode } from './narration.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 async function checkNarration(html, directory) {
@@ -77,9 +79,10 @@ async function checkNarration(html, directory) {
 export async function buildPage(
   source,
   target,
-  { sourcePackage = false, tsconfig, cdn = false, html: suppliedHTML } = {},
+  { sourcePackage = false, tsconfig, cdn = false, html: suppliedHTML, silent = false } = {},
 ) {
   let html = suppliedHTML ?? (await readFile(source, 'utf8'));
+  if (silent) html = setNarrationMode(html, true);
   await checkNarration(html, dirname(source));
   const attribute = (attrs, name) =>
     new RegExp(`\\b${name}\\s*=\\s*(["'])(.*?)\\1`, 'i').exec(attrs)?.[2];
@@ -114,22 +117,27 @@ export async function buildPage(
       outfile: out,
       bundle: true,
       format: cdn ? 'esm' : 'iife',
+      // Bundled assets share the page's base; IIFEs have no native import.meta.
+      ...(cdn ? {} : { define: { 'import.meta.url': 'document.baseURI' } }),
       target: 'es2022',
       ...(tsconfig ? { tsconfig } : { tsconfigRaw: { compilerOptions: {} } }),
       ...(sourcePackage ? { alias: sourceAliases } : {}),
-      plugins: cdn
-        ? [
-            {
-              name: 'rapier-cdn',
-              setup(build) {
-                build.onResolve({ filter: /^@dimforge\/rapier[23]d-compat$/ }, ({ path }) => ({
-                  path: `https://cdn.jsdelivr.net/npm/${path}@${dependencies[path]}/dist/rapier.mjs`,
-                  external: true,
-                }));
+      plugins: [
+        assetURLs(),
+        ...(cdn
+          ? [
+              {
+                name: 'rapier-cdn',
+                setup(build) {
+                  build.onResolve({ filter: /^@dimforge\/rapier[23]d-compat$/ }, ({ path }) => ({
+                    path: `https://cdn.jsdelivr.net/npm/${path}@${dependencies[path]}/dist/rapier.mjs`,
+                    external: true,
+                  }));
+                },
               },
-            },
-          ]
-        : [],
+            ]
+          : []),
+      ],
       loader: Object.fromEntries(
         [
           '.woff2',
@@ -192,7 +200,13 @@ export async function buildScene(source, target, options = {}) {
     for (const entry of entries) {
       const from = resolve(directory, entry.name),
         to = resolve(output, entry.name);
-      if (entry.name.startsWith('.') || ignored.has(entry.name) || from === target) continue;
+      if (
+        entry.name.startsWith('.') ||
+        ignored.has(entry.name) ||
+        from === target ||
+        options.exclude?.some((path) => resolve(path) === from)
+      )
+        continue;
       if (entry.isDirectory()) await visit(from, to);
       else if (entry.isFile() && sceneAsset(entry.name)) {
         await mkdir(output, { recursive: true });

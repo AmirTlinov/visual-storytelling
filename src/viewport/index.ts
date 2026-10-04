@@ -8,6 +8,7 @@ export type {
   VolumePoint,
 } from './morph/surface.js';
 export { Viewport3D } from './three.js';
+export type { Viewport3DHandle } from './three.js';
 export { SvgOrbit } from './svg-orbit.js';
 export type { SvgOrbitPose } from './svg-orbit.js';
 export type { Shot3D, ShotTransition3D } from './shots.js';

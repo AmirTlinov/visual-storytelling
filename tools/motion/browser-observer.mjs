@@ -154,9 +154,16 @@ export function observeBrowser({ targets, drainBinding }) {
       }
       const box = node.getBoundingClientRect(),
         style = getComputedStyle(node);
+      // Common accessible-only styles deliberately paint no pixels. Keep their
+      // observations, but do not report their 1px box as accidentally clipped text.
+      const clippedAway =
+        style.clipPath === 'inset(50%)' ||
+        (['absolute', 'fixed'].includes(style.position) &&
+          /^rect\(0px[, ]+0px[, ]+0px[, ]+0px\)$/.test(style.clip));
       const observation = {
         selector,
         text: (node.getAttribute('aria-label') ?? node.textContent ?? '').trim().slice(0, 160),
+        textSource: node.hasAttribute('aria-label') ? 'accessible-name' : 'dom-text-content',
         owner: node.getAttribute('data-review-owner') ?? undefined,
         coordinates: 'css-viewport',
         viewport: { width: innerWidth, height: innerHeight },
@@ -165,7 +172,8 @@ export function observeBrowser({ targets, drainBinding }) {
         width: box.width,
         height: box.height,
         opacity: Number(style.opacity),
-        visible: style.visibility !== 'hidden' && style.display !== 'none',
+        visible:
+          !clippedAway && node.checkVisibility({ opacityProperty: true, visibilityProperty: true }),
         scrollWidth: node.scrollWidth,
         clientWidth: node.clientWidth,
         scrollHeight: node.scrollHeight,

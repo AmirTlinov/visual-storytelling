@@ -115,6 +115,7 @@ export function inlineResources(directory) {
           value = result.slice(result.indexOf('{') + 1, result.lastIndexOf('}'));
         } else if (
           (['img', 'source', 'video', 'embed'].includes(name) &&
+            !(name === 'source' && node.parentNode?.tagName === 'audio') &&
             ['src', 'poster'].includes(attr.name)) ||
           (name === 'image' && attr.name === 'href') ||
           (name === 'link' && attr.name === 'href' && /icon/i.test(attrs.rel ?? ''))

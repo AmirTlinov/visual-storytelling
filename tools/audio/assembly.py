@@ -7,9 +7,10 @@ import time
 import numpy as np
 
 from alignment import Aligner
+from credits import audio_credits
 from listening import write_listening_page
 from mixing import mix
-from resources import ALIGN_REPO, ALIGN_REVISION, SPEECH_CREDIT, digest
+from resources import ALIGN_REPO, ALIGN_REVISION, digest
 from script import read_script, timed_cues
 from speech import SAMPLE_RATE, Speaker
 
@@ -57,9 +58,12 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
         staging = Path(temporary)
         print("Mixing the shared timeline", flush=True)
         mix_info = mix(voice, spec.get("music"), staging)
-        credits = staging / "CREDITS.txt"
-        music_credit = credits.read_text() if credits.exists() else ""
-        credits.write_text(SPEECH_CREDIT + ("\n" + music_credit if music_credit else ""))
+        credits = output / "CREDITS.txt"
+        previous = output / "timeline.json"
+        previous_mix = json.loads(previous.read_text()).get("mix", {}) if previous.exists() else {}
+        (staging / "CREDITS.txt").write_text(audio_credits(
+            credits.read_text() if credits.exists() else "", mix_info["music"], previous_mix.get("music"),
+        ))
         timeline = {
             "version": 1, "sample_rate": SAMPLE_RATE, "duration": len(voice) / SAMPLE_RATE,
             "source_sha256": source_digest,
@@ -71,6 +75,8 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
             "mix": mix_info, "warnings": warnings,
             "build": {"seconds": round(time.perf_counter() - started, 3), "segments": stats},
         }
+        if "captionAliases" in spec:
+            timeline["captionAliases"] = spec["captionAliases"]
         (staging / "timeline.json").write_text(json.dumps(timeline, ensure_ascii=False, indent=2) + "\n")
         (staging / "narration.txt").write_text("\n\n".join(s["spoken"] for s in spec["segments"]) + "\n")
         write_listening_page(staging / "voice-preview.html", title="Озвучка рассказа",
@@ -85,7 +91,7 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
         for name in ("audio.wav", "voice.wav", "music.wav", "CREDITS.txt", "timeline.json", "narration.txt", "voice-preview.html"):
             if (staging / name).exists():
                 (staging / name).replace(output / name)
-            elif name in {"music.wav", "CREDITS.txt"}:
+            elif name == "music.wav":
                 (output / name).unlink(missing_ok=True)
     if report:
         print(json.dumps({"output": str(output), "preview": str(output / "voice-preview.html"),

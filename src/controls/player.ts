@@ -1,13 +1,14 @@
 import { html } from '../ink/dom.js';
 import type { Transport } from '../story/transport.js';
 import { PlayerControls } from './player-view.js';
+import type { CaptionTrack } from '../story/captions.js';
 
 export const formatTime = (seconds: number) =>
   `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 export interface PlayerOptions {
   transport: Transport;
   stops?: readonly number[];
-  captions?: { element: HTMLElement; segments: readonly { start: number; text: string }[] };
+  captions?: { element: HTMLElement; track: Pick<CaptionTrack, 'at'> };
   onSeek?: (time: number) => void;
   onPlay?: () => void;
 }
@@ -65,8 +66,8 @@ export function player(parent: HTMLElement, options: PlayerOptions) {
     });
     error.textContent = state.error;
     if (options.captions) {
-      const { element, segments } = options.captions;
-      const text = segments.findLast((segment) => segment.start <= state.time)?.text ?? '';
+      const { element, track } = options.captions;
+      const text = track.at(state.time);
       if (element.textContent !== text) element.textContent = text;
     }
   });

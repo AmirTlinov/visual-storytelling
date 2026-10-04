@@ -106,7 +106,9 @@ export function shotPose(
       ]),
     );
     const fit = readableFrame(camera, {
-      center: target,
+      // Endpoint targets already include the screen-space pan. Fit the authored
+      // world center so asymmetric insets are applied exactly once during a turn.
+      center: bounds.getCenter(new T.Vector3()),
       direction,
       width,
       height,

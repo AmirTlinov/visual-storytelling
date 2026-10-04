@@ -19,6 +19,7 @@ function mount(
     labelInsets = () => ({}),
   }: { onInteract?: () => void; label?: string; labelInsets?: () => LabelInsets } = {},
 ) {
+  let gltf: Promise<ReturnType<(typeof import('./gltf.js'))['gltfLoader']>> | undefined;
   const T = ThreeKit,
     scene = new T.Scene();
   const camera = new T.PerspectiveCamera(36, 1, 0.01, 1000);
@@ -297,11 +298,21 @@ function mount(
     },
     label: labels.label,
     async loadGLB(source: string | ArrayBuffer) {
-      const loader = new T.GLTFLoader();
+      if (disposed) throw new Error('3D viewport has been disposed');
+      const owner = await (gltf ??= import('./gltf.js').then((module) => module.gltfLoader()));
+      if (disposed) {
+        owner.dispose();
+        throw new Error('3D viewport has been disposed');
+      }
+      const { loader } = owner;
       const result =
         source instanceof ArrayBuffer
           ? await loader.parseAsync(source, '')
           : await loader.loadAsync(source);
+      if (disposed) {
+        release(result.scene);
+        throw new Error('3D viewport has been disposed');
+      }
       return result;
     },
     onRender(callback: () => void) {
@@ -324,6 +335,10 @@ function mount(
     dispose() {
       if (disposed) return;
       disposed = true;
+      void gltf?.then(
+        (owner) => owner.dispose(),
+        () => {},
+      );
       for (const cleanup of [...cleanups]) cleanup();
       cleanups.clear();
       removals.clear();
@@ -343,3 +358,4 @@ function mount(
   };
 }
 export const Viewport3D = { mount };
+export type Viewport3DHandle = Awaited<ReturnType<typeof mount>>;

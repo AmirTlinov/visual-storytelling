@@ -5,6 +5,7 @@ import { renderer } from '../render.mjs';
 import { captureWriter } from './session.mjs';
 import { storyEpisodes, selectEpisode } from './episodes.mjs';
 import { sourceReferences } from './sources.mjs';
+import { subjectDigests } from './subject-digests.mjs';
 
 /** An adapter over the existing scene clock; this is never a playback performance trace. */
 export async function captureScene({
@@ -106,6 +107,7 @@ export async function captureScene({
             return {
               id,
               text: node.textContent?.trim().slice(0, 160),
+              textSource: 'dom-text-content',
               x: b.x - origin.x,
               y: b.y - origin.y,
               width: b.width,
@@ -130,6 +132,35 @@ export async function captureScene({
       for (const object of objects)
         object.sourceFile = await references.owner(object.source ?? object.owner);
       const png = await capture.png();
+      const regions = await capture.page.evaluate(() => {
+        const root = document.querySelector('.ve-scene');
+        const origin = root?.getBoundingClientRect() ?? { x: 0, y: 0 };
+        const box = (node) => {
+          const b = node.getBoundingClientRect();
+          const hidden = !node.checkVisibility();
+          return {
+            x: b.x - origin.x,
+            y: b.y - origin.y,
+            width: hidden ? 0 : b.width,
+            height: hidden ? 0 : b.height,
+          };
+        };
+        const subject = root?.querySelector(
+          '[data-scene-frame],.ve-stage,svg.canvas,svg.vs-canvas',
+        );
+        const exclude = [
+          ...(root?.querySelectorAll('[data-caption],[data-player],[data-review-ignore]') ?? []),
+        ].map(box);
+        return [
+          ...(subject ? [{ id: '$subject', ...box(subject), exclude }] : []),
+          ...[...(root?.querySelectorAll('[data-review-id]') ?? [])].map((node) => ({
+            id: node.getAttribute('data-review-id'),
+            ...box(node),
+            exclude,
+          })),
+        ];
+      });
+      const subjects = await subjectDigests(png, regions);
       await writer.append({
         id: `frame:${writer.frames.length}`,
         time,
@@ -138,6 +169,7 @@ export async function captureScene({
         diagnostics,
         objects,
         digest: createHash('sha256').update(png).digest('hex'),
+        subjects,
         png,
       });
     }

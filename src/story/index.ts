@@ -10,3 +10,7 @@ export * from './steps.js';
 export * from './svg.js';
 export * from './media.js';
 export * from './simulation.js';
+export { storyActions } from './actions.js';
+export type { StoryAction, StoryActionsOptions } from './actions.js';
+export { captionTrack } from './captions.js';
+export type { Caption, CaptionOptions, CaptionTrack } from './captions.js';

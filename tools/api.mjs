@@ -48,7 +48,8 @@ export async function buildAPI(root, output) {
   // Ship the declaration graph, not a second handwritten API catalogue. The
   // consumer can expand argument types without installing TypeScript or src/.
   const declarations = {},
-    signatures = {};
+    signatures = {},
+    members = {};
   const statement = (node) => {
     while (node.parent && !ts.isSourceFile(node.parent)) node = node.parent;
     return node;
@@ -59,8 +60,8 @@ export async function buildAPI(root, output) {
       : node.name
         ? [node.name]
         : [];
-  function collect(node) {
-    const owner = statement(node),
+  function collect(node, member = false) {
+    const owner = member ? node : statement(node),
       file = localFile(owner),
       id = `${file}:${owner.pos}`;
     if (declarations[id]) return id;
@@ -87,9 +88,20 @@ export async function buildAPI(root, output) {
           symbol = checker.getAliasedSymbol(symbol);
         }
         for (const declaration of symbol?.declarations ?? []) {
+          if (
+            declaration.getSourceFile() === owner.getSourceFile() &&
+            declaration.pos >= owner.pos &&
+            declaration.end <= owner.end
+          )
+            continue;
           const dependency = statement(declaration);
           if (dependency === owner || localFile(dependency) === undefined) continue;
           if (ts.isImportDeclaration(dependency) || ts.isExportDeclaration(dependency)) continue;
+          if (
+            ts.isModuleDeclaration(dependency) &&
+            dependency.flags & ts.NodeFlags.GlobalAugmentation
+          )
+            continue;
           const type =
             ts.isInterfaceDeclaration(dependency) || ts.isTypeAliasDeclaration(dependency);
           const apis = names(dependency).flatMap((name) => [
@@ -110,19 +122,45 @@ export async function buildAPI(root, output) {
   }
   for (const { entry, name, declaration } of publicDeclarations) {
     (signatures[entry] ??= {})[name] = collect(declaration);
+    const symbol = checker.getSymbolAtLocation(declaration.name);
+    if (!symbol) continue;
+    const type =
+      ts.isInterfaceDeclaration(declaration) || ts.isTypeAliasDeclaration(declaration)
+        ? checker.getDeclaredTypeOfSymbol(symbol)
+        : checker.getTypeOfSymbolAtLocation(symbol, declaration);
+    const properties = {};
+    for (const property of checker.getPropertiesOfType(type)) {
+      const node = property.declarations?.find((node) => localFile(node) !== undefined);
+      if (!node) continue;
+      const callable = checker
+        .getSignaturesOfType(
+          checker.getTypeOfSymbolAtLocation(property, node),
+          ts.SignatureKind.Call,
+        )[0]
+        ?.getDeclaration();
+      properties[property.name] = collect(
+        callable && localFile(callable) !== undefined ? callable : node,
+        true,
+      );
+    }
+    if (Object.keys(properties).length) (members[entry] ??= {})[name] = properties;
   }
   await writeFile(
     join(output, 'api.json'),
-    JSON.stringify({ name: pkg.name, modules, signatures, declarations }, null, 2) + '\n',
+    JSON.stringify({ name: pkg.name, modules, signatures, members, declarations }, null, 2) + '\n',
   );
 }
 
 /** Read actual public signatures without requiring TypeScript or implementation sources. */
 export async function describeAPI(root, ...queries) {
-  const { name, modules, signatures, declarations } = JSON.parse(
+  const full = queries.includes('--full');
+  queries = queries.filter((query) => query !== '--full');
+  const { name, modules, signatures, members, declarations } = JSON.parse(
     await readFile(join(root, 'dist/api.json'), 'utf8'),
   );
   const importName = (entry) => name + (entry === '.' ? '' : entry.slice(1));
+  // Dedicated entry points avoid pulling aggregate browser assets into pure helpers.
+  const entries = Object.entries(modules).sort(([a], [b]) => Number(a === '.') - Number(b === '.'));
   const listing = (entries) =>
     entries
       .map(([entry, symbols]) => `${importName(entry)}\n  ${Object.keys(symbols).join(', ')}`)
@@ -130,7 +168,8 @@ export async function describeAPI(root, ...queries) {
   if (!queries.length)
     return {
       text:
-        listing(Object.entries(modules)) + '\n\nInspect a signature: visual-story api SceneShell',
+        listing(Object.entries(modules)) +
+        '\n\nInspect: visual-story api SceneShell.mount SceneOptions\nExpand related declarations: add --full',
       missing: [],
     };
   const blocks = [],
@@ -142,11 +181,28 @@ export async function describeAPI(root, ...queries) {
       blocks.push(listing([[query, modules[query]]]));
       continue;
     }
-    const matches = Object.entries(modules).flatMap(([entry, symbols]) =>
+    const [requestedName, member] = query.split('.');
+    let matches = entries.flatMap(([entry, symbols]) =>
       Object.entries(symbols)
-        .filter(([symbol]) => symbol.toLowerCase() === query.toLowerCase())
-        .map(([symbol, file]) => ({ entry, symbol, file })),
+        .filter(([symbol]) => symbol.toLowerCase() === requestedName.toLowerCase())
+        .map(([symbol, file]) => ({
+          entry,
+          symbol,
+          file,
+          id: member ? members?.[entry]?.[symbol]?.[member] : signatures[entry][symbol],
+        }))
+        .filter((match) => match.id),
     );
+    // An instance method is discoverable without knowing the handle type's name.
+    if (!matches.length && !member) {
+      matches = Object.entries(members ?? {}).flatMap(([entry, owners]) =>
+        Object.entries(owners).flatMap(([symbol, properties]) =>
+          Object.entries(properties)
+            .filter(([name]) => name.toLowerCase() === requestedName.toLowerCase())
+            .map(([, id]) => ({ entry, symbol, id })),
+        ),
+      );
+    }
     if (!matches.length) {
       const candidates = [...new Set(Object.values(modules).flatMap(Object.keys))].filter(
         (symbol) => symbol.toLowerCase().includes(query.toLowerCase()),
@@ -156,14 +212,14 @@ export async function describeAPI(root, ...queries) {
       );
       continue;
     }
-    for (const { entry, symbol, file } of matches) {
-      const id = signatures[entry][symbol];
+    for (const { entry, symbol, id } of matches) {
+      const file = declarations[id].file;
       if (selected.has(id)) continue;
       if (!requested.has(file)) requested.set(file, new Set());
       requested
         .get(file)
         .add(
-          `import${declarations[id].type ? ' type' : ''} { ${symbol} } from '${importName(entry)}';`,
+          `import${declarations[signatures[entry][symbol]].type ? ' type' : ''} { ${symbol} } from '${importName(entry)}';`,
         );
       selected.add(id);
     }
@@ -171,6 +227,10 @@ export async function describeAPI(root, ...queries) {
   const expanded = new Set(),
     files = new Map(),
     related = new Set();
+  const publicById = new Map();
+  for (const symbols of Object.values(signatures))
+    for (const [symbol, id] of Object.entries(symbols))
+      if (!publicById.has(id)) publicById.set(id, symbol);
   function expand(id) {
     if (expanded.has(id)) return;
     expanded.add(id);
@@ -178,14 +238,18 @@ export async function describeAPI(root, ...queries) {
     if (!files.has(record.file)) files.set(record.file, []);
     files.get(record.file).push(record);
     record.related.forEach((name) => related.add(name));
-    record.dependencies.forEach(expand);
+    for (const dependency of record.dependencies) {
+      if (full || !record.type || selected.has(dependency) || !publicById.has(dependency))
+        expand(dependency);
+      else related.add(publicById.get(dependency));
+    }
   }
-  selected.forEach(expand);
+  for (const id of selected) expand(id);
   for (const file of [...requested.keys(), ...[...files.keys()].filter((f) => !requested.has(f))]) {
     const records = files.get(file),
       imports = [...new Set(records.flatMap((r) => r.imports))];
     const publicImports = new Map();
-    for (const [entry, symbols] of Object.entries(modules))
+    for (const [entry, symbols] of entries)
       for (const [symbol, source] of Object.entries(symbols)) {
         const id = signatures[entry][symbol];
         if (source === file && expanded.has(id) && declarations[id].type && !publicImports.has(id))

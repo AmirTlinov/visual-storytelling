@@ -8,7 +8,7 @@ import { buildAPI, describeAPI } from '../tools/api.mjs';
 
 test('one morph lookup explains its inputs without unrelated implementation helpers', async () => {
   const root = fileURLToPath(new URL('../', import.meta.url));
-  const { text, missing } = await describeAPI(root, 'Morph3D', 'Morph2D', 'Morph');
+  const { text, missing } = await describeAPI(root, 'Morph3D', 'Morph2D', 'Morph', '--full');
   assert.deepEqual(missing, []);
   assert.match(text, /import \{ Morph3D \} from '@visual-storytelling\/core\/three'/);
   for (const name of ['MorphOperation', 'MorphObject', 'MorphFrame', 'Frame', 'Cue'])
@@ -23,6 +23,26 @@ test('one morph lookup explains its inputs without unrelated implementation help
   const unknown = await describeAPI(root, 'Viewport');
   assert.equal(unknown.missing.length, 1);
   assert.match(unknown.text, /Viewport3D/);
+  const method = await describeAPI(root, 'SceneMount.attachStory');
+  assert.match(method.text, /import type \{ SceneMount \}/);
+  assert.doesNotMatch(
+    method.text,
+    /declare global|interface SceneHandle|interface ControlParameter/,
+  );
+  const loader = await describeAPI(root, 'loadGLB');
+  assert.deepEqual(loader.missing, []);
+  assert.match(loader.text, /import type \{ Viewport3DHandle \}/);
+  assert.match(loader.text, /loadGLB\(source: string \| ArrayBuffer\)/);
+  const captions = await describeAPI(root, 'captionTrack');
+  assert.match(
+    captions.text,
+    /import \{ captionTrack \} from '@visual-storytelling\/core\/story';/,
+  );
+  const { captionTrack } = await import('../dist/story/index.js');
+  assert.match(
+    captionTrack({ segments: [{ id: 'one', start: 0, end: 1, text: 'Готово.' }] }).serialize('srt'),
+    /Готово\./,
+  );
 });
 
 test('shipped discovery resolves private factories, aliases and recursive argument types', async () => {
@@ -87,6 +107,11 @@ test('shipped discovery resolves private factories, aliases and recursive argume
     assert.match(choices.text, /import \{ Choice \} from 'public-api-fixture\/alternate';/);
     assert.match(choices.text, /const First: \{ first: true \}/);
     assert.match(choices.text, /const Second: \{ second: true \}/);
+    const member = await describeAPI(root, 'Widget.create');
+    assert.deepEqual(member.missing, []);
+    assert.match(member.text, /create\(options: Options\)/);
+    assert.match(member.text, /interface Input/);
+    assert.doesNotMatch(member.text, /const Widget|obsoleteHelper|Unrelated/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

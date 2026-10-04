@@ -34,3 +34,14 @@
 [data-content-layout="fit"]{position:relative;width:100%}
 [data-content-layout="fit"]>svg{display:block;width:100%;height:auto;max-height:none}
 [data-content-layout="fit"]>canvas{display:block;width:100%;height:100%}
+
+.ve-scene .ve-frame{position:relative;width:100%;overflow:hidden;isolation:isolate}
+.ve-scene .ve-frame>.ve-frame-content{position:absolute;inset:0}
+.ve-standalone .ve-scene:has(>.ve-frame){max-width:none}
+.ve-scene .ve-captions{font-size:20px;line-height:1.4;text-align:center;margin:12px auto;max-width:64ch;white-space:pre-line}
+.ve-scene .ve-frame-content>.ve-captions{position:absolute;bottom:24px;left:8%;width:84%;max-width:none;margin:0;padding:8px 16px;background:var(--ve-surface);color:var(--ve-ink);z-index:10;pointer-events:none}
+.ve-scene .ve-captions:empty{visibility:hidden}
+.ve-scene [data-story-pressed=true]{filter:brightness(.85)}
+.ve-scene .ve-frame [aria-selected=true]{outline:2px solid var(--ve-blue);outline-offset:3px}
+.ve-scene [data-story-pressed=true]:not([data-story-reduced=true]){scale:.97}
+@media(prefers-reduced-motion:reduce){.ve-scene [data-story-pressed=true]{scale:none}}

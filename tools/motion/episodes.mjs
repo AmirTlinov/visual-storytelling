@@ -98,7 +98,8 @@ function mediaEpisodes(review, samples) {
   for (const e of results)
     if (e.kind !== 'chapter')
       e.parent = results.find(
-        (c) => c.kind === 'chapter' && e.start >= c.start && e.start <= c.end,
+        (c) => c.kind === 'chapter' && e.start >= c.start &&
+          (e.start < c.end || (c.start === c.end && e.start === c.start)),
       )?.id;
   return results;
 }
@@ -207,11 +208,20 @@ export function buildEpisodes(samples, { context, telemetry, timeline } = {}) {
       ].sort((a, b) => a.time - b.time);
       const inside = samples.filter((s) => s.time >= from && s.time <= to);
       const observations = [...new Set(inside.flatMap((s) => s.diagnostics ?? []))];
+      const subjectState = (sample) =>
+        e.targets?.length
+          ? JSON.stringify(e.targets.map((id) => sample.subjects?.[id] ?? null))
+          : (sample.subjects?.$subject ?? sample.digest);
+      const subjectAvailable = inside.every((s) =>
+        e.targets?.length
+          ? e.targets.every((id) => s.subjects?.[id] !== undefined)
+          : Boolean(subjectState(s)),
+      );
       if (
         e.kind === 'action' &&
         inside.length > 1 &&
-        inside.every((s) => s.digest) &&
-        new Set(inside.map((s) => s.digest)).size === 1
+        subjectAvailable &&
+        new Set(inside.map(subjectState)).size === 1
       )
         observations.push('Выбранные состояния внутри действия одинаковы.');
       if (e.referenced === false && e.kind === 'action')
@@ -227,6 +237,11 @@ export function buildEpisodes(samples, { context, telemetry, timeline } = {}) {
           firstChange: changes[0]?.time,
           lastChange: changes.at(-1)?.time,
           sampledFrames: samples.filter((s) => s.time >= from && s.time <= to).length,
+          scope: e.targets?.length
+            ? { objects: e.targets }
+            : inside.some((s) => s.subjects?.$subject)
+              ? 'subject without player/captions'
+              : 'whole frame',
           note: 'Изменения изображения; связь с действием и завершение процесса оценивает просматривающий.',
         },
       };

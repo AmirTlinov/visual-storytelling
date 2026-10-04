@@ -12,6 +12,7 @@
 | Образец рассказчика | `src/assets/audio/narrator-male.wav`: принятая цельная реплика Higgs TTS 3; точная расшифровка в `tools/audio/resources.py` | Тот же мужской голос; образец задаёт живую манеру дальнейшего синтеза. Атрибуция Boson AI сохраняется в каждом рассказе. |
 | [mathjs](https://mathjs.org/) | 15.2.0, разбор выражений, скалярные/матричные функции и символическая производная | Apache-2.0, лицензия в установленном пакете. |
 | [Three.js](https://github.com/mrdoob/three.js) | 0.186.1, WebGL, OrbitControls и GLTFLoader | MIT, лицензия в установленном пакете. |
+| [Draco](https://github.com/google/draco) | glTF-декодер из закреплённого Three.js 0.186.1; включается в пакет и автономный HTML | Apache-2.0, источник и условия в `three/examples/jsm/libs/draco/README.md`. |
 | [Rapier](https://github.com/dimforge/rapier.js) | 0.21.0, отдельные `rapier2d-compat` / `rapier3d-compat`, столкновения и мягкие тела в WASM | Apache-2.0, лицензии в установленных пакетах. |
 | [Sharp](https://sharp.pixelplumbing.com) | 0.35.5, декодирование, масштаб и PNG для проверки движения | Apache-2.0, лицензия в установленном пакете. |
 | [Playwright](https://github.com/microsoft/playwright) | 1.63.0, браузерный захват, экспорт и проверка сцен | Apache-2.0, лицензия в установленном пакете. |
