@@ -29,7 +29,11 @@ import {
 function mount(
   view: ReturnType<typeof Viewport3D.mount>,
   operation: MathOperation | MathMorphPlan,
-  options: { pigment?: string } = {},
+  options: {
+    pigment?: string;
+    /** Embedded operations keep their host's authored size; standalone content fits its rows. */
+    layout?: 'scene' | 'content';
+  } = {},
 ) {
   const prepared = mathPlan(operation);
   const object = new Group(),
@@ -41,7 +45,7 @@ function mount(
     disposed = false;
   let progress = 0;
   const stage = view.renderer.domElement.parentElement!;
-  const viewport = contentViewport(stage);
+  const viewport = options.layout === 'scene' ? undefined : contentViewport(stage);
   let arrangement: ReturnType<typeof cellLayout> | undefined,
     layoutWidth = 0;
   let lastTime: MorphTime = 0,
@@ -108,11 +112,11 @@ function mount(
       if (!arrangement || widthAvailable !== layoutWidth) {
         arrangement = cellLayout(plan, widthAvailable);
         layoutWidth = widthAvailable;
-        viewport.resize(arrangement.height + 64);
+        viewport?.resize(arrangement.height + 64);
       }
     } else {
       arrangement = undefined;
-      viewport.resize();
+      viewport?.resize();
     }
     const frame = mathMotionFrame(plan, time, arrangement?.columns);
     formula.element.style.maxWidth = `${Math.max(160, widthAvailable - 64)}px`;
@@ -211,7 +215,7 @@ function mount(
     disposed = true;
     unwatchMotion();
     resizeObserver.disconnect();
-    viewport.dispose();
+    viewport?.dispose();
     clear();
     volume.dispose();
     formula.remove();
