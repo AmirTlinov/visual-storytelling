@@ -1,12 +1,11 @@
 import { mathPlan } from './math.js';
-import { constructionPlan } from './construction/plan.js';
 import type { MathOperation, MathMorphPlan } from './types.js';
-import type { ConstructionOperation, ConstructionPlan } from './construction/types.js';
+import type { ConstructionPlan } from './construction/types.js';
 import type { MorphCues, MorphTime } from './timing.js';
 
-type Operation = MathOperation | MathMorphPlan | ConstructionOperation | ConstructionPlan;
-const isConstruction = (value: Operation): value is ConstructionOperation | ConstructionPlan =>
-  'kind' in value ? value.kind === 'construction' : value.encoding === 'construction';
+type Operation = MathOperation | MathMorphPlan | ConstructionPlan;
+const isConstruction = (value: Operation): value is ConstructionPlan =>
+  'encoding' in value && value.encoding === 'construction';
 
 /** One mounted owner survives changes between numerical bodies and geometric explanations. */
 export async function mountMath(
@@ -30,7 +29,7 @@ export async function mountMath(
     if (disposed) throw new Error('Math presentation has been disposed');
     // Same-kind edits reuse the owner. A different presentation is mounted before retiring it.
     if (isConstruction(next)) {
-      const prepared = constructionPlan(next);
+      const prepared = next;
       if (construction) return construction.setOperation(prepared);
       replace((target) => {
         const mounted = mountConstruction(target, prepared);

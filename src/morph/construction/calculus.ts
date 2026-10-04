@@ -1,18 +1,8 @@
 import { scalarExpression } from '../formula/expression.js';
 import { integrate } from '../formula/calculus.js';
-import {
-  finite,
-  positive,
-  number,
-  line,
-  path,
-  axes,
-  sample,
-  boundsOf,
-  padded,
-  lerp,
-} from './geometry.js';
-import type { ConstructionModel, DiagramBounds, ScalarFunction, DiagramPoint } from './types.js';
+import { finite, positive, number, sample, boundsOf, padded, lerp } from './geometry.js';
+import { createModel } from '../model/index.js';
+import type { ConstructionPlan, ScalarFunction, DiagramPoint } from './types.js';
 
 function scalar(fn: ScalarFunction) {
   if (typeof fn === 'string') return scalarExpression(fn);
@@ -60,14 +50,13 @@ export function derivative(
   at: number,
   span = 1.5,
   label?: string,
-): ConstructionModel {
+): ConstructionPlan {
   finite(at);
   positive(span);
   const f = scalar(fn),
     y = f.value(at),
     slope = f.derivative(at);
   finite(slope);
-  const curve = sample((x) => [x, f.value(x)], at - span, at + span);
   const initialH = span * 0.75;
   const resolution = Math.max(span * 1e-7, 32 * Number.EPSILON * Math.abs(at));
   const rateAt = (h: number) => {
@@ -78,137 +67,78 @@ export function derivative(
     finite(rate);
     return rate;
   };
-  const rates = Array.from({ length: 97 }, (_, i) => rateAt((initialH * i) / 96));
-  const bounds = padded(
-    boundsOf([
-      ...curve,
-      [at, 0],
-      ...rates.flatMap((rate): DiagramPoint[] => [
-        [at - span * 0.7, y - rate * span * 0.7],
-        [at + span * 0.85, y + rate * span * 0.85],
-      ]),
-    ]),
-  );
-  const localBounds: DiagramBounds = [
-    [-0.2, Math.min(0, ...rates) - 0.4],
-    [1.4, Math.max(0, ...rates) + 0.5],
-  ];
-  return {
-    stages: 3,
-    result: slope,
-    sample(stage, p) {
-      const h =
-        stage === 0
-          ? initialH
-          : stage === 1
-            ? initialH * Math.exp(-4 * p)
-            : initialH * Math.exp(-4) * (1 - p);
-      const rate = rateAt(h);
-      const other: DiagramPoint = [at + h, y + rate * h];
-      return {
-        panels: [
-          {
-            id: 'curve',
-            title: `Два близких значения ${written(fn, label)}`,
-            bounds,
-            aspect: 'free',
-            paths: [
-              ...axes(bounds),
-              path('function', curve),
-              line(
-                'secant',
-                [at - span * 0.7, y - rate * span * 0.7],
-                [at + span * 0.85, y + rate * span * 0.85],
-                'purple',
-              ),
-              {
-                ...path('difference', [[at, y], [at + h, y], other], 'orange'),
-                closed: true,
-                fill: true,
-              },
-              {
-                ...path(
-                  'point',
-                  sample(
-                    (t) => [at + span * 0.02 * Math.cos(t), y + span * 0.02 * Math.sin(t)],
-                    0,
-                    Math.PI * 2,
-                    20,
-                  ),
-                ),
-                closed: true,
-                fill: true,
-              },
-            ],
-            labels: [
-              {
-                id: 'x-label',
-                text: `x = ${number(at)}`,
-                at: [at, y],
-                side: 'bottom',
-                pigment: 'blue',
-              },
-              {
-                id: 'dx',
-                text: stage === 2 && p === 1 ? 'Δx → 0' : `Δx = ${number(h)}`,
-                at: [at + h, y],
-                side: 'right',
-                pigment: 'orange',
-              },
-            ],
-          },
-          {
-            id: 'slope',
-            title: 'Тот же наклон, ширина приведена к 1',
-            bounds: localBounds,
-            aspect: 'free',
-            paths: [
-              ...axes(localBounds),
-              {
-                ...path(
-                  'slope-triangle',
-                  [
-                    [0, 0],
-                    [1, 0],
-                    [1, rate],
-                  ],
-                  'orange',
-                ),
-                closed: true,
-                fill: true,
-              },
-              line('slope-line', [0, 0], [1, rate], 'purple'),
-              {
-                ...line('limit', [0, 0], [1, slope], 'green'),
-                dashed: true,
-                opacity: stage === 2 ? p : 0,
-              },
-            ],
-            labels: [
-              { id: 'unit', text: '1', at: [0, 0], to: [1, 0], side: 'bottom' },
-              {
-                id: 'slope-value',
-                text: number(rate),
-                at: [1, 0],
-                to: [1, rate],
-                side: 'right',
-                pigment: 'purple',
-              },
-            ],
-          },
+  const m = createModel({ convergence: 0, settle: 0 });
+  const h = m.value((s) => initialH * Math.exp(-4 * s.convergence) * (1 - s.settle));
+  const rate = h.map(rateAt),
+    other = h.join(rate, (h, r) => [at + h, y + r * h]);
+  const a = rate.map((r) => [at - span * 0.7, y - r * span * 0.7]),
+    b = rate.map((r) => [at + span * 0.85, y + r * span * 0.85]);
+  const normalized = rate.map((r) => [1, r]);
+  const ratio = rate.map((r) => `Δy / Δx = ${number(r)}`);
+  return m.explain({
+    panels: [
+      {
+        title: `Два близких значения ${written(fn, label)}`,
+        axes: true,
+        aspect: 'free',
+        objects: [
+          m.curve((x) => [x, f.value(x)], { domain: [at - span, at + span] }),
+          m.segment(a, b, { pigment: 'purple' }),
+          m.polygon([[at, y], h.map((h) => [at + h, y]), other], { pigment: 'orange', fill: true }),
+          m.point([at, y], { label: `x = ${number(at)}`, side: 'bottom' }),
+          m.label(
+            h.map((h) => (h === 0 ? 'Δx → 0' : `Δx = ${number(h)}`)),
+            h.map((h) => [at + h, y]),
+            { pigment: 'orange', side: 'right' },
+          ),
         ],
-        formula:
-          stage === 2 && p > 0.99
-            ? `f′(${number(at)}) = ${number(slope)}`
-            : `Δy / Δx = ${number(rate)}`,
-        explanation: [
+      },
+      {
+        title: 'Тот же наклон, ширина приведена к 1',
+        axes: true,
+        aspect: 'free',
+        objects: [
+          m.polygon([[0, 0], [1, 0], normalized], { pigment: 'orange', fill: true }),
+          m.segment([0, 0], normalized, { pigment: 'purple' }),
+          m.segment([0, 0], [1, slope], {
+            pigment: 'green',
+            dashed: true,
+            visible: m.parameter('settle'),
+          }),
+          m.measure([0, 0], [1, 0], { side: 'bottom', pigment: 'ink' }),
+          m.measure([1, 0], normalized, {
+            label: rate.map(number),
+            side: 'right',
+            pigment: 'purple',
+          }),
+        ],
+      },
+    ],
+    steps: [
+      {
+        to: {},
+        formula: ratio,
+        explanation:
           'Секущая соединяет две точки. Оранжевый треугольник показывает отношение приращений.',
+      },
+      {
+        to: { convergence: 1 },
+        formula: ratio,
+        explanation:
           'Сближаем точки. Справа сохраняем видимый размер треугольника, чтобы следить за наклоном.',
-          'Расстояние стремится к нулю; секущая непрерывно становится касательной.',
-        ][stage]!,
-      };
-    },
-  };
+      },
+      {
+        to: { settle: 1 },
+        formula: m
+          .parameter('settle')
+          .join(rate, (p, r) =>
+            p === 1 ? `f′(${number(at)}) = ${number(slope)}` : `Δy / Δx = ${number(r)}`,
+          ),
+        explanation: 'Расстояние стремится к нулю; секущая непрерывно становится касательной.',
+      },
+    ],
+    result: slope,
+  });
 }
 
 export function integral(
@@ -216,7 +146,7 @@ export function integral(
   from: number,
   to: number,
   label?: string,
-): ConstructionModel {
+): ConstructionPlan {
   finite(from, to);
   if (!(to > from)) throw new Error('Illustrated integration needs an increasing interval');
   const f = scalar(fn),
@@ -283,81 +213,81 @@ export function integral(
   );
   const signed = [...values.values()].some((y) => y < 0),
     symbol = signed ? 'I' : 'S';
-  return {
-    stages: 3,
-    result,
-    sample(stage, p) {
-      const refinement = stage === 0 ? 0 : stage === 1 ? p : 1;
-      const flatten = stage === 2 ? p : 0,
-        growth = stage === 0 ? p : 1;
-      const boundary: DiagramPoint[] = edge.map(({ x, fine, coarse }) => [
-        x,
-        lerp(lerp(coarse, fine, refinement), average, flatten) * growth,
-      ]);
-      const shown = lerp(approximate, result, refinement) * growth;
-      const separators = [1, 2, 3].map((i) => {
-        const x = from + (length * i) / 4;
-        const height =
-          lerp(
-            lerp(Math.max(heights[i - 1]!, heights[i]!), value(x), refinement),
-            average,
-            flatten,
-          ) * growth;
-        return {
-          ...line(`partition-${i}`, [x, 0], [x, height], 'blue'),
-          opacity: (1 - flatten) * 0.5,
-        };
-      });
-      return {
-        panels: [
-          {
-            id: 'integral',
-            title: `${signed ? 'Ориентированная площадь под' : 'Площадь под'} ${written(fn, label)}`,
-            bounds,
-            aspect: 'free',
-            paths: [
-              ...axes(bounds),
-              { ...path('area', [[from, 0], ...boundary, [to, 0]]), closed: true, fill: true },
-              { ...path('function', curve), dashed: flatten > 0, opacity: 1 - flatten * 0.6 },
-              ...separators,
-              {
-                ...line('mean', [from, average], [to, average], 'green'),
-                dashed: true,
-                opacity: flatten,
-              },
-            ],
-            labels: [
-              {
-                id: 'interval',
-                text: `${number(length)}`,
-                at: [from, 0],
-                to: [to, 0],
-                side: 'bottom',
-              },
-              { id: 'from', text: number(from), at: [from, 0], side: 'left' },
-              {
-                id: 'mean-height',
-                text: `Средняя высота ${number(average)}`,
-                at: [to, average],
-                side: 'top',
-                pigment: 'green',
-                opacity: flatten,
-              },
-            ],
-          },
-        ],
-        formula:
-          stage === 2
-            ? `${symbol} = ${number(length)} × ${number(average)} = ${number(result)}`
-            : `${symbol} ≈ ${number(shown)}`,
-        explanation: [
-          'Поднимаем четыре прямоугольника к серединам отрезков: их площадь даёт первую оценку.',
-          'Уточняем ту же границу. Сумма площадей приближается к интегралу.',
-          signed
-            ? 'Выравниваем высоту, сохраняя ориентированную площадь: части ниже оси вычитаются из частей выше неё.'
-            : 'Выравниваем высоту, сохраняя площадь. Интеграл равен ширине, умноженной на среднюю высоту.',
-        ][stage]!,
-      };
-    },
+  const m = createModel({ growth: 0, refinement: 0, flatten: 0 });
+  const boundary = edge.map(({ x, fine, coarse }) =>
+    m.value((s) => [x, lerp(lerp(coarse, fine, s.refinement), average, s.flatten) * s.growth]),
+  );
+  const shown = m.value((s) => lerp(approximate, result, s.refinement) * s.growth);
+  const separators = [1, 2, 3].map((i) => {
+    const x = from + (length * i) / 4;
+    const height = m.value((s) => [
+      x,
+      lerp(
+        lerp(Math.max(heights[i - 1]!, heights[i]!), value(x), s.refinement),
+        average,
+        s.flatten,
+      ) * s.growth,
+    ]);
+    return m.segment([x, 0], height, { visible: m.value((s) => (1 - s.flatten) * 0.5) });
+  });
+  // The quadrature's corrected ordinates are the mathematical polygon: every intermediate
+  // ordinate has the same signed integral, including functions that cross the horizontal axis.
+  const curveValues = curve.map((p) => p[1]);
+  const functionAt = (x: number) => {
+    const p = Math.max(0, Math.min(curve.length - 1, ((x - from) / length) * (curve.length - 1))),
+      i = Math.min(curve.length - 2, Math.floor(p));
+    return lerp(curveValues[i]!, curveValues[i + 1]!, p - i);
   };
+  const approximation = shown.map((v) => `${symbol} ≈ ${number(v)}`);
+  return m.explain({
+    panels: [
+      {
+        title: `${signed ? 'Ориентированная площадь под' : 'Площадь под'} ${written(fn, label)}`,
+        aspect: 'free',
+        axes: true,
+        bounds,
+        objects: [
+          m.polygon([[from, 0], ...boundary, [to, 0]], { fill: true }),
+          m.curve((x) => [x, functionAt(x)], {
+            domain: [from, to],
+            visible: m.value((s) => 1 - s.flatten * 0.6),
+          }),
+          ...separators,
+          m.segment([from, average], [to, average], {
+            pigment: 'green',
+            dashed: true,
+            visible: m.parameter('flatten'),
+          }),
+          m.measure([from, 0], [to, 0], { pigment: 'ink' }),
+          m.label(number(from), [from, 0], { side: 'left', pigment: 'ink' }),
+          m.label(`Средняя высота ${number(average)}`, [to, average], {
+            side: 'top',
+            pigment: 'green',
+            visible: m.parameter('flatten'),
+          }),
+        ],
+      },
+    ],
+    steps: [
+      {
+        to: { growth: 1 },
+        formula: approximation,
+        explanation:
+          'Поднимаем четыре прямоугольника к серединам отрезков: их площадь даёт первую оценку.',
+      },
+      {
+        to: { refinement: 1 },
+        formula: approximation,
+        explanation: 'Уточняем ту же границу. Сумма площадей приближается к интегралу.',
+      },
+      {
+        to: { flatten: 1 },
+        formula: `${symbol} = ${number(length)} × ${number(average)} = ${number(result)}`,
+        explanation: signed
+          ? 'Выравниваем высоту, сохраняя ориентированную площадь: части ниже оси вычитаются из частей выше неё.'
+          : 'Выравниваем высоту, сохраняя площадь. Интеграл равен ширине, умноженной на среднюю высоту.',
+      },
+    ],
+    result,
+  });
 }

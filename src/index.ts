@@ -15,7 +15,20 @@ export * from './host/widget-state.js';
 
 export { MathMorph, mathPlan } from './morph/math.js';
 export type {
-  ConstructionOperation,
+  Value,
+  MathState,
+  Input,
+  Coordinate,
+  Domain,
+  MarkStyle,
+  CurveStyle,
+  MaterialStyle,
+  ModelStep,
+  ModelPanel,
+  ModelObject,
+  Explanation,
+} from './morph/model/index.js';
+export type {
   ConstructionPlan,
   ConstructionFrame,
   DiagramPoint,
@@ -54,3 +67,5 @@ export type {
   MorphOperation,
   MorphPlan,
 } from './morph/objects.js';
+
+export type { DeformationOptions } from './morph/construction/deformation.js';

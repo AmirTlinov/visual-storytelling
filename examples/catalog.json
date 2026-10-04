@@ -383,5 +383,25 @@
     "source": "scene.js",
     "guides": ["skill/references/scene-authoring.md"],
     "recommended": true
+  },
+  "mathematical-relations": {
+    "title": "Одна связь — весь рисунок",
+    "page": "index.html",
+    "time": 94,
+    "checkpoints": [0, 10, 25, 42.3, 65, 85, 94, 103],
+    "group": "math",
+    "summary": "Общий математический граф: комплексный квадрат, нелинейная карта, фазовый портрет и подписанная поверхность в 3D. Сцена задаёт зависимости без новых методов движка.",
+    "tags": [
+      "математика",
+      "MathMorph.model",
+      "комплексные числа",
+      "траектория",
+      "фазовый портрет",
+      "материал",
+      "3D"
+    ],
+    "source": "models.js",
+    "guides": ["docs/morphing.md"],
+    "recommended": true
   }
 }

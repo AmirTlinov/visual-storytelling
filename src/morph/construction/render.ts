@@ -3,9 +3,10 @@ import { svg } from '../../ink/dom.js';
 import { paragraph } from '../../ink/paragraph.js';
 import { fusionText } from '../../ink/fusion/text.js';
 import { color } from '../../ink/palette.js';
-import { placeLabels, type LabelBox } from '../../layout/labels.js';
+import { placeLabels, type LabelBox, type LabelLimits } from '../../layout/labels.js';
 import { contentViewport } from '../../layout/content.js';
-import { constructionPlan } from './plan.js';
+import { materialDrawing } from './material.js';
+import { spatialPanelRenderer } from './spatial.js';
 import {
   mathMotionFrame,
   morphTiming,
@@ -14,7 +15,6 @@ import {
   type MorphTime,
 } from '../timing.js';
 import type {
-  ConstructionOperation,
   ConstructionPlan,
   DiagramPanel,
   DiagramPath,
@@ -27,21 +27,55 @@ type Stroke = ReturnType<Surface['pen']['polyline']>;
 type Boundary = ReturnType<Surface['pen']['contour']>;
 const points = (path: readonly DiagramPoint[]) =>
   path.map((p) => `${p[0].toFixed(2)} ${p[1].toFixed(2)}`);
-type AnnotationLayout = { left: number; right: number; order: string[] };
+type AnnotationLayout = {
+  left: number;
+  right: number;
+  order: string[];
+  inkSides: Map<string, 'top' | 'bottom'>;
+};
 
 /** Reserve measured annotation space for the entire operation, so changing digits never move the drawing. */
 function annotationLayout(plan: ConstructionPlan) {
   const margins = new Map<string, AnnotationLayout>(),
     positions = new Map<string, Map<string, { sum: number; count: number }>>(),
     widths = new Map<string, number>();
+  const differences = new Map<string, number>();
   for (let i = 0; i <= plan.stages * 24; i++) {
     for (const panel of plan.sample(i / (plan.stages * 24)).panels) {
-      const entry = margins.get(panel.id) ?? { left: 44, right: 44, order: [] };
+      const entry = margins.get(panel.id) ?? {
+        left: 44,
+        right: 44,
+        order: [],
+        inkSides: new Map(),
+      };
       const [lo, hi] = panel.bounds,
         span = hi[0] - lo[0];
       const anchors = positions.get(panel.id) ?? new Map();
       positions.set(panel.id, anchors);
       for (const label of panel.labels ?? []) {
+        for (const patch of panel.patches ?? [])
+          if (patch.text) {
+            const center = patch.map([
+              (patch.domain[0][0] + patch.domain[1][0]) / 2,
+              (patch.domain[0][1] + patch.domain[1][1]) / 2,
+            ]);
+            const key = `${panel.id}/${label.id}/${patch.id}`;
+            const difference =
+              (differences.get(key) ?? 0) +
+              (label.at[1] + (label.to ?? label.at)[1]) / 2 -
+              center[1];
+            differences.set(key, difference);
+            entry.inkSides.set(
+              `${label.id}/${patch.id}`,
+              label.side === 'bottom'
+                ? 'bottom'
+                : label.side === 'top'
+                  ? 'top'
+                  : difference >= 0
+                    ? 'top'
+                    : 'bottom',
+            );
+          }
         const anchor = anchors.get(label.id) ?? { sum: 0, count: 0 };
         anchor.sum +=
           ((label.at[1] + (label.to ?? label.at)[1]) / 2 - lo[1]) / (hi[1] - lo[1]) +
@@ -83,13 +117,17 @@ function panelRenderer(sheet: Surface, id: string) {
     string,
     { wrapper: SVGGElement; text: ReturnType<typeof paragraph>; background: SVGRectElement }
   >();
-  const texts = new Map<string, ReturnType<typeof fusionText>>();
+  const materials = new Map<string, ReturnType<typeof materialDrawing>>();
+  const inkBounds = new Map<string, LabelBox>();
   let used = new Set<string>();
-  let usedText = new Set<string>();
+
   const draw = (item: DiagramPath, pixel: (point: DiagramPoint) => DiagramPoint) => {
     const key = item.id;
     used.add(key);
-    const coordinates = item.points.map(pixel);
+    const coordinates = item.points.map((p) => {
+      const v = pixel(p);
+      return [v[0], v[1]] as const;
+    });
     if (coordinates.length < 2 || coordinates.some((p) => !p.every(Number.isFinite)))
       throw new Error('A construction path needs finite geometry');
     const signature = `${Boolean(item.closed)}/${Boolean(item.fill)}/${Boolean(item.quiet)}`;
@@ -141,94 +179,62 @@ function panelRenderer(sheet: Surface, id: string) {
     pixel: (point: DiagramPoint) => DiagramPoint,
     units: number,
   ) => {
-    const [[x0, y0], [x1, y1]] = patch.domain;
-    const edge = (a: DiagramPoint, b: DiagramPoint) =>
-      Array.from(
-        { length: 25 },
-        (_, i): DiagramPoint => [a[0] + ((b[0] - a[0]) * i) / 25, a[1] + ((b[1] - a[1]) * i) / 25],
-      );
-    const boundary = [
-      ...edge([x0, y0], [x1, y0]),
-      ...edge([x1, y0], [x1, y1]),
-      ...edge([x1, y1], [x0, y1]),
-      ...edge([x0, y1], [x0, y0]),
-    ].map(patch.map);
+    let drawing = materials.get(patch.id);
+    if (!drawing) {
+      drawing = materialDrawing();
+      materials.set(patch.id, drawing);
+    }
+    const art = drawing(patch);
+    const mappedStrokes = art.strokes.map((stroke) => stroke.map((p) => pixel(patch.map(p))));
+    const inkPoints = mappedStrokes.flat();
+    if (inkPoints.length) {
+      const xs = inkPoints.map((p) => p[0]),
+        ys = inkPoints.map((p) => p[1]);
+      const x = Math.min(...xs),
+        y = Math.min(...ys);
+      inkBounds.set(patch.id, { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y });
+    }
     draw(
       {
         id: patch.id,
-        points: boundary,
+        points: art.boundary.map(patch.map),
         closed: true,
-        fill: true,
+        fill: patch.fill !== false,
         pigment: patch.pigment,
         opacity: patch.opacity,
       },
       pixel,
     );
-    const at = (x: number, y: number) => pixel(patch.map([x, y]));
-    if (patch.grid)
-      for (const axis of [0, 1] as const) {
-        const divisions = patch.grid[axis];
-        for (let i = 1; i < divisions; i++) {
-          const value =
-            patch.domain[0][axis] +
-            ((patch.domain[1][axis] - patch.domain[0][axis]) * i) / divisions;
-          draw(
-            {
-              id: `${patch.id}-grid-${axis}-${i}`,
-              points: Array.from({ length: 33 }, (_, j) =>
-                patch.map(
-                  axis === 0
-                    ? [value, y0 + ((y1 - y0) * j) / 32]
-                    : [x0 + ((x1 - x0) * j) / 32, value],
-                ),
-              ),
-              pigment: patch.pigment,
-              quiet: true,
-              opacity: patch.opacity,
-            },
-            pixel,
-          );
-        }
+    art.grid.forEach((line, i) =>
+      draw(
+        {
+          id: `${patch.id}-grid-${i}`,
+          points: line.map(patch.map),
+          quiet: true,
+          pigment: patch.pigment,
+          opacity: patch.opacity,
+        },
+        pixel,
+      ),
+    );
+    mappedStrokes.forEach((stroke, i) => {
+      const key = `${patch.id}-ink-${i}`;
+      used.add(key);
+      let mark = ink.get(key);
+      if (!mark) {
+        mark = svg('path', {
+          fill: 'none',
+          stroke: 'var(--ve-ink)',
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+        });
+        ink.set(key, mark);
+        geometry.append(mark);
       }
-    if (patch.text) {
-      const textKey = patch.text;
-      usedText.add(textKey);
-      let shape = texts.get(textKey);
-      if (!shape) {
-        shape = fusionText(patch.text, { size: 100, maxWidth: 1200 });
-        texts.set(textKey, shape);
-      }
-      const k = Math.min(
-        ((x1 - x0) * 0.66) / shape.bounds.width,
-        ((y1 - y0) * 0.5) / shape.bounds.height,
-        38 / (shape.bounds.height * units),
-      );
-      const center = at((x0 + x1) / 2, (y0 + y1) / 2),
-        across = at((x0 + x1) / 2 + k, (y0 + y1) / 2);
-      const weight = Math.max(
-        1.5,
-        Math.min(3.2, Math.hypot(center[0] - across[0], center[1] - across[1]) * 2.8),
-      );
-      shape.paths.forEach((stroke, i) => {
-        const key = `${patch.id}-ink-${i}`;
-        used.add(key);
-        let mark = ink.get(key);
-        if (!mark) {
-          mark = svg('path', {
-            fill: 'none',
-            stroke: 'var(--ve-ink)',
-            'stroke-linecap': 'round',
-            'stroke-linejoin': 'round',
-          });
-          ink.set(key, mark);
-          geometry.append(mark);
-        }
-        const mapped = stroke.map((p) => at((x0 + x1) / 2 + p[0] * k, (y0 + y1) / 2 - p[1] * k));
-        mark.setAttribute('d', `M${points(mapped).join('L')}`);
-        mark.setAttribute('stroke-width', String(weight));
-        mark.style.opacity = String(patch.opacity ?? 1);
-      });
-    }
+      mark.setAttribute('d', `M${points(stroke).join('L')}`);
+      mark.setAttribute('stroke-width', String(Math.max(1.5, Math.min(3.2, art.weight * units))));
+      mark.style.opacity = String(patch.opacity ?? 1);
+    });
   };
   return {
     render(
@@ -240,15 +246,23 @@ function panelRenderer(sheet: Surface, id: string) {
       margins: AnnotationLayout,
     ) {
       used = new Set();
-      usedText = new Set();
+      inkBounds.clear();
+
       root.setAttribute('transform', `translate(${x} ${y})`);
       const headingHeight = heading.render(panel.title, width - 12, width / 2, 23);
       const [[left, bottom], [right, top]] = panel.bounds;
       const plotTop = 30 + headingHeight;
       const leftMargin = Math.min(width * 0.44, margins.left),
         rightMargin = Math.min(width * 0.44, margins.right);
-      const availableWidth = width - leftMargin - rightMargin,
-        availableHeight = height - plotTop - 50;
+      const availableWidth = width - leftMargin - rightMargin;
+      // A tall mathematical domain earns vertical room instead of shrinking to a tiny stamp.
+      const readablePlotHeight =
+        panel.aspect === 'free'
+          ? 220
+          : Math.min(480, (availableWidth * (top - bottom)) / Math.max(0.001, right - left));
+      const requiredHeight = plotTop + 50 + readablePlotHeight;
+      if (requiredHeight > height + 0.5) return requiredHeight;
+      const availableHeight = height - plotTop - 50;
       let sx = availableWidth / Math.max(0.001, right - left),
         sy = availableHeight / Math.max(0.001, top - bottom);
       if (panel.aspect !== 'free') sx = sy = Math.min(sx, sy);
@@ -258,11 +272,33 @@ function panelRenderer(sheet: Surface, id: string) {
       ];
       for (const patch of panel.patches ?? []) material(patch, pixel, Math.min(sx, sy));
       for (const item of panel.paths ?? []) draw(item, pixel);
+      for (const mark of panel.marks ?? []) {
+        const [cx, cy] = pixel(mark.at);
+        draw(
+          {
+            id: mark.id,
+            points: Array.from(
+              { length: 24 },
+              (_, i) =>
+                [
+                  cx + 3.8 * Math.cos((i * Math.PI) / 12),
+                  cy + 3.8 * Math.sin((i * Math.PI) / 12),
+                ] as DiagramPoint,
+            ),
+            closed: true,
+            fill: true,
+            pigment: mark.pigment,
+            opacity: mark.opacity,
+          },
+          (p) => p,
+        );
+      }
       // Keep the prepared ordering, including hidden labels. Fade-in cannot rearrange its neighbours.
       const visible = [...(panel.labels ?? [])].sort(
         (a, b) => margins.order.indexOf(a.id) - margins.order.indexOf(b.id),
       );
       const preferred: LabelBox[] = [];
+      const protectedSpace: LabelLimits[] = [];
       const entries = visible.map((item) => {
         const key = `label-${item.id}`;
         used.add(key);
@@ -324,26 +360,73 @@ function panelRenderer(sheet: Surface, id: string) {
           cx += ox * offset;
           cy += oy * offset;
         }
+        const limits: LabelLimits = { top: plotTop - 12, bottom: height - 3 };
+        cx = Math.max(box.width / 2 + 6, Math.min(width - box.width / 2 - 6, cx));
+        for (const [id, obstacle] of inkBounds) {
+          // The relation is prepared across the operation. A moving label never swaps sides.
+          const direction = margins.inkSides.get(`${item.id}/${id}`);
+          if (!direction) continue;
+          const clearance =
+            Math.abs(cx - (obstacle.x + obstacle.width / 2)) - (box.width + obstacle.width) / 2;
+          const amount = Math.max(0, Math.min(1, (32 - clearance) / 24));
+          const blend = amount * amount * (3 - 2 * amount);
+          if (direction === 'top')
+            limits.bottom = Math.min(
+              limits.bottom!,
+              height - 3 + blend * (obstacle.y - 10 - (height - 3)),
+            );
+          else
+            limits.top = Math.max(
+              limits.top!,
+              plotTop - 12 + blend * (obstacle.y + obstacle.height + 10 - (plotTop - 12)),
+            );
+          const edge =
+            direction === 'top'
+              ? obstacle.y - box.height / 2 - 10
+              : obstacle.y + obstacle.height + box.height / 2 + 10;
+          cy += blend * (direction === 'top' ? Math.min(0, edge - cy) : Math.max(0, edge - cy));
+        }
         preferred.push({
           x: cx - box.width / 2 - 3,
           y: cy - box.height / 2 - 2,
           width: box.width + 6,
           height: box.height + 4,
         });
-        return { entry, box };
+        protectedSpace.push(limits);
+        return { entry, box, item, anchor: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] as DiagramPoint };
       });
       const labelHeight = preferred.reduce((sum, box) => sum + box.height + 8, -8);
       // This upper bound makes every prepared pair constraint feasible, including stacked labels.
       if (labelHeight > height - plotTop + 9) return plotTop - 9 + labelHeight;
-      const placed = placeLabels(preferred, {
-        x: 3,
-        y: plotTop - 12,
-        width: width - 6,
-        height: height - plotTop + 9,
-      });
-      entries.forEach(({ entry, box }, i) => {
+      const placed = placeLabels(
+        preferred,
+        {
+          x: 3,
+          y: plotTop - 12,
+          width: width - 6,
+          height: height - plotTop + 9,
+        },
+        protectedSpace,
+      );
+      entries.forEach(({ entry, box, item, anchor }, i) => {
         const p = placed[i]!;
         entry.wrapper.setAttribute('transform', `translate(${p.x + 3 - box.x} ${p.y + 2 - box.y})`);
+        const edge: DiagramPoint = [
+          Math.max(p.x, Math.min(p.x + p.width, anchor[0])),
+          Math.max(p.y, Math.min(p.y + p.height, anchor[1])),
+        ];
+        const distance = Math.hypot(edge[0] - anchor[0], edge[1] - anchor[1]);
+        if (distance > 24 && !item.to)
+          draw(
+            {
+              id: `leader-${item.id}`,
+              points: [anchor, edge],
+              pigment: item.pigment,
+              quiet: true,
+              opacity: (item.opacity ?? 1) * Math.min(1, (distance - 24) / 16),
+            },
+            (p) => p,
+          );
         for (const [key, value] of Object.entries({
           x: box.x - 3,
           y: box.y - 2,
@@ -368,7 +451,8 @@ function panelRenderer(sheet: Surface, id: string) {
           value.wrapper.remove();
           labels.delete(key);
         }
-      for (const key of texts.keys()) if (!usedText.has(key)) texts.delete(key);
+      for (const key of materials.keys())
+        if (!panel.patches?.some((p) => p.id === key)) materials.delete(key);
       return height;
     },
     dispose() {
@@ -376,20 +460,18 @@ function panelRenderer(sheet: Surface, id: string) {
       heading.dispose();
       paths.forEach((p) => p.shape.dispose());
       labels.forEach((p) => p.text.dispose());
-      texts.clear();
+      materials.clear();
     },
   };
 }
 
 /** Shared geometry, pen, layout, measured labels and narrative motion for mathematical constructions. */
-export function mountConstruction(
-  parent: HTMLElement,
-  operation: ConstructionOperation | ConstructionPlan,
-) {
-  let plan = constructionPlan(operation),
+export function mountConstruction(parent: HTMLElement, operation: ConstructionPlan) {
+  let plan = operation,
     disposed = false,
     lastTime: MorphTime = 0,
     lastCues: MorphCues | undefined;
+  let projection: '2d' | '3d' = '2d';
   let margins = annotationLayout(plan);
   const sheet = surface(parent, {
     id: `math-construction-${serial++}`,
@@ -404,11 +486,18 @@ export function mountConstruction(
   const equation = paragraph(sheet.layer, { size: 26 }),
     explanation = paragraph(sheet.layer, { size: 20 });
   equation.element.style.color = color('purple');
-  const panels = new Map<string, ReturnType<typeof panelRenderer>>();
+  const panels = new Map<
+    string,
+    {
+      space: '2d' | '3d';
+      renderer: ReturnType<typeof panelRenderer> | ReturnType<typeof spatialPanelRenderer>;
+    }
+  >();
   function render(time: MorphTime, cues?: MorphCues) {
     if (disposed) return;
     const timing = morphTiming(time, cues, plan.stages);
     const frame = mathMotionFrame(plan, timing);
+    projection = frame.panels.some((p) => p.space === '3d') ? '3d' : '2d';
     const width = Math.max(280, parent.clientWidth),
       gap = 24;
     const columns = width >= 680 ? Math.min(2, frame.panels.length) : 1;
@@ -418,12 +507,24 @@ export function mountConstruction(
     const renderPanels = () =>
       Math.max(
         ...frame.panels.map((panel, i) => {
-          let renderer = panels.get(panel.id);
-          if (!renderer) {
-            renderer = panelRenderer(sheet, panel.id);
-            panels.set(panel.id, renderer);
+          let entry = panels.get(panel.id);
+          const space = panel.space ?? '2d';
+          if (entry && entry.space !== space) {
+            entry.renderer.dispose();
+            panels.delete(panel.id);
+            entry = undefined;
           }
-          return renderer.render(
+          if (!entry) {
+            entry = {
+              space,
+              renderer:
+                space === '3d'
+                  ? spatialPanelRenderer(sheet, panel.id)
+                  : panelRenderer(sheet, panel.id),
+            };
+            panels.set(panel.id, entry);
+          }
+          return entry.renderer.render(
             panel,
             (i % columns) * (panelWidth + gap),
             Math.floor(i / columns) * (panelHeight + 16),
@@ -454,9 +555,9 @@ export function mountConstruction(
     );
     sheet.resize(width, height, false);
     viewport.resize(height);
-    for (const [id, renderer] of panels)
+    for (const [id, entry] of panels)
       if (!frame.panels.some((p) => p.id === id)) {
-        renderer.dispose();
+        entry.renderer.dispose();
         panels.delete(id);
       }
     sheet.element.querySelector('desc')!.textContent = `${frame.formula}. ${frame.explanation}`;
@@ -473,7 +574,7 @@ export function mountConstruction(
     disposed = true;
     observer.disconnect();
     unwatch();
-    panels.forEach((p) => p.dispose());
+    panels.forEach((p) => p.renderer.dispose());
     equation.dispose();
     explanation.dispose();
     viewport.dispose();
@@ -489,6 +590,9 @@ export function mountConstruction(
     element: sheet.element,
     view: {
       reset() {
+        panels.forEach((p) => {
+          'reset' in p.renderer && p.renderer.reset();
+        });
         render(lastTime, lastCues);
       },
       dispose,
@@ -499,10 +603,10 @@ export function mountConstruction(
       return plan;
     },
     get projection() {
-      return '2d' as const;
+      return projection;
     },
-    setOperation(operation: ConstructionOperation | ConstructionPlan) {
-      const next = constructionPlan(operation),
+    setOperation(operation: ConstructionPlan) {
+      const next = operation,
         nextMargins = annotationLayout(next);
       const previous = { plan, margins, time: lastTime, cues: lastCues };
       plan = next;

@@ -1,9 +1,10 @@
 import type { Pigment } from '../../ink/palette.js';
+import type { MathValue } from '../formula/types.js';
 
-export type DiagramPoint = readonly [number, number];
+export type DiagramPoint = readonly [number, number] | readonly [number, number, number];
 export type DiagramBounds = readonly [DiagramPoint, DiagramPoint];
 export type ScalarFunction = string | ((x: number) => number);
-export type Matrix2 = readonly [DiagramPoint, DiagramPoint];
+export type Matrix2 = readonly [readonly [number, number], readonly [number, number]];
 
 /** Mathematical coordinates, never pixels. Material coordinates identify the same ink over time. */
 export interface MaterialPatch {
@@ -14,6 +15,7 @@ export interface MaterialPatch {
   grid?: readonly [number, number];
   text?: string;
   opacity?: number;
+  fill?: boolean;
 }
 export interface DiagramPath {
   id: string;
@@ -44,6 +46,8 @@ export interface DiagramPanel {
   patches?: readonly MaterialPatch[];
   paths?: readonly DiagramPath[];
   labels?: readonly DiagramLabel[];
+  marks?: readonly { id: string; at: DiagramPoint; pigment?: Pigment; opacity?: number }[];
+  space?: '2d' | '3d';
 }
 export interface ConstructionFrame {
   stage: number;
@@ -51,35 +55,16 @@ export interface ConstructionFrame {
   panels: readonly DiagramPanel[];
   formula: string;
   explanation: string;
-  result?: number;
+  result?: MathValue;
 }
 export interface ConstructionPlan {
   encoding: 'construction';
   stages: number;
-  result: number;
+  result?: MathValue;
   sample(progress: number): ConstructionFrame;
 }
-export type ConstructionOperation = { kind: 'construction' } & (
-  | { model: 'distribute'; a: number; b: number; c: number }
-  | { model: 'linear'; matrix: Matrix2 }
-  | { model: 'projection'; angle: number }
-  | { model: 'derivative'; fn: ScalarFunction; at: number; span?: number; label?: string }
-  | { model: 'integral'; fn: ScalarFunction; from: number; to: number; label?: string }
-  | { model: 'spring'; mass: number; stiffness: number; amplitude: number }
-  | {
-      model: 'deform';
-      domain: DiagramBounds;
-      /** Known range of the map in mathematical coordinates; keeps complex motion framed steadily. */
-      bounds?: DiagramBounds;
-      parameter: readonly [number, number];
-      map(point: DiagramPoint, parameter: number): DiagramPoint;
-      grid?: readonly [number, number];
-      text?: string;
-      label?: string;
-    }
-);
 export interface ConstructionModel {
   stages: number;
-  result: number;
+  result?: MathValue;
   sample(stage: number, motion: number): Omit<ConstructionFrame, 'stage' | 'phase' | 'result'>;
 }

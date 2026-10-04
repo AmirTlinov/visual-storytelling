@@ -1,5 +1,4 @@
-import type { DiagramPoint, DiagramPath, DiagramBounds, MaterialPatch } from './types.js';
-import type { Pigment } from '../../ink/palette.js';
+import type { DiagramPoint, DiagramBounds } from './types.js';
 
 export const lerp = (a: number, b: number, p: number) => a + (b - a) * p;
 export const number = (x: number) => Number(x.toFixed(2)).toString().replace('-', '−');
@@ -10,36 +9,8 @@ export function positive(...values: number[]) {
   finite(...values);
   if (values.some((v) => v <= 0)) throw new Error('Construction dimensions must be positive');
 }
-export const line = (
-  id: string,
-  a: DiagramPoint,
-  b: DiagramPoint,
-  pigment: Pigment = 'ink',
-): DiagramPath => ({ id, points: [a, b], pigment });
-export const path = (
-  id: string,
-  points: readonly DiagramPoint[],
-  pigment: Pigment = 'blue',
-): DiagramPath => ({ id, points, pigment });
 export function sample(fn: (t: number) => DiagramPoint, from: number, to: number, count = 96) {
   return Array.from({ length: count + 1 }, (_, i) => fn(lerp(from, to, i / count)));
-}
-export const rect = (
-  id: string,
-  domain: DiagramBounds,
-  pigment: Pigment,
-  text?: string,
-): MaterialPatch => ({ id, domain, pigment, text, map: (point) => point });
-export function axes(bounds: DiagramBounds): DiagramPath[] {
-  const [[x0, y0], [x1, y1]] = bounds;
-  return [
-    ...(y0 <= 0 && y1 >= 0
-      ? [{ ...line('axis-x', [x0, 0], [x1, 0]), quiet: true, arrow: true }]
-      : []),
-    ...(x0 <= 0 && x1 >= 0
-      ? [{ ...line('axis-y', [0, y0], [0, y1]), quiet: true, arrow: true }]
-      : []),
-  ];
 }
 export function boundsOf(points: readonly DiagramPoint[]): DiagramBounds {
   let x0 = Infinity,

@@ -3,12 +3,17 @@ import type { Camera } from 'three';
 import { annotation, type LabelFrame } from './label-annotation.js';
 import { surfaceLettering, type SurfaceOptions, type LabelAnchor } from './surface-lettering.js';
 import type { FrameAnchor } from './framing.js';
+import { placeLabels } from '../layout/labels.js';
 export type { Face } from './label-faces.js';
 
 export interface LabelOptions extends SurfaceOptions {
   offset?: [number, number];
   size?: number;
   frame?: LabelFrame;
+  /** Mathematical annotations are packed inside the viewport; surface inscriptions remain geometry. */
+  avoidOverlap?: boolean;
+  /** Prepared vertical order for a related set of moving annotations. */
+  order?: number;
 }
 export interface LabelInsets {
   top?: number;
@@ -59,11 +64,17 @@ export function projectedLabels(
       a.hidden(false);
       const font = options.size ? `${options.size}px` : '';
       if (a.element.style.fontSize !== font) a.element.style.fontSize = font;
+      if (options.avoidOverlap) {
+        a.element.style.maxWidth = `${Math.max(48, Math.min(200, stage.clientWidth - 28))}px`;
+        a.element.style.whiteSpace = 'normal';
+        a.element.style.overflowWrap = 'anywhere';
+        a.element.style.textAlign = 'center';
+      }
       if (
         !a.element.textContent ||
         !visible(item.anchor) ||
         options.visible?.() === false ||
-        item.opacity <= 0
+        (item.opacity <= 0 && !options.avoidOverlap)
       ) {
         a.hidden(true);
         return [];
@@ -88,18 +99,46 @@ export function projectedLabels(
     const width = stage.clientWidth,
       height = stage.clientHeight,
       safe = insets();
-    // Each label keeps its authored anchor. Orbit never triggers packing or a callout.
-    for (const { point, item, size } of measure(labels)) {
-      const [w, h] = size as [number, number],
-        a = item.annotation;
+    const candidates = measure(labels).flatMap(({ point, item, size }) => {
       const p = point.clone().project(camera);
       if (p.z < -1 || p.z > 1) {
-        a.hidden(true);
-        continue;
+        item.annotation.hidden(true);
+        return [];
       }
       const offset = item.options.offset ?? [0, 0];
-      const x = ((p.x + 1) * width) / 2 + offset[0],
-        y = ((1 - p.y) * height) / 2 + offset[1];
+      return [
+        {
+          item,
+          size,
+          x: ((p.x + 1) * width) / 2 + offset[0],
+          y: ((1 - p.y) * height) / 2 + offset[1],
+        },
+      ];
+    });
+    const automatic = candidates
+      .filter((p) => p.item.options.avoidOverlap)
+      .sort((a, b) => (a.item.options.order ?? a.y) - (b.item.options.order ?? b.y));
+    const arranged = placeLabels(
+      automatic.map((p) => ({
+        x: p.x - p.size[0]! / 2,
+        y: p.y - p.size[1]! / 2,
+        width: p.size[0]!,
+        height: p.size[1]!,
+      })),
+      {
+        x: (safe.left ?? 0) + 4,
+        y: (safe.top ?? 0) + 4,
+        width: Math.max(1, width - (safe.left ?? 0) - (safe.right ?? 0) - 8),
+        height: Math.max(1, height - (safe.top ?? 0) - (safe.bottom ?? 0) - 8),
+      },
+    );
+    automatic.forEach((p, i) => {
+      p.x = arranged[i]!.x + p.size[0]! / 2;
+      p.y = arranged[i]!.y + p.size[1]! / 2;
+    });
+    for (const { item, size, x, y } of candidates) {
+      const [w, h] = size as [number, number],
+        a = item.annotation;
       a.place(x, y, w, h);
       // Fade at UI edges without clamping a label away from its owner.
       const room = Math.min(

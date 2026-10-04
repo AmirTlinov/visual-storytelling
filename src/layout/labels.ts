@@ -5,8 +5,18 @@ export interface LabelBox {
   height: number;
 }
 
+/** Optional protected-space boundaries for each label, in the same coordinates as the area. */
+export interface LabelLimits {
+  top?: number;
+  bottom?: number;
+}
+
 /** Closest readable placement in a prepared vertical order. No frame history or side swapping. */
-export function placeLabels(preferred: readonly LabelBox[], area: LabelBox) {
+export function placeLabels(
+  preferred: readonly LabelBox[],
+  area: LabelBox,
+  limits: readonly LabelLimits[] = [],
+) {
   const gap = 8;
   const placed = preferred.map((box) => ({
     ...box,
@@ -18,8 +28,21 @@ export function placeLabels(preferred: readonly LabelBox[], area: LabelBox) {
   const constraints: { i: number; j?: number; sign: number; distance: number; dual: number }[] = [];
   placed.forEach((box, i) => {
     constraints.push(
-      { i, sign: 1, distance: area.y + box.height / 2, dual: 0 },
-      { i, sign: -1, distance: -(area.y + area.height - box.height / 2), dual: 0 },
+      {
+        i,
+        sign: 1,
+        distance: Math.max(area.y, limits[i]?.top ?? area.y) + box.height / 2,
+        dual: 0,
+      },
+      {
+        i,
+        sign: -1,
+        distance: -(
+          Math.min(area.y + area.height, limits[i]?.bottom ?? area.y + area.height) -
+          box.height / 2
+        ),
+        dual: 0,
+      },
     );
     for (let j = i + 1; j < placed.length; j++) {
       const other = placed[j]!;

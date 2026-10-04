@@ -36,3 +36,14 @@ test('horizontal approach creates room continuously before boxes touch', () => {
     previous = labels;
   }
 });
+
+test('packing annotations preserves protected material lettering between groups', () => {
+  const labels = placeLabels([box(100, 155), box(100, 160), box(100, 170)], area, [
+    { bottom: 180 },
+    { bottom: 180 },
+    { top: 240 },
+  ]);
+  assert.ok(labels[0].y + 38 <= labels[1].y + 1e-5);
+  assert.ok(labels[1].y + labels[1].height <= 180 + 1e-5);
+  assert.ok(labels[2].y >= 240 - 1e-5);
+});
