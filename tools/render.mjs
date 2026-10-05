@@ -121,6 +121,7 @@ export async function renderer({
     };
     await seek(0);
     signal?.throwIfAborted();
+    let screenshots;
     return {
       page,
       capture,
@@ -133,9 +134,46 @@ export async function renderer({
       control: (commands) => controlScene(capture, commands),
       async png() {
         const frame = page.locator('[data-scene-frame]').first();
-        if (!controls && (await frame.count())) return frame.screenshot();
         const main = page.locator('.ve-scene').first();
-        return (await main.count()) ? main.screenshot() : page.screenshot({ fullPage: true });
+        const target =
+          !controls && (await frame.count()) ? frame : (await main.count()) ? main : undefined;
+        if (!target) return page.screenshot({ fullPage: true });
+        const area = await target.evaluate((element) => {
+          const { x, y, width, height } = element.getBoundingClientRect();
+          return {
+            x,
+            y,
+            width,
+            height,
+            viewportWidth: innerWidth,
+            viewportHeight: innerHeight,
+            scrollX,
+            scrollY,
+          };
+        });
+        // Capture a visible frame without resizing the viewport or recompressing
+        // PNG for size. Beyond-viewport capture can temporarily reflow a live scene.
+        if (
+          !area.scrollX &&
+          !area.scrollY &&
+          area.x >= 0 &&
+          area.y >= 0 &&
+          area.width > 0 &&
+          area.height > 0 &&
+          area.x + area.width <= area.viewportWidth &&
+          area.y + area.height <= area.viewportHeight
+        ) {
+          screenshots ??= await context.newCDPSession(page);
+          const { data } = await screenshots.send('Page.captureScreenshot', {
+            format: 'png',
+            fromSurface: true,
+            captureBeyondViewport: false,
+            optimizeForSpeed: true,
+            clip: { x: area.x, y: area.y, width: area.width, height: area.height, scale: 1 },
+          });
+          return Buffer.from(data, 'base64');
+        }
+        return target.screenshot();
       },
       svg: () => capture.evaluate((scene) => scene.exportSVG()),
       close,

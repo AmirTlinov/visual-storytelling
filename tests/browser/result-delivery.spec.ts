@@ -21,6 +21,11 @@ test('computed results arrive once and rewind through the same path, including e
         pose: [...source.matrix.elements],
         camera: view.camera.position.toArray(),
         result: calculation.userData.visualReview().frame.result,
+        formula: [...document.querySelectorAll<HTMLElement>('.ve-label')].some(
+          (label) =>
+            !label.hidden &&
+            label.textContent === calculation.userData.visualReview().frame.formula,
+        ),
       };
     });
   const seek = async (time: number) => {
@@ -28,18 +33,18 @@ test('computed results arrive once and rewind through the same path, including e
     await page.locator('.ve-stage canvas').screenshot();
     return state();
   };
-  await seek(7.5);
+  expect((await seek(7.5)).formula).toBe(true);
   await expect(receiver).toBeHidden();
   await expect(computed).toHaveCount(1);
   const before = (await computed.boundingBox())!;
   const travelling = await seek(9.5);
   const during = (await computed.boundingBox())!;
   expect(during.y).toBeGreaterThan(before.y + 30);
-  expect(travelling).toMatchObject({ source: true, target: false, result: 5 });
+  expect(travelling).toMatchObject({ source: true, target: false, result: 5, formula: false });
   const arrived = await seek(11);
   await expect(receiver).toBeVisible();
   await expect(computed).toHaveCount(0);
-  expect(arrived).toMatchObject({ source: false, target: true, result: 5 });
+  expect(arrived).toMatchObject({ source: false, target: true, result: 5, formula: false });
   expect(arrived.camera).toEqual(travelling.camera);
   const address = (await receiver.boundingBox())!;
   await page.mouse.click(address.x + address.width / 2, address.y + address.height / 2);

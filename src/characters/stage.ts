@@ -172,6 +172,8 @@ export async function characterStage(
     let camera: FrameBox = { x: 0, y: 0, width: set.width, height: set.height },
       bounds: Record<string, FrameBox> = {};
     let details: Record<string, FrameBox> = {};
+    let propBounds: Record<string, FrameBox> = {};
+    const namedSubjects = () => ({ ...bounds, ...propBounds, ...details });
     let focus: readonly string[] | undefined;
     let changingShot = false;
     inspect = () => {
@@ -236,18 +238,21 @@ export async function characterStage(
         ...prepared?.bounds(),
         ...actorBounds,
       };
+      propBounds = {};
       for (const [id, node] of Object.entries(nodes)) {
-        if (Number(node.getAttribute('opacity')) <= 0) continue;
         const box = node.getBBox(),
           prop = score.props[id]!,
           state = propState[id] as { at: Point };
         const scale = prop.scale ?? 1;
-        bounds[id] = {
+        propBounds[id] = {
           x: state.at.x + box.x * scale,
           y: state.at.y + box.y * scale,
           width: box.width * scale,
           height: box.height * scale,
         };
+        // Opacity controls visibility, not whether an authored camera target exists.
+        // Automatic framing and review still include only the painted subjects.
+        if (Number(node.getAttribute('opacity')) > 0) bounds[id] = propBounds[id]!;
       }
       return { actions, propState };
     };
@@ -314,7 +319,7 @@ export async function characterStage(
           previous = stageFrame(
             set.width,
             set.height,
-            framing.subjects(previousShot ? { ...bounds, ...details } : bounds, outgoing),
+            framing.subjects(previousShot ? namedSubjects() : bounds, outgoing),
             previousShot,
             aspect,
           );
@@ -323,7 +328,7 @@ export async function characterStage(
         const current = stageFrame(
           set.width,
           set.height,
-          framing.subjects(beat.shot ? { ...bounds, ...details } : bounds, envelope),
+          framing.subjects(beat.shot ? namedSubjects() : bounds, envelope),
           beat.shot,
           aspect,
         );
@@ -439,10 +444,8 @@ export async function characterStage(
       view: {
         transition: 'idle' as const,
         validateFocus(ids: readonly string[]) {
-          if (
-            !ids.length ||
-            ids.some((id) => !Object.hasOwn(bounds, id) && !Object.hasOwn(details, id))
-          )
+          const subjects = namedSubjects();
+          if (!ids.length || ids.some((id) => !Object.hasOwn(subjects, id)))
             throw new Error('Unknown camera subject');
         },
         focus(ids: readonly string[]) {
@@ -462,9 +465,7 @@ export async function characterStage(
           if (
             state?.kind !== 'characters' ||
             !Array.isArray(state.focus) ||
-            state.focus.some(
-              (id) => typeof id !== 'string' || !Object.hasOwn({ ...bounds, ...details }, id),
-            )
+            state.focus.some((id) => typeof id !== 'string' || !Object.hasOwn(namedSubjects(), id))
           )
             return false;
           if (state.focus.length) stage.view.focus(state.focus);

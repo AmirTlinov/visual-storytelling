@@ -280,3 +280,106 @@ test('leaving a page closeup survives closing the book, reduced motion and rever
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('explicit shots retain transparent props across reveal, conceal and reverse seeks', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'character-camera-fade-'));
+  let capture;
+  try {
+    const bundle = await build({
+      plugins: [assetURLs()],
+      stdin: {
+        resolveDir: fileURLToPath(new URL('../', import.meta.url)),
+        contents: `
+          import {CharacterStage} from './src/characters/stage.ts';
+          import {chibi} from './src/characters/packs/chibi.ts';
+          import './src/style.css';
+          const host=document.querySelector('#scene');
+          const options={pack:chibi,cast:{hero:{skin:'tesla',at:{x:400,y:570},scale:.7}},camera:'responsive',
+            set:{width:960,height:650,spots:{},svg:'<rect width="960" height="650" fill="#30494c"/>',
+              props:{record:{art:{svg:'<rect width="180" height="100" fill="#e5c36d"/>'},at:{x:1500,y:250},opacity:0}}},
+            beats:[
+              {id:'before',text:'Before',seconds:1},
+              {id:'reveal',text:'Reveal',seconds:1,props:{record:{opacity:1,over:.5}},shot:{focus:['record'],framing:'detail'}},
+              {id:'conceal',text:'Conceal',seconds:1,props:{record:{opacity:0,over:.5}},shot:{focus:['record'],framing:'detail'}},
+              {id:'after',text:'After',seconds:1},
+            ]};
+          window.galleryReady=CharacterStage.mount(host,options).then(stage=>{
+            window.lab={sample(time,reduced=false){stage.render(time,reduced);return {
+              state:stage.snapshot(),review:host.querySelector('canvas').__visualReview(),
+            };},invalidFocus(){try{stage.view.focus(['absent']);return null;}catch(error){return error.message;}},
+            hiddenFocus(){stage.render(0);stage.view.focus(['record']);const value=stage.view.capture();stage.view.reset();return stage.view.restore(value);},
+            dispose(){stage.dispose();}};
+          });`,
+      },
+      bundle: true,
+      write: false,
+      outdir: '.',
+      format: 'iife',
+      loader: { '.woff2': 'dataurl' },
+    });
+    await writeFile(
+      join(directory, 'index.html'),
+      '<!doctype html><head><link rel="stylesheet" href="style.css"></head><body style="margin:0"><div id="scene" style="position:relative;width:960px;height:650px"></div><script src="index.js"></script>',
+    );
+    for (const output of bundle.outputFiles)
+      await writeFile(
+        join(directory, output.path.endsWith('.css') ? 'style.css' : 'index.js'),
+        output.text,
+      );
+    capture = await renderer({ directory, width: 960, height: 650, controls: true });
+    const sample = (time, reduced = false) =>
+      capture.page.evaluate(({ time, reduced }) => window.lab.sample(time, reduced), {
+        time,
+        reduced,
+      });
+    const times = [
+        0, 0.999999, 1, 1.000001, 1.5, 2, 2.499999, 2.5, 2.500001, 2.999999, 3, 3.000001, 3.5,
+      ],
+      states = [];
+    for (const time of times) {
+      const value = await sample(time);
+      assert.ok(Object.values(value.state.camera).every(Number.isFinite));
+      const visible = value.state.props.record.opacity > 0;
+      assert.equal(Object.hasOwn(value.state.bounds, 'record'), visible);
+      assert.equal(
+        value.review.objects.some((object) => object.id === 'record'),
+        visible,
+      );
+      states.push(value);
+    }
+    for (const value of [states[0], states.at(-1)])
+      assert.ok(
+        value.state.camera.x + value.state.camera.width < 1400,
+        'hidden prop cannot enlarge automatic framing',
+      );
+    assert.deepEqual(
+      states[4].state.camera,
+      states[8].state.camera,
+      'explicit shot remains stable after its prop fades out',
+    );
+    for (const [i, time] of times.entries()) {
+      if (time < 1 || time > 1.000001) continue;
+      assert.ok(
+        Math.abs(states[i].state.camera.x - states[1].state.camera.x) < 0.001,
+        'fade-in boundary is continuous',
+      );
+    }
+    for (let i = times.length - 1; i >= 0; i--)
+      assert.deepEqual(await sample(times[i]), states[i], 'reverse seek is deterministic');
+    const reduced = await sample(1, true);
+    assert.equal(reduced.state.props.record.opacity, 1);
+    assert.equal(
+      await capture.page.evaluate(() => window.lab.invalidFocus()),
+      'Unknown camera subject',
+    );
+    assert.equal(await capture.page.evaluate(() => window.lab.hiddenFocus()), true);
+    assert.deepEqual(
+      capture.messages.filter((message) => message.type === 'error'),
+      [],
+    );
+    await capture.page.evaluate(() => window.lab.dispose());
+  } finally {
+    await capture?.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

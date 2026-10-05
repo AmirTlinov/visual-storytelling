@@ -253,8 +253,10 @@ function mount(
     }
     const frame = mathMotionFrame(plan, time, arrangement?.columns);
     const deliveredBounds = delivery?.render(frame, plan.stages, travel, time.reduced);
+    const annotationsVisible = !delivery || travel === 0;
     if (!embedded) formula.element.style.maxWidth = `${Math.max(160, widthAvailable - 64)}px`;
     formula.set(frame.formula);
+    formula.show(annotationsVisible);
     lastTime = input;
     lastCues = cues;
     lastDelivery = placement;
@@ -284,12 +286,12 @@ function mount(
       rulerKey = key;
     }
     const measured = plan.encoding === 'quantity';
-    ruler.visible = measured;
+    ruler.visible = measured && annotationsVisible;
     const active = measured ? (frame.morph < 0.5 ? frame.sources : frame.targets) : [];
     const steps = new Set<number>();
     for (const part of active) steps.add(quantityStep(part));
     const coarse = [...steps].some((step) => step > 1);
-    stepLabel.show(coarse);
+    stepLabel.show(coarse && annotationsVisible);
     if (coarse) {
       stepLabel.set(
         `${steps.size === 1 ? 'Шаг сетки' : 'Шаги сетки'}: ${[...steps]
@@ -300,7 +302,7 @@ function mount(
       stepAnchor.position.set((min[0] + max[0]) / 2, min[1] - gap * 1.1, 0.52);
     }
     const single = active.length === 1 ? active[0] : undefined;
-    dimensionLabels.forEach((l) => l.show(!!single && single.size[1] > 1.01));
+    dimensionLabels.forEach((l) => l.show(annotationsVisible && !!single && single.size[1] > 1.01));
     if (single && single.size[1] > 1.01) {
       dimensions[0]!.position.set(
         single.position[0],
@@ -350,6 +352,7 @@ function mount(
       entry.anchor.position.set(...note.position);
       entry.label.set(note.text);
       entry.label.opacity(note.opacity);
+      entry.label.show(annotationsVisible);
     }
     view.invalidate();
     return frame;
