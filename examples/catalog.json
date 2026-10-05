@@ -657,5 +657,24 @@
     "tags": ["InkStroke3D", "линия", "траектория", "3d"],
     "source": "scene.js",
     "guides": ["skills/visual-explainer/references/scene-template.md"]
+  },
+  "svg-artwork": {
+    "title": "Почему дальний кажется меньше?",
+    "page": "index.html",
+    "time": 10.2,
+    "checkpoints": [0, 4, 6, 9, 10.2, 12],
+    "group": "techniques",
+    "summary": "Один SVG в двух обличьях: глубина, масштаб, прозрачность и камера на общих часах рассказа.",
+    "tags": [
+      "SvgArtwork3D",
+      "SVG",
+      "рисунок",
+      "перспектива",
+      "3d",
+      "объект",
+      "повторное использование"
+    ],
+    "source": "scene.js",
+    "guides": ["docs/svg-artwork.md"]
   }
 }

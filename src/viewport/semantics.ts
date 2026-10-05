@@ -1,4 +1,15 @@
-import { Box3, Raycaster, Vector2, Vector3, type Camera, type Object3D, type Mesh } from 'three';
+import {
+  Box3,
+  Raycaster,
+  Vector2,
+  Vector3,
+  type Camera,
+  type Object3D,
+  type Mesh,
+  type Material,
+  type InstancedMesh,
+  type InstancedBufferGeometry,
+} from 'three';
 import { describeObject, type ObjectMeaning } from '../scene-objects.js';
 import { objectVisible } from './visibility.js';
 
@@ -8,6 +19,38 @@ interface Subject {
   meaning: ObjectMeaning;
 }
 const subjects = new WeakMap<Object3D, Subject>();
+
+const materialVisible = (material: Material | undefined) =>
+  material?.visible && (!material.transparent || material.opacity > 0);
+
+function drawsGeometry(object: Object3D, materialIndex?: number): boolean {
+  const { geometry, material } = object as Mesh;
+  if (!geometry || !material) return false;
+  const instances = object as InstancedMesh,
+    instancedGeometry = geometry as InstancedBufferGeometry;
+  if (
+    (instances.isInstancedMesh && instances.count === 0) ||
+    (instancedGeometry.isInstancedBufferGeometry && instancedGeometry.instanceCount === 0)
+  )
+    return false;
+  const start = Math.max(0, geometry.drawRange.start),
+    end = Math.min(
+      geometry.index?.count ?? geometry.getAttribute('position')?.count ?? 0,
+      geometry.drawRange.start + geometry.drawRange.count,
+    );
+  if (end <= start) return false;
+  if (!Array.isArray(material)) return !!materialVisible(material);
+  if (materialIndex !== undefined) return !!materialVisible(material[materialIndex]);
+  return geometry.groups.some(
+    (group) =>
+      Math.min(end, group.start + group.count) > Math.max(start, group.start) &&
+      materialVisible(material[group.materialIndex ?? 0]),
+  );
+}
+
+function visibleGeometry(object: Object3D): boolean {
+  return object.visible && (drawsGeometry(object) || object.children.some(visibleGeometry));
+}
 
 /** Child meshes, inscriptions and outlines inherit the authored subject. */
 export function subjectOf(object: Object3D): Subject | undefined {
@@ -50,7 +93,11 @@ export function semanticObjects3D(
     return false;
   };
   const visible = (record: { object: Object3D; options: SubjectOptions3D }) =>
-    attached(record.object) && objectVisible(record.object) && record.options.visible?.() !== false;
+    attached(record.object) &&
+    objectVisible(record.object) &&
+    record.options.visible?.() !== false &&
+    // Logical parts may be painted by a shared surface rather than their anchor.
+    (record.options.bounds !== undefined || visibleGeometry(record.object));
   const observer = new MutationObserver(invalidate);
   let down: { x: number; y: number; pointer: number } | undefined;
   canvas.addEventListener(
@@ -89,14 +136,11 @@ export function semanticObjects3D(
         ),
         camera,
       );
-      const hit = raycaster.intersectObjects(scene.children, true).find(({ object }) => {
-        const material = (object as Mesh).material;
-        return (
-          objectVisible(object) &&
-          (!material ||
-            (Array.isArray(material) ? material.some((m) => m.visible) : material.visible))
+      const hit = raycaster
+        .intersectObjects(scene.children, true)
+        .find(
+          ({ object, face }) => objectVisible(object) && drawsGeometry(object, face?.materialIndex),
         );
-      });
       const candidates = [...records.values()]
         .flatMap((record) => {
           if (!record.options.bounds || !visible(record)) return [];

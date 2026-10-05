@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 290">
+  <g fill="none" stroke="#263238" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+    <g id="envelope">
+      <path fill="#d8694e" d="M99 15 C47 12 15 43 17 89 C18 135 58 169 78 201 L122 201 C145 165 184 133 184 86 C183 40 148 13 99 15Z"/>
+      <path fill="#f6d9cb" d="M97 16 C62 44 55 82 65 121 C72 152 87 183 89 200 L112 200 C116 168 135 139 138 105 C142 63 128 29 101 15Z"/>
+      <path d="M22 75 Q97 63 179 75 M26 113 Q96 129 176 109 M49 153 Q99 169 150 152" stroke-opacity=".35"/>
+      <path d="M101 22 C98 65 99 126 100 197" stroke-opacity=".4"/>
+      <path d="M38 55 Q48 37 69 31" stroke="#f6d9cb" stroke-width="5"/>
+      <path fill="#d8694e" d="M77 198 L123 198 L119 208 L81 208Z"/>
+    </g>
+    <g id="basket">
+      <path d="M82 208 L86 236 M118 208 L114 236"/>
+      <path fill="#f6d9cb" d="M79 235 Q99 232 121 235 L116 269 Q99 274 85 269Z"/>
+      <path d="M83 244 L117 244 M84 254 L116 254 M92 238 L94 267 M107 238 L106 269" stroke-opacity=".45"/>
+      <path d="M78 235 Q99 230 122 235" stroke-width="4"/>
+    </g>
+  </g>
+</svg>

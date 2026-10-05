@@ -6,6 +6,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   ShapeGeometry,
+  Sphere,
   Vector3,
 } from 'three';
 import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
@@ -22,6 +23,11 @@ export interface SvgArtworkOptions {
 /** Ready-made vector artwork remains geometry: it follows its parent, camera and theme.
  * Load source text once; create an instance for each subject. Viewport3D disposes its meshes. */
 function create(view: Viewport3DHandle, source: string, options: SvgArtworkOptions = {}) {
+  for (const name of ['width', 'height'] as const) {
+    const value = options[name];
+    if (value !== undefined && (!Number.isFinite(value) || value <= 0))
+      throw new Error(`SVG artwork ${name} must be finite and positive`);
+  }
   const parsed = new SVGLoader().parse(source);
   const root = new Group(),
     drawing = new Group();
@@ -33,12 +39,12 @@ function create(view: Viewport3DHandle, source: string, options: SvgArtworkOptio
       tone,
     ]),
   );
-  let order = 0;
   root.add(drawing);
   function paint(color: string, opacity: number) {
     let material: MeshBasicMaterial | undefined;
     return () => {
       if (!material) {
+        if (!Number.isFinite(opacity)) throw new Error('SVG artwork opacity must be finite');
         material = new MeshBasicMaterial({
           color,
           side: DoubleSide,
@@ -67,13 +73,21 @@ function create(view: Viewport3DHandle, source: string, options: SvgArtworkOptio
         }
         let mesh: Mesh;
         try {
+          const positions = geometry.getAttribute('position');
+          if (!positions.array.every(Number.isFinite))
+            throw new Error('SVG artwork coordinates must be finite');
+          geometry.computeBoundingBox();
+          const bounds = geometry.boundingBox!;
+          if (bounds.max.x <= bounds.min.x || bounds.max.y <= bounds.min.y) {
+            geometry.dispose();
+            return;
+          }
           mesh = new Mesh(geometry, material());
         } catch (error) {
           geometry.dispose();
           throw error;
         }
         mesh.name = path.userData!.node.id;
-        mesh.renderOrder = order++;
         drawing.add(mesh);
         for (let node: Element | null = path.userData!.node; node; node = node.parentElement) {
           if (!node.id) continue;
@@ -92,28 +106,37 @@ function create(view: Viewport3DHandle, source: string, options: SvgArtworkOptio
       }
     }
     if (!drawing.children.length) throw new Error('SVG artwork has no drawable paths');
+    const bounds = new Box3().setFromObject(drawing),
+      size = bounds.getSize(new Vector3());
+    // A coplanar illustration has one sorting centre. Per-path centres would
+    // reorder its paint when the camera turns; global renderOrder would instead
+    // draw details of a distant illustration over a closer one. Equal depth keeps
+    // Three's stable source/mesh order, while whole illustrations sort by depth.
+    const sphere = bounds.getBoundingSphere(new Sphere());
+    for (const mesh of drawing.children as Mesh[]) mesh.geometry.boundingSphere = sphere.clone();
+    const scale = Math.min(
+      options.width !== undefined ? options.width / size.x : Infinity,
+      options.height !== undefined ? options.height / size.y : Infinity,
+    );
+    const fit = Number.isFinite(scale) ? scale : 1;
+    drawing.scale.set(fit, -fit, fit);
+    drawing.position.copy(bounds.getCenter(new Vector3())).multiply(drawing.scale).negate();
   } catch (error) {
     for (const mesh of drawing.children as Mesh[]) mesh.geometry.dispose();
     for (const material of materials.keys()) material.dispose();
     throw error;
   }
-  drawing.scale.y = -1;
-  const bounds = new Box3().setFromObject(drawing),
-    size = bounds.getSize(new Vector3());
-  const scale = Math.min(
-    options.width ? options.width / size.x : Infinity,
-    options.height ? options.height / size.y : Infinity,
-  );
-  drawing.position.sub(bounds.getCenter(new Vector3()));
-  root.scale.setScalar(Number.isFinite(scale) ? scale : 1);
   return {
+    /** Centred, fitted artwork. Its transform is entirely available for animation. */
     root,
     /** Meshes belonging to each named SVG element or group, in source coordinates. */
     layers,
     opacity(value: number) {
-      root.visible = value > 0;
-      for (const [material, opacity] of materials)
-        material.opacity = opacity * Math.max(0, Math.min(1, value));
+      if (!Number.isFinite(value)) throw new Error('SVG artwork opacity must be finite');
+      const alpha = Math.max(0, Math.min(1, value));
+      drawing.visible = alpha > 0;
+      for (const [material, opacity] of materials) material.opacity = opacity * alpha;
+      view.invalidate();
     },
   };
 }
