@@ -94,8 +94,22 @@ export function surfaceLettering(
     planes.push(plane);
   }
   let previous = '',
-    opacity = 1;
+    opacity = 1,
+    previousHeight = options.height,
+    previousWidth = options.maxWidth;
   const font = getComputedStyle(stage).fontFamily;
+  function resize() {
+    const aspect = canvas.width / canvas.height;
+    planes.forEach((plane, index) => {
+      const face = faceSizes[index];
+      const height = face
+        ? Math.min(face[1] * 0.62, (face[0] * 0.92) / aspect)
+        : Math.min(options.height ?? 0.32, (options.maxWidth ?? Infinity) / aspect);
+      plane.scale.set(height * aspect, height, 1);
+    });
+    previousHeight = options.height;
+    previousWidth = options.maxWidth;
+  }
   function draw(value: string) {
     context.font = `112px ${font}`;
     const width = Math.max(32, Math.ceil(context.measureText(value).width + 16));
@@ -107,14 +121,7 @@ export function surfaceLettering(
       material.map = texture = createTexture();
     }
     context.font = `112px ${font}`;
-    const aspect = canvas.width / canvas.height;
-    planes.forEach((plane, index) => {
-      const face = faceSizes[index];
-      const height = face
-        ? Math.min(face[1] * 0.62, (face[0] * 0.92) / aspect)
-        : Math.min(options.height ?? 0.32, (options.maxWidth ?? Infinity) / aspect);
-      plane.scale.set(height * aspect, height, 1);
-    });
+    resize();
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = '#fff';
     context.textAlign = 'center';
@@ -128,7 +135,7 @@ export function surfaceLettering(
     if (value !== previous) {
       previous = value;
       draw(value);
-    }
+    } else if (options.height !== previousHeight || options.maxWidth !== previousWidth) resize();
     group.visible = !!value && opacity > 0 && options.visible?.() !== false;
     if (!(anchor instanceof T.Object3D)) group.position.copy(attachment.local());
     group.updateWorldMatrix(true, true);

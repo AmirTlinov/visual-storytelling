@@ -44,7 +44,9 @@ test('an open book keeps its live drawing on the table, through closeup, retake 
             surfaces:{book:{title:'Живой рисунок на странице',size:{width:480,height:320},create(view){
               view.layer.innerHTML='<path d="M60 100H420V240H60Z M80 260H400" fill="none" stroke="#2369b4" stroke-width="5"/><circle cx="350" cy="170" r="35" fill="#edbd64" stroke="#b56a30" stroke-width="4"/><text x="240" y="52" text-anchor="middle" fill="#273d42" font-size="27">Наблюдение в тетради</text><circle data-charge cy="100" r="8" fill="#b56a30"/>';
               const dot=view.layer.querySelector('[data-charge]');let time;
-              return {render(frame){time=frame.time;dot.setAttribute('cx',String(100+240*(time%2)/2));},snapshot(){return {time};}};
+              return {render(frame,viewport){time=frame.time;dot.setAttribute('cx',String(100+240*(time%2)/2));
+                window.drawingFrame=frame;window.drawingViewport={...viewport};window.drawingRenders=(window.drawingRenders??0)+1;
+              },snapshot(){return {time};}};
             }}}};
           const score=compileScore(options);
           const put=score.blocking.plans.find(plan=>plan.action.action==='put');
@@ -56,6 +58,31 @@ test('an open book keeps its live drawing on the table, through closeup, retake 
                 state:stage.snapshot(),resting:stage.restingBook('book'),hidden:surface.hidden,
                 charge:Number(surface.querySelector('[data-charge]').getAttribute('cx')),
               };},
+              async presentations(){
+                const parent=document.createElement('div');document.body.append(parent);
+                const results=[];
+                for(const [width,height]of [[375,812],[1280,720],[375,812]]){
+                  stage.render(score.script.cues.away.end-.001);
+                  const presentation=stage.presentSurface('book',parent);
+                  const quad=[{x:0,y:0},{x:width,y:0},{x:width,y:height},{x:0,y:height}];
+                  const frame=window.drawingFrame,before=window.drawingRenders;
+                  presentation.project(quad,width/height);
+                  const projected={...window.drawingViewport},renders=window.drawingRenders-before;
+                  const sameFrame=window.drawingFrame===frame;
+                  const repeated=window.drawingRenders;
+                  presentation.project(quad,width/height);
+                  const sameProjectionRenders=window.drawingRenders-repeated;
+                  stage.render(score.script.cues.away.end-.5);
+                  const during={...window.drawingViewport},time=window.drawingFrame.time;
+                  const svg=parent.querySelector('svg'),original=svg.outerHTML;
+                  await stage.capture();
+                  const captureRestored=svg.outerHTML===original;
+                  presentation.release();
+                  results.push({width,height,projected,renders,sameFrame,sameProjectionRenders,during,time,captureRestored,
+                    released:{...window.drawingViewport}});
+                }
+                parent.remove();return results;
+              },
               dispose(){stage.dispose();return host.childElementCount;}};
           });`,
       },
@@ -143,6 +170,28 @@ test('an open book keeps its live drawing on the table, through closeup, retake 
         expected,
         'reduced motion and reverse seek restore the same book',
       );
+    }
+    for (const result of await capture.page.evaluate(() => window.lab.presentations())) {
+      const width = Math.max(480, (320 * result.width) / result.height);
+      const expected = { width, height: (width * result.height) / result.width };
+      for (const key of ['width', 'height']) {
+        assert.ok(Math.abs(result.projected[key] - expected[key]) < 1e-9);
+        assert.equal(
+          result.during[key],
+          result.projected[key],
+          'the next frame retains the presented viewport',
+        );
+      }
+      assert.equal(result.renders, 1, 'a new aperture reflows its current frame immediately');
+      assert.equal(result.sameFrame, true);
+      assert.equal(
+        result.sameProjectionRenders,
+        0,
+        'moving the same plane does not repeat authored work',
+      );
+      assert.equal(result.time, cues.away.end - 0.5);
+      assert.equal(result.captureRestored, true);
+      assert.deepEqual(result.released, { width: 480, height: 320 });
     }
     assert.deepEqual(
       capture.messages.filter((message) => message.type === 'error'),

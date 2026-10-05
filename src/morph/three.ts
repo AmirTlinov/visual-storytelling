@@ -116,17 +116,69 @@ function mount(
   object.add(ruler);
   const formulaAnchor = new Object3D();
   object.add(formulaAnchor);
-  // The equation is a reading aid above the material; the numbers on the body
-  // remain physical strokes. Camera distance must not shrink the equation.
-  const formula = view.label('', formulaAnchor, { tone: 'purple', size: 26 });
-  formula.element.style.whiteSpace = 'normal';
-  formula.element.style.textAlign = 'center';
+  const embedded = options.layout === 'scene';
+  let annotationWidth = 6,
+    annotationGap = 0.6;
+  // Embedded explanations share the operation's geometry; standalone readers
+  // retain screen-sized annotations above the fitted material.
+  const formula = view.label(
+    '',
+    formulaAnchor,
+    embedded
+      ? {
+          tone: 'purple',
+          space: 'world',
+          get height() {
+            return Math.min(0.72, annotationGap * 1.2);
+          },
+          get maxWidth() {
+            return annotationWidth;
+          },
+        }
+      : { tone: 'purple', size: 26 },
+  );
+  if (!embedded) {
+    formula.element.style.whiteSpace = 'normal';
+    formula.element.style.textAlign = 'center';
+  }
   const dimensions = [new Object3D(), new Object3D()];
   dimensions.forEach((a) => object.add(a));
-  const dimensionLabels = dimensions.map((a) => view.label('', a, { tone: 'ink', size: 20 }));
+  const dimensionLabels = dimensions.map((a) =>
+    view.label(
+      '',
+      a,
+      embedded
+        ? {
+            tone: 'ink',
+            space: 'world',
+            get height() {
+              return Math.min(0.45, annotationGap * 0.4);
+            },
+            get maxWidth() {
+              return annotationGap * 1.1;
+            },
+          }
+        : { tone: 'ink', size: 20 },
+    ),
+  );
   const stepAnchor = new Object3D();
   object.add(stepAnchor);
-  const stepLabel = view.label('', stepAnchor, { tone: 'ink', size: 17 });
+  const stepLabel = view.label(
+    '',
+    stepAnchor,
+    embedded
+      ? {
+          tone: 'ink',
+          space: 'world',
+          get height() {
+            return Math.min(0.45, annotationGap * 0.6);
+          },
+          get maxWidth() {
+            return annotationWidth;
+          },
+        }
+      : { tone: 'ink', size: 17 },
+  );
   let rulerKey = '';
   function clear() {
     for (const { anchor, label } of notes.values()) {
@@ -201,7 +253,7 @@ function mount(
     }
     const frame = mathMotionFrame(plan, time, arrangement?.columns);
     const deliveredBounds = delivery?.render(frame, plan.stages, travel, time.reduced);
-    formula.element.style.maxWidth = `${Math.max(160, widthAvailable - 64)}px`;
+    if (!embedded) formula.element.style.maxWidth = `${Math.max(160, widthAvailable - 64)}px`;
     formula.set(frame.formula);
     lastTime = input;
     lastCues = cues;
@@ -215,6 +267,8 @@ function mount(
       height = max[1] - min[1],
       extent = Math.max(width, height),
       gap = plan.encoding !== 'quantity' ? 0.6 : Math.max(0.7, extent * 0.12);
+    annotationGap = gap;
+    annotationWidth = Math.max(6, width + gap * 1.2);
     formulaAnchor.position.set((min[0] + max[0]) / 2, max[1] + gap * 1.4, 0);
     const key = [...min, ...max].join(',');
     if (plan.encoding === 'quantity' && key !== rulerKey) {
@@ -265,6 +319,11 @@ function mount(
     bounds.max.y += gap * 2.2;
     bounds.min.x -= gap * 1.6;
     bounds.max.x += gap * 0.6;
+    if (embedded) {
+      const center = (min[0] + max[0]) / 2;
+      bounds.min.x = Math.min(bounds.min.x, center - annotationWidth / 2);
+      bounds.max.x = Math.max(bounds.max.x, center + annotationWidth / 2);
+    }
     if (deliveredBounds) bounds.union(deliveredBounds);
     body.render(mathBodies(frame, measured));
     const currentNotes = new Set((frame.notes ?? []).map((note) => note.id));

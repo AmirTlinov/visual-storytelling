@@ -38,7 +38,11 @@ export async function renderer({
     void close().catch(() => {});
   };
   try {
-    launched = chromium.launch({ executablePath: process.env.VISUAL_STORY_CHROMIUM });
+    launched = chromium.launch({
+      executablePath: process.env.VISUAL_STORY_CHROMIUM,
+      // Headless Chromium otherwise selects SwiftShader on macOS, even with Metal available.
+      args: process.platform === 'darwin' ? ['--use-angle=metal', '--enable-gpu'] : [],
+    });
     signal?.addEventListener('abort', abort, { once: true });
     const browser = await launched;
     signal?.throwIfAborted();

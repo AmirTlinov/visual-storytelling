@@ -38,7 +38,12 @@ export function characterSurfaces(
       colors?: ReturnType<typeof theme>;
       quad?: Quad;
       frame?: ChapterFrame;
-      presentation?: { marker: Comment; aspect: number; theme: Theme; release(): void };
+      presentation?: {
+        marker: Comment;
+        viewport: { width: number; height: number };
+        theme: Theme;
+        release(): void;
+      };
     }
   >();
   const strata: HTMLCanvasElement[] = [];
@@ -214,7 +219,7 @@ export function characterSurfaces(
             values.active = channels.active!;
           e.frame = { ...e.frame, values };
         }
-        if (e.presentation) e.drawing.render(e.frame, e.size);
+        if (e.presentation) e.drawing.render(e.frame, e.presentation.viewport);
       }
       for (const layer of strata) layer.hidden = true;
     },
@@ -288,7 +293,7 @@ export function characterSurfaces(
       };
       const presentation = {
         marker,
-        aspect: e.size.width / e.size.height,
+        viewport: { ...e.size },
         theme: worldTheme(id),
         release,
       };
@@ -312,9 +317,14 @@ export function characterSurfaces(
           }
           const width = Math.max(e.size.width, e.size.height * aspect),
             height = width / aspect;
-          presentation.aspect = aspect;
-          e.view.fitViewport(width, height);
-          Object.assign(e.host.style, { width: `${width}px`, height: `${height}px` });
+          if (width !== presentation.viewport.width || height !== presentation.viewport.height) {
+            presentation.viewport = { width, height };
+            e.view.fitViewport(width, height);
+            Object.assign(e.host.style, { width: `${width}px`, height: `${height}px` });
+            // Reflow the same sampled frame now: direct seeks and paused resizes
+            // must not wait for another tick to populate the new page aperture.
+            if (e.frame) e.drawing.render(e.frame, presentation.viewport);
+          }
           const mapping = projective(quad, width, height);
           e.host.hidden = !mapping;
           if (mapping) e.host.style.transform = mapping.css;
@@ -338,10 +348,13 @@ export function characterSurfaces(
             try {
               e.view.fitViewport(e.size.width, e.size.height);
               e.colors?.set(worldTheme(layer));
+              if (e.frame) e.drawing.render(e.frame, e.size);
               image = snapshotSVG(e.view.element, 2);
             } finally {
-              e.view.fitViewport(e.presentation.aspect, 1);
+              const { width, height } = e.presentation.viewport;
+              e.view.fitViewport(width, height);
               e.colors?.set(e.presentation.theme);
+              if (e.frame) e.drawing.render(e.frame, e.presentation.viewport);
             }
           } else image = snapshotSVG(e.view.element, 2);
           return {
