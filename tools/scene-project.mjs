@@ -17,6 +17,7 @@ const localPath = (spec, directory) =>
 
 /** Local dependencies travel as immutable archives; registry versions retain the project's lockfile. */
 export async function closeSceneDependencies(source, destination, { signal, runtime } = {}) {
+  const destinationRoot = await realpath(destination);
   const file = join(destination, 'package.json');
   const pkg = JSON.parse(await readFile(file, 'utf8'));
   const cache = new Map();
@@ -104,26 +105,48 @@ export async function closeSceneDependencies(source, destination, { signal, runt
         if (!resolvedRuntime && (typeof spec !== 'string' || !spec.startsWith('file:'))) continue;
         const path = resolvedRuntime ? runtime.root : localPath(spec, source);
         const result = await packed(path);
-        const inside = relative(source, path);
-        const copied =
-          !isAbsolute(inside) &&
-          inside !== '..' &&
-          !inside.startsWith('..' + sep) &&
-          (await lstat(join(destination, inside)).then(
-            (entry) => entry.isFile(),
-            () => false,
-          ));
-        if (
-          !resolvedRuntime &&
-          copied &&
-          !(await stat(path)).isDirectory() &&
-          !isAbsolute(spec.slice(5))
-        )
-          continue;
+        // The installed runtime is authoritative, but its exact archive may already
+        // travel with the authored project. Keep that file instead of adding a second copy.
+        const declared =
+          typeof spec === 'string' && spec.startsWith('file:') ? localPath(spec, source) : null;
+        if (declared) {
+          const inside = relative(source, declared);
+          const copied =
+            !isAbsolute(inside) &&
+            inside !== '..' &&
+            !inside.startsWith('..' + sep) &&
+            (await lstat(join(destination, inside)).then(
+              (entry) => entry.isFile(),
+              () => false,
+            )) &&
+            (await realpath(join(destination, inside))) === join(destinationRoot, inside);
+          if (copied && (await readFile(join(destination, inside))).equals(result.bytes)) {
+            const reference = `file:./${inside.split(sep).join('/')}`;
+            if (spec !== reference) {
+              pkg[field][name] = reference;
+              changed = true;
+            }
+            continue;
+          }
+        }
         const hash = createHash('sha256').update(result.bytes).digest('hex').slice(0, 16);
         const archive = `dependencies/${name.replace(/[^a-zA-Z0-9._-]/g, '-')}-${hash}.tgz`;
-        await mkdir(join(destination, 'dependencies'), { recursive: true });
-        await writeFile(join(destination, archive), result.bytes);
+        const folder = join(destination, 'dependencies');
+        const existing = await lstat(folder).catch((error) => {
+          if (error.code !== 'ENOENT') throw error;
+          return null;
+        });
+        if (existing && !existing.isDirectory())
+          throw new Error(`Dependency output must be a real directory: ${folder}`);
+        if (!existing) await mkdir(folder);
+        const target = join(destination, archive);
+        try {
+          await writeFile(target, result.bytes, { flag: 'wx' });
+        } catch (error) {
+          if (error.code !== 'EEXIST') throw error;
+          if (!(await lstat(target)).isFile() || !(await readFile(target)).equals(result.bytes))
+            throw new Error(`Dependency archive has different content or is a link: ${target}`);
+        }
         pkg[field][name] = `file:./${archive}`;
         changed = true;
       }

@@ -3,11 +3,24 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, writeFile, rm, cp, chmod } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  writeFile,
+  rm,
+  cp,
+  chmod,
+  symlink,
+  readlink,
+} from 'node:fs/promises';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { packageInfo, writeBuildInfo } from '../tools/build-info.mjs';
 import { packRuntime, updateSceneRuntime } from '../tools/runtime-package.mjs';
+import { closeSceneDependencies } from '../tools/scene-project.mjs';
 
 const run = promisify(execFile);
 const runtime = '@visual-storytelling/core';
@@ -129,6 +142,146 @@ process.exit(result.status ?? 1);
     process.env.PATH = original;
   }
 }
+
+test('source delivery reuses the matching runtime archive and keeps portable references to the actual build', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'runtime-delivery-'));
+  try {
+    const root = await fixture(directory);
+    const { target, packed } = await scene(directory, root);
+    const original = await readFile(join(target, 'package.json'));
+    const lock = await readFile(join(target, 'package-lock.json'));
+    const installed = join(target, 'node_modules', runtime);
+    const archive = join(target, packed.filename);
+    const recipients = [];
+    for (const spec of [
+      packed.dependency,
+      `file:${archive}`,
+      pathToFileURL(archive).href,
+      `file:../scene/${packed.filename}`,
+    ]) {
+      const recipient = join(directory, `recipient-${recipients.length}`);
+      await cp(target, recipient, {
+        recursive: true,
+        filter: (path) => path !== join(target, 'node_modules'),
+      });
+      const manifest = await readJSON(join(recipient, 'package.json'));
+      manifest.dependencies[runtime] = spec;
+      if (spec !== packed.dependency)
+        await writeFile(join(recipient, 'package.json'), JSON.stringify(manifest));
+      await closeSceneDependencies(target, recipient, {
+        runtime: { name: runtime, root: installed },
+      });
+      assert.deepEqual(await readdir(join(recipient, 'dependencies')), [
+        packed.filename.split('/').at(-1),
+      ]);
+      assert.equal(
+        (await readJSON(join(recipient, 'package.json'))).dependencies[runtime],
+        packed.dependency,
+      );
+      if (spec === packed.dependency) {
+        assert((await readFile(join(recipient, 'package.json'))).equals(original));
+        assert((await readFile(join(recipient, 'package-lock.json'))).equals(lock));
+      }
+      recipients.push({ recipient, value: 1 });
+    }
+    // The declared archive can lag behind the actual runtime selected for rendering.
+    await revision(root, 2);
+    const recipient = join(directory, 'changed-runtime');
+    await cp(target, recipient, {
+      recursive: true,
+      filter: (path) => path !== join(target, 'node_modules'),
+    });
+    await closeSceneDependencies(target, recipient, { runtime: { name: runtime, root } });
+    assert.notEqual(
+      (await readJSON(join(recipient, 'package.json'))).dependencies[runtime],
+      packed.dependency,
+    );
+    recipients.push({ recipient, value: 2 });
+    assert((await readFile(join(target, 'package.json'))).equals(original));
+    assert((await readFile(join(target, 'package-lock.json'))).equals(lock));
+    await rm(root, { recursive: true });
+    await rm(target, { recursive: true });
+    for (const { recipient, value } of recipients) {
+      await run(
+        'npm',
+        [
+          'ci',
+          '--offline',
+          '--ignore-scripts',
+          '--no-audit',
+          '--no-fund',
+          '--cache',
+          join(directory, 'empty-cache'),
+        ],
+        { cwd: recipient },
+      );
+      assert.equal(await importedValue(recipient), value);
+      assert(!(await readdir(recipient)).includes('script-ran'));
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('source delivery refuses linked output without changing the source or external archive cache', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'runtime-delivery-links-'));
+  try {
+    const root = await fixture(directory);
+    const { target, packed } = await scene(directory, root);
+    const installed = join(target, 'node_modules', runtime);
+    const cache = join(directory, 'archive-cache');
+    await cp(join(target, 'dependencies'), cache, { recursive: true });
+    await writeFile(join(cache, 'unrelated.txt'), 'Keep this external file.\n');
+    const cacheNames = (await readdir(cache)).sort();
+    const originals = await Promise.all(
+      [
+        ...['package.json', 'package-lock.json', packed.filename].map((name) => join(target, name)),
+        ...cacheNames.map((name) => join(cache, name)),
+      ].map(async (file) => [file, await readFile(file)]),
+    );
+    for (const kind of ['matching-runtime', 'different-runtime', 'archive-link']) {
+      if (kind === 'different-runtime') await revision(root, 2);
+      const recipient = join(directory, kind);
+      await cp(target, recipient, {
+        recursive: true,
+        filter: (path) => path !== join(target, 'node_modules'),
+      });
+      let link, linkedTo;
+      if (kind === 'archive-link') {
+        await rm(join(recipient, packed.filename));
+        const bytes = await readFile(join(target, packed.filename));
+        link = join(
+          recipient,
+          'dependencies',
+          `-visual-storytelling-core-${hash(bytes).slice(0, 16)}.tgz`,
+        );
+        linkedTo = join(cache, 'unrelated.txt');
+      } else {
+        link = join(recipient, 'dependencies');
+        await rm(link, { recursive: true });
+        linkedTo = cache;
+      }
+      await symlink(linkedTo, link);
+      await assert.rejects(
+        closeSceneDependencies(target, recipient, {
+          runtime: { name: runtime, root: kind === 'different-runtime' ? root : installed },
+        }),
+        kind === 'archive-link' ? /archive has different content or is a link/ : /real directory/,
+        kind,
+      );
+      assert.equal(await readlink(link), linkedTo);
+      for (const [file, bytes] of originals) assert((await readFile(file)).equals(bytes), file);
+      assert.deepEqual((await readdir(cache)).sort(), cacheNames);
+      for (const name of ['package.json', 'package-lock.json'])
+        assert(
+          (await readFile(join(recipient, name))).equals(await readFile(join(target, name))),
+          `${kind}: ${name}`,
+        );
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('update replaces same-version bytes, preserves authored project, and skips a repeated installation', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'runtime-update-'));
