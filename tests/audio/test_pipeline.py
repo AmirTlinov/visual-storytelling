@@ -22,6 +22,82 @@ EXAMPLE = Path(__file__).resolve().parents[2] / "examples" / "remainder-story" /
 
 
 class AudioChecks(unittest.TestCase):
+    def test_cached_whole_paragraph_precedes_new_sentence_splitting(self):
+        paragraph = " ".join(start + " слово" * 28 + " " + end for start, end in [
+            ("Первое", "завершено."), ("Второе", "готово."), ("Третье", "проверено."),
+        ])
+        for text, old_budget, quote in [
+            (paragraph, 1200, "завершено Второе"),
+            (paragraph, 2400, "завершено Второе"),
+            ("Начало" + " слово" * 49 + " завершено.", 1200, "завершено"),
+        ]:
+            with self.subTest(budget=old_budget, words=len(words(text))), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                script, output = root / "narration.json", root / "output"
+                script.write_text(json.dumps({"version": 3, "intro": 0, "outro": 0,
+                    "music": None, "segments": [{"id": "whole", "text": text, "pause_after": 0,
+                    "cues": [{"id": "boundary", "quote": quote, "action": "Продолжаем мысль"}]}]}, ensure_ascii=False))
+                spec = read_script(script)
+                segment = spec["segments"][0]
+                speaker = Speaker.__new__(Speaker)
+                speaker.identity = {"model": "fixture", "parameters": GENERATION,
+                                    "reference_sha256": file_digest(Path(spec["voice"]["reference_audio"]))}
+                speaker.voice, speaker.model = spec["voice"], None
+                key = digest({"v": 3, **speaker.identity,
+                    "parameters": {**GENERATION, "max_new_tokens": old_budget},
+                    "reference_text": speaker.voice["reference_text"],
+                    **{name: segment[name] for name in ("seed", "text", "delivery")}, "sample_rate": SAMPLE_RATE})
+                path = root / "clips" / f"{key}.wav"
+                path.parent.mkdir()
+                sf.write(path, .1 * np.sin(np.linspace(0, 128 * np.pi, 2 * SAMPLE_RATE)), SAMPLE_RATE, subtype="PCM_16")
+                expected, _ = sf.read(path, dtype="int16")
+                aligned_texts = []
+                class CachedAligner:
+                    device = "cpu"
+                    def align(self, audio, spoken, actual_key):
+                        aligned_texts.append((spoken, actual_key))
+                        tokens = words(spoken)
+                        return [{"text": word, "start": .05 + 1.9 * i / len(tokens),
+                                 "end": .05 + 1.9 * (i + 1) / len(tokens), "score": .9}
+                                for i, word in enumerate(tokens)], {"cached": True, "seconds": 0}
+                with patch('speech.CACHE', root), patch('speech.load_model', side_effect=AssertionError("A cached paragraph must not load TTS")):
+                    timeline = build_audio(script, output, "cpu", speaker=speaker, aligner=CachedAligner(), report=False)
+                self.assertEqual(aligned_texts, [(segment["spoken"], key)])
+                self.assertNotIn("passages", timeline["segments"][0])
+                self.assertEqual(timeline["duration"], 2)
+                self.assertTrue(timeline["build"]["segments"][0]["synthesis"]["cached"])
+                self.assertTrue(np.array_equal(sf.read(output / "voice.wav", dtype="int16")[0], expected))
+                self.assertEqual([w["text"] for w in timeline["segments"][0]["words"]], words(text))
+                check_timeline(script, output / "timeline.json")
+
+    def test_larger_budget_reuses_a_complete_long_take_from_the_original_budget(self):
+        speaker = Speaker.__new__(Speaker)
+        speaker.identity = {"model": "fixture", "parameters": GENERATION}
+        speaker.voice = {"reference_text": "Точный образец."}
+        speaker.reference_codes = None
+        calls = []
+        def generate(**options):
+            calls.append(options["max_new_tokens"])
+            yield SimpleNamespace(audio=np.full(2400, .1), token_count=10)
+        speaker.model = SimpleNamespace(generate=generate, sample_rate=24000)
+        segment = {"seed": 42, "text": "слово " * 60, "delivery": ""}
+        budget = generation_parameters(segment["text"])["max_new_tokens"]
+        self.assertGreater(budget, 1200)
+        with tempfile.TemporaryDirectory() as folder, patch('speech.CACHE', Path(folder)):
+            key = digest({"v": 3, **speaker.identity, "parameters": {**GENERATION, "max_new_tokens": 1200},
+                          "reference_text": speaker.voice["reference_text"], **segment, "sample_rate": SAMPLE_RATE})
+            path = Path(folder) / "clips" / f"{key}.wav"
+            path.parent.mkdir()
+            sf.write(path, np.full(4800, .1), SAMPLE_RATE, subtype="PCM_16")
+            self.assertTrue(speaker.has_cached(segment))
+            audio, actual, record = speaker.synthesize(segment)
+            self.assertEqual(actual, key)
+            self.assertTrue(record["cached"])
+            self.assertEqual(calls, [])
+            segment["seed"] = 43
+            speaker.synthesize(segment)
+            self.assertEqual(calls, [budget])
+
     def test_complete_sentences_share_cues_and_keep_a_cached_receipt_byte_stable(self):
         class FakeSpeaker:
             identity = {"model": "fixture", "reference_sha256": file_digest(REFERENCE_AUDIO)}

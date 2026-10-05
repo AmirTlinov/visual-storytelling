@@ -17,6 +17,13 @@ GENERATION = {"temperature": .8, "top_k": 50}
 MAX_TOKENS = 4096
 
 
+def token_budgets(first):
+    budgets = [first]
+    while budgets[-1] < MAX_TOKENS:
+        budgets.append(min(MAX_TOKENS, budgets[-1] * 2))
+    return budgets
+
+
 class SpeechLimitError(RuntimeError):
     pass
 
@@ -85,19 +92,29 @@ class Speaker:
                          "reference_sha256": file_digest(self.reference_path),
                          "parameters": GENERATION}
 
-    def synthesize(self, segment):
+    def _candidates(self, segment):
         parameters = generation_parameters(segment["delivery"] + segment["text"])
+        minimum_budget = parameters["max_new_tokens"]
         candidates = []
-        while True:
+        # Prefer current completed takes, then the whole original retry chain.
+        # A changed generation budget must not invalidate accepted performances.
+        budgets = dict.fromkeys(token_budgets(minimum_budget) + token_budgets(1200))
+        for limit in budgets:
+            parameters = {**parameters, "max_new_tokens": limit}
             key = digest({"v": 3, **self.identity, "parameters": parameters,
                           "reference_text": self.voice["reference_text"],
                           "seed": segment["seed"], "text": segment["text"],
                           "delivery": segment["delivery"], "sample_rate": SAMPLE_RATE})
             wav = CACHE / "clips" / f"{key}.wav"
             candidates.append((parameters, key, wav))
-            if parameters["max_new_tokens"] == MAX_TOKENS:
-                break
-            parameters = {**parameters, "max_new_tokens": min(MAX_TOKENS, parameters["max_new_tokens"] * 2)}
+        return candidates
+
+    def has_cached(self, segment):
+        return any(wav.exists() for _, _, wav in self._candidates(segment))
+
+    def synthesize(self, segment):
+        candidates = self._candidates(segment)
+        fresh_budgets = token_budgets(generation_parameters(segment["delivery"] + segment["text"])["max_new_tokens"])
         # Look for a previously completed larger-budget take before repeating a
         # known short budget. Failed/truncated generations are never cached.
         for parameters, key, wav in candidates:
@@ -109,6 +126,8 @@ class Speaker:
             reference_codes = model.encode_reference_audio(self.reference_path)
             self.model, self.reference_codes = model, reference_codes
         for parameters, key, wav in candidates:
+            if parameters["max_new_tokens"] not in fresh_budgets:
+                continue
             try:
                 audio = render(self.model, segment["delivery"] + segment["text"], segment["seed"],
                                self.reference_codes, self.voice["reference_text"], parameters)

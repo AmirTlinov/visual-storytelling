@@ -51,10 +51,12 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
     source_digest = digest(json.loads(script_path.read_text()))
     spec = read_script(script_path, source_directory=source_directory)
     inputs = dependency_digests(spec)
-    passages = [speech_passages(segment) for segment in spec["segments"]]
     if speaker is not None and speaker.voice != spec["voice"]:
         raise ValueError("A shared speaker must use the same voice settings")
     speaker = speaker or Speaker(spec["voice"])
+    cached = getattr(speaker, "has_cached", lambda _: False)
+    passages = [[segment] if cached(segment) else speech_passages(segment)
+                for segment in spec["segments"]]
     aligner = aligner or Aligner(device)
     segments, cues, chunks, stats = [], {}, [], []
     cursor = round(spec["intro"] * SAMPLE_RATE)
