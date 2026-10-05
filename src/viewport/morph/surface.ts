@@ -57,6 +57,8 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
     planes: { value: new Float32Array(24) },
     groups: { value: new Int32Array(2) },
     groupCount: { value: 1 },
+    groupBoundsMin: { value: new Float32Array(3) },
+    groupBoundsMax: { value: new Float32Array(3) },
     planeCounts: { value: new Int32Array(1) },
     blends: { value: new Float32Array(2) },
     boundsMin: { value: bounds.min.clone() },
@@ -225,6 +227,8 @@ function mount(view: ReturnType<typeof Viewport3D.mount>, options: VolumeMorphOp
       uniforms.contactRadii.value = field.contactRadii;
       uniforms.planes.value = field.planes;
       uniforms.groups.value = field.groups;
+      uniforms.groupBoundsMin.value = field.groupBoundsMin;
+      uniforms.groupBoundsMax.value = field.groupBoundsMax;
       uniforms.blends.value = field.blends;
       uniforms.planeCounts.value = field.planeCounts;
       selectTopology(material, sources.length, targets.length);

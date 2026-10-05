@@ -96,6 +96,10 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
     nextGroups = groups.slice();
   const blends = new Float32Array(capacity * 2),
     nextBlends = blends.slice();
+  const groupBoundsMin = new Float32Array(capacity * 3),
+    groupBoundsMax = groupBoundsMin.slice(),
+    nextGroupBoundsMin = groupBoundsMin.slice(),
+    nextGroupBoundsMax = groupBoundsMin.slice();
   const planeCounts = new Int32Array(capacity),
     nextPlaneCounts = planeCounts.slice();
   const sourceDistances = new Float64Array(capacity),
@@ -144,7 +148,8 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
     nextBounds = new Box3(),
     localBounds = new Box3(),
     fromBounds = new Box3(),
-    toBounds = new Box3();
+    toBounds = new Box3(),
+    groupBounds = new Box3();
   const materialBounds = shapes.map(() => new Box3());
   const worldTransforms = new Float64Array(shapes.length * 16),
     pairRegistration = new Float64Array(12);
@@ -282,6 +287,8 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
     groups,
     blends,
     planeCounts,
+    groupBoundsMin,
+    groupBoundsMax,
     registration,
     count,
     targetCount,
@@ -303,6 +310,8 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
       nextPlanes.fill(0);
       nextPlaneCounts.fill(0);
       nextContactRadii.fill(0);
+      nextGroupBoundsMin.fill(0);
+      nextGroupBoundsMax.fill(0);
       for (const [group, material] of materials.entries()) {
         const { morph: nextProgress, tension: nextTension } = materialState(
           frame,
@@ -314,6 +323,7 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
         inverseBasis.copy(basis).invert();
         fromBounds.makeEmpty();
         toBounds.makeEmpty();
+        groupBounds.makeEmpty();
         const indices = [...material.sources, ...material.targets];
         for (const i of indices) {
           localMatrix.multiplyMatrices(inverseBasis, matrix.fromArray(worldTransforms, i * 16));
@@ -370,7 +380,13 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
               .multiplyScalar(allowance),
           );
           nextBounds.union(localBounds);
+          if (i < count ? nextProgress < 1 : nextProgress > 0) groupBounds.union(localBounds);
         }
+        // These are the same registered shapes and contact reach as the field.
+        // A convex blend can only be inside where at least one operand is inside.
+        groupBounds.expandByScalar(0.01);
+        groupBounds.min.toArray(nextGroupBoundsMin, group * 3);
+        groupBounds.max.toArray(nextGroupBoundsMax, group * 3);
         updateRounding(nextTransforms, nextScales, nextTension, material.sources, nextContactRadii);
         nextPlaneCounts[group] = updatePlanes(
           nextTransforms,
@@ -380,6 +396,8 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
           group * 24,
         );
       }
+      if (!nextGroupBoundsMin.every(Number.isFinite) || !nextGroupBoundsMax.every(Number.isFinite))
+        throw new Error('Volume material bounds must fit finite GPU floats');
       if (!nextTransforms.every(Number.isFinite))
         throw new Error('Volume transforms must fit finite GPU floats');
       if (
@@ -402,6 +420,8 @@ export function volumeField(sources: readonly VolumeShape[], targets: readonly V
       groups.set(nextGroups);
       blends.set(nextBlends);
       planeCounts.set(nextPlaneCounts);
+      groupBoundsMin.set(nextGroupBoundsMin);
+      groupBoundsMax.set(nextGroupBoundsMax);
       registration.set(nextRegistration);
       groupCount = materials.length;
     },

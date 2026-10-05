@@ -8,6 +8,9 @@ uniform vec3 contactRadii[SOURCE_COUNT * 6];
 uniform vec2 blends[GROUP_CAPACITY];
 uniform int groups[SHAPE_COUNT];
 uniform int groupCount;
+uniform vec3 groupBoundsMin[GROUP_CAPACITY];
+uniform vec3 groupBoundsMax[GROUP_CAPACITY];
+bool activeGroups[GROUP_CAPACITY];
 uniform vec4 planes[GROUP_CAPACITY * 6];
 uniform int planeCounts[GROUP_CAPACITY];
 float primitive(int i, vec3 point) {
@@ -36,23 +39,24 @@ float primitive(int i, vec3 point) {
 float field(vec3 p) {
   float from[GROUP_CAPACITY], target[GROUP_CAPACITY];
   for (int group=0;group<GROUP_CAPACITY;group++) { from[group]=1e30; target[group]=1e30; }
-  float result = 1e30;
   for (int i=SOURCE_COUNT;i<SHAPE_COUNT;i++) {
+    if(!activeGroups[groups[i]]) continue;
     float d = primitive(i,p);
     target[groups[i]] = min(target[groups[i]],d);
   }
   for (int i=0;i<SOURCE_COUNT;i++) {
     int group = groups[i];
-    if(blends[group].x >= 1.) continue;
+    if(!activeGroups[group] || blends[group].x >= 1.) continue;
     float tension = blends[group].y;
     float d = from[group];
     float next = primitive(i, p);
     float h = tension > 0. ? max(0., tension - abs(d - next)) / tension : 0.;
     from[group] = min(d, next) - h * h * tension * .25;
   }
-  result = 1e30;
+  float result = 1e30;
   for (int group=0;group<GROUP_CAPACITY;group++) {
     if(group >= groupCount) break;
+    if(!activeGroups[group]) continue;
     float morph = blends[group].x;
     if(morph >= 1.) { result=min(result,target[group]); continue; }
     float d = from[group];
@@ -91,6 +95,8 @@ uniform float inkBand;
 uniform bool inkDetails;
 varying vec3 rayExit;
 vec3 normalAt(vec3 p, float e) {
+  // Normals sample neighboring points, so keep the complete field at a hit.
+  for(int group=0;group<GROUP_CAPACITY;group++) activeGroups[group] = true;
   return normalize(vec3(field(p+vec3(e,0,0))-field(p-vec3(e,0,0)),
     field(p+vec3(0,e,0))-field(p-vec3(0,e,0)), field(p+vec3(0,0,e))-field(p-vec3(0,0,e))));
 }
@@ -106,6 +112,20 @@ vec4 trace(vec3 direction, vec3 dx, vec3 dy, out float depth, out vec3 point, ou
   vec3 low = min(nearBox,farBox), high = max(nearBox,farBox);
   float t = max(0., max(low.x, max(low.y,low.z)));
   float end = min(high.x,min(high.y,high.z));
+  // Independent materials that this ray cannot touch never enter its field.
+  // The broad phase uses conservative bounds including registered contact reach.
+  float first = 1e30, last = -1e30;
+  for(int group=0;group<GROUP_CAPACITY;group++) {
+    if(group >= groupCount) break;
+    vec3 a = (groupBoundsMin[group] - rayOrigin) / safeDirection;
+    vec3 b = (groupBoundsMax[group] - rayOrigin) / safeDirection;
+    vec3 lo = min(a,b), hi = max(a,b);
+    float enter = max(t,max(lo.x,max(lo.y,lo.z)));
+    float leave = min(end,min(hi.x,min(hi.y,hi.z)));
+    activeGroups[group] = enter <= leave;
+    if(activeGroups[group]) { first = min(first,enter); last = max(last,leave); }
+  }
+  t = first; end = last;
   bool hit = false;
   for(int i=0;i<192;i++) {
     if(t > end) break;

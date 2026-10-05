@@ -122,6 +122,8 @@ export function prepareVolumePrograms(
         'contactRadii',
         'planes',
         'groups',
+        'groupBoundsMin',
+        'groupBoundsMax',
         'blends',
         'planeCounts',
       ] as const)

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Euler, Vector3 } from 'three';
+import { Box3, Euler, Vector3 } from 'three';
 import { surfaceInscriptions } from '../dist/morph/ink.js';
 import { mathBodies } from '../dist/morph/math-bodies.js';
 import {
@@ -116,6 +116,8 @@ test('rejected frames leave the displayed field intact and preserve GPU buffer i
     planeCounts: [...morph.planeCounts],
     groups: [...morph.groups],
     groupCount: morph.groupCount,
+    groupBoundsMin: [...morph.groupBoundsMin],
+    groupBoundsMax: [...morph.groupBoundsMax],
     registration: [...morph.registration],
     bounds: [morph.bounds.min.toArray(), morph.bounds.max.toArray()],
     blends: [...morph.blends],
@@ -317,6 +319,48 @@ test('distant material pairs keep their own contact planes and registration axes
   }
 });
 
+test('material ray bounds follow only the currently registered geometry and retain independent clocks', () => {
+  const box = volumeBox([2, 2, 1]);
+  const field = volumeField([box, box], [box, box]);
+  for (const progress of [0, 0.2, 0.7, 1, 0.2, 0]) {
+    field.update({
+      sources: [
+        { material: 'left', position: [-20, -4, 0], rotation: [0, 0.4, 0], scale: [2, 1, 1] },
+        { material: 'right', position: [-20, 4, 0], rotation: [0.3, 0, 0] },
+      ],
+      targets: [
+        { material: 'left', position: [20, -4, 0], scale: [1, 2, 1] },
+        { material: 'right', position: [20, 4, 0], scale: [1, 1, 2] },
+      ],
+      morph: 0,
+      materials: { left: { morph: progress }, right: { morph: 1 - progress } },
+    });
+    assert.equal(field.groupCount, 2);
+    for (let group = 0; group < 2; group++) {
+      const bounds = new Box3(
+        new Vector3().fromArray(field.groupBoundsMin, group * 3),
+        new Vector3().fromArray(field.groupBoundsMax, group * 3),
+      );
+      assert.ok(
+        bounds.getSize(new Vector3()).x < 7,
+        'Inactive distant endpoints never stretch the ray interval',
+      );
+      const x = -20 + 40 * (group ? 1 - progress : progress);
+      assert.ok(bounds.containsPoint(new Vector3(x, group ? 4 : -4, 0)));
+      assert.ok(field.distance(x, group ? 4 : -4, 0) < 0);
+    }
+  }
+  assert.throws(() =>
+    field.update({
+      sources: [{ material: 'a' }, { material: 'b', position: [1e100, 0, 0] }],
+      targets: [{ material: 'a' }, { material: 'b', position: [1e100, 0, 0] }],
+      morph: 0,
+    }),
+  );
+  field.update({ sources: [{}, {}], targets: [{}, {}], morph: 0 });
+  assert.equal(field.groupCount, 1, 'A failed frame leaves no invalid bounds in unused groups');
+});
+
 test('ray bounds contain contact expansion under anisotropic material scaling', () => {
   const sphere = volumeSphere(1),
     field = volumeField([sphere, sphere], [sphere]);
@@ -337,6 +381,7 @@ test('ray bounds contain contact expansion under anisotropic material scaling', 
     field.bounds.containsPoint(new Vector3(12, 0, 0)),
     'The GPU proxy must not cut off visible material',
   );
+  assert.ok(field.groupBoundsMax[0]! >= 12, 'The material ray bound includes the contact reach');
   assert.ok(field.distance(field.bounds.max.x, 0, 0) > 0);
 });
 
