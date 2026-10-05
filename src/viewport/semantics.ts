@@ -1,17 +1,6 @@
-import {
-  Box3,
-  Raycaster,
-  Vector2,
-  Vector3,
-  type Camera,
-  type Object3D,
-  type Mesh,
-  type Material,
-  type InstancedMesh,
-  type InstancedBufferGeometry,
-} from 'three';
+import { Box3, Raycaster, Vector2, Vector3, type Camera, type Object3D } from 'three';
 import { describeObject, type ObjectMeaning } from '../scene-objects.js';
-import { objectVisible } from './visibility.js';
+import { objectVisible, drawsGeometry } from './visibility.js';
 
 interface Subject {
   id: string;
@@ -19,34 +8,6 @@ interface Subject {
   meaning: ObjectMeaning;
 }
 const subjects = new WeakMap<Object3D, Subject>();
-
-const materialVisible = (material: Material | undefined) =>
-  material?.visible && (!material.transparent || material.opacity > 0);
-
-function drawsGeometry(object: Object3D, materialIndex?: number): boolean {
-  const { geometry, material } = object as Mesh;
-  if (!geometry || !material) return false;
-  const instances = object as InstancedMesh,
-    instancedGeometry = geometry as InstancedBufferGeometry;
-  if (
-    (instances.isInstancedMesh && instances.count === 0) ||
-    (instancedGeometry.isInstancedBufferGeometry && instancedGeometry.instanceCount === 0)
-  )
-    return false;
-  const start = Math.max(0, geometry.drawRange.start),
-    end = Math.min(
-      geometry.index?.count ?? geometry.getAttribute('position')?.count ?? 0,
-      geometry.drawRange.start + geometry.drawRange.count,
-    );
-  if (end <= start) return false;
-  if (!Array.isArray(material)) return !!materialVisible(material);
-  if (materialIndex !== undefined) return !!materialVisible(material[materialIndex]);
-  return geometry.groups.some(
-    (group) =>
-      Math.min(end, group.start + group.count) > Math.max(start, group.start) &&
-      materialVisible(material[group.materialIndex ?? 0]),
-  );
-}
 
 function visibleGeometry(object: Object3D): boolean {
   return object.visible && (drawsGeometry(object) || object.children.some(visibleGeometry));

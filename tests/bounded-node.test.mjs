@@ -188,6 +188,41 @@ test('bounded nodes retain complete centered ink, readable size and body-owned c
       const routeClearance =
         (clear.x + clear.width <= 196 || clear.x >= 204) &&
         (clear.y + clear.height <= 246 || clear.y >= 254);
+      const diagram = SvgLayout.element('g', { transform: 'translate(5 7) scale(1.1 .7)' });
+      const a = SvgLayout.element('rect', { x: 20, y: 300, width: 60, height: 30 }),
+        b = SvgLayout.element('rect', { x: 500, y: 300, width: 60, height: 30 }),
+        blocker = SvgLayout.element('rect', { x: 250, y: 270, width: 80, height: 100 }),
+        caption = SvgLayout.element('text', { 'font-size': 18 }, 'поток');
+      diagram.append(a, b, blocker, caption);
+      drawing.layer.append(diagram);
+      const routeOptions = { space: drawing.layer, avoid: [blocker], clearance: 10 };
+      const routed = SvgLayout.connect(a, b, routeOptions);
+      SvgLayout.along(caption, routed, {
+        space: drawing.layer,
+        avoid: [a, b, blocker],
+        offset: 18,
+      });
+      const noCrossing = (bounds) =>
+        routed.points.slice(1).every((end, i) => {
+          const start = routed.points[i];
+          return start.x === end.x
+            ? start.x <= bounds.x ||
+                start.x >= bounds.x + bounds.width ||
+                Math.max(start.y, end.y) <= bounds.y ||
+                Math.min(start.y, end.y) >= bounds.y + bounds.height
+            : start.y <= bounds.y ||
+                start.y >= bounds.y + bounds.height ||
+                Math.max(start.x, end.x) <= bounds.x ||
+                Math.min(start.x, end.x) >= bounds.x + bounds.width;
+        });
+      const routedClear =
+        routed.points.length > 2 &&
+        noCrossing(SvgLayout.box(blocker, drawing.layer)) &&
+        noCrossing(SvgLayout.box(caption, drawing.layer));
+      blocker.style.opacity = '0';
+      const hiddenObstacleIgnored = SvgLayout.connect(a, b, routeOptions).points.length === 2;
+      blocker.style.opacity = '1';
+      const routeRestored = SvgLayout.connect(a, b, routeOptions).d === routed.d;
       drawing.dispose();
       first.dispose();
       return {
@@ -211,6 +246,9 @@ test('bounded nodes retain complete centered ink, readable size and body-owned c
         sharedSpace,
         avoided,
         routeClearance,
+        routedClear,
+        hiddenObstacleIgnored,
+        routeRestored,
         disposed: !first.element.isConnected && !second.element.isConnected,
       };
     });
@@ -236,6 +274,9 @@ test('bounded nodes retain complete centered ink, readable size and body-owned c
       'sharedSpace',
       'avoided',
       'routeClearance',
+      'routedClear',
+      'hiddenObstacleIgnored',
+      'routeRestored',
     ])
       assert.equal(result[key], true, key);
   } finally {

@@ -123,7 +123,15 @@ function strokeLocation(state: StrokeState | undefined, progress: number) {
     a[1]! + (b[1]! - a[1]!) * fraction,
     a[2]! + (b[2]! - a[2]!) * fraction,
   ];
-  return { progress: p, total, distance, segment, point };
+  let direction = b.map((v, i) => v - a[i]!) as [number, number, number];
+  let size = Math.hypot(...direction);
+  // A path may begin with repeated points. Its first real segment still owns the direction.
+  for (let i = segment + 1; size === 0 && i < state.points.length; i++) {
+    direction = state.points[i]!.map((v, axis) => v - a[axis]!) as [number, number, number];
+    size = Math.hypot(...direction);
+  }
+  const tangent = direction.map((v) => v / (size || 1)) as [number, number, number];
+  return { progress: p, total, distance, segment, point, tangent };
 }
 
 /** Reveal by arc length, retaining the complete path for camera framing and reverse seeks. */
@@ -189,6 +197,10 @@ function create(
     /** Position in root-local coordinates at the same distance fraction as draw(). */
     pointAt(progress: number) {
       return strokeLocation(strokes.get(root), progress)?.point;
+    },
+    /** Direction of the same segment used by draw(), including immediately after a corner. */
+    tangentAt(progress: number) {
+      return strokeLocation(strokes.get(root), progress)?.tangent;
     },
     points(next: readonly StrokePoint[]) {
       updateInkLine(root, next);

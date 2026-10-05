@@ -236,3 +236,12 @@ view.label('Объём', () => cube.localToWorld(new T.Vector3(0, 1, 0)), {
 Пустой след, одна точка, изменение числа точек, пунктир и обратная перемотка
 поддерживаются тем же владельцем. Время передавай через `frame.reveal(cue)`.
 [Копируемый пример](../../../examples/ink-trace/scene.js) меняет число витков живого следа.
+
+### Связи между фигурами
+
+`InkConnection3D.create(view, from, to, {space: group, avoid: [...objects, physicalLabel]})`
+из `/three` измеряет фигуры и обходит препятствия. После компоновки вызови `update`,
+затем `draw` от метки рассказа; `pointAt` ведёт сигнал по тому же штриху. Отдельные
+мобильные координаты стрелок и копия пути в `CurvePath` не нужны. Для SVG —
+`SvgLayout.connect(..., {avoid, space})` и `SvgLayout.along` по возвращённой трассе.
+[Контракт](../../../docs/connections.md), [пример](../../../examples/connected-diagram/scene.js).

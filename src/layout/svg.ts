@@ -1,4 +1,5 @@
 import { svg as element } from '../ink/dom.js';
+import { connectionRoute, crossesBounds, type ConnectionSide } from './connection.js';
 
 interface Point {
   x: number;
@@ -7,6 +8,7 @@ interface Point {
 interface Route {
   start: Point;
   end: Point;
+  points?: readonly Point[];
 }
 interface Bounds extends Point {
   width: number;
@@ -105,40 +107,63 @@ function connect(
     toShape = 'rect',
     gap = 3,
     space = from.ownerSVGElement!,
-  }: { fromShape?: string; toShape?: string; gap?: number; space?: SVGGraphicsElement } = {},
+    avoid = [],
+    route = avoid.length ? 'orthogonal' : 'straight',
+    clearance = 8,
+    fromSide,
+    toSide,
+  }: {
+    fromShape?: string;
+    toShape?: string;
+    gap?: number;
+    space?: SVGGraphicsElement;
+    avoid?: readonly SVGGraphicsElement[];
+    route?: 'straight' | 'orthogonal';
+    clearance?: number;
+    fromSide?: ConnectionSide;
+    toSide?: ConnectionSide;
+  } = {},
 ) {
   const a = box(from, space),
-    b = box(to, space);
+    b = from === to ? a : box(to, space);
+  if (route === 'orthogonal') {
+    const connection = connectionRoute(a, b, {
+      gap,
+      clearance,
+      fromSide,
+      toSide,
+      avoid: avoid
+        .filter((node) => node !== from && node !== to && shown(node))
+        .map((node) => box(node, space)),
+    });
+    return {
+      ...connection,
+      d: connection.points.map((p, i) => `${i ? 'L' : 'M'}${p.x} ${p.y}`).join(''),
+    };
+  }
   const start = edge(a, { x: b.cx, y: b.cy }, { shape: fromShape, gap });
   const end = edge(b, { x: a.cx, y: a.cy }, { shape: toShape, gap });
-  return { start, end, d: `M${start.x} ${start.y}L${end.x} ${end.y}` };
+  return { start, end, points: [start, end], d: `M${start.x} ${start.y}L${end.x} ${end.y}` };
 }
 
-/** Segment/rectangle intersection keeps crossing links out of an inscription's ink. */
-function crosses(route: Route, bounds: Bounds) {
-  let lo = 0,
-    hi = 1;
-  for (const axis of ['x', 'y'] as const) {
-    const start = route.start[axis],
-      delta = route.end[axis] - start;
-    const min = bounds[axis],
-      max = min + (axis === 'x' ? bounds.width : bounds.height);
-    if (Math.abs(delta) < 1e-9) {
-      if (start < min || start > max) return false;
-    } else {
-      const a = (min - start) / delta,
-        b = (max - start) / delta;
-      lo = Math.max(lo, Math.min(a, b));
-      hi = Math.min(hi, Math.max(a, b));
-      if (lo > hi) return false;
-    }
+function shown(node: SVGGraphicsElement) {
+  for (let parent: Element | null = node; parent; parent = parent.parentElement) {
+    const style = getComputedStyle(parent);
+    if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0)
+      return false;
   }
   return true;
 }
+function segments(route: Route) {
+  const points = route.points ?? [route.start, route.end];
+  return points.slice(1).map((end, i) => ({ start: points[i]!, end }));
+}
+const crosses = (route: Route, bounds: Bounds) =>
+  segments(route).some(({ start, end }) => crossesBounds(start, end, bounds));
 
 function along(
   label: SVGGraphicsElement,
-  { start, end }: Route,
+  route: Route,
   {
     at = 0.5,
     offset = 16,
@@ -153,9 +178,23 @@ function along(
     space?: SVGGraphicsElement;
   } = {},
 ) {
-  const dx = end.x - start.x,
-    dy = end.y - start.y,
-    length = Math.hypot(dx, dy) || 1;
+  const parts = segments(route).map((p) => ({
+    ...p,
+    length: Math.hypot(p.end.x - p.start.x, p.end.y - p.start.y),
+  }));
+  const length = parts.reduce((sum, p) => sum + p.length, 0) || 1;
+  const location = (at: number) => {
+    let remaining = Math.max(0, Math.min(1, at)) * length;
+    let segment = parts.at(-1) ?? { start: route.start, end: route.end, length: 0 };
+    for (const part of parts) {
+      segment = part;
+      if (remaining <= part.length) break;
+      remaining -= part.length;
+    }
+    const dx = (segment.end.x - segment.start.x) / (segment.length || 1),
+      dy = (segment.end.y - segment.start.y) / (segment.length || 1);
+    return { x: segment.start.x + dx * remaining, y: segment.start.y + dy * remaining, dx, dy };
+  };
   const ink = label.getBBox();
   const parentToSpace = space
     .getCTM()!
@@ -164,8 +203,11 @@ function along(
   const spaceToParent = parentToSpace.inverse();
   const width = Math.abs(parentToSpace.a) * ink.width + Math.abs(parentToSpace.c) * ink.height;
   const height = Math.abs(parentToSpace.b) * ink.width + Math.abs(parentToSpace.d) * ink.height;
-  const obstacles = avoid.map((node) => ('start' in node ? node : box(node, space)));
-  const normalRadius = (Math.abs(dy) * width + Math.abs(dx) * height) / (2 * length);
+  const obstacles = avoid
+    .filter((node) => 'start' in node || shown(node))
+    .map((node) => ('start' in node ? node : box(node, space)));
+  const normal = location(at);
+  const normalRadius = (Math.abs(normal.dy) * width + Math.abs(normal.dx) * height) / 2;
   const preferred =
     offset === 0 ? 0 : Math.sign(offset) * Math.max(Math.abs(offset), normalRadius + gap);
   const step = Math.max(8, Math.min(width, height) / 2 + gap);
@@ -186,8 +228,9 @@ function along(
   candidates.sort((a, b) => a.cost - b.cost);
   let chosen = { at, distance: preferred };
   for (const candidate of candidates) {
-    const x = start.x + dx * candidate.at - (dy / length) * candidate.distance;
-    const y = start.y + dy * candidate.at + (dx / length) * candidate.distance;
+    const p = location(candidate.at);
+    const x = p.x - p.dy * candidate.distance;
+    const y = p.y + p.dx * candidate.distance;
     const rect = {
       x: x - width / 2 - gap,
       y: y - height / 2 - gap,
@@ -195,6 +238,7 @@ function along(
       height: height + 2 * gap,
     };
     if (
+      (offset === 0 || !crosses(route, rect)) &&
       obstacles.every((b) =>
         'start' in b
           ? !crosses(b, rect)
@@ -208,9 +252,10 @@ function along(
       break;
     }
   }
+  const p = location(chosen.at);
   const center = new DOMPoint(
-    start.x + dx * chosen.at - (dy / length) * chosen.distance,
-    start.y + dy * chosen.at + (dx / length) * chosen.distance,
+    p.x - p.dy * chosen.distance,
+    p.y + p.dx * chosen.distance,
   ).matrixTransform(spaceToParent);
   place(label, center.x, center.y);
 }

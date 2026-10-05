@@ -60,6 +60,16 @@ test('a travelling object follows the visible tip through uneven segments, edits
     assert.deepEqual(end(stroke.root), [2, 1, 8]);
     stroke.points([[2, 1, 3]]);
     assert.deepEqual(stroke.pointAt(0.5), [2, 1, 3]);
+    stroke.points([
+      [0, 0],
+      [0, 0],
+      [2, 0],
+      [2, 2],
+      [6, 2],
+    ]);
+    assert.deepEqual(stroke.tangentAt(0), [1, 0, 0]);
+    assert.deepEqual(stroke.tangentAt(0.25), [1, 0, 0]);
+    assert.deepEqual(stroke.tangentAt(0.250001), [0, 1, 0]);
     stroke.points([]);
     assert.equal(stroke.pointAt(0.5), undefined);
     assert.throws(() => stroke.pointAt(NaN), /finite/);

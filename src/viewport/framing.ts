@@ -107,12 +107,15 @@ export function readableFrame(camera: T.PerspectiveCamera, options: ReadableFram
 }
 
 /** Visible geometry only; hidden future results must not flatten the opening shot. */
-export function geometryFrameAnchors(objects: readonly T.Object3D[]): FrameAnchor[] {
+export function geometryFrameAnchors(
+  objects: readonly T.Object3D[],
+  include: (object: T.Object3D) => boolean = () => true,
+): FrameAnchor[] {
   const anchors: FrameAnchor[] = [];
   for (const object of objects) {
     object.updateWorldMatrix(true, true);
     object.traverseVisible((node) => {
-      if (!(node instanceof T.Mesh || node instanceof T.Line)) return;
+      if (!(node instanceof T.Mesh || node instanceof T.Line) || !include(node)) return;
       const geometry = node.geometry;
       if (!geometry.boundingBox) geometry.computeBoundingBox();
       const { min, max } = geometry.boundingBox!;

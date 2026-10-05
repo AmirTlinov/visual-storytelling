@@ -11,6 +11,8 @@ export { Viewport3D } from './three.js';
 export { SvgArtwork3D } from './artwork.js';
 export { InkStroke3D } from './ink-line.js';
 export type { InkStrokeOptions } from './ink-line.js';
+export { InkConnection3D } from './ink-connection.js';
+export type { InkConnectionOptions, ConnectionTarget3D } from './ink-connection.js';
 export type { SvgArtworkOptions } from './artwork.js';
 export type { Viewport3DHandle } from './three.js';
 export type { SubjectOptions3D } from './semantics.js';
