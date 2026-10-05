@@ -6,8 +6,9 @@ import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 import { buildScene } from '../tools/build-pages.mjs';
-import { checkNarration, prepareNarration } from '../tools/narration.mjs';
+import { checkNarration, prepareNarration, silenceSceneCopy } from '../tools/narration.mjs';
 import { narrationSource } from '../tools/story-document.mjs';
 
 const run = promisify(execFile);
@@ -19,7 +20,7 @@ test('silent creation preserves narrative timing and authored assets without Pyt
   const script = {
     version: 1,
     duration: 4,
-    segments: [{ id: 'start', text: 'Move', start: 0, end: 4 }],
+    segments: [{ id: 'start', text: 'Move', start: 0.2, end: 3.6, audio_start: 0, audio_end: 4 }],
     cues: {
       move: { start: 1, end: 3, action: 'Move one unit', timing: { duration: 2 } },
     },
@@ -93,6 +94,68 @@ test('silent creation preserves narrative timing and authored assets without Pyt
   await silence();
   assert.equal(await readFile(join(directory, 'CREDITS.txt'), 'utf8'), authored);
   assert.equal(await readFile(join(directory, 'scene.js'), 'utf8'), 'source');
+});
+
+test('published timeline imports and assets preserve authored motion in the pauses around speech', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'story-playback-spans-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const source = join(directory, 'source'),
+    output = join(directory, 'dist');
+  await mkdir(source);
+  const timeline = {
+    version: 1,
+    duration: 2,
+    segments: [
+      {
+        id: 'chapter',
+        text: 'Move',
+        start: 0.2,
+        end: 1.8,
+        audio_start: 0,
+        audio_end: 2,
+        words: [{ text: 'Move', start: 0.2, end: 1.8 }],
+      },
+    ],
+    cues: { settle: { start: 1.7, end: 1.95, action: 'The drawing settles after the last word' } },
+  };
+  const receipt = {
+    ...timeline,
+    synthesis: { reference_path: '/private/voice.wav' },
+    segments: timeline.segments.map((segment) => ({
+      ...segment,
+      seed: 42,
+      delivery: { emotion: 'calm' },
+    })),
+  };
+  await writeFile(join(source, 'timeline.json'), JSON.stringify(receipt));
+  await writeFile(
+    join(source, 'index.html'),
+    '<!doctype html><script type="module" src="scene.js"></script>',
+  );
+  await writeFile(
+    join(source, 'scene.js'),
+    `
+    import timeline from './timeline.json' with {type:'json'};
+    globalThis.playback = timeline;
+    globalThis.chapterSpan = [timeline.segments[0].audio_start, timeline.segments[0].audio_end];
+    globalThis.asset = new URL('./timeline.json', import.meta.url).href;
+  `,
+  );
+  for (const silent of [false, true]) {
+    if (silent) await silenceSceneCopy(source);
+    await buildScene(source, output);
+    const context = { URL };
+    runInNewContext(await readFile(join(output, 'index.js'), 'utf8'), context);
+    assert.deepEqual(Array.from(context.chapterSpan), [0, 2]);
+    const imported = JSON.parse(JSON.stringify(context.playback));
+    const inline = JSON.parse(Buffer.from(context.asset.split(',')[1], 'base64').toString());
+    const copied = JSON.parse(await readFile(join(output, 'timeline.json'), 'utf8'));
+    for (const published of [imported, inline, copied]) {
+      assert.deepEqual(published, timeline);
+      assert.ok(published.cues.settle.end > published.segments[0].end);
+      assert.ok(published.cues.settle.end <= published.segments[0].audio_end);
+    }
+  }
 });
 
 test('scene builds reject stale generated narration while silent and independent scenes still build', async () => {

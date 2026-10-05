@@ -51,7 +51,8 @@ export function playbackTimeline(timeline) {
     ...fields(timeline, ['version', 'duration', 'cues', 'captionAliases']),
     ...(timeline.segments && {
       segments: timeline.segments.map((segment) => ({
-        ...fields(segment, ['id', 'title', 'text', 'start', 'end']),
+        // The audio span includes pauses that authored chapter and motion windows use.
+        ...fields(segment, ['id', 'title', 'text', 'start', 'end', 'audio_start', 'audio_end']),
         ...(segment.words && {
           words: segment.words.map((word) => fields(word, ['text', 'start', 'end'])),
         }),
@@ -85,7 +86,7 @@ export async function silenceSceneCopy(directory) {
         .map((key) => [key, timeline[key]]),
     );
     for (const segment of script.segments ?? [])
-      for (const key of ['audio_start', 'audio_end', 'seed', 'delivery']) delete segment[key];
+      for (const key of ['seed', 'delivery']) delete segment[key];
     await write('timeline.json', script);
   }
   const credits = await read('CREDITS.txt');
