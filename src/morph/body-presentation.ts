@@ -14,6 +14,7 @@ export function mountBodies(
   options: {
     projection?: '2d' | '3d';
     pigment?: string;
+    columns?: number;
   } = {},
 ) {
   const plan = mathPlan(operation);

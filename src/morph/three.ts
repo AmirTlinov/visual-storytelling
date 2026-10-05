@@ -14,7 +14,7 @@ import { morphBody3D } from './body-3d.js';
 import { mathBodies } from './math-bodies.js';
 import { mathPlan } from './math.js';
 import { mathNumber } from './numbers.js';
-import { cellLayout } from './layout.js';
+import { cellLayout, validateCellColumns } from './layout.js';
 import { contentViewport } from '../layout/content.js';
 import type { MathOperation, MathMorphPlan } from './types.js';
 import {
@@ -33,8 +33,11 @@ function mount(
     pigment?: string;
     /** Embedded operations keep their host's authored size; standalone content fits its rows. */
     layout?: 'scene' | 'content';
+    /** Maximum cells per row. Omit to adapt the row count to the viewport. */
+    columns?: number;
   } = {},
 ) {
+  validateCellColumns(options.columns);
   const prepared = mathPlan(operation);
   const object = new Group(),
     bounds = new Box3();
@@ -110,7 +113,7 @@ function mount(
     const widthAvailable = stage.clientWidth || layoutWidth || 640;
     if (plan.encoding !== 'quantity') {
       if (!arrangement || widthAvailable !== layoutWidth) {
-        arrangement = cellLayout(plan, widthAvailable);
+        arrangement = cellLayout(plan, widthAvailable, options.columns);
         layoutWidth = widthAvailable;
         viewport?.resize(arrangement.height + 64);
       }

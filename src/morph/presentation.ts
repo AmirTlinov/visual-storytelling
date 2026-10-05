@@ -13,7 +13,7 @@ const isConstruction = (value: Operation): value is ConstructionPlan =>
 export async function mountMath(
   parent: HTMLElement,
   operation: Operation,
-  options: { projection?: '2d' | '3d'; pigment?: string } = {},
+  options: { projection?: '2d' | '3d'; pigment?: string; columns?: number } = {},
 ) {
   const element = document.createElement('div');
   element.className = 've-math-presentation';

@@ -2,7 +2,7 @@ import { quantityBounds, quantityStep } from './measure.js';
 import { surface } from '../ink/surface.js';
 import { lettering } from '../ink/lettering.js';
 import { paragraph } from '../ink/paragraph.js';
-import { cellLayout } from './layout.js';
+import { cellLayout, validateCellColumns } from './layout.js';
 import { contentViewport } from '../layout/content.js';
 import { mathPlan } from './math.js';
 import { mathNumber } from './numbers.js';
@@ -21,8 +21,9 @@ import {
 function mount(
   parent: HTMLElement,
   operation: MathOperation | MathMorphPlan,
-  options: { id: string; pigment?: string; width?: number; height?: number },
+  options: { id: string; pigment?: string; width?: number; height?: number; columns?: number },
 ) {
+  validateCellColumns(options.columns);
   const prepared = mathPlan(operation);
   let width = options.width ?? 840,
     height = options.height ?? 360;
@@ -78,7 +79,7 @@ function mount(
     if (plan.encoding !== 'quantity') {
       width = Math.max(180, available || width);
       if (!arrangement || `${width}` !== layoutKey) {
-        arrangement = cellLayout(plan, width);
+        arrangement = cellLayout(plan, width, options.columns);
         layoutKey = `${width}`;
         headingSpace = 36;
         for (let stage = 0; stage < plan.stages; stage++)

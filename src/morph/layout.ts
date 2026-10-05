@@ -1,9 +1,15 @@
 import { partBounds } from './measure.js';
 import type { MathMorphPlan } from './types.js';
 
+export function validateCellColumns(columns: number | undefined) {
+  if (columns !== undefined && (!Number.isSafeInteger(columns) || columns < 1))
+    throw new Error('MathMorph columns must be a positive integer');
+}
+
 /** Reserve one readable composition for the operation, including its intermediate steps. */
-export function cellLayout(plan: MathMorphPlan, width: number) {
-  const columns = Math.max(1, Math.floor((width - 24) / 140));
+export function cellLayout(plan: MathMorphPlan, width: number, authoredColumns?: number) {
+  validateCellColumns(authoredColumns);
+  const columns = authoredColumns ?? Math.max(1, Math.floor((width - 24) / 140));
   let bounds = plan.boundsFor?.(columns);
   if (!bounds) {
     const parts = [];

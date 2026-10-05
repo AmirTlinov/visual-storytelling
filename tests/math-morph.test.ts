@@ -1,9 +1,34 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MathMorph, mathPlan } from '../dist/morph/math.js';
+import { cellLayout } from '../dist/morph/layout.js';
 import type { MathPart } from '../dist/morph/types.js';
 const close = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-8, `${a} != ${b}`);
 const volume = (a: MathPart) => a.size[0] * a.size[1] * a.size[2];
+
+test('authored rows keep an embedded vector calculation stable through resize and reduction', () => {
+  const plan = mathPlan(MathMorph.dot([1, 2, 3, 4, 5, 6, 7, 8], [8, 7, 6, 5, 4, 3, 2, 1]));
+  const wide = cellLayout(plan, 1600, 4),
+    narrow = cellLayout(plan, 360, 4);
+  assert.deepEqual(
+    wide.bounds,
+    narrow.bounds,
+    'Host width must not rearrange an authored workbench',
+  );
+  const first = plan.sample(0, { columns: wide.columns });
+  assert.ok(new Set(first.sources.map((part) => part.position[1])).size > 1);
+  for (let i = 0; i <= 100; i++) {
+    const frame = plan.sample(i / 100, { columns: wide.columns });
+    for (const part of [...frame.sources, ...frame.targets])
+      for (let axis = 0; axis < 3; axis++) {
+        assert.ok(part.position[axis]! - part.size[axis]! / 2 >= wide.bounds[0][axis]! - 1e-8);
+        assert.ok(part.position[axis]! + part.size[axis]! / 2 <= wide.bounds[1][axis]! + 1e-8);
+      }
+  }
+  close(plan.result, 120);
+  for (const columns of [0, -1, 1.5, Infinity, NaN])
+    assert.throws(() => cellLayout(plan, 640, columns), /positive integer/);
+});
 
 test('join and cut preserve measured matter and reach contact without interpenetration', () => {
   for (const operation of [MathMorph.add(2, 4), MathMorph.divide(6, 3)]) {
