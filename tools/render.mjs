@@ -81,6 +81,7 @@ export async function renderer({
     await capture.evaluate((scene) => scene.pause());
     if (!controls)
       await page.evaluate(() => {
+        document.querySelector('.ve-scene')?.setAttribute('data-scene-export', '');
         const drawing = document.querySelector('svg.canvas,svg.vs-canvas');
         const paper = drawing?.closest('.ve-scene');
         const before = drawing?.getBoundingClientRect();

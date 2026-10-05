@@ -170,3 +170,50 @@ test('receiver ownership rolls back errors and an old disposal cannot release a 
     lab.dispose();
   }
 });
+
+test('one delivery retargets nine tensor cells and replays each affine handoff without retaining receivers', () => {
+  const lab = fixture(),
+    delivery = mathDelivery3D(lab.source, { to: lab.to });
+  const cells = Array.from({ length: 9 }, (_, i) => {
+    const cell = new Mesh(new BoxGeometry(0.8 + i / 20, 0.6, 0.4), new MeshBasicMaterial());
+    cell.position.set(i % 3, -Math.floor(i / 3), i / 10);
+    lab.to.parent.add(cell);
+    cell.visible = false;
+    return cell;
+  });
+  try {
+    const states = new Map();
+    for (const index of [0, 1, 2, 3, 4, 5, 6, 7, 8, 2, 0, 8]) {
+      const to = cells[index];
+      delivery.setOptions({ to, via: [index / 3, 2, 0.5] });
+      for (const progress of [0, 0.5, 1, 0.5, 0, 1]) {
+        delivery.render(result, 1, progress);
+        const key = `${index}:${progress}`;
+        const matrix = lab.source.matrix.elements.slice();
+        if (states.has(key)) close(matrix, states.get(key));
+        states.set(key, matrix);
+        assert.equal(to.visible, progress === 1);
+      }
+      const held = lab.source.matrix.elements.slice();
+      assert.throws(
+        () => delivery.setOptions({ to: cells[(index + 1) % 9], bounds: new Box3() }),
+        /bounds/,
+      );
+      close(lab.source.matrix.elements, held);
+      assert.throws(() => mathDelivery3D(lab.source, { to }), /already has/);
+    }
+    delivery.setOptions({ to: lab.to });
+    // Released cells are available immediately; no remount or second calculation is needed.
+    const independent = mathDelivery3D(new Group(), { to: cells[8] });
+    independent.dispose();
+    delivery.dispose();
+    close(lab.source.matrix.elements, lab.original.elements);
+  } finally {
+    delivery.dispose();
+    for (const cell of cells) {
+      cell.geometry.dispose();
+      cell.material.dispose();
+    }
+    lab.dispose();
+  }
+});
