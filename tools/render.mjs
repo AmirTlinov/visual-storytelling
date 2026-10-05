@@ -11,6 +11,7 @@ export async function renderer({
   scene,
   theme,
   width = 960,
+  height = 1200,
   controls = false,
   directory,
   entry = 'index.html',
@@ -18,6 +19,8 @@ export async function renderer({
   signal,
 }) {
   signal?.throwIfAborted();
+  if (![width, height].every((n) => Number.isInteger(n) && n > 0 && n <= 8192))
+    throw new Error('Render viewport width and height must be integers from 1 to 8192');
   const catalog = directory ? undefined : await readCatalog();
   if (!directory && !catalog[scene]) throw new Error('Unknown example');
   const server = await serve(directory ?? resolve(root, 'site'));
@@ -40,7 +43,7 @@ export async function renderer({
     const browser = await launched;
     signal?.throwIfAborted();
     const context = await browser.newContext({
-      viewport: { width, height: 1200 },
+      viewport: { width, height },
       deviceScaleFactor: 1,
       colorScheme: theme,
       reducedMotion: reduced ? 'reduce' : 'no-preference',

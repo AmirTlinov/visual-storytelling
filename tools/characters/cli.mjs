@@ -3,6 +3,7 @@ import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { compileCharacterPack } from './compile.mjs';
+import { characterSources, characterProfile, characterArtwork } from './profiles.mjs';
 
 export async function runCharacters(args) {
   const { values, positionals } = parseArgs({
@@ -27,9 +28,12 @@ export async function runCharacters(args) {
   if (values.help) {
     console.log(`visual-story characters [list] [--json]
 visual-story characters new ID --from tesla|mira [--outfit NAME] --out DIRECTORY
-visual-story characters build DIRECTORY [DIRECTORY ...] --out pack.json
+visual-story characters build CAST.json|DIRECTORY [CAST.json|DIRECTORY ...] --out pack.json
 
 new copies editable SVG artwork and its rig-compatible frames; existing files are preserved.
+A cast JSON is [{"id":"scientist","from":"mira","outfit":"lab-coat","palette":{"#ffdac3":"#d4a077"}}].
+Use a cast for appearance variations; use new only when editing the SVG drawings.
+from is tesla, mira or an artwork directory relative to the cast file.
 Edit the SVG parts or character.json palette, then build once. Import the result as CharacterPack.
 The template's native skeleton, skin attachments, constraints and draw order stay in the library.`);
     return;
@@ -99,20 +103,32 @@ The template's native skeleton, skin attachments, constraints and draw order sta
     }
     await writeFile(join(destination, 'character.json'), JSON.stringify(profile, null, 2) + '\n');
     await cp(join(template, 'LICENSE.txt'), join(destination, 'CREDITS.txt'));
-    await writeFile(join(destination, 'sheet.svg'), await contactSheet(destination, profile));
+    await writeFile(
+      join(destination, 'sheet.svg'),
+      await contactSheet(template, destination, profile),
+    );
     console.log(
       `Created ${id}: ${Object.keys(profile.parts).length} editable parts\n${join(destination, 'sheet.svg')}\nBuild: visual-story characters build ${destination} --out ${join(dirname(destination), id + '.json')}`,
     );
   } else if (command === 'build') {
     if (!inputs.length || !values.out)
-      throw new Error('Use characters build DIRECTORY [DIRECTORY ...] --out pack.json');
-    const pack = await compileCharacterPack(
-      template,
-      inputs.map((input) => resolve(input)),
+      throw new Error('Use characters build CAST.json|DIRECTORY [...] --out pack.json');
+    const sources = await characterSources(template, inputs);
+    const pack = await compileCharacterPack(template, sources);
+    // Only editable directories own sheet.svg. Cast variations never modify their shared base.
+    const sheets = await Promise.all(
+      [...new Set(sources.filter((source) => typeof source === 'string'))].map(async (source) => {
+        const { directory, profile } = await characterProfile(source);
+        return {
+          file: join(directory, 'sheet.svg'),
+          svg: await contactSheet(template, directory, profile),
+        };
+      }),
     );
     const out = resolve(values.out);
     await mkdir(dirname(out), { recursive: true });
     await writeFile(out, JSON.stringify(pack) + '\n');
+    for (const { file, svg } of sheets) await writeFile(file, svg);
     await writeFile(
       join(dirname(out), 'CHARACTER-CREDITS.txt'),
       pack.credit + '\n\n' + (await readFile(join(template, 'LICENSE.txt'), 'utf8')),
@@ -123,18 +139,23 @@ The template's native skeleton, skin attachments, constraints and draw order sta
   } else throw new Error(`Unknown characters command: ${command}`);
 }
 
-async function contactSheet(directory, profile) {
-  const entries = Object.entries(profile.parts),
+async function contactSheet(template, directory, profile) {
+  const outfits = JSON.parse(await readFile(join(template, 'wardrobe/catalog.json'), 'utf8'));
+  const entries = [
+      ...Object.entries(profile.parts).map(([part, entry]) => ({ part, view: 'front', entry })),
+      ...Object.entries(profile.views ?? {}).flatMap(([view, parts]) =>
+        Object.entries(parts).map(([part, entry]) => ({ part, view, entry })),
+      ),
+    ],
     columns = 4,
     size = 220,
     height = 240 * Math.ceil(entries.length / columns);
   const escape = (s) =>
     String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
   const cells = await Promise.all(
-    entries.map(async ([name, entry], index) => {
-      let art = await readFile(join(directory, entry.file), 'utf8');
-      for (const [from, to] of Object.entries(profile.palette ?? {}))
-        art = art.replaceAll(from, to);
+    entries.map(async ({ part, view, entry }, index) => {
+      const name = view === 'front' ? part : `${part} (${view})`;
+      const art = await characterArtwork(template, directory, profile, part, view, entry, outfits);
       return `<g transform="translate(${(index % columns) * size} ${Math.floor(index / columns) * 240})"><rect x="8" y="8" width="204" height="204" fill="#edf0ed" stroke="#7b8886" stroke-dasharray="4 4"/><path d="M110 8v204M8 110h204" stroke="#c5ccca"/><image x="18" y="18" width="184" height="184" href="data:image/svg+xml;base64,${Buffer.from(art).toString('base64')}"/><text x="110" y="231" text-anchor="middle" fill="#253b42" font-size="15">${escape(name)}</text></g>`;
     }),
   );

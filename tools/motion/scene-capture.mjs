@@ -19,6 +19,7 @@ export async function captureScene({
   frames,
   fps,
   width,
+  height,
   theme,
   reduced,
 }) {
@@ -26,6 +27,7 @@ export async function captureScene({
     directory: directory ? input : dirname(input),
     entry: directory ? 'index.html' : basename(input),
     width,
+    height,
     theme,
     reduced,
     controls: true,
@@ -68,6 +70,7 @@ export async function captureScene({
       duration,
       theme,
       reduced,
+      viewport: capture.page.viewportSize(),
       clock: 'scene model time',
       sampling: 'model-checkpoints',
       inspectionLimits: { domObjects: 150, objectsPer3DView: 400 },

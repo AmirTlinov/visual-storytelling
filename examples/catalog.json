@@ -636,5 +636,16 @@
     ],
     "guides": ["docs/book.md", "docs/characters.md"],
     "recommended": true
+  },
+  "ink-trace": {
+    "title": "Как возникает траектория?",
+    "page": "index.html",
+    "time": 4.5,
+    "checkpoints": [0, 1.5, 3, 4.5, 6, 8],
+    "group": "techniques",
+    "summary": "Рисующийся пространственный след: длина штриха, пунктир, перемотка и изменение пути принадлежат InkStroke3D.",
+    "tags": ["InkStroke3D", "линия", "траектория", "3d"],
+    "source": "scene.js",
+    "guides": ["skill/references/scene-template.md"]
   }
 }

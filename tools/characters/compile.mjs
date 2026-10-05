@@ -1,9 +1,10 @@
 import { readFile } from 'node:fs/promises';
-import { resolve, sep } from 'node:path';
+import { resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import sharp from 'sharp';
 import { characterAtlas } from './atlas.mjs';
 import { measureRig } from './measure.mjs';
+import { characterProfile, characterArtwork } from './profiles.mjs';
 
 /** The rig owns topology and draw order. A skin supplies artwork in that rig's UV frames. */
 export async function compileCharacterPack(template, directories, { id = 'chibi-custom' } = {}) {
@@ -16,11 +17,7 @@ export async function compileCharacterPack(template, directories, { id = 'chibi-
     viewSkins = {};
   const outfits = JSON.parse(await readFile(resolve(template, 'wardrobe/catalog.json'), 'utf8'));
   for (const entry of directories) {
-    const root = resolve(typeof entry === 'string' ? entry : entry.directory);
-    const profile = {
-      ...JSON.parse(await readFile(resolve(root, 'character.json'), 'utf8')),
-      ...(typeof entry === 'string' ? {} : entry.profile),
-    };
+    const { directory: root, profile } = await characterProfile(entry);
     if (profile.outfit && !Object.hasOwn(outfits, profile.outfit))
       throw new Error(`Unknown outfit: ${profile.outfit}`);
     if (profile.template !== spec.id) throw new Error(`Unknown template: ${profile.template}`);
@@ -50,19 +47,7 @@ export async function compileCharacterPack(template, directories, { id = 'chibi-
       );
       for (const [part, entry] of Object.entries(parts)) {
         if (!known.has(entry.path)) throw new Error(`Unknown attachment in ${part}: ${entry.path}`);
-        const garment = profile.outfit && outfits[profile.outfit].parts.includes(part);
-        const backGarment =
-          garment && view === 'back' && outfits[profile.outfit].back.includes(part);
-        const owner = garment ? resolve(template, 'wardrobe', profile.outfit) : root;
-        const file = resolve(
-          owner,
-          garment ? `${part}${backGarment ? '-back' : ''}.svg` : entry.file,
-        );
-        if (!file.startsWith(owner + sep))
-          throw new Error(`Artwork must be inside the character directory: ${part}`);
-        let svg = await readFile(file, 'utf8');
-        for (const [from, to] of Object.entries(profile.palette ?? {}))
-          svg = svg.replaceAll(from, to);
+        const svg = await characterArtwork(template, root, profile, part, view, entry, outfits);
         const buffer = await sharp(Buffer.from(svg)).png().toBuffer();
         const { width: w, height: h } = await sharp(buffer).metadata();
         const path = skin.name + '/' + entry.path;

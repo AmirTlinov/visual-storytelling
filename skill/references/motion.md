@@ -61,7 +61,9 @@
 ```sh
 # Рассказ: все главы и операции; одна метка — целиком с контекстом до и после.
 visual-story review /absolute/scene/dist --out /absolute/SESSION
-visual-story review /absolute/scene/dist --cue copy --out /absolute/COPY
+visual-story review /absolute/scene/dist --cue copy --width 375 --height 844 --out /absolute/COPY
+# Один кадр действия без ручного пересчёта времени речи.
+visual-story export /absolute/scene/dist --cue copy --progress .5 --width 375 --height 844 --out /absolute/frame.png
 # Любой браузерный интерфейс; библиотека на странице не требуется.
 visual-story review http://localhost:3000 --click '#open' --out /absolute/SESSION
 visual-story review /absolute/page.html --capture --scenario /absolute/flow.json
@@ -81,6 +83,11 @@ visual-story review inspect /absolute/SESSION --at 2.1 --object '#panel' --out /
 # Тот же сценарий после исправления, с прежними условиями и сравнением.
 visual-story review /absolute/SESSION/replay.json --baseline /absolute/SESSION --out /absolute/AFTER
 ```
+
+`--width` и `--height` задают окно браузера и для перемотки локальной сцены, и для
+записи взаимодействия; receipt хранит фактический `source.viewport`. PNG сохраняет
+полный кадр сцены, высота которого может отличаться от окна. `--cue chapter:ID`
+выбирает главу; один общий `review` снимает главы и действия за один запуск браузера.
 
 Без `--out` создаётся свежий каталог `artifacts/motion-*`. Команда возвращает
 абсолютные пути, покрытие записи и время выполнения. `inspect` сначала выдаёт

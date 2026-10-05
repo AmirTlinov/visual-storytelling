@@ -19,6 +19,7 @@ export async function reviewMotion({
   frames = 12,
   fps,
   width = 960,
+  height,
   theme = 'light',
   reduced = false,
   crop,
@@ -171,6 +172,7 @@ export async function reviewMotion({
       frames,
       fps,
       width,
+      height,
       theme,
       reduced,
     }));

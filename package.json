@@ -10,6 +10,8 @@
     "tools",
     "examples/**/*.{html,js,mjs,ts,json,css,svg,png,jpg,webp,woff2,py,txt,md,command}",
     "!examples/**/{dist,site,artifacts,review,node_modules}/**",
+    "!examples/**/.*",
+    "!examples/**/.*/**",
     "skill",
     "docs",
     "PHILOSOPHY.md",

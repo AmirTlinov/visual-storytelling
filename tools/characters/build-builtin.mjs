@@ -1,12 +1,12 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { compileCharacterPack } from './compile.mjs';
+import { characterSources } from './profiles.mjs';
 export async function buildBuiltinCharacters() {
   const template = fileURLToPath(new URL('../../src/assets/characters/chibi/', import.meta.url));
-  const cast = JSON.parse(await readFile(template + '/cast.json', 'utf8'));
   const pack = await compileCharacterPack(
     template,
-    cast.map(({ from, ...profile }) => ({ directory: template + '/' + from, profile })),
+    await characterSources(template, [template + '/cast.json']),
     {
       id: 'chibi',
     },

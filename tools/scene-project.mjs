@@ -1,14 +1,4 @@
-import {
-  access,
-  writeFile,
-  readFile,
-  mkdtemp,
-  mkdir,
-  rm,
-  stat,
-  lstat,
-  realpath,
-} from 'node:fs/promises';
+import { writeFile, readFile, mkdtemp, mkdir, rm, stat, lstat, realpath } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -155,24 +145,8 @@ export async function pinSceneProject(
   destination,
   { signal, build = true, root = fileURLToPath(new URL('../', import.meta.url)) } = {},
 ) {
-  signal?.throwIfAborted();
-  if (
-    build &&
-    (await access(join(root, 'src/index.ts')).then(
-      () => true,
-      () => false,
-    ))
-  ) {
-    const { buildPackage } = await import('./build-package.mjs');
-    await buildPackage();
-  }
-  signal?.throwIfAborted();
-  const { stdout } = await execute(
-    'npm',
-    ['pack', '--ignore-scripts', '--pack-destination', destination, '--json'],
-    { cwd: root, signal },
-  );
-  const receipt = JSON.parse(stdout)[0];
+  const { packRuntime } = await import('./runtime-package.mjs');
+  const receipt = await packRuntime(destination, { root, build, signal });
   await writeFile(
     join(destination, 'package.json'),
     JSON.stringify(
@@ -186,11 +160,11 @@ export async function pinSceneProject(
           preview: 'visual-story preview dist',
           pack: 'visual-story pack dist --out artifacts/story.html',
           audio: 'visual-story audio .',
-          export: 'visual-story export --directory dist',
+          export: 'visual-story export dist',
           deliver: 'visual-story deliver .',
           review: 'visual-story review dist --out artifacts/review',
         },
-        dependencies: { '@visual-storytelling/core': `file:./${receipt.filename}` },
+        dependencies: { '@visual-storytelling/core': receipt.dependency },
       },
       null,
       2,

@@ -249,6 +249,7 @@ export async function runMotionCLI(args) {
       maxSize: numeric('max-size'),
       cue: v.cue,
       width: numeric('width'),
+      height: numeric('height'),
       theme: v.theme,
       reduced: v.reduced,
       baseline: v.baseline,

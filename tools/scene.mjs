@@ -54,6 +54,7 @@ if (process.argv[2] === 'characters') {
     },
     api: { full: { type: 'boolean', default: false } },
     info: { json: { type: 'boolean', default: false } },
+    update: { from: { type: 'string' } },
     build: { ...outputOption, cdn: { type: 'boolean', default: false } },
     dev: serverOptions,
     preview: serverOptions,
@@ -87,6 +88,7 @@ if (process.argv[2] === 'characters') {
   const help = `visual-story new DIRECTORY --example NAME [--no-audio | --silent | --audio]
 visual-story examples [QUERY] [--json] [--recommended] [--group explanations|techniques]
 visual-story info [DIRECTORY] [--json]        actual packages, build identity and stale sources
+visual-story update DIRECTORY [--from LIBRARY]  build, pin and install this runtime
 visual-story api [NAME.member ... | ./SUBPATH] [--full]       public names or exact shipped declarations
 visual-story characters --help              prepared actors, actions and editable SVG skin kits
 visual-story dev DIRECTORY [--port 8793]       rebuild + restore the selected semantic cue
@@ -140,6 +142,20 @@ Re-run the same command after changing a line; unchanged voice segments use the 
     const { diagnosePackage, formatPackageInfo } = await import('./build-info.mjs');
     const report = await diagnosePackage(root, destination);
     console.log(values.json ? JSON.stringify(report, null, 2) : formatPackageInfo(report));
+  } else if (command === 'update') {
+    const { updateSceneRuntime } = await import('./runtime-package.mjs');
+    await cancellableCommand('Update', async (signal) => {
+      console.log(
+        JSON.stringify(
+          await updateSceneRuntime(destination, {
+            root: values.from ? resolve(values.from) : root,
+            signal,
+          }),
+          null,
+          2,
+        ),
+      );
+    });
   } else if (command === 'examples') {
     console.log(describeExamples(catalog, { query: positionals.slice(1).join(' '), ...values }));
   } else if (command === 'api') {

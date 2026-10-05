@@ -91,7 +91,7 @@ test('a production-only installation of the packed public API typechecks outside
     const scene = join(directory, 'new-scene');
     // Local development outputs must not become template inputs on the next copy.
     const template = join(installed, 'examples/explorer-svg');
-    for (const folder of ['dist', 'artifacts', 'nested/review']) {
+    for (const folder of ['dist', 'artifacts', 'nested/review', 'nested/.scratch']) {
       await mkdir(join(template, folder), { recursive: true });
       await writeFile(join(template, folder, 'old.json'), '{}');
     }
@@ -103,6 +103,7 @@ test('a production-only installation of the packed public API typechecks outside
       'dist/old.json',
       'artifacts/old.json',
       'nested/review/old.json',
+      'nested/.scratch/old.json',
       '.private.html',
     ])
       await assert.rejects(readFile(join(scene, path)), { code: 'ENOENT' });

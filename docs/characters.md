@@ -247,6 +247,23 @@ objects: {
 
 ## Новый облик
 
+Для вариаций одежды и палитры достаточно одного `cast.json`:
+
+```json
+[
+  { "id": "scientist", "from": "mira", "outfit": "lab-coat", "palette": { "#ffdac3": "#d4a077" } },
+  { "id": "mechanic", "from": "tesla", "outfit": "work-apron" }
+]
+```
+
+`visual-story characters build cast.json --out assets/cast.json` использует общие
+SVG и риг без копий рисунков на каждого героя. Палитра наследуется от основы;
+замены шестизначных hex-цветов применяются одновременно. `from: "./art/scientist"`
+берёт авторские рисунки относительно файла состава. Несколько составов и каталогов
+можно собрать одной командой.
+
+Для изменения самих рисунков создай редактируемый каталог:
+
 ```sh
 npx visual-story characters new scientist --from mira --outfit lab-coat --out art/scientist
 # Измени SVG или palette в art/scientist/character.json.
@@ -254,6 +271,7 @@ npx visual-story characters build art/scientist --out assets/scientist.json
 ```
 
 В каталоге находятся редактируемые части и `sheet.svg` с их рабочими рамками.
+Успешный `build` обновляет лист по тем же SVG, одежде и палитре, включая задний вид.
 `--from tesla` включает усы во всех 13 вариантах рта; `--from mira` даёт основу
 без усов. `--outfit lab-coat|field-coat|scholar|work-apron` сразу подставляет совместимую одежду,
 включая спину и рукава. Встроенные варианты — `mira-lab`, `tesla-field`, `mira-scholar` и `tesla-workshop`.
