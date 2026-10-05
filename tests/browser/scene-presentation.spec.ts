@@ -69,3 +69,55 @@ test('review ignores hidden SVG and measures lettering after real perspective pr
   expect(flat.unreadableText).toEqual([]);
   expect(await page.locator('svg g').count()).toBe(2);
 });
+
+test('pointer selection keeps formulas and moving results clean; keyboard focus remains visible', async ({
+  page,
+}) => {
+  await page.goto('/result-delivery/index.html');
+  await page.evaluate(() => (window as any).galleryReady);
+  await page.locator('[data-seek]').fill('9.5');
+  const formula = page.locator('.ve-label[data-object="calculation"]:not([hidden])');
+  const calculation = page.locator('button[data-object="calculation"]');
+  const result = page.locator('button[data-object^="calculation:"]:not([hidden])');
+  const decorations = () =>
+    page.locator('[data-object]:not([hidden])').evaluateAll((nodes) =>
+      nodes.map((node) => ({
+        outline: getComputedStyle(node).outlineStyle,
+        filter: getComputedStyle(node).filter,
+      })),
+    );
+  const expectClean = async () => {
+    await expect
+      .poll(async () =>
+        (await decorations()).every((item) => item.outline === 'none' && item.filter === 'none'),
+      )
+      .toBe(true);
+    await expect(calculation.locator('span')).toBeHidden();
+    await expect(result.locator('span')).toBeHidden();
+  };
+  await formula.click();
+  await expect(calculation).toHaveAttribute('data-selected');
+  await expectClean();
+  await formula.click();
+  await expect(calculation).not.toHaveAttribute('data-selected');
+  const body = (await result.boundingBox())!;
+  await page.mouse.click(body.x + body.width / 2, body.y + body.height / 2);
+  await expect(result).toHaveAttribute('data-selected');
+  await expectClean();
+  const canvas = page.locator('.ve-stage canvas');
+  await canvas.click({ position: { x: 8, y: 8 } });
+  await expect(page.locator('[data-selected]')).toHaveCount(0);
+  // Browser keyboard modality owns the indicator; a remembered selection does not.
+  await canvas.focus();
+  await page.keyboard.press('Tab');
+  await result.focus();
+  await expect
+    .poll(() => result.evaluate((node) => getComputedStyle(node).outlineStyle))
+    .toBe('solid');
+  await expect(result.locator('span')).toBeVisible();
+  await result.press('Enter');
+  await expect(result).toHaveAttribute('data-selected');
+  await canvas.click({ position: { x: 8, y: 8 } });
+  await expect(page.locator('[data-selected]')).toHaveCount(0);
+  await expectClean();
+});

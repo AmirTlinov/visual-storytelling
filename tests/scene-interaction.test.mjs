@@ -60,6 +60,17 @@ test('one live scene owns disposal, semantic visibility, keyboard history and cu
     );
     assert.deepEqual(await page.evaluate(() => scene.selected), ['item']);
     await page.evaluate(() => scene.select([]));
+    const item = page.getByRole('button', { name: 'Meaningful item', exact: true });
+    await item.click();
+    assert.deepEqual(await page.evaluate(() => scene.selected), ['item']);
+    await page.getByRole('button', { name: 'Воспроизвести', exact: true }).click();
+    assert.deepEqual(await page.evaluate(() => scene.selected), ['item']);
+    await page.getByRole('button', { name: 'Пауза', exact: true }).click();
+    await item.click();
+    assert.deepEqual(await page.evaluate(() => scene.selected), []);
+    await item.click();
+    await page.locator('.ve-stage svg').click({ position: { x: 160, y: 65 } });
+    assert.deepEqual(await page.evaluate(() => scene.selected), []);
     await page
       .getByRole('button', { name: 'Meaningful item', exact: true })
       .click({ button: 'right' });

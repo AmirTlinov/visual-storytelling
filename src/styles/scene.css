@@ -97,14 +97,19 @@ html:has(>body.ve-standalone>.ve-scene[data-theme=dark]){color-scheme:dark}
 .ve-scene [data-object][role='button'] {
   cursor: pointer;
 }
-.ve-scene [data-object][data-selected] {
-  filter: drop-shadow(0 0 2px var(--ve-ink));
-  outline: 1px dashed currentColor;
-  outline-offset: 5px;
+.ve-viewport-object {
+  outline: none;
 }
-.ve-scene [data-object][role='button']:focus-visible {
-  outline: 2px dashed currentColor;
-  outline-offset: 5px;
+.ve-viewport-object > span {
+  display: none;
+}
+.ve-viewport-object:focus-visible > span {
+  display: block;
+}
+.ve-scene [data-object][role='button']:focus-visible,
+.ve-viewport-object:focus-visible {
+  outline: 2px solid var(--ve-blue, #2670a8);
+  outline-offset: 3px;
 }
 .ve-experiment-history {
   display: flex;

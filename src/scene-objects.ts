@@ -21,6 +21,8 @@ export function describeObject(element: Element, meaning: ObjectMeaning) {
 
 export function sceneObjects(root: Element) {
   const abort = new AbortController();
+  const controls =
+    'button, input, select, textarea, label, summary, a[href], [contenteditable]:not([contenteditable="false"]), [role="button"], [role="slider"], [tabindex]:not(canvas, svg, [role="img"])';
   let selected: string[] = [];
   const nodes = () => {
     if (abort.signal.aborted) throw new Error('Scene objects have been disposed.');
@@ -64,10 +66,15 @@ export function sceneObjects(root: Element) {
     root.dispatchEvent(new CustomEvent('scene-selection', { bubbles: true }));
   };
   const target = (event: Event) => {
-    const node = (event.target as Element)?.closest?.('[data-object]');
+    // An embedded control owns its activation, even inside a described object.
+    const node = (event.target as Element)?.closest?.(`[data-object], ${controls}`);
     return node && root.contains(node) && meanings.has(node)
       ? (node as HTMLElement | SVGElement)
       : null;
+  };
+  const activate = (node: HTMLElement | SVGElement) => {
+    const id = node.dataset.object!;
+    select(selected.length === 1 && selected[0] === id ? [] : [id]);
   };
   let down: { x: number; y: number; pointer: number } | undefined;
   root.addEventListener(
@@ -75,7 +82,7 @@ export function sceneObjects(root: Element) {
     (event) => {
       const e = event as PointerEvent;
       down =
-        e.button === 0 && e.isPrimary
+        !e.defaultPrevented && e.button === 0 && e.isPrimary
           ? { x: e.clientX, y: e.clientY, pointer: e.pointerId }
           : undefined;
     },
@@ -86,12 +93,15 @@ export function sceneObjects(root: Element) {
     (event) => {
       const e = event as PointerEvent,
         node = target(e);
+      // A renderer consumes a geometry hit before this bubbling event arrives.
       if (
-        node &&
+        !e.defaultPrevented &&
         down?.pointer === e.pointerId &&
         Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5
-      )
-        select([node.dataset.object!]);
+      ) {
+        if (node) activate(node);
+        else if (!(e.target as Element)?.closest?.(controls)) select([]);
+      }
       down = undefined;
     },
     { signal: abort.signal },
@@ -108,7 +118,7 @@ export function sceneObjects(root: Element) {
     (event) => {
       const node = target(event);
       // Native keyboard activation and a renderer's hit-test enter the same owner.
-      if (node && (event as MouseEvent).detail === 0) select([node.dataset.object!]);
+      if (!event.defaultPrevented && node && (event as MouseEvent).detail === 0) activate(node);
     },
     { signal: abort.signal },
   );
@@ -117,9 +127,10 @@ export function sceneObjects(root: Element) {
     (event) => {
       const e = event as KeyboardEvent,
         node = target(e);
+      if (e.defaultPrevented) return;
       if (node && !node.matches('button') && ['Enter', ' '].includes(e.key)) {
         e.preventDefault();
-        select([node.dataset.object!]);
+        activate(node);
       } else if (e.key === 'Escape' && selected.length) select([]);
     },
     { signal: abort.signal },

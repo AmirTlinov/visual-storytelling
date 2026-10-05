@@ -98,13 +98,12 @@ export function semanticObjects3D(
     record.options.visible?.() !== false &&
     // Logical parts may be painted by a shared surface rather than their anchor.
     (record.options.bounds !== undefined || visibleGeometry(record.object));
-  const observer = new MutationObserver(invalidate);
   let down: { x: number; y: number; pointer: number } | undefined;
   canvas.addEventListener(
     'pointerdown',
     (event) => {
       down =
-        event.button === 0 && event.isPrimary
+        !event.defaultPrevented && event.button === 0 && event.isPrimary
           ? { x: event.clientX, y: event.clientY, pointer: event.pointerId }
           : undefined;
     },
@@ -124,7 +123,7 @@ export function semanticObjects3D(
         down?.pointer === event.pointerId &&
         Math.hypot(event.clientX - down.x, event.clientY - down.y) < 5;
       down = undefined;
-      if (!click) return;
+      if (!click || event.defaultPrevented) return;
       scene.updateMatrixWorld(true);
       camera.updateMatrixWorld(true);
       const rect = canvas.getBoundingClientRect();
@@ -166,7 +165,10 @@ export function semanticObjects3D(
         region && (!hit || subject || region.distance <= hit.distance)
           ? region.record
           : subject && records.get(subject.id);
-      if (record && visible(record)) record.element.click();
+      if (record && visible(record)) {
+        event.preventDefault();
+        record.element.click();
+      }
     },
     listen,
   );
@@ -210,13 +212,6 @@ export function semanticObjects3D(
       button.style.top = `${rect.y - stageRect.y + ((1 - top) * rect.height) / 2}px`;
       button.style.width = `${((right - left) * rect.width) / 2}px`;
       button.style.height = `${((top - bottom) * rect.height) / 2}px`;
-      const selected = button.hasAttribute('data-selected'),
-        focused = document.activeElement === button;
-      button.style.outline =
-        selected || focused
-          ? `2px ${focused ? 'solid' : 'dashed'} var(--ve-blue, #2670a8)`
-          : 'none';
-      button.firstElementChild!.toggleAttribute('hidden', !selected && !focused);
     }
   }
   return {
@@ -227,20 +222,17 @@ export function semanticObjects3D(
       if (records.has(id) || subjects.has(object)) throw new Error(`Duplicate 3D subject: ${id}`);
       const element = document.createElement('button');
       element.type = 'button';
+      element.className = 've-viewport-object';
       element.dataset.object = id;
       element.style.cssText =
         'position:absolute;pointer-events:none;background:transparent;border:0;padding:0;min-width:0;min-height:0;border-radius:6px;z-index:2;';
       const label = document.createElement('span');
-      label.hidden = true;
       label.textContent = meaning.label;
       label.style.cssText =
         'position:absolute;left:0;bottom:100%;max-width:240px;background:var(--ve-surface, white);color:var(--ve-ink, #17212b);padding:3px 6px;border-radius:4px;font-size:13px;white-space:normal;';
       element.append(label);
       stage.append(element);
       const forget = describeObject(element, meaning);
-      element.addEventListener('focus', invalidate, listen);
-      element.addEventListener('blur', invalidate, listen);
-      observer.observe(element, { attributes: true, attributeFilter: ['data-selected'] });
       const record = {
         id,
         object,
@@ -280,7 +272,6 @@ export function semanticObjects3D(
     },
     dispose() {
       abort.abort();
-      observer.disconnect();
       for (const record of [...records.values()]) record.dispose();
     },
   };

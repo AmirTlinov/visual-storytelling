@@ -17,6 +17,7 @@ async function fixture(contents, work) {
   try {
     const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
     await page.setContent('<main class="ve-scene" style="position:relative;width:600px"></main>');
+    await page.addStyleTag({ path: 'src/styles/scene.css' });
     await page.addScriptTag({ content: bundled.outputFiles[0].text });
     await work(page);
   } finally {
@@ -30,6 +31,7 @@ test('3D hit testing, labels, keyboard and provenance share stable semantic obje
     import {SceneShell} from './src/scene.ts';
     import {Viewport3D, ThreeKit as T, MathMorph3D} from './src/viewport/index.ts';
     import {MathMorph} from './src/morph/math.ts';
+    import {describeObject} from './src/scene-objects.ts';
     const root=document.querySelector('main'), shell=SceneShell.mount(root,{title:'Objects'});
     shell.stage.style.cssText='width:600px;height:400px;position:relative';
     const view=Viewport3D.mount(shell.stage); shell.attachView(view);
@@ -38,7 +40,7 @@ test('3D hit testing, labels, keyboard and provenance share stable semantic obje
     view.describe(cube,'amount',{label:'Количество',value:()=>7,unit:'см³',source:{file:'subject.ts'},inputs:()=>['source'],provenance:()=>({operation:'add',inputs:[3,4]})});
     const label=view.label('7 см³',cube,{offset:[0,-80]});
     root.scene.extend({view});
-    window.lab={root,shell,view,group,cube,label,T,MathMorph,MathMorph3D};
+    window.lab={root,shell,view,group,cube,label,T,MathMorph,MathMorph3D,describeObject};
   `,
     async (page) => {
       await page.waitForFunction(
@@ -54,7 +56,12 @@ test('3D hit testing, labels, keyboard and provenance share stable semantic obje
       assert.equal(object.value, 7);
       assert.deepEqual(object.source, { file: 'subject.ts' });
       assert.deepEqual(object.provenance, { operation: 'add', inputs: [3, 4] });
-      await page.evaluate(() => lab.root.scene.select([]));
+      await page.mouse.click(area.x + area.width / 2, area.y + area.height / 2);
+      assert.deepEqual(await page.evaluate(() => lab.root.scene.selected), []);
+      await page.mouse.click(area.x + area.width / 2, area.y + area.height / 2);
+      assert.deepEqual(await page.evaluate(() => lab.root.scene.selected), ['amount']);
+      await page.mouse.click(area.x + 5, area.y + 5);
+      assert.deepEqual(await page.evaluate(() => lab.root.scene.selected), []);
       await page.locator('button[data-object="amount"]').focus();
       await page.keyboard.press('Enter');
       assert.deepEqual(await page.evaluate(() => lab.root.scene.selected), ['amount']);
@@ -65,6 +72,29 @@ test('3D hit testing, labels, keyboard and provenance share stable semantic obje
       );
       await page.keyboard.press('Escape');
       assert.deepEqual(await page.evaluate(() => lab.root.scene.selected), []);
+      await page.evaluate(() => {
+        const parent = document.createElement('div');
+        parent.dataset.object = 'container';
+        parent.style.display = 'contents';
+        lab.view.renderer.domElement.before(parent);
+        parent.append(lab.view.renderer.domElement);
+        lab.forgetContainer = lab.describeObject(parent, { label: 'Container' });
+        lab.activations = 0;
+        lab.root.addEventListener('scene-selection', () => lab.activations++);
+      });
+      await page.mouse.click(area.x + area.width / 2, area.y + area.height / 2);
+      assert.deepEqual(await page.evaluate(() => lab.root.scene.selected), ['amount']);
+      assert.equal(
+        await page.evaluate(() => lab.activations),
+        1,
+        'one geometry hit activates once',
+      );
+      await page.evaluate(() => {
+        const canvas = lab.view.renderer.domElement,
+          parent = canvas.parentElement;
+        lab.forgetContainer();
+        parent.replaceWith(canvas);
+      });
       const reorder = await page.evaluate(() => {
         const before = lab.root.scene.objects();
         lab.group.add(new lab.T.Object3D());
