@@ -1,4 +1,4 @@
-import { surface, type Surface } from '../ink/surface.js';
+import { surface, type Surface, type Grid } from '../ink/surface.js';
 import type { SceneChapter, ChapterFrame } from './composition.js';
 import type { ChapterTiming } from './composition-plan.js';
 import { snapshotSVG } from '../export/index.js';
@@ -18,6 +18,7 @@ export function inkChapter(
   options: ChapterTiming &
     Pick<SceneChapter, 'controls' | 'valuesAt'> & {
       size?: InkViewport;
+      grid?: Grid | false;
       create(view: Surface): InkDrawing | Promise<InkDrawing>;
     },
 ): SceneChapter {
@@ -30,7 +31,7 @@ export function inkChapter(
         description: options.text,
         width: options.size?.width ?? 960,
         height: options.size?.height ?? 640,
-        grid: false,
+        grid: options.grid,
       });
       Object.assign(view.element.style, {
         position: 'absolute',
@@ -50,9 +51,8 @@ export function inkChapter(
         latest = frame;
         const box = parent.getBoundingClientRect();
         const size = options.size ?? { width: box.width || 960, height: box.height || 640 };
-        const current = view.element.viewBox.baseVal;
-        if (current.width !== size.width || current.height !== size.height)
-          view.resize(size.width, size.height, false);
+        if (options.size) view.fitViewport(box.width || 960, box.height || 640);
+        else view.resize(size.width, size.height);
         drawing.render(frame, size);
       };
       const observer = new ResizeObserver(() => {

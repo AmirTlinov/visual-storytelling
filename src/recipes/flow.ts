@@ -66,7 +66,6 @@ export function flowDiagram(view: Surface, options: FlowOptions): InkDrawing {
       if (key !== signature) {
         signature = key;
         clear();
-        view.grid(false);
         const branched = new Set(ranks.values()).size < ids.length,
           minimum = branched ? 80 : 48;
         if (compact && height / layers < minimum)

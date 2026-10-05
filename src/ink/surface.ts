@@ -37,25 +37,37 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
   parent.append(element);
   let width = 0,
     height = 0,
+    viewportRatio: number | undefined,
     gridSignature = '';
-  const drawGrid = (grid: Grid | false = { step: 30 }) => {
+  let gridOptions: Grid | false = options.grid ?? { step: 30 };
+  let bounds = { x: 0, y: 0, width: 0, height: 0 };
+  const drawGrid = (grid: Grid | false = gridOptions) => {
     if (grid && (!(grid.step > 0) || !Number.isFinite(grid.step)))
       throw new Error('Grid step must be positive');
+    gridOptions = grid && { ...grid };
     const signature = grid
-      ? [width, height, grid.step, grid.x ?? 0, grid.y ?? 0].join(',')
+      ? [bounds.x, bounds.y, bounds.width, bounds.height, grid.step, grid.x ?? 0, grid.y ?? 0].join(
+          ',',
+        )
       : 'none';
     if (signature === gridSignature) return;
     gridSignature = signature;
     paper.replaceChildren();
     if (!grid) return;
     const parts: string[] = [];
-    for (let x = (grid.x ?? 0) % grid.step; x <= width; x += grid.step) {
+    const left = bounds.x,
+      top = bounds.y,
+      right = left + bounds.width,
+      bottom = top + bounds.height;
+    const start = (edge: number, origin = 0) =>
+      origin + Math.ceil((edge - origin) / grid.step) * grid.step;
+    for (let x = start(left, grid.x); x <= right; x += grid.step) {
       const bow = ((seed(`${options.id}:v:${x}`) % 13) - 6) / 12;
-      parts.push(`M${x} 0 Q${x + bow} ${height / 2} ${x} ${height}`);
+      parts.push(`M${x} ${top} Q${x + bow} ${(top + bottom) / 2} ${x} ${bottom}`);
     }
-    for (let y = (grid.y ?? 0) % grid.step; y <= height; y += grid.step) {
+    for (let y = start(top, grid.y); y <= bottom; y += grid.step) {
       const bow = ((seed(`${options.id}:h:${y}`) % 13) - 6) / 12;
-      parts.push(`M0 ${y} Q${width / 2} ${y + bow} ${width} ${y}`);
+      parts.push(`M${left} ${y} Q${(left + right) / 2} ${y + bow} ${right} ${y}`);
     }
     paper.append(
       svg('path', {
@@ -66,16 +78,32 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
       }),
     );
   };
-  const resize = (w: number, h: number, grid: Grid | false = options.grid ?? { step: 30 }) => {
-    if (![w, h].every((value) => Number.isFinite(value) && value > 0))
-      throw new Error('Surface dimensions must be positive');
-    if (w !== width || h !== height) {
-      width = w;
-      height = h;
-      element.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  const updateViewport = () => {
+    const w = viewportRatio ? Math.max(width, height * viewportRatio) : width;
+    const h = viewportRatio ? Math.max(height, width / viewportRatio) : height;
+    const x = (width - w) / 2,
+      y = (height - h) / 2;
+    if (bounds.x !== x || bounds.y !== y || bounds.width !== w || bounds.height !== h) {
+      bounds = { x, y, width: w, height: h };
+      element.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
       element.style.aspectRatio = `${w} / ${h}`;
     }
-    drawGrid(grid);
+    drawGrid();
+  };
+  const resize = (w: number, h: number, grid: Grid | false = gridOptions) => {
+    if (![w, h].every((value) => Number.isFinite(value) && value > 0))
+      throw new Error('Surface dimensions must be positive');
+    width = w;
+    height = h;
+    gridOptions = grid;
+    updateViewport();
+  };
+  /** Expand the visible paper around fixed artwork without moving its coordinates or grid origin. */
+  const fitViewport = (w: number, h: number) => {
+    if (![w, h].every((value) => Number.isFinite(value) && value > 0))
+      throw new Error('Viewport dimensions must be positive');
+    viewportRatio = w / h;
+    updateViewport();
   };
   resize(options.width, options.height);
   return {
@@ -83,6 +111,7 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
     layer,
     pen: pen(element),
     resize,
+    fitViewport,
     grid: drawGrid,
     onDispose(cleanup: () => void) {
       if (disposed) throw new Error('Drawing surface has been disposed');

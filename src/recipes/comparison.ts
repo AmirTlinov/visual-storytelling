@@ -47,7 +47,6 @@ export function comparisonDiagram(view: Surface, options: ComparisonOptions): In
         signature = key;
         clear.forEach((f) => f());
         clear = [];
-        view.grid(false);
         for (let i = 0; i <= 4; i++) {
           const x = left + (span * i) / 4;
           const line = view.pen.path(ruler.content, `ruler-${i}`, `M${x} 18V${bottom + 10}`, {

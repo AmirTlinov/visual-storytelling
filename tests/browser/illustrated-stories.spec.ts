@@ -92,11 +92,36 @@ for (const [name, values] of [
         { type: 'parameters', values: { chapter: 'experiment', sceneTime: 1, ...values } },
       ]);
       expect(paper.mode).toBe('explore');
+      const grid = page.locator('[data-chapter="experiment"] .vs-grid path');
+      await expect(grid).toBeVisible();
+      const gridLines = await grid.getAttribute('d');
       for (const theme of ['dark', 'light']) {
         const inspection = await command([{ type: 'theme', value: theme }]);
         expect(inspection.presentation.clipped).toEqual([]);
         expect(inspection.presentation.unreadableText).toEqual([]);
+        await expect(grid).toHaveAttribute('d', gridLines!);
       }
+      const paperBounds = await grid.evaluate((path: SVGGraphicsElement) => {
+        const drawing = path.ownerSVGElement!,
+          grid = path.getBBox(),
+          viewport = drawing.viewBox.baseVal;
+        return {
+          gaps: [
+            grid.x - viewport.x,
+            grid.y - viewport.y,
+            viewport.x + viewport.width - grid.x - grid.width,
+            viewport.y + viewport.height - grid.y - grid.height,
+          ],
+          ratio: viewport.width / viewport.height,
+          visibleRatio: drawing.clientWidth / drawing.clientHeight,
+          fill: getComputedStyle(path).fill,
+          background: getComputedStyle(drawing).backgroundColor,
+        };
+      });
+      expect(Math.max(...paperBounds.gaps)).toBeLessThan(1);
+      expect(paperBounds.ratio).toBeCloseTo(paperBounds.visibleRatio, 4);
+      expect(paperBounds.fill).toBe('none');
+      expect(paperBounds.background).toBe('rgba(0, 0, 0, 0)');
       if (name === 'tesla-circuit') {
         expect(paper.snapshot.content.closed).toBe(false);
         await page
