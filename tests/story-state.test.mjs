@@ -297,4 +297,46 @@ test('preparation retains the media clock, pause intent and only the latest requ
   await controller.player.play();
   await controller.ready();
   assert.equal(preparations, 1, 'play/pause events are transport status, not new authored frames');
+
+  controller.dispose();
+  for (const failure of ['prepare', 'render', 'derive', 'stateAt']) {
+    let broken = false,
+      visible;
+    const fail = () => {
+      throw new Error('Synchronous presentation failed');
+    };
+    controller = story({
+      script: { duration: 4, cues: {} },
+      stateAt: (frame) => {
+        if (failure === 'stateAt' && broken && frame.time >= 2) fail();
+        return frame.time;
+      },
+      derive(value) {
+        if (failure === 'derive' && broken && value >= 2) fail();
+        return value;
+      },
+      prepare(value) {
+        if (failure === 'prepare' && broken && value >= 2) fail();
+      },
+      render(value) {
+        if (failure === 'render' && broken && value >= 2) fail();
+        visible = value;
+      },
+    });
+    controller.seek(2);
+    await controller.player.play();
+    broken = true;
+    // This is the same update callback as the media clock, after time already advanced.
+    assert.throws(() => controller.update(), /Synchronous presentation failed/);
+    assert.equal(controller.player.state.playing, false, `${failure} failure pauses media`);
+    assert.match(controller.player.state.error, /Synchronous presentation failed/);
+    await assert.rejects(controller.ready(), /Synchronous presentation failed/);
+    assert.equal(visible, 2, 'the last complete frame remains visible');
+    broken = false;
+    await controller.player.play();
+    await controller.ready();
+    assert(Math.abs(visible - 2) < 0.02, 'Play retries at the failed frame before resuming media');
+    assert.equal(controller.player.state.playing, true);
+    controller.dispose();
+  }
 });

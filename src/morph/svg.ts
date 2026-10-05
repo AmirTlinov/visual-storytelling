@@ -8,6 +8,9 @@ import { mathPlan } from './math.js';
 import { mathNumber } from './numbers.js';
 import { morphBody2D } from './body-2d.js';
 import { mathBodies } from './math-bodies.js';
+import { mathSemantics } from './semantics.js';
+import { describeObject } from '../scene-objects.js';
+import { svg } from '../ink/dom.js';
 import type { MathOperation, MathPart, MathMorphPlan } from './types.js';
 import {
   morphTiming,
@@ -45,6 +48,28 @@ function mount(
     lettering(sheet.layer, '', { size: 20 }),
   ];
   const notes = new Map<string, ReturnType<typeof lettering>>();
+  const semantics = mathSemantics(options.id, 'src/morph/svg.ts');
+  // Transparent logical regions share the body coordinates and the common scene selection.
+  // Sibling targets retain keyboard access instead of nesting buttons inside the root object.
+  const semanticLayer = svg('g'),
+    semanticRoot = svg('rect', { 'data-object': options.id, fill: 'transparent' });
+  sheet.element.setAttribute('role', 'group');
+  semanticLayer.append(semanticRoot);
+  sheet.layer.append(semanticLayer);
+  const rootMeaning = describeObject(semanticRoot, semantics.meaning);
+  const parts = new Map<string, { element: SVGRectElement; dispose(): void }>();
+  function clearParts() {
+    for (const part of parts.values()) {
+      part.dispose();
+      part.element.remove();
+    }
+    parts.clear();
+    semantics.clear();
+  }
+  function prepareSemantics() {
+    for (let stage = 0; stage < plan.stages; stage++)
+      semantics.update(plan.sample(stage / plan.stages));
+  }
   let plan = prepared;
   let currentFrame: ReturnType<typeof plan.sample> | undefined;
   let configured = operation;
@@ -66,9 +91,12 @@ function mount(
   let headingSpace = 36;
   function setOperation(next: MathOperation | MathMorphPlan) {
     if (disposed) throw new Error('Math morph has been disposed');
-    plan = mathPlan(next);
+    const prepared = mathPlan(next);
+    clearParts();
+    plan = prepared;
     configured = next;
     layoutKey = '';
+    prepareSemantics();
     render(0);
   }
   function render(input: MorphTime, cues?: MorphCues) {
@@ -98,6 +126,17 @@ function mount(
     lastCues = cues;
     currentFrame = frame;
     latest = progress;
+    semantics.update(frame);
+    for (const [id, record] of semantics.parts) {
+      if (!parts.has(id)) {
+        const element = svg('rect', { 'data-object': id, fill: 'transparent' });
+        semanticLayer.append(element);
+        parts.set(id, { element, dispose: describeObject(element, record.meaning) });
+      }
+      const element = parts.get(id)!.element;
+      element.style.display = record.visible ? '' : 'none';
+      element.setAttribute('aria-label', record.meaning.label);
+    }
     if (!parent.getClientRects().length) return frame;
     formula.render(frame.formula, width - 32, width / 2, 34);
     const headingHeight = arrangement ? headingSpace : 36;
@@ -112,6 +151,24 @@ function mount(
       arrangement?.scale ??
       Math.min((width - 72) / (max[0] - min[0]), (height - 150) / (max[1] - min[1]));
     const cy = height / 2 + headingHeight / 2;
+    semanticRoot.setAttribute('width', String(width));
+    semanticRoot.setAttribute('height', String(height));
+    for (const [id, record] of semantics.parts) {
+      if (!record.visible) continue;
+      const part = record.part,
+        size = [part.size[0] * (part.scale?.[0] ?? 1), part.size[1] * (part.scale?.[1] ?? 1)],
+        element = parts.get(id)!.element;
+      element.setAttribute(
+        'x',
+        String(width / 2 + (part.position[0] - center[0]! - size[0]! / 2) * scale),
+      );
+      element.setAttribute(
+        'y',
+        String(cy - (part.position[1] - center[1]! + size[1]! / 2) * scale),
+      );
+      element.setAttribute('width', String(size[0]! * scale));
+      element.setAttribute('height', String(size[1]! * scale));
+    }
     const transform = (part: MathPart) => ({
       x: width / 2 + (part.position[0] - center[0]! - part.size[0] / 2) * scale,
       y: cy - (part.position[1] - center[1]! + part.size[1] / 2) * scale,
@@ -181,6 +238,8 @@ function mount(
     dimensions.forEach((l) => l.dispose());
     notes.forEach((l) => l.dispose());
     body.dispose();
+    clearParts();
+    rootMeaning();
     sheet.dispose();
   }
   const refresh = () => render(lastTime, lastCues);
@@ -188,6 +247,7 @@ function mount(
   const unwatchMotion = watchMotion(refresh);
   observer.observe(parent);
   try {
+    prepareSemantics();
     render(0);
   } catch (error) {
     dispose();

@@ -11,6 +11,9 @@ export function frameContext(app, extensions) {
   let inFlight = Promise.resolve();
   const ownUpdates = new Set();
   const compact = (value) => (typeof value === 'string' ? value.slice(0, 100) : value);
+  const payload = (value) => ({
+    structuredContent: { visualStory: { ...value, observedAt: new Date().toISOString() } },
+  });
   async function flush() {
     if (sending || removed || closed || !latest) return;
     const next = latest;
@@ -19,12 +22,9 @@ export function frameContext(app, extensions) {
     if (key === signature) return;
     sending = true;
     try {
-      const payload = {
-        structuredContent: { visualStory: { ...next, observedAt: new Date().toISOString() } },
-      };
       inFlight = extensions.modelContext
-        ? extensions.modelContext.update(payload)
-        : app.updateModelContext(payload);
+        ? extensions.modelContext.update(payload(next))
+        : app.updateModelContext(payload(next));
       const reply = await inFlight;
       if (reply?.updateId) ownUpdates.add(reply.updateId);
       while (ownUpdates.size > 8) ownUpdates.delete(ownUpdates.values().next().value);
@@ -41,13 +41,14 @@ export function frameContext(app, extensions) {
   return {
     update(session, report) {
       if (removed || closed) return;
-      const cue = report.state.review.cues.find((c) => c.id === report.checkpoint.cue);
+      const cue = report.state.cue;
       const entries = Object.entries(report.checkpoint.values);
       latest = {
         sessionId: session.sessionId,
         projectId: session.projectId,
         buildRevision: session.buildRevision,
         stateRevision: report.stateRevision,
+        renderStatus: report.renderStatus,
         time: Math.round(report.state.time * 10) / 10,
         cue: cue
           ? { id: cue.id, label: (cue.action ?? cue.hold ?? cue.text ?? '').slice(0, 160) }
@@ -58,12 +59,13 @@ export function frameContext(app, extensions) {
         moreParameters: entries.length > 8 ? entries.length - 8 : undefined,
       };
       // IDs retain their meaning; omit detail rather than truncating identifiers.
-      while (JSON.stringify(latest).length > 1500 && Object.keys(latest.parameters).length) {
+      const overBudget = () => JSON.stringify(payload(latest)).length > 1500;
+      while (overBudget() && Object.keys(latest.parameters).length) {
         delete latest.parameters[Object.keys(latest.parameters).at(-1)];
         latest.moreParameters = entries.length - Object.keys(latest.parameters).length;
       }
-      while (JSON.stringify(latest).length > 1500 && latest.selected?.length) latest.selected.pop();
-      if (JSON.stringify(latest).length > 1500) delete latest.cue;
+      while (overBudget() && latest.selected?.length) latest.selected.pop();
+      if (overBudget()) delete latest.cue;
       clearTimeout(timer);
       timer = setTimeout(flush, 120);
     },

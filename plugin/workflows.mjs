@@ -102,17 +102,37 @@ async function prepare(input, task) {
     throw new Error(
       'The original preparation inputs expired. Open the project to prepare its current revision.',
     );
+  const captured = receipt && (receipt.preparedRevision ?? receipt.revision);
+  const reusable =
+    receipt &&
+    (!sourceRevision || receipt.revision === sourceRevision) &&
+    (await projectFiles(original).then(
+      (value) => value.revision === captured,
+      (error) => {
+        if (error.code === 'ENOENT') return false;
+        throw error;
+      },
+    ));
   let source;
-  if (receipt && (!sourceRevision || receipt.revision === sourceRevision)) {
-    await snapshotProject(original, snapshot);
-    source = receipt;
-  } else source = await snapshotProject(projectPath, snapshot, sourceRevision);
+  if (reusable) {
+    await snapshotProject(original, snapshot, captured);
+    source = { revision: receipt.revision, files: receipt.files };
+  } else source = await snapshotProject(projectPath, snapshot, sourceRevision ?? receipt?.revision);
   await writeJSON(join(snapshot, '.vstory-input.json'), source);
   await dependencies(snapshot, data, task);
   const voice = await readJSON(join(snapshot, 'voice.json'));
   if (voice?.enabled) await buildNarration(snapshot, { ...task, cache: join(data, 'speech') });
   task.signal.throwIfAborted();
-  return { snapshot, source, silent: voice?.enabled === false };
+  const preparedRevision = (await projectFiles(snapshot)).revision;
+  await writeJSON(join(snapshot, '.vstory-input.json'), { ...source, preparedRevision });
+  return { snapshot, source, preparedRevision, silent: voice?.enabled === false };
+}
+
+async function unchangedInputs(snapshot, revision) {
+  if ((await projectFiles(snapshot)).revision !== revision)
+    throw new Error(
+      'Preparation changed its source inputs. Generators must write only to VISUAL_STORY_OUTPUT. Fix the generator and prepare the new project revision.',
+    );
 }
 
 export const workflows = {
@@ -122,7 +142,9 @@ export const workflows = {
     task.progress('Подготавливаю новую библиотеку…');
     const updated = await updateSceneRuntime(snapshot, { root, build: false, signal: task.signal });
     if (!updated.changed) return { upToDate: true };
+    const preparedRevision = (await projectFiles(snapshot)).revision;
     await buildScene(snapshot, join(snapshot, 'dist'), { signal: task.signal });
+    await unchangedInputs(snapshot, preparedRevision);
     const path = updated.dependency.replace(/^file:(?:\.\/)?/, '');
     const bytes = await readFile(join(snapshot, path));
     return {
@@ -162,7 +184,7 @@ export const workflows = {
     };
   },
   async build(input, task) {
-    const { snapshot, source, silent } = await prepare(input, task);
+    const { snapshot, source, preparedRevision, silent } = await prepare(input, task);
     const output = join(snapshot, 'dist');
     task.progress('Собираю объяснение…');
     await buildScene(snapshot, output, { signal: task.signal, silent });
@@ -171,6 +193,7 @@ export const workflows = {
       audio: 'original',
       signal: task.signal,
     });
+    await unchangedInputs(snapshot, preparedRevision);
     const revision = digest(
       JSON.stringify({
         projectId: input.projectId,

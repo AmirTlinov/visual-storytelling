@@ -59,6 +59,11 @@ export function semanticObjects3D(
     record.options.visible?.() !== false &&
     // Logical parts may be painted by a shared surface rather than their anchor.
     (record.options.bounds !== undefined || visibleGeometry(record.object));
+  const available = (id: string) => {
+    const record = records.get(id);
+    if (!record || !visible(record)) throw new Error(`Unavailable 3D subject: ${id}`);
+    return record;
+  };
   let down: { x: number; y: number; pointer: number } | undefined;
   canvas.addEventListener(
     'pointerdown',
@@ -178,6 +183,9 @@ export function semanticObjects3D(
   return {
     render,
     ids: () => [...records.keys()],
+    validate(ids: readonly string[]) {
+      ids.forEach(available);
+    },
     describe(object: Object3D, id: string, meaning: ObjectMeaning, options: SubjectOptions3D = {}) {
       if (abort.signal.aborted) throw new Error('3D subjects have been disposed');
       if (records.has(id) || subjects.has(object)) throw new Error(`Duplicate 3D subject: ${id}`);
@@ -217,9 +225,7 @@ export function semanticObjects3D(
     bounds(ids: readonly string[]) {
       const bounds = new Box3();
       for (const id of ids) {
-        const record = records.get(id);
-        if (!record || !visible(record)) throw new Error(`Unavailable 3D subject: ${id}`);
-        bounds.union(boxOf(record));
+        bounds.union(boxOf(available(id)));
       }
       return bounds;
     },

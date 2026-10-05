@@ -67,19 +67,31 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
       frame,
     };
   }
+  function present<T>(callback: () => T): T {
+    try {
+      return callback();
+    } catch (cause) {
+      preparationError = cause;
+      player.fail(cause);
+      throw cause;
+    }
+  }
   function publish(next: ReturnType<typeof compute>) {
     cancelPreparation();
     preparationError = undefined;
     values = next.values;
     state = next.state;
     const requestedMode = mode;
-    const draw = () => {
-      options.render(next.state, next.frame, requestedMode);
-      for (const listener of listeners) listener(requestedMode, next.values);
-    };
+    const draw = () =>
+      present(() => {
+        options.render(next.state, next.frame, requestedMode);
+        for (const listener of listeners) listener(requestedMode, next.values);
+      });
     if (!options.prepare) return draw();
     const controller = new AbortController();
-    const prepared = options.prepare(next.state, next.frame, requestedMode, controller.signal);
+    const prepared = present(() =>
+      options.prepare!(next.state, next.frame, requestedMode, controller.signal),
+    );
     if (!prepared) return draw();
     let resolve!: () => void, reject!: (cause: unknown) => void;
     const done = new Promise<void>((yes, no) => {
@@ -116,7 +128,8 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
   function update() {
     if (disposed || changing || preparationError) return;
     const frame = sheet.at(player.state.time, forcedReduced ?? media.matches);
-    publish(compute(mode === 'story' ? options.stateAt(frame) : values, frame));
+    const next = present(() => compute(mode === 'story' ? options.stateAt(frame) : values, frame));
+    publish(next);
   }
   // Media commands can synchronously emit several events. Publish one complete state.
   function change(command: () => void, next: ReturnType<typeof compute>) {

@@ -53,9 +53,9 @@ async function call(action, args = {}) {
     name: 'story_view',
     arguments: {
       action,
-      sessionId: session.sessionId,
+      sessionId: session?.sessionId,
       renderer,
-      generation: session.generation,
+      generation: session?.generation,
       ...args,
     },
   });
@@ -106,6 +106,7 @@ async function poll() {
         command: { op: 'suspend', id: crypto.randomUUID(), expiresAt: Date.now() + 1000 },
       });
       closed = true;
+      await modelContext.close();
     }
   }
   polling = false;
@@ -147,9 +148,11 @@ async function prepareUpdate(update) {
     candidate?.revision === update.buildRevision
   )
     return;
+  const owner = session;
   preparing = true;
   try {
     const result = await call('candidate');
+    if (closed || session !== owner) return;
     const next = result.structuredContent;
     clearTimeout(candidate?.timer);
     candidate?.frame.remove();
@@ -178,6 +181,7 @@ async function prepareUpdate(update) {
 }
 function failCandidate(message) {
   if (!candidate) return;
+  candidate.restoration?.reject(new Error(message));
   failedRevision = candidate.revision;
   clearTimeout(candidate.timer);
   candidate.frame.remove();
@@ -187,13 +191,61 @@ function failCandidate(message) {
 }
 async function applyUpdate() {
   if (!candidate?.ready || replacing) return;
+  const next = candidate;
+  const owner = session;
+  const operation = {
+    sessionId: owner.sessionId,
+    generation: owner.generation,
+    buildRevision: next.revision,
+  };
+  let prepared;
   replacing = true;
   $('update').disabled = true;
   try {
-    const result = await call('replace', { buildRevision: candidate.revision });
+    prepared = (await call('replace', { ...operation, phase: 'prepare' })).structuredContent;
+    if (closed || session !== owner || candidate !== next)
+      throw new Error('Представление закрылось во время подготовки.');
+    await new Promise((resolve, reject) => {
+      let timer;
+      const finish = (fn) => (value) => {
+        clearTimeout(timer);
+        next.restoration = undefined;
+        fn(value);
+      };
+      next.restoration = {
+        id: prepared.replacementId,
+        resolve: finish(resolve),
+        reject: finish(reject),
+      };
+      timer = setTimeout(
+        () => next.restoration?.reject(new Error('Истекло время переноса состояния.')),
+        Math.max(0, prepared.expiresAt - Date.now()),
+      );
+      next.frame.contentWindow.postMessage(
+        {
+          channel,
+          generation: next.generation,
+          type: 'restore-preview',
+          replacementId: prepared.replacementId,
+          expiresAt: prepared.expiresAt,
+          checkpoint: prepared.checkpoint,
+          stateRevision: prepared.stateRevision,
+          widgetState: prepared.widgetState,
+        },
+        '*',
+      );
+    });
+    if (closed || session !== owner || candidate !== next)
+      throw new Error('Представление закрылось во время подготовки.');
+    const result = await call('replace', {
+      ...operation,
+      phase: 'commit',
+      replacementId: prepared.replacementId,
+    });
+    if (closed || session !== owner || candidate !== next) return;
     session = result.structuredContent;
     const old = frame;
-    frame = candidate.frame;
+    frame = next.frame;
     old.id = '';
     frame.id = 'scene';
     frame.className = '';
@@ -202,12 +254,11 @@ async function applyUpdate() {
     frame.contentWindow.postMessage(
       {
         channel,
-        generation: candidate.generation,
+        generation: next.generation,
         type: 'activate',
+        replacementId: prepared.replacementId,
         nextGeneration: session.generation,
-        checkpoint: session.checkpoint,
         stateRevision: session.stateRevision,
-        widgetState: session.widgetState,
       },
       '*',
     );
@@ -216,7 +267,14 @@ async function applyUpdate() {
     $('update').hidden = true;
     error('');
   } catch (e) {
-    error(e.message);
+    if (prepared)
+      await call('replace', {
+        ...operation,
+        phase: 'abort',
+        replacementId: prepared.replacementId,
+      }).catch(() => {});
+    if (candidate === next) failCandidate(e.message);
+    else if (!closed && session?.sessionId === owner.sessionId) error(e.message);
   } finally {
     replacing = false;
     $('update').disabled = false;
@@ -263,6 +321,10 @@ addEventListener('message', (event) => {
     data?.channel === channel &&
     data.generation === candidate.generation
   ) {
+    if (data.type === 'preview-restored' && data.replacementId === candidate.restoration?.id)
+      candidate.restoration.resolve();
+    if (data.type === 'preview-error' && data.replacementId === candidate.restoration?.id)
+      candidate.restoration.reject(new Error(data.message));
     if (data.type === 'error') failCandidate(data.message);
     if (data.type === 'ready') {
       clearTimeout(candidate.timer);
@@ -319,7 +381,7 @@ addEventListener('message', (event) => {
     void publishContext();
   }
   if (data.type === 'ack') {
-    sync({ id: data.id, result: data.result, error: data.error });
+    sync({ id: data.id, result: data.result, error: data.error, failure: data.failure });
     void publishContext();
   }
   if (data.type === 'error' || data.type === 'expired') {
@@ -352,6 +414,7 @@ function host(context) {
 }
 async function dispose() {
   closed = true;
+  candidate?.restoration?.reject(new Error('Представление закрыто.'));
   clearTimeout(loadTimer);
   clearTimeout(candidate?.timer);
   await modelContext.close();

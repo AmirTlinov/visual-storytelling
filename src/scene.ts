@@ -218,8 +218,9 @@ function mount(
     if (next === 'story') history?.clear();
   }
   function selectMode(next: 'story' | 'explore') {
+    const from = view?.capture?.();
     setMode(next);
-    view?.reset();
+    view?.reset({ animate: true, from });
   }
   storyButton.addEventListener('click', () => selectMode('story'), options);
   exploreButton.addEventListener('click', () => selectMode('explore'), options);
@@ -242,7 +243,7 @@ function mount(
       parameters,
       visible: (key) => !inputs.get(key)!.element.hidden,
       get setMode() {
-        return player ? setMode : undefined;
+        return player ? selectMode : undefined;
       },
       setValues: changeValues,
       view: () => view,
@@ -342,8 +343,12 @@ function mount(
       if (view === next) return;
       view?.dispose();
       view = next;
-      if (next.focus) handle.extend({ focus: next.focus });
-      else delete handle.focus;
+      const focus = (ids: readonly string[]) => next.focus!(ids);
+      handle.extend({
+        get focus() {
+          return next.focus ? focus : undefined;
+        },
+      });
       modes.hidden = false;
     },
     dispose: handle.dispose,
@@ -384,7 +389,12 @@ function mount(
       onSeek: controller.seek,
       onPlay: preparePlayback,
     });
-    inputStory = (next) => controller.explore({ ...controller.values, ...next });
+    inputStory = (next) => {
+      controller.explore({ ...controller.values, ...next });
+      // Accepted input belongs to the model immediately, even while its next
+      // presentation is loading. History and a following input must see it.
+      reflectState(controller.mode, controller.values);
+    };
     playback = () => controller.player.state.playing;
     const chapters = chapterHeading(
       heading,
@@ -427,13 +437,14 @@ function mount(
     };
     storyButton.hidden = false;
     modes.hidden = !parameters.length && !view;
-    unsubscribe = controller.subscribe((next, state) => {
+    function reflectState(next: 'story' | 'explore', state: P) {
       if (next === 'story') status.textContent = '';
-      if (exploration === 'model') setMode(next);
       for (const { key } of parameters) values[key] = (state as Record<string, ControlValue>)[key]!;
+      if (exploration === 'model') setMode(next);
       refresh();
       chapters.update(controller.currentTime, exploration === 'view' || next === 'story');
-    });
+    }
+    unsubscribe = controller.subscribe(reflectState);
     setMode('story');
     handle.extend({
       play: () => {

@@ -17,7 +17,8 @@ import { mathNumber } from './numbers.js';
 import { mathDelivery3D, type MathDelivery3DOptions } from './delivery-3d.js';
 import { cellLayout, validateCellColumns } from './layout.js';
 import { contentViewport } from '../layout/content.js';
-import type { MathOperation, MathMorphPlan, MathPart } from './types.js';
+import type { MathOperation, MathMorphPlan } from './types.js';
+import { mathSemantics } from './semantics.js';
 import {
   morphTiming,
   mathMotionFrame,
@@ -70,89 +71,28 @@ function mount(
     frame: currentFrame,
   });
   const id = options.id ?? 'math-morph';
-  const originIds = new Map<string, string>();
-  const parts = new Map<
-    string,
-    { object: Object3D; part: MathPart; visible: boolean; dispose(): void }
-  >();
-  const rootMeaning = view.describe(
-    object,
-    id,
-    {
-      label: 'Математическое преобразование',
-      value: () => currentFrame?.result,
-      source: { file: 'src/morph/three.ts' },
-      inputs: () => [...new Set(originIds.values())],
-      provenance: () =>
-        currentFrame && {
-          formula: currentFrame.formula,
-          stage: currentFrame.stage,
-          phase: currentFrame.phase,
-          result: currentFrame.result,
-          sources: currentFrame.sources.map((part) => ({
-            id: part.id && `${id}:${part.id}`,
-            value: part.value,
-            origins: part.origins,
-          })),
-          targets: currentFrame.targets.map((part) => ({
-            id: part.id && `${id}:${part.id}`,
-            value: part.value,
-            origins: part.origins,
-          })),
-        },
-    },
-    { bounds: () => bounds.clone().applyMatrix4(object.matrixWorld) },
-  );
+  const semantics = mathSemantics(id, 'src/morph/three.ts');
+  const parts = new Map<string, { object: Object3D; dispose(): void }>();
+  const rootMeaning = view.describe(object, id, semantics.meaning, {
+    bounds: () => bounds.clone().applyMatrix4(object.matrixWorld),
+  });
   function clearParts() {
     for (const part of parts.values()) {
       part.dispose();
       part.object.removeFromParent();
     }
     parts.clear();
-    originIds.clear();
+    semantics.clear();
   }
   function describeParts(frame: NonNullable<typeof currentFrame>) {
-    for (const record of parts.values()) record.visible = false;
-    const active = new Map(
-      (frame.morph < 0.5 ? frame.sources : frame.targets).map((part) => [part.id, part]),
-    );
-    for (const part of [...frame.sources, ...frame.targets]) {
-      if (!part.id) continue;
-      const key = `${id}:${part.id}`;
+    semantics.update(frame);
+    for (const [key, record] of semantics.parts) {
       if (!parts.has(key)) {
         const anchor = new Object3D();
         volume.object.add(anchor);
-        const record = { object: anchor, part, visible: false, dispose: () => {} };
-        parts.set(key, record);
-        for (const origin of part.origins ?? []) {
-          const originKey = `${origin.operand}:${origin.index}`;
-          if (!originIds.has(originKey) && part.origins?.length === 1)
-            originIds.set(originKey, key);
-        }
-        record.dispose = view.describe(
-          anchor,
-          key,
-          {
-            get label() {
-              return `Величина ${mathNumber(record.part.value)}`;
-            },
-            value: () => record.part.value,
-            source: { file: 'src/morph/three.ts' },
-            inputs: () => [
-              ...new Set(
-                (record.part.origins ?? []).flatMap((origin) => {
-                  const source = originIds.get(`${origin.operand}:${origin.index}`);
-                  return source && source !== key ? [source] : [];
-                }),
-              ),
-            ],
-            provenance: () => ({
-              origins: record.part.origins ?? [],
-              formula: currentFrame?.formula,
-              stage: currentFrame?.stage,
-            }),
-          },
-          {
+        parts.set(key, {
+          object: anchor,
+          dispose: view.describe(anchor, key, record.meaning, {
             visible: () => record.visible,
             bounds: () => {
               const part = record.part,
@@ -162,13 +102,10 @@ function mount(
                 .setFromCenterAndSize(new Vector3(...part.position), size)
                 .applyMatrix4(volume.object.matrixWorld);
             },
-          },
-        );
+          }),
+        });
       }
-      const record = parts.get(key)!;
-      record.part = active.get(part.id) ?? part;
-      record.visible = active.has(part.id);
-      record.object.position.set(...record.part.position);
+      parts.get(key)!.object.position.set(...record.part.position);
     }
   }
   const notes = new Map<string, { anchor: Object3D; label: ReturnType<typeof view.label> }>();

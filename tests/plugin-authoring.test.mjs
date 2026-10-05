@@ -43,6 +43,8 @@ test(
       await page.goto(host.url);
       const app = page.frameLocator('iframe[title="MCP App"]');
       await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      const connectHelp = await call('story_help', { query: 'connect' });
+      assert.match(connectHelp.structuredContent.text, /function connect/);
       await app.locator('#settings').click();
       await app.locator('input[name="cacheLimitMB"]').fill('1024');
       await app.locator('#preferences button[type="submit"]').click();
@@ -63,6 +65,14 @@ test(
         projectId: project.id,
         file: 'scene.js',
       });
+      const initial = (await call('story_inspect', { sessionId })).structuredContent;
+      await call('story_control', {
+        sessionId,
+        buildRevision: initial.buildRevision,
+        stateRevision: initial.stateRevision,
+        requestId: randomUUID(),
+        commands: [{ type: 'rate', value: 0.25 }, { type: 'play' }],
+      });
       const edited = await call('story_edit', {
         projectId: project.id,
         sourceRevision: before.sourceRevision,
@@ -75,6 +85,20 @@ test(
         ],
       });
       await finish(edited.structuredContent.job.id);
+      await app.locator('#update').waitFor();
+      const shownSource = (await call('story_inspect', { sessionId, file: 'scene.js' }))
+        .structuredContent;
+      assert.equal(
+        shownSource.content,
+        file.content,
+        'the shown source stays bound to the playing build',
+      );
+      assert.equal(shownSource.shownSourceRevision, before.sourceRevision);
+      assert.equal(
+        shownSource.workingSourceRevision,
+        edited.structuredContent.project.sourceRevision,
+      );
+      await app.locator('#update').click();
       await app
         .frameLocator('#scene')
         .getByText('Проверенная авторская правка', { exact: true })
@@ -110,14 +134,31 @@ test(
       const voiceList = (await call('story_voice', { projectId: project.id })).structuredContent;
       assert.equal(voiceList.ready, true);
       assert.ok(voiceList.voices.length);
-      const narrated = await call('story_voice', {
+      const voiceDisabled = await call('story_voice', {
         projectId: project.id,
         sourceRevision: undone.structuredContent.project.sourceRevision,
         requestId: randomUUID(),
-        enabled: true,
+        enabled: false,
         voice: voiceList.voices[0].id,
+        language: 'ru',
+      });
+      await finish(voiceDisabled.structuredContent.job.id);
+      await call('story_preferences', { patch: { language: 'en', voice: null } });
+      const narrated = await call('story_voice', {
+        projectId: project.id,
+        sourceRevision: voiceDisabled.structuredContent.project.sourceRevision,
+        requestId: randomUUID(),
+        enabled: true,
       });
       await finish(narrated.structuredContent.job.id);
+      const voiceSettings = (await call('story_voice', { projectId: project.id })).structuredContent
+        .settings;
+      assert.equal(voiceSettings.voice, voiceList.voices[0].id);
+      assert.equal(
+        voiceSettings.language,
+        'ru',
+        'enabling narration keeps the project voice and language',
+      );
       await app.frameLocator('#scene').locator('audio:not([muted])').waitFor({ state: 'attached' });
       const narration = (
         await call('story_inspect', { projectId: project.id, file: 'narration.json' })

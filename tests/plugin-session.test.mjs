@@ -204,6 +204,98 @@ test('a timed-out handoff keeps a recently connected owner available', async (t)
   await pending;
 });
 
+test('a superseded candidate resumes the paused owner without changing its build or generation', async (t) => {
+  const { directory, session, view } = await fixture(t);
+  session.nextBuild = { ...build, revision: 'candidate-a' };
+  const replacing = directory.replace({ ...view, buildRevision: 'candidate-a' });
+  const rejected = assert.rejects(replacing, /prepared build changed/);
+  const suspend = (await directory.exchange(view)).commands[0];
+  assert.equal(suspend.op, 'suspend');
+  session.nextBuild = { ...build, revision: 'candidate-b' };
+  await acknowledge(directory, view, suspend.id, report(7, 12));
+  const resume = (await directory.exchange(view)).commands[0];
+  assert.equal(resume.op, 'resume');
+  await acknowledge(directory, view, resume.id, report(7, 12));
+  await rejected;
+  assert.equal(session.build.revision, build.revision);
+  assert.equal(session.nextBuild.revision, 'candidate-b');
+  assert.equal(session.generation, view.generation);
+  assert.equal(session.checkpoint.time, 12);
+  const inspection = request(directory, session.id, { op: 'inspect' });
+  const command = (await directory.exchange(view)).commands[0];
+  await acknowledge(directory, view, command.id, report(7, 12));
+  assert.equal((await inspection).status, 'connected');
+});
+
+test('a candidate commits only after restoration, while abort preserves the current build and checkpoint', async (t) => {
+  const { directory, session, view } = await fixture(t);
+  session.nextBuild = { ...build, revision: 'candidate' };
+  const preparing = directory.replace({ ...view, buildRevision: 'candidate', phase: 'prepare' });
+  const suspended = (await directory.exchange(view)).commands[0];
+  await acknowledge(directory, view, suspended.id, report(4, 9));
+  const pending = await preparing;
+  assert.equal(session.build.revision, build.revision);
+  assert.equal(session.generation, view.generation);
+  assert.equal(pending.checkpoint.time, 9);
+  await assert.rejects(directory.attach(session.id, randomUUID()), /applying an update/);
+  const aborted = directory.replace({
+    ...view,
+    buildRevision: 'candidate',
+    phase: 'abort',
+    replacementId: pending.replacementId,
+  });
+  const resume = (await directory.exchange(view)).commands[0];
+  assert.equal(resume.op, 'resume');
+  await acknowledge(directory, view, resume.id, report(4, 9));
+  await aborted;
+  assert.equal(session.build.revision, build.revision);
+  assert.equal(session.generation, view.generation);
+  assert.equal(session.handoff, false);
+  const again = directory.replace({ ...view, buildRevision: 'candidate', phase: 'prepare' });
+  await acknowledge(
+    directory,
+    view,
+    (await directory.exchange(view)).commands[0].id,
+    report(5, 11),
+  );
+  const ready = await again;
+  const committed = await directory.replace({
+    ...view,
+    buildRevision: 'candidate',
+    phase: 'commit',
+    replacementId: ready.replacementId,
+  });
+  assert.equal(committed.buildRevision, 'candidate');
+  assert.equal(committed.generation, view.generation + 1);
+  assert.equal(committed.checkpoint.time, 11);
+  assert.equal(session.replacement, undefined);
+});
+
+test('an abandoned prepared candidate resumes the previous owner and cannot later commit', async (t) => {
+  const { directory, session, view } = await fixture(t, { timeout: 30, rendererTimeout: 2000 });
+  session.nextBuild = { ...build, revision: 'candidate' };
+  const preparing = directory.replace({ ...view, buildRevision: 'candidate' });
+  await acknowledge(directory, view, (await directory.exchange(view)).commands[0].id, report(4, 9));
+  const pending = await preparing;
+  let resume;
+  while (!resume)
+    resume = (await directory.exchange(view)).commands.find((command) => command.op === 'resume');
+  await acknowledge(directory, view, resume.id, report(4, 9));
+  await session.replacement?.aborting;
+  assert.equal(session.build.revision, build.revision);
+  assert.equal(session.generation, view.generation);
+  assert.equal(session.handoff, false);
+  await assert.rejects(
+    directory.replace({
+      ...view,
+      buildRevision: 'candidate',
+      phase: 'commit',
+      replacementId: pending.replacementId,
+    }),
+    /no longer available/,
+  );
+});
+
 test('an expired renderer recovers its last checkpoint and fences off the former generation', async (t) => {
   let now = 10000;
   t.mock.method(Date, 'now', () => now);
@@ -282,4 +374,37 @@ test('MCP schemas reject lossy command typos and malformed state envelopes', () 
   assert.deepEqual(viewReport.parse(report(2, 4)), report(2, 4));
   assert.equal(viewReport.safeParse({ ...report(), checkpoint: [] }).success, false);
   assert.equal(acknowledgement.safeParse({ id: '' }).success, false);
+});
+
+test('a cold-scene execution failure preserves the completed command prefix through the delivery channel', async (t) => {
+  const { directory, session, view } = await fixture(t);
+  const pending = request(directory, session.id, {
+    op: 'control',
+    buildRevision: build.revision,
+    stateRevision: 0,
+    commands: [
+      { type: 'seek', time: 4 },
+      { type: 'focus', ids: ['missing'] },
+    ],
+  });
+  const [command] = (await directory.exchange(view)).commands;
+  await directory.exchange({
+    ...view,
+    wait: false,
+    acknowledgements: [
+      acknowledgement.parse({
+        id: command.id,
+        error: 'Object is unavailable in this chapter.',
+        failure: { code: 'scene_control_failed', commandIndex: 1, completedCommands: 1 },
+      }),
+    ],
+  });
+  await assert.rejects(
+    pending,
+    (error) =>
+      error.code === 'scene_control_failed' &&
+      error.completedCommands === 1 &&
+      error.commandIndex === 1 &&
+      error.action === 'story_inspect',
+  );
 });

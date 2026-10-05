@@ -18,8 +18,10 @@ export interface SceneCheckpoint {
 }
 
 export interface SceneView {
+  readonly transition?: 'running' | 'idle';
+  validateFocus?(ids: readonly string[]): void;
   focus?(ids: readonly string[]): void;
-  reset(): void;
+  reset(options?: { animate?: boolean; from?: unknown }): void;
   dispose(): void;
   capture?(): unknown;
   restore?(state: unknown): void | boolean;
@@ -178,7 +180,7 @@ export async function restoreScene(handle: SceneHandle, state: SceneCheckpoint, 
           ? 'Выбранные объекты изменились. Рассказ открыт с начала.'
           : 'Выбранные объекты изменились. Недоступные выделения сняты.',
     });
-  if (state.selected && capabilities.includes('select'))
+  if (state.selected && handle.inspect({ presentation: false }).capabilities.includes('select'))
     await handle.control([
       {
         type: 'select',

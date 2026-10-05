@@ -127,13 +127,24 @@ test('a responsive character host keeps SVG, Spine and Ink aligned through pause
     await capture.page.locator('#responsive').screenshot({ path: join(artifacts, 'wide.png') });
     const reset = await capture.page.evaluate(() => {
       const previous = window.lab.stage.snapshot().camera;
-      window.lab.stage.focus(['hero.face']);
+      window.lab.stage.view.focus(['hero.face']);
       const close = window.lab.stage.snapshot().camera;
-      window.lab.stage.reset();
-      return { previous, close, after: window.lab.stage.snapshot().camera };
+      const saved = window.lab.stage.view.capture();
+      window.lab.stage.view.reset();
+      const after = window.lab.stage.snapshot().camera;
+      const accepted = window.lab.stage.view.restore(saved);
+      const restored = window.lab.stage.snapshot().camera;
+      const invalid = window.lab.stage.view.restore({ kind: 'characters', focus: ['missing'] });
+      const unchanged = window.lab.stage.snapshot().camera;
+      window.lab.stage.view.reset();
+      return { previous, close, after, accepted, restored, invalid, unchanged };
     });
     assert.notDeepEqual(reset.close, reset.previous);
     assert.deepEqual(reset.after, reset.previous);
+    assert.equal(reset.accepted, true);
+    assert.deepEqual(reset.restored, reset.close);
+    assert.equal(reset.invalid, false);
+    assert.deepEqual(reset.unchanged, reset.close);
     await capture.page.evaluate(() => window.lab.resize(360, 760));
     await capture.page.waitForFunction(
       () =>

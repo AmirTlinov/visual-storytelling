@@ -9,6 +9,7 @@ async function fixture(contents, work) {
     stdin: { contents, resolveDir: process.cwd() },
     bundle: true,
     write: false,
+    outdir: '.',
     format: 'iife',
     loader: { '.woff2': 'dataurl' },
     plugins: [assetURLs()],
@@ -18,12 +19,216 @@ async function fixture(contents, work) {
     const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
     await page.setContent('<main class="ve-scene" style="position:relative;width:600px"></main>');
     await page.addStyleTag({ path: 'src/styles/scene.css' });
-    await page.addScriptTag({ content: bundled.outputFiles[0].text });
+    for (const output of bundled.outputFiles.filter((file) => file.path.endsWith('.css')))
+      await page.addStyleTag({ content: output.text });
+    await page.addScriptTag({
+      content: bundled.outputFiles.find((file) => file.path.endsWith('.js')).text,
+    });
     await work(page);
   } finally {
     await browser.close();
   }
 }
+
+test('async input keeps one undo step and agent view commands match manual exploration', async () => {
+  await fixture(
+    `
+    import {SceneShell} from './src/scene.ts';
+    import {Viewport3D, ThreeKit as T} from './src/viewport/index.ts';
+    const root=document.querySelector('main');
+    const shell=SceneShell.mount(root,{title:'Preparation',parameters:[{key:'x',label:'X',value:1,min:0,max:10}]});
+    shell.stage.style.cssText='width:600px;height:400px;position:relative';
+    const view=Viewport3D.mount(shell.stage); shell.attachView(view);
+    const cube=new T.Mesh(new T.BoxGeometry(),new T.MeshBasicMaterial({color:'blue'}));
+    const group=new T.Group(), other=cube.clone(); other.position.x=12; group.add(cube,other);
+    view.setObject(group); view.describe(cube,'cube',{label:'Cube'});
+    let finish; const prepared=new Set();
+    const story=shell.attachStory({
+      script:{duration:4,cues:{all:{start:0,end:4}}},stateAt:()=>({x:1}),
+      prepare(values){if([7,9].includes(values.x)&&!prepared.has(values.x))return new Promise(resolve=>finish=()=>{prepared.add(values.x);resolve()})},
+      render(values,frame,mode){root.dataset.drawn=values.x;view.shot({target:group,direction:mode==='story'?[0,0,1]:[2,1,4],padding:70})},
+    });
+    window.lab={root,shell,story,view,finish:()=>finish()};
+  `,
+    async (page) => {
+      const authored = await page.evaluate(() => lab.view.capture());
+      await page.evaluate(() => {
+        window.change = lab.root.scene.control([{ type: 'parameters', values: { x: 7 } }]);
+      });
+      const pending = await page.evaluate(() => ({
+        parameter: lab.root.scene.inspect({ presentation: false }).parameters[0].value,
+        model: lab.story.values.x,
+        drawn: lab.root.dataset.drawn,
+      }));
+      assert.deepEqual(pending, { parameter: 7, model: 7, drawn: '1' });
+      await page.evaluate(async () => {
+        lab.finish();
+        await change;
+      });
+      assert.equal(await page.evaluate(() => lab.root.dataset.drawn), '7');
+      assert.deepEqual(await page.evaluate(() => lab.root.scene.experimentHistory), {
+        undo: true,
+        redo: false,
+      });
+      await page.evaluate(() => lab.root.scene.control([{ type: 'undoExperiment' }]));
+      assert.equal(await page.evaluate(() => lab.root.dataset.drawn), '1');
+      assert.deepEqual(await page.evaluate(() => lab.root.scene.experimentHistory), {
+        undo: false,
+        redo: true,
+      });
+
+      const cancelled = await page.evaluate(async () => {
+        const controller = new AbortController();
+        const blocked = lab.root.scene
+          .control(
+            [
+              { type: 'parameters', values: { x: 9 } },
+              { type: 'parameters', values: { x: 5 } },
+            ],
+            { signal: controller.signal },
+          )
+          .then(
+            () => 'completed',
+            (error) => ({
+              message: error.message,
+              code: error.code,
+              completedCommands: error.completedCommands,
+              action: error.action,
+            }),
+          );
+        controller.abort(new Error('User continued the experiment'));
+        return Promise.race([
+          blocked,
+          new Promise((resolve) => setTimeout(() => resolve('still waiting for resources'), 100)),
+        ]);
+      });
+      assert.match(cancelled.message, /User continued the experiment/);
+      assert.equal(cancelled.code, 'scene_control_cancelled');
+      assert.equal(cancelled.completedCommands, 0);
+      assert.equal(cancelled.action, 'inspect');
+      await page.evaluate(async () => {
+        await lab.root.scene.control([{ type: 'parameters', values: { x: 8 } }]);
+        lab.finish();
+        await lab.root.scene.ready();
+      });
+      assert.equal(await page.evaluate(() => lab.root.dataset.drawn), '8');
+      await page.evaluate(() => lab.root.scene.control([{ type: 'mode', value: 'story' }]));
+      await page.waitForFunction(
+        (position) =>
+          lab.view.capture().position.every((value, i) => Math.abs(value - position[i]) < 1e-10),
+        authored.position,
+      );
+      await page.locator('canvas').first().focus();
+      await page.keyboard.press('ArrowLeft');
+      const orbited = await page.evaluate(() => lab.view.capture());
+      assert.equal(orbited.following, false);
+      assert.notDeepEqual(orbited.position, authored.position);
+      await page.evaluate(() => lab.root.scene.control([{ type: 'focus', ids: ['cube'] }]));
+      const focused = await page.evaluate(() => lab.view.capture());
+      assert.notDeepEqual(focused.position, orbited.position, 'focus works after a manual orbit');
+      assert.equal(focused.following, false);
+      await page.evaluate(() => lab.story.update());
+      assert.deepEqual(
+        await page.evaluate(() => lab.view.capture().position),
+        focused.position,
+        'the next story frame preserves an explicit exploratory focus',
+      );
+      const invalid = await page.evaluate(async () => {
+        try {
+          await lab.root.scene.control([
+            { type: 'focus', ids: ['absent'] },
+            { type: 'seek', time: 2 },
+          ]);
+        } catch (error) {
+          return {
+            message: error.message,
+            time: lab.story.currentTime,
+            camera: lab.view.capture(),
+          };
+        }
+      });
+      assert.match(invalid.message, /Unavailable 3D subject/);
+      assert.equal(invalid.time, 0);
+      assert.deepEqual(invalid.camera, focused, 'known-owner validation has no effects');
+      const returning = await page.evaluate(async () => {
+        const before = lab.view.capture();
+        await lab.root.scene.control([{ type: 'mode', value: 'story' }]);
+        const immediate = lab.view.capture(),
+          transition = lab.root.scene.inspect({ presentation: false }).viewTransition,
+          samples = [],
+          start = performance.now();
+        await new Promise((resolve) => {
+          const sample = () => {
+            samples.push({
+              time: performance.now() - start,
+              position: lab.view.capture().position,
+            });
+            if (performance.now() - start < 280) requestAnimationFrame(sample);
+            else resolve();
+          };
+          requestAnimationFrame(sample);
+        });
+        return { before, immediate, samples, transition };
+      });
+      assert.equal(returning.transition, 'running');
+      returning.immediate.position.forEach((value, i) =>
+        assert(
+          Math.abs(value - returning.before.position[i]) < 1e-10,
+          'return starts at the displayed pose',
+        ),
+      );
+      assert(
+        returning.samples.some(
+          (sample) =>
+            sample.position.some((value, i) => Math.abs(value - authored.position[i]) > 1e-5) &&
+            sample.position.some(
+              (value, i) => Math.abs(value - returning.before.position[i]) > 1e-5,
+            ),
+        ),
+        'return draws intermediate camera poses',
+      );
+      assert.deepEqual(await page.evaluate(() => lab.view.capture()), authored);
+      assert.equal(
+        await page.evaluate(() => lab.root.scene.inspect({ presentation: false }).viewTransition),
+        'idle',
+      );
+      await page.locator('canvas').first().focus();
+      await page.keyboard.press('ArrowLeft');
+      await page.getByRole('button', { name: 'Рассказ', exact: true }).click();
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      );
+      await page.locator('canvas').first().focus();
+      await page.keyboard.press('ArrowRight');
+      const interrupted = await page.evaluate(() => lab.view.capture());
+      assert.equal(
+        await page.evaluate(() => lab.root.scene.inspect({ presentation: false }).viewTransition),
+        'idle',
+      );
+      await page.waitForTimeout(280);
+      assert.deepEqual(
+        await page.evaluate(() => lab.view.capture()),
+        interrupted,
+        'a new orbit interrupts the return',
+      );
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await page.evaluate(() => lab.root.scene.control([{ type: 'mode', value: 'story' }]));
+      assert.deepEqual(await page.evaluate(() => lab.view.capture()), authored);
+      await page.evaluate(() => lab.root.scene.control([{ type: 'mode', value: 'explore' }]));
+      const exploratory = await page.evaluate(() => lab.view.capture());
+      assert.notDeepEqual(exploratory.position, authored.position);
+      await page.locator('canvas').first().focus();
+      await page.keyboard.press('ArrowLeft');
+      await page.evaluate(() => lab.root.scene.control([{ type: 'mode', value: 'explore' }]));
+      assert.deepEqual(
+        await page.evaluate(() => lab.view.capture()),
+        exploratory,
+        'Explore restores its own authored viewpoint',
+      );
+      assert.equal(await page.evaluate(() => lab.story.currentTime), 0);
+    },
+  );
+});
 
 test('3D hit testing, labels, keyboard and provenance share stable semantic objects', async () => {
   await fixture(
@@ -172,6 +377,164 @@ test('3D hit testing, labels, keyboard and provenance share stable semantic obje
           .sort(),
         ['dot', 'dot:result'],
       );
+    },
+  );
+});
+
+test('SVG math parts share inspect, find, pointer, keyboard and provenance through replacement', async () => {
+  await fixture(
+    `
+    import {SceneShell} from './src/scene.ts';
+    import {MathMorph2D} from './src/morph/svg.ts';
+    import {MathMorph} from './src/morph/math.ts';
+    import './src/style.css';
+    const root=document.querySelector('main'), shell=SceneShell.mount(root,{title:'SVG math'});
+    const morph=MathMorph2D.mount(shell.stage,MathMorph.dot([1,2,3],[4,5,6]),{id:'dot'});
+    window.lab={root,shell,morph,MathMorph};
+  `,
+    async (page) => {
+      const initial = await page.evaluate(
+        () => lab.root.scene.inspect({ presentation: false }).objects,
+      );
+      const input = initial.find((part) => part.id !== 'dot' && part.visible);
+      assert(input, 'the SVG exposes rendered quantity regions');
+      const target = page.locator(`[data-object="${input.id}"]`);
+      await target.click();
+      assert.deepEqual(await page.evaluate(() => lab.root.scene.selected), [input.id]);
+      assert.equal(await target.evaluate((node) => getComputedStyle(node).outlineStyle), 'solid');
+      await target.focus();
+      await page.keyboard.press('Enter');
+      assert.deepEqual(await page.evaluate(() => lab.root.scene.selected), []);
+
+      const complete = await page.evaluate(() => {
+        lab.morph.render(1);
+        return lab.root.scene.inspect({ presentation: false }).objects;
+      });
+      const result = complete.find((part) => part.id === 'dot:result');
+      assert.equal(result.value, 32);
+      assert.equal(
+        result.inputs.length,
+        6,
+        'direct seeking preserves original inputs from unseen stages',
+      );
+      assert.equal(result.provenance.origins.length, 6);
+      assert.equal(complete.find((part) => part.id === 'dot').value, 32);
+      assert.equal(complete.find((part) => part.id === input.id).visible, false);
+      assert.equal(
+        await target.isVisible(),
+        false,
+        'inactive inputs retain provenance without hit or keyboard targets',
+      );
+      const found = await page.evaluate(() => lab.root.scene.find('Величина 32'));
+      assert(found.some((part) => part.id === 'dot:result'));
+      await page.evaluate(() => lab.root.scene.control([{ type: 'select', ids: ['dot:result'] }]));
+      assert.deepEqual(await page.evaluate(() => lab.root.scene.selected), ['dot:result']);
+
+      const replaced = await page.evaluate(() => {
+        lab.morph.setOperation(lab.MathMorph.calculate('add', 3, 4));
+        lab.morph.render(1);
+        return lab.root.scene.inspect({ presentation: false }).objects;
+      });
+      assert.equal(replaced.find((part) => part.id === 'dot').value, 7);
+      assert(
+        !replaced.some((part) => part.id === input.id),
+        'replaced operation registrations are released',
+      );
+      await page.evaluate(() => lab.morph.dispose());
+      assert.deepEqual(await page.evaluate(() => lab.root.scene.objects()), []);
+      assert.deepEqual(await page.evaluate(() => lab.root.scene.selected), []);
+    },
+  );
+});
+
+test('a remounted composition restores the active chapter camera and semantic selection', async () => {
+  await fixture(
+    `
+    import {SceneStory} from './src/story/composition.ts';
+    import {Viewport3D, ThreeKit as T} from './src/viewport/index.ts';
+    import './src/style.css';
+    const root=document.querySelector('main'); let active;
+    const chapters=['opening','space','end'].map(id=>({id,title:id,text:id,seconds:2,
+      async mount(parent){
+        if(id!=='space')return {render(){parent.textContent=id},dispose(){parent.replaceChildren()}};
+        await new Promise(resolve=>setTimeout(resolve,30));
+        const view=Viewport3D.mount(parent);
+        const cube=new T.Mesh(new T.BoxGeometry(),new T.MeshBasicMaterial({color:'blue'}));
+        view.setObject(cube);view.describe(cube,'cube',{label:'Cube'});active=view;
+        return {view,render(){view.shot({target:cube,direction:[0,0,1],padding:50})},dispose:view.dispose};
+      }
+    }));
+    window.remount=async()=>{
+      root.scene?.dispose();
+      const lesson=await SceneStory.mount(root,{title:'Chapters',chapters,frame:{width:600,height:400}});
+      window.lab={...lesson,root,view:()=>active};
+    };
+    window.galleryReady=remount();
+  `,
+    async (page) => {
+      await page.evaluate(() => galleryReady);
+      const future = await page.evaluate(async () => {
+        try {
+          await lab.scene.control([
+            { type: 'seek', time: 3 },
+            { type: 'select', ids: ['absent'] },
+          ]);
+        } catch (error) {
+          return {
+            message: error.message,
+            code: error.code,
+            commandIndex: error.commandIndex,
+            completedCommands: error.completedCommands,
+            action: error.action,
+            time: lab.scene.inspect({ presentation: false }).time,
+          };
+        }
+      });
+      assert.match(future.message, /Select needs known object IDs/);
+      assert.deepEqual(
+        { ...future, message: undefined },
+        {
+          message: undefined,
+          code: 'scene_control_failed',
+          commandIndex: 1,
+          completedCommands: 1,
+          action: 'inspect',
+          time: 3,
+        },
+      );
+      await page.evaluate(async () => {
+        await remount();
+        await lab.scene.control([
+          { type: 'seek', time: 3 },
+          { type: 'select', ids: ['cube'] },
+          { type: 'focus', ids: ['cube'] },
+        ]);
+      });
+      assert.deepEqual(await page.evaluate(() => lab.scene.selected), ['cube']);
+      await page.locator('[data-chapter="space"] canvas').focus();
+      await page.keyboard.press('ArrowLeft');
+      const result = await page.evaluate(async () => {
+        await lab.scene.control([{ type: 'select', ids: ['cube'] }]);
+        const camera = lab.view().capture(),
+          saved = lab.scene.capture();
+        await remount();
+        const initial = lab.scene.inspect({ presentation: false });
+        await lab.scene.restore(saved);
+        return {
+          camera,
+          saved,
+          initial: initial.capabilities,
+          restored: lab.view().capture(),
+          state: lab.scene.inspect({ presentation: false }),
+        };
+      });
+      assert.equal(result.camera.following, false);
+      assert(result.saved.view, 'the checkpoint includes the logical chapter camera');
+      assert.equal(result.initial.includes('select'), false);
+      assert.equal(result.state.time, 3);
+      assert.deepEqual(result.state.selected, ['cube']);
+      assert.deepEqual(result.restored, result.camera);
+      assert.deepEqual(result.state.restoreNotices, []);
     },
   );
 });
@@ -370,6 +733,20 @@ test('a removed selected subject returns to its chapter and retains compatible e
       assert.deepEqual(restored.state.restoreNotices[0].ids, ['removed']);
       assert.equal(restored.state.restoreNotices[0].chapter, 'second');
       assert.match(restored.status, /Условие/);
+      const cold = await page.evaluate(async () => {
+        const scene = lab.root.scene;
+        scene.select(['dynamic']);
+        const saved = scene.capture();
+        scene.select([]);
+        lab.root.querySelector('[data-object="kept"]').remove();
+        await scene.control([{ type: 'seek', time: 0 }]);
+        const before = scene.inspect({ presentation: false }).capabilities;
+        await scene.restore(saved);
+        return { before, selected: scene.selected, notices: scene.restoreNotices };
+      });
+      assert.equal(cold.before.includes('select'), false);
+      assert.deepEqual(cold.selected, ['dynamic']);
+      assert.deepEqual(cold.notices, []);
     },
   );
 });

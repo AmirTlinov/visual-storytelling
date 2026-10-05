@@ -436,15 +436,41 @@ export async function characterStage(
           ),
         };
       },
-      focus(ids: readonly string[]) {
-        if (ids.some((id) => !Object.hasOwn({ ...bounds, ...details }, id)))
-          throw new Error('Unknown camera subject');
-        manualShot = { focus: ids, framing: 'detail' };
-        stage.render(...latest);
-      },
-      reset() {
-        manualShot = undefined;
-        if (snapshot) stage.render(...latest);
+      view: {
+        transition: 'idle' as const,
+        validateFocus(ids: readonly string[]) {
+          if (
+            !ids.length ||
+            ids.some((id) => !Object.hasOwn(bounds, id) && !Object.hasOwn(details, id))
+          )
+            throw new Error('Unknown camera subject');
+        },
+        focus(ids: readonly string[]) {
+          stage.view.validateFocus(ids);
+          manualShot = { focus: [...ids], framing: 'detail' };
+          stage.render(...latest);
+        },
+        reset() {
+          manualShot = undefined;
+          if (snapshot) stage.render(...latest);
+        },
+        capture() {
+          return { kind: 'characters', focus: [...(manualShot?.focus ?? [])] };
+        },
+        restore(value: unknown) {
+          const state = value as { kind?: string; focus?: string[] } | undefined;
+          if (
+            state?.kind !== 'characters' ||
+            !Array.isArray(state.focus) ||
+            state.focus.some(
+              (id) => typeof id !== 'string' || !Object.hasOwn({ ...bounds, ...details }, id),
+            )
+          )
+            return false;
+          if (state.focus.length) stage.view.focus(state.focus);
+          else stage.view.reset();
+          return true;
+        },
       },
       snapshot: () => snapshot,
       /** Flatten only a requested transition boundary; live content keeps all DOM layers. */

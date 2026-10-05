@@ -1,11 +1,11 @@
-import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { narrationSource } from './story-document.mjs';
 import { parse } from 'parse5';
-import { systemNarration, voiceDigest } from './voice/macos.mjs';
+import { macosVoice, systemNarration, voiceDigest } from './voice/macos.mjs';
 
 function editAudioTags(html, edit) {
   const edits = [];
@@ -40,12 +40,74 @@ export function setNarrationMode(html, silent) {
   });
 }
 
+/** The viewer needs semantic timing, not a synthesis receipt or local voice paths. */
+export function playbackTimeline(timeline) {
+  const fields = (value, keys) =>
+    Object.fromEntries(
+      keys.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]),
+    );
+  return {
+    ...fields(timeline, ['version', 'duration', 'cues', 'captionAliases']),
+    ...(timeline.segments && {
+      segments: timeline.segments.map((segment) => ({
+        ...fields(segment, ['id', 'title', 'text', 'start', 'end']),
+        ...(segment.words && {
+          words: segment.words.map((word) => fields(word, ['text', 'start', 'end'])),
+        }),
+      })),
+    }),
+  };
+}
+
 /** A permanent silent template keeps story cues and authored credits, without speech scaffolding. */
 export async function silenceSceneCopy(directory) {
-  await promisify(execFile)('python3', [
-    fileURLToPath(new URL('audio/silent.py', import.meta.url)),
-    directory,
-  ]);
+  const optional = (name) =>
+    readFile(join(directory, name), 'utf8').catch((error) => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+  const story = await optional('story.json');
+  if (story) {
+    const document = JSON.parse(story);
+    (document.narration ??= {}).enabled = false;
+    await writeFile(join(directory, 'story.json'), JSON.stringify(document, null, 2) + '\n');
+  }
+  const original = await optional('timeline.json');
+  const timeline = original && JSON.parse(original);
+  if (timeline)
+    await writeFile(
+      join(directory, 'timeline.json'),
+      JSON.stringify(playbackTimeline(timeline), null, 2) + '\n',
+    );
+  const credits = await optional('CREDITS.txt');
+  if (credits) {
+    let authored = credits
+      .replace(
+        /^=== visual-story:audio ===\r?\n[\s\S]*?^=== \/visual-story:audio ===(?:\r?\n|$)/gm,
+        '',
+      )
+      .replaceAll(
+        "This audio was created with Boson AI's Higgs Audio — https://www.boson.ai/higgs-audio\n",
+        '',
+      );
+    const music = timeline?.mix?.music;
+    if (music)
+      authored = authored.replaceAll(
+        `${music.title} — ${music.artist}\n${music.source}\n${music.license} ${music.license_url ?? ''}\n${music.changes}\n`,
+        '',
+      );
+    if (authored.trim()) await writeFile(join(directory, 'CREDITS.txt'), authored.trim() + '\n');
+    else await rm(join(directory, 'CREDITS.txt'));
+  }
+  for (const name of [
+    'narration.json',
+    'narration.txt',
+    'voice-preview.html',
+    'audio.wav',
+    'voice.wav',
+    'music.wav',
+    'voice.json',
+  ])
+    await rm(join(directory, name), { force: true });
   for (const name of await readdir(directory)) {
     if (!name.endsWith('.html')) continue;
     const file = join(directory, name);
@@ -65,16 +127,34 @@ export async function buildNarration(directory, { signal, progress, cache } = {}
   signal?.throwIfAborted();
   const source = await narrationSource(directory);
   if (!source) throw new Error('Provide story.json or narration.json for speech');
-  const settings = await readFile(join(directory, 'voice.json'), 'utf8').then(
-    JSON.parse,
-    (error) => {
-      if (error.code !== 'ENOENT') throw error;
-    },
-  );
+  const settingsFile = join(directory, 'voice.json');
+  let settings = await readFile(settingsFile, 'utf8').then(JSON.parse, (error) => {
+    if (error.code !== 'ENOENT') throw error;
+  });
+  const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  const hasHiggs = Boolean(pkg.bin?.['sketch-audio']);
+  const provider = settings?.provider ?? (hasHiggs ? 'higgs' : 'macos');
   let result;
-  if (settings?.provider === 'macos')
+  if (provider === 'macos') {
+    if (settings?.provider !== 'macos' || settings?.enabled !== true || !settings?.voice) {
+      const voice = await macosVoice.prepare(settings ?? {}, { signal });
+      settings = {
+        ...settings,
+        enabled: true,
+        provider,
+        voice: voice.id,
+        language: voice.language,
+        rate: voice.rate,
+      };
+      signal?.throwIfAborted();
+      await writeFile(settingsFile, JSON.stringify(settings, null, 2) + '\n');
+    }
     result = await systemNarration(directory, source.file, settings, { signal, progress, cache });
-  else
+  } else if (provider === 'higgs') {
+    if (!hasHiggs)
+      throw new Error(
+        'This package does not include Higgs. Choose provider "macos" in voice.json, or use the full repository with your licensed local Higgs installation.',
+      );
     await new Promise((resolve, reject) => {
       const child = spawn(
         fileURLToPath(new URL('sketch-audio', import.meta.url)),
@@ -86,6 +166,10 @@ export async function buildNarration(directory, { signal, progress, cache } = {}
         code === 0 ? resolve() : reject(new Error(`Narration build failed (exit ${code})`)),
       );
     });
+  } else
+    throw new Error(
+      `Unknown narration provider: ${provider}. Choose "macos"${hasHiggs ? ' or "higgs"' : ''} in voice.json.`,
+    );
   for (const name of await readdir(directory)) {
     signal?.throwIfAborted();
     if (!name.endsWith('.html')) continue;

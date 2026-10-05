@@ -69,8 +69,7 @@ async function mount(root: HTMLElement, options: CharacterStoryOptions) {
       },
     });
     root.scene!.snapshot = drawing.snapshot;
-    root.scene!.focus = drawing.focus;
-    shell.attachView({ reset: drawing.reset, dispose() {} });
+    shell.attachView({ ...drawing.view, dispose() {} });
     root.scene!.checkpoints = options.beats.map((beat) => score.script.cues[beat.id]!.start);
     if (options.remember) {
       let restoring = false,

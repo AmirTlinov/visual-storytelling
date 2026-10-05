@@ -13,7 +13,7 @@ import { constants } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { readJSON, writeJSON } from './runtime/storage.mjs';
-import { projectFiles, projectFile, digest } from './project-files.mjs';
+import { projectFiles, projectFile, readProjectFile, digest } from './project-files.mjs';
 import { failure } from './errors.mjs';
 
 const readOptional = (file) =>
@@ -122,15 +122,7 @@ export class ProjectStore {
     return next;
   }
   async read(id, name) {
-    const file = await projectFile(this.get(id).path, name),
-      bytes = await readFile(file);
-    if (
-      bytes.length > 1_000_000 ||
-      bytes.includes(0) ||
-      !Buffer.from(bytes.toString('utf8')).equals(bytes)
-    )
-      throw new Error('Use the local file path for binary or large source files.');
-    return { file, content: bytes.toString('utf8'), digest: digest(bytes) };
+    return readProjectFile(this.get(id).path, name);
   }
   async historyDirectory(project) {
     const directory = join(project.path, '.vstory');

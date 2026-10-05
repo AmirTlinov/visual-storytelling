@@ -88,6 +88,7 @@ export async function packDirectory(
     html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}body>svg{display:block;width:100%;height:auto}</style></head><body>${html.replace(/<\?xml[^>]*>/, '')}</body></html>`;
   html = await resources.markup(html, base);
   const scriptEdits = [];
+  const notices = new Set();
   for (const node of elements(html, 'script')) {
     if (
       !['', 'module', 'text/javascript', 'application/javascript'].includes(
@@ -98,6 +99,13 @@ export async function packDirectory(
     const location = node.sourceCodeLocation;
     if (!location) continue;
     const src = attribute(node, 'src');
+    if (src) {
+      try {
+        notices.add(await readFile(local(src) + '.LICENSE.txt', 'utf8'));
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
+    }
     let code = src
       ? await readFile(local(src), 'utf8')
       : html.slice(location.startTag.endOffset, location.endTag?.startOffset ?? location.endOffset);
@@ -147,19 +155,18 @@ export async function packDirectory(
       '</head>',
       `<style>:root,.ve-scene{color-scheme:${theme}!important}</style></head>`,
     );
-  const notices = [];
   for (const path of [
     join(root, 'CREDITS.txt'),
     new URL('../THIRD_PARTY.md', import.meta.url),
     new URL('../dist/assets/shantell-OFL.txt', import.meta.url),
   ]) {
     try {
-      notices.push(await readFile(path, 'utf8'));
+      notices.add(await readFile(path, 'utf8'));
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
     }
   }
-  html += '\n<!--\n' + notices.join('\n\n').replaceAll('--', '—') + '\n-->\n';
+  html += '\n<!--\n' + [...notices].join('\n\n').replaceAll('--', '—') + '\n-->\n';
   const recordings = audioElements(html).flatMap((node) =>
     [node, ...(node.childNodes ?? []).filter((child) => child.tagName === 'source')].flatMap(
       (element) =>

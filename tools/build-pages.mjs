@@ -8,9 +8,10 @@ import { sceneAsset, sceneInput } from './assets.mjs';
 import { generateScene } from './generate-scene.mjs';
 import { buildOutput } from './build-output.mjs';
 import { assetURLs, moduleAssetURLs } from './asset-urls.mjs';
-import { checkNarration, setNarrationMode } from './narration.mjs';
+import { checkNarration, setNarrationMode, playbackTimeline } from './narration.mjs';
 import { resolvePackage } from './build-info.mjs';
 import { readCatalog } from './catalog.mjs';
+import { writeBundleNotices } from './bundle-notices.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 export async function buildPage(
@@ -60,6 +61,7 @@ export async function buildPage(
   const out = resolve(target, name);
   await mkdir(target, { recursive: true });
   if (code.trim()) {
+    const assets = new Set();
     const result = await build({
       stdin: {
         contents: await moduleAssetURLs(code, source),
@@ -76,7 +78,7 @@ export async function buildPage(
       ...(tsconfig ? { tsconfig } : { tsconfigRaw: { compilerOptions: {} } }),
       ...(sourcePackage ? { alias: sourceAliases } : {}),
       plugins: [
-        assetURLs(),
+        assetURLs({ onAsset: (file) => assets.add(file) }),
         ...(cdn
           ? [
               {
@@ -122,6 +124,7 @@ export async function buildPage(
       legalComments: 'inline',
       metafile: true,
     });
+    await writeBundleNotices(out, result.metafile, { assets });
     if (Object.values(result.metafile.outputs).some((output) => output.cssBundle)) {
       const at =
         head?.sourceCodeLocation?.endTag?.startOffset ?? body?.sourceCodeLocation?.startOffset ?? 0;
@@ -174,7 +177,12 @@ export async function buildScene(source, target, options = {}) {
       if (entry.isDirectory()) await visit(from, to);
       else if (entry.isFile() && sceneAsset(entry.name)) {
         await mkdir(output, { recursive: true });
-        await cp(from, to);
+        if (entry.name === 'timeline.json')
+          await writeFile(
+            to,
+            JSON.stringify(playbackTimeline(JSON.parse(await readFile(from, 'utf8')))) + '\n',
+          );
+        else await cp(from, to);
       }
     }
     for (const entry of entries)

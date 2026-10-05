@@ -15,6 +15,19 @@ import { sceneInput } from '../tools/assets.mjs';
 const inside = (root, path) => path === root || path.startsWith(root + sep);
 export const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
+/** The same bounded source reader serves working files and the inputs of a shown build. */
+export async function readProjectFile(root, name) {
+  const file = await projectFile(root, name),
+    bytes = await readFile(file);
+  if (
+    bytes.length > 1_000_000 ||
+    bytes.includes(0) ||
+    !Buffer.from(bytes.toString('utf8')).equals(bytes)
+  )
+    throw new Error('Use the local file path for binary or large source files.');
+  return { file, content: bytes.toString('utf8'), digest: digest(bytes) };
+}
+
 /** Only authored files enter snapshots. Dotfiles, generated output and dependency trees stay out. */
 export async function projectFiles(root) {
   root = await realpath(root);

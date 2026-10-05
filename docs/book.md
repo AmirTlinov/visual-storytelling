@@ -44,6 +44,11 @@
 используют общий `book/timing.ts`. Самостоятельный `SceneStory` получает
 длительность, ID, заголовок и текст вступления от выбранного transition.
 
+Глава возвращает `view` с `focus/reset/capture/restore`, если её камерой можно управлять.
+`Viewport3D` передаётся напрямую; у `CharacterStage` это `stage.view`. Композиция сохраняет
+логический ракурс вместе с ID главы и восстанавливает его после холодного открытия.
+Метод `capture({ aspect })` самой главы снимает изображение для книжного перехода.
+
 ```js
 import { IllustratedStory } from '@visual-storytelling/core/book';
 import { chibi, teachingRoom } from '@visual-storytelling/core/characters';

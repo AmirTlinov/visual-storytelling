@@ -121,7 +121,7 @@ server.registerTool(
   'story_inspect',
   {
     description:
-      'Read the displayed scene, working project or persistent job. No IDs lists active sessions. For a project, returns sourceRevision and file hashes; add file to read its UTF-8 source. For a session, returns compact state and capabilities. Request model for object values and causal inputs, timeline for all cues, or presentation for geometry.',
+      'Read the displayed scene, working project or persistent job. No IDs lists active sessions. sessionId + file reads the shown build source with shown and working revisions; projectId + file reads working UTF-8 source. A project returns sourceRevision and file hashes. A session returns compact state and capabilities. Request model for object values and causal inputs, timeline for all cues, or presentation for geometry.',
     inputSchema: {
       sessionId: sessionId.optional(),
       projectId: z.string().uuid().optional(),
@@ -133,6 +133,7 @@ server.registerTool(
   },
   safely(async ({ sessionId, projectId, file, jobId, detail }) => {
     if (jobId) return result(await runtime.call('job', { jobId }));
+    if (sessionId && file) return result(await runtime.call('shownSource', { sessionId, file }));
     if (projectId) return result(await runtime.call('project', { projectId, file }));
     return sessionId
       ? toolResult(presentSession(await request(sessionId, { op: 'inspect', detail }), detail))
@@ -155,7 +156,7 @@ server.registerTool(
   'story_control',
   {
     description:
-      'Control the existing live scene through its SceneHandle. Supply the inspected buildRevision and stateRevision, plus a unique requestId. Pause alone needs no prior inspection. Retries reuse the result. Acknowledgement means two renderer frames, not a screenshot or transition completion.',
+      'Control the existing live scene through its SceneHandle. Supply the inspected buildRevision and stateRevision, plus a unique requestId. Pause alone needs no prior inspection. Retries reuse the result. Acknowledgement is rendered after preparation and two frame opportunities, or prepared if the host defers repaint. Neither confirms screenshot pixels or a camera transition ending.',
     inputSchema: {
       sessionId,
       buildRevision: z.string().optional(),
@@ -190,6 +191,8 @@ registerAppTool(
         })
         .optional(),
       buildRevision: z.string().optional(),
+      phase: z.enum(['prepare', 'commit', 'abort']).optional(),
+      replacementId: z.string().uuid().optional(),
       report: viewReport.optional(),
       acknowledgements: z.array(acknowledgement).max(32).optional(),
       wait: z.boolean().optional(),

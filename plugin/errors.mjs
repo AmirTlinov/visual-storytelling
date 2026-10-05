@@ -8,5 +8,9 @@ export function errorData(error) {
     ...(error.field ? { field: error.field } : {}),
     ...(error.current ? { current: error.current } : {}),
     ...(error.action ? { action: error.action } : {}),
+    ...(Number.isSafeInteger(error.commandIndex) ? { commandIndex: error.commandIndex } : {}),
+    ...(Number.isSafeInteger(error.completedCommands)
+      ? { completedCommands: error.completedCommands }
+      : {}),
   };
 }

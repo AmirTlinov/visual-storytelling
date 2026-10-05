@@ -34,6 +34,7 @@ export interface SceneInspection {
   selected?: readonly string[];
   objects?: ReturnType<NonNullable<SceneHandle['objects']>>;
   experimentHistory?: { undo: boolean; redo: boolean };
+  viewTransition?: 'running' | 'idle';
   mode: 'story' | 'explore';
   parameters: (Omit<ControlParameter, 'format'> & {
     key: string;
@@ -71,6 +72,7 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
       selected: handle.selected,
       objects,
       experimentHistory: handle.experimentHistory,
+      viewTransition: owner.view?.()?.transition,
       mode: owner.mode?.() ?? 'explore',
       parameters: (owner.parameters ?? []).map(({ format, ...p }) => {
         const value = owner.values?.()[p.key] ?? p.value;
@@ -160,9 +162,31 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
     async control(commands: readonly SceneCommand[], { signal }: SceneControlOptions = {}) {
       owner.assertLive();
       signal?.throwIfAborted();
+      const wait = <T>(value: T | PromiseLike<T>): Promise<T> => {
+        if (!signal) return Promise.resolve(value);
+        return new Promise<T>((resolve, reject) => {
+          const clean = () => signal.removeEventListener('abort', cancelled);
+          const cancelled = () => {
+            clean();
+            reject(signal.reason);
+          };
+          signal.addEventListener('abort', cancelled, { once: true });
+          Promise.resolve(value).then(
+            (result) => {
+              clean();
+              resolve(result);
+            },
+            (error) => {
+              clean();
+              reject(error);
+            },
+          );
+          if (signal.aborted) cancelled();
+        });
+      };
       if (!Array.isArray(commands) || !commands.length || commands.length > 32)
         throw new Error('Supply 1–32 scene commands');
-      const validate = (c: SceneCommand) => {
+      const validate = (c: SceneCommand, live = true) => {
         if (!c || typeof c !== 'object') throw new Error('A scene command needs a type');
         if (
           (c.type === 'undoExperiment' || c.type === 'redoExperiment') &&
@@ -179,11 +203,9 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
         if (
           c.type === 'select' &&
           (!Array.isArray(c.ids) ||
-            !handle.select ||
-            c.ids.some(
-              (id: unknown) =>
-                typeof id !== 'string' || !handle.objects?.().some((o) => o.id === id),
-            ))
+            c.ids.some((id: unknown) => typeof id !== 'string' || !id.trim()) ||
+            (live &&
+              (!handle.select || c.ids.some((id) => !handle.objects?.().some((o) => o.id === id)))))
         )
           throw new Error('Select needs known object IDs');
         if (
@@ -216,6 +238,10 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
             c.ids.some((id: unknown) => typeof id !== 'string' || !id.trim()))
         )
           throw new Error('Focus needs supported object IDs');
+        if (c.type === 'focus' && live) {
+          if (!handle.focus) throw new Error('Focus is unavailable in the current chapter');
+          owner.view?.()?.validateFocus?.(c.ids);
+        }
         if (c.type === 'reduced' && (!handle.setReduced || typeof c.value !== 'boolean'))
           throw new Error('Reduced motion needs a boolean');
         if (c.type === 'parameters' && !owner.setValues)
@@ -228,14 +254,15 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
           for (const [key, value] of Object.entries(c.values)) {
             const p = owner.parameters?.find((p) => p.key === key);
             if (
-              !p ||
-              p.disabled ||
-              typeof value !== typeof p.value ||
-              (typeof value === 'number' &&
-                (!Number.isFinite(value) ||
-                  value < (p.min ?? -Infinity) ||
-                  value > (p.max ?? Infinity))) ||
-              (p.options && !p.options.some((o) => o.value === value))
+              !['number', 'boolean', 'string'].includes(typeof value) ||
+              (typeof value === 'number' && !Number.isFinite(value)) ||
+              (live &&
+                (!p ||
+                  p.disabled ||
+                  typeof value !== typeof p.value ||
+                  (typeof value === 'number' &&
+                    (value < (p.min ?? -Infinity) || value > (p.max ?? Infinity))) ||
+                  (p.options && !p.options.some((o) => o.value === value))))
             )
               throw new Error(`Invalid scene parameter: ${key}`);
           }
@@ -259,61 +286,86 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
         )
           throw new Error('Unsupported scene command');
       };
-      // Reject invalid input before effects; a previous operation can then change live bounds.
-      for (const c of commands) validate(c);
+      // Shapes are checked before effects. Later chapters and parameter-dependent
+      // objects become authoritative only after their preceding preparation.
+      let changedOwner = false;
       for (const c of commands) {
-        owner.assertLive();
-        signal?.throwIfAborted();
-        validate(c);
-        switch (c.type) {
-          case 'undoExperiment':
-            await handle.undoExperiment!();
-            break;
-          case 'redoExperiment':
-            await handle.redoExperiment!();
-            break;
-          case 'mute':
-            await handle.mute!(c.value);
-            break;
-          case 'rate':
-            handle.setRate!(c.value);
-            break;
-          case 'select':
-            handle.select!(c.ids);
-            break;
-          case 'pause':
-            handle.pause!();
-            break;
-          case 'play':
-            await handle.play!();
-            break;
-          case 'seek':
-            handle.seek!(c.time);
-            break;
-          case 'cue': {
-            const q = handle.review().cues.find((q) => q.id === c.id)!;
-            handle.seek!(q.start + (q.end - q.start) * (c.progress ?? 0));
-            break;
+        validate(c, !changedOwner);
+        changedOwner ||= [
+          'seek',
+          'cue',
+          'mode',
+          'parameters',
+          'undoExperiment',
+          'redoExperiment',
+        ].includes(c.type);
+      }
+      for (const [index, c] of commands.entries()) {
+        try {
+          owner.assertLive();
+          signal?.throwIfAborted();
+          validate(c);
+          switch (c.type) {
+            case 'undoExperiment':
+              await wait(handle.undoExperiment!());
+              break;
+            case 'redoExperiment':
+              await wait(handle.redoExperiment!());
+              break;
+            case 'mute':
+              await wait(handle.mute!(c.value));
+              break;
+            case 'rate':
+              handle.setRate!(c.value);
+              break;
+            case 'select':
+              handle.select!(c.ids);
+              break;
+            case 'pause':
+              handle.pause!();
+              break;
+            case 'play':
+              await wait(handle.play!());
+              break;
+            case 'seek':
+              handle.seek!(c.time);
+              break;
+            case 'cue': {
+              const q = handle.review().cues.find((q) => q.id === c.id)!;
+              handle.seek!(q.start + (q.end - q.start) * (c.progress ?? 0));
+              break;
+            }
+            case 'mode':
+              owner.setMode!(c.value);
+              break;
+            case 'parameters':
+              owner.setValues!({ ...owner.values?.(), ...c.values });
+              break;
+            case 'focus':
+              if (!handle.focus) throw new Error('Focus is unavailable in the current chapter');
+              handle.focus(c.ids);
+              break;
+            case 'theme':
+              await wait(handle.setTheme!(c.value));
+              break;
+            case 'reduced':
+              handle.setReduced!(c.value);
+              break;
           }
-          case 'mode':
-            owner.setMode!(c.value);
-            break;
-          case 'parameters':
-            owner.setValues!({ ...owner.values?.(), ...c.values });
-            break;
-          case 'focus':
-            if (!handle.focus) throw new Error('Focus is unavailable in the current chapter');
-            handle.focus(c.ids);
-            break;
-          case 'theme':
-            await handle.setTheme!(c.value);
-            break;
-          case 'reduced':
-            handle.setReduced!(c.value);
-            break;
+          await wait(handle.ready?.());
+          signal?.throwIfAborted();
+        } catch (cause) {
+          const detail = cause instanceof Error ? cause.message : String(cause);
+          throw Object.assign(
+            new Error(`${detail} The current command may have changed the scene. Inspect before continuing.`, { cause }),
+            {
+              code: signal?.aborted ? 'scene_control_cancelled' : 'scene_control_failed',
+              commandIndex: index,
+              completedCommands: index,
+              action: 'inspect',
+            },
+          );
         }
-        await handle.ready?.();
-        signal?.throwIfAborted();
       }
       return inspect();
     },

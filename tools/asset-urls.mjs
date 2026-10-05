@@ -4,6 +4,16 @@ import { join, dirname, basename, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from '@babel/parser';
 import { inlineResources } from './inline-resources.mjs';
+import { createHash } from 'node:crypto';
+import { playbackTimeline } from './narration.mjs';
+import { writeBundleNotices } from './bundle-notices.mjs';
+
+const assetContents = async (file) => {
+  const bytes = await readFile(file);
+  return basename(file) === 'timeline.json'
+    ? Buffer.from(JSON.stringify(playbackTimeline(JSON.parse(bytes))))
+    : bytes;
+};
 
 const literal = (node) =>
   node?.type === 'StringLiteral'
@@ -92,9 +102,10 @@ export async function moduleAssetURLs(source, file) {
           `${file}: ${value} still depends on other modules or module-relative resources; bundle that script before using it as an asset`,
         );
     }
-    const data = await inlineResources(dirname(path)).data(
-      encodeURIComponent(basename(path)) + url.hash,
-    );
+    const data =
+      basename(path) === 'timeline.json'
+        ? `data:application/json;base64,${(await assetContents(path)).toString('base64')}${url.hash}`
+        : await inlineResources(dirname(path)).data(encodeURIComponent(basename(path)) + url.hash);
     edits.push({
       start: node.start,
       end: node.end,
@@ -139,7 +150,8 @@ export async function standaloneAssetURLs(source, resources, base) {
 /** Ship decoder bytes as ordinary ESM, so consumers need no special asset loader. */
 export async function embedRuntimeAssets(output) {
   const file = join(output, 'viewport/gltf.js');
-  await build({
+  const assets = new Set();
+  const result = await build({
     entryPoints: [file],
     outfile: file,
     allowOverwrite: true,
@@ -148,16 +160,22 @@ export async function embedRuntimeAssets(output) {
     // esbuild's debug headers otherwise include the random transactional output path.
     minifyWhitespace: true,
     external: ['three/addons/loaders/*'],
-    plugins: [assetURLs()],
+    plugins: [assetURLs({ onAsset: (file) => assets.add(file) })],
     sourcemap: true,
+    metafile: true,
   });
+  await writeBundleNotices(file, result.metafile, { assets });
 }
 
 /** Vite-compatible ?url assets are embedded by the offline scene builder. */
-export function assetURLs() {
+export function assetURLs({ onAsset } = {}) {
   return {
     name: 'scene-asset-urls',
     setup(build) {
+      build.onLoad({ filter: /[/\\]timeline\.json$/, namespace: 'file' }, async (args) => ({
+        contents: await assetContents(args.path),
+        loader: 'json',
+      }));
       build.onLoad({ filter: /\.[cm]?[jt]sx?$/, namespace: 'file' }, async (args) => {
         const source = await readFile(args.path, 'utf8');
         if (!source.includes('import.meta')) return;
@@ -177,10 +195,18 @@ export function assetURLs() {
           kind: args.kind,
         });
         if (resolved.errors.length) return { errors: resolved.errors };
-        return { path: resolved.path, namespace: 'scene-asset-url' };
+        onAsset?.(resolved.path);
+        const id = createHash('sha256')
+          .update(await assetContents(resolved.path))
+          .digest('hex');
+        return {
+          path: `${id}/${basename(resolved.path)}`,
+          namespace: 'scene-asset-url',
+          pluginData: { file: resolved.path },
+        };
       });
       build.onLoad({ filter: /.*/, namespace: 'scene-asset-url' }, async (args) => ({
-        contents: await readFile(args.path),
+        contents: await assetContents(args.pluginData.file),
         loader: 'dataurl',
       }));
     },

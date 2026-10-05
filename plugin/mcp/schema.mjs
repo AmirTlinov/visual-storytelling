@@ -26,6 +26,7 @@ export const command = z.discriminatedUnion('type', [
 ]);
 export const viewReport = z.object({
   stateRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  renderStatus: z.enum(['rendered', 'prepared']).optional(),
   state: z.record(z.string(), z.unknown()),
   checkpoint: z.object({
     time: z.number().finite().nonnegative(),
@@ -46,6 +47,13 @@ export const acknowledgement = z.object({
   id,
   result: z.unknown().optional(),
   error: z.string().max(4096).optional(),
+  failure: z
+    .object({
+      code: z.enum(['scene_control_failed', 'scene_control_cancelled']),
+      commandIndex: z.number().int().min(0).max(31),
+      completedCommands: z.number().int().min(0).max(32),
+    })
+    .optional(),
 });
 export const sessionId = z.string().uuid();
 export const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };

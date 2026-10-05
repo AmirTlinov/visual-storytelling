@@ -1,22 +1,118 @@
 import { fork } from 'node:child_process';
-import { join } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import { readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { release } from 'node:os';
+import { setTimeout as delay } from 'node:timers/promises';
 import { readJSON, writeJSON } from './runtime/storage.mjs';
 import { digest } from './project-files.mjs';
+import { contentDigest } from '../tools/build-info.mjs';
+import { failure } from './errors.mjs';
+
+const processGroups = process.platform !== 'win32';
+function signalWorker(child, signal) {
+  if (!child?.pid) return;
+  try {
+    if (processGroups) process.kill(-child.pid, signal);
+    else child.kill(signal);
+  } catch (error) {
+    if (error.code !== 'ESRCH') throw error;
+  }
+}
+async function releaseWorker(child) {
+  if (!child?.pid || !processGroups) return;
+  // The worker can exit before a renderer, encoder or generator it spawned.
+  signalWorker(child, 'SIGKILL');
+  for (let attempt = 0; attempt < 100; attempt++) {
+    try {
+      process.kill(-child.pid, 0);
+    } catch (error) {
+      if (error.code === 'ESRCH') return;
+      throw error;
+    }
+    await delay(20);
+  }
+  throw new Error('Preparation processes did not release their resources after cancellation.');
+}
 
 /** One bounded preparation queue; a worker keeps compilation and video off the MCP event loop. */
 export class JobRunner {
-  constructor(data, entry, onComplete = (_, result) => result) {
+  constructor(data, entry, onComplete = (_, result) => result, { toolchainRoot } = {}) {
     this.data = data;
     this.entry = entry;
     this.onComplete = onComplete;
+    this.toolchainRoot = toolchainRoot;
+    this.toolchains = new Map();
     this.jobs = new Map();
     this.queue = [];
     this.active = null;
     this.saves = new Map();
     this.enqueues = Promise.resolve();
     this.closed = false;
+  }
+  toolchain() {
+    if (!this.toolchains.has(this.entry)) {
+      // An installed release is immutable. Hash it once per runtime, never while polling jobs.
+      const identity = Promise.all([
+        contentDigest(dirname(this.entry), [basename(this.entry)]),
+        contentDigest(dirname(process.execPath), [basename(process.execPath)]),
+        this.toolchainRoot
+          ? contentDigest(
+              this.toolchainRoot,
+              [
+                'dist',
+                'tools',
+                'package.json',
+                'package-lock.json',
+                'plugin.json',
+                'release.json',
+                'plugin/runtime/worker.mjs',
+                'plugin/runtime/storage.mjs',
+                'plugin/workflows.mjs',
+                'plugin/project-files.mjs',
+                'plugin/environment.mjs',
+                'runtime/npm/package.json',
+                'runtime/npm/bin',
+                'runtime/npm/lib',
+              ],
+              (path) => path.split('/').includes('node_modules'),
+            )
+          : undefined,
+      ]).then(([worker, runtime, tools]) => ({
+        digest: digest(
+          JSON.stringify({
+            worker,
+            runtime,
+            tools,
+            platform: process.platform,
+            arch: process.arch,
+            os: release(),
+          }),
+        ),
+        node: process.version,
+      }));
+      this.toolchains.set(this.entry, identity);
+    }
+    return this.toolchains.get(this.entry);
+  }
+  async requireToolchain(job) {
+    const current = await this.toolchain();
+    if (job.toolchain?.digest !== current.digest)
+      throw failure(
+        'toolchain_changed',
+        'The preparation tools changed or were not recorded for this job. Start a new preparation from the project’s current revision with the current tools.',
+        {
+          field: 'toolchain',
+          current,
+          action: {
+            create: 'story_create',
+            produce: 'story_produce',
+            migrate: 'story_migrate',
+            build: 'story_open',
+          }[job.kind],
+        },
+      );
+    return current;
   }
   async start() {
     const names = await readdir(join(this.data, 'jobs')).catch((error) => {
@@ -123,6 +219,7 @@ export class JobRunner {
       input,
       projectId: input.projectId,
       sourceRevision: input.sourceRevision,
+      toolchain: await this.toolchain(),
       status: 'queued',
       stage: 'Ожидает подготовки',
       createdAt: new Date().toISOString(),
@@ -149,19 +246,20 @@ export class JobRunner {
       if (active?.child) {
         if (active.child.connected) active.child.send({ type: 'cancel' }, () => {});
         active.timer = setTimeout(() => {
-          active.child.kill('SIGTERM');
-          active.timer = setTimeout(() => active.child.kill('SIGKILL'), 1000);
+          signalWorker(active.child, 'SIGTERM');
+          active.timer = setTimeout(() => signalWorker(active.child, 'SIGKILL'), 1000);
         }, 2000);
       }
       await this.save(job);
     }
     return this.describe(job);
   }
-  retry(id, requestId) {
+  async retry(id, requestId) {
     const job = this.jobs.get(id);
     if (!job) throw new Error('Unknown job.');
     if (!['failed', 'cancelled', 'interrupted'].includes(job.status))
       throw new Error('Only stopped preparations can be resumed.');
+    await this.requireToolchain(job);
     return this.enqueue(
       job.kind,
       { ...job.input, resumeFrom: job.input.resumeFrom ?? job.id },
@@ -182,6 +280,7 @@ export class JobRunner {
   }
   async run(job) {
     try {
+      await this.requireToolchain(job);
       job.status = 'running';
       job.startedAt = new Date().toISOString();
       await this.save(job);
@@ -190,6 +289,7 @@ export class JobRunner {
           const child = fork(this.entry, [], {
             stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
             env: process.env,
+            detached: processGroups,
           });
           this.active.child = child;
           let terminal,
@@ -218,6 +318,9 @@ export class JobRunner {
             }
           });
         });
+        await releaseWorker(this.active.child);
+        clearTimeout(this.active.timer);
+        this.active.child = null;
         if (job.status !== 'cancelling' && !terminal?.cancelled) {
           if (terminal?.type !== 'result' || code !== 0)
             throw new Error(terminal?.error ?? (tail || 'Preparation process stopped.'));
@@ -227,20 +330,25 @@ export class JobRunner {
           job.stage = 'Готово';
         } else job.status = 'cancelling';
       }
-      if (job.status === 'cancelling') {
-        job.status = 'cancelled';
-        job.stage = 'Отменено';
-      }
     } catch (error) {
-      if (job.status === 'cancelling') {
-        job.status = 'cancelled';
-        job.stage = 'Отменено';
-      } else {
+      if (job.status !== 'cancelling') {
         job.status = 'failed';
         job.stage = 'Не удалось подготовить';
         job.error = error.message;
       }
     } finally {
+      const cancelling = job.status === 'cancelling';
+      try {
+        await releaseWorker(this.active.child);
+        if (cancelling) {
+          job.status = 'cancelled';
+          job.stage = 'Отменено';
+        }
+      } catch (error) {
+        job.status = 'failed';
+        job.stage = 'Не удалось остановить подготовку';
+        job.error = error.message;
+      }
       job.finishedAt = new Date().toISOString();
       await this.save(job).catch((error) => console.error(error.message));
     }

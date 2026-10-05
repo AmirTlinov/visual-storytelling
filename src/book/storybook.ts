@@ -58,8 +58,7 @@ async function mount(parent: HTMLElement, options: StorybookOptions) {
               drawing.render(frame.time, frame.reduced, frame);
             },
             snapshot: drawing.snapshot,
-            focus: drawing.focus,
-            reset: drawing.reset,
+            view: drawing.view,
             capture() {
               if (
                 index < worlds.length - 1 &&

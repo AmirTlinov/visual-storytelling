@@ -31,7 +31,7 @@ test('cold and reverse chapter seeks await bounded GPU owners, including export 
           return {
             render(value){frame=value;view.invalidate()},
             snapshot(){return{index,progress:frame.progress}},
-            focus(ids){if(ids[0]!=='cube'+index)throw new Error('Wrong focus owner');focused=index},
+            view:{focus(ids){if(ids[0]!=='cube'+index)throw new Error('Wrong focus owner');focused=index},reset:view.reset,capture:view.capture,restore:view.restore},
             dispose(){record.disposed=true;live.delete(record);view.dispose()},
           };
         }

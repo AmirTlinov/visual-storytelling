@@ -80,6 +80,7 @@ export class SessionDirectory {
       returnAvailable: Boolean(session.returnTo?.length),
       generation: session.generation,
       stateRevision: session.stateRevision,
+      renderStatus: session.renderStatus,
       status: session.renderer
         ? this.expired(session)
           ? 'unresponsive'
@@ -105,6 +106,8 @@ export class SessionDirectory {
       .catch(() => {})
       .then(async () => {
         this.get(id);
+        if (s.replacement)
+          throw new Error('The scene is applying an update. Retry after it finishes.');
         let reason = s.checkpoint ? 'reconnect' : 'initial';
         if (s.renderer === renderer) reason = 'current';
         else {
@@ -119,7 +122,10 @@ export class SessionDirectory {
                   await this.request(id, { op: 'suspend' });
                 } catch (error) {
                   this.get(id);
-                  if (s.renderer && !this.expired(s)) throw error;
+                  if (s.renderer && !this.expired(s)) {
+                    await this.resume(s);
+                    throw error;
+                  }
                   reason = s.renderer ? 'lease-expired' : 'reconnect';
                 }
               }
@@ -160,30 +166,97 @@ export class SessionDirectory {
       throw new Error('This view has been replaced. Reopen it to continue here.');
   }
 
-  /** A candidate is already mounted on pause before the old renderer yields its checkpoint. */
-  async replace({ sessionId, renderer, generation, buildRevision }) {
+  /** Keep the old owner until the candidate has restored its final, suspended checkpoint. */
+  async replace({
+    sessionId,
+    renderer,
+    generation,
+    buildRevision,
+    phase = 'prepare',
+    replacementId,
+  }) {
     const s = this.get(sessionId);
     this.validate(s, renderer, generation);
-    if (s.handoff) throw new Error('The view is already changing.');
-    if (s.nextBuild?.revision !== buildRevision)
-      throw new Error('A newer preparation is available. Load its candidate first.');
-    s.handoff = true;
-    try {
-      if (s.ready) await this.request(sessionId, { op: 'suspend' });
-      this.validate(s, renderer, generation);
-      if (s.nextBuild?.revision !== buildRevision)
-        throw new Error('The prepared build changed. Reopen the latest candidate.');
+    if (phase !== 'prepare') {
+      const pending = s.replacement;
+      if (!pending || pending.id !== replacementId || pending.build.revision !== buildRevision)
+        throw new Error('This prepared update is no longer available.');
+      if (phase === 'abort') {
+        await this.abortReplacement(s, pending);
+        return this.describe(s);
+      }
+      if (phase !== 'commit') throw new Error('Unknown update phase.');
+      if (
+        !pending.prepared ||
+        pending.aborting ||
+        Date.now() >= pending.expiresAt ||
+        s.nextBuild !== pending.build
+      ) {
+        await this.abortReplacement(s, pending);
+        throw new Error('The prepared build changed or expired. Load its candidate again.');
+      }
+      clearTimeout(pending.timer);
       this.rejectPending(s, 'Build changed. Inspect the new scene.');
-      s.build = s.nextBuild;
+      s.build = pending.build;
       s.nextBuild = null;
+      s.replacement = undefined;
+      s.handoff = false;
       s.generation++;
       s.ready = false;
       s.state = null;
       s.wake?.();
       return { ...this.describe(s), checkpoint: s.checkpoint, widgetState: s.widgetState ?? {} };
-    } finally {
-      s.handoff = false;
     }
+    if (s.handoff) throw new Error('The view is already changing.');
+    if (s.nextBuild?.revision !== buildRevision)
+      throw new Error('A newer preparation is available. Load its candidate first.');
+    s.handoff = true;
+    const pending = (s.replacement = {
+      id: randomUUID(),
+      build: s.nextBuild,
+      renderer,
+      generation,
+    });
+    try {
+      if (s.ready) await this.request(sessionId, { op: 'suspend' });
+      this.validate(s, renderer, generation);
+      if (s.nextBuild !== pending.build)
+        throw new Error('The prepared build changed. Reopen the latest candidate.');
+      pending.prepared = true;
+      pending.expiresAt = Date.now() + this.timeout;
+      pending.timer = setTimeout(() => void this.abortReplacement(s, pending), this.timeout);
+      return {
+        ...this.describe(s),
+        replacementId: pending.id,
+        expiresAt: pending.expiresAt,
+        checkpoint: s.checkpoint,
+        widgetState: s.widgetState ?? {},
+      };
+    } catch (error) {
+      await this.abortReplacement(s, pending);
+      throw error;
+    }
+  }
+
+  async abortReplacement(s, pending) {
+    if (s.replacement !== pending) return;
+    if (pending.aborting) return pending.aborting;
+    pending.aborting = (async () => {
+      clearTimeout(pending.timer);
+      if (s.renderer === pending.renderer && s.generation === pending.generation && !this.closed)
+        await this.resume(s);
+      if (s.replacement === pending) {
+        s.replacement = undefined;
+        s.handoff = false;
+      }
+    })();
+    return pending.aborting;
+  }
+
+  /** A rejected handoff leaves the current view mounted and paused, ready for more input. */
+  async resume(s) {
+    if (!s.renderer || this.expired(s)) return;
+    await this.request(s.id, { op: 'resume' }).catch(() => {});
   }
 
   async exchange({ sessionId, renderer, generation, report, acknowledgements = [], wait = true }) {
@@ -205,6 +278,7 @@ export class SessionDirectory {
         s.state = report.state;
         s.checkpoint = report.checkpoint;
         s.stateRevision = report.stateRevision;
+        s.renderStatus = report.renderStatus ?? 'rendered';
         s.observedAt = new Date().toISOString();
         s.ready = true;
         s.wake?.();
@@ -218,9 +292,22 @@ export class SessionDirectory {
       s.pending.delete(ack.id);
       s.queue = s.queue.filter((command) => command.id !== ack.id);
       if (ack.error !== undefined)
-        pending.reject(new Error(ack.error || 'The view could not execute this command.'));
+        pending.reject(
+          failure(
+            ack.failure?.code ?? 'view_command_failed',
+            ack.error || 'The view could not execute this command.',
+            {
+              ...ack.failure,
+              action: 'story_inspect',
+            },
+          ),
+        );
       else
-        pending.resolve({ ...this.describe(s), result: ack.result, acknowledgement: 'rendered' });
+        pending.resolve({
+          ...this.describe(s),
+          result: ack.result,
+          acknowledgement: s.renderStatus,
+        });
     }
     // Reports and acknowledgements must never consume the poll channel's commands.
     if (!wait) return { commands: [], ...this.describe(s) };
@@ -269,11 +356,11 @@ export class SessionDirectory {
       return Promise.reject(
         failure('view_closed', 'Open the scene before controlling it.', { action: 'story_open' }),
       );
-    if (!s.ready && !['suspend', 'inspect'].includes(request.op))
+    if (!s.ready && !['suspend', 'resume', 'inspect'].includes(request.op))
       return Promise.reject(
         new Error('The view is still opening. Wait for it before controlling the scene.'),
       );
-    if (s.handoff && request.op !== 'suspend')
+    if (s.handoff && !['suspend', 'resume'].includes(request.op))
       return Promise.reject(
         new Error('The scene is moving to another view. Inspect after it opens.'),
       );
@@ -331,6 +418,9 @@ export class SessionDirectory {
   detach({ sessionId, renderer, generation }) {
     const s = this.get(sessionId);
     if (s.renderer !== renderer || s.generation !== generation) return false;
+    clearTimeout(s.replacement?.timer);
+    s.replacement = undefined;
+    s.handoff = false;
     s.renderer = null;
     s.ready = false;
     this.rejectPending(s, 'View closed before confirming the command.');
@@ -351,6 +441,7 @@ export class SessionDirectory {
     if (this.closed) return;
     this.closed = true;
     for (const s of this.sessions.values()) {
+      clearTimeout(s.replacement?.timer);
       s.renderer = null;
       s.ready = false;
       this.rejectPending(s, 'Server closed.');

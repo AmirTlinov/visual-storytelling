@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { SessionDirectory } from '../session-directory.mjs';
 import { readJSON, writeJSON } from './storage.mjs';
 import { ProjectStore } from '../projects.mjs';
+import { readProjectFile } from '../project-files.mjs';
 import { JobRunner } from '../jobs.mjs';
 import { ProjectWatch } from '../project-watch.mjs';
 import { Preferences } from '../preferences.mjs';
@@ -50,40 +51,45 @@ const watched = new ProjectWatch(async (id) => {
   )
     await prepareProject(project);
 });
-const jobs = new JobRunner(data, join(directory, 'worker.mjs'), async (job, result) => {
-  if (result.migration) {
-    const project = await projects.edit({
-      projectId: job.projectId,
-      sourceRevision: job.sourceRevision,
-      requestId: job.id + '-migration',
-      ...result.migration,
-    });
-    return { project, job: await prepareProject(project, job.id + '-build') };
-  }
-  if (result.buildRevision) {
-    const current = await projects.inspect(job.projectId);
-    if (result.sourceRevision !== current.sourceRevision) return { ...result, superseded: true };
-    const prepared = await readJSON(join(data, 'builds', result.buildRevision + '.json'));
-    await projects.remember({
-      ...projects.get(job.projectId),
-      buildRevision: result.buildRevision,
-    });
-    watched.open(projects.get(job.projectId));
-    for (const session of sessions.sessions.values())
-      if (session.build.projectId === job.projectId) {
-        session.nextBuild = prepared;
-        session.wake?.();
-      }
-  }
-  setTimeout(scheduleClose, 0);
-  await collectCache(data, {
-    limitMB: (await preferences.read()).cacheLimitMB,
-    projects: await projects.list(),
-    sessions: [...sessions.sessions.values()],
-    snapshotLeases: jobs.snapshotLeases(),
-  }).catch((error) => console.error('Cache: ' + error.message));
-  return result;
-});
+const jobs = new JobRunner(
+  data,
+  join(directory, 'worker.mjs'),
+  async (job, result) => {
+    if (result.migration) {
+      const project = await projects.edit({
+        projectId: job.projectId,
+        sourceRevision: job.sourceRevision,
+        requestId: job.id + '-migration',
+        ...result.migration,
+      });
+      return { project, job: await prepareProject(project, job.id + '-build') };
+    }
+    if (result.buildRevision) {
+      const current = await projects.inspect(job.projectId);
+      if (result.sourceRevision !== current.sourceRevision) return { ...result, superseded: true };
+      const prepared = await readJSON(join(data, 'builds', result.buildRevision + '.json'));
+      await projects.remember({
+        ...projects.get(job.projectId),
+        buildRevision: result.buildRevision,
+      });
+      watched.open(projects.get(job.projectId));
+      for (const session of sessions.sessions.values())
+        if (session.build.projectId === job.projectId) {
+          session.nextBuild = prepared;
+          session.wake?.();
+        }
+    }
+    setTimeout(scheduleClose, 0);
+    await collectCache(data, {
+      limitMB: (await preferences.read()).cacheLimitMB,
+      projects: await projects.list(),
+      sessions: [...sessions.sessions.values()],
+      snapshotLeases: jobs.snapshotLeases(),
+    }).catch((error) => console.error('Cache: ' + error.message));
+    return result;
+  },
+  { toolchainRoot: resolve(directory, '../..') },
+);
 await jobs.start();
 await writeJSON(join(data, 'builds', example.revision + '.json'), example);
 const connections = new Set(),
@@ -306,6 +312,23 @@ const operations = {
   async project({ projectId, file }) {
     return file ? projects.read(projectId, file) : projects.inspect(projectId);
   },
+  async shownSource({ sessionId, file }) {
+    const session = await load(sessionId),
+      shown = session.build;
+    if (!shown.snapshot)
+      throw new Error(
+        'This view has no editable source snapshot. Create a project from the example first.',
+      );
+    const working = await projects.inspect(shown.projectId);
+    return {
+      sessionId,
+      projectId: shown.projectId,
+      buildRevision: shown.revision,
+      shownSourceRevision: shown.sourceRevision,
+      workingSourceRevision: working.sourceRevision,
+      ...(await readProjectFile(shown.snapshot, file)),
+    };
+  },
   async catalog() {
     return {
       projects: await projects.list(),
@@ -337,11 +360,12 @@ const operations = {
         settings,
       };
     }
+    const previous = await readJSON(join(projects.get(projectId).path, 'voice.json'));
     const settings = {
       enabled,
       provider: 'macos',
-      voice: voice ?? defaults.voice,
-      language: language ?? defaults.language,
+      voice: voice ?? previous?.voice ?? defaults.voice,
+      language: language ?? previous?.language ?? defaults.language,
     };
     if (enabled) await macosVoice.prepare(settings, {});
     return operations.edit({
@@ -429,6 +453,12 @@ const operations = {
         throw new Error('Prepare this project before requesting its pinned API.');
       root = join(build.snapshot, 'node_modules/@visual-storytelling/core');
     }
+    // The reader belongs to the installed plugin; declarations belong to the pinned project.
+    const { describeAPI } = await import(
+      pathToFileURL(join(directory, '../../tools/api.mjs')).href
+    );
+    const api = await describeAPI(root, query);
+    if (!api.missing.length) return api;
     const catalog = (await readJSON(join(root, 'examples/catalog.json'))) ?? {};
     const matches = Object.entries(catalog).filter(([id, e]) =>
       [id, e.title, e.summary].join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase()),
@@ -439,11 +469,7 @@ const operations = {
           .slice(0, 12)
           .map(([id, e]) => ({ id, ...e, source: join(root, 'examples', id, e.source) })),
       };
-    // The reader is trusted plugin code; declarations and examples come from the project version.
-    const { describeAPI } = await import(
-      pathToFileURL(join(directory, '../../tools/api.mjs')).href
-    );
-    return describeAPI(root, query);
+    return api;
   },
   async edit(args) {
     const project = await projects.edit(args);
@@ -515,7 +541,7 @@ const operations = {
     };
   },
   async exchange(params) {
-    const result = await sessions.exchange(params);
+    const { state: _state, ...result } = await sessions.exchange(params);
     if (params.report) await save(sessions.get(params.sessionId));
     return {
       ...result,

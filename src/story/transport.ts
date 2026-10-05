@@ -53,6 +53,11 @@ export function transport({ duration, audio }: TransportOptions) {
     media.pause();
     clock.update('state');
   }
+  function fail(cause: unknown) {
+    pause();
+    error = cause instanceof Error ? cause.message : String(cause);
+    notify();
+  }
   function seek(time: number) {
     if (disposed) throw new Error('Playback has been disposed');
     if (!Number.isFinite(time)) throw new Error('Seek time must be finite');
@@ -111,18 +116,14 @@ export function transport({ duration, audio }: TransportOptions) {
           const token = request;
           void startMedia(token).catch((cause) => {
             if (disposed || token !== request) return;
-            pause();
-            error = cause instanceof Error ? cause.message : String(cause);
-            notify();
+            fail(cause);
           });
         } else notify();
       },
       (cause) => {
         if (disposed || preparation !== task) return;
         preparation = undefined;
-        pause();
-        error = cause instanceof Error ? cause.message : String(cause);
-        notify();
+        fail(cause);
       },
     );
   }
@@ -130,9 +131,7 @@ export function transport({ duration, audio }: TransportOptions) {
     audio.addEventListener(
       'error',
       () => {
-        pause();
-        error = 'Не удалось загрузить звук';
-        notify();
+        fail(new Error('Не удалось загрузить звук'));
       },
       { signal: abort.signal },
     );
@@ -165,6 +164,7 @@ export function transport({ duration, audio }: TransportOptions) {
     },
     play,
     prepare,
+    fail,
     pause,
     seek,
     toggle() {

@@ -22,7 +22,14 @@ test(
           {
             id: 'first',
             text: 'Начнём в отмеченной точке. Три шага вправо.',
-            cues: [{ id: 'right', quote: 'Три шага', action: 'Растёт стрелка.' }],
+            cues: [
+              {
+                id: 'right',
+                quote: 'Три шага',
+                action: 'Растёт стрелка.',
+                timing: { delay: 0.1, duration: 0.4 },
+              },
+            ],
           },
           {
             id: 'second',
@@ -51,6 +58,7 @@ test(
       const changed = JSON.parse(await readFile(join(directory, 'timeline.json'), 'utf8'));
       assert.deepEqual(Object.keys(changed.cues), Object.keys(original.cues));
       assert.deepEqual(changed.cues.right, original.cues.right);
+      assert.deepEqual(changed.cues.right.timing, spec.segments[0].cues[0].timing);
       assert.ok(changed.duration > original.duration);
       assert.match(captionTrack(changed).serialize('srt'), /отмеченной точке/);
       const audio = await readFile(join(directory, 'audio.wav'));

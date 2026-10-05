@@ -1,4 +1,4 @@
-import { SceneShell, type SceneOptions } from '../scene.js';
+import { SceneShell, type SceneOptions, type SceneView } from '../scene.js';
 import { theme, type Theme } from '../ink/palette.js';
 import type { ControlValue } from '../controls/fields.js';
 import { activeCue, type Frame, type Script } from './cues.js';
@@ -28,8 +28,8 @@ export interface ChapterPresentation {
   snapshot?(): unknown;
   /** Freeze the current frame before returning; decoding its boundary image may be asynchronous. */
   capture?(viewport?: { aspect: number }): Promise<HTMLCanvasElement> | HTMLCanvasElement;
-  reset?(): void;
-  focus?(ids: readonly string[]): void;
+  /** Logical view belongs to the chapter; its disposal stays with the presentation. */
+  view?: Omit<SceneView, 'dispose'>;
   dispose(): void;
 }
 export interface SceneChapter extends ChapterTiming {
@@ -250,10 +250,6 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
           input: (changes) => story!.explore({ ...story!.values, ...changes }),
         };
         presentation.drawing.render(latest);
-        if (parent.scene) {
-          if (presentation.drawing.focus) parent.scene.focus = presentation.drawing.focus;
-          else delete parent.scene.focus;
-        }
         shell.showParameters([
           'chapter',
           'sceneTime',
@@ -321,7 +317,39 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
         resize.disconnect();
       });
     }
-    shell.attachView({ reset: () => presentations.active?.drawing.reset?.(), dispose() {} });
+    shell.attachView({
+      get transition() {
+        return presentations.active?.drawing.view?.transition;
+      },
+      get focus() {
+        const view = presentations.active?.drawing.view;
+        return view?.focus ? (ids: readonly string[]) => view.focus!(ids) : undefined;
+      },
+      validateFocus(ids) {
+        presentations.active?.drawing.view?.validateFocus?.(ids);
+      },
+      reset(settings) {
+        const from = settings?.from as { chapter?: string; state?: unknown } | undefined;
+        presentations.active?.drawing.view?.reset({
+          animate: settings?.animate,
+          from: from?.chapter === options.chapters[current]!.id ? from?.state : undefined,
+        });
+      },
+      capture() {
+        const state = presentations.active?.drawing.view?.capture?.();
+        return state === undefined ? undefined : { chapter: options.chapters[current]!.id, state };
+      },
+      restore(value: unknown) {
+        const saved = value as { chapter?: string; state?: unknown } | undefined;
+        const view = presentations.active?.drawing.view;
+        return Boolean(
+          saved?.chapter === options.chapters[current]!.id &&
+            view?.restore &&
+            view.restore(saved.state) !== false,
+        );
+      },
+      dispose() {},
+    });
     await story.ready();
     return { shell, story, scene };
   } catch (error) {
