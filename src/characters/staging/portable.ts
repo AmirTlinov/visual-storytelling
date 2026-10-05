@@ -23,7 +23,7 @@ export function portable(
   color?: string,
 ): Furniture {
   const ink = '#304650';
-  const drawings = {
+  const drawings: Record<typeof kind, NonNullable<Furniture['art']>> = {
     letter: {
       width: 72,
       height: 50,
@@ -37,11 +37,17 @@ export function portable(
       svg: `<path d="M18-48q26-6 22 17-2 18-21 12" fill="none"/><path d="M-27-55h46l-3 45q-20 18-40 0Z" fill="${color ?? '#8daeba'}"/><ellipse cx="-4" cy="-55" rx="23" ry="5" fill="#d2be9b"/>`,
     },
     instrument: {
+      title: 'Измерительный прибор',
       width: 80,
       height: 92,
       grip: { x: -31, y: -24 },
-      svg: `<path d="M-40 0v-92h80V0Z" fill="${color ?? '#af9875'}"/><path d="M-29-81h58v42h-58Z" fill="#ebe8d7"/><path d="m-22-47 22-25 17 23" fill="none"/><circle cy="-19" r="8" fill="#658f84"/>`,
-      activeSvg: `<path d="M-40 0v-92h80V0Z" fill="${color ?? '#af9875'}"/><path d="M-29-81h58v42h-58Z" fill="#ebe8d7"/><path d="m-22-47 38-25 1 23" fill="none"/><circle cy="-19" r="8" fill="#ead67d"/>`,
+      svg: `<path d="M-40 0v-92h80V0Z" fill="${color ?? '#af9875'}"/><path d="M-29-81h58v42h-58Z" fill="#ebe8d7"/><path data-reading d="m-22-47 22-25 17 23" fill="none"/><circle data-button cy="-19" r="8" fill="#658f84"/>`,
+      paint(node, { active = 0 }) {
+        node
+          .querySelector('[data-reading]')!
+          .setAttribute('d', `m-22-47 ${22 + active * 16}-25 ${17 - active * 16} 23`);
+        node.querySelector('[data-button]')!.setAttribute('fill', active ? '#ead67d' : '#658f84');
+      },
     },
   };
   const art = drawings[kind];
@@ -55,7 +61,6 @@ export function portable(
     art: {
       ...art,
       svg: wrap(art.svg),
-      ...('activeSvg' in art ? { activeSvg: wrap(art.activeSvg) } : {}),
     },
     ...(kind === 'instrument'
       ? { trigger: { at: { x: 0, z: 0, height: 0.19 }, effect: 'toggle' as const } }
@@ -66,40 +71,30 @@ export async function portableArt(
   context: ManagedWebGLRenderingContext,
   objects: Readonly<Record<string, Furniture>>,
 ) {
-  const textures = new Map<string, GLTexture[]>();
+  const textures = new Map<string, GLTexture>();
   const dispose = () => {
-    for (const pair of textures.values()) pair.forEach((t) => t.dispose());
+    for (const texture of textures.values()) texture.dispose();
     textures.clear();
   };
   try {
     for (const [id, item] of Object.entries(objects))
-      if (item.kind === 'prop') {
-        const art = item.art!,
-          pair: GLTexture[] = [];
-        textures.set(id, pair);
-        for (const content of [art.svg, ...(art.activeSvg ? [art.activeSvg] : [])]) {
-          const image = new Image();
-          image.src =
-            'data:image/svg+xml;charset=utf-8,' +
-            encodeURIComponent(
-              `<svg xmlns="http://www.w3.org/2000/svg" width="${art.width * 2}" height="${art.height * 2}" viewBox="${-art.width / 2} ${-art.height} ${art.width} ${art.height}">${content}</svg>`,
-            );
-          await image.decode();
-          pair.push(new GLTexture(context, image, false));
-        }
+      if (item.kind === 'prop' && !item.art!.paint) {
+        const art = item.art!;
+        const image = new Image();
+        image.src =
+          'data:image/svg+xml;charset=utf-8,' +
+          encodeURIComponent(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="${art.width * 2}" height="${art.height * 2}" viewBox="${-art.width / 2} ${-art.height} ${art.width} ${art.height}">${art.svg}</svg>`,
+          );
+        await image.decode();
+        textures.set(id, new GLTexture(context, image, false));
       }
     return {
-      draw(renderer: SceneRenderer, frame: CarriedFrame, height: number, active: number) {
-        const pair = textures.get(frame.id);
-        if (!pair) return;
+      draw(renderer: SceneRenderer, frame: CarriedFrame, height: number) {
+        const texture = textures.get(frame.id);
+        if (!texture) return;
         const box = portableBounds(frame, objects[frame.id]!.art!);
-        renderer.drawTexture(
-          pair[active ? 1 : 0] ?? pair[0]!,
-          box.x,
-          height - box.y - box.height,
-          box.width,
-          box.height,
-        );
+        renderer.drawTexture(texture, box.x, height - box.y - box.height, box.width, box.height);
       },
       dispose,
     };

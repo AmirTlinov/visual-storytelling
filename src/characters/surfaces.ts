@@ -72,7 +72,12 @@ export function characterSurfaces(
     for (const [id, definition] of Object.entries(definitions)) {
       const item = options.set.staging?.objects[id];
       if (!item) throw new Error(`Unknown object for drawing surface: ${id}`);
-      if (item.kind !== 'book' && item.kind !== 'board' && !item.surface?.corners)
+      if (
+        item.kind !== 'book' &&
+        item.kind !== 'board' &&
+        !item.surface?.corners &&
+        !item.art?.paint
+      )
         throw new Error(`Object ${id} needs a drawable plane`);
       const host = document.createElement('div');
       host.className = 've-character-surface';
@@ -185,6 +190,7 @@ export function characterSurfaces(
       focus?: readonly string[],
       resolveValues = false,
       layoutBox = frameBox,
+      objectValues: Readonly<Record<string, Readonly<Record<string, number>>>> = {},
     ) {
       camera = frameBox;
       layoutCamera = layoutBox;
@@ -198,6 +204,16 @@ export function characterSurfaces(
           resolveValues && frame.mode === 'story'
             ? { ...frame, values: { ...frame.values, ...e.definition.valuesAt?.(frame) } }
             : frame;
+        const channels = objectValues[id];
+        if (channels) {
+          const values =
+            frame.mode === 'explore'
+              ? { ...channels, ...e.frame.values }
+              : { ...e.frame.values, ...channels };
+          if (options.set.staging!.objects[id]!.trigger && Object.hasOwn(channels, 'active'))
+            values.active = channels.active!;
+          e.frame = { ...e.frame, values };
+        }
         if (e.presentation) e.drawing.render(e.frame, e.size);
       }
       for (const layer of strata) layer.hidden = true;

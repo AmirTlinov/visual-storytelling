@@ -4,7 +4,9 @@ import { project } from './staging/space.js';
 import { stageFrame, sameShot, type FrameBox } from './staging/camera.js';
 import { world } from './staging/world.js';
 import { performance } from './performance.js';
-import { compileScore, smooth, type CharacterScore } from './score.js';
+import { compileScore, type CharacterScore } from './score.js';
+import { propFrame, smooth } from './prop-state.js';
+import { artworkSurfaces, mountArtwork } from './artwork.js';
 import type { CharacterStageOptions, Place, Point } from './types.js';
 import { fitFrame } from '../scene-frame.js';
 import { characterSurfaces } from './surfaces.js';
@@ -27,6 +29,7 @@ export async function characterStage(
   score: CharacterScore,
   shared?: CharacterRenderer,
 ) {
+  options = { ...options, surfaces: artworkSurfaces(options) };
   const { set, pack, cast } = options;
   const background = options.background !== false;
   const scope = `character-stage-${++nextStage}`;
@@ -154,10 +157,12 @@ export async function characterStage(
     }
     const nodes = Object.fromEntries(
       (background ? Object.entries(score.props) : []).map(([id, prop]) => {
-        const group = document.createElementNS(NS, 'g');
-        group.innerHTML = prop.art.svg.replaceAll('$id', `${scope}-${id}`);
+        const group = mountArtwork(
+          prop.layer === 'back' ? back : front,
+          prop.art,
+          `${scope}-${id}`,
+        );
         group.dataset.reviewId = id;
-        (prop.layer === 'back' ? back : front).append(group);
         return [id, group];
       }),
     );
@@ -211,37 +216,21 @@ export async function characterStage(
     };
     const sample = (time: number, reduced: boolean) => {
       const { actions, actorBounds } = sampleCast(time, reduced);
-      const propState: Record<string, unknown> = {};
-      for (const [id, prop] of Object.entries(score.props)) {
-        const key = score.propTracks[id]!.findLast((key) => key.start <= time);
-        const from = key?.from ?? prop,
-          to = key?.to ?? prop;
-        const p = key
-          ? reduced
-            ? 1
-            : smooth((time - key.start) / Math.max(0.001, key.end - key.start))
-          : 1;
-        const a = resolve(from.at!),
-          b = resolve(to.at!);
-        const at = {
-          x: a.x + (b.x - a.x) * p,
-          y: a.y + (b.y - a.y) * p - (key?.arc ?? 0) * 4 * p * (1 - p),
-        };
-        const opacity = (from.opacity ?? 1) + ((to.opacity ?? 1) - (from.opacity ?? 1)) * p;
-        const values = Object.fromEntries(
-          Object.keys({ ...from.values, ...to.values }).map((name) => {
-            const a = from.values?.[name] ?? 0,
-              b = to.values?.[name] ?? a;
-            return [name, a + (b - a) * p];
-          }),
-        );
+      const propState: Record<string, ReturnType<typeof propFrame>> = {};
+      const controls = prepared?.controls() ?? {};
+      for (const [id, initial] of Object.entries(score.propStates)) {
+        const state = propFrame(initial, score.propTracks[id]!, time, reduced, resolve);
+        const object = set.staging?.objects[id];
+        if (object?.trigger) state.values.active = controls[id] ?? object.trigger.initial ?? 0;
         const node = nodes[id];
         if (node) {
+          const prop = score.props[id]!,
+            at = state.at!;
           node.setAttribute('transform', `translate(${at.x} ${at.y}) scale(${prop.scale ?? 1})`);
-          node.setAttribute('opacity', String(opacity));
-          prop.art.paint?.(node, values);
+          node.setAttribute('opacity', String(state.opacity));
+          prop.art.paint?.(node, state.values);
         }
-        propState[id] = { at, opacity, values };
+        propState[id] = state;
       }
       bounds = {
         ...prepared?.bounds(),
@@ -404,6 +393,7 @@ export async function characterStage(
           focus,
           !frame,
           current,
+          Object.fromEntries(Object.entries(propState).map(([id, state]) => [id, state.values])),
         );
         renderer!.begin();
         try {
@@ -556,10 +546,8 @@ export const CharacterStage = {
       }
       return {
         get canvas() {
-          if (options.some((o) => Object.keys(o.surfaces ?? {}).length))
-            throw new Error(
-              'This cast sequence has live Ink surfaces. Capture its rendered stage for a complete image.',
-            );
+          // Each mounted stage knows its explicit and automatically prepared surfaces.
+          for (const stage of stages) void stage.canvas;
           return graphics.canvas;
         },
         render(index: number, time: number, reduced = false) {

@@ -34,8 +34,11 @@ export interface Actor {
   holdingHand?: 'left' | 'right';
 }
 export interface PropArt {
+  /** Accessible name when the drawing is mounted as a physical live surface. */
+  title?: string;
   /** Local SVG, with its contact point at (0,0). Source must be trusted authored artwork. */
   svg: string;
+  /** Absolute drawing state. Physical controls supply a reserved `active` channel. */
   paint?(element: SVGGElement, values: Readonly<Record<string, number>>): void;
 }
 export interface Prop {
@@ -78,7 +81,7 @@ export interface Beat {
   title?: string;
   /** Omitted actors continue their last performance. */
   actors?: Readonly<Record<string, string>>;
-  /** Omitted props and channels retain their last value. */
+  /** Flat props and physical drawings share value tracks. Omitted channels retain their value. */
   props?: Readonly<Record<string, PropChange>>;
   perform?: readonly StageAction[];
   shot?: Shot;
@@ -98,7 +101,7 @@ export interface CharacterStageOptions {
   script?: Script;
   /** Crossfade between authored poses in seconds. */
   blend?: number;
-  /** False renders only the transparent character canvas, without scenery, shadows or props. */
+  /** False hides scenery, shadows and resting props; items carried by the cast remain visible. */
   background?: boolean;
 }
 export interface CharacterStoryOptions extends CharacterStageOptions {

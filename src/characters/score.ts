@@ -1,31 +1,29 @@
 import { cueSheet, type Script } from '../story/cues.js';
-import type { CharacterStageOptions, Place, PropChange } from './types.js';
+import type { CharacterStageOptions, Place, PropArt, PropChange } from './types.js';
 import { destination } from './staging/layout.js';
 import { compileBlocking } from './staging/blocking.js';
 import { propStart } from './prop-timing.js';
-
-export const smooth = (t: number) => {
-  t = Math.max(0, Math.min(1, t));
-  return t * t * (3 - 2 * t);
-};
+import type { PropKey, PropState } from './prop-state.js';
 export interface ActionKey {
   start: number;
   action: string;
 }
-export interface PropKey {
-  start: number;
-  end: number;
-  from: PropState;
-  to: PropState;
-  arc: number;
-}
-type PropState = Pick<PropChange, 'at' | 'opacity' | 'values'>;
 
 /** Compile a storyboard once; the existing Story owns validation, time and playback. */
 export function compileScore(options: CharacterStageOptions) {
   const { pack, set, cast, beats } = options;
   const props = { ...set.props, ...options.props };
   const finite = (n: number) => Number.isFinite(n);
+  const artwork = (art: PropArt, id: string) => {
+    if (
+      !art ||
+      typeof art.svg !== 'string' ||
+      (art.paint !== undefined && typeof art.paint !== 'function')
+    )
+      throw new Error(`Prop ${id}: art needs svg and an optional paint function`);
+    if ('activeSvg' in art)
+      throw new Error(`Prop ${id}: use art.paint with the active channel instead of activeSvg`);
+  };
   if (![set.width, set.height].every((n) => finite(n) && n > 0))
     throw new Error('Invalid stage size');
   if (!beats.length || !Object.keys(cast).length)
@@ -89,7 +87,27 @@ export function compileScore(options: CharacterStageOptions) {
   }
   const states: Record<string, PropState> = Object.create(null);
   const propTracks: Record<string, PropKey[]> = Object.create(null);
+  const objects = set.staging?.objects ?? {};
+  for (const [id, item] of Object.entries(objects)) {
+    if (item.art) {
+      if (item.kind !== 'prop') throw new Error(`Object ${id}: art belongs to kind prop`);
+      artwork(item.art, id);
+    }
+    if (Object.hasOwn(cast, id) || Object.hasOwn(props, id))
+      throw new Error(`Physical object shares an actor or prop ID: ${id}`);
+    if (item.art?.paint && (options.surfaces?.[id] || item.surface?.corners))
+      throw new Error(`Object ${id}: art.paint owns its whole drawing; use surfaces for an inset`);
+    if (item.art?.paint || options.surfaces?.[id]) {
+      propState({ values: item.values });
+      if (item.trigger && Object.hasOwn(item.values ?? {}, 'active'))
+        throw new Error(`Object ${id}: the press trigger owns the active channel`);
+      states[id] = { values: { ...item.values } };
+      propTracks[id] = [];
+    } else if (item.values !== undefined)
+      throw new Error(`Object ${id}: values need art.paint or a drawing surface`);
+  }
   for (const [id, prop] of Object.entries(props)) {
+    artwork(prop.art, id);
     if (Object.hasOwn(cast, id)) throw new Error(`Actor and prop share an ID: ${id}`);
     if (prop.scale !== undefined && (!finite(prop.scale) || prop.scale <= 0))
       throw new Error(`Invalid prop scale: ${id}`);
@@ -98,6 +116,7 @@ export function compileScore(options: CharacterStageOptions) {
     states[id] = { at: prop.at, opacity: prop.opacity ?? 1, values: { ...prop.values } };
     propTracks[id] = [];
   }
+  const propStates = { ...states };
   const ids = new Set<string>();
   for (const beat of beats) {
     if (!beat.id.trim() || ids.has(beat.id)) throw new Error(`Duplicate or empty beat: ${beat.id}`);
@@ -141,6 +160,15 @@ export function compileScore(options: CharacterStageOptions) {
     for (const [id, change] of Object.entries(beat.props ?? {})) {
       const from = states[id];
       if (!from) throw new Error(`Unknown prop: ${id}`);
+      const object = objects[id];
+      if (object) {
+        if (change.at !== undefined || change.opacity !== undefined || change.arc !== undefined)
+          throw new Error(
+            `Object ${id}: physical placement belongs to perform; props animates values`,
+          );
+        if (object.trigger && Object.hasOwn(change.values ?? {}, 'active'))
+          throw new Error(`Object ${id}: the press trigger owns the active channel`);
+      }
       propState(change);
       const to = {
         at: change.at ?? from.at,
@@ -177,6 +205,6 @@ export function compileScore(options: CharacterStageOptions) {
   }
   if (!options.script) script.duration = time;
   cueSheet(script);
-  return { script, tracks, props, propTracks, blocking };
+  return { script, tracks, props, propStates, propTracks, blocking };
 }
 export type CharacterScore = ReturnType<typeof compileScore>;

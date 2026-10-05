@@ -1,4 +1,4 @@
-import type { Point } from '../types.js';
+import type { Point, PropArt } from '../types.js';
 
 /** Ground coordinates in metres: x right, z away from the camera, height above the ground. */
 export interface GroundPoint {
@@ -38,13 +38,13 @@ export interface Furniture {
   scale?: number;
   color?: string;
   /** Portable vector artwork in local drawing units, origin at its resting contact. */
-  art?: {
-    svg: string;
-    activeSvg?: string;
+  art?: PropArt & {
     width: number;
     height: number;
     grip: { x: number; y: number };
   };
+  /** Initial drawing channels; beat.props uses the same channels on physical and flat props. */
+  values?: Readonly<Record<string, number>>;
   /** Surface height in metres. Chairs, benches and tables provide defaults. */
   support?: { height: number };
   /** Local seat offsets. A bench provides two places by default. */

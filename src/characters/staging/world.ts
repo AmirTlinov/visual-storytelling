@@ -53,7 +53,7 @@ export async function world(
     surface?: (id: string, quad: Quad) => void,
   ) => {
     if ('portable' in frame) {
-      props?.draw(renderer, frame, height, frames.objects[frame.id] ?? 0);
+      props?.draw(renderer, frame, height);
       if (options.surfaces?.[frame.id])
         surface?.(
           frame.id,
@@ -153,12 +153,17 @@ export async function world(
         }));
       if (options.background !== false)
         for (const [id, item] of Object.entries(staging.objects))
-          if (item.kind === 'door')
+          if (item.kind === 'door' && !omit.includes(id))
             for (const part of furnitureParts(item, staging.projection, frames.objects[id] ?? 0))
               items.push({ depth: part.depth, draw: () => drawFurniture(renderer, part, height) });
       for (const id of Object.keys(options.surfaces ?? {})) {
         const object = staging.objects[id]!;
-        if (object.kind !== 'book' && object.kind !== 'prop' && options.background !== false) {
+        if (
+          object.kind !== 'book' &&
+          object.kind !== 'prop' &&
+          options.background !== false &&
+          !omit.includes(id)
+        ) {
           const plane = drawingPlane(object, staging.projection, frames.items[id] ?? object.at);
           items.push({ depth: plane.depth, draw: () => surface?.(id, plane.quad) });
         }
@@ -213,7 +218,7 @@ export async function world(
                   .filter((index) => index >= 0),
                 index = arms.find((index) => index > torso) ?? arms[0] ?? -1;
               if (index > 0) renderer.drawSkeleton(skeleton, -1, order[index - 1]!.data.index);
-              drawItem(renderer, book, surface);
+              if (!omit.includes(book.id)) drawItem(renderer, book, surface);
               renderer.drawSkeleton(skeleton, index < 0 ? -1 : order[index]!.data.index, -1);
             } else renderer.drawSkeleton(skeleton);
           },
@@ -272,6 +277,7 @@ export async function world(
       items: structuredClone(heldItems),
       objects: { ...frames.objects },
     }),
+    controls: () => frames.objects,
     dispose() {
       props?.dispose();
       furniture.dispose();

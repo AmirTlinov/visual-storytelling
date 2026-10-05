@@ -7,6 +7,7 @@ import type { Furniture } from '../characters/staging/types.js';
 import type { NotebookSource } from './opening.js';
 import { snapshotSVG } from '../export/index.js';
 import type { characterStage } from '../characters/stage.js';
+import { placeNotebook } from './placement.js';
 
 /** Freeze the actual stage boundary before decoding its background image. */
 export async function notebookSource(
@@ -50,22 +51,7 @@ export function notebookWorld(set: StageSet) {
       return id;
     };
     bookId = available('story-notebook');
-    const deskId = available('story-desk');
-    const z = -0.4,
-      space = set.staging.projection,
-      scale = space.distance / (space.distance + z);
-    const x = (set.width * 0.81 - space.center) / (space.unit * scale);
-    set = arrange(set, {
-      objects: {
-        [deskId]: { kind: 'table', at: { x, z }, scale: 1, color: '#9e8667' },
-        [bookId]: {
-          kind: 'book',
-          at: { of: deskId, side: 'on' },
-          scale: 0.72,
-          color: '#385c63',
-        },
-      },
-    });
+    set = placeNotebook(set, bookId, available('story-desk'));
   } else set = arrange(set, { objects: { [bookId]: { color: '#385c63' } } });
   return { set, bookId };
 }

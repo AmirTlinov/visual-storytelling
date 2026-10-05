@@ -20,11 +20,16 @@ test('an open book keeps its live drawing on the table, through closeup, retake 
           import {CharacterStage} from './src/characters/stage.ts';
           import {chibi} from './src/characters/packs/chibi.ts';
           import {readingRoom} from './src/characters/staging/sets.ts';
+          import {arrange} from './src/characters/staging/layout.ts';
           import {compileScore} from './src/characters/score.ts';
           import './src/style.css';
           const host=document.querySelector('#scene');
-          const options={pack:chibi,set:readingRoom({theme:'laboratory'}),
-            cast:{hero:{skin:'tesla',at:'entry',scale:.8,holding:'book'}},
+          const set=arrange(readingRoom({theme:'laboratory',perspective:'overview',width:1680}),{
+            objects:{seat:null,plant:null,sideTable:{at:{x:-1.55,z:3.8},scale:.96}},
+            spots:{reader:{of:'sideTable',side:'left',gap:.55,offset:{x:0,z:.7}}},
+          });
+          const options={pack:chibi,set,
+            cast:{hero:{skin:'tesla',at:'reader',scale:.68,holding:'book'}},
             beats:[
               {id:'open',text:'Раскрыть книгу',perform:[{action:'openBook',actor:'hero',book:'book'}]},
               {id:'read',text:'Рассмотреть схему',perform:[{action:'read',actor:'hero',book:'book',pages:1}]},
@@ -35,7 +40,7 @@ test('an open book keeps its live drawing on the table, through closeup, retake 
               {id:'close',text:'Закрыть',perform:[{action:'closeBook',actor:'hero',book:'book'}]},
               {id:'return',text:'Вернуть закрытой',perform:[{action:'put',actor:'hero',onto:'sideTable'}]},
               {id:'finish',text:'Книга закрыта',seconds:2},
-            ],
+            ].map(beat=>({shot:{focus:['hero','book','sideTable'],framing:'medium'},...beat})),
             surfaces:{book:{title:'Живой рисунок на странице',size:{width:480,height:320},create(view){
               view.layer.innerHTML='<path d="M60 100H420V240H60Z M80 260H400" fill="none" stroke="#2369b4" stroke-width="5"/><circle cx="350" cy="170" r="35" fill="#edbd64" stroke="#b56a30" stroke-width="4"/><text x="240" y="52" text-anchor="middle" fill="#273d42" font-size="27">Наблюдение в тетради</text><circle data-charge cy="100" r="8" fill="#b56a30"/>';
               const dot=view.layer.querySelector('[data-charge]');let time;
@@ -45,7 +50,7 @@ test('an open book keeps its live drawing on the table, through closeup, retake 
           const put=score.blocking.plans.find(plan=>plan.action.action==='put');
           const placing=put.start+(put.end-put.start)*(put.timing.rise+put.timing.approach+put.timing.engage+put.timing.act/2)/Object.values(put.timing).reduce((a,b)=>a+b,0);
           window.galleryReady=CharacterStage.mount(host,options).then(stage=>{
-            window.lab={stage,cues:score.script.cues,placing,
+            window.lab={stage,cues:score.script.cues,placing,approach:put.to.hero.at,support:set.staging.objects.sideTable.at,
               sample(time,reduced=false){stage.render(time,reduced);return stage.snapshot();},
               inspect(){const surface=host.querySelector('[data-surface=book]');return {
                 state:stage.snapshot(),resting:stage.restingBook('book'),hidden:surface.hidden,
@@ -70,10 +75,16 @@ test('an open book keeps its live drawing on the table, through closeup, retake 
         output.text,
       );
     capture = await renderer({ directory, width: 960, controls: true });
-    const { cues, placing } = await capture.page.evaluate(() => ({
+    const { cues, placing, approach, support } = await capture.page.evaluate(() => ({
       cues: window.lab.cues,
       placing: window.lab.placing,
+      approach: window.lab.approach,
+      support: window.lab.support,
     }));
+    assert.ok(
+      approach.z <= support.z,
+      'the original film arrangement resolves to a visible contact',
+    );
     const sample = (time) => capture.page.evaluate((time) => window.lab.sample(time), time);
     const initial = await sample(0);
     assert.equal(initial.world.objects.book, 0);

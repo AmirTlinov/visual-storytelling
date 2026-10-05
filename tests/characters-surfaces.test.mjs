@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { drawingPlane } from '../dist/characters/staging/drawing-plane.js';
 import { bookPage } from '../dist/characters/staging/book.js';
-import { portable } from '../dist/characters/staging/portable.js';
-import { readingRoom } from '../dist/characters/staging/sets.js';
+import { portable, portableBounds } from '../dist/characters/staging/portable.js';
+import { readingRoom, courtyard } from '../dist/characters/staging/sets.js';
+import { destination } from '../dist/characters/staging/layout.js';
 import { projective } from '../dist/ink/projective.js';
 import { PerspectiveCamera, Vector3 } from '../dist/viewport/engine.js';
 import { notebookCamera } from '../dist/book/camera.js';
@@ -165,7 +166,7 @@ test('the same homography maps a perspective board and the opening book to all f
 
 test('a portable drawing uses the same local picture coordinates at rest and in either hand', () => {
   const space = readingRoom().staging.projection;
-  const item = portable('instrument', { x: 2, z: 3, height: 1.4 });
+  const item = portable('letter', { x: 2, z: 3, height: 1.4 });
   item.surface = {
     corners: [
       { x: -0.28, z: 0, height: 0.8 },
@@ -198,4 +199,30 @@ test('a portable drawing uses the same local picture coordinates at rest and in 
       ),
     /front plane/,
   );
+});
+
+test('automatic artwork content targets match its physical picture in each set projection', () => {
+  for (const set of [readingRoom(), courtyard()]) {
+    const space = set.staging.projection;
+    for (const scale of [undefined, 0.55, 1.2]) {
+      const item = { ...portable('instrument', { x: 2, z: 3, height: 1.4 }), scale };
+      const staging = { ...set.staging, objects: { meter: item }, spots: {} };
+      const target = destination(staging, 'meter.content');
+      const projected = project(space, target),
+        anchor = project(space, item.at);
+      const bounds = portableBounds(
+        { id: 'meter', portable: true, ...anchor, scale: anchor.scale * (scale ?? 0.72) },
+        item.art,
+      );
+      assert.ok(Math.abs(projected.x - bounds.x - bounds.width / 2) < 1e-9);
+      assert.ok(Math.abs(projected.y - bounds.y - bounds.height / 2) < 1e-9);
+      const quad = drawingPlane(item, space).quad;
+      assert.ok(Math.abs(quad[0].x - bounds.x) < 1e-9);
+      assert.ok(Math.abs(quad[0].y - bounds.y) < 1e-9);
+      assert.ok(Math.abs(quad[2].x - bounds.x - bounds.width) < 1e-9);
+      assert.ok(Math.abs(quad[2].y - bounds.y - bounds.height) < 1e-9);
+      staging.spots['meter.content'] = { x: -2, z: 1, height: 0 };
+      assert.deepEqual(destination(staging, 'meter.content'), staging.spots['meter.content']);
+    }
+  }
 });

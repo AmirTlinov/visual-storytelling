@@ -116,7 +116,7 @@ export function compileBlocking(options: CharacterStageOptions, script?: Script)
     if (
       item.kind === 'prop' &&
       (!item.art ||
-        ![item.art.width, item.art.height, item.art.grip.x, item.art.grip.y].every(
+        ![item.art.width, item.art.height, item.art.grip?.x, item.art.grip?.y].every(
           Number.isFinite,
         ) ||
         item.art.width <= 0 ||
@@ -297,7 +297,7 @@ export function compileBlocking(options: CharacterStageOptions, script?: Script)
             staging,
             options.cast[action.actor]!,
             from[action.actor]!,
-            { ...staging.objects[id]!, at, open: objectStates[id] },
+            { ...staging.objects[id]!, id, at, open: objectStates[id] },
             options.pack.rig!,
             action.action === 'put'
               ? from[action.actor]!.holdingHand

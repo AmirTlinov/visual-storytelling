@@ -59,7 +59,7 @@ export const sourceDigest = (root) =>
     'tsconfig.json',
     'tsconfig.build.json',
   ]);
-const runtimeDigest = (root) => contentDigest(root, ['.'], (name) => name === receiptName);
+export const runtimeDigest = (root) => contentDigest(root, ['.'], (name) => name === receiptName);
 const packageDigest = async (root, runtime, output = join(root, 'dist')) => {
   // One fresh npm snapshot per identity check. npm owns files/ignore rules and
   // mandatory files such as README and licenses; do not maintain a second packlist.

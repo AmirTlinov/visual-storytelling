@@ -1,4 +1,4 @@
-import { boardPlane } from './drawing-plane.js';
+import { drawingCorners, drawingPoint } from './drawing-plane.js';
 import { doorPassage } from './doorway.js';
 import type { StageSet } from '../types.js';
 import type { Destination, Furniture, GroundPoint, Staging } from './types.js';
@@ -37,15 +37,13 @@ export function destination(staging: Staging, place: Destination): GroundPoint {
   let at: GroundPoint | undefined;
   if (typeof place === 'string') {
     if (reference?.content) {
-      const corners = item?.surface?.corners ?? (item?.kind === 'board' ? boardPlane : undefined);
+      const corners = item && drawingCorners(item);
       if (item && corners) {
-        const s = item.scale ?? 1;
-        at = {
-          x: item.at.x + (corners.reduce((n, p) => n + p.x, 0) / 4) * s,
-          z: item.at.z + (corners.reduce((n, p) => n + p.z, 0) / 4) * s,
-          height:
-            (item.at.height ?? 0) + (corners.reduce((n, p) => n + (p.height ?? 0), 0) / 4) * s,
-        };
+        at = drawingPoint(item, staging.projection, {
+          x: corners.reduce((n, p) => n + p.x, 0) / 4,
+          z: corners.reduce((n, p) => n + p.z, 0) / 4,
+          height: corners.reduce((n, p) => n + (p.height ?? 0), 0) / 4,
+        });
       }
     } else at = origin;
   } else if (place && typeof place === 'object' && 'of' in place) {

@@ -2,7 +2,8 @@ import type { Actor, Point } from '../types.js';
 import type { Placement } from './blocking.js';
 import type { BipedRig, Furniture, GroundPoint, Staging } from './types.js';
 import { project, distance } from './space.js';
-import { footprint } from './objects.js';
+import { footprint, supportPoint } from './objects.js';
+import { furnitureParts } from './furniture.js';
 import { route } from './navigation.js';
 import { bookHands, bookHandsOrder } from './book.js';
 import { notebookFaces, notebookParts } from './notebook.js';
@@ -22,7 +23,7 @@ export function transferApproach(
   staging: Staging,
   actor: Actor,
   before: Placement,
-  item: Furniture,
+  item: Furniture & { id: string },
   rig: BipedRig,
   preferredHand?: Side,
 ) {
@@ -94,21 +95,43 @@ export function transferApproach(
   for (const hands of sides)
     for (const [i, side] of hands.entries()) level(rig.reach[side].shoulder.height, grips[i]!.y);
   level(head.bottom, objectBounds.y - 2);
+  // A cutout actor and its held item share a depth. Prefer the camera side of
+  // the support, when reachable, to keep the transfer visible before release.
+  let supportDepth = Infinity;
   // Furniture edges supply useful approach planes; the route owns obstacle avoidance.
-  for (const object of Object.values(staging.objects)) {
+  for (const [id, object] of Object.entries(staging.objects)) {
+    if (id === item.id) continue;
     const box = footprint(object);
-    if (
-      box &&
-      item.at.x >= box.left &&
-      item.at.x <= box.right &&
-      item.at.z >= box.front &&
-      item.at.z <= box.back
-    ) {
+    const above = box
+      ? item.at.x >= box.left &&
+        item.at.x <= box.right &&
+        item.at.z >= box.front &&
+        item.at.z <= box.back
+      : Math.abs(item.at.x - object.at.x) + Math.abs(item.at.z - object.at.z) < 1e-6;
+    if (!above) continue;
+    if (box) {
       depths.add(box.front - radius);
       depths.add(box.back + radius);
     }
+    if (
+      (object.support || ['table', 'chair', 'bench'].includes(object.kind)) &&
+      Math.abs((supportPoint(object).height ?? 0) - (item.at.height ?? 0)) < 1e-6
+    ) {
+      const depth =
+        object.kind === 'prop'
+          ? object.at.z - 0.001
+          : Math.min(...furnitureParts(object, space).map((part) => part.depth));
+      supportDepth = Math.min(supportDepth, depth);
+      depths.add(depth - radius);
+    }
   }
-  const candidates: { at: GroundPoint; hand: Side; via: GroundPoint[]; cost: number }[] = [];
+  const candidates: {
+    at: GroundPoint;
+    hand: Side;
+    via: GroundPoint[];
+    cost: number;
+    behindSupport: boolean;
+  }[] = [];
   for (const z of depths) {
     // Projection cannot make a distant or over-high object reachable. Native IK
     // stays two-dimensional; these world limits keep its stance local to the contact.
@@ -166,11 +189,17 @@ export function transferApproach(
         }
         const path = [before.at, ...via, at];
         const length = path.slice(1).reduce((sum, p, i) => sum + distance(path[i]!, p), 0);
-        candidates.push({ at, hand: hands[0]!, via, cost: length });
+        candidates.push({
+          at,
+          hand: hands[0]!,
+          via,
+          cost: length,
+          behindSupport: z > supportDepth,
+        });
       }
     }
   }
-  candidates.sort((a, b) => a.cost - b.cost);
+  candidates.sort((a, b) => Number(a.behindSupport) - Number(b.behindSupport) || a.cost - b.cost);
   if (!candidates[0])
     throw new Error(
       `Cannot reach ${item.kind} at height ${item.at.height ?? 0} from floor ${floor}`,

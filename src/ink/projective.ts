@@ -50,6 +50,11 @@ export function projective(quad: Quad, width: number, height: number) {
   };
   return {
     at,
+    /** Parallel edges need only one native canvas draw, without tessellation. */
+    affine:
+      Math.abs(g) + Math.abs(h) < 1e-10
+        ? ([m[0]! / width, m[3]! / width, m[1]! / height, m[4]! / height, a.x, a.y] as const)
+        : undefined,
     inverse(x: number, y: number) {
       const a = m[0]! - x * g,
         b = m[1]! - x * h;
@@ -65,7 +70,7 @@ export function projective(quad: Quad, width: number, height: number) {
   };
 }
 
-/** Export uses the same homography as the live DOM; subdivision retains perspective. */
+/** Capture samples the same inverse homography as the live DOM, without internal clip edges. */
 export function paintPlane(
   context: CanvasRenderingContext2D,
   source: HTMLCanvasElement,
@@ -75,34 +80,66 @@ export function paintPlane(
     h = source.height,
     map = projective(quad, w, h);
   if (!map) return;
-  const triangle = (uv: [XY, XY, XY]) => {
-    const p = uv.map((q) => map.at(q.x, q.y));
-    const [a, b, c] = uv,
-      [pa, pb, pc] = p;
-    const det = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
-    const ax = ((pb!.x - pa!.x) * (c.y - a.y) - (pc!.x - pa!.x) * (b.y - a.y)) / det;
-    const ay = ((pb!.y - pa!.y) * (c.y - a.y) - (pc!.y - pa!.y) * (b.y - a.y)) / det;
-    const bx = ((pc!.x - pa!.x) * (b.x - a.x) - (pb!.x - pa!.x) * (c.x - a.x)) / det;
-    const by = ((pc!.y - pa!.y) * (b.x - a.x) - (pb!.y - pa!.y) * (c.x - a.x)) / det;
+  if (map.affine) {
     context.save();
-    context.beginPath();
-    context.moveTo(pa!.x, pa!.y);
-    context.lineTo(pb!.x, pb!.y);
-    context.lineTo(pc!.x, pc!.y);
-    context.closePath();
-    context.clip();
-    context.setTransform(ax, ay, bx, by, pa!.x - ax * a.x - bx * a.y, pa!.y - ay * a.x - by * a.y);
+    context.setTransform(...map.affine);
     context.drawImage(source, 0, 0);
     context.restore();
-  };
-  const n = 16;
-  for (let y = 0; y < n; y++)
-    for (let x = 0; x < n; x++) {
-      const a = { x: (x * w) / n, y: (y * h) / n },
-        b = { x: ((x + 1) * w) / n, y: (y * h) / n };
-      const c = { x: ((x + 1) * w) / n, y: ((y + 1) * h) / n },
-        d = { x: (x * w) / n, y: ((y + 1) * h) / n };
-      triangle([a, b, c]);
-      triangle([a, c, d]);
+    return;
+  }
+  const left = Math.max(0, Math.floor(Math.min(...quad.map((p) => p.x)))),
+    top = Math.max(0, Math.floor(Math.min(...quad.map((p) => p.y)))),
+    right = Math.min(context.canvas.width, Math.ceil(Math.max(...quad.map((p) => p.x)))),
+    bottom = Math.min(context.canvas.height, Math.ceil(Math.max(...quad.map((p) => p.y))));
+  if (right <= left || bottom <= top) return;
+  const plane = document.createElement('canvas');
+  plane.width = right - left;
+  plane.height = bottom - top;
+  const ink = plane.getContext('2d')!;
+  const pixels = source.getContext('2d')!.getImageData(0, 0, w, h).data;
+  const output = ink.createImageData(plane.width, plane.height),
+    target = output.data;
+  // Sample premultiplied colour so translucent ink keeps its pigment at edges.
+  // This runs only for perspective captures; live playback remains DOM/GPU driven.
+  for (let y = 0; y < plane.height; y++)
+    for (let x = 0; x < plane.width; x++) {
+      const uv = map.inverse(x + left + 0.5, y + top + 0.5);
+      const sx = uv.x - 0.5,
+        sy = uv.y - 0.5,
+        ix = Math.floor(sx),
+        iy = Math.floor(sy),
+        fx = sx - ix,
+        fy = sy - iy;
+      let alpha = 0,
+        red = 0,
+        green = 0,
+        blue = 0;
+      for (let dy = 0; dy < 2; dy++)
+        for (let dx = 0; dx < 2; dx++) {
+          const px = Math.max(0, Math.min(w - 1, ix + dx)),
+            py = Math.max(0, Math.min(h - 1, iy + dy)),
+            i = (py * w + px) * 4,
+            coverage = pixels[i + 3]! * (dx ? fx : 1 - fx) * (dy ? fy : 1 - fy);
+          alpha += coverage;
+          red += pixels[i]! * coverage;
+          green += pixels[i + 1]! * coverage;
+          blue += pixels[i + 2]! * coverage;
+        }
+      if (alpha === 0) continue;
+      const i = (y * plane.width + x) * 4;
+      target[i] = red / alpha;
+      target[i + 1] = green / alpha;
+      target[i + 2] = blue / alpha;
+      target[i + 3] = alpha;
     }
+  ink.putImageData(output, 0, 0);
+  context.save();
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.beginPath();
+  context.moveTo(quad[0].x, quad[0].y);
+  for (const point of quad.slice(1)) context.lineTo(point.x, point.y);
+  context.closePath();
+  context.clip();
+  context.drawImage(plane, left, top);
+  context.restore();
 }
