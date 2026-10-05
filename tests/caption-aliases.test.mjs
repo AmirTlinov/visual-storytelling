@@ -128,15 +128,23 @@ test('caption alias pairs reject empty, marked-up and ambiguous normalized keys'
 });
 
 test('SceneShell uses the same display aliases for visible and accessible chapter captions', async () => {
+  const phrase = 'Вычислим, насколько каждая связь влияет на общий промах в пэ дэ эф.';
+  const words = phrase.match(/[\p{L}\p{N}]+/gu).map((text, i) => ({
+    text,
+    start: 4 + i * 0.22,
+    end: 4.18 + i * 0.22,
+  }));
   const script = {
-    duration: 3,
+    duration: 10,
     cues: {},
     captionAliases: { 'пэ дэ эф': 'PDF' },
-    segments: [chapter('Пэ дэ эф.')],
+    segments: [chapter('Пэ дэ эф.'), { id: 'two-lines', start: 4, end: 8.5, text: phrase, words }],
   };
+  const wrapped = captionTrack(script).at(4.1);
+  assert.equal(wrapped.split('\n').length, 2);
   const bundle = await build({
     stdin: {
-      contents: `import { SceneShell } from './dist/scene.js';
+      contents: `import { SceneShell } from './dist/scene.js'; import './dist/style.css';
         window.mount = captions => {
           const shell = SceneShell.mount(document.querySelector('main'), {title:'Example', captions});
           shell.attachStory({script:${JSON.stringify(script)},stateAt:()=>({}),render(){}});
@@ -147,19 +155,59 @@ test('SceneShell uses the same display aliases for visible and accessible chapte
     bundle: true,
     write: false,
     format: 'iife',
+    outdir: '.',
     platform: 'browser',
     loader: { '.woff2': 'dataurl' },
   });
   const browser = await chromium.launch({ headless: true });
   try {
-    for (const captions of [true, undefined]) {
-      const page = await browser.newPage();
+    for (const [captions, width] of [
+      [true, 1280],
+      [true, 375],
+      [undefined, 375],
+    ]) {
+      const page = await browser.newPage({ viewport: { width, height: 812 } });
       await page.setContent('<main class="ve-scene"></main>');
-      await page.addScriptTag({ content: bundle.outputFiles[0].text });
+      await page.addStyleTag({
+        content: bundle.outputFiles.find((f) => f.path.endsWith('.css')).text,
+      });
+      await page.addScriptTag({
+        content: bundle.outputFiles.find((f) => f.path.endsWith('.js')).text,
+      });
       await page.evaluate((value) => {
         window.mount(value);
         document.querySelector('main').scene.seek(1.1);
       }, captions);
+      assert.equal(await page.locator('[data-caption]').textContent(), 'PDF.');
+      await page.evaluate(() => {
+        document.querySelector('main').scene.seek(4.1);
+        return document.fonts.ready;
+      });
+      assert.equal(await page.locator('[data-caption]').textContent(), wrapped);
+      assert.equal(await page.locator('[data-caption]').getAttribute('role'), 'status');
+      if (captions) {
+        const box = await page.locator('[data-caption]').evaluate((el) => ({
+          height: el.getBoundingClientRect().height,
+          lineHeight: parseFloat(getComputedStyle(el).lineHeight),
+          whiteSpace: getComputedStyle(el).whiteSpace,
+          overflows: el.scrollWidth > el.clientWidth,
+          top: el.getBoundingClientRect().top,
+          bottom: el.getBoundingClientRect().bottom,
+          controlsBottom: document.querySelector('[data-player]').getBoundingClientRect().bottom,
+        }));
+        assert.equal(box.whiteSpace, 'pre-line');
+        assert.equal(box.overflows, false);
+        const rows = box.height / box.lineHeight;
+        assert.ok(
+          rows >= 2 - 0.01 && rows <= (width === 375 ? 3 : 2) + 0.01,
+          JSON.stringify({ width, ...box }),
+        );
+        assert.ok(
+          box.top >= box.controlsBottom && box.bottom <= 812,
+          JSON.stringify({ width, ...box }),
+        );
+      }
+      await page.evaluate(() => document.querySelector('main').scene.seek(1.1));
       assert.equal(await page.locator('[data-caption]').textContent(), 'PDF.');
       await page.evaluate(() => document.querySelector('main').scene.seek(0));
       assert.equal(await page.locator('[data-caption]').textContent(), '');

@@ -22,7 +22,7 @@ test('captions preserve source typography, word boundaries and aligned time acro
   );
   assert.deepEqual(
     track.segments.map((c) => c.text),
-    ['«По-прежнему» e^x —', '3,14.', 'Верно?'],
+    ['«По-прежнему» e^x —', '3,14. Верно?'],
   );
   assert.equal(track.at(0.9), '');
   assert.equal(track.at(1), '«По-прежнему» e^x —');
@@ -60,6 +60,77 @@ test('captions preserve source typography, word boundaries and aligned time acro
       }),
     /does not match/,
   );
+});
+
+test('captions rebalance a real sentence tail without losing words or their acoustic intervals', () => {
+  const text = 'Вычислим, насколько каждая связь влияет на общий промах, и изменим её.';
+  const times = [
+    [1430.82022, 1431.36089],
+    [1431.96163, 1432.38215],
+    [1432.48227, 1432.82269],
+    [1432.90279, 1433.18314],
+    [1433.24321, 1433.66373],
+    [1433.74383, 1433.78388],
+    [1433.90403, 1434.18438],
+    [1434.24445, 1434.64494],
+    [1435.24569, 1435.26571],
+    [1435.34581, 1435.78635],
+    [1435.92653, 1436.04667],
+  ];
+  const words = text
+    .match(/[\p{L}\p{N}]+/gu)
+    .map((text, i) => ({ text, start: times[i][0], end: times[i][1] }));
+  const { segments } = captionTrack({
+    segments: [{ id: 'tail', start: 1430.8, end: 1436.5, text, words }],
+  });
+  assert.equal(
+    segments
+      .map((s) => s.text)
+      .join(' ')
+      .replace(/\s+/g, ' '),
+    text,
+  );
+  assert.equal(segments.at(-1).text, 'и изменим её.');
+  assert.ok(segments.every((s) => s.end - s.start >= 0.8 - 1e-6));
+  assert.ok(
+    segments.every(
+      (s) => s.text.split('\n').length <= 2 && s.text.split('\n').every((l) => l.length <= 42),
+    ),
+  );
+  for (const word of words)
+    assert.ok(segments.some((s) => s.start <= word.start && s.end >= word.end));
+});
+
+test('a short isolated caption holds in silence without joining across a pause or the next chapter', () => {
+  const track = captionTrack({
+    segments: [
+      {
+        id: 'one',
+        start: 0,
+        end: 4,
+        text: 'Да. Нет.',
+        words: [
+          { text: 'Да', start: 0.2, end: 0.35 },
+          { text: 'Нет', start: 2, end: 2.16 },
+        ],
+      },
+      {
+        id: 'two',
+        start: 2.5,
+        end: 4,
+        text: 'Дальше.',
+        words: [{ text: 'Дальше', start: 2.7, end: 3.3 }],
+      },
+    ],
+  });
+  assert.deepEqual(track.segments, [
+    { start: 0.2, end: 1, text: 'Да.' },
+    { start: 2, end: 2.5, text: 'Нет.' },
+    { start: 2.7, end: 3.5, text: 'Дальше.' },
+  ]);
+  assert.equal(track.at(1.5), '');
+  assert.equal(track.at(2.5), '');
+  assert.throws(() => captionTrack({ segments: [] }, { minSeconds: Infinity }), /Caption limits/);
 });
 
 test('word-aligned captions accept existing narration receipts without changing the spoken text', async () => {

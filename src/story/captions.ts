@@ -9,6 +9,10 @@ export interface CaptionOptions {
   /** Soft character limit; a word is never cut in half. */
   maxChars?: number;
   maxSeconds?: number;
+  /** Two balanced lines at most; indivisible words may exceed this soft limit. */
+  lineChars?: number;
+  /** Reading-time target; aligned starts and pauses are preserved. */
+  minSeconds?: number;
 }
 export interface CaptionTrack {
   readonly segments: readonly Caption[];
@@ -150,22 +154,111 @@ const stamp = (time: number, separator: string) => {
   return `${String(Math.floor(ms / 3600000)).padStart(2, '0')}:${String(Math.floor(ms / 60000) % 60).padStart(2, '0')}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}${separator}${String(ms % 1000).padStart(3, '0')}`;
 };
 
+function lines(text: string, width: number) {
+  text = text.trim().replace(/\s+/gu, ' ');
+  if (text.length <= width) return text;
+  let best = text,
+    cost = Infinity;
+  for (const match of text.matchAll(/ /gu)) {
+    const left = text.slice(0, match.index),
+      right = text.slice(match.index + 1),
+      overflow = Math.max(0, left.length - width, right.length - width),
+      score =
+        overflow * 1000 + Math.abs(left.length - right.length) - (/[,;:—]$/u.test(left) ? 8 : 0);
+    if (score < cost) {
+      cost = score;
+      best = left + '\n' + right;
+    }
+  }
+  return best;
+}
+
+function groupWords(words: Caption[], options: Required<CaptionOptions>, end: number) {
+  const { maxChars, maxSeconds, minSeconds, lineChars } = options;
+  const text = (group: Caption[]) => group.map((word) => word.text).join('');
+  const duration = (group: Caption[]) => group.at(-1)!.end - group[0]!.start;
+  const fits = (group: Caption[]) =>
+    group.length === 1 ||
+    (text(group).trim().length <= maxChars &&
+      duration(group) <= maxSeconds &&
+      lines(text(group), lineChars)
+        .split('\n')
+        .every((line) => line.length <= lineChars || !line.includes(' ')));
+  const groups: Caption[][] = [];
+  let current: Caption[] = [];
+  const flush = () => {
+    if (current.length) groups.push(current);
+    current = [];
+  };
+  for (const word of words) {
+    if (current.length && (!fits([...current, word]) || word.start - current.at(-1)!.end > 0.65))
+      flush();
+    current.push(word);
+    if (/[.!?…][»”"')]*$/u.test(word.text.trimEnd())) flush();
+  }
+  flush();
+
+  // A hard length cut must not strand the last word of a sentence in a brief flash.
+  // Repartition adjacent groups using their original word times, without crossing a pause.
+  const shortfall = (group: Caption[]) => Math.max(0, minSeconds - duration(group) - 1e-6) ** 2;
+  for (let i = 0; i < groups.length - 1; i++) {
+    const left = groups[i]!,
+      right = groups[i + 1]!;
+    if ((!shortfall(left) && !shortfall(right)) || right[0]!.start - left.at(-1)!.end > 0.65)
+      continue;
+    const both = [...left, ...right];
+    if (fits(both)) {
+      groups.splice(i, 2, both);
+      i = Math.max(-1, i - 2);
+      continue;
+    }
+    let cut = left.length,
+      best = (shortfall(left) + shortfall(right)) * 1000;
+    for (let split = 1; split < both.length; split++) {
+      const a = both.slice(0, split),
+        b = both.slice(split);
+      const score = (shortfall(a) + shortfall(b)) * 1000 + Math.abs(split - left.length);
+      if (score < best - 1e-9 && fits(a) && fits(b)) {
+        cut = split;
+        best = score;
+      }
+    }
+    groups.splice(i, 2, both.slice(0, cut), both.slice(cut));
+  }
+  return groups.map((group, i) => ({
+    start: group[0]!.start,
+    end: Math.max(
+      group.at(-1)!.end,
+      Math.min(group[0]!.start + minSeconds, groups[i + 1]?.[0]?.start ?? end),
+    ),
+    text: lines(text(group), lineChars),
+  }));
+}
+
 /** One optional caption track for playback, video, SRT and VTT. Times are absolute. */
 export function captionTrack(
   script: Pick<Script, 'segments' | 'captionAliases'>,
   options: CaptionOptions = {},
 ): CaptionTrack {
   const maxChars = options.maxChars ?? 76,
-    maxSeconds = options.maxSeconds ?? 5;
-  if (!Number.isFinite(maxChars) || maxChars < 1 || !Number.isFinite(maxSeconds) || maxSeconds <= 0)
+    maxSeconds = options.maxSeconds ?? 5,
+    lineChars = options.lineChars ?? 42,
+    requestedMinimum = options.minSeconds ?? 0.8,
+    minSeconds = Math.min(requestedMinimum, maxSeconds);
+  if (
+    [maxChars, maxSeconds, lineChars, requestedMinimum].some(
+      (value) => !Number.isFinite(value) || value <= 0,
+    ) ||
+    maxChars < 1 ||
+    lineChars < 1
+  )
     throw new Error('Caption limits must be positive');
   const segments: Caption[] = [];
   const aliases = aliasMatcher(script.captionAliases);
-  const append = (caption: Caption) => segments.push({ ...caption, text: caption.text.trim() });
   let previousEnd = 0;
-  for (const chapter of script.segments ?? []) {
-    let current: Caption | undefined;
-    for (const word of displayWords(chapter, aliases)) {
+  for (const [index, chapter] of (script.segments ?? []).entries()) {
+    const words = displayWords(chapter, aliases);
+    for (const word of words) {
       if (
         !Number.isFinite(word.start) ||
         !Number.isFinite(word.end) ||
@@ -175,26 +268,14 @@ export function captionTrack(
       )
         throw new Error(`Invalid caption time in ${chapter.id}`);
       previousEnd = word.end;
-      // Source spans include their own punctuation and spacing (по-прежнему, e^x, quotes).
-      if (
-        current &&
-        ((current.text + word.text).trim().length > maxChars ||
-          word.end - current.start > maxSeconds ||
-          word.start - current.end > 0.65)
-      ) {
-        append(current);
-        current = undefined;
-      }
-      if (current) {
-        current.text += word.text;
-        current.end = word.end;
-      } else current = { ...word };
-      if (/[.!?…][»”"')]*$/u.test(word.text.trimEnd())) {
-        append(current);
-        current = undefined;
-      }
     }
-    if (current) append(current);
+    segments.push(
+      ...groupWords(
+        words,
+        { maxChars, maxSeconds, lineChars, minSeconds },
+        Math.min(chapter.end, script.segments?.[index + 1]?.start ?? Infinity),
+      ),
+    );
   }
   return {
     segments,
