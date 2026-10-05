@@ -658,6 +658,17 @@
     "source": "scene.js",
     "guides": ["skills/visual-explainer/references/scene-template.md"]
   },
+  "result-delivery": {
+    "title": "Куда попадает результат?",
+    "page": "index.html",
+    "time": 9.5,
+    "checkpoints": [0, 4, 7.5, 9.5, 10.95, 11, 13],
+    "group": "techniques",
+    "summary": "Сумма записывается в память, скалярное произведение — в вектор. MathMorph ведёт размер, путь, появление ячейки и перемотку по двум меткам рассказа.",
+    "tags": ["MathMorph", "ячейка", "перенос", "вычисление", "память", "вектор", "3d"],
+    "source": "scene.js",
+    "guides": ["docs/morphing.md"]
+  },
   "svg-artwork": {
     "title": "Почему дальний кажется меньше?",
     "page": "index.html",

@@ -169,13 +169,15 @@ test('SVG instances retain their fitted size, paint order and authored visibilit
       // MathMorph's logical parts retain their explicit bounds/visibility owner.
       const logical = new Kit.Group();
       lab.view.scene.add(logical);
+      lab.logical = logical;
       let shown = true;
+      let logicalBounds = new Kit.Box3(new Kit.Vector3(1.6, 0, 0), new Kit.Vector3(1.8, 0.2, 0.2));
       lab.view.describe(
         logical,
         'logical',
         { label: 'Logical part' },
         {
-          bounds: () => new Kit.Box3(new Kit.Vector3(1.6, 0, 0), new Kit.Vector3(1.8, 0.2, 0.2)),
+          bounds: () => logicalBounds,
           visible: () => shown,
         },
       );
@@ -187,6 +189,8 @@ test('SVG instances retain their fitted size, paint order and authored visibilit
         await pixel();
         logicalSamples.push(logicalButton.hidden);
       }
+      // A camera envelope may include an unrelated object after a delivery.
+      logicalBounds = new Kit.Box3(new Kit.Vector3(-2, -1, -0.1), new Kit.Vector3(2, 1, 0.1));
       lab.front.root.visible = true;
       lab.front.root.position.z = 0.4;
       // Keep the tree visible: the material alone makes the front plane disappear.
@@ -213,6 +217,14 @@ test('SVG instances retain their fitted size, paint order and authored visibilit
     assert.equal(semantics.frontHidden, true);
     await page.mouse.click(...semantics.point);
     assert.deepEqual(await page.evaluate(() => hits), ['back']);
+    await page.evaluate(async () => {
+      // A logical part of this shared surface still takes precedence over its root.
+      lab.art.root.add(lab.logical);
+      lab.view.invalidate();
+      await pixel();
+    });
+    await page.mouse.click(...semantics.point);
+    assert.deepEqual(await page.evaluate(() => hits), ['back', 'logical']);
     const instances = await page.evaluate(async () => {
       const stroke = Kit.InkStroke3D.create(lab.view, [
         [-1.9, -0.5, 0],

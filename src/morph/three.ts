@@ -14,6 +14,7 @@ import { morphBody3D } from './body-3d.js';
 import { mathBodies } from './math-bodies.js';
 import { mathPlan } from './math.js';
 import { mathNumber } from './numbers.js';
+import { mathDelivery3D, type MathDelivery3DOptions } from './delivery-3d.js';
 import { cellLayout, validateCellColumns } from './layout.js';
 import { contentViewport } from '../layout/content.js';
 import type { MathOperation, MathMorphPlan, MathPart } from './types.js';
@@ -37,6 +38,8 @@ function mount(
     layout?: 'scene' | 'content';
     /** Maximum cells per row. Omit to adapt the row count to the viewport. */
     columns?: number;
+    /** Deliver the computed result into this receiver using a separate Story cue. */
+    delivery?: MathDelivery3DOptions;
   } = {},
 ) {
   validateCellColumns(options.columns);
@@ -50,11 +53,14 @@ function mount(
     disposed = false;
   let progress = 0;
   const stage = view.renderer.domElement.parentElement!;
-  const viewport = options.layout === 'scene' ? undefined : contentViewport(stage);
+  const viewport =
+    options.layout === 'scene' || options.delivery ? undefined : contentViewport(stage);
   let arrangement: ReturnType<typeof cellLayout> | undefined,
     layoutWidth = 0;
   let lastTime: MorphTime = 0,
-    lastCues: MorphCues | undefined;
+    lastCues: MorphCues | undefined,
+    lastDelivery: string | number | undefined;
+  let delivery: ReturnType<typeof mathDelivery3D> | undefined;
   let currentFrame: ReturnType<typeof plan.sample> | undefined;
   let configured = operation;
   object.userData.visualReview = () => ({
@@ -115,7 +121,7 @@ function mount(
       const key = `${id}:${part.id}`;
       if (!parts.has(key)) {
         const anchor = new Object3D();
-        object.add(anchor);
+        volume.object.add(anchor);
         const record = { object: anchor, part, visible: false, dispose: () => {} };
         parts.set(key, record);
         for (const origin of part.origins ?? []) {
@@ -154,7 +160,7 @@ function mount(
               const size = new Vector3(...part.size).multiply(new Vector3(...scale));
               return new Box3()
                 .setFromCenterAndSize(new Vector3(...part.position), size)
-                .applyMatrix4(object.matrixWorld);
+                .applyMatrix4(volume.object.matrixWorld);
             },
           },
         );
@@ -211,10 +217,21 @@ function mount(
       }),
     );
   }
-  function render(input: MorphTime, cues?: MorphCues) {
+  function render(input: MorphTime, cues?: MorphCues, placement?: string | number) {
     if (disposed) return;
+    if (placement !== undefined && !delivery)
+      throw new Error('Configure a MathMorph delivery receiver before supplying its progress');
+    if (
+      typeof placement === 'string' &&
+      (typeof input === 'number' || typeof input.progress === 'number')
+    )
+      throw new Error('A MathMorph delivery cue needs a Story frame');
     const time = morphTiming(input, cues, plan.stages),
       p = time.progress;
+    const travel =
+      typeof placement === 'string'
+        ? morphTiming(input, placement).progress
+        : morphTiming(placement ?? 0).progress;
     const widthAvailable = stage.clientWidth || layoutWidth || 640;
     if (plan.encoding !== 'quantity') {
       if (!arrangement || widthAvailable !== layoutWidth) {
@@ -227,10 +244,12 @@ function mount(
       viewport?.resize();
     }
     const frame = mathMotionFrame(plan, time, arrangement?.columns);
+    const deliveredBounds = delivery?.render(frame, plan.stages, travel, time.reduced);
     formula.element.style.maxWidth = `${Math.max(160, widthAvailable - 64)}px`;
     formula.set(frame.formula);
     lastTime = input;
     lastCues = cues;
+    lastDelivery = placement;
     currentFrame = frame;
     describeParts(frame);
     progress = p;
@@ -290,6 +309,7 @@ function mount(
     bounds.max.y += gap * 2.2;
     bounds.min.x -= gap * 1.6;
     bounds.max.x += gap * 0.6;
+    if (deliveredBounds) bounds.union(deliveredBounds);
     body.render(mathBodies(frame, measured));
     const currentNotes = new Set((frame.notes ?? []).map((note) => note.id));
     for (const [id, note] of notes)
@@ -328,6 +348,7 @@ function mount(
     clear();
     clearParts();
     rootMeaning();
+    delivery?.dispose();
     volume.dispose();
     formula.remove();
     dimensionLabels.forEach((l) => l.remove());
@@ -339,7 +360,7 @@ function mount(
     offRemove();
   }
   const off = view.onDispose(dispose);
-  const refresh = () => render(lastTime, lastCues);
+  const refresh = () => render(lastTime, lastCues, lastDelivery);
   const unwatchMotion = watchMotion(refresh);
   const resizeObserver = new ResizeObserver(refresh);
   resizeObserver.observe(stage);
@@ -351,6 +372,7 @@ function mount(
       }
   });
   try {
+    if (options.delivery) delivery = mathDelivery3D(volume.object, options.delivery);
     prepare();
     render(0);
   } catch (error) {

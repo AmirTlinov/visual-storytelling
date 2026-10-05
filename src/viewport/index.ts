@@ -24,4 +24,5 @@ export { readableFrame, geometryFrameAnchors } from './framing.js';
 export type { FrameAnchor, ReadableFrame } from './framing.js';
 
 export { MathMorph3D } from '../morph/three.js';
+export type { MathDelivery3DOptions } from '../morph/delivery-3d.js';
 export { Morph3D } from '../morph/object-3d.js';

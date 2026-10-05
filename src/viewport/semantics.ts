@@ -87,9 +87,9 @@ export function semanticObjects3D(
   const raycaster = new Raycaster();
   const boxOf = (subject: { object: Object3D; options: SubjectOptions3D }) =>
     subject.options.bounds?.() ?? new Box3().setFromObject(subject.object);
-  const attached = (object: Object3D) => {
+  const attached = (object: Object3D, root: Object3D = scene) => {
     for (let node: Object3D | null = object; node; node = node.parent)
-      if (node === scene) return true;
+      if (node === root) return true;
     return false;
   };
   const visible = (record: { object: Object3D; options: SubjectOptions3D }) =>
@@ -141,9 +141,13 @@ export function semanticObjects3D(
         .find(
           ({ object, face }) => objectVisible(object) && drawsGeometry(object, face?.materialIndex),
         );
+      const subject = hit && subjectOf(hit.object);
       const candidates = [...records.values()]
         .flatMap((record) => {
           if (!record.options.bounds || !visible(record)) return [];
+          // Shared-surface regions refine their own subject. A broader logical
+          // envelope must not steal a click from an unrelated physical object.
+          if (subject && !attached(record.object, subject.object)) return [];
           const point = raycaster.ray.intersectBox(boxOf(record), new Vector3());
           return point ? [{ record, distance: point.distanceTo(raycaster.ray.origin) }] : [];
         })
@@ -158,7 +162,6 @@ export function semanticObjects3D(
             return false;
           }),
       );
-      const subject = hit && subjectOf(hit.object);
       const record =
         region && (!hit || subject || region.distance <= hit.distance)
           ? region.record
