@@ -129,6 +129,64 @@ test('entering the world notebook reserves camera time without moving spoken cue
   assert.deepEqual(script.cues['paper.try'], aligned.cues['paper.try']);
 });
 
+test('document action timing survives speech projection and uses existing time after its phrase', () => {
+  const story = {
+    title: 'Действие',
+    chapters: [
+      {
+        id: 'lesson',
+        title: 'Действие',
+        beats: [
+          {
+            id: 'start',
+            text: 'Вычисляем',
+            say: 'Начнём.',
+            timing: { until: 'finish', delay: 0.2 },
+          },
+          { id: 'finish', text: 'Завершаем', say: 'Закончим.', timing: { duration: 4 } },
+        ],
+      },
+    ],
+  };
+  const spec = documentNarration(story);
+  assert.deepEqual(spec.segments[0].cues[0].timing, { until: 'lesson.finish', delay: 0.2 });
+  assert.deepEqual(spec.segments[0].cues[1].timing, { duration: 4 });
+  assert.equal(
+    story.chapters[0].beats[0].timing.until,
+    'finish',
+    'projection does not rewrite authored IDs',
+  );
+  const aligned = {
+    duration: 12,
+    cues: {
+      'lesson.start': { start: 1, end: 1.6, timing: spec.segments[0].cues[0].timing },
+      'lesson.finish': { start: 6, end: 6.8, timing: spec.segments[0].cues[1].timing },
+    },
+    segments: [{ id: 'lesson', start: 1, end: 6.8, text: 'Начнём. Закончим.' }],
+  };
+  const script = documentScript(story, aligned);
+  assert.equal(script.cues['lesson.start'].start, 1.2);
+  assert.equal(script.cues['lesson.start'].end, 6);
+  assert.equal(script.cues.lesson.end, 10, 'the final action can finish during an existing outro');
+  assert.deepEqual(script.cues['lesson.finish'].speech, { start: 6, end: 6.8 });
+  assert.equal(script.segments, aligned.segments);
+
+  story.chapters[0].beats[0].timing.duration = 2;
+  const malformed = documentNarration(story).segments[0].cues[0].timing;
+  assert.equal(malformed.duration, 2, 'projection preserves invalid JSON for the cue validator');
+  assert.throws(
+    () =>
+      documentScript(story, {
+        ...aligned,
+        cues: {
+          ...aligned.cues,
+          'lesson.start': { ...aligned.cues['lesson.start'], timing: malformed },
+        },
+      }),
+    /exactly one of duration or until/,
+  );
+});
+
 test('repeated thoughts bind to their own spoken words, including a quote inside an earlier thought', async () => {
   const sayings = [
     'Сначала цепь замкнута.',

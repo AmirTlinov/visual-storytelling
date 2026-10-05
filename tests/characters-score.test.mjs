@@ -56,6 +56,12 @@ test('a score preserves continuing performances and gives short prop changes the
   assert.equal(aligned.propTracks.lamp[0].start, 5.35);
   assert.equal(aligned.propTracks.lamp[0].end, 10);
   assert.equal(aligned.tracks.tesla[1].start, 5);
+  narrated.script.cues.idea = { start: 5, end: 5.6, timing: { duration: 4, delay: 0.5 } };
+  const extended = compileScore(narrated);
+  assert.equal(extended.tracks.tesla[1].start, 5.5);
+  assert.equal(extended.propTracks.lamp[0].start, 5.85);
+  assert.equal(extended.propTracks.lamp[0].end, 9.5);
+  assert.deepEqual(extended.script.cues.idea.speech, { start: 5, end: 5.6 });
 });
 
 test('score errors identify invalid references and timing before graphics resources are created', () => {

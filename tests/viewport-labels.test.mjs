@@ -155,26 +155,39 @@ test('transparent packed annotations neither displace visible labels nor enlarge
     assert.deepEqual(transparent.hidden, [true, true]);
 
     const frames = new Map();
-    for (const alpha of [0.01, 0.5, 1, 0, 1, 0.5, 0.01, 0]) {
+    for (const alpha of [0, 0.000001, 0.01, 0.25, 0.5, 1, 0.5, 0.25, 0.01, 0.000001, 0]) {
       const frame = await page.evaluate(async (alpha) => {
         lab.next.opacity(alpha);
         const shot = await lab.sample();
         const style = getComputedStyle(lab.next.element.parentElement);
+        const lower = lab.current.element.parentElement.getBoundingClientRect();
+        const upper = lab.next.element.parentElement.getBoundingClientRect();
         return {
           shot,
           hidden: lab.next.element.hidden,
           alpha: style.display === 'none' ? 0 : Number(style.opacity),
+          clearance: lower.top - upper.bottom,
         };
       }, alpha);
       assert.equal(frame.hidden, alpha === 0);
       if (alpha > 0) {
         assert.equal(frame.alpha, alpha, 'fractional fades retain their authored opacity');
-        assert(frame.shot.top > initial.top + 10, 'visible labels still avoid each other');
       } else assert.deepEqual(frame.shot, initial);
       if (frames.has(alpha)) assert.deepEqual(frame, frames.get(alpha), 'rewind is history-free');
       frames.set(alpha, frame);
     }
-    assert.equal(frames.get(0.01).shot.top, frames.get(1).shot.top);
+    assert.ok(
+      Math.abs(frames.get(0.000001).shot.top - initial.top) < 0.1,
+      'an imperceptible neighbour cannot abruptly move the visible label',
+    );
+    let displacement = 0;
+    for (const alpha of [0.01, 0.25, 0.5, 1]) {
+      const next = frames.get(alpha).shot.top - initial.top;
+      assert.ok(next > displacement, 'clearance grows continuously with visible opacity');
+      displacement = next;
+    }
+    assert.ok(frames.get(0.01).shot.top - initial.top < 0.5);
+    assert.ok(frames.get(1).clearance >= 7.9, 'opaque annotations retain the full readable gap');
     const refitted = await page.evaluate(async () => {
       lab.future.opacity(1);
       const visible = await lab.sample();
@@ -186,6 +199,236 @@ test('transparent packed annotations neither displace visible labels nor enlarge
     assert.deepEqual(refitted.reduced, initial);
     await page.evaluate(() => lab.view.dispose());
     assert.equal(await page.locator('.ve-annotation').count(), 0);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('computed local labels share framing, semantics and lifetime with their reparented object', async () => {
+  const bundle = await build({
+    stdin: {
+      contents:
+        "import { Viewport3D } from './src/viewport/three.ts'; import * as T from './src/viewport/engine.ts'; window.lib = { Viewport3D, T };",
+      resolveDir: resolve('.'),
+    },
+    bundle: true,
+    write: false,
+    format: 'iife',
+    plugins: [assetURLs()],
+    define: { 'import.meta.url': 'document.baseURI' },
+  });
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 900, height: 600 } });
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.setContent(
+      '<main class="ve-scene" style="position:relative;width:800px;height:400px;--ve-surface:white;--ve-ink:black"></main>',
+    );
+    await page.addStyleTag({ path: 'src/styles/scene-shell.css' });
+    await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    await page.evaluate(async () => {
+      const { Viewport3D, T } = lib;
+      const stage = document.querySelector('main'),
+        view = Viewport3D.mount(stage);
+      const root = new T.Group(),
+        left = new T.Group(),
+        right = new T.Group();
+      root.add(left, right);
+      root.rotation.set(0.1, 0.2, 0.15);
+      root.position.set(0.4, -0.2, 0.3);
+      left.rotation.y = 0.3;
+      left.scale.set(1.2, 0.8, 1.1);
+      right.position.x = 1;
+      right.rotation.z = -0.2;
+      const cube = new T.Mesh(new T.BoxGeometry(), new T.MeshBasicMaterial());
+      cube.position.set(0.2, 0.1, 0);
+      left.add(cube);
+      view.setObject(root);
+      view.describe(left, 'left', { label: 'First subject' });
+      view.describe(right, 'right', { label: 'Second subject' });
+      const point = new T.Vector3(0.1, 1.5, 0);
+      const anchor = { object: cube, position: () => point };
+      const label = view.label('Вычисляемая локальная позиция', anchor, {
+        size: 18,
+        frame: { padding: [13, 6] },
+      });
+      const ink = view.label(
+        'Локальная надпись',
+        { object: cube, position: point },
+        { space: 'world', height: 0.2 },
+      );
+      const independent = view.label('World', () => new T.Vector3(), { visible: () => false });
+      const settle = () =>
+        new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+      const shot = () => view.shot({ target: cube, direction: [0, 0, 1], padding: 24 });
+      function snapshot() {
+        const world = cube.localToWorld(point.clone());
+        const p = world.clone().project(view.camera);
+        const box = label.element.parentElement.getBoundingClientRect(),
+          frame = stage.getBoundingClientRect();
+        return {
+          hidden: [label.element.hidden, ink.element.hidden],
+          subject: label.element.dataset.object,
+          drift: Math.hypot(
+            box.x + box.width / 2 - frame.x - ((p.x + 1) * frame.width) / 2,
+            box.y + box.height / 2 - frame.y - ((1 - p.y) * frame.height) / 2,
+          ),
+          inkDrift: ink.object.getWorldPosition(new T.Vector3()).distanceTo(world),
+          inkLocal: ink.object.position.toArray(),
+          point: point.toArray(),
+          gaps: [
+            box.left - frame.left,
+            frame.right - box.right,
+            box.top - frame.top,
+            frame.bottom - box.bottom,
+          ],
+        };
+      }
+      window.lab = {
+        stage,
+        view,
+        root,
+        left,
+        right,
+        cube,
+        point,
+        label,
+        ink,
+        independent,
+        shot,
+        snapshot,
+        settle,
+        T,
+      };
+      shot();
+      await settle();
+    });
+    const check = async (subject = 'left') => {
+      const sample = await page.evaluate(async () => {
+        await lab.settle();
+        return lab.snapshot();
+      });
+      assert.deepEqual(sample.hidden, [false, false]);
+      assert.equal(sample.subject, subject);
+      assert(sample.drift < 0.1, JSON.stringify(sample));
+      assert(sample.inkDrift < 1e-9, JSON.stringify(sample));
+      assert.deepEqual(sample.inkLocal, sample.point, 'Sampling must not mutate the local point');
+      assert(
+        sample.gaps.every((gap) => gap >= 23.9),
+        JSON.stringify(sample),
+      );
+    };
+    await check();
+    for (const width of [375, 520, 800]) {
+      await page.evaluate(
+        (width) =>
+          new Promise((done) => {
+            const stop = lab.view.onRender(() => {
+              if (lab.view.camera.aspect === width / lab.stage.clientHeight) {
+                stop();
+                done();
+              }
+            });
+            lab.stage.style.width = width + 'px';
+          }),
+        width,
+      );
+      await check();
+    }
+    await page.evaluate(() => {
+      lab.point.set(-0.4, 1.1, 0.2);
+      lab.shot();
+    });
+    await check();
+    for (const visible of [false, true]) {
+      await page.evaluate((visible) => {
+        lab.left.visible = visible;
+        lab.view.invalidate();
+      }, visible);
+      await page.evaluate(() => lab.settle());
+      assert.deepEqual(await page.evaluate(() => lab.snapshot().hidden), [!visible, !visible]);
+    }
+    await page.evaluate(() => {
+      lab.right.add(lab.cube);
+      lab.shot();
+    });
+    await check('right');
+    await page.evaluate(() => {
+      lab.cube.removeFromParent();
+      lab.view.invalidate();
+    });
+    await page.evaluate(() => lab.settle());
+    assert.deepEqual(await page.evaluate(() => lab.snapshot().hidden), [true, true]);
+    await page.evaluate(() => {
+      lab.right.add(lab.cube);
+      // Promoting a retained subtree must keep the same annotation and GPU resources.
+      lab.view.setObject(lab.right, { fitView: false });
+      lab.shot();
+    });
+    await check('right');
+    const nextShot = await page.evaluate(async () => {
+      lab.label.opacity(0);
+      lab.point.set(-0.7, 3, 0.3);
+      lab.ink.set('Свежая надпись после переноса локальной точки');
+      lab.shot();
+      await lab.settle();
+      const plane = lab.ink.object.children[0];
+      return [-0.5, 0.5].flatMap((x) =>
+        [-0.5, 0.5].map((y) => {
+          const p = new lab.T.Vector3(x, y, 0)
+            .applyMatrix4(plane.matrixWorld)
+            .project(lab.view.camera);
+          return [
+            ((p.x + 1) * lab.stage.clientWidth) / 2,
+            ((1 - p.y) * lab.stage.clientHeight) / 2,
+          ];
+        }),
+      );
+    });
+    assert(
+      nextShot.every(([x, y]) => x >= 23.9 && x <= 800 - 23.9 && y >= 23.9 && y <= 400 - 23.9),
+      'The next shot must measure the moved inscription and its new text: ' +
+        JSON.stringify(nextShot),
+    );
+    const replaced = await page.evaluate(async () => {
+      const { view, ink, label, independent, T } = lab;
+      const counts = [];
+      for (const resource of [
+        ink.object.children[0].geometry,
+        ink.object.children[0].material,
+        ink.object.children[0].material.map,
+      ]) {
+        const count = { value: 0 };
+        counts.push(count);
+        resource.addEventListener('dispose', () => count.value++);
+      }
+      view.setObject(new T.Mesh(new T.BoxGeometry(), new T.MeshBasicMaterial()));
+      await lab.settle();
+      const result = {
+        label: label.element.isConnected,
+        ink: ink.element.isConnected,
+        independent: independent.element.isConnected,
+        released: counts.map((c) => c.value),
+      };
+      view.dispose();
+      label.remove();
+      ink.remove();
+      return {
+        ...result,
+        releasedAfterDispose: counts.map((c) => c.value),
+        remaining: lab.stage.querySelectorAll('.ve-annotation,.ve-surface-label').length,
+      };
+    });
+    assert.deepEqual(replaced, {
+      label: false,
+      ink: false,
+      independent: true,
+      released: [1, 1, 1],
+      releasedAfterDispose: [1, 1, 1],
+      remaining: 0,
+    });
+    assert.deepEqual(errors, []);
   } finally {
     await browser.close();
   }

@@ -1,7 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, stat } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  writeFile,
+  readdir,
+  rm,
+  stat,
+  cp,
+  symlink,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -54,9 +64,14 @@ async function gone(pid) {
 }
 
 async function fixture(t) {
-  const directory = await mkdtemp(join(tmpdir(), 'story-runtime-'));
-  const data = join(directory, 'data');
+  const temporary = await mkdtemp(join(tmpdir(), 'story-runtime-'));
+  const release = join(temporary, 'release'),
+    directory = join(release, 'plugin/dist'),
+    data = join(temporary, 'data');
   await mkdir(data);
+  await mkdir(directory, { recursive: true });
+  await mkdir(join(release, 'tools'));
+  await mkdir(join(release, 'dist'));
   const clients = new Set(),
     kernels = new Set();
   t.after(async () => {
@@ -69,7 +84,7 @@ async function fixture(t) {
       }
     }
     await Promise.allSettled([...kernels].map(gone));
-    await rm(directory, { recursive: true, force: true });
+    await rm(temporary, { recursive: true, force: true });
   });
   await Promise.all([
     build({
@@ -92,6 +107,11 @@ async function fixture(t) {
       format: 'esm',
     }),
     writeFile(join(directory, 'app.html'), '<main>Runtime contract fixture</main>'),
+    writeFile(
+      join(release, 'tools/api.mjs'),
+      'export const describeAPI = async () => ({ text: "Fixture API", missing: [] });\n',
+    ),
+    writeFile(join(release, 'dist/index.js'), 'export const runtime = 1;\n'),
     writeJSON(join(directory, 'example.json'), {
       revision: 'runtime-fixture',
       title: 'Runtime fixture',
@@ -111,13 +131,13 @@ async function fixture(t) {
     );
     return client;
   }
-  async function runtime() {
-    const client = await direct(directory, data);
+  async function runtime(at = directory) {
+    const client = await direct(at, data);
     clients.add(client);
     kernels.add((await client.call('hello')).pid);
     return client;
   }
-  return { directory, data, stdio, runtime };
+  return { temporary, release, directory, data, stdio, runtime };
 }
 
 async function tool(client, name, args = {}) {
@@ -278,12 +298,59 @@ test(
 );
 
 test(
+  'release roots and late imported dependencies reject an incompatible live owner with identical kernel bytes',
+  { timeout: 15000 },
+  async (t) => {
+    const f = await fixture(t),
+      runtime = await f.runtime(),
+      hello = await runtime.call('hello');
+    const alias = join(f.temporary, 'release-alias');
+    await symlink(f.release, alias, 'dir');
+    const same = await f.runtime(join(alias, 'plugin/dist'));
+    assert.equal((await same.call('hello')).serverInstance, hello.serverInstance);
+    same.close();
+
+    const next = join(f.temporary, 'next-release');
+    await cp(f.release, next, { recursive: true });
+    const nextDirectory = join(next, 'plugin/dist');
+    assert.deepEqual(
+      await readFile(join(nextDirectory, 'kernel.mjs')),
+      await readFile(join(f.directory, 'kernel.mjs')),
+    );
+    const conflict = (error) => {
+      assert.equal(error.code, 'RUNTIME_VERSION_CONFLICT');
+      assert.match(error.action, /reconnect/);
+      return true;
+    };
+    await assert.rejects(direct(nextDirectory, f.data), conflict);
+    for (const name of ['tools/api.mjs', 'dist/index.js']) {
+      const file = join(f.release, name),
+        original = await readFile(file);
+      await writeFile(file, Buffer.concat([original, Buffer.from('\n// updated dependency\n')]));
+      await assert.rejects(direct(f.directory, f.data), conflict);
+      assert.equal((await runtime.call('hello')).pid, hello.pid);
+      await writeFile(file, original);
+    }
+    assert.equal((await runtime.call('help', { query: 'fixture' })).text, 'Fixture API');
+    runtime.close();
+    await gone(hello.pid);
+    const updated = await f.runtime(nextDirectory);
+    const nextHello = await updated.call('hello');
+    assert.notEqual(nextHello.build, hello.build);
+    assert.notEqual(nextHello.serverInstance, hello.serverInstance);
+    assert.equal((await updated.call('help', { query: 'fixture' })).text, 'Fixture API');
+  },
+);
+
+test(
   'an early kernel exit reports startup failure and releases its startup lock',
   { timeout: 5000 },
   async (t) => {
-    const directory = await mkdtemp(join(tmpdir(), 'story-runtime-failed-'));
-    t.after(() => rm(directory, { recursive: true, force: true }));
-    const data = join(directory, 'data');
+    const temporary = await mkdtemp(join(tmpdir(), 'story-runtime-failed-'));
+    t.after(() => rm(temporary, { recursive: true, force: true }));
+    const data = join(temporary, 'data'),
+      directory = join(temporary, 'release/plugin/dist');
+    await mkdir(directory, { recursive: true });
     await writeFile(
       join(directory, 'kernel.mjs'),
       "throw new Error('deliberate startup failure');\n",

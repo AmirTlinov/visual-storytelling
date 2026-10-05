@@ -69,8 +69,9 @@ async function mount<P extends Record<string, unknown>, O, F>(
   root: HTMLElement,
   options: MorphStoryOptions<P, O, F>,
 ) {
-  const { presenter, initial, script } = options;
-  const sheet = cueSheet(script);
+  const { presenter, initial } = options;
+  const sheet = cueSheet(options.script),
+    script = sheet.script;
   const keys = Object.keys(initial);
   if (keys.includes(CHAPTER) || keys.includes(PROGRESS))
     throw new Error('Morph story parameter uses a reserved key');

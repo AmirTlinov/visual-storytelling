@@ -1,14 +1,13 @@
 # Геометрия и проекция BERT: устройство примеров
 
-Справка для переиспользования модели, геометрии и обновлений JavaScript/SVG.
-Визуальный образец выбирай из [SKILL.md](../SKILL.md).
+Справка о `geometric-tensor` и `parameter-cube` полной исходной библиотеки.
+Эти примеры не поставляются с плагином; наличие проверяй через `examples --json`.
+Для новой сцены в плагине начни с [explorer-3d](../../../examples/explorer-3d/scene.js).
+Пути ниже отсчитываются от корня полной библиотеки.
 
 ## Геометрическое преобразование
 
-![Сфера и её образ](../../../examples/geometric-tensor/preview.png)
-
-[Генератор](../../../examples/geometric-tensor/build.mjs) ·
-[Браузерный просмотр](../../../examples/geometric-tensor/index.html)
+`examples/geometric-tensor/`: генератор `build.mjs`, просмотр `index.html`, кадр `preview.png`.
 
 Сфера становится эллипсоидом при `T = diag(1 + 0.85 t, 1, 1 - 0.48 t)`.
 Показан образ `T v`, не поверхность уровня `v^T T v = 1`. Это конкретный
@@ -22,11 +21,7 @@
 
 ## Постоянные параметры и переменные активации
 
-![Куб параметров и сборка запроса](../../../examples/parameter-cube/preview.png)
-
-[Генератор](../../../examples/parameter-cube/cube.mjs) ·
-[Живой интерфейс](../../../examples/parameter-cube/cube.html) ·
-[Вычислитель](../../../examples/parameter-cube/projection.py)
+`examples/parameter-cube/`: генератор `cube.mjs`, интерфейс `cube.html`, вычислитель `projection.py`, кадр `preview.png`.
 
 ```text
 text -> embeddings + layers 1..3 -> x -> x W_Q,h + b_h -> q_h
@@ -62,7 +57,7 @@ text -> embeddings + layers 1..3 -> x -> x W_Q,h + b_h -> q_h
 ### Воспроизведение
 
 Генераторы находятся в исходниках; `build` создаёт SVG в выходном каталоге, после визуальных изменений обнови превью.
-Оба генератора используют `@visual-storytelling/core/controls` для нативного ползунка; контуры BERT и окончания его цветовой шкалы берутся из `SketchInk` (`src/ink/marks.ts`), а `../../tools/svg_style.py` встраивает общие `ink.css`, `range.css` и шрифты.
+Оба генератора используют `@visual-storytelling/core/controls` для нативного ползунка; контуры BERT и окончания его цветовой шкалы берутся из `SketchInk` (`src/ink/marks.ts`), а `tools/svg_style.py` встраивает общие `ink.css`, `range.css` и шрифты.
 Ползунком управляет браузер, обработчик `input` меняет только предметный параметр; после изменения `viewBox` вызывается `fitSvgControls`, сохраняющий экранный размер управления.
 Превью интерактивных SVG снимай в браузере: статические SVG-рендереры не отображают HTML-поля в `foreignObject`.
 `build` пересобирает BERT SVG из включённого `projection.json`; модель для этого не нужна. SVG содержит исходный кадр и интерактивный код; временной разбор BERT запускается общим плеером в HTML.

@@ -60,6 +60,7 @@ def check_timeline(script_path, timeline_path, *, source_directory=None):
         cues.update(timed_cues(source_segment, aligned))
     if timeline.get("cues") != cues:
         raise ValueError("Narration cues differ from the aligned script; run visual-story audio")
+    check_action_windows(cues, timeline.get("duration", 0))
     audio = timeline.get("audio")
     if not isinstance(audio, str) or not audio:
         raise ValueError("Narration has no generated audio; run visual-story audio")
@@ -233,6 +234,24 @@ def read_script(path, *, source_directory=None):
                 raise ValueError(f"{cid}: occurrence does not exist")
             cue["word_start"] = matches[occurrence - 1]
             cue["word_end"] = cue["word_start"] + len(quote)
+            if "timing" in cue:
+                timing = cue["timing"]
+                if (not isinstance(timing, dict) or set(timing) - {"duration", "until", "delay"}
+                        or ("duration" in timing) == ("until" in timing)):
+                    raise ValueError(f"{cid}: timing needs exactly one of duration or until, with optional delay")
+                for key in ("duration", "delay"):
+                    if key in timing and (type(timing[key]) not in (int, float)
+                            or not math.isfinite(timing[key]) or timing[key] < 0
+                            or (key == "duration" and timing[key] == 0)):
+                        raise ValueError(f"{cid}: timing duration must be positive and delay non-negative")
+                if "until" in timing and (not isinstance(timing["until"], str)
+                        or not ID.fullmatch(timing["until"])):
+                    raise ValueError(f"{cid}: timing until needs a cue ID")
+    for segment in segments:
+        for cue in segment["cues"]:
+            until = cue.get("timing", {}).get("until")
+            if until is not None and (until not in ids or until == cue["id"]):
+                raise ValueError(f'{cue["id"]}: timing until needs another existing cue ID')
     if "captionAliases" in spec:
         caption_aliases(spec["captionAliases"], segments)
     music = spec.get("music")
@@ -262,5 +281,20 @@ def timed_cues(segment, aligned_words):
             "text": " ".join(word["text"] for word in selected),
             "start": selected[0]["start"], "end": selected[-1]["end"],
             **{key: cue[key] for key in ("action", "hold") if key in cue},
+            **({"timing": dict(cue["timing"])} if "timing" in cue else {}),
         }
     return cues
+
+
+def check_action_windows(cues, duration):
+    """Reject action metadata that cannot fit the finished audio; keep acoustic cues unchanged."""
+    if type(duration) not in (int, float) or not math.isfinite(duration) or duration <= 0:
+        raise ValueError("Action timeline duration must be positive")
+    for cid, cue in cues.items():
+        timing = cue.get("timing")
+        if timing is None:
+            continue
+        start = cue["start"] + timing.get("delay", 0)
+        end = start + timing["duration"] if "duration" in timing else cues[timing["until"]]["start"]
+        if not math.isfinite(end) or end <= start or end > duration + .01:
+            raise ValueError(f"{cid}: timing needs a positive action window within the audio; add pause_after or outro if needed")

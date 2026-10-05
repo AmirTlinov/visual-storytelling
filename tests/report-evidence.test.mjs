@@ -47,6 +47,8 @@ test('large review loads bounded evidence on file and HTTP, preserving queries a
         coordinates: 'css-viewport',
         text: '</script><script>window.injected=true</script>',
       },
+      { id: 'cube', x: 160, y: 60, width: 20, height: 10, text: 'Detached label' },
+      { id: 'cube', x: 0, y: 0, width: 20, height: 10, visible: false, text: 'Hidden label' },
     ],
   }));
   const telemetry = {
@@ -186,14 +188,17 @@ test('large review loads bounded evidence on file and HTTP, preserving queries a
       const scale = Math.min(box.width / 200, box.height / 100);
       await playerImage.click({
         position: {
-          x: (box.width - 200 * scale) / 2 + 10 * scale,
-          y: (box.height - 100 * scale) / 2 + 30 * scale,
+          x: (box.width - 200 * scale) / 2 + 170 * scale,
+          y: (box.height - 100 * scale) / 2 + 65 * scale,
         },
       });
       await page.waitForFunction(() => {
         const evidence = JSON.parse(document.querySelector('[data-inspection-data]').textContent);
         return evidence.requested.point && evidence.requested.object === 'cube';
       });
+      const clicked = JSON.parse(await page.locator('[data-inspection-data]').textContent());
+      assert.equal(clicked.objects[0].viewId, 'world');
+      assert.equal(clicked.objects[0].representations.length, 2);
       await page.selectOption('[data-inspection-object]', 'cube');
       await page.waitForFunction(
         () =>

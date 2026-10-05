@@ -125,9 +125,9 @@ export function compileScore(options: CharacterStageOptions) {
     if (!beat.text.trim()) throw new Error(`Beat needs its visible action: ${beat.id}`);
     ids.add(beat.id);
   }
-  if (options.script) cueSheet(options.script);
-  const blocking = compileBlocking(options, options.script);
-  const script: Script = options.script ?? {
+  const supplied = options.script && cueSheet(options.script).script;
+  const blocking = compileBlocking(options, supplied);
+  const script: Script = supplied ?? {
     duration: 0,
     cues: {},
     segments: [],

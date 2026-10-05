@@ -54,6 +54,10 @@ export function composeChapters(
     transition?: number | ((index: number) => number);
   } = {},
 ) {
+  chapters = chapters.map((chapter) =>
+    chapter.script ? { ...chapter, script: cueSheet(chapter.script).script } : chapter,
+  );
+  if (options.script) options = { ...options, script: cueSheet(options.script).script };
   if (!chapters.length) throw new Error('A composition needs at least one chapter');
   const opening = options.introduction;
   const lead = opening?.seconds ?? 0,
@@ -66,7 +70,6 @@ export function composeChapters(
     throw new Error('Chapter transitions need non-negative durations');
   if (opening && (!opening.id?.trim() || !opening.title?.trim() || !opening.text?.trim()))
     throw new Error('Chapter introduction needs an ID, title and text');
-  if (options.script) cueSheet(options.script);
   const cues: Record<string, Cue> = Object.create(null),
     segments: Chapter[] = [],
     ids = new Set<string>();
@@ -96,7 +99,6 @@ export function composeChapters(
     ];
     const anchors = new Map<number, Partial<Record<'start' | 'end', number>>>();
     if (chapter.script) {
-      cueSheet(chapter.script);
       for (const [id, local] of Object.entries(chapter.script.cues)) {
         const spoken = options.script?.cues[`${chapter.id}.${id}`];
         if (spoken) {
@@ -167,7 +169,11 @@ export function composeChapters(
         const key = `${chapter.id}.${id}`;
         if (ids.has(key) || Object.hasOwn(cues, key))
           throw new Error(`Composed cue ID collides: ${key}`);
-        cues[key] = { ...cue, ...range(cue) };
+        cues[key] = {
+          ...cue,
+          ...range(cue),
+          ...(cue.speech ? { speech: range(cue.speech) } : {}),
+        };
       }
       for (const s of chapter.script.segments ?? [])
         segments.push({

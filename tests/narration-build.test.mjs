@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm, cp } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, cp, readdir } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
@@ -11,6 +11,90 @@ import { checkNarration, prepareNarration } from '../tools/narration.mjs';
 import { narrationSource } from '../tools/story-document.mjs';
 
 const run = promisify(execFile);
+test('silent creation preserves narrative timing and authored assets without Python', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'story-silent-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const write = (name, value) =>
+    writeFile(join(directory, name), typeof value === 'string' ? value : JSON.stringify(value));
+  const script = {
+    version: 1,
+    duration: 4,
+    segments: [{ id: 'start', text: 'Move', start: 0, end: 4 }],
+    cues: {
+      move: { start: 1, end: 3, action: 'Move one unit', timing: { duration: 2 } },
+    },
+    captionAliases: { move: 'start' },
+  };
+  await write('timeline.json', {
+    ...script,
+    audio: 'audio.wav',
+    source_sha256: 'old',
+    mix: { music: 'old' },
+    segments: [{ ...script.segments[0], audio_start: 0, audio_end: 4, seed: 42, delivery: {} }],
+  });
+  await write('story.json', { title: 'Story', narration: { enabled: true, voice: { seed: 42 } } });
+  await write('voice.json', { provider: 'macos', enabled: true, language: 'ru-RU' });
+  const authored = 'Product logo and fonts\nLegacy narrator attribution\n';
+  await write(
+    'CREDITS.txt',
+    authored +
+      '\n=== visual-story:audio ===\nGenerated narration and music\n=== /visual-story:audio ===\n',
+  );
+  for (const name of [
+    'narration.json',
+    'narration.txt',
+    'voice-preview.html',
+    'audio.wav',
+    'voice.wav',
+    'music.wav',
+    'scene.js',
+    'logo.svg',
+  ])
+    await write(name, 'source');
+  const html =
+    '<main><!-- <audio src="example.wav"> --><audio src="audio.wav"></audio><p>Story</p></main>';
+  await write('index.html', html);
+  const silence = () =>
+    run(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `import { silenceSceneCopy } from ${JSON.stringify(new URL('../tools/narration.mjs', import.meta.url).href)}; await silenceSceneCopy(process.argv[1]);`,
+        directory,
+      ],
+      { env: { ...process.env, PATH: join(directory, 'no-programs') } },
+    );
+  await silence();
+  assert.deepEqual(JSON.parse(await readFile(join(directory, 'timeline.json'), 'utf8')), script);
+  assert.equal(await readFile(join(directory, 'CREDITS.txt'), 'utf8'), authored);
+  assert.deepEqual(JSON.parse(await readFile(join(directory, 'story.json'), 'utf8')).narration, {
+    enabled: false,
+    voice: { seed: 42 },
+  });
+  assert.deepEqual(JSON.parse(await readFile(join(directory, 'voice.json'), 'utf8')), {
+    provider: 'macos',
+    enabled: false,
+    language: 'ru-RU',
+  });
+  assert.equal(
+    await readFile(join(directory, 'index.html'), 'utf8'),
+    html.replace('<audio src="audio.wav"></audio>', ''),
+  );
+  assert.deepEqual((await readdir(directory)).sort(), [
+    'CREDITS.txt',
+    'index.html',
+    'logo.svg',
+    'scene.js',
+    'story.json',
+    'timeline.json',
+    'voice.json',
+  ]);
+  await silence();
+  assert.equal(await readFile(join(directory, 'CREDITS.txt'), 'utf8'), authored);
+  assert.equal(await readFile(join(directory, 'scene.js'), 'utf8'), 'source');
+});
+
 test('scene builds reject stale generated narration while silent and independent scenes still build', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'story-narration-'));
   const source = join(directory, 'source'),

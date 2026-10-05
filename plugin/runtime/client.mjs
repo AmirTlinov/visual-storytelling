@@ -5,6 +5,7 @@ import { mkdir, readFile, rm, lstat, writeFile, open, realpath, chmod } from 'no
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { runtimeBuild } from './identity.mjs';
 
 const protocol = 1;
 const uid = process.getuid();
@@ -147,10 +148,9 @@ export function runtimeClient(serverDirectory) {
 /** Each host stdio process connects to one local owner over a user-only Unix socket. */
 export async function connectRuntime(serverDirectory) {
   const data = await privateDirectory(dataDirectory(), true);
+  serverDirectory = await realpath(serverDirectory);
   const entry = join(serverDirectory, 'kernel.mjs');
-  const build = createHash('sha256')
-    .update(await readFile(entry))
-    .digest('hex');
+  const build = await runtimeBuild(serverDirectory);
   // Binary changes share the endpoint; the handshake prevents two owners of persisted sessions.
   const identity = createHash('sha256').update(`${protocol}\0${data}`).digest('hex').slice(0, 20);
   const ipc = await privateDirectory(`/tmp/visual-story-${uid}`);

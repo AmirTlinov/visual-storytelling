@@ -11,6 +11,7 @@ import { assetURLs, moduleAssetURLs } from './asset-urls.mjs';
 import { checkNarration, setNarrationMode } from './narration.mjs';
 import { resolvePackage } from './build-info.mjs';
 import { readCatalog } from './catalog.mjs';
+import { writeSourceReferences } from './build-sources.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 export async function buildPage(
@@ -121,6 +122,12 @@ export async function buildPage(
       ),
       legalComments: 'inline',
       metafile: true,
+    });
+    await writeSourceReferences(out, result.metafile, {
+      directory: dirname(source),
+      runtimeRoot: sourcePackage
+        ? root
+        : await resolvePackage('@visual-storytelling/core', dirname(source)),
     });
     if (Object.values(result.metafile.outputs).some((output) => output.cssBundle)) {
       const at =

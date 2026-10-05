@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join, resolve, dirname } from 'node:path';
@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { narrationSource } from './story-document.mjs';
 import { parse } from 'parse5';
 import { systemNarration, voiceDigest } from './voice/macos.mjs';
+import { cueSheet } from '../dist/story/cues.js';
 
 function editAudioTags(html, edit) {
   const edits = [];
@@ -42,10 +43,53 @@ export function setNarrationMode(html, silent) {
 
 /** A permanent silent template keeps story cues and authored credits, without speech scaffolding. */
 export async function silenceSceneCopy(directory) {
-  await promisify(execFile)('python3', [
-    fileURLToPath(new URL('audio/silent.py', import.meta.url)),
-    directory,
-  ]);
+  const read = (name) =>
+    readFile(join(directory, name), 'utf8').catch((error) => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+  const write = (name, value) =>
+    writeFile(join(directory, name), JSON.stringify(value, null, 2) + '\n');
+  const story = await read('story.json');
+  if (story) {
+    const document = JSON.parse(story);
+    (document.narration ??= {}).enabled = false;
+    await write('story.json', document);
+  }
+  const voice = await read('voice.json');
+  if (voice) await write('voice.json', { ...JSON.parse(voice), enabled: false });
+  const timing = await read('timeline.json');
+  if (timing) {
+    const timeline = JSON.parse(timing);
+    const script = Object.fromEntries(
+      ['version', 'duration', 'segments', 'cues', 'captionAliases']
+        .filter((key) => Object.hasOwn(timeline, key))
+        .map((key) => [key, timeline[key]]),
+    );
+    for (const segment of script.segments ?? [])
+      for (const key of ['audio_start', 'audio_end', 'seed', 'delivery']) delete segment[key];
+    await write('timeline.json', script);
+  }
+  const credits = await read('CREDITS.txt');
+  if (credits !== undefined) {
+    // Only the explicit audio-owned block can be removed; every other attribution is authored.
+    const authored = credits
+      .replace(
+        /^=== visual-story:audio ===\r?\n[\s\S]*?^=== \/visual-story:audio ===(?:\r?\n|$)/gm,
+        '',
+      )
+      .trim();
+    if (authored) await writeFile(join(directory, 'CREDITS.txt'), authored + '\n');
+    else await rm(join(directory, 'CREDITS.txt'));
+  }
+  for (const name of [
+    'narration.json',
+    'narration.txt',
+    'voice-preview.html',
+    'audio.wav',
+    'voice.wav',
+    'music.wav',
+  ])
+    await rm(join(directory, name), { force: true });
   for (const name of await readdir(directory)) {
     if (!name.endsWith('.html')) continue;
     const file = join(directory, name);
@@ -146,14 +190,26 @@ export async function checkNarration(html, directory, { signal } = {}) {
       if (!receipt.source_sha256)
         throw new Error('Generated narration has no source receipt. Run visual-story audio.');
       if (receipt.digest_format === 'canonical-json-v1') {
+        const authored = JSON.parse(await readFile(script.file, 'utf8'));
         if (
-          receipt.source_sha256 !== voiceDigest(JSON.parse(await readFile(script.file, 'utf8'))) ||
+          receipt.source_sha256 !== voiceDigest(authored) ||
           voiceDigest(receipt.voice_settings) !==
             voiceDigest(JSON.parse(await readFile(join(directory, 'voice.json'), 'utf8')))
         )
           throw new Error(
             'Narration or voice changed. Prepare the current narration before building.',
           );
+        for (const segment of authored.segments ?? [])
+          for (const cue of segment.cues ?? [])
+            if (
+              !receipt.cues?.[cue.id] ||
+              voiceDigest({ timing: cue.timing }) !==
+                voiceDigest({ timing: receipt.cues[cue.id].timing })
+            )
+              throw new Error(
+                `Narration action timing is stale for ${cue.id}. Prepare the current narration before building.`,
+              );
+        cueSheet(receipt);
         break;
       }
       try {

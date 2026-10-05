@@ -7,6 +7,11 @@ export function objectVisible(object: Object3D): boolean {
   return true;
 }
 
+export function objectWithin(object: Object3D, root: Object3D): boolean {
+  for (let node: Object3D | null = object; node; node = node.parent) if (node === root) return true;
+  return false;
+}
+
 const materialVisible = (material: Material | undefined) =>
   material?.visible && (!material.transparent || material.opacity > 0);
 

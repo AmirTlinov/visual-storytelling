@@ -1,10 +1,12 @@
 # Исследование устройства
 
-Примеры: [компьютер](../../../examples/computer-explorer/index.html) и [нейрон](../../../examples/neuron-explorer/index.html).
-Исходники — `examples/computer-explorer/` и `examples/neuron-explorer/` библиотеки.
+Доступная основа — [explorer-svg](../../../examples/explorer-svg/scene.js).
+Подробные предметные примеры `computer-explorer` и `neuron-explorer` входят в полную
+библиотеку; прежде чем их создавать, проверь наличие через `examples --json`.
+Команды ниже запускаются из каталога навыка:
 
 ```sh
-node ../../tools/scene.mjs new /absolute/output/my-device --example computer-explorer
+node ../../tools/scene.mjs new /absolute/output/my-device --example explorer-svg
 cd /absolute/output/my-device
 npm install
 npm run build
@@ -22,7 +24,9 @@ npm run dev
 
 Сцена возвращает `{body, box, hits}`; цель — `{key, label, node, box}`. `body` содержит SVG-группу `data-part="key"` для каждого открываемого объекта. Координаты целей и рисунка совпадают. Выделение повторяет контур предмета; текст остаётся вне силуэта.
 
-## Компьютер
+## Компьютер в полной библиотеке
+
+Следующие файлы принадлежат `examples/computer-explorer/`, который не поставляется с плагином.
 
 `board/`, `cpu/`, `gpu/`, `memory/`, `storage/`, `display/`, `io/` владеют своими рисунками и поведением. `image-job/` связывает NAND, буфер, CPU, GPU и LCD одним вычислением. Структурные схемы и учебное выполнение различаются в подписях; выбор масштаба сохраняет идентичность данных.
 

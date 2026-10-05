@@ -1,5 +1,5 @@
 export { cueSheet, interpolate, progress } from './cues.js';
-export type { Cue, Chapter, Script, Frame, CueReview } from './cues.js';
+export type { Cue, CueSpan, CueTiming, Chapter, Script, Frame, CueReview } from './cues.js';
 export { transport } from './transport.js';
 export type { Transport, TransportOptions, Playback } from './transport.js';
 export { story } from './story.js';

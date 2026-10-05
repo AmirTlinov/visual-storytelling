@@ -1,10 +1,11 @@
 import * as T from './engine.js';
 import type { Camera } from 'three';
 import { annotation, type LabelFrame } from './label-annotation.js';
-import { surfaceLettering, type SurfaceOptions, type LabelAnchor } from './surface-lettering.js';
+import { surfaceLettering, type SurfaceOptions } from './surface-lettering.js';
+import { resolveLabelAnchor, type LabelAnchor } from './label-anchor.js';
 import type { FrameAnchor } from './framing.js';
 import { placeLabels } from '../layout/labels.js';
-import { objectVisible } from './visibility.js';
+import { objectVisible, objectWithin } from './visibility.js';
 import { subjectOf } from './semantics.js';
 import { describeObject } from '../scene-objects.js';
 export type { Face } from './label-faces.js';
@@ -27,22 +28,15 @@ export interface LabelInsets {
 type ScreenLabel = {
   annotation: ReturnType<typeof annotation>;
   text: string | (() => string);
-  anchor: LabelAnchor;
+  anchor: ReturnType<typeof resolveLabelAnchor>;
   options: LabelOptions;
   opacity: number;
   subject?: ReturnType<typeof subjectOf>;
   forget?: () => void;
 };
 type Surface = ReturnType<typeof surfaceLettering>;
-function visible(anchor: LabelAnchor) {
-  return typeof anchor === 'function' || objectVisible(anchor);
-}
-function belongs(anchor: LabelAnchor, roots: readonly T.Object3D[]) {
-  if (typeof anchor === 'function') return false;
-  for (let node: T.Object3D | null = anchor; node; node = node.parent)
-    if (roots.includes(node)) return true;
-  return false;
-}
+const belongs = (object: T.Object3D | undefined, roots: readonly T.Object3D[]) =>
+  object !== undefined && roots.some((root) => objectWithin(object, root));
 
 /** Stable annotations and physical inscriptions have explicit, separate spatial roles. */
 export function projectedLabels(
@@ -59,7 +53,8 @@ export function projectedLabels(
   function measure(items: Iterable<ScreenLabel>) {
     const pending = [...items].flatMap((item) => {
       const { annotation: a, options } = item;
-      const subject = typeof item.anchor === 'function' ? undefined : subjectOf(item.anchor);
+      const owner = item.anchor.object;
+      const subject = owner && subjectOf(owner);
       if (subject !== item.subject) {
         item.forget?.();
         item.forget = undefined;
@@ -98,18 +93,15 @@ export function projectedLabels(
       }
       if (
         !a.element.textContent ||
-        !visible(item.anchor) ||
+        (owner && (!objectWithin(owner, scene) || !objectVisible(owner))) ||
         options.visible?.() === false ||
         item.opacity <= 0
       ) {
+        a.group.style.opacity = '0';
         a.hidden(true);
         return [];
       }
-      const point =
-        typeof item.anchor === 'function'
-          ? item.anchor()
-          : item.anchor.getWorldPosition(new T.Vector3());
-      return [{ item, point }];
+      return [{ item, point: item.anchor.world() }];
     });
     // Write every label first, then measure; framing and painting share these dimensions.
     return pending.map((p) => ({
@@ -150,6 +142,7 @@ export function projectedLabels(
         y: p.y - p.size[1]! / 2,
         width: p.size[0]!,
         height: p.size[1]!,
+        opacity: p.item.opacity,
       })),
       {
         x: (safe.left ?? 0) + 4,
@@ -182,7 +175,9 @@ export function projectedLabels(
     anchors(target: T.Object3D | T.Box3 | readonly T.Object3D[]): FrameAnchor[] {
       if (target instanceof T.Box3) return [];
       const roots = Array.isArray(target) ? target : [target];
-      return measure([...labels].filter((item) => belongs(item.anchor, roots))).map(
+      // A shot can follow a text or local-position change before the next render.
+      for (const item of surfaces) if (belongs(item.object, roots)) item.prepare();
+      return measure([...labels].filter((item) => belongs(item.anchor.object, roots))).map(
         ({ item, point, size }) => ({
           position: point,
           padding: [
@@ -210,8 +205,9 @@ export function projectedLabels(
         );
         surfaces.add(item);
         invalidate();
+        const { prepare: _prepare, ...label } = item;
         return {
-          ...item,
+          ...label,
           remove() {
             surfaces.delete(item);
             item.remove();
@@ -220,7 +216,13 @@ export function projectedLabels(
       }
       const a = annotation(stage, options.tone ?? 'ink', options.frame);
       a.element.textContent = typeof text === 'function' ? text() : text;
-      const item: ScreenLabel = { annotation: a, text, anchor, options, opacity: 1 };
+      const item: ScreenLabel = {
+        annotation: a,
+        text,
+        anchor: resolveLabelAnchor(anchor),
+        options,
+        opacity: 1,
+      };
       labels.add(item);
       invalidate();
       return {
@@ -248,7 +250,7 @@ export function projectedLabels(
     },
     dispose(root?: T.Object3D) {
       for (const item of labels)
-        if (!root || belongs(item.anchor, [root])) {
+        if (!root || belongs(item.anchor.object, [root])) {
           item.forget?.();
           item.annotation.remove();
           labels.delete(item);

@@ -11,7 +11,7 @@ from credits import audio_credits
 from listening import write_listening_page
 from mixing import mix
 from resources import ALIGN_REPO, ALIGN_REVISION, digest
-from script import read_script, timed_cues, speech_passages, dependency_digests
+from script import read_script, timed_cues, check_action_windows, speech_passages, dependency_digests
 from speech import SAMPLE_RATE, Speaker
 from quality import complete_take
 
@@ -90,6 +90,7 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
                       **({"passages": take["passages"]} if "passages" in take else {})})
     chunks.append(np.zeros(round(spec["outro"] * SAMPLE_RATE), dtype=np.float32))
     voice = np.concatenate(chunks)
+    check_action_windows(cues, len(voice) / SAMPLE_RATE)
     output.parent.mkdir(parents=True, exist_ok=True)
     # Assemble to a temporary sibling. Failed builds never replace a working mix.
     with tempfile.TemporaryDirectory(prefix=".sketch-audio-", dir=output.parent) as temporary:
