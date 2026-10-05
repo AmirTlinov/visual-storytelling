@@ -1,9 +1,19 @@
 import { gsap } from 'gsap';
 import { clamp } from '../ink/dom.js';
 
-export interface Cue {
+export interface CueSpan {
   start: number;
   end: number;
+}
+/** An action starts at its speech anchor plus delay and has one explicit end. */
+export type CueTiming = { delay?: number } & (
+  | { duration: number; until?: never }
+  | { until: string; duration?: never }
+);
+export interface Cue extends CueSpan {
+  timing?: CueTiming;
+  /** Original aligned words, retained when timing resolves the visible action window. */
+  speech?: CueSpan;
   quote?: string;
   text?: string;
   /** The visible operation, including its input and result. */
@@ -32,6 +42,8 @@ export interface Frame<K extends string = string> {
   reduced: boolean;
   cue(id: K): Cue;
   progress(id: K): number;
+  /** Seconds since the action started, clamped at zero; unaffected by reduced motion. */
+  elapsed(id: K): number;
   reveal(id: K): number;
   has(id: K): boolean;
   finished(id: K): boolean;
@@ -57,9 +69,45 @@ export const progress = (time: number, range: Cue, lead = 0, tail = 0) => {
     end = range.end + tail;
   return end <= start ? Number(time >= start) : clamp((time - start) / (end - start));
 };
+/** Resolve from original speech anchors, never from another action's retimed window. */
+function timedCue(id: string, cues: Record<string, Cue>): Cue {
+  const source = cues[id]!;
+  if (source.timing === undefined) return source;
+  const { timing, ...cue } = source;
+  if (
+    !timing ||
+    typeof timing !== 'object' ||
+    Array.isArray(timing) ||
+    Object.keys(timing).some((key) => !['duration', 'until', 'delay'].includes(key))
+  )
+    throw new Error(`Cue ${id}: timing needs duration or until`);
+  const delay = timing.delay ?? 0;
+  if (!Number.isFinite(delay) || delay < 0)
+    throw new Error(`Cue ${id}: timing delay must be finite and non-negative`);
+  const duration = 'duration' in timing;
+  if (duration === 'until' in timing)
+    throw new Error(`Cue ${id}: timing needs exactly one of duration or until`);
+  const speech = cue.speech ?? { start: cue.start, end: cue.end };
+  const start = speech.start + delay;
+  let end: number;
+  if (duration) {
+    if (!Number.isFinite(timing.duration) || !(timing.duration! > 0))
+      throw new Error(`Cue ${id}: timing duration must be positive`);
+    end = start + timing.duration!;
+  } else {
+    const until = timing.until;
+    if (typeof until !== 'string' || !until.trim() || !Object.hasOwn(cues, until))
+      throw new Error(`Cue ${id}: timing until needs an existing cue ID`);
+    const target = cues[until]!;
+    end = (target.speech ?? target).start;
+  }
+  if (!(end > start)) throw new Error(`Cue ${id}: timing must give a positive action window`);
+  return { ...cue, start, end, speech: { ...speech } };
+}
 /** Latest started semantic operation, including its hold until the next cue. */
 export function activeCue(script: Script | undefined, time: number) {
   const entry = Object.entries(script?.cues ?? {})
+    .map(([id, cue]) => [id, cue.timing ? timedCue(id, script!.cues) : cue] as const)
     .filter(([, c]) => c.start <= time)
     .sort((a, b) => b[1].start - a[1].start)[0];
   return entry ? { id: entry[0], progress: progress(time, entry[1]) } : undefined;
@@ -69,7 +117,15 @@ export const interpolate = (from: number, to: number, p: number) =>
   gsap.utils.interpolate(from, to, ease(clamp(p)));
 
 /** Spoken-word cues, or authored silent cues, are the only source of reveal times. */
-export function cueSheet<K extends string>(script: Script<K>) {
+export function cueSheet<K extends string>(source: Script<K>) {
+  const script = Object.values<Cue>(source.cues).some((cue) => cue.timing !== undefined)
+    ? {
+        ...source,
+        cues: Object.fromEntries(
+          Object.keys(source.cues).map((id) => [id, timedCue(id, source.cues)]),
+        ) as Record<K, Cue>,
+      }
+    : source;
   const referenced = new Set<K>();
   const targets = new Map<K, Set<string>>();
   let observedTime = 0;
@@ -78,6 +134,7 @@ export function cueSheet<K extends string>(script: Script<K>) {
   if (!Number.isFinite(script.duration) || script.duration <= 0)
     throw new Error('Story duration must be positive');
   for (const [id, cue] of Object.entries<Cue>(script.cues)) {
+    const speech = cue.speech;
     if (
       !Number.isFinite(cue.start) ||
       !Number.isFinite(cue.end) ||
@@ -86,6 +143,15 @@ export function cueSheet<K extends string>(script: Script<K>) {
       cue.end > script.duration + 0.01
     )
       throw new Error(`Invalid cue: ${id}`);
+    if (
+      speech &&
+      (!Number.isFinite(speech.start) ||
+        !Number.isFinite(speech.end) ||
+        speech.start < 0 ||
+        speech.end < speech.start ||
+        speech.end > script.duration + 0.01)
+    )
+      throw new Error(`Invalid speech anchor: ${id}`);
     if (
       (cue.action !== undefined && cue.hold !== undefined) ||
       [cue.action, cue.hold].some(
@@ -154,6 +220,9 @@ export function cueSheet<K extends string>(script: Script<K>) {
         reduced,
         cue: get,
         progress: amount,
+        elapsed(id) {
+          return observe(id, 'elapsed', Math.max(0, time - get(id).start));
+        },
         target(id, objectId) {
           get(id);
           if (!objectId.trim()) throw new Error('A review target needs a stable identity');

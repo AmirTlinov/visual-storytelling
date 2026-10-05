@@ -35,11 +35,14 @@ test('silent authoring needs no Python and preserves authored cues, assets and c
       'voice.wav',
       'music.wav',
       'voice-preview.html',
-      'voice.json',
       'scene.js',
       'logo.svg',
     ])
       await writeFile(join(directory, name), 'source');
+    await writeFile(
+      join(directory, 'voice.json'),
+      JSON.stringify({ provider: 'macos', voice: 'chosen', language: 'ru', enabled: true }),
+    );
     await writeFile(
       join(directory, 'index.html'),
       '<main><audio src="audio.wav"></audio><p>Example</p></main>',
@@ -73,7 +76,14 @@ test('silent authoring needs no Python and preserves authored cues, assets and c
       'logo.svg',
       'scene.js',
       'timeline.json',
+      'voice.json',
     ]);
+    assert.deepEqual(JSON.parse(await readFile(join(directory, 'voice.json'))), {
+      provider: 'macos',
+      voice: 'chosen',
+      language: 'ru',
+      enabled: false,
+    });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

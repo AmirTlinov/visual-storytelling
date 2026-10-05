@@ -1,7 +1,7 @@
 import { createServer } from 'node:net';
 import { readFile, chmod, rm, lstat, realpath } from 'node:fs/promises';
 import { dirname, join, resolve, isAbsolute, basename } from 'node:path';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { SessionDirectory } from '../session-directory.mjs';
 import { readJSON, writeJSON } from './storage.mjs';
@@ -14,15 +14,14 @@ import { environmentStatus } from '../environment.mjs';
 import { macosVoice } from '../../tools/voice/macos.mjs';
 import { collectCache } from '../cache.mjs';
 import { errorData } from '../errors.mjs';
+import { runtimeBuild } from './identity.mjs';
 
 const [socketPath, data] = process.argv.slice(2),
-  directory = dirname(process.argv[1]);
+  directory = await realpath(dirname(process.argv[1]));
 if (!socketPath || !data)
   throw new Error('Runtime requires its private socket and data directory.');
 const protocol = 1;
-const build = createHash('sha256')
-  .update(await readFile(process.argv[1]))
-  .digest('hex');
+const build = await runtimeBuild(directory);
 const example = JSON.parse(await readFile(join(directory, 'example.json'), 'utf8'));
 const sessions = new SessionDirectory();
 const projects = new ProjectStore(data);

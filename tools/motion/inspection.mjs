@@ -54,6 +54,46 @@ export function queryEvidence(data, query = {}) {
   };
   const visible = (o) =>
     !o.missing && o.visible !== false && o.opacity !== 0 && o.width > 0 && o.height > 0;
+  const extent = (boxes) => {
+    let left = Infinity,
+      top = Infinity,
+      right = -Infinity,
+      bottom = -Infinity;
+    for (const box of boxes) {
+      left = Math.min(left, box.x);
+      top = Math.min(top, box.y);
+      right = Math.max(right, box.x + box.width);
+      bottom = Math.max(bottom, box.y + box.height);
+    }
+    return { x: left, y: top, width: right - left, height: bottom - top };
+  };
+  // One observed object may have a mesh, annotations and hidden DOM mirrors.
+  // Keep its owner's facts; retain separate visible rectangles for exact hit testing.
+  const combine = (records) => {
+    const groups = new Map();
+    for (const record of records) {
+      if (!groups.has(record.id)) groups.set(record.id, []);
+      groups.get(record.id).push(record);
+    }
+    return [...groups.values()].map((parts) => {
+      const owner =
+        parts.findLast((o) => o.viewId !== undefined || o.matrix || o.camera) ??
+        parts.find(visible) ??
+        parts.at(-1);
+      const shown = parts.filter(visible);
+      const representations = shown.map(({ x, y, width, height }) => ({ x, y, width, height }));
+      return {
+        ...owner,
+        ...(representations.length ? extent(representations) : {}),
+        visible: representations.length > 0,
+        ...(shown.length && owner.missing ? { missing: false } : {}),
+        ...(shown.length && owner.opacity === 0
+          ? { opacity: Math.max(...shown.map((part) => part.opacity ?? 1)) }
+          : {}),
+        representations,
+      };
+    });
+  };
   // View-level facts are stored once per frame. Old saved captures already carry them on objects.
   const frameObjects = (frame) =>
     (frame.objects ?? []).map((o) => {
@@ -87,26 +127,32 @@ export function queryEvidence(data, query = {}) {
       latest.set(e.selector, e);
   const scene = (telemetry.scene ?? []).findLast((s) => s.time <= at);
   const allObjects = [
-    ...frameObjects(currentFrame),
-    ...(scene?.objects ?? []),
-    ...[...latest.values()].map((e) => ({
-      ...e,
-      id: e.selector,
-      evidence: 'DOM; inspect pixel timing separately',
-    })),
-  ].map((o) => pixels(o, currentFrame));
+    combine(frameObjects(currentFrame).map((o) => pixels(o, currentFrame))),
+    combine((scene?.objects ?? []).map((o) => pixels(o, currentFrame))),
+    combine(
+      [...latest.values()].map((e) =>
+        pixels(
+          { ...e, id: e.selector, evidence: 'DOM; inspect pixel timing separately' },
+          currentFrame,
+        ),
+      ),
+    ),
+  ].flat();
   const objects = [...new Map(allObjects.map((o) => [o.id, o])).values()];
-  const hit = query.point
-    ? objects
+  const hitArea = (object) =>
+    Math.min(
+      ...object.representations
         .filter(
-          (o) =>
-            visible(o) &&
-            query.point[0] >= o.x &&
-            query.point[0] <= o.x + o.width &&
-            query.point[1] >= o.y &&
-            query.point[1] <= o.y + o.height,
+          (b) =>
+            query.point[0] >= b.x &&
+            query.point[0] <= b.x + b.width &&
+            query.point[1] >= b.y &&
+            query.point[1] <= b.y + b.height,
         )
-        .sort((a, b) => a.width * a.height - b.width * b.height)
+        .map((b) => b.width * b.height),
+    );
+  const hit = query.point
+    ? objects.filter((o) => Number.isFinite(hitArea(o))).sort((a, b) => hitArea(a) - hitArea(b))
     : objects;
   const wanted = query.object ?? (query.point ? hit[0]?.id : undefined);
   const compact = (o) => ({
@@ -123,6 +169,7 @@ export function queryEvidence(data, query = {}) {
     missing: o.missing,
     document: o.document,
     depth: o.depth,
+    representations: o.representations,
   });
   const rawTrajectory = wanted
     ? [
@@ -132,14 +179,20 @@ export function queryEvidence(data, query = {}) {
         ...(telemetry.scene ?? [])
           .filter((s) => s.time >= from && s.time <= to)
           .flatMap((s) =>
-            (s.objects ?? []).filter((o) => o.id === wanted).map((o) => ({ ...o, time: s.time })),
+            combine(
+              (s.objects ?? [])
+                .filter((o) => o.id === wanted)
+                .map((o) => pixels({ ...o, time: s.time })),
+            ),
           ),
         ...frames
           .filter((f) => f.time >= from && f.time <= to)
           .flatMap((f) =>
-            frameObjects(f)
-              .filter((o) => o.id === wanted)
-              .map((o) => ({ ...o, time: f.time })),
+            combine(
+              frameObjects(f)
+                .filter((o) => o.id === wanted)
+                .map((o) => pixels({ ...o, time: f.time }, f)),
+            ),
           ),
       ]
         .map((o) => pixels(o))
@@ -160,19 +213,7 @@ export function queryEvidence(data, query = {}) {
   }
   const candidates = [...rawTrajectory, ...objects.filter((o) => o.id === wanted)].filter(visible);
   let bounds;
-  if (candidates.length) {
-    let left = Infinity,
-      top = Infinity,
-      right = -Infinity,
-      bottom = -Infinity;
-    for (const b of candidates) {
-      left = Math.min(left, b.x);
-      top = Math.min(top, b.y);
-      right = Math.max(right, b.x + b.width);
-      bottom = Math.max(bottom, b.y + b.height);
-    }
-    bounds = { x: left, y: top, width: right - left, height: bottom - top };
-  }
+  if (candidates.length) bounds = extent(candidates);
   const region =
     query.point && !wanted
       ? {
@@ -209,10 +250,10 @@ export function queryEvidence(data, query = {}) {
       cueReads: f.cueReads,
       diagnostics: f.diagnostics,
       presentation: f.presentation,
-      objects: frameObjects(f)
+      objects: combine(frameObjects(f).map((o) => pixels(o, f)))
         .filter((o) => (wanted ? o.id === wanted : visible(o)))
         .slice(0, wanted ? 32 : 12)
-        .map((o) => (wanted ? pixels(o, f) : compact(pixels(o, f)))),
+        .map((o) => (wanted ? o : compact(o))),
     })),
     objects: hit.filter((o) => (wanted ? o.id === wanted : visible(o))).slice(0, wanted ? 32 : 40),
     hits: query.point ? hit.slice(0, 12).map(compact) : undefined,

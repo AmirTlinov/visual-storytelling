@@ -21,7 +21,7 @@ test('rendered review detects a frozen operation and unused cue, permits a readi
           import { mountScene } from './dist/scene-handle.js';
           console.warn('Line geometry has too few points');
           const sheet = cueSheet({duration: 5, segments:[{id:'lesson',start:0,end:5,text:'Explain each change'}], cues: {
-            frozen: {start: 0, end: 1, action: 'Move the circle', text: '<em>copy</em>'},
+            frozen: {start: 0, end: 0.12, timing: {duration: 1}, action: 'Move the circle', text: '<em>copy</em>'},
             missing: {start: 1, end: 2, action: 'Reveal the result'},
             read: {start: 2, end: 3, hold: 'Compare the values'},
             unassigned: {start: 3, end: 4},
@@ -55,6 +55,16 @@ test('rendered review detects a frozen operation and unused cue, permits a readi
     const report = JSON.parse(await readFile(result.session, 'utf8'));
     const capture = await loadCapture(result.session);
     const frozen = report.episodes.find((e) => e.cue === 'frozen');
+    assert.equal(frozen.end, 1, 'review follows the visible action, not the short spoken anchor');
+    assert.equal(frozen.speech.end, 0.12);
+    assert(
+      capture.samples.some((sample) =>
+        sample.cueReads?.reads.some(
+          (read) => read.id === 'frozen' && read.operation === 'progress' && read.value === 0.5,
+        ),
+      ),
+      'the semantic midpoint must observe the shared action progress',
+    );
     assert(frozen.observations.some((s) => s.includes('одинаковы')));
     assert(frozen.observations.includes('No readable space for label'));
     assert(

@@ -179,6 +179,12 @@ export async function describeAPI(root, ...queries) {
       blocks.push(listing([[query, modules[query]]]));
       continue;
     }
+    if (query === '.' || query.startsWith('./')) {
+      missing.push(
+        `No public entry point "${query}" in this runtime. Available: ${Object.keys(modules).join(', ')}.`,
+      );
+      continue;
+    }
     const [requestedName, member] = query.split('.');
     let matches = entries.flatMap(([entry, symbols]) =>
       Object.entries(symbols)

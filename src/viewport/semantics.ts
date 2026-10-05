@@ -1,6 +1,6 @@
 import { Box3, Raycaster, Vector2, Vector3, type Camera, type Object3D } from 'three';
 import { describeObject, type ObjectMeaning } from '../scene-objects.js';
-import { objectVisible, drawsGeometry } from './visibility.js';
+import { objectVisible, objectWithin, drawsGeometry } from './visibility.js';
 
 interface Subject {
   id: string;
@@ -48,13 +48,8 @@ export function semanticObjects3D(
   const raycaster = new Raycaster();
   const boxOf = (subject: { object: Object3D; options: SubjectOptions3D }) =>
     subject.options.bounds?.() ?? new Box3().setFromObject(subject.object);
-  const attached = (object: Object3D, root: Object3D = scene) => {
-    for (let node: Object3D | null = object; node; node = node.parent)
-      if (node === root) return true;
-    return false;
-  };
   const visible = (record: { object: Object3D; options: SubjectOptions3D }) =>
-    attached(record.object) &&
+    objectWithin(record.object, scene) &&
     objectVisible(record.object) &&
     record.options.visible?.() !== false &&
     // Logical parts may be painted by a shared surface rather than their anchor.
@@ -112,7 +107,7 @@ export function semanticObjects3D(
           if (!record.options.bounds || !visible(record)) return [];
           // Shared-surface regions refine their own subject. A broader logical
           // envelope must not steal a click from an unrelated physical object.
-          if (subject && !attached(record.object, subject.object)) return [];
+          if (subject && !objectWithin(record.object, subject.object)) return [];
           const point = raycaster.ray.intersectBox(boxOf(record), new Vector3());
           return point ? [{ record, distance: point.distanceTo(raycaster.ray.origin) }] : [];
         })

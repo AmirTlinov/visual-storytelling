@@ -77,14 +77,14 @@ def render_measurements(
         plt.close(fig)
 ```
 
-После создания графика добавь смысловое описание и проверь настоящий рендер:
+После создания графика добавь смысловое описание и проверь настоящий рендер.
+Из каталога этого навыка `skills/visual-explainer/`, с абсолютным путём к результату:
 
 ```bash
-SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/visual-explainer"
-python3 "$SKILL_DIR/../../tools/add_svg_accessibility.py" plot.svg \
+python3 ../../tools/add_svg_accessibility.py /absolute/plot.svg \
   --title "Амплитуда во времени" \
   --description "Четыре измерения амплитуды с вертикальными интервалами погрешности. Наибольшее значение наблюдается при трёх секундах."
-python3 "$SKILL_DIR/../../tools/render_svg.py" plot.svg --output plot.png
+python3 ../../tools/render_svg.py /absolute/plot.svg --output /absolute/plot.png
 ```
 
 Список стилей читается слева направо: каждый следующий стиль уточняет уже

@@ -10,7 +10,7 @@ import { inkChapter } from '../story/ink-chapter.js';
 import type { CharacterSurface } from '../characters/surfaces.js';
 import type { CharacterStageOptions } from '../characters/types.js';
 import type { SceneStoryOptions } from '../story/composition.js';
-import type { Script } from '../story/cues.js';
+import { cueSheet, type Script } from '../story/cues.js';
 
 export interface IllustratedDocument extends StoryDocument {
   chapters: readonly (StoryDocument['chapters'][number] & {
@@ -44,7 +44,17 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
         chapter.beats.map((beat) => {
           const cue = aligned!.cues[`${chapter.id}.${beat.id}`];
           if (!cue) throw new Error(`Missing spoken action ${chapter.id}.${beat.id}`);
-          return [beat.id, { ...cue, start: cue.start - offset, end: cue.end - offset }];
+          return [
+            beat.id,
+            {
+              ...cue,
+              start: cue.start - offset,
+              end: cue.end - offset,
+              ...(cue.speech
+                ? { speech: { start: cue.speech.start - offset, end: cue.speech.end - offset } }
+                : {}),
+            },
+          ];
         }),
       ),
     };
@@ -59,16 +69,29 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
           beat.seconds ??
           Math.max(cue ? cue.end - cue.start : 0, 2.5, beat.say.split(/\s+/).length / 2.5 + 0.6);
         const span = { start: time, end: time + seconds };
-        local.cues[beat.id] = { ...span, action: beat.text };
+        let timing = beat.timing;
+        if (timing?.until?.startsWith(`${chapter.id}.`))
+          timing = { ...timing, until: timing.until.slice(chapter.id.length + 1) };
+        local.cues[beat.id] = {
+          ...span,
+          action: beat.text,
+          ...(timing !== undefined ? { timing } : {}),
+        };
         (local.segments as unknown[]).push({
           id: beat.id,
           ...span,
           text: beat.say,
           title: beat.title ?? beat.text,
         });
-        time += seconds;
+        time += Math.max(
+          seconds,
+          beat.timing && 'duration' in beat.timing
+            ? (beat.timing.delay ?? 0) + beat.timing.duration!
+            : 0,
+        );
       }
       local.duration = time;
+      local = cueSheet(local).script;
     }
     if (chapter.view === 'cast')
       return {

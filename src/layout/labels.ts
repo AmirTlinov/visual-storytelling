@@ -3,6 +3,8 @@ export interface LabelBox {
   y: number;
   width: number;
   height: number;
+  /** Fade strength of pairwise clearance; fully visible labels require the complete gap. */
+  opacity?: number;
 }
 
 /** Optional protected-space boundaries for each label, in the same coordinates as the area. */
@@ -23,15 +25,23 @@ export function placeLabels(
     x: Math.max(area.x, Math.min(area.x + area.width - box.width, box.x)),
   }));
   const centers = placed.map((box) => box.y + box.height / 2);
-  // Each constraint is a half-space a·y >= b. Dykstra projection retains the closest solution;
-  // unlike attraction/repulsion, it does not settle while labels still overlap.
-  const constraints: { i: number; j?: number; sign: number; distance: number; dual: number }[] = [];
+  // Bounds and opaque pairs are hard half-spaces a·y >= b. Fading pairs have a
+  // quadratic overlap penalty weight/(1-weight), continuous up to hard clearance.
+  const constraints: {
+    i: number;
+    j?: number;
+    sign: number;
+    distance: number;
+    weight: number;
+    dual: number;
+  }[] = [];
   placed.forEach((box, i) => {
     constraints.push(
       {
         i,
         sign: 1,
         distance: Math.max(area.y, limits[i]?.top ?? area.y) + box.height / 2,
+        weight: 1,
         dual: 0,
       },
       {
@@ -41,11 +51,14 @@ export function placeLabels(
           Math.min(area.y + area.height, limits[i]?.bottom ?? area.y + area.height) -
           box.height / 2
         ),
+        weight: 1,
         dual: 0,
       },
     );
     for (let j = i + 1; j < placed.length; j++) {
       const other = placed[j]!;
+      const weight = Math.max(0, Math.min(1, box.opacity ?? 1, other.opacity ?? 1));
+      if (weight === 0) continue;
       const clearance =
         Math.abs(box.x + box.width / 2 - other.x - other.width / 2) - (box.width + other.width) / 2;
       // Start making room before contact. The full separation is already active at an 8 px gap.
@@ -57,6 +70,7 @@ export function placeLabels(
         j,
         sign: -1,
         distance: contact * ((box.height + other.height) / 2 + gap) - (1 - contact) * area.height,
+        weight,
         dual: 0,
       });
     }
@@ -64,9 +78,13 @@ export function placeLabels(
   for (let iteration = 0; iteration < Math.max(256, 64 * placed.length ** 2); iteration++) {
     let change = 0;
     for (const constraint of constraints) {
-      const { i, j, sign, distance } = constraint;
+      const { i, j, sign, distance, weight } = constraint;
       const value = sign * centers[i]! + (j === undefined ? 0 : centers[j]!);
-      const dual = Math.max(0, constraint.dual + (distance - value) / (j === undefined ? 1 : 2));
+      const norm = j === undefined ? 1 : 2;
+      const dual = Math.max(
+        0,
+        ((norm * constraint.dual + distance - value) * weight) / (1 + (norm - 1) * weight),
+      );
       const step = dual - constraint.dual;
       centers[i]! += sign * step;
       if (j !== undefined) centers[j]! += step;

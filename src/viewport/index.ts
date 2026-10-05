@@ -20,6 +20,7 @@ export { SvgOrbit } from './svg-orbit.js';
 export type { SvgOrbitPose } from './svg-orbit.js';
 export type { Shot3D, ShotTransition3D } from './shots.js';
 export type { LabelOptions, LabelInsets, Face } from './labels.js';
+export type { LabelAnchor } from './label-anchor.js';
 export { arrangeTensorRows, deliverTensorCells } from './tensor-motion.js';
 export type { TensorCell, TensorHandle, Point3 } from './tensor-motion.js';
 export { readableFrame, geometryFrameAnchors } from './framing.js';

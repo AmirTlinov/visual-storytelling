@@ -1,6 +1,7 @@
 import * as T from './engine.js';
 import { localFaceCorners, type Face } from './label-faces.js';
-import { objectVisible } from './visibility.js';
+import { objectVisible, objectWithin } from './visibility.js';
+import { resolveLabelAnchor, type LabelAnchor } from './label-anchor.js';
 import type { Camera } from 'three';
 
 export interface SurfaceOptions {
@@ -13,7 +14,6 @@ export interface SurfaceOptions {
   tone?: string;
   visible?: () => boolean;
 }
-export type LabelAnchor = T.Object3D | (() => T.Vector3);
 type Ink = (material: T.MeshBasicMaterial, tone: string) => T.MeshBasicMaterial;
 
 /** Lettering is geometry: stable face attachment, perspective and ordinary depth occlusion. */
@@ -27,6 +27,10 @@ export function surfaceLettering(
   release: (object: T.Object3D) => void,
   invalidate: () => void,
 ) {
+  const attachment = resolveLabelAnchor(anchor);
+  const faces = options.face ? (Array.isArray(options.face) ? options.face : [options.face]) : [];
+  const faceAnchor = anchor instanceof T.Mesh ? anchor : undefined;
+  if (faces.length && !faceAnchor) throw new Error('A surface face label needs a Mesh anchor');
   const element = document.createElement('span');
   element.className = 've-surface-label';
   element.textContent = typeof text === 'function' ? text() : text;
@@ -36,11 +40,10 @@ export function surfaceLettering(
   group.name = 'surface-lettering';
   group.userData.visualReview = () => ({
     text: element.textContent,
-    anchor: typeof anchor === 'function' ? undefined : anchor.uuid,
+    anchor: attachment.object?.uuid,
     source: 'src/viewport/surface-lettering.ts',
   });
-  if (typeof anchor === 'function') scene.add(group);
-  else anchor.add(group);
+  (attachment.object ?? scene).add(group);
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d')!;
   function createTexture() {
@@ -63,13 +66,11 @@ export function surfaceLettering(
     }),
     options.tone ?? 'ink',
   );
-  const faces = options.face ? (Array.isArray(options.face) ? options.face : [options.face]) : [];
   const planes: T.Mesh[] = [];
   const faceSizes: Array<[number, number]> = [];
   if (faces.length) {
-    if (!(anchor instanceof T.Mesh)) throw new Error('A surface face label needs a Mesh anchor');
     for (const side of faces) {
-      const corners = localFaceCorners(anchor, side);
+      const corners = localFaceCorners(faceAnchor!, side);
       const across = corners[1]!.clone().sub(corners[0]!),
         up = corners[3]!.clone().sub(corners[0]!);
       const width = across.length(),
@@ -121,7 +122,7 @@ export function surfaceLettering(
     context.fillText(value, canvas.width / 2, canvas.height / 2);
     texture.needsUpdate = true;
   }
-  function update(camera: Camera) {
+  function prepare() {
     if (typeof text === 'function') element.textContent = text();
     const value = element.textContent ?? '';
     if (value !== previous) {
@@ -129,10 +130,14 @@ export function surfaceLettering(
       draw(value);
     }
     group.visible = !!value && opacity > 0 && options.visible?.() !== false;
-    if (typeof anchor === 'function') group.position.copy(anchor());
+    if (!(anchor instanceof T.Object3D)) group.position.copy(attachment.local());
     group.updateWorldMatrix(true, true);
+  }
+  function update(camera: Camera) {
+    prepare();
     const eye = camera.getWorldPosition(new T.Vector3());
     element.hidden =
+      !objectWithin(group, scene) ||
       !objectVisible(group) ||
       !planes.some((plane) => {
         const normal = new T.Vector3(0, 0, 1).transformDirection(plane.matrixWorld);
@@ -142,6 +147,7 @@ export function surfaceLettering(
   return {
     element,
     object: group,
+    prepare,
     update,
     set(value: string) {
       text = value;

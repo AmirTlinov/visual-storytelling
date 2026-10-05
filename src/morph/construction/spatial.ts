@@ -337,20 +337,24 @@ export function spatialPanelRenderer(sheet: Surface, id: string, up?: DiagramCam
         if (!entry) {
           const point = new T.Vector3(),
             side = item.side ?? 'top';
-          const label = view.label(item.text, () => point, {
-            avoidOverlap: true,
-            order,
-            tone: item.pigment ?? 'ink',
-            size: 18,
-            offset:
-              side === 'left'
-                ? [-35, 0]
-                : side === 'right'
-                  ? [35, 0]
-                  : side === 'bottom'
-                    ? [0, 23]
-                    : [0, -23],
-          });
+          const label = view.label(
+            item.text,
+            { object: scene, position: point },
+            {
+              avoidOverlap: true,
+              order,
+              tone: item.pigment ?? 'ink',
+              size: 18,
+              offset:
+                side === 'left'
+                  ? [-35, 0]
+                  : side === 'right'
+                    ? [35, 0]
+                    : side === 'bottom'
+                      ? [0, 23]
+                      : [0, -23],
+            },
+          );
           entry = { point, label, signature };
           labels.set(item.id, entry);
         }

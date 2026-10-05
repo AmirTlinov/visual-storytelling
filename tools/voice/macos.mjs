@@ -239,7 +239,7 @@ export async function systemNarration(
         end: words[lexical[at + quote.length - 1].index].end,
         ...(cue.action ? { action: cue.action } : {}),
         ...(cue.hold ? { hold: cue.hold } : {}),
-        ...(cue.timing === undefined ? {} : { timing: structuredClone(cue.timing) }),
+        ...(cue.timing !== undefined ? { timing: structuredClone(cue.timing) } : {}),
       };
     }
     const pcm = Buffer.alloc(take.frames * 2);
@@ -269,7 +269,6 @@ export async function systemNarration(
     synthesis: { provider: 'macos', voice: voice.id, identity: voice.identity },
     alignment: { method: 'native-word-markers' },
   };
-  // Keep acoustic anchors intact; the runtime owns validation and visible action windows.
   cueSheet(timeline);
   signal?.throwIfAborted();
   await writeFile(join(directory, 'audio.wav'), wav(pieces, sampleRate));

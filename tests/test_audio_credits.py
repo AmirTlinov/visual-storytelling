@@ -29,6 +29,5 @@ class AudioCredits(unittest.TestCase):
         self.assertTrue(built.startswith(authored))
         self.assertEqual(audio_credits(built, None), built)
 
-
 if __name__ == "__main__":
     unittest.main()

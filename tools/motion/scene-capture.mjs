@@ -58,6 +58,8 @@ export async function captureScene({
       clock: 'scene model time',
       sampling: 'model-checkpoints',
       inspectionLimits: { domObjects: 150, objectsPer3DView: 400 },
+      ownerLinks:
+        'Only unchanged inputs of the captured bundle or directly loaded assets; no CLI-source fallback.',
       timingNote:
         'Состояния по перемотке. Эти интервалы не измеряют плавность реального воспроизведения.',
       ...(selected
@@ -77,14 +79,41 @@ export async function captureScene({
         : undefined;
       const diagnostics = await capture.capture.evaluate((s) => s.diagnostics());
       const presentation = await capture.capture.evaluate((s) => s.presentation());
-      const { objects, views } = await identities.evaluate((cache) => {
+      const { objects, views, regions } = await identities.evaluate((cache) => {
         const root = document.querySelector('.ve-scene'),
           origin = root?.getBoundingClientRect() ?? { x: 0, y: 0 };
-        const dom = [...document.querySelectorAll('svg text,[data-review-id],[data-layout-error]')]
+        const boxes = new WeakMap();
+        const box = (node) => {
+          if (!boxes.has(node)) {
+            const b = node.getBoundingClientRect();
+            boxes.set(node, {
+              x: b.x - origin.x,
+              y: b.y - origin.y,
+              width: b.width,
+              height: b.height,
+              visible:
+                !node.closest('[aria-hidden="true"]') &&
+                node.checkVisibility({ opacityProperty: true, visibilityProperty: true }),
+            });
+          }
+          return boxes.get(node);
+        };
+        const region = (node) => {
+          const { visible, ...bounds } = box(node);
+          return visible ? bounds : { ...bounds, width: 0, height: 0 };
+        };
+        const dom = [
+          ...document.querySelectorAll(
+            'svg text,[data-review-id],[data-object],[data-layout-error]',
+          ),
+        ]
           .slice(0, 150)
           .map((node) => {
-            const b = node.getBoundingClientRect();
-            let id = node.getAttribute('data-review-id') || node.id || cache.nodes.get(node);
+            let id =
+              node.getAttribute('data-review-id') ||
+              node.getAttribute('data-object') ||
+              node.id ||
+              cache.nodes.get(node);
             if (!id) {
               id = `svg:${cache.next++}`;
               cache.nodes.set(node, id);
@@ -93,10 +122,7 @@ export async function captureScene({
               id,
               text: node.textContent?.trim().slice(0, 160),
               textSource: 'dom-text-content',
-              x: b.x - origin.x,
-              y: b.y - origin.y,
-              width: b.width,
-              height: b.height,
+              ...box(node),
               data: node.__visualReview?.(),
               owner: node.getAttribute('data-review-owner') ?? undefined,
               evidence: 'DOM at model checkpoint',
@@ -122,39 +148,25 @@ export async function captureScene({
             })),
           );
         }
-        return { objects, views };
-      });
-      for (const object of objects)
-        object.sourceFile = await references.owner(object.source ?? object.owner);
-      const png = await capture.png();
-      const regions = await capture.page.evaluate(() => {
-        const root = document.querySelector('.ve-scene');
-        const origin = root?.getBoundingClientRect() ?? { x: 0, y: 0 };
-        const box = (node) => {
-          const b = node.getBoundingClientRect();
-          const hidden = !node.checkVisibility();
-          return {
-            x: b.x - origin.x,
-            y: b.y - origin.y,
-            width: hidden ? 0 : b.width,
-            height: hidden ? 0 : b.height,
-          };
-        };
         const subject = root?.querySelector(
           '[data-scene-frame],.ve-stage,svg.canvas,svg.vs-canvas',
         );
         const exclude = [
           ...(root?.querySelectorAll('[data-caption],[data-player],[data-review-ignore]') ?? []),
-        ].map(box);
-        return [
-          ...(subject ? [{ id: '$subject', ...box(subject), exclude }] : []),
-          ...[...(root?.querySelectorAll('[data-review-id]') ?? [])].map((node) => ({
-            id: node.getAttribute('data-review-id'),
-            ...box(node),
+        ].map(region);
+        const regions = [
+          ...(subject ? [{ id: '$subject', ...region(subject), exclude }] : []),
+          ...[...(root?.querySelectorAll('[data-review-id],[data-object]') ?? [])].map((node) => ({
+            id: node.getAttribute('data-review-id') || node.getAttribute('data-object'),
+            ...region(node),
             exclude,
           })),
         ];
+        return { objects, views, regions };
       });
+      for (const object of objects)
+        object.sourceFile = await references.owner(object.source ?? object.owner);
+      const png = await capture.png();
       const subjects = await subjectDigests(png, regions);
       await writer.append({
         id: `frame:${writer.frames.length}`,

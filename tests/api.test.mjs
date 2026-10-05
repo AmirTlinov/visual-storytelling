@@ -1,10 +1,56 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  writeFile,
+  rm,
+  readdir,
+  copyFile,
+  symlink,
+  access,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { buildAPI, describeAPI } from '../tools/api.mjs';
+
+test('CLI discovery respects a runtime without character and Higgs authoring tools', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'story-profile-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const tools = fileURLToPath(new URL('../tools', import.meta.url));
+  await mkdir(join(root, 'tools'));
+  await writeFile(
+    join(root, 'package.json'),
+    JSON.stringify({ type: 'module', exports: {}, bin: {} }),
+  );
+  // Run the real CLI against this package profile; shared owners remain their original files.
+  for (const name of await readdir(tools))
+    if (name === 'scene.mjs') await copyFile(join(tools, name), join(root, 'tools', name));
+    else if (name !== 'characters') await symlink(join(tools, name), join(root, 'tools', name));
+  const run = (...args) =>
+    promisify(execFile)(process.execPath, [join(root, 'tools/scene.mjs'), ...args]);
+  const help = (await run('--help')).stdout;
+  assert.doesNotMatch(help, /characters --help|--audio\]/);
+  assert.match(help, /--silent/);
+  const creation = (await run('new', '--help')).stdout;
+  assert.match(creation, /story_voice/);
+  assert.match(creation, /provider.*macos/);
+  await assert.rejects(run('characters', '--help'), (error) => {
+    assert.match(error.stderr, /does not include \.\/characters/);
+    assert.doesNotMatch(error.stderr, /ERR_MODULE_NOT_FOUND/);
+    return true;
+  });
+  const destination = join(root, 'untouched');
+  await assert.rejects(run('new', destination, '--audio'), (error) => {
+    assert.match(error.stderr, /--no-audio/);
+    assert.doesNotMatch(error.stderr, /ENOENT|ERR_MODULE_NOT_FOUND/);
+    return true;
+  });
+  await assert.rejects(access(destination), { code: 'ENOENT' });
+});
 
 test('one morph lookup explains its inputs without unrelated implementation helpers', async () => {
   const root = fileURLToPath(new URL('../', import.meta.url));
@@ -103,6 +149,11 @@ test('shipped discovery resolves private factories, aliases and recursive argume
     await buildAPI(root, join(root, 'dist'));
     const { text, missing } = await describeAPI(root, 'Widget');
     assert.deepEqual(missing, []);
+    const absent = await describeAPI(root, './characters');
+    assert.deepEqual(absent.missing, [
+      'No public entry point "./characters" in this runtime. Available: ., ./alternate.',
+    ]);
+    assert.doesNotMatch(absent.text, /Matches:/);
     assert.match(text, /declare function create\(options: Options\)/);
     assert.match(text, /Input as Options/);
     assert.match(text, /import type \{ WidgetInput \} from 'public-api-fixture'/);

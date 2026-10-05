@@ -12,6 +12,7 @@ import { checkNarration, setNarrationMode, playbackTimeline } from './narration.
 import { resolvePackage } from './build-info.mjs';
 import { readCatalog } from './catalog.mjs';
 import { writeBundleNotices } from './bundle-notices.mjs';
+import { writeSourceReferences } from './build-sources.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 export async function buildPage(
@@ -125,6 +126,12 @@ export async function buildPage(
       metafile: true,
     });
     await writeBundleNotices(out, result.metafile, { assets });
+    await writeSourceReferences(out, result.metafile, {
+      directory: dirname(source),
+      runtimeRoot: sourcePackage
+        ? root
+        : await resolvePackage('@visual-storytelling/core', dirname(source)),
+    });
     if (Object.values(result.metafile.outputs).some((output) => output.cssBundle)) {
       const at =
         head?.sourceCodeLocation?.endTag?.startOffset ?? body?.sourceCodeLocation?.startOffset ?? 0;

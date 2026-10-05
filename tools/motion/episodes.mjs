@@ -98,7 +98,9 @@ function mediaEpisodes(review, samples) {
   for (const e of results)
     if (e.kind !== 'chapter')
       e.parent = results.find(
-        (c) => c.kind === 'chapter' && e.start >= c.start &&
+        (c) =>
+          c.kind === 'chapter' &&
+          e.start >= c.start &&
           (e.start < c.end || (c.start === c.end && e.start === c.start)),
       )?.id;
   return results;
@@ -217,6 +219,11 @@ export function buildEpisodes(samples, { context, telemetry, timeline } = {}) {
           ? e.targets.every((id) => s.subjects?.[id] !== undefined)
           : Boolean(subjectState(s)),
       );
+      const missingTargets = (e.targets ?? []).filter((id) =>
+        inside.some((sample) => sample.subjects?.[id] === undefined),
+      );
+      if (missingTargets.length)
+        observations.push(`Нет области изображения для объектов: ${missingTargets.join(', ')}.`);
       if (
         e.kind === 'action' &&
         inside.length > 1 &&
@@ -238,7 +245,7 @@ export function buildEpisodes(samples, { context, telemetry, timeline } = {}) {
           lastChange: changes.at(-1)?.time,
           sampledFrames: samples.filter((s) => s.time >= from && s.time <= to).length,
           scope: e.targets?.length
-            ? { objects: e.targets }
+            ? { objects: e.targets, ...(missingTargets.length ? { missing: missingTargets } : {}) }
             : inside.some((s) => s.subjects?.$subject)
               ? 'subject without player/captions'
               : 'whole frame',

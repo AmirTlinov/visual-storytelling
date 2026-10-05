@@ -3,14 +3,15 @@
 Для морфингов и собственных моделей `MathMorph.model` используй [MorphStory](../../../docs/morph-stories.md).
 Задай `presenter: MathMorph` или `InkMorph`, параметры и операции глав: общая оболочка
 свяжет их с метками, полями, камерой и перемоткой. [Числа и тела](../../../examples/morph-story/scene.js),
-[слова](../../../examples/ink-story/scene.js), [связанная 2D/3D-модель](../../../examples/gradient-descent/scene.js).
+[слова](../../../examples/ink-story/scene.js).
 
-Начни с ближайшего готового рисунка; общая оболочка уже подключена:
+Начни с ближайшего рисунка из `examples --json`; общая оболочка уже подключена.
+Команды ниже запускаются из каталога навыка `skills/visual-explainer/`:
 
 ```sh
-node ../tools/scene.mjs new /absolute/output/story --example explorer-svg --no-audio
+node ../../tools/scene.mjs new /absolute/output/story --example explorer-svg --no-audio
 # Кубик → ряд → слой → объём: --example explorer-3d
-# Согласованный морф форм, надписей и текста: --example written-morph
+# Морфинг тел: --example morph-story; самостоятельного текста: --example ink-story
 cd /absolute/output/story
 npm install
 npm run dev -- --port 0  # свободный порт; CLI печатает URL
@@ -27,11 +28,13 @@ npm run dev -- --port 0  # свободный порт; CLI печатает URL
 Ответ берётся из поставленных деклараций и указывает их настоящий путь.
 
 Меняй `narration.json` (реплики и действия), `scene.js` (модель и рисунок).
-`npm run audio` создаёт голос и `timeline.json`, затем убирает тихий режим.
+`story_voice` включает системный голос проекта в плагине. В отдельном проекте
+`npm run audio` использует выбранный в `voice.json` провайдер, создаёт `timeline.json`
+и убирает тихий режим.
 [Формат реплик и меток](narration.md) нужен при подготовке озвучки.
 
-Для постоянного тихого рассказа убери `<audio>` из HTML и параметр `audio` из `attachStory`;
-задай `timeline.json` прямо в секундах, например:
+Для постоянного тихого рассказа создавай проект с `--silent`; команда сохраняет
+метки и убирает речевые ресурсы. Его `timeline.json` можно задавать прямо в секундах:
 
 ```json
 {
@@ -116,11 +119,10 @@ window.galleryReady = (async () => {
 освобождает рассказ, камеру и callbacks `shell.onDispose`: добавляй туда наблюдатели,
 подписки и движение предмета. `controller.subscribe((mode, values) => …)` сразу сообщает
 состояние и возвращает функцию отписки; `controller.onSeek(time => …)` сообщает целевое время до рендера.
-`notebook.attach(controller)` возвращает тот же `SceneHandle`, опубликованный в `root.scene`; `notebook.onDispose` регистрирует очистку у оболочки — см. [вектор](../../../examples/vector/index.ts).
 
 ## Превращение предметов
 
-Вместо собственной хореографии создай `Morph.merge([Morph.box([1,1,1], 1), Morph.sphere(.5, 2)], Morph.capsule(.5, 2, 3))` и передай в `Morph3D.mount(view, operation)` или `Morph2D.mount(stage, operation, {id})`. В `render` достаточно `body.render(frame, 'merge')`; надпись, контакт и грани принадлежат телу. Для самостоятельных слов и абзацев — `await InkMorph.mount(stage, {sources, targets})` с тем же прогрессом. Для вычисления величин — `MathMorph`. [Рабочий исходник](../../../examples/written-morph/scene.js), [контракт и примеры](../../../docs/morphing.md).
+Вместо собственной хореографии создай `Morph.merge([Morph.box([1,1,1], 1), Morph.sphere(.5, 2)], Morph.capsule(.5, 2, 3))` и передай в `Morph3D.mount(view, operation)` или `Morph2D.mount(stage, operation, {id})`. В `render` достаточно `body.render(frame, 'merge')`; надпись, контакт и грани принадлежат телу. Для самостоятельных слов и абзацев — `await InkMorph.mount(stage, {sources, targets})` с тем же прогрессом. Для вычисления величин — `MathMorph`. Готовую оболочку показывают [тела](../../../examples/morph-story/scene.js) и [слова](../../../examples/ink-story/scene.js); точные сигнатуры — в `api Morph3D InkMorph MathMorph`.
 
 ## Рассказ → самостоятельный опыт → восстановление
 
@@ -174,14 +176,14 @@ const cube = new T.Mesh(
 );
 view.setObject(cube);
 view.label(() => '3.14', cube, { face: ['front', 'back'], tone: 'blue' });
-view.label('Объём', () => cube.localToWorld(new T.Vector3(0, 1, 0)), {
+view.label('Объём', { object: cube, position: new T.Vector3(0, 1, 0) }, {
   frame: { padding: [13, 6] },
 });
 // В render: view.shot({target: cube, direction: [0,0,1], padding: 36, from: overview3d, progress: frame.progress('focus')});
 ```
 
 `shot` имеет тот же смысл, `direction` — направление от цели к камере; целью также может
-быть группа объектов или неизменный `T.Box3`. Для объектов камера сама учитывает видимые подписи на дочерних якорях; при явном `T.Box3` или якорях-функциях дополнительные мировые точки задаются через
+быть группа объектов или неизменный `T.Box3`. Для объектов камера сама учитывает видимые подписи и их рамки на принадлежащих им якорях. У независимой мировой подписи или явного `T.Box3` дополнительные точки задаются через
 `anchors: [{position, padding: [halfWidth, halfHeight]}]`, занятое управление —
 `insets: {top, right, bottom, left}` в пикселях.
 
@@ -190,7 +192,10 @@ view.label('Объём', () => cube.localToWorld(new T.Vector3(0, 1, 0)), {
 Числам на Mesh задавай `face: 'front'` или явные грани `['front', 'back']`; для надписи в плоскости фигуры используй её дочерний `Object3D` с `space: 'world', height: 0.3` (мировые единицы).
 Текст внутри геометрической фигуры и её обводка имеют общего владельца; рамку внешнего пояснения создавай через `frame`, чтобы она оставалась целой с текстом.
 При вращении сохраняй привязки: числа остаются на поверхности, пересортировка подписей и автоматические выноски создают скачки и визуальный шум; читаемость обеспечивают композиция, ракурс и масштаб.
-Пояснение закрепляй в локальной точке предмета через дочерний `Object3D` или `localToWorld`, как выше: экранная граница меняется с ракурсом и не служит пространственным якорем.
+Пояснение закрепляй через `{object, position}`: положение локально предмету,
+видимость и удаление следуют его владельцу. Для движущейся точки передай
+`position: () => new T.Vector3(model.x, 1, 0)`. Отдельная функция-якорь задаёт
+независимую мировую точку; она не связывает подпись с предметом.
 `size` задаёт экранный размер, `labelInsets: () => ({top, bottom})` оставляет место интерфейсу; контроллер обновляет надпись через `set/show/opacity/remove`.
 Если цвет обозначает величину, задай `view.ink(material, p => p.blue.clone().lerp(p.surface, model.fraction))`.
 Функция вычисляет цвет при `invalidate()` и смене темы, включая паузу; ручное обновление того же материала не требуется.
@@ -200,15 +205,15 @@ view.label('Объём', () => cube.localToWorld(new T.Vector3(0, 1, 0)), {
 Готовый SVG-предмет подключай через [SvgArtwork3D](../../../docs/svg-artwork.md):
 один исходник, нужный `height`, палитра экземпляра и свободный `root` для анимации.
 Нормализация размера, порядок слоёв и обновление прозрачности уже принадлежат рисунку.
-[Пример](../../../examples/svg-artwork/scene.js) переиспользует один SVG на разных планах.
+Пример `svg-artwork` доступен в каталоге полной библиотеки.
 
 Арифметикой владеет [MathMorph](../../../docs/morphing.md).
 Скалярную сумму и `dot` до 64 входов передавай целиком: движок сам ведёт порции
-и накопленный результат. Одна метка покрывает весь расчёт; готовая основа —
-[long-calculation](../../../examples/long-calculation/scene.js).
+и накопленный результат. Одна метка покрывает весь расчёт; `api MathMorph.dot`
+показывает контракт текущей версии. В полной библиотеке есть пример `long-calculation`.
 Для записи вычисленного числа задай `MathMorph3D.mount(view, operation, {delivery:{to:cell}})`
 и `render(frame, 'calculate', 'place')`: владелец измеряет получателя и ведёт
-полёт, размер, появление и перемотку. [Пример](../../../examples/result-delivery/scene.js)
+полёт, размер, появление и перемотку. Пример `result-delivery` полной библиотеки
 использует тот же путь для памяти и вектора; отдельные пересчёты `surface.position/scale`
 и `cell.visible` не нужны. Для перестановки уже существующих ячеек используй
 `arrangeTensorRows` и `deliverTensorCells`, сохраняя идентичность предметов.
@@ -235,7 +240,8 @@ view.label('Объём', () => cube.localToWorld(new T.Vector3(0, 1, 0)), {
 сигнал или карточку вместе со штрихом. У пустого пути результат `undefined`.
 Пустой след, одна точка, изменение числа точек, пунктир и обратная перемотка
 поддерживаются тем же владельцем. Время передавай через `frame.reveal(cue)`.
-[Копируемый пример](../../../examples/ink-trace/scene.js) меняет число витков живого следа.
+`api InkStroke3D` показывает полный контракт; [пример связи](../../../examples/connected-diagram/scene.js)
+использует тот же штрих и `pointAt` для сигнала.
 
 ### Связи между фигурами
 

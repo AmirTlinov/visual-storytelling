@@ -1,10 +1,12 @@
 import type { Beat } from '../characters/types.js';
-import type { Script } from '../story/cues.js';
+import { cueSheet, type CueTiming, type Script } from '../story/cues.js';
 import { bookTiming, bookBoundary } from './timing.js';
 
 /** One authored thought owns both its spoken words and its visible action. */
 export interface AuthoredBeat extends Beat {
   say: string;
+  /** Action window; until accepts a local beat ID or a fully qualified chapter.beat ID. */
+  timing?: CueTiming;
 }
 export interface StoryDocument {
   title: string;
@@ -37,7 +39,10 @@ export function authoredChapter(document: StoryDocument, id: string) {
     id: chapter.id,
     title: chapter.title,
     text: chapter.beats.map((b) => b.say).join(' '),
-    beats: chapter.beats.map(({ say, ...beat }) => ({ ...beat, text: beat.text || say })),
+    beats: chapter.beats.map(({ say, timing: _timing, ...beat }) => ({
+      ...beat,
+      text: beat.text || say,
+    })),
   };
 }
 /** Feed the existing cached speech/alignment owner, without copying phrases into narration.json. */
@@ -80,7 +85,21 @@ export function documentNarration(document: StoryDocument) {
         for (let start = 0; quote.length && start <= wordStart; start++)
           if (quote.every((word, index) => tokens[start + index] === word)) occurrence++;
         wordStart += quote.length;
-        return { id, quote: beat.say, occurrence, action: beat.text };
+        let timing = beat.timing;
+        if (typeof timing?.until === 'string') {
+          const until = timing.until;
+          timing = {
+            ...timing,
+            until: chapter.beats.some((b) => b.id === until) ? `${chapter.id}.${until}` : until,
+          };
+        }
+        return {
+          id,
+          quote: beat.say,
+          occurrence,
+          action: beat.text,
+          ...(timing !== undefined ? { timing } : {}),
+        };
       });
       return {
         id: chapter.id,
@@ -107,6 +126,7 @@ export function documentScript(
       document.chapters[index]?.view === 'cast',
     ),
 ): Script {
+  aligned = cueSheet(aligned).script;
   const cues = { ...aligned.cues };
   let end = 0;
   for (const [index, chapter] of document.chapters.entries()) {
@@ -118,12 +138,16 @@ export function documentScript(
       throw new Error(
         `Narration needs ${delay}s before chapter ${chapter.id} for its page transition`,
       );
+    const finish = Math.max(
+      segment.end,
+      ...chapter.beats.map((beat) => cues[`${chapter.id}.${beat.id}`]?.end ?? segment.end),
+    );
     cues[chapter.id] = {
       start,
-      end: segment.end,
+      end: finish,
       action: chapter.beats.map((b) => b.text).join(' '),
     };
-    end = segment.end;
+    end = finish;
   }
   return { ...aligned, cues };
 }

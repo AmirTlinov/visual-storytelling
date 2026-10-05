@@ -11,7 +11,7 @@ from unittest.mock import patch
 import wave
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools' / 'audio'))
-from script import read_script, timed_cues, check_timeline
+from script import read_script, timed_cues, check_action_windows, check_timeline
 from resources import SPEECH_REPO, SPEECH_REVISION
 from audition import audition
 
@@ -41,12 +41,12 @@ class NarrationCues(unittest.TestCase):
                         with wave.open(str(source.parent / timeline[key])) as audio:
                             self.assertAlmostEqual(timeline['duration'], audio.getnframes() / audio.getframerate(), places=6)
 
-    def script(self, cue):
+    def script(self, cue, extra=()):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'narration.json'
             path.write_text(json.dumps({
                 'version': 3, 'music': None, 'segments': [{
-                    'id': 'chapter', 'text': 'Перенесём две фишки.', 'cues': [cue],
+                    'id': 'chapter', 'text': 'Перенесём две фишки.', 'cues': [cue, *extra],
                 }],
             }))
             return read_script(path)
@@ -64,6 +64,27 @@ class NarrationCues(unittest.TestCase):
         for invalid in [{'action': 'move', 'hold': 'read'}, {'action': ''}, {'hold': 42}]:
             with self.assertRaisesRegex(ValueError, 'action or hold'):
                 self.script({'id': 'move', 'quote': 'две фишки', **invalid})
+
+    def test_action_timing_preserves_aligned_words_and_validates_authored_windows(self):
+        words = [{'text': text, 'start': i + 1, 'end': i + 1.5}
+                 for i, text in enumerate(['Перенесём', 'две', 'фишки'])]
+        for timing in [{'duration': 9, 'delay': .5}, {'until': 'finish'}]:
+            segment = self.script({'id': 'move', 'quote': 'две фишки', 'timing': timing},
+                                  [{'id': 'finish', 'quote': 'фишки'}])['segments'][0]
+            cues = timed_cues(segment, words)
+            cue = cues['move']
+            self.assertEqual(cue, {'text': 'две фишки', 'start': 2, 'end': 3.5, 'timing': timing})
+            self.assertEqual(segment['spoken'], 'Перенесём две фишки.')
+            check_action_windows(cues, 12)
+        for timing in [{'duration': 20}, {'until': 'chapter'}, {'until': 'finish', 'delay': 2}]:
+            cues['move']['timing'] = timing
+            with self.subTest(timing=timing), self.assertRaisesRegex(ValueError, 'positive action window'):
+                check_action_windows(cues, 12)
+        for timing in [None, {}, {'duration': 0}, {'duration': -1}, {'duration': True},
+                       {'duration': 2, 'delay': -1}, {'duration': 2, 'until': 'chapter'},
+                       {'until': 'missing'}, {'until': 'move'}, {'until': 5}, {'duration': 2, 'typo': 1}]:
+            with self.subTest(timing=timing), self.assertRaisesRegex(ValueError, 'timing'):
+                self.script({'id': 'move', 'quote': 'две фишки', 'timing': timing})
 
     def test_repeated_quote_requires_occurrence(self):
         spec = {"version":3, "segments":[{"id":"line", "text":"Два и два.", "cues":[{"id":"second", "quote":"два"}]}]}
