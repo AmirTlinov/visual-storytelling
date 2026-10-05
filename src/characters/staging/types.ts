@@ -117,6 +117,8 @@ export interface BipedRig {
   face: string;
   /** Whole head pivot for a gaze independent of locomotion. */
   head?: string;
+  /** Measured neutral face silhouette for each skin, including breathing. */
+  faceBounds?: Record<string, { left: number; right: number; bottom: number; top: number }>;
   arms: Record<'left' | 'right', { upper: string; lower: string }>;
   /** Compiled native units relative to the standing support, including breathing clearance. */
   reach?: Record<

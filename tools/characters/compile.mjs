@@ -3,7 +3,7 @@ import { resolve, sep } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import sharp from 'sharp';
 import { characterAtlas } from './atlas.mjs';
-import { measureReach } from './measure.mjs';
+import { measureRig } from './measure.mjs';
 
 /** The rig owns topology and draw order. A skin supplies artwork in that rig's UV frames. */
 export async function compileCharacterPack(template, directories, { id = 'chibi-custom' } = {}) {
@@ -138,7 +138,7 @@ export async function compileCharacterPack(template, directories, { id = 'chibi-
     actions: spec.actions,
     anchors: spec.anchors,
     credit: spec.credit,
-    rig: spec.rig && { ...spec.rig, reach: measureReach(data, atlas, spec.rig, skins[0]) },
+    rig: spec.rig && { ...spec.rig, ...measureRig(data, atlas, spec.rig, skins) },
     viewSkins,
   };
 }

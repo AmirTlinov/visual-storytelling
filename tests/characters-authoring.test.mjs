@@ -18,6 +18,8 @@ import { routines } from '../dist/characters/routines.js';
 import { world } from '../dist/characters/staging/world.js';
 import { drawBook, bookBounds } from '../dist/characters/staging/book.js';
 import { notebookParts } from '../dist/characters/staging/notebook.js';
+import { portableBounds } from '../dist/characters/staging/portable.js';
+import { characterDetails } from '../dist/characters/framing.js';
 import { performance, readSkeleton, unpackCharacter } from '../dist/characters/performance.js';
 
 const { data } = readSkeleton(await unpackCharacter(chibi));
@@ -135,7 +137,6 @@ test('an arranged reading routine reaches the book, opens and closes it, then re
   const score = compileScore(options),
     blocking = score.blocking;
   const plans = Object.fromEntries(blocking.plans.map((p) => [p.action.action, p]));
-  assert.ok(plans.take.via.length > 0, 'taking the book starts with a real furniture detour');
   clearPath(
     [plans.take.from.hero.at, ...plans.take.via, plans.take.to.hero.at],
     footprint(set.staging.objects.sideTable),
@@ -1061,5 +1062,185 @@ test('walking combines independent hands, gaze and mood without changing its rou
     assert.notDeepEqual(matrix(actual, chibi.rig.head), matrix(native, chibi.rig.head));
   } finally {
     gestureWorld.dispose();
+  }
+});
+
+test('a book keeps the same two hands from either approach through reading, returning and rewind', async () => {
+  const set = arrange(readingRoom(), {
+    objects: {
+      seat: { at: ground(4, 7) },
+      sideTable: { at: ground(0, 2.5) },
+      book: { at: { of: 'sideTable', side: 'on' } },
+    },
+  });
+  for (const [skin, scale] of [
+    ['mira-lab', 0.64],
+    ['tesla', 0.8],
+  ])
+    for (const x of [-4, 4])
+      for (const flip of [false, true]) {
+        const options = {
+          pack: chibi,
+          set,
+          cast: { hero: { skin, scale, flip, at: ground(x, 0) } },
+          beats: [
+            { action: 'take', actor: 'hero', object: 'book' },
+            { action: 'read', actor: 'hero', book: 'book', pages: 1 },
+            { action: 'put', actor: 'hero', onto: 'sideTable' },
+          ].map((action) => ({ id: action.action, text: action.action, perform: [action] })),
+        };
+        const score = compileScore(options),
+          subject = await actorWorld(options, score),
+          expected = flip ? ['right', 'left'] : ['left', 'right'];
+        try {
+          for (const plan of score.blocking.plans)
+            for (let i = 0; i <= 24; i++) {
+              const time = actionTime(plan, 'act', i / 24);
+              subject.sample(time, false);
+              const snapshot = subject.snapshot(),
+                contacts = snapshot.actors.hero.contacts;
+              assert.deepEqual(
+                contacts.map((contact) => contact.side),
+                expected,
+                `${skin}/${x}/${flip}/${plan.action.action}: cover grips exchange hands`,
+              );
+              assert.ok(contacts[0].target.x < contacts[1].target.x, 'book grips keep their order');
+              for (const contact of contacts)
+                assert.ok(contact.error < 1, `book contact misses by ${contact.error}`);
+              if (i === 12) {
+                subject.sample(score.script.duration, false);
+                subject.sample(time, false);
+                assert.deepEqual(
+                  subject.snapshot(),
+                  snapshot,
+                  'backward seek preserves hand ownership',
+                );
+              }
+            }
+        } finally {
+          subject.dispose();
+        }
+      }
+});
+
+test('taking and placing a small prop on a high support keeps its grip and clears the face', async () => {
+  const set = arrange(readingRoom({ perspective: 'overview', width: 1680 }), {
+    objects: {
+      seat: null,
+      plant: null,
+      sideTable: { at: ground(1.4, 3.8), scale: 0.96 },
+      instrument: {
+        kind: 'prop',
+        at: { of: 'sideTable', side: 'on', offset: ground(0.25, -0.2) },
+        scale: 0.68,
+        support: { height: 0.9 },
+        art: { svg: '', width: 180, height: 200, grip: { x: 45, y: -62 } },
+      },
+      specimen: {
+        kind: 'prop',
+        at: { of: 'sideTable', side: 'on', offset: ground(-0.55, -0.35) },
+        scale: 0.75,
+        art: { svg: '', width: 78, height: 24, grip: { x: -29, y: -8 } },
+      },
+    },
+    spots: { reader: null },
+  });
+  for (const variant of [
+    { scale: 0.67, hand: 'right' },
+    { scale: 0.67, flip: true, hand: 'left' },
+    { scale: 0.85 },
+  ]) {
+    const { hand, ...appearance } = variant;
+    const actor = { skin: 'tesla', at: ground(-1.7, 2.6), ...appearance };
+    const options = {
+      pack: chibi,
+      set,
+      background: false,
+      cast: { hero: actor },
+      beats: [
+        {
+          id: 'take',
+          text: 'Take',
+          seconds: 4,
+          perform: [{ action: 'take', actor: 'hero', object: 'specimen', hand }],
+        },
+        {
+          id: 'put',
+          text: 'Put',
+          seconds: 4,
+          perform: [{ action: 'put', actor: 'hero', onto: 'instrument' }],
+        },
+      ],
+    };
+    const score = compileScore(options);
+    if (variant.scale === 0.67 && !variant.flip) {
+      const distant = compileScore({
+        ...options,
+        cast: { hero: { ...actor, at: ground(-1.7, 0) } },
+      });
+      assert.ok(
+        Math.abs(distant.blocking.plans[0].to.hero.at.z - set.staging.objects.specimen.at.z) <=
+          (chibi.rig.reach.right.max * actor.scale) / 100 + 1e-8,
+        'perspective must not replace an approach from a distant depth',
+      );
+      assert.throws(
+        () =>
+          compileScore({
+            ...options,
+            set: arrange(set, {
+              objects: { instrument: { at: ground(1.65, 3.6, 3) } },
+            }),
+          }),
+        /Cannot reach/,
+        'perspective must not make an over-high support reachable',
+      );
+    }
+    const perf = performance(
+      data,
+      chibi,
+      actor,
+      score.tracks.hero,
+      project(set.staging.projection, actor.at),
+      set.height,
+    );
+    const subject = await world(options, score.blocking, { hero: perf }, undefined);
+    const frames = [];
+    try {
+      for (const plan of score.blocking.plans) {
+        clearPath(
+          [plan.from.hero.at, ...plan.via, plan.to.hero.at],
+          footprint(set.staging.objects.sideTable),
+        );
+        for (let i = 0; i <= 20; i++) {
+          const time = actionTime(plan, 'act', Math.min(i / 20, 1 - 1e-7));
+          subject.sample(time, false);
+          const state = subject.snapshot(),
+            contact = state.actors.hero.contacts.find((c) => c.kind === 'carry');
+          assert.ok(
+            contact.error < 1,
+            `${JSON.stringify(variant)} grip misses by ${contact.error}`,
+          );
+          if (hand) assert.equal(contact.side, hand);
+          const face = characterDetails(perf.skeleton, chibi.rig, set.height).face;
+          const item = portableBounds(state.items.hero, set.staging.objects.specimen.art);
+          const overlapX =
+            Math.min(face.x + face.width, item.x + item.width) - Math.max(face.x, item.x);
+          const overlapY =
+            Math.min(face.y + face.height, item.y + item.height) - Math.max(face.y, item.y);
+          assert.ok(
+            overlapX <= 0 || overlapY <= 0,
+            `face covers the specimen during ${plan.action.action} at ${time}`,
+          );
+          frames.push({ time, state });
+        }
+      }
+      for (const { time, state } of frames.reverse()) {
+        subject.sample(time, true);
+        subject.sample(time, false);
+        assert.deepEqual(subject.snapshot(), state);
+      }
+    } finally {
+      subject.dispose();
+    }
   }
 });

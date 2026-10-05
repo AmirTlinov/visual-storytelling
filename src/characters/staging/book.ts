@@ -72,6 +72,12 @@ export function bookHands(book: BookFrame) {
     }),
   };
 }
+/** Keep the two cover grips with the same hands while the book crosses the body. */
+export function bookHandsOrder(leftShoulderX: number, rightShoulderX: number) {
+  return leftShoulderX <= rightShoulderX
+    ? (['left', 'right'] as const)
+    : (['right', 'left'] as const);
+}
 export function bookPage(book: BookFrame): Quad | undefined {
   const { open, h, cx, edge, lift } = fold(book);
   if (open < 0.55) return undefined;

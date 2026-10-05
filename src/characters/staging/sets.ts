@@ -53,7 +53,7 @@ export function readingRoom(options: RoomOptions = {}): StageSet {
     theme === 'library'
       ? shelf(44) + shelf(width - 240)
       : `<g stroke="#344b4c" stroke-width="5"><path fill="#b4a27a" d="M50 80h190v240H50z"/><path fill="#314f4e" d="M64 94h162v212H64z"/></g><g stroke="#d9d7b7" stroke-width="3" fill="none"><path d="M83 227h119M101 221V158m42 63V128m42 93V177"/><circle cx="153" cy="135" r="35"/></g><g transform="translate(${width - 218} 115)" stroke="#bfbb98" fill="none" stroke-width="4"><circle cx="60" cy="60" r="51"/><path d="M60 17v48l29 21"/></g>`;
-  const svg = `<defs><linearGradient id="$id-room" x2="0" y2="1"><stop stop-color="${wall}"/><stop offset="1" stop-color="#455f5c"/></linearGradient></defs><path fill="url(#$id-room)" d="M0 0h${width}v650H0z"/><path d="M0 ${backY}h${width}v${650 - backY}H0z" fill="#b8a581"/><path d="M0 ${backY}h${width}" stroke="#d1c5a0" stroke-width="9"/>${floorGrid(space, '#6e7565', 14.3)}<g transform="translate(0 ${backY - 425})">${wallArt}<g transform="translate(${(width - 960) / 2} 0)"><path fill="#aec3b7" stroke="#34504f" stroke-width="6" d="M323 46h310v265H323z"/><path d="M326 267q61-109 125-51 76-110 178-19v110H326z" fill="#73958a"/><circle cx="562" cy="109" r="28" fill="#f1ddb0"/><path d="M479 49v260M326 181h305" stroke="#34504f" stroke-width="7"/><path d="M311 310h333v12H311z" fill="${wood}" stroke="#34504f" stroke-width="4"/></g></g>`;
+  const svg = `<defs><linearGradient id="$id-room" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="650"><stop stop-color="${wall}"/><stop offset="1" stop-color="#455f5c"/></linearGradient></defs><path fill="url(#$id-room)" d="M0 0h${width}v650H0z"/><path d="M0 ${backY}h${width}v${650 - backY}H0z" fill="#b8a581"/><path d="M0 ${backY}h${width}" stroke="#d1c5a0" stroke-width="9"/>${floorGrid(space, '#6e7565', 14.3)}<g transform="translate(0 ${backY - 425})">${wallArt}<g transform="translate(${(width - 960) / 2} 0)"><path fill="#aec3b7" stroke="#34504f" stroke-width="6" d="M323 46h310v265H323z"/><path d="M326 267q61-109 125-51 76-110 178-19v110H326z" fill="#73958a"/><circle cx="562" cy="109" r="28" fill="#f1ddb0"/><path d="M479 49v260M326 181h305" stroke="#34504f" stroke-width="7"/><path d="M311 310h333v12H311z" fill="${wood}" stroke="#34504f" stroke-width="4"/></g></g>`;
   const set = prepareSet(
     svg,
     space,
@@ -75,6 +75,7 @@ export function readingRoom(options: RoomOptions = {}): StageSet {
     },
   );
   set.width = width;
+  set.backdrop = { divide: backY, above: 'url(#$id-room)', below: '#b8a581' };
   return arrange(set, {
     objects: { book: { at: { of: 'sideTable', side: 'on' } } },
     spots: { reader: { of: 'seat', side: 'front', gap: 0.75 } },
@@ -99,7 +100,7 @@ export function street(options: StreetOptions = {}): StageSet {
         house(650, 328, 310, '#b1b49b')
       : `<path d="M0 307q140-96 292-14 180-127 369-11 190-94 299-22v158H0Z" fill="#8ea884"/><path d="M0 372q240-67 486 1 263-60 474-19v60H0Z" fill="#739582"/>`;
   const svg = `<path fill="#c5d8d0" d="M0 0h960v650H0z"/><circle cx="815" cy="72" r="38" fill="#f2deac"/><g fill="#e6e6cf" opacity=".9"><path d="M80 79q20-32 49-12 28-29 51 8 25-4 36 19H62q0-19 18-15Z"/><path d="M546 47q18-32 44-11 18-30 47 10l34 23H523Z"/></g>${`<g transform="translate(0 ${backY - 381})">${background}</g>`}<path d="M0 ${backY}h960v${650 - backY}H0Z" fill="#b6ae92"/>${floorGrid(space, '#7d8b7b')}<path d="M0 640h960" stroke="#526d68" stroke-width="11"/>`;
-  return prepareSet(
+  const set = prepareSet(
     svg,
     space,
     {
@@ -116,6 +117,7 @@ export function street(options: StreetOptions = {}): StageSet {
       bench: { kind: 'bench', at: ground(0.5, 7), scale: 1.25, color: '#997a55' },
     },
   );
+  return { ...set, backdrop: { divide: backY, above: '#c5d8d0', below: '#b6ae92' } };
 }
 
 export interface CourtyardOptions {
@@ -213,7 +215,7 @@ export function courtyard(options: CourtyardOptions = {}): StageSet {
     <g fill="#e4e5cf"><path d="M20 91q31-30 67-3 40-45 71-5l50 25H9Z"/><path d="M715 56q28-32 60-7 38-27 57 10l49 15H684Z"/></g>
     <path fill="#88a48e" d="M0 239Q71 117 142 219Q214 115 279 234Q374 149 463 241Q618 134 693 239Q820 133 960 245V390H0Z"/>
     <path fill="#a9ad92" d="M0 395h960v255H0z"/>${parts.map((p) => p.svg).join('')}`;
-  return arrange(
+  const set = arrange(
     prepareSet(
       svg,
       space,
@@ -235,6 +237,7 @@ export function courtyard(options: CourtyardOptions = {}): StageSet {
       },
     },
   );
+  return { ...set, backdrop: { divide: 395, above: '#c8d8ce', below: '#a9ad92' } };
 }
 
 /** Ready blocking for explaining a diagram: a presenter, a clear board and optional reading props. */

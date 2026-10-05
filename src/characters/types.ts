@@ -51,6 +51,8 @@ export interface StageSet {
   height: number;
   /** Backdrop SVG children. Use $id in definition IDs to scope multiple mounted scenes. */
   svg: string;
+  /** Extend the two backdrop planes when a responsive camera sees beyond the authored artwork. */
+  backdrop?: { divide: number; above: string; below: string };
   spots: Readonly<Record<string, Point>>;
   props?: Readonly<Record<string, Prop>>;
   staging?: Staging;
@@ -80,6 +82,8 @@ export interface Beat {
   shot?: Shot;
 }
 export interface CharacterStageOptions {
+  /** Fill the host and fit shot subjects to its aspect. Omit to preserve the authored stage frame. */
+  camera?: 'responsive';
   /** Live Ink drawings attached to prepared furniture; share the chapter time and values. */
   surfaces?: Readonly<Record<string, CharacterSurface>>;
   description?: string;

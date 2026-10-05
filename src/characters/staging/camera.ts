@@ -20,14 +20,18 @@ export function stageFrame(
   height: number,
   objects: Readonly<Record<string, FrameBox>>,
   shot?: Shot,
+  viewportAspect?: number,
 ): FrameBox {
+  const aspect = viewportAspect ?? width / height;
+  if (!Number.isFinite(aspect) || aspect <= 0) throw new Error('Camera aspect must be positive');
   const keys = shot?.focus ?? Object.keys(objects),
     boxes = keys.map((id) => {
       const box = objects[id];
       if (!box) throw new Error(`Unknown camera subject: ${id}`);
       return box;
     });
-  if (!boxes.length) return { x: 0, y: 0, width, height };
+  if (!boxes.length)
+    return { x: (width - height * aspect) / 2, y: 0, width: height * aspect, height };
   const margin = shot?.framing === 'detail' ? 16 : shot?.framing === 'wide' ? 70 : 32;
   const subject = union(boxes);
   let b = {
@@ -38,9 +42,9 @@ export function stageFrame(
   };
   // The complete set already supplies context. Extra portrait padding would
   // pull the default camera beyond its painted edges for an otherwise fitting prop.
-  if (!shot) b = union([{ x: 0, y: 0, width, height }, subject]);
-  const w = Math.max(b.width, (b.height * width) / height),
-    h = (w * height) / width;
+  if (!shot && viewportAspect === undefined) b = union([{ x: 0, y: 0, width, height }, subject]);
+  const w = Math.max(b.width, b.height * aspect),
+    h = w / aspect;
   const frame = { x: b.x + (b.width - w) / 2, y: b.y + (b.height - h) / 2, width: w, height: h };
   // Keep a smaller frame inside the room, or the room inside a larger frame.
   // Relax that interval only as far as the subject requires, preserving its fit

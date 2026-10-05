@@ -118,6 +118,8 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
       if (plan.transfer) {
         rise();
         approach();
+        p.holdingHand = after.holdingHand;
+        p.hands = after.hands;
         const tr = plan.transfer;
         if (!tr.taking)
           p.bookOpen =

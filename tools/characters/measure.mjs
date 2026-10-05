@@ -5,17 +5,38 @@ import {
   AtlasAttachmentLoader,
   MixFrom,
   Physics,
+  RegionAttachment,
+  MeshAttachment,
 } from '@esotericsoftware/spine-webgl';
 
-/** Reach belongs to the native rig. Artwork and character names do not change it. */
-export function measureReach(json, atlasText, rig, skin) {
+/** Bake neutral reach and per-skin face clearance from the native rig. */
+export function measureRig(json, atlasText, rig, skins) {
   const data = new SkeletonJson(
     new AtlasAttachmentLoader(new TextureAtlas(atlasText)),
   ).readSkeletonData(json);
   const skeleton = new Skeleton(data),
     clip = data.findAnimation(rig.views.front);
   if (!clip) throw new Error(`Missing neutral rig view: ${rig.views.front}`);
-  skeleton.setSkin(skin);
+  const faceBones = new Set(
+    skeleton.bones
+      .filter((bone) => {
+        for (let current = bone; current; current = current.parent)
+          if (current.data.name === rig.face) return true;
+        return false;
+      })
+      .map((bone) => bone.data.index),
+  );
+  const faceBounds = Object.fromEntries(
+    skins.map((skin) => [
+      skin,
+      {
+        left: Infinity,
+        right: -Infinity,
+        bottom: Infinity,
+        top: -Infinity,
+      },
+    ]),
+  );
   const arms = Object.fromEntries(
     Object.entries(rig.arms).map(([side, names]) => {
       const upper = skeleton.findBone(names.upper),
@@ -34,20 +55,68 @@ export function measureReach(json, atlasText, rig, skin) {
   }
   keys(json.animations[rig.views.front]);
   for (const time of [...times].sort((a, b) => a - b)) {
-    skeleton.setupPose();
-    clip.apply(skeleton, -1, time, false, null, 1, MixFrom.setup, false, false, false);
-    skeleton.updateWorldTransform(Physics.reset);
-    for (const arm of Object.values(arms)) {
-      const a = arm.upper.appliedPose,
-        b = arm.lower.appliedPose;
-      const first = Math.hypot(b.worldX - a.worldX, b.worldY - a.worldY),
-        second = arm.lower.data.length * Math.hypot(b.a, b.c);
-      arm.positions.push({ x: a.worldX, height: a.worldY });
-      arm.min = Math.max(arm.min, Math.abs(first - second));
-      arm.max = Math.min(arm.max, first + second);
+    for (const skin of skins) {
+      skeleton.setSkin(skin);
+      skeleton.setupPose();
+      clip.apply(skeleton, -1, time, false, null, 1, MixFrom.setup, false, false, false);
+      skeleton.updateWorldTransform(Physics.reset);
+      const vertices = [];
+      for (const slot of skeleton.slots) {
+        const pose = slot.appliedPose,
+          attachment = pose.attachment;
+        if (!slot.bone.active || pose.color.a <= 0 || !attachment) continue;
+        const belongs = faceBones.has(slot.bone.data.index);
+        if (attachment instanceof RegionAttachment && belongs) {
+          const offsets = attachment.sequence.offsets?.[attachment.sequence.resolveIndex(pose)];
+          if (offsets) attachment.computeWorldVertices(slot, offsets, vertices, vertices.length, 2);
+        } else if (attachment instanceof MeshAttachment && (belongs || attachment.bones)) {
+          const world = [];
+          attachment.computeWorldVertices(
+            skeleton,
+            slot,
+            0,
+            attachment.worldVerticesLength,
+            world,
+            0,
+            2,
+          );
+          if (!attachment.bones) vertices.push(...world);
+          else {
+            let bone = 0,
+              weight = 0;
+            for (let vertex = 0; bone < attachment.bones.length; vertex += 2) {
+              const count = attachment.bones[bone++];
+              let drawn = false;
+              for (let i = 0; i < count; i++, weight += 3)
+                if (faceBones.has(attachment.bones[bone++]) && attachment.vertices[weight + 2] > 0)
+                  drawn = true;
+              if (drawn) vertices.push(world[vertex], world[vertex + 1]);
+            }
+          }
+        }
+      }
+      const bounds = faceBounds[skin];
+      for (let i = 0; i < vertices.length; i += 2) {
+        bounds.left = Math.min(bounds.left, vertices[i]);
+        bounds.right = Math.max(bounds.right, vertices[i]);
+        bounds.bottom = Math.min(bounds.bottom, vertices[i + 1]);
+        bounds.top = Math.max(bounds.top, vertices[i + 1]);
+      }
+      if (skin !== skins[0]) continue;
+      for (const arm of Object.values(arms)) {
+        const a = arm.upper.appliedPose,
+          b = arm.lower.appliedPose;
+        const first = Math.hypot(b.worldX - a.worldX, b.worldY - a.worldY),
+          second = arm.lower.data.length * Math.hypot(b.a, b.c);
+        arm.positions.push({ x: a.worldX, height: a.worldY });
+        arm.min = Math.max(arm.min, Math.abs(first - second));
+        arm.max = Math.min(arm.max, first + second);
+      }
     }
   }
-  return Object.fromEntries(
+  if (!Object.values(faceBounds).every((bounds) => Object.values(bounds).every(Number.isFinite)))
+    throw new Error('The rig needs visible face artwork');
+  const reach = Object.fromEntries(
     Object.entries(arms).map(([side, arm]) => {
       const shoulder = arm.positions[0];
       let excursion = 0,
@@ -68,4 +137,5 @@ export function measureReach(json, atlasText, rig, skin) {
       return [side, { shoulder, min, max }];
     }),
   );
+  return { reach, faceBounds };
 }

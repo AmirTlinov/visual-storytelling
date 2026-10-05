@@ -10,6 +10,7 @@ import { destination } from './layout.js';
 import { route, meetingPoint } from './navigation.js';
 import { coordinateTraffic } from './traffic.js';
 import { pressApproach } from './press.js';
+import { transferApproach } from './transfer.js';
 import { actionTiming, durationOf, type ActionTiming } from './timing.js';
 
 export interface Placement {
@@ -290,11 +291,19 @@ export function compileBlocking(options: CharacterStageOptions, script?: Script)
             throw new Error(`Two actions own object ${id} in beat ${beat.id}`);
           usedObjects.add(id);
           transfer = { id, at: { ...at }, taking: action.action === 'take' };
-          p.at = point({
-            x: at.x - 0.62 * (options.cast[action.actor]!.scale ?? 0.77),
-            z: at.z - 0.6,
-            height: from[action.actor]!.at.height ?? 0,
-          });
+          const contact = transferApproach(
+            staging,
+            options.cast[action.actor]!,
+            from[action.actor]!,
+            { ...staging.objects[id]!, at },
+            options.pack.rig!,
+            action.action === 'put'
+              ? from[action.actor]!.holdingHand
+              : (action.hand ?? options.cast[action.actor]!.holdingHand),
+          );
+          p.at = point(contact.at);
+          p.holdingHand = contact.hand;
+          via = contact.via;
           p.facing = 'front';
           p.seated = 0;
           p.seat = undefined;

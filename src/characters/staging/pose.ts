@@ -13,7 +13,7 @@ import type { BipedRig, Projection, GroundPoint, Furniture } from './types.js';
 import type { BlockingActor, PairContact } from './blocking.js';
 import { ease } from './space.js';
 import { project, interpolate, alongPath } from './space.js';
-import { bookHands, type BookFrame } from './book.js';
+import { bookHands, bookHandsOrder, type BookFrame } from './book.js';
 import { pressTravel } from './press.js';
 
 type Performer = ReturnType<typeof performance>;
@@ -353,8 +353,7 @@ export function body(
         book.resting = { faces: placement.resting, weight: placement.weight };
       }
       const hands = bookHands(book);
-      const left = this.sideToward(hands.left),
-        right = left === 'left' ? 'right' : 'left';
+      const [left, right] = bookHandsOrder(shoulder('left').x, shoulder('right').x);
       reach(left, hands.left, placement?.grip ?? frame.bookBlend ?? 1, 'book-support');
       reach(right, hands.right, placement?.grip ?? frame.bookBlend ?? 1, 'page');
       return book;

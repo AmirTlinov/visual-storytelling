@@ -37,10 +37,17 @@ export async function characterStage(
   let surfaces: ReturnType<typeof characterSurfaces> | undefined;
   aperture.className = 've-character-aperture';
   element.append(aperture);
+  let replay: (() => void) | undefined;
   const resize = () => {
-    const width = element.clientWidth || set.width,
-      height = element.clientHeight || set.height,
-      fit = fitFrame(set.width, set.height, width, height);
+    const width = element.clientWidth || parseFloat(aperture.style.width) || set.width,
+      height = element.clientHeight || parseFloat(aperture.style.height) || set.height,
+      fit =
+        options.camera === 'responsive'
+          ? { width, height }
+          : fitFrame(set.width, set.height, width, height);
+    const changed =
+      parseFloat(aperture.style.width) !== fit.width ||
+      parseFloat(aperture.style.height) !== fit.height;
     Object.assign(aperture.style, {
       width: `${fit.width}px`,
       height: `${fit.height}px`,
@@ -48,6 +55,7 @@ export async function characterStage(
       top: `${(height - fit.height) / 2}px`,
     });
     surfaces?.resize();
+    if (changed && !element.hidden && canvas.parentElement === aperture) replay?.();
   };
   const observer = new ResizeObserver(resize);
   observer.observe(element);
@@ -61,6 +69,18 @@ export async function characterStage(
     return svg;
   };
   const back = layer(background ? set.svg : '');
+  const backdrop =
+    background && set.backdrop
+      ? ['above', 'below'].map((part) => {
+          const rect = document.createElementNS(NS, 'rect');
+          rect.setAttribute(
+            'fill',
+            set.backdrop![part as 'above' | 'below'].replaceAll('$id', scope),
+          );
+          return rect;
+        })
+      : [];
+  back.prepend(...backdrop);
   canvas.setAttribute('role', 'img');
   canvas.dataset.reviewId = 'cast';
   const front = layer();
@@ -73,6 +93,7 @@ export async function characterStage(
   const dispose = () => {
     if (disposed) return;
     disposed = true;
+    replay = undefined;
     observer.disconnect();
     if (inspected.__visualReview === inspect) delete inspected.__visualReview;
     surfaces?.dispose();
@@ -254,18 +275,24 @@ export async function characterStage(
         );
         const authoredBeat = options.beats[index]!;
         const beat = manualShot ? { ...authoredBeat, shot: manualShot } : authoredBeat;
+        const aspect =
+          options.camera === 'responsive'
+            ? parseFloat(aperture.style.width) / parseFloat(aperture.style.height)
+            : undefined;
         focus = beat.shot?.focus;
         const current = stageFrame(
           set.width,
           set.height,
           beat.shot ? { ...bounds, ...details } : bounds,
           beat.shot,
+          aspect,
         );
         const previous = stageFrame(
           set.width,
           set.height,
           options.beats[Math.max(0, index - 1)]!.shot ? { ...bounds, ...details } : bounds,
           options.beats[Math.max(0, index - 1)]!.shot,
+          aspect,
         );
         const mix =
           reduced || manualShot ? 1 : smooth((time - score.script.cues[beat.id]!.start) / 0.45);
@@ -283,6 +310,19 @@ export async function characterStage(
           }),
         ) as unknown as FrameBox;
         camera = captureView?.camera ?? camera;
+        for (const [i, rect] of backdrop.entries()) {
+          const top = i ? Math.max(camera.y, set.backdrop!.divide) : camera.y;
+          const bottom = i
+            ? camera.y + camera.height
+            : Math.min(camera.y + camera.height, set.backdrop!.divide);
+          for (const [key, value] of Object.entries({
+            x: camera.x,
+            y: top,
+            width: camera.width,
+            height: Math.max(0, bottom - top),
+          }))
+            rect.setAttribute(key, String(value));
+        }
         for (const svg of [back, front])
           svg.setAttribute('viewBox', `${camera.x} ${camera.y} ${camera.width} ${camera.height}`);
         renderer!.camera.position.set(
@@ -292,14 +332,16 @@ export async function characterStage(
         );
         renderer!.camera.setViewport(camera.width, camera.height);
         // Logical dimensions also work when the host is hidden or detached.
+        const logicalHeight = set.height,
+          logicalWidth = (logicalHeight * camera.width) / camera.height;
         const dpr = Math.min(
           devicePixelRatio || 1,
           2,
-          maxTextureSize / set.width,
-          maxTextureSize / set.height,
+          maxTextureSize / logicalWidth,
+          maxTextureSize / logicalHeight,
         );
-        const width = Math.max(1, Math.round(set.width * dpr)),
-          height = Math.max(1, Math.round(set.height * dpr));
+        const width = Math.max(1, Math.round(logicalWidth * dpr)),
+          height = Math.max(1, Math.round(logicalHeight * dpr));
         if (canvas.width !== width) canvas.width = width;
         if (canvas.height !== height) canvas.height = height;
         const gl = context!.gl;
@@ -369,6 +411,7 @@ export async function characterStage(
       },
       reset() {
         manualShot = undefined;
+        if (snapshot) stage.render(...latest);
       },
       snapshot: () => snapshot,
       /** Flatten only a requested transition boundary; live content keeps all DOM layers. */
@@ -411,6 +454,7 @@ export async function characterStage(
       },
       dispose,
     };
+    replay = () => stage.render(...latest);
     return stage;
   } catch (error) {
     dispose();

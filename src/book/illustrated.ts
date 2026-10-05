@@ -21,7 +21,7 @@ export interface IllustratedDocument extends StoryDocument {
 }
 export interface IllustratedStoryOptions {
   document: IllustratedDocument;
-  world: Pick<CharacterStageOptions, 'pack' | 'set' | 'cast'>;
+  world: Pick<CharacterStageOptions, 'pack' | 'set' | 'cast' | 'camera'>;
   drawings: Readonly<Record<string, CharacterSurface & { controls?: readonly string[] }>>;
   parameters?: SceneStoryOptions['parameters'];
   script?: Script;
@@ -75,6 +75,7 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
         ...authored,
         set: world.set,
         cast: world.cast,
+        camera: world.camera,
         script: local,
         surfaces: { [chapter.surface ?? 'board']: content },
         controls: content.controls,
