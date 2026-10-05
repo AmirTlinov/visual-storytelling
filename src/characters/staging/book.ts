@@ -1,7 +1,7 @@
 import type { SceneRenderer } from '@esotericsoftware/spine-webgl';
 import { color } from './furniture.js';
 import { projective, type Quad, type XY } from '../../ink/projective.js';
-import type { notebookFaces, NotebookFace } from './notebook.js';
+import { notebookPageAspect, type notebookFaces, type NotebookFace } from './notebook.js';
 import { stageInk } from './geometry.js';
 
 export interface BookFrame {
@@ -12,21 +12,21 @@ export interface BookFrame {
   turn: number;
   handTurn: number;
   color: string;
-  open?: number;
+  open: number;
   /** The existing transfer phase tilts the same vertices onto their physical support. */
   resting?: { faces: ReturnType<typeof notebookFaces>; weight: number };
 }
 /** The cover, page and fingers share the same fold geometry. */
 function fold(book: BookFrame) {
-  const open = book.open ?? 1,
+  const open = book.open,
     w = 82 * book.scale,
     h = 42 * book.scale;
   return {
     open,
     w,
     h,
-    cx: book.x + ((1 - open) * w) / 2,
-    edge: -Math.cos(Math.PI * open) * w,
+    cx: book.x - ((1 - open) * w) / 2,
+    edge: Math.cos(Math.PI * open) * w,
     lift: Math.sin(Math.PI * open) * h * 0.95,
   };
 }
@@ -34,42 +34,58 @@ function heldPage(book: BookFrame): Quad {
   const { w, h, cx } = fold(book),
     cy = book.y;
   return [
-    { x: cx - w, y: cy - h },
     { x: cx, y: cy - h * 0.65 },
+    { x: cx + w, y: cy - h },
+    { x: cx + w, y: cy + h * 0.15 },
     { x: cx, y: cy + h * 0.42 },
-    { x: cx - w, y: cy + h * 0.15 },
   ];
 }
-const restingOrder = (name: NotebookFace, points: Quad): Quad => {
-  // Held cover is listed from its top-right corner; the physical cover starts top-left.
-  // Match visual corners without reflecting the plane during the transfer.
-  return name === 'cover' ? [points[1], points[0], points[3], points[2]] : points;
-};
-/** Fingers follow the same plane as the cover throughout a take or put. */
-function restingPoint(book: BookFrame, point: XY): XY {
+function heldLeaf(book: BookFrame, turn?: number): Quad {
+  const { w, h, cx, edge, lift } = fold(book),
+    x = turn === undefined ? edge : -Math.cos(Math.PI * turn) * w,
+    raise = turn === undefined ? lift : Math.sin(Math.PI * turn) * h * 1.3;
+  return [
+    { x: cx, y: book.y - h * 0.65 },
+    { x: cx + x, y: book.y - h - raise },
+    { x: cx + x, y: book.y + h * 0.15 - raise },
+    { x: cx, y: book.y + h * 0.42 },
+  ];
+}
+const between = (a: XY, b: XY, weight: number): XY => ({
+  x: a.x + (b.x - a.x) * weight,
+  y: a.y + (b.y - a.y) * weight,
+});
+/** Every permanent face has the same corner identities in the hand and on the table. */
+function transferredPoints(book: BookFrame, points: Quad, name?: NotebookFace): Quad {
   const resting = book.resting;
-  if (!resting?.weight) return point;
-  const cover = resting.faces.find((face) => face.name === 'cover')!;
-  const from = projective(heldPage(book), 1, 1)!;
-  const to = projective(restingOrder('page', cover.points), 1, 1)!;
-  const uv = from.inverse(point.x, point.y),
-    target = to.at(uv.x, uv.y);
-  return {
-    x: point.x + (target.x - point.x) * resting.weight,
-    y: point.y + (target.y - point.y) * resting.weight,
-  };
+  if (!resting?.weight) return points;
+  const target = resting.faces.find((face) => face.name === name);
+  let destination: Quad;
+  if (target) destination = target.points;
+  else {
+    // A loose turning leaf follows the base page's chart, never the old held position.
+    const page = resting.faces.find((face) => face.name === 'page')!;
+    const from = projective(heldPage(book), 1, 1)!,
+      to = projective(page.points, 1, 1)!;
+    destination = points.map((point) => {
+      const uv = from.inverse(point.x, point.y);
+      return to.at(uv.x, uv.y);
+    }) as unknown as Quad;
+  }
+  return points.map((point, i) =>
+    between(point, destination[i]!, resting.weight),
+  ) as unknown as Quad;
 }
 export function bookHands(book: BookFrame) {
-  const { w, h, cx, edge, lift } = fold(book);
+  const page = transferredPoints(book, heldPage(book), 'page'),
+    leaf = transferredPoints(
+      book,
+      heldLeaf(book, book.handTurn || undefined),
+      book.handTurn ? undefined : 'cover',
+    );
   return {
-    left: restingPoint(book, { x: cx - w, y: book.y + h * 0.15 }),
-    right: restingPoint(book, {
-      x: cx + (book.handTurn ? Math.cos(Math.PI * book.handTurn) * w : edge) * 0.72,
-      y:
-        book.y +
-        h * 0.2256 -
-        (book.handTurn ? Math.sin(Math.PI * book.handTurn) * h * 1.3 : lift) * 0.72,
-    }),
+    left: between(leaf[3], leaf[2], 0.72),
+    right: page[2],
   };
 }
 /** Keep the two cover grips with the same hands while the book crosses the body. */
@@ -78,25 +94,35 @@ export function bookHandsOrder(leftShoulderX: number, rightShoulderX: number) {
     ? (['left', 'right'] as const)
     : (['right', 'left'] as const);
 }
-export function bookPage(book: BookFrame): Quad | undefined {
-  const { open, h, cx, edge, lift } = fold(book);
+export function bookPage(book: BookFrame, contentAspect?: number): Quad | undefined {
+  if (contentAspect !== undefined && (!Number.isFinite(contentAspect) || contentAspect <= 0))
+    throw new Error('Book content aspect must be finite and positive');
+  const { open } = fold(book);
   if (open < 0.55) return undefined;
-  const cy = book.y,
+  const corners = heldPage(book),
     inset = 0.1;
-  const corners = [
-    { x: cx, y: cy - h * 0.65 },
-    { x: cx + edge, y: cy - h - lift },
-    { x: cx + edge, y: cy + h * 0.15 - lift },
-    { x: cx, y: cy + h * 0.42 },
-  ];
   const center = {
     x: corners.reduce((n, p) => n + p.x, 0) / 4,
     y: corners.reduce((n, p) => n + p.y, 0) / 4,
   };
-  return corners.map((p) => ({
-    x: p.x + (center.x - p.x) * inset,
-    y: p.y + (center.y - p.y) * inset,
-  })) as unknown as Quad;
+  const page = transferredPoints(
+    book,
+    corners.map((p) => between(p, center, inset)) as unknown as Quad,
+    'page',
+  );
+  if (contentAspect === undefined) return page;
+  const map = projective(page, 1, 1);
+  if (!map) return undefined;
+  const width = Math.min(1, contentAspect / notebookPageAspect),
+    height = Math.min(1, notebookPageAspect / contentAspect),
+    left = (1 - width) / 2,
+    top = (1 - height) / 2;
+  return [
+    map.at(left, top),
+    map.at(left + width, top),
+    map.at(left + width, top + height),
+    map.at(left, top + height),
+  ];
 }
 type Face = {
   name?: NotebookFace;
@@ -106,7 +132,7 @@ type Face = {
   width: number;
 };
 function bookFaces(book: BookFrame): Face[] {
-  const { open, w, h, cx, edge, lift } = fold(book),
+  const { open, w, h, cx } = fold(book),
     s = book.scale,
     cy = book.y;
   const face = (
@@ -122,24 +148,24 @@ function bookFaces(book: BookFrame): Face[] {
     stroke,
     width,
   });
-  const faces = [
+  const faces: Face[] = [
     face(
       'back',
       [
-        [-w - 5 * s, -h * 0.9],
         [0, -h * 0.63],
+        [w + 5 * s, -h * 0.9],
+        [w + 5 * s, h * 0.38],
         [0, h * 0.62],
-        [-w - 5 * s, h * 0.38],
       ],
       book.color,
     ),
     face(
       'side',
       [
-        [0, -h * 0.65],
-        [0, h * 0.42],
-        [0, h * 0.42],
-        [0, -h * 0.65],
+        [w, -h],
+        [w, h * 0.15],
+        [w, h * 0.15],
+        [w, -h],
       ],
       '#d6dbd8',
       stageInk,
@@ -148,10 +174,10 @@ function bookFaces(book: BookFrame): Face[] {
     face(
       'end',
       [
-        [-w, h * 0.15],
         [0, h * 0.42],
+        [w, h * 0.15],
+        [w, h * 0.15],
         [0, h * 0.42],
-        [-w, h * 0.15],
       ],
       '#e3e5df',
       stageInk,
@@ -160,10 +186,10 @@ function bookFaces(book: BookFrame): Face[] {
     face(
       'spine',
       [
-        [-w, -h],
-        [-w, -h],
-        [-w, h * 0.15],
-        [-w, h * 0.15],
+        [0, -h * 0.65],
+        [0, -h * 0.65],
+        [0, h * 0.42],
+        [0, h * 0.42],
       ],
       book.color,
       stageInk,
@@ -172,10 +198,10 @@ function bookFaces(book: BookFrame): Face[] {
     face(
       'head',
       [
-        [-w, -h],
         [0, -h * 0.65],
+        [w, -h],
+        [w, -h],
         [0, -h * 0.65],
-        [-w, -h],
       ],
       '#d6dbd8',
       stageInk,
@@ -184,10 +210,10 @@ function bookFaces(book: BookFrame): Face[] {
     face(
       'paper',
       [
-        [-w, -h],
         [0, -h * 0.65],
+        [w, -h],
+        [w, h * 0.15],
         [0, h * 0.42],
-        [-w, h * 0.15],
       ],
       '#ece9dc',
       stageInk,
@@ -196,33 +222,30 @@ function bookFaces(book: BookFrame): Face[] {
     face(
       'page',
       [
-        [-w, -h],
         [0, -h * 0.65],
+        [w, -h],
+        [w, h * 0.15],
         [0, h * 0.42],
-        [-w, h * 0.15],
       ],
       '#ece9dc',
     ),
-    face(
-      'cover',
-      [
-        [0, -h * 0.65],
-        [edge, -h - lift],
-        [edge, h * 0.15 - lift],
-        [0, h * 0.42],
-      ],
-      open < 0.5 ? book.color : '#f6f4e9',
-    ),
+    {
+      name: 'cover',
+      points: heldLeaf(book),
+      fill: open < 0.5 ? book.color : '#f6f4e9',
+      stroke: stageInk,
+      width: 2.7 * s,
+    },
   ];
   if (open < 0.08)
     faces.push(
       face(
         'label',
         [
-          [-w * 0.78, -h * 0.69],
-          [-w * 0.22, -h * 0.56],
-          [-w * 0.22, h * 0.16],
-          [-w * 0.78, 0],
+          [w * 0.22, -h * 0.56],
+          [w * 0.78, -h * 0.69],
+          [w * 0.78, 0],
+          [w * 0.22, h * 0.16],
         ],
         book.color,
         '#c9ad70',
@@ -232,8 +255,8 @@ function bookFaces(book: BookFrame): Face[] {
 }
 function transferred(book: BookFrame, face: Face) {
   const target = book.resting?.faces.find((f) => f.name === face.name),
+    restingStroke = target?.stroke ?? book.resting?.faces.find((f) => f.name === 'page')?.stroke,
     weight = book.resting?.weight ?? 0;
-  const points = target ? restingOrder(target.name, target.points) : face.points;
   const ink = (a: string, b: string) => {
     const from = color(a),
       to = color(b);
@@ -242,28 +265,17 @@ function transferred(book: BookFrame, face: Face) {
     return from;
   };
   return {
-    points: face.points.map((p, i) => ({
-      x: p.x + (points[i]!.x - p.x) * weight,
-      y: p.y + (points[i]!.y - p.y) * weight,
-    })),
+    points: transferredPoints(book, face.points, face.name),
     fill: ink(face.fill, target?.fill ?? face.fill),
     stroke: ink(face.stroke, stageInk),
-    width: face.width + ((target?.stroke ?? face.width) - face.width) * weight,
+    width: face.width + ((restingStroke ?? face.width) - face.width) * weight,
   };
 }
 function turningPage(book: BookFrame): Face | undefined {
-  const { open, w, h, cx } = fold(book);
+  const { open } = fold(book);
   if (!(book.turn > 0.001 && book.turn < 0.999 && open > 0.99)) return;
-  const x = Math.cos(Math.PI * book.turn) * w,
-    raise = Math.sin(Math.PI * book.turn) * h * 1.3,
-    cy = book.y;
   return {
-    points: [
-      { x: cx, y: cy - h * 0.65 },
-      { x: cx + x, y: cy - h - raise },
-      { x: cx + x, y: cy + h * 0.15 - raise },
-      { x: cx, y: cy + h * 0.42 },
-    ],
+    points: heldLeaf(book, book.turn),
     fill: book.turn < 0.5 ? '#fcfbf3' : '#dcdacb',
     stroke: stageInk,
     width: 2.7 * book.scale,
@@ -289,9 +301,8 @@ export function drawBook(
   height: number,
   content?: () => void,
 ) {
-  const { open, h, cx } = fold(book),
-    s = book.scale,
-    cy = book.y;
+  const { open } = fold(book),
+    s = book.scale;
   const poly = (face: Face) => {
     const { points, fill, stroke, width } = transferred(book, face);
     const area = points.reduce((sum, p, i) => {
@@ -322,21 +333,20 @@ export function drawBook(
         renderer.rectLine(true, a.x, height - a.y, b.x, height - b.y, width, stroke);
     }
   };
-  for (const face of bookFaces(book)) poly(face);
+  const faces = bookFaces(book);
+  for (const face of faces) poly(face);
   if (open > 0.92 && !content) {
-    for (const side of [-1, 1])
+    for (const face of faces.filter((face) => face.name === 'page' || face.name === 'cover')) {
+      const { points, width } = transferred(book, { ...face, width: 1.5 * s });
+      const map = projective(points, 1, 1);
+      if (!map) continue;
       for (let row = 0; row < 4; row++) {
-        const y = -h * 0.43 + row * 8 * s;
-        renderer.rectLine(
-          true,
-          cx + side * 12 * s,
-          height - cy - y,
-          cx + side * 59 * s,
-          height - cy - y + (side > 0 ? 6 : -6) * s,
-          1.5 * s,
-          color('#a2a192'),
-        );
+        const y = 0.28 + row * 0.16,
+          a = map.at(0.15, y),
+          b = map.at(0.75, y);
+        renderer.rectLine(true, a.x, height - a.y, b.x, height - b.y, width, color('#a2a192'));
       }
+    }
   }
   content?.();
   const turn = turningPage(book);

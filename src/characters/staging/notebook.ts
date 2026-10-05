@@ -16,7 +16,7 @@ export type NotebookFace =
 export const notebookPageAspect = (0.6 - 0.012) / (0.84 - 0.016);
 
 /** A resting notebook shares its support plane with furniture. The hinge never leaves the binding. */
-export function notebookGeometry(item: Furniture, open = 0) {
+export function notebookGeometry(item: Furniture, open = item.open ?? 0) {
   const s = item.scale ?? 0.72,
     w = 0.6 * s,
     d = 0.84 * s,
@@ -85,20 +85,25 @@ export function notebookFaces(item: Furniture, space: Projection) {
   const model = notebookGeometry(item);
   const faces: { name: NotebookFace; points: readonly GroundPoint[]; fill: string }[] = [
     ...model.faces,
-    { name: 'cover', points: model.front, fill: model.color },
+    { name: 'cover', points: model.front, fill: model.open < 0.5 ? model.color : '#f6f4e9' },
   ];
   // A small paper label follows the cover, including when viewed obliquely on a table.
-  const [a, b, , d] = model.front;
-  const at = (u: number, v: number) => ({
-    x: a.x + (b.x - a.x) * u + (d.x - a.x) * v,
-    z: a.z + (b.z - a.z) * u + (d.z - a.z) * v,
-    height: a.height,
-  });
-  faces.push({
-    name: 'label',
-    points: [at(0.2, 0.19), at(0.83, 0.19), at(0.83, 0.55), at(0.2, 0.55)],
-    fill: '#f0f0e9',
-  });
+  if (model.open < 0.08) {
+    const [a, b, , d] = model.front;
+    const at = (u: number, v: number) => ({
+      x: a.x + (b.x - a.x) * u + (d.x - a.x) * v,
+      z: a.z + (b.z - a.z) * u + (d.z - a.z) * v,
+      height:
+        (a.height ?? 0) +
+        ((b.height ?? 0) - (a.height ?? 0)) * u +
+        ((d.height ?? 0) - (a.height ?? 0)) * v,
+    });
+    faces.push({
+      name: 'label',
+      points: [at(0.2, 0.19), at(0.83, 0.19), at(0.83, 0.55), at(0.2, 0.55)],
+      fill: '#f0f0e9',
+    });
+  }
   return faces.map((face) => ({
     name: face.name,
     points: notebookQuad(face.points, space),

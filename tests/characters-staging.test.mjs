@@ -283,7 +283,8 @@ function performer(options) {
     const frame = blockAt(score.blocking, time, reduced);
     for (const [id, b] of Object.entries(bodies)) b.sample(time, frame.actors[id], reduced);
     for (const pair of frame.pairs) connect(bodies, pair);
-    for (const b of Object.values(bodies)) if (b.frame.holding) b.book(b.frame.holding, '#855057');
+    for (const b of Object.values(bodies))
+      if (b.frame.holding) b.book(b.frame.holding, '#855057', frame.objects[b.frame.holding]);
     return Object.fromEntries(
       Object.entries(bodies).map(([id, b]) => [
         id,

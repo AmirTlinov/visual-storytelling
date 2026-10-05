@@ -51,7 +51,7 @@ export interface Furniture {
   seats?: readonly GroundPoint[];
   /** Local physical control and its deterministic state change. */
   trigger?: { at: GroundPoint; initial?: number; effect: 'toggle' | 'on' | 'off' };
-  /** Initial door opening, 0 closed to 1 open. */
+  /** Initial door or book opening, 0 closed to 1 open. The object keeps this state while carried. */
   open?: number;
   /** An entrance includes its wall and room; colors change without changing contacts. */
   facade?: { wall?: string; inside?: string };

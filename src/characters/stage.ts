@@ -185,6 +185,79 @@ export async function characterStage(
       };
     };
 
+    const sample = (time: number, reduced: boolean) => {
+      const actions =
+        prepared?.sample(time, reduced) ??
+        Object.fromEntries(
+          Object.entries(actors).map(([id, actor]) => [id, actor.sample(time, reduced)]),
+        );
+      const propState: Record<string, unknown> = {};
+      for (const [id, prop] of Object.entries(score.props)) {
+        const key = score.propTracks[id]!.findLast((key) => key.start <= time);
+        const from = key?.from ?? prop,
+          to = key?.to ?? prop;
+        const p = key
+          ? reduced
+            ? 1
+            : smooth((time - key.start) / Math.max(0.001, key.end - key.start))
+          : 1;
+        const a = resolve(from.at!),
+          b = resolve(to.at!);
+        const at = {
+          x: a.x + (b.x - a.x) * p,
+          y: a.y + (b.y - a.y) * p - (key?.arc ?? 0) * 4 * p * (1 - p),
+        };
+        const opacity = (from.opacity ?? 1) + ((to.opacity ?? 1) - (from.opacity ?? 1)) * p;
+        const values = Object.fromEntries(
+          Object.keys({ ...from.values, ...to.values }).map((name) => {
+            const a = from.values?.[name] ?? 0,
+              b = to.values?.[name] ?? a;
+            return [name, a + (b - a) * p];
+          }),
+        );
+        const node = nodes[id];
+        if (node) {
+          node.setAttribute('transform', `translate(${at.x} ${at.y}) scale(${prop.scale ?? 1})`);
+          node.setAttribute('opacity', String(opacity));
+          prop.art.paint?.(node, values);
+        }
+        propState[id] = { at, opacity, values };
+      }
+      bounds = {
+        ...prepared?.bounds(),
+        ...Object.fromEntries(
+          Object.entries(actors).map(([id, actor]) => {
+            const b = actor.skeleton.getBoundsRect();
+            return [
+              id,
+              { x: b.x, y: set.height - b.y - b.height, width: b.width, height: b.height },
+            ];
+          }),
+        ),
+      };
+      for (const [id, node] of Object.entries(nodes)) {
+        if (Number(node.getAttribute('opacity')) <= 0) continue;
+        const box = node.getBBox(),
+          prop = score.props[id]!,
+          state = propState[id] as { at: Point };
+        const scale = prop.scale ?? 1;
+        bounds[id] = {
+          x: state.at.x + box.x * scale,
+          y: state.at.y + box.y * scale,
+          width: box.width * scale,
+          height: box.height * scale,
+        };
+      }
+      details = Object.fromEntries(
+        Object.entries(actors).flatMap(([id, actor]) =>
+          Object.entries(characterDetails(actor.skeleton, pack.rig, set.height)).map(
+            ([part, box]) => [`${id}.${part}`, box],
+          ),
+        ),
+      );
+      return { actions, propState };
+    };
+
     const stage = {
       get canvas() {
         if (surfaces)
@@ -200,75 +273,6 @@ export async function characterStage(
         aperture.hidden = false;
         canvas.setAttribute('aria-label', options.description ?? 'Characters');
         inspected.__visualReview = inspect;
-        const actions =
-          prepared?.sample(time, reduced) ??
-          Object.fromEntries(
-            Object.entries(actors).map(([id, actor]) => [id, actor.sample(time, reduced)]),
-          );
-        const propState: Record<string, unknown> = {};
-        for (const [id, prop] of Object.entries(score.props)) {
-          const key = score.propTracks[id]!.findLast((key) => key.start <= time);
-          const from = key?.from ?? prop,
-            to = key?.to ?? prop;
-          const p = key
-            ? reduced
-              ? 1
-              : smooth((time - key.start) / Math.max(0.001, key.end - key.start))
-            : 1;
-          const a = resolve(from.at!),
-            b = resolve(to.at!);
-          const at = {
-            x: a.x + (b.x - a.x) * p,
-            y: a.y + (b.y - a.y) * p - (key?.arc ?? 0) * 4 * p * (1 - p),
-          };
-          const opacity = (from.opacity ?? 1) + ((to.opacity ?? 1) - (from.opacity ?? 1)) * p;
-          const values = Object.fromEntries(
-            Object.keys({ ...from.values, ...to.values }).map((name) => {
-              const a = from.values?.[name] ?? 0,
-                b = to.values?.[name] ?? a;
-              return [name, a + (b - a) * p];
-            }),
-          );
-          const node = nodes[id];
-          if (node) {
-            node.setAttribute('transform', `translate(${at.x} ${at.y}) scale(${prop.scale ?? 1})`);
-            node.setAttribute('opacity', String(opacity));
-            prop.art.paint?.(node, values);
-          }
-          propState[id] = { at, opacity, values };
-        }
-        bounds = {
-          ...prepared?.bounds(),
-          ...Object.fromEntries(
-            Object.entries(actors).map(([id, actor]) => {
-              const b = actor.skeleton.getBoundsRect();
-              return [
-                id,
-                { x: b.x, y: set.height - b.y - b.height, width: b.width, height: b.height },
-              ];
-            }),
-          ),
-        };
-        for (const [id, node] of Object.entries(nodes)) {
-          if (Number(node.getAttribute('opacity')) <= 0) continue;
-          const box = node.getBBox(),
-            prop = score.props[id]!,
-            state = propState[id] as { at: Point };
-          const scale = prop.scale ?? 1;
-          bounds[id] = {
-            x: state.at.x + box.x * scale,
-            y: state.at.y + box.y * scale,
-            width: box.width * scale,
-            height: box.height * scale,
-          };
-        }
-        details = Object.fromEntries(
-          Object.entries(actors).flatMap(([id, actor]) =>
-            Object.entries(characterDetails(actor.skeleton, pack.rig, set.height)).map(
-              ([part, box]) => [`${id}.${part}`, box],
-            ),
-          ),
-        );
         const index = Math.max(
           0,
           options.beats.findLastIndex((b) => score.script.cues[b.id]!.start <= time),
@@ -280,6 +284,27 @@ export async function characterStage(
             ? parseFloat(aperture.style.width) / parseFloat(aperture.style.height)
             : undefined;
         focus = beat.shot?.focus;
+        const mix =
+          reduced || manualShot ? 1 : smooth((time - score.script.cues[beat.id]!.start) / 0.45);
+        const previousShot = options.beats[Math.max(0, index - 1)]!.shot;
+        const differentShot =
+          previousShot?.framing !== beat.shot?.framing ||
+          previousShot?.focus.length !== beat.shot?.focus.length ||
+          previousShot?.focus.some((id) => !beat.shot?.focus.includes(id));
+        let previous: FrameBox | undefined;
+        if (mix < 1 && differentShot) {
+          // The outgoing subject may disappear during this beat. Sample its shot
+          // at the boundary, then restore the current pose before drawing any layer.
+          sample(score.script.cues[beat.id]!.start, false);
+          previous = stageFrame(
+            set.width,
+            set.height,
+            previousShot ? { ...bounds, ...details } : bounds,
+            previousShot,
+            aspect,
+          );
+        }
+        const { actions, propState } = sample(time, reduced);
         const current = stageFrame(
           set.width,
           set.height,
@@ -287,15 +312,7 @@ export async function characterStage(
           beat.shot,
           aspect,
         );
-        const previous = stageFrame(
-          set.width,
-          set.height,
-          options.beats[Math.max(0, index - 1)]!.shot ? { ...bounds, ...details } : bounds,
-          options.beats[Math.max(0, index - 1)]!.shot,
-          aspect,
-        );
-        const mix =
-          reduced || manualShot ? 1 : smooth((time - score.script.cues[beat.id]!.start) / 0.45);
+        previous ??= current;
         // A deliberate shot change reveals/crops artwork while travelling. Judge
         // subject fit once it arrives; retain the actual bounds throughout the move.
         changingShot =

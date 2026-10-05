@@ -143,10 +143,8 @@ test('an arranged reading routine reaches the book, opens and closes it, then re
   );
   for (const action of ['openBook', 'closeBook']) {
     const plan = plans[action];
-    assert.ok(
-      Math.abs(blockAt(blocking, (plan.start + plan.end) / 2).actors.hero.bookOpen - 0.5) < 1e-10,
-    );
-    assert.equal(blockAt(blocking, plan.end).actors.hero.bookOpen, action === 'openBook' ? 1 : 0);
+    assert.ok(Math.abs(blockAt(blocking, (plan.start + plan.end) / 2).objects.book - 0.5) < 1e-10);
+    assert.equal(blockAt(blocking, plan.end).objects.book, action === 'openBook' ? 1 : 0);
   }
   const final = blockAt(blocking, score.script.duration);
   assert.equal(final.actors.hero.holding, undefined);
@@ -159,19 +157,34 @@ test('an arranged reading routine reaches the book, opens and closes it, then re
       ['take', 'openBook', 'put'].includes(beat.perform[0].action),
     ),
   }).blocking;
-  const put = returning.plans.at(-1),
-    closeSpan = Math.max(0.35, put.timing.approach);
-  assert.equal(blockAt(returning, put.start).actors.hero.bookOpen, 1);
-  assert.ok(
-    Math.abs(
-      blockAt(returning, put.start + put.timing.rise + closeSpan / 2).actors.hero.bookOpen - 0.5,
-    ) < 1e-10,
-  );
-  assert.equal(blockAt(returning, put.start + put.timing.rise + closeSpan).actors.hero.bookOpen, 0);
-  assert.equal(
-    blockAt(returning, put.end).actors.hero.bookOpen,
-    0,
-    'returning closes an open book before release',
+  const put = returning.plans.at(-1);
+  for (let i = 0; i <= 12; i++)
+    assert.equal(
+      blockAt(returning, put.start + ((put.end - put.start) * i) / 12).objects.book,
+      1,
+      'the book keeps its opening while it is returned to the table',
+    );
+  const alreadyOpen = compileScore({
+    ...options,
+    set: arrange(set, { objects: { book: { open: 1 } } }),
+    beats: options.beats.filter((beat) => ['take', 'put'].includes(beat.perform[0].action)),
+  }).blocking;
+  for (const time of [0, ...alreadyOpen.plans.map((plan) => plan.end)])
+    assert.equal(blockAt(alreadyOpen, time).objects.book, 1);
+  assert.throws(
+    () =>
+      compileScore({
+        ...options,
+        set: arrange(set, {
+          objects: {
+            book: {
+              open: 1,
+              trigger: { at: ground(0, 0), effect: 'toggle', initial: 0 },
+            },
+          },
+        }),
+      }),
+    /uses opening actions/,
   );
 
   const subject = await actorWorld(options, score);
@@ -231,7 +244,7 @@ test('an arranged reading routine reaches the book, opens and closes it, then re
           );
           assert.deepEqual(
             winding,
-            [-1, -1, -1, -1, 1, 1],
+            [-1, -1, -1, -1, -1, -1],
             'back, spine and front cover keep their winding while lifted',
           );
         }
@@ -1105,6 +1118,10 @@ test('a book keeps the same two hands from either approach through reading, retu
                 `${skin}/${x}/${flip}/${plan.action.action}: cover grips exchange hands`,
               );
               assert.ok(contacts[0].target.x < contacts[1].target.x, 'book grips keep their order');
+              assert.deepEqual(
+                contacts.map((contact) => contact.kind),
+                ['page', 'book-support'],
+              );
               for (const contact of contacts)
                 assert.ok(contact.error < 1, `book contact misses by ${contact.error}`);
               if (i === 12) {

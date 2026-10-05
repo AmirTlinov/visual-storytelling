@@ -94,6 +94,8 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
       place(plan.to);
       if (plan.transfer && !plan.transfer.taking) items[plan.transfer.id] = { ...plan.transfer.at };
       if (a.action === 'openDoor' || a.action === 'closeDoor') objects[a.door] = plan.objectTo!;
+      if (a.action === 'read' || a.action === 'openBook' || a.action === 'closeBook')
+        objects[a.book] = plan.objectTo!;
       if (plan.effect) objects[plan.effect.id] = plan.effect.to;
       continue;
     }
@@ -121,10 +123,6 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
         p.holdingHand = after.holdingHand;
         p.hands = after.hands;
         const tr = plan.transfer;
-        if (!tr.taking)
-          p.bookOpen =
-            (before.bookOpen ?? 0) *
-            (1 - ease((elapsed - plan.timing.rise) / Math.max(0.35, plan.timing.approach)));
         p.transfer = {
           ...tr,
           progress: ease(phase('act')),
@@ -150,9 +148,8 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
         }
       }
       if (a.action === 'openBook' || a.action === 'closeBook')
-        p.bookOpen =
-          (before.bookOpen ?? 0) +
-          ((after.bookOpen ?? 0) - (before.bookOpen ?? 0)) * ease(phase('act'));
+        objects[a.book] =
+          plan.objectFrom! + (plan.objectTo! - plan.objectFrom!) * ease(phase('act'));
       if (a.action === 'turn') p.facing = phase('act') < 0.5 ? before.facing : after.facing;
       if (a.action === 'openDoor' || a.action === 'closeDoor') {
         const door = blocking.staging.objects[a.door]!,
@@ -194,9 +191,9 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
         if (a.action === 'read') {
           p.holding = a.book;
           p.bookBlend = 1;
-          p.bookOpen =
-            (before.bookOpen ?? 0) +
-            (1 - (before.bookOpen ?? 0)) * ease((elapsed - plan.timing.approach) / 0.35);
+          objects[a.book] =
+            plan.objectFrom! +
+            (plan.objectTo! - plan.objectFrom!) * ease((elapsed - plan.timing.approach) / 0.35);
           const reading = phase('act'),
             cycle = reading * (a.pages ?? 3),
             page = cycle % 1;

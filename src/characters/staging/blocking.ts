@@ -23,7 +23,6 @@ export interface Placement {
   hands?: 1 | 2;
   holdingHand?: 'left' | 'right';
   seatSlot?: number;
-  bookOpen?: number;
 }
 export interface BlockingActor extends Placement {
   travel?: {
@@ -126,6 +125,8 @@ export function compileBlocking(options: CharacterStageOptions, script?: Script)
     if (item.support && (!Number.isFinite(item.support.height) || item.support.height < 0))
       throw new Error(`Invalid support: ${id}`);
     for (const seat of item.seats ?? []) point(seat);
+    if (item.kind === 'book' && item.trigger)
+      throw new Error(`Book ${id} uses opening actions; place its button on a separate prop`);
     if (
       item.trigger &&
       (!['toggle', 'on', 'off'].includes(item.trigger.effect) ||
@@ -136,7 +137,10 @@ export function compileBlocking(options: CharacterStageOptions, script?: Script)
       throw new Error(`Invalid object scale: ${id}`);
     if (
       item.open !== undefined &&
-      (item.kind !== 'door' || !Number.isFinite(item.open) || item.open < 0 || item.open > 1)
+      (!['door', 'book'].includes(item.kind) ||
+        !Number.isFinite(item.open) ||
+        item.open < 0 ||
+        item.open > 1)
     )
       throw new Error(`Invalid initial opening: ${id}`);
   }
@@ -155,7 +159,6 @@ export function compileBlocking(options: CharacterStageOptions, script?: Script)
       holding: a.holding,
       hands: a.holding && staging.objects[a.holding]?.kind === 'book' ? 2 : 1,
       holdingHand: a.holdingHand ?? 'left',
-      bookOpen: 0,
     };
     if (a.holding !== undefined) {
       if (
@@ -169,7 +172,7 @@ export function compileBlocking(options: CharacterStageOptions, script?: Script)
   }
   const initialObjects = Object.fromEntries(
     Object.entries(staging.objects)
-      .filter(([, item]) => item.kind === 'door' || item.trigger)
+      .filter(([, item]) => item.kind === 'door' || item.kind === 'book' || item.trigger)
       .map(([id, item]) => [id, item.trigger?.initial ?? item.open ?? 0]),
   );
   const state = structuredClone(initial),
@@ -276,7 +279,6 @@ export function compileBlocking(options: CharacterStageOptions, script?: Script)
             p.holding = id;
             p.hands = staging.objects[id]!.kind === 'book' ? 2 : 1;
             p.holdingHand = action.hand ?? options.cast[action.actor]!.holdingHand ?? 'left';
-            p.bookOpen = 0;
           } else {
             if (!p.holding) throw new Error(`Actor ${action.actor} has no object to put`);
             id = p.holding;
@@ -285,7 +287,6 @@ export function compileBlocking(options: CharacterStageOptions, script?: Script)
             at = supportPoint(support);
             itemPositions[id] = { ...at };
             p.holding = undefined;
-            p.bookOpen = 0;
           }
           if (usedObjects.has(id))
             throw new Error(`Two actions own object ${id} in beat ${beat.id}`);
@@ -295,7 +296,7 @@ export function compileBlocking(options: CharacterStageOptions, script?: Script)
             staging,
             options.cast[action.actor]!,
             from[action.actor]!,
-            { ...staging.objects[id]!, at },
+            { ...staging.objects[id]!, at, open: objectStates[id] },
             options.pack.rig!,
             action.action === 'put'
               ? from[action.actor]!.holdingHand
@@ -349,13 +350,11 @@ export function compileBlocking(options: CharacterStageOptions, script?: Script)
           p.seatHeight = objectShape.chair.seat * (chair.scale ?? 1);
         }
         if (action.action === 'read') {
-          object(action.book, ['book']);
           if (from[action.actor]!.holding !== action.book)
             throw new Error(
               'A reader must hold the book: take it first or set cast[actor].holding',
             );
           p.holding = action.book;
-          p.bookOpen = 1;
           p.facing = 'front';
           if (
             action.pages !== undefined &&
@@ -366,7 +365,19 @@ export function compileBlocking(options: CharacterStageOptions, script?: Script)
         if (action.action === 'openBook' || action.action === 'closeBook') {
           if (p.holding !== action.book)
             throw new Error(`${action.action} needs the held book ${action.book}`);
-          p.bookOpen = action.action === 'openBook' ? 1 : 0;
+        }
+        if (
+          action.action === 'openBook' ||
+          action.action === 'closeBook' ||
+          action.action === 'read'
+        ) {
+          object(action.book, ['book']);
+          if (usedObjects.has(action.book))
+            throw new Error(`Two actions own object ${action.book} in beat ${beat.id}`);
+          usedObjects.add(action.book);
+          objectFrom = objectStates[action.book] ?? 0;
+          objectTo = action.action === 'closeBook' ? 0 : 1;
+          objectStates[action.book] = objectTo;
         }
         if (action.action === 'turn') {
           if (!['front', 'left', 'right', 'back'].includes(action.facing))

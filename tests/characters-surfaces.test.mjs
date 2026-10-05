@@ -7,6 +7,7 @@ import { readingRoom } from '../dist/characters/staging/sets.js';
 import { projective } from '../dist/ink/projective.js';
 import { PerspectiveCamera, Vector3 } from '../dist/viewport/engine.js';
 import { notebookCamera } from '../dist/book/camera.js';
+import { notebookGeometry } from '../dist/characters/staging/notebook.js';
 import { project } from '../dist/characters/staging/space.js';
 
 test('the notebook camera preserves the stage crop and fills the page after resize and rewind', () => {
@@ -18,7 +19,12 @@ test('the notebook camera preserves the stage crop and fills the page after resi
         height: set.height,
         projection: set.staging.projection,
         camera: { x: 130, y: 80, width: 560, height: 430 },
-        book: { kind: 'book', at: { x: 2, z: 3, height: 1.86 * scale }, scale },
+        book: {
+          kind: 'book',
+          at: { x: 2, z: 3, height: 1.86 * scale },
+          scale,
+          open: scale < 1 ? 0 : 1,
+        },
       };
       const camera = new PerspectiveCamera();
       for (const aspect of [0.44, 1.5, 2.2]) {
@@ -30,6 +36,11 @@ test('the notebook camera preserves the stage crop and fills the page after resi
           return { x: ((p.x + 1) * width) / 2, y: ((1 - p.y) * height) / 2 };
         };
         const closed = notebookCamera(source, 0);
+        assert.deepEqual(
+          closed.model.front,
+          notebookGeometry(source.book).front,
+          'the camera entry preserves the book opening left by the actor',
+        );
         closed.project(camera, width, height);
         const w = Math.max(source.camera.width, source.camera.height * aspect),
           h = w / aspect;

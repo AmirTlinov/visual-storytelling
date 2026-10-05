@@ -49,7 +49,7 @@ export function transferApproach(
       x: target.x,
       y: target.y,
       scale: itemScale,
-      open: 0,
+      open: item.open ?? 0,
       turn: 0,
       handTurn: 0,
       color: '',

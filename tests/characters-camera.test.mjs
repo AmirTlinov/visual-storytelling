@@ -148,3 +148,124 @@ test('a responsive character host keeps SVG, Spine and Ink aligned through pause
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('leaving a page closeup survives closing the book, reduced motion and reverse seeks', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'character-camera-close-'));
+  let capture;
+  try {
+    const bundle = await build({
+      plugins: [assetURLs()],
+      stdin: {
+        resolveDir: fileURLToPath(new URL('../', import.meta.url)),
+        contents: `
+          import {CharacterStage} from './src/characters/stage.ts';
+          import {chibi} from './src/characters/packs/chibi.ts';
+          import {readingRoom} from './src/characters/staging/sets.ts';
+          import {compileScore} from './src/characters/score.ts';
+          import './src/style.css';
+          const host=document.querySelector('#scene'),set=readingRoom();
+          set.staging.objects.book.open=1;
+          const options={pack:chibi,set,camera:'responsive',
+            cast:{hero:{skin:'tesla',at:'entry',scale:.8,holding:'book'}},
+            beats:[
+              {id:'detail',text:'Рассмотреть страницу',seconds:1,shot:{focus:['book.content'],framing:'detail'}},
+              {id:'close',text:'Закрыть',perform:[{action:'closeBook',actor:'hero',book:'book'}]},
+              {id:'end',text:'Книга закрыта',seconds:1},
+            ],
+            surfaces:{book:{title:'Page',size:{width:480,height:320},create(view){
+              view.layer.innerHTML='<circle cx="240" cy="160" r="60" fill="#2369b4"/>';
+              let time;
+              return {render(frame){time=frame.time;},snapshot(){return {time};}};
+            }}}};
+          const score=compileScore(options);
+          window.galleryReady=CharacterStage.mount(host,options).then(stage=>{
+            window.lab={start:score.script.cues.close.start,
+              sample(time,reduced=false){stage.render(time,reduced);return stage.snapshot();},
+              async capture(){const before=stage.snapshot();await stage.capture({camera:{x:0,y:0,width:960,height:650}});return {before,after:stage.snapshot()};},
+              async invalidFocus(){
+                const strict=await CharacterStage.mount(document.createElement('div'),{
+                  ...options,beats:options.beats.map(beat=>beat.id==='close'?{...beat,shot:options.beats[0].shot}:beat),
+                });
+                try {strict.render(score.script.cues.close.start+.6);return null;}
+                catch(error){return error.message;}finally{strict.dispose();}
+              },
+              dispose(){stage.dispose();return host.childElementCount;}};
+          });`,
+      },
+      bundle: true,
+      write: false,
+      outdir: '.',
+      format: 'iife',
+      loader: { '.woff2': 'dataurl' },
+    });
+    await writeFile(
+      join(directory, 'index.html'),
+      '<!doctype html><head><link rel="stylesheet" href="style.css"></head><body style="margin:0"><div id="scene" style="position:relative;width:960px;height:650px"></div><script src="index.js"></script>',
+    );
+    for (const output of bundle.outputFiles)
+      await writeFile(
+        join(directory, output.path.endsWith('.css') ? 'style.css' : 'index.js'),
+        output.text,
+      );
+    capture = await renderer({ directory, width: 960, controls: true });
+    const start = await capture.page.evaluate(() => window.lab.start);
+    const sample = (offset, reduced = false) =>
+      capture.page.evaluate(({ time, reduced }) => window.lab.sample(time, reduced), {
+        time: start + offset,
+        reduced,
+      });
+    const initial = await sample(0);
+    const states = [];
+    for (const offset of [0.3, 0.325, 0.44, 0.45, 0.6]) {
+      const state = await sample(offset);
+      assert.equal(state.framing.changingShot, offset < 0.45);
+      assert.equal(state.surfaces.book.visible, offset < 0.325);
+      assert.ok(Object.values(state.camera).every(Number.isFinite));
+      const progress = offset / 0.65;
+      assert.ok(
+        Math.abs(state.world.objects.book - (1 - progress ** 2 * (3 - 2 * progress))) < 1e-12,
+      );
+      states.push([offset, state]);
+    }
+    assert.notDeepEqual(states[0][1].camera, initial.camera);
+    await sample(0.325);
+    const hiddenLayers = capture.page.locator('#scene canvas[hidden]');
+    assert.ok(await hiddenLayers.count(), 'the page left a completed drawing pass');
+    assert.equal(
+      await hiddenLayers.evaluateAll((layers) =>
+        layers.every((layer) => getComputedStyle(layer).display === 'none'),
+      ),
+      true,
+      'a standalone character stage must hide the old pass without a SceneShell ancestor',
+    );
+    const image = await capture.page.evaluate(() => window.lab.capture());
+    assert.deepEqual(
+      image.after,
+      image.before,
+      'boundary sampling and capture restore the live pose',
+    );
+    const reduced = await sample(0.1, true);
+    assert.equal(reduced.world.objects.book, 0);
+    assert.equal(reduced.framing.changingShot, false);
+    assert.equal(reduced.surfaces.book.visible, false);
+    for (const [offset, expected] of states.reverse())
+      assert.deepEqual(
+        await sample(offset),
+        expected,
+        'camera sampling does not depend on seek history',
+      );
+    assert.equal(
+      await capture.page.evaluate(() => window.lab.invalidFocus()),
+      'Unknown camera subject: book.content',
+      'the active authored shot must still name a visible subject',
+    );
+    assert.deepEqual(
+      capture.messages.filter((message) => message.type === 'error'),
+      [],
+    );
+    assert.equal(await capture.page.evaluate(() => window.lab.dispose()), 0);
+  } finally {
+    await capture?.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

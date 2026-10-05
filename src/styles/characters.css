@@ -20,6 +20,9 @@
 .ve-character-aperture > canvas {
   pointer-events: none;
 }
+.ve-character-aperture > [hidden] {
+  display: none;
+}
 .ve-character-surface {
   contain: layout style;
 }

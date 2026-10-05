@@ -12,7 +12,10 @@ const mix = (a: number, b: number, p: number) => a + (b - a) * p;
 /** The stage's pinhole projection, followed by a continuous orbit above its real notebook. */
 export function notebookCamera(source: NotebookSource, progress: number) {
   const space = source.projection;
-  const model = notebookGeometry(source.book, ease(phase(progress, 0.42, 0.76)));
+  const model = notebookGeometry(
+    source.book,
+    mix(source.book.open ?? 0, 1, ease(phase(progress, 0.42, 0.76))),
+  );
   const projectCamera = (camera: PerspectiveCamera, width: number, height: number) => {
     const aspect = width / height;
     const silhouette = [model.front, model.page].flatMap((face) => notebookQuad(face, space));

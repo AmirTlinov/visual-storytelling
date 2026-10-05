@@ -326,6 +326,7 @@ export function body(
     book(
       id: string,
       color: string,
+      open: number,
       placement?: {
         x: number;
         y: number;
@@ -342,7 +343,7 @@ export function body(
         y: height - p.y,
         scale,
         turn: frame.turn ?? 0,
-        open: frame.bookOpen ?? 0,
+        open,
         handTurn: frame.handTurn ?? 0,
         color,
       };
@@ -354,8 +355,8 @@ export function body(
       }
       const hands = bookHands(book);
       const [left, right] = bookHandsOrder(shoulder('left').x, shoulder('right').x);
-      reach(left, hands.left, placement?.grip ?? frame.bookBlend ?? 1, 'book-support');
-      reach(right, hands.right, placement?.grip ?? frame.bookBlend ?? 1, 'page');
+      reach(left, hands.left, placement?.grip ?? frame.bookBlend ?? 1, 'page');
+      reach(right, hands.right, placement?.grip ?? frame.bookBlend ?? 1, 'book-support');
       return book;
     },
     snapshot: () => ({
