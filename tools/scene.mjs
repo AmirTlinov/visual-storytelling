@@ -7,10 +7,9 @@ import { buildScene } from './build-pages.mjs';
 import { serve } from './site.mjs';
 import { packDirectory } from './standalone.mjs';
 import { readCatalog, describeExamples } from './catalog.mjs';
-import { buildNarration, setNarrationMode, silenceSceneCopy } from './narration.mjs';
-import { pinSceneProject } from './scene-project.mjs';
+import { buildNarration } from './narration.mjs';
+import { createScene } from './create-scene.mjs';
 import { cancellableCommand } from './cancellable-command.mjs';
-import { sceneInput } from './assets.mjs';
 if (process.argv[2] === 'characters') {
   const { runCharacters } = await import('./characters/cli.mjs');
   await runCharacters(process.argv.slice(3));
@@ -104,7 +103,7 @@ visual-story deliver DIRECTORY --out artifacts/release --formats mp4,html [--job
 visual-story export --help                       MP4, stills and subtitle files
 visual-story pack DIST --out artifacts/story.html [--inline]
 
-Authoring: ${join(root, 'skill/SKILL.md')}`;
+Authoring: ${join(root, 'skills/visual-explainer/SKILL.md')}`;
   if (values.help && command === 'info')
     console.log(`visual-story info [DIRECTORY] [--json]
 
@@ -168,53 +167,12 @@ Re-run the same command after changing a line; unchanged voice segments use the 
     console.log(text);
     if (missing.length) process.exitCode = 1;
   } else if (command === 'new') {
-    if ([values.audio, values['no-audio'], values.silent].filter(Boolean).length > 1)
-      throw new Error('Choose one of --audio, --no-audio or --silent');
-    if (!catalog[values.example])
-      throw new Error(`Choose an example: ${Object.keys(catalog).join(', ')}`);
-    try {
-      if ((await readdir(destination)).length) throw new Error('Choose an empty output directory');
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-    }
-    await mkdir(destination, { recursive: true });
-    const source = join(root, 'examples', values.example);
-    for (const name of await readdir(source)) {
-      if (
-        (name.startsWith('preview') && name.endsWith('.png')) ||
-        !sceneInput(name) ||
-        ['voice.wav', 'music.wav'].includes(name) ||
-        ((values['no-audio'] || values.silent) && name === 'audio.wav')
-      )
-        continue;
-      await cp(join(source, name), join(destination, name), {
-        recursive: true,
-        filter: (path) => sceneInput(relative(source, path)),
-      });
-    }
-    if (catalog[values.example].page !== 'index.html') {
-      const page = catalog[values.example].page;
-      if (page.endsWith('.html'))
-        await cp(join(destination, page), join(destination, 'index.html'));
-      else
-        await writeFile(
-          join(destination, 'index.html'),
-          `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script type="module">import '@visual-storytelling/core/style.css';</script></head><body class="ve-standalone"><main class="ve-scene" data-paper="false"><object data="${page}" type="image/svg+xml" style="width:100%;height:1200px"></object></main></body></html>`,
-        );
-    }
-    if (values.silent) await silenceSceneCopy(destination);
-    await pinSceneProject(destination);
-    const hasAudio = await access(join(destination, 'audio.wav')).then(
-      () => true,
-      () => false,
-    );
-    if (values['no-audio'] || (!values.audio && !hasAudio))
-      for (const name of await readdir(destination))
-        if (name.endsWith('.html')) {
-          const file = join(destination, name);
-          await writeFile(file, setNarrationMode(await readFile(file, 'utf8'), true));
-        }
-    if (values.audio) await buildNarration(destination);
+    await createScene(destination, {
+      example: values.example,
+      deferAudio: values['no-audio'],
+      silent: values.silent,
+      audio: values.audio,
+    });
     console.log(`${destination}\ncd ${destination}\nnpm install\nnpm run build\nnpm run dev`);
   } else if (command === 'audio') {
     await buildNarration(destination);

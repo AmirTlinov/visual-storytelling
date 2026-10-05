@@ -5,8 +5,13 @@ import { captionTrack, type CaptionOptions } from './story/captions.js';
 import { sceneFrame, inspectPresentation, type SceneFrameOptions } from './scene-frame.js';
 export type { SceneFrameOptions, ScenePresentation } from './scene-frame.js';
 import { loadFonts } from './ink/fonts.js';
+import { theme } from './ink/palette.js';
+import { SceneHistory } from './controls/history.js';
 import { player as statePlayer } from './controls/player.js';
 import type { SceneHandle } from './scene-handle.js';
+import type { SceneInspection } from './scene-access.js';
+import type { SceneCheckpoint, SceneView } from './scene-checkpoint.js';
+export type { SceneCheckpoint, SceneView } from './scene-checkpoint.js';
 export { mountScene } from './scene-handle.js';
 export type { SceneHandle, SceneRuntime } from './scene-handle.js';
 export interface SceneOptions {
@@ -25,6 +30,8 @@ export interface SceneOptions {
   onMode?: (mode: 'story' | 'explore') => void;
   /** View-only exploration leaves narration and model time running. */
   exploration?: 'model' | 'view';
+  /** Disable when the subject supplies its own SceneHistory for richer editable state. */
+  history?: boolean;
 }
 export interface SceneMount {
   stage: HTMLDivElement;
@@ -43,7 +50,7 @@ export interface SceneMount {
   /** Register subject-owned observers, animations and subscriptions for removal. */
   onDispose(cleanup: () => void): () => void;
   /** View gestures keep media running; mode buttons and seeking restore the authored shot. */
-  attachView(view: { reset(): void; dispose(): void }): void;
+  attachView(view: SceneView): void;
   dispose(): void;
 }
 import {
@@ -77,6 +84,7 @@ function mount(
     frame,
     heading: showHeading = true,
     captions,
+    history: retainHistory = true,
   }: SceneOptions,
 ): SceneMount {
   if (parameters.some((p, i) => !p.key || parameters.findIndex((q) => q.key === p.key) !== i))
@@ -86,10 +94,13 @@ function mount(
   const abort = new AbortController(),
     options = { signal: abort.signal };
   const cleanups = new Set<() => void>();
+  const sceneTheme = theme(root);
+  cleanups.add(sceneTheme.dispose);
   const values = Object.fromEntries(parameters.map((p) => [p.key, p.value]));
   let inputStory: ((next: Record<string, ControlValue>) => void) | undefined;
   let playback: (() => boolean) | undefined;
-  let view: { reset(): void; dispose(): void } | undefined;
+  let view: SceneView | undefined;
+  let history: ReturnType<typeof SceneHistory.mount<SceneCheckpoint, SceneInspection>> | undefined;
   const heading = node('h1', { class: 've-heading' }, title),
     modes = node('div', { class: 'modes', role: 'group', 'aria-label': 'Режим сцены' });
   const storyButton = node(
@@ -145,6 +156,10 @@ function mount(
       if (control.value !== values[key]) control.setValue(values[key]!);
   }
   function changeValues(next: Record<string, ControlValue>) {
+    if (history) history.change(() => applyValues(next));
+    else applyValues(next);
+  }
+  function applyValues(next: Record<string, ControlValue>) {
     assertLive();
     if (inputStory) {
       try {
@@ -183,6 +198,7 @@ function mount(
     exploreButton.setAttribute('aria-pressed', String(mode === 'explore'));
     root.dataset.sceneMode = mode;
     onMode(mode);
+    if (next === 'story') history?.clear();
   }
   function selectMode(next: 'story' | 'explore') {
     setMode(next);
@@ -199,6 +215,7 @@ function mount(
     {
       snapshot: () => ({ ...values }),
       presentation: () => inspectPresentation(stage),
+      setTheme: sceneTheme.set,
       dispose,
     },
     {
@@ -211,8 +228,50 @@ function mount(
         return player ? setMode : undefined;
       },
       setValues: changeValues,
+      view: () => view,
     },
   );
+  if (parameters.length && retainHistory) {
+    const bar = node('div', { class: 've-experiment-history', hidden: '' });
+    const undo = node('button', { type: 'button' }, 'Отменить условие'),
+      redo = node('button', { type: 'button' }, 'Повторить');
+    bar.append(undo, redo);
+    actions.append(bar);
+    history = SceneHistory.mount(root, {
+      read: handle.capture,
+      restore: handle.restore,
+      gestureRoot: fields,
+      equal: (a, b) => a.mode === b.mode && JSON.stringify(a.values) === JSON.stringify(b.values),
+      onError: (error) => {
+        status.textContent = error instanceof Error ? error.message : String(error);
+      },
+      changed: () => {
+        const focused = document.activeElement;
+        undo.disabled = !history!.state.undo;
+        redo.disabled = !history!.state.redo;
+        bar.hidden = !history!.state.undo && !history!.state.redo;
+        if (focused === undo && undo.disabled && !redo.disabled)
+          redo.focus({ preventScroll: true });
+        else if (focused === redo && redo.disabled && !undo.disabled)
+          undo.focus({ preventScroll: true });
+        root.dispatchEvent(new CustomEvent('scene-history', { bubbles: true }));
+      },
+    });
+    handle.undoExperiment = history.undo;
+    handle.redoExperiment = history.redo;
+    handle.restore = history.restore;
+    Object.defineProperty(handle, 'experimentHistory', {
+      configurable: true,
+      get: () => history!.state,
+    });
+    cleanups.add(history.dispose);
+    const travel = (direction: 'undo' | 'redo') =>
+      void history![direction]().catch((e) => {
+        status.textContent = e.message;
+      });
+    undo.addEventListener('click', () => travel('undo'), options);
+    redo.addEventListener('click', () => travel('redo'), options);
+  }
   return {
     stage,
     fields,
@@ -261,14 +320,14 @@ function mount(
       else cleanups.add(cleanup);
       return () => cleanups.delete(cleanup);
     },
-    attachView(next: { reset(): void; dispose(): void }) {
+    attachView(next: SceneView) {
       assertLive();
       if (view === next) return;
       view?.dispose();
       view = next;
       modes.hidden = false;
     },
-    dispose,
+    dispose: handle.dispose,
   };
 
   function assertLive() {
@@ -360,6 +419,14 @@ function mount(
         },
         seek: controller.seek,
         pause: controller.pause,
+        mute: controller.player.mute,
+        setRate: controller.player.rate,
+        get muted() {
+          return controller.player.state.muted;
+        },
+        get rate() {
+          return controller.player.state.rate;
+        },
         review: controller.review,
         duration: controller.duration,
         get currentTime() {

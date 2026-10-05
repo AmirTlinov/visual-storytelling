@@ -1,0 +1,23 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "visual-storytelling",
+  "version": "0.3.2",
+  "description": "Создавайте, исследуйте и обсуждайте живые визуальные объяснения вместе с Codex.",
+  "author": {
+    "name": "Amir Tlinov"
+  },
+  "license": "0BSD",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Visual Storytelling",
+        "shortDescription": "Объяснения, которыми можно управлять",
+        "longDescription": "Откройте интерактив прямо в разговоре, исследуйте его руками, найдите нужный момент и обсудите увиденное с Codex. Вся работа выполняется на вашем компьютере.",
+        "developerName": "Amir Tlinov",
+        "category": "Education",
+        "capabilities": ["Interactive"],
+        "defaultPrompt": "Открой Visual Storytelling. Помоги мне исследовать пример и понять его механизм."
+      }
+    }
+  }
+}

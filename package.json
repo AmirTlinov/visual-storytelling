@@ -1,6 +1,6 @@
 {
   "name": "@visual-storytelling/core",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "private": true,
   "license": "0BSD",
   "type": "module",
@@ -12,7 +12,7 @@
     "!examples/**/{dist,site,artifacts,review,node_modules}/**",
     "!examples/**/.*",
     "!examples/**/.*/**",
-    "skill",
+    "skills",
     "docs",
     "PHILOSOPHY.md",
     "AGENTS.md",
@@ -90,7 +90,9 @@
     "format": "prettier --write src examples tools tests *.ts *.json README.md PHILOSOPHY.md AGENTS.md THIRD_PARTY.md docs",
     "prepack": "npm run build",
     "test:visual": "node tools/visual-regression.mjs compare site artifacts/migrated",
-    "build:characters": "node tools/characters/build-builtin.mjs"
+    "build:characters": "node tools/characters/build-builtin.mjs",
+    "build:plugin": "node plugin/build.mjs",
+    "plugin:release": "npm run build && node plugin/build.mjs --release"
   },
   "dependencies": {
     "@babel/parser": "7.29.9",
@@ -108,11 +110,15 @@
     "three": "0.186.1"
   },
   "devDependencies": {
+    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@modelcontextprotocol/sdk": "1.32.0",
+    "@openai/mcp-extensions": "0.1.0",
     "@playwright/test": "1.63.0",
     "@types/node": "24.10.0",
     "pngjs": "7.0.0",
     "prettier": "3.6.2",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "zod": "4.4.3"
   },
   "engines": {
     "node": ">=22.18"

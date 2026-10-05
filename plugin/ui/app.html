@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Visual Storytelling</title>
+  </head>
+  <body>
+    <header>
+      <button id="browse" aria-controls="library" title="Проекты и примеры">
+        <span id="title">Visual Storytelling</span> ▾
+      </button>
+      <div>
+        <button id="update" hidden>Показать правку</button
+        ><button id="release" hidden>Выпустить</button
+        ><button id="expand" hidden>Развернуть</button>
+      </div>
+    </header>
+    <section id="library" hidden aria-label="Проекты и примеры">
+      <button id="library-close">Закрыть библиотеку</button>
+      <div id="library-content"></div>
+    </section>
+    <div id="release-options" hidden role="group" aria-label="Формат выпуска">
+      <button data-format="html">Интерактив · HTML</button
+      ><button data-format="mp4">Видео · MP4</button
+      ><button data-format="source">Редактируемый проект</button>
+    </div>
+    <aside id="job" hidden>
+      <span id="job-text" role="status"></span><button id="cancel">Отменить</button>
+    </aside>
+    <main>
+      <iframe
+        id="scene"
+        title="Интерактивное объяснение"
+        sandbox="allow-scripts"
+        allow="autoplay"
+      ></iframe>
+    </main>
+    <p id="error" role="alert" hidden></p>
+    <p id="artifacts" hidden></p>
+    <footer><span id="connection" role="status">Подключение…</span></footer>
+  </body>
+</html>

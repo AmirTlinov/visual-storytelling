@@ -86,7 +86,11 @@ test('a production-only installation of the packed public API typechecks outside
       ).stdout,
     );
     assert.equal(entries.length, 1);
-    for (const file of [entries[0].source, ...entries[0].guides, join(installed, 'skill/SKILL.md')])
+    for (const file of [
+      entries[0].source,
+      ...entries[0].guides,
+      join(installed, 'skills/visual-explainer/SKILL.md'),
+    ])
       assert.ok((await readFile(file, 'utf8')).length > 0);
     const scene = join(directory, 'new-scene');
     // Local development outputs must not become template inputs on the next copy.

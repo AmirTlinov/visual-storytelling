@@ -8,7 +8,7 @@ window.galleryReady = (async () => {
   const initial = {width: 5, count: 4, shape: 'rect', labels: true, grid: true, color: 'blue'};
   const measure = n => Number(n.toFixed(2));
   let form = ShapeModel.create(initial.shape, initial.width), layout;
-  const shell = SceneShell.mount(root, {title: 'Рисованные элементы управления', parameters: [
+  const shell = SceneShell.mount(root, {title: 'Рисованные элементы управления', history: false, parameters: [
     {key: 'width', label: 'Ширина', min: 1, max: 8, step: .01, value: initial.width, format: n => `${measure(n)} см`},
     {key: 'count', type: 'stepper', label: 'Точек внутри', min: 0, max: 8, step: 1, value: initial.count},
     {key: 'shape', type: 'select', label: 'Фигура', value: initial.shape, options: SketchShapes.options},

@@ -1,27 +1,45 @@
 import type { SceneHandle } from './scene-handle.js';
 import type { ControlParameter, ControlValue } from './controls/fields.js';
+import type { SceneView } from './scene-checkpoint.js';
 
 export type SceneCommand =
   | { type: 'pause' | 'play' }
+  | { type: 'undoExperiment' | 'redoExperiment' }
+  | { type: 'mute'; value: boolean }
+  | { type: 'rate'; value: number }
   | { type: 'seek'; time: number }
   | { type: 'cue'; id: string; progress?: number }
   | { type: 'mode'; value: 'story' | 'explore' }
   | { type: 'parameters'; values: Record<string, ControlValue> }
   | { type: 'focus'; ids: readonly string[] }
+  | { type: 'select'; ids: readonly string[] }
   | { type: 'theme'; value: 'auto' | 'light' | 'dark' | 'inherit' }
   | { type: 'reduced'; value: boolean };
+export interface SceneControlOptions {
+  signal?: AbortSignal;
+}
 export interface SceneInspection {
   time: number;
   duration: number;
   playing: boolean;
+  muted?: boolean;
+  rate?: number;
+  selected?: readonly string[];
+  objects?: ReturnType<NonNullable<SceneHandle['objects']>>;
+  experimentHistory?: { undo: boolean; redo: boolean };
   mode: 'story' | 'explore';
-  parameters: (ControlParameter & { key: string; visible: boolean })[];
+  parameters: (Omit<ControlParameter, 'format'> & {
+    key: string;
+    visible: boolean;
+    displayValue?: string;
+  })[];
   capabilities: string[];
   snapshot: unknown;
   presentation: ReturnType<NonNullable<SceneHandle['presentation']>> | undefined;
   review: ReturnType<SceneHandle['review']>;
 }
 export interface SceneAccessOwner {
+  view?(): SceneView | undefined;
   playing?(): boolean;
   mode?(): 'story' | 'explore';
   values?(): Record<string, ControlValue>;
@@ -32,30 +50,47 @@ export interface SceneAccessOwner {
   assertLive(): void;
 }
 export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
-  const inspect = (): SceneInspection => {
+  const inspect = ({ presentation = true }: { presentation?: boolean } = {}): SceneInspection => {
     owner.assertLive();
+    const objects = handle.objects?.(),
+      review = handle.review();
     return {
       time: handle.currentTime ?? 0,
       duration: handle.duration ?? 0,
       playing: owner.playing?.() ?? false,
+      muted: handle.muted,
+      rate: handle.rate,
+      selected: handle.selected,
+      objects,
+      experimentHistory: handle.experimentHistory,
       mode: owner.mode?.() ?? 'explore',
-      parameters: (owner.parameters ?? []).map((p) => ({
-        ...p,
-        value: owner.values?.()[p.key] ?? p.value,
-        visible: owner.visible?.(p.key) ?? true,
-      })),
+      parameters: (owner.parameters ?? []).map(({ format, ...p }) => {
+        const value = owner.values?.()[p.key] ?? p.value;
+        return {
+          ...p,
+          value,
+          displayValue: format?.(value),
+          visible: owner.visible?.(p.key) ?? true,
+        };
+      }),
       capabilities: [
         ...(['seek', 'play', 'pause'] as const).filter((key) => typeof handle[key] === 'function'),
-        ...(handle.seek && handle.review().cues.length ? ['cue'] : []),
+        ...(handle.seek && review.cues.length ? ['cue'] : []),
         ...(owner.setValues && owner.parameters?.length ? ['parameters'] : []),
         ...(owner.setMode ? ['mode'] : []),
         ...(handle.setReduced ? ['reduced'] : []),
         ...(handle.focus ? ['focus'] : []),
         ...(handle.setTheme ? ['theme'] : []),
+        ...(handle.mute ? ['mute'] : []),
+        ...(handle.setRate ? ['rate'] : []),
+        ...(handle.select && objects?.length ? ['select'] : []),
+        ...(['undoExperiment', 'redoExperiment'] as const).filter(
+          (key) => typeof handle[key] === 'function',
+        ),
       ],
       snapshot: handle.snapshot(),
-      presentation: handle.presentation?.(),
-      review: handle.review(),
+      presentation: presentation ? handle.presentation?.() : undefined,
+      review,
     };
   };
   return {
@@ -78,13 +113,35 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
         )
         .slice(0, 20);
     },
-    async control(commands: readonly SceneCommand[]) {
+    async control(commands: readonly SceneCommand[], { signal }: SceneControlOptions = {}) {
       owner.assertLive();
+      signal?.throwIfAborted();
       if (!Array.isArray(commands) || !commands.length || commands.length > 32)
         throw new Error('Supply 1–32 scene commands');
-      // Check command shapes and parameter ranges before applying the ordered operations.
-      for (const c of commands) {
+      const validate = (c: SceneCommand) => {
         if (!c || typeof c !== 'object') throw new Error('A scene command needs a type');
+        if (
+          (c.type === 'undoExperiment' || c.type === 'redoExperiment') &&
+          !handle[c.type as 'undoExperiment' | 'redoExperiment']
+        )
+          throw new Error('Experiment history is unavailable');
+        if (c.type === 'mute' && (!handle.mute || typeof c.value !== 'boolean'))
+          throw new Error('Mute is unavailable or invalid');
+        if (
+          c.type === 'rate' &&
+          (!handle.setRate || !Number.isFinite(c.value) || c.value < 0.25 || c.value > 3)
+        )
+          throw new Error('Playback rate must be between 0.25 and 3');
+        if (
+          c.type === 'select' &&
+          (!Array.isArray(c.ids) ||
+            !handle.select ||
+            c.ids.some(
+              (id: unknown) =>
+                typeof id !== 'string' || !handle.objects?.().some((o) => o.id === id),
+            ))
+        )
+          throw new Error('Select needs known object IDs');
         if (
           c.type === 'parameters' &&
           (!c.values || typeof c.values !== 'object' || Array.isArray(c.values))
@@ -148,13 +205,37 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
             'focus',
             'theme',
             'reduced',
+            'mute',
+            'rate',
+            'select',
+            'undoExperiment',
+            'redoExperiment',
           ].includes(c.type)
         )
           throw new Error('Unsupported scene command');
-      }
+      };
+      // Reject invalid input before effects; a previous operation can then change live bounds.
+      for (const c of commands) validate(c);
       for (const c of commands) {
         owner.assertLive();
+        signal?.throwIfAborted();
+        validate(c);
         switch (c.type) {
+          case 'undoExperiment':
+            await handle.undoExperiment!();
+            break;
+          case 'redoExperiment':
+            await handle.redoExperiment!();
+            break;
+          case 'mute':
+            handle.mute!(c.value);
+            break;
+          case 'rate':
+            handle.setRate!(c.value);
+            break;
+          case 'select':
+            handle.select!(c.ids);
+            break;
           case 'pause':
             handle.pause!();
             break;
@@ -189,6 +270,7 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
             handle.setReduced!(c.value);
             break;
         }
+        signal?.throwIfAborted();
       }
       return inspect();
     },

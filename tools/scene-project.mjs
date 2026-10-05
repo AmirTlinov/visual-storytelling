@@ -147,6 +147,10 @@ export async function pinSceneProject(
 ) {
   const { packRuntime } = await import('./runtime-package.mjs');
   const receipt = await packRuntime(destination, { root, build, signal });
+  const hasVoice = await stat(join(root, 'tools/sketch-audio')).then(
+    () => true,
+    () => false,
+  );
   await writeFile(
     join(destination, 'package.json'),
     JSON.stringify(
@@ -159,7 +163,7 @@ export async function pinSceneProject(
           dev: 'visual-story dev .',
           preview: 'visual-story preview dist',
           pack: 'visual-story pack dist --out artifacts/story.html',
-          audio: 'visual-story audio .',
+          ...(hasVoice ? { audio: 'visual-story audio .' } : {}),
           export: 'visual-story export dist',
           deliver: 'visual-story deliver .',
           review: 'visual-story review dist --out artifacts/review',
@@ -169,6 +173,11 @@ export async function pinSceneProject(
       null,
       2,
     ) + '\n',
+  );
+  await execute(
+    'npm',
+    ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'],
+    { cwd: destination, signal },
   );
   return receipt;
 }

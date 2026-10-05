@@ -1,12 +1,26 @@
 /* One scene history: live changes are grouped by the gesture that produced them. */
 
-function mount<T>(
+function mount<T, R>(
   root: HTMLElement,
   {
     read,
     restore,
     beforeTravel = () => {},
-  }: { read: () => T; restore: (value: T) => void; beforeTravel?: () => void },
+    equal = (a, b) => JSON.stringify(a) === JSON.stringify(b),
+    changed = () => {},
+    onError = (error) => {
+      console.error(error);
+    },
+    gestureRoot = root,
+  }: {
+    read: () => T;
+    restore: (value: T) => R | Promise<R>;
+    beforeTravel?: () => void;
+    equal?: (a: T, b: T) => boolean;
+    changed?: () => void;
+    onError?: (error: unknown) => void;
+    gestureRoot?: HTMLElement;
+  },
 ) {
   const abort = new AbortController(),
     listen = { signal: abort.signal };
@@ -14,36 +28,55 @@ function mount<T>(
     future: T[] = [],
     copy = (value: T) => structuredClone(value);
   let current = copy(read()),
-    pending = false;
+    pending = false,
+    applying = false;
   let field: HTMLElement | null = null;
   function record() {
-    if (pending) return;
+    if (pending || applying) return;
     const next = copy(read());
-    if (JSON.stringify(next) === JSON.stringify(current)) return;
+    if (equal(next, current)) return;
     past.push(current);
     if (past.length > 100) past.shift();
     current = next;
     future.length = 0;
+    changed();
   }
   function begin() {
+    if (applying || pending) return;
+    current = copy(read());
     pending = true;
   }
   function end() {
+    if (!pending) return;
     pending = false;
     field = null;
     record();
   }
-  function travel(back: boolean) {
+  async function restoreState(value: T) {
+    const previous = applying;
+    applying = true;
+    try {
+      return await restore(copy(value));
+    } finally {
+      applying = previous;
+      current = copy(read());
+    }
+  }
+  async function travel(back: boolean) {
+    if (applying) return;
     beforeTravel();
     end();
     const from = back ? past : future,
       to = back ? future : past;
     if (!from.length) return;
-    to.push(current);
-    current = from.pop()!;
+    const previous = current,
+      target = from.at(-1)!;
     const focused = document.activeElement,
       keepFocus = root.contains(focused);
-    restore(copy(current));
+    await restoreState(target);
+    to.push(previous);
+    from.pop();
+    changed();
     if (keepFocus && focused && !focused.isConnected)
       root.querySelector<HTMLElement>('[data-handle]')?.focus({ preventScroll: true });
   }
@@ -70,12 +103,12 @@ function mount<T>(
       if (!z && !y) return;
       event.preventDefault();
       event.stopPropagation();
-      travel(z && !event.shiftKey);
+      void travel(z && !event.shiftKey).catch(onError);
     },
     { ...listen, capture: true },
   );
   // Range drags and held arrow keys are each one undo step.
-  root.addEventListener(
+  gestureRoot.addEventListener(
     'pointerdown',
     (event) => {
       if (!(event.target as Element).matches('input[type="range"]')) return;
@@ -99,7 +132,7 @@ function mount<T>(
     },
     listen,
   );
-  root.addEventListener(
+  gestureRoot.addEventListener(
     'keydown',
     (event) => {
       if (
@@ -123,7 +156,7 @@ function mount<T>(
     },
     { ...listen, capture: true },
   );
-  root.addEventListener(
+  gestureRoot.addEventListener(
     'keyup',
     (event) => {
       if (event.target === field && (field as HTMLInputElement | null)?.type === 'range') end();
@@ -131,7 +164,7 @@ function mount<T>(
     listen,
   );
   // Native text undo stays local; numeric edits belong to scene history.
-  root.addEventListener(
+  gestureRoot.addEventListener(
     'focusin',
     (event) => {
       if (editable(event.target) || (event.target as Element).matches('input[type="number"]')) {
@@ -142,7 +175,7 @@ function mount<T>(
     },
     listen,
   );
-  root.addEventListener(
+  gestureRoot.addEventListener(
     'focusout',
     (event) => {
       if (event.target === field) end();
@@ -158,6 +191,24 @@ function mount<T>(
     listen,
   );
   return {
+    get state() {
+      return { undo: past.length > 0, redo: future.length > 0 };
+    },
+    restore: restoreState,
+    change(work: () => void) {
+      if (!pending && !applying) current = copy(read());
+      work();
+      record();
+    },
+    clear() {
+      if (applying) return;
+      past.length = 0;
+      future.length = 0;
+      pending = false;
+      field = null;
+      current = copy(read());
+      changed();
+    },
     record,
     begin,
     end,

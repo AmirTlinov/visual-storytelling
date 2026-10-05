@@ -77,7 +77,7 @@
     "summary": "Одна клетка → ряд → площадь. Рисунок раскрывает смысл умножения.",
     "tags": ["площадь", "умножение", "рассказ", "озвучка", "story"],
     "source": "scene.js",
-    "guides": ["skill/references/scene-template.md"],
+    "guides": ["skills/visual-explainer/references/scene-template.md"],
     "reference": true
   },
   "remainder-story": {
@@ -89,7 +89,7 @@
     "summary": "23 предмета собираются в семь троек; два остаются за пределами групп.",
     "tags": ["деление", "остаток", "рассказ", "озвучка", "story"],
     "source": "scene.js",
-    "guides": ["skill/references/scene-template.md"],
+    "guides": ["skills/visual-explainer/references/scene-template.md"],
     "reference": true
   },
   "fraction-of-a-set": {
@@ -148,7 +148,7 @@
     "summary": "Кубик → ряд → слой → объём. Рассказ с вращением и исследованием коробки.",
     "tags": ["объём", "3d", "рассказ", "камера", "SceneShell"],
     "source": "scene.js",
-    "guides": ["skill/references/scene-template.md"],
+    "guides": ["skills/visual-explainer/references/scene-template.md"],
     "recommended": true
   },
   "explorer-svg": {
@@ -160,7 +160,7 @@
     "summary": "Перемещения складываются на плоскости. Готовая основа рассказа с камерой.",
     "tags": ["вектор", "сложение", "svg", "2d", "рассказ", "камера", "SceneShell"],
     "source": "scene.js",
-    "guides": ["skill/references/scene-template.md"],
+    "guides": ["skills/visual-explainer/references/scene-template.md"],
     "recommended": true
   },
   "controls": {
@@ -171,7 +171,7 @@
     "summary": "Кнопки, поля, ползунки и выбор в общем рисованном стиле.",
     "tags": ["управление", "кнопки", "ползунки", "поля", "controls"],
     "source": "scene.js",
-    "guides": ["skill/references/scene-authoring.md"]
+    "guides": ["skills/visual-explainer/references/scene-authoring.md"]
   },
   "ink-fusion": {
     "title": "Живые чернила",
@@ -244,7 +244,7 @@
     "summary": "Оси, срезы и компоненты помогают прочитать многомерный массив.",
     "tags": ["тензор", "массив", "геометрия", "svg"],
     "source": "build.mjs",
-    "guides": ["skill/references/interactive-tensors.md"]
+    "guides": ["skills/visual-explainer/references/interactive-tensors.md"]
   },
   "parameter-cube": {
     "title": "Как веса BERT собирают запрос",
@@ -255,7 +255,7 @@
     "summary": "Выберите вес BERT и проследите вклады входов до компоненты запроса.",
     "tags": ["bert", "параметры", "веса", "матрица", "тензор", "нейрон", "проекция"],
     "source": "cube.mjs",
-    "guides": ["skill/references/interactive-tensors.md"]
+    "guides": ["skills/visual-explainer/references/interactive-tensors.md"]
   },
   "lc-oscillator": {
     "title": "Колебательный LC-контур",
@@ -266,7 +266,7 @@
     "summary": "Заряд и ток связывают электрическое и магнитное поля колебательного контура.",
     "tags": ["физика", "lc", "колебания", "электричество", "поле"],
     "source": "build.py",
-    "guides": ["skill/references/lc-oscillator.md"]
+    "guides": ["skills/visual-explainer/references/lc-oscillator.md"]
   },
   "vector": {
     "title": "Матрица меняет вектор",
@@ -296,7 +296,7 @@
     "summary": "Раскройте компьютер от устройств до ячеек памяти и транзисторов.",
     "tags": ["компьютер", "cpu", "gpu", "ssd", "ram", "lcd", "вложенность", "камера"],
     "source": "scenes.js",
-    "guides": ["skill/references/nested-explorer.md"]
+    "guides": ["skills/visual-explainer/references/nested-explorer.md"]
   },
   "neuron-explorer": {
     "title": "Внутри нейрона",
@@ -306,7 +306,7 @@
     "summary": "Исследуйте устройство нейрона, переходя от целого к деталям сигнала.",
     "tags": ["нейрон", "вложенность", "камера", "сигнал"],
     "source": "scene.js",
-    "guides": ["skill/references/nested-explorer.md"]
+    "guides": ["skills/visual-explainer/references/nested-explorer.md"]
   },
   "physical-objects": {
     "title": "Физические материалы",
@@ -402,7 +402,7 @@
       "actions"
     ],
     "source": "scene.js",
-    "guides": ["skill/references/scene-authoring.md"],
+    "guides": ["skills/visual-explainer/references/scene-authoring.md"],
     "reference": true,
     "recommended": true
   },
@@ -428,7 +428,7 @@
       "нажатие"
     ],
     "source": "scene.js",
-    "guides": ["skill/references/scene-authoring.md"],
+    "guides": ["skills/visual-explainer/references/scene-authoring.md"],
     "recommended": true
   },
   "mathematical-relations": {
@@ -646,6 +646,6 @@
     "summary": "Рисующийся пространственный след: длина штриха, пунктир, перемотка и изменение пути принадлежат InkStroke3D.",
     "tags": ["InkStroke3D", "линия", "траектория", "3d"],
     "source": "scene.js",
-    "guides": ["skill/references/scene-template.md"]
+    "guides": ["skills/visual-explainer/references/scene-template.md"]
   }
 }

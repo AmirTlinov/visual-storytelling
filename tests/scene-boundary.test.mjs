@@ -77,8 +77,8 @@ test('one scene boundary preserves capabilities, live time and model ownership t
       model: lab.editable.scene.inspect().capabilities,
     }));
     assert(initial.same, 'attaching a story must keep the registered handle');
-    assert.deepEqual(initial.before, ['parameters']);
-    assert.deepEqual(initial.model, ['parameters']);
+    assert.deepEqual(initial.before, ['parameters', 'theme', 'undoExperiment', 'redoExperiment']);
+    assert.deepEqual(initial.model, ['parameters', 'theme', 'undoExperiment', 'redoExperiment']);
     assert(initial.after.includes('seek') && initial.after.includes('cue'));
     await seekScene(capture, 4.5);
     assert.equal(await page.evaluate(() => lab.root.scene.currentTime), 4.5);

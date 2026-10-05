@@ -42,6 +42,24 @@ window.galleryReady = (async () => {
   const horizontal = vector(drawing, 'horizontal', 'blue'),
     vertical = vector(drawing, 'vertical', 'orange'),
     result = vector(drawing, 'result', 'purple', 2.5);
+  horizontal.describe({
+    label: 'Горизонтальное перемещение',
+    value: () => pose.x,
+    unit: 'шаги',
+    source: { file: 'scene.js' },
+  });
+  vertical.describe({
+    label: 'Вертикальное перемещение',
+    value: () => pose.y,
+    unit: 'шаги',
+    source: { file: 'scene.js' },
+  });
+  result.describe({
+    label: 'Результат двух перемещений',
+    value: () => [pose.x, pose.y],
+    inputs: () => ['horizontal', 'vertical'],
+    source: { file: 'scene.js' },
+  });
   const start = element('circle', { r: 3.5, fill: 'var(--ve-ink)' }),
     end = element('circle', { r: 3.5, fill: 'var(--ve-purple)' });
   world.append(start, end);

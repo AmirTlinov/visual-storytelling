@@ -6,6 +6,7 @@ export class SilentMedia extends EventTarget {
   anchor: number;
   stopped: boolean;
   muted: boolean;
+  private speed = 1;
   constructor(duration: number) {
     super();
     this.duration = duration;
@@ -17,7 +18,7 @@ export class SilentMedia extends EventTarget {
   get currentTime() {
     return Math.min(
       this.duration,
-      this.position + (this.stopped ? 0 : (performance.now() - this.anchor) / 1000),
+      this.position + (this.stopped ? 0 : ((performance.now() - this.anchor) / 1000) * this.speed),
     );
   }
   set currentTime(value: number) {
@@ -29,6 +30,17 @@ export class SilentMedia extends EventTarget {
   }
   get ended() {
     return this.currentTime >= this.duration;
+  }
+  get playbackRate() {
+    return this.speed;
+  }
+  set playbackRate(value: number) {
+    if (!Number.isFinite(value) || value < 0.25 || value > 3)
+      throw new Error('Playback rate must be between 0.25 and 3');
+    this.position = this.currentTime;
+    this.anchor = performance.now();
+    this.speed = value;
+    this.dispatchEvent(new Event('ratechange'));
   }
   get paused() {
     return this.stopped || this.ended;

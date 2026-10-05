@@ -102,6 +102,21 @@ export interface ScenePresentation {
   unreadableText: { id: string; pixels: number; minimum: number }[];
 }
 
+/** Shared by visual review and semantic inspection, including Chromium's hidden SVG case. */
+export function isRendered(
+  node: Element,
+  styleOf: (node: Element) => CSSStyleDeclaration = getComputedStyle,
+) {
+  if (!node.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return false;
+  const style = styleOf(node);
+  if (style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+  for (let parent: Element | null = node; parent; parent = parent.parentElement) {
+    const parentStyle = styleOf(parent);
+    if (parentStyle.display === 'none' || Number(parentStyle.opacity) === 0) return false;
+  }
+  return true;
+}
+
 /** Geometric evidence for review, computed on demand without another render loop. */
 export function inspectPresentation(stage: HTMLElement | SVGSVGElement): ScenePresentation {
   const styles = new Map<Element, CSSStyleDeclaration>();
@@ -109,17 +124,7 @@ export function inspectPresentation(stage: HTMLElement | SVGSVGElement): ScenePr
     if (!styles.has(node)) styles.set(node, getComputedStyle(node));
     return styles.get(node)!;
   };
-  const visible = (node: Element) => {
-    if (!node.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return false;
-    // Chromium's checkVisibility currently returns true for SVG under display:none.
-    const style = styleOf(node);
-    if (style.visibility === 'hidden' || style.visibility === 'collapse') return false;
-    for (let parent: Element | null = node; parent; parent = parent.parentElement) {
-      const parentStyle = styleOf(parent);
-      if (parentStyle.display === 'none' || Number(parentStyle.opacity) === 0) return false;
-    }
-    return true;
-  };
+  const visible = (node: Element) => isRendered(node, styleOf);
   const projected = new Map<Element, boolean>();
   const hasPerspective = (node: Element): boolean => {
     if (projected.has(node)) return projected.get(node)!;

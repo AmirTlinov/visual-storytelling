@@ -81,3 +81,38 @@ html:has(>body.ve-standalone>.ve-scene[data-theme=dark]){color-scheme:dark}
 .ve-scene .canvas:not(:where(.ve-frame *)) .ink-line{fill:none;stroke:var(--ve-ink);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .ve-scene .ve-player[data-seekable=false]{width:auto;margin:0;container-type:normal}
 .ve-scene .ve-player[data-seekable=false] [data-next]{display:block}
+
+.ve-scene .ve-player .ve-playback-rate {
+  flex: 0 0 auto;
+  min-height: 40px;
+  width: 64px;
+  padding: 4px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ve-ink);
+  background: transparent;
+  border: 1px solid var(--ve-line);
+  border-radius: 8px;
+}
+.ve-scene [data-object][role='button'] {
+  cursor: pointer;
+}
+.ve-scene [data-object][data-selected] {
+  filter: drop-shadow(0 0 2px var(--ve-ink));
+  outline: 1px dashed currentColor;
+  outline-offset: 5px;
+}
+.ve-scene [data-object][role='button']:focus-visible {
+  outline: 2px dashed currentColor;
+  outline-offset: 5px;
+}
+.ve-experiment-history {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.ve-experiment-history button {
+  font-size: 13px;
+  padding: 5px 9px;
+  min-height: 36px;
+}

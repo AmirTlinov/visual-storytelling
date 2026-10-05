@@ -1,0 +1,12 @@
+{
+  "name": "visual-storytelling-local",
+  "interface": { "displayName": "Visual Storytelling" },
+  "plugins": [
+    {
+      "name": "visual-storytelling",
+      "source": { "source": "local", "path": "./.plugin-release" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Education"
+    }
+  ]
+}

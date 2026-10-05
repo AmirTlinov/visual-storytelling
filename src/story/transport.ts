@@ -6,6 +6,7 @@ export interface Playback {
   playing: boolean;
   muted: boolean;
   hasAudio: boolean;
+  rate: number;
   error: string | null;
 }
 export interface TransportOptions {
@@ -29,6 +30,7 @@ export function transport({ duration, audio }: TransportOptions) {
     playing: pending || !media.paused,
     muted: media.muted,
     hasAudio: !(media instanceof SilentMedia),
+    rate: media.playbackRate ?? 1,
     error,
   });
   const notify = () => {
@@ -111,6 +113,14 @@ export function transport({ duration, audio }: TransportOptions) {
     },
     mute(value = !media.muted) {
       media.muted = value;
+      notify();
+    },
+    rate(value: number) {
+      if (!Number.isFinite(value) || value < 0.25 || value > 3)
+        throw new Error('Playback rate must be between 0.25 and 3');
+      if (media.playbackRate === undefined)
+        throw new Error('This media does not support playback rate');
+      media.playbackRate = value;
       notify();
     },
     subscribe(listener: (state: Playback) => void) {

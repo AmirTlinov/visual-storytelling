@@ -3,10 +3,14 @@ import {
   type SceneCommand,
   type SceneInspection,
   type SceneAccessOwner,
+  type SceneControlOptions,
 } from './scene-access.js';
 import type { Theme } from './ink/palette.js';
 import type { CueReview } from './story/cues.js';
 import { inspectPresentation, type ScenePresentation } from './scene-frame.js';
+import { captureScene, restoreScene, type SceneCheckpoint } from './scene-checkpoint.js';
+import { sceneObjects } from './scene-objects.js';
+export type { ObjectMeaning } from './scene-objects.js';
 
 declare global {
   interface HTMLElement {
@@ -22,6 +26,16 @@ export interface SceneRuntime {
   readonly duration?: number;
   readonly currentTime?: number;
   readonly playing?: boolean;
+  readonly muted?: boolean;
+  readonly rate?: number;
+  readonly selected?: readonly string[];
+  objects?(): ReturnType<ReturnType<typeof sceneObjects>['objects']>;
+  select?(ids: readonly string[]): void;
+  readonly experimentHistory?: { undo: boolean; redo: boolean };
+  undoExperiment?(): Promise<void>;
+  redoExperiment?(): Promise<void>;
+  mute?(value: boolean): void;
+  setRate?(value: number): void;
   play?(): void | Promise<void>;
   seek?(time: number): void;
   pause?(): void;
@@ -40,8 +54,13 @@ export interface SceneRuntime {
 
 /** One inspectable boundary for stories, editable models and native SVG. */
 export interface SceneHandle extends SceneRuntime {
-  inspect(): SceneInspection;
-  control(commands: readonly SceneCommand[]): Promise<SceneInspection>;
+  capture(): SceneCheckpoint;
+  restore(state: SceneCheckpoint): Promise<SceneInspection>;
+  inspect(options?: { presentation?: boolean }): SceneInspection;
+  control(
+    commands: readonly SceneCommand[],
+    options?: SceneControlOptions,
+  ): Promise<SceneInspection>;
   find(query: string): CueReview['cues'];
   snapshot(): unknown;
   review(): CueReview;
@@ -56,6 +75,7 @@ export function mountScene<T extends SceneRuntime>(
 ): T & SceneHandle {
   if (root.scene) throw new Error('Dispose the mounted scene before replacing it');
   let disposed = false;
+  const subjects = sceneObjects(root);
   const assertLive = () => {
     if (disposed || root.scene !== handle) throw new Error('Scene has been disposed or replaced');
   };
@@ -63,6 +83,11 @@ export function mountScene<T extends SceneRuntime>(
     snapshot: () => null,
     review: (): CueReview => ({ duration: handle.duration ?? 0, cues: [], segments: [] }),
     presentation: () => inspectPresentation(root),
+    objects: subjects.objects,
+    select: subjects.select,
+    get selected() {
+      return subjects.selected;
+    },
   } as unknown as T & SceneHandle;
   // Forward both own and prototype capabilities to their original receiver. Copying
   // descriptors freezes data fields and breaks class getters/private fields.
@@ -101,6 +126,7 @@ export function mountScene<T extends SceneRuntime>(
   handle.dispose = () => {
     if (disposed || root.scene !== handle) return;
     disposed = true;
+    subjects.dispose();
     try {
       runtime.dispose();
     } finally {
@@ -114,6 +140,8 @@ export function mountScene<T extends SceneRuntime>(
   access.assertLive = assertLive;
   access.playing ??= () => runtime.playing ?? false;
   Object.assign(handle, sceneAccess(handle, access));
+  handle.capture = () => captureScene(handle, access.view?.());
+  handle.restore = (state) => restoreScene(handle, state, access.view?.());
   root.scene = handle;
   return handle;
 }

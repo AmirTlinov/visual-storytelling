@@ -29,23 +29,7 @@ function showError(message, build = false) {
   node.textContent = message;
 }
 function savePosition() {
-  const state = handle?.inspect?.();
-  if (!state) return;
-  const cue = state.review.cues
-    .filter((c) => c.start <= state.time && c.end >= state.time && c.end > c.start)
-    .sort((a, b) => a.end - a.start - (b.end - b.start))[0];
-  sessionStorage.setItem(
-    key,
-    JSON.stringify({
-      time: state.time,
-      cue: cue?.id,
-      progress: cue ? (state.time - cue.start) / (cue.end - cue.start) : 0,
-      mode: state.mode,
-      values: Object.fromEntries(
-        state.parameters.filter((p) => !p.disabled).map((p) => [p.key, p.value]),
-      ),
-    }),
-  );
+  if (handle?.capture) sessionStorage.setItem(key, JSON.stringify(handle.capture()));
 }
 function refresh() {
   if (restoring) return;
@@ -125,34 +109,13 @@ async function ready() {
         capabilities.includes('cue') && cue && handle.review().cues.some((c) => c.id === cue);
     if (cue && !state && !hasCue) throw new Error('Unknown cue: ' + cue);
     const time = state?.time ?? (query.has('t') ? Number(query.get('t')) : undefined);
-    const commands = capabilities.includes('pause') ? [{ type: 'pause' }] : [];
-    if (hasCue) commands.push({ type: 'cue', id: cue, progress: state?.progress ?? 0 });
-    else if (Number.isFinite(time) && capabilities.includes('seek'))
-      commands.push({ type: 'seek', time: Math.min(handle.duration, Math.max(0, time)) });
-    if (state?.mode === 'explore' && capabilities.includes('mode'))
-      commands.push({ type: 'mode', value: 'explore' });
-    if (commands.length) await handle.control(commands);
-    if (state?.mode === 'explore' && capabilities.includes('parameters')) {
-      const pending = new Map(Object.entries(state.values));
-      // Chapter/model selectors may change the next field's range or availability.
-      // Restore in the owner's declared order and inspect again after each input.
-      while (pending.size) {
-        const parameter = handle.inspect().parameters.find((p) => {
-          const value = pending.get(p.key);
-          return (
-            pending.has(p.key) &&
-            !p.disabled &&
-            typeof p.value === typeof value &&
-            (typeof value !== 'number' ||
-              (value >= (p.min ?? -Infinity) && value <= (p.max ?? Infinity))) &&
-            (!p.options || p.options.some((o) => o.value === value))
-          );
-        });
-        if (!parameter) break;
-        const value = pending.get(parameter.key);
-        pending.delete(parameter.key);
-        await handle.control([{ type: 'parameters', values: { [parameter.key]: value } }]);
-      }
+    if (state) await handle.restore(state);
+    else {
+      const commands = capabilities.includes('pause') ? [{ type: 'pause' }] : [];
+      if (hasCue) commands.push({ type: 'cue', id: cue, progress: 0 });
+      else if (Number.isFinite(time) && capabilities.includes('seek'))
+        commands.push({ type: 'seek', time: Math.min(handle.duration, Math.max(0, time)) });
+      if (commands.length) await handle.control(commands);
     }
     await rendered();
     const current = await fetch('/__visual_story_session').then((r) => r.json());

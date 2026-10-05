@@ -20,6 +20,7 @@ export function player(parent: HTMLElement, options: PlayerOptions) {
   const view = PlayerControls.mount(element, {
     chapters: true,
     sound: clock.state.hasAudio,
+    speed: true,
     max: clock.state.duration,
     label: 'Позиция рассказа',
   });
@@ -52,6 +53,7 @@ export function player(parent: HTMLElement, options: PlayerOptions) {
   );
   view.seek.addEventListener('input', () => seek(view.seek.valueAsNumber), listen);
   view.mute?.addEventListener('click', () => clock.mute(), listen);
+  view.rate?.addEventListener('change', () => clock.rate(Number(view.rate!.value)), listen);
   const unsubscribe = clock.subscribe((state) => {
     const stamp = `${formatTime(state.time)} / ${formatTime(state.duration)}`;
     view.update({
@@ -63,6 +65,7 @@ export function player(parent: HTMLElement, options: PlayerOptions) {
       canBack: state.time > 0.01,
       canNext: state.time < state.duration,
       muted: state.muted,
+      rate: state.rate,
     });
     error.textContent = state.error;
     if (options.captions) {

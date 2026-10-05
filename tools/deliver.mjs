@@ -22,12 +22,14 @@ export async function deliver(
     out,
     formats = ['mp4'],
     silent = false,
+    prepareAudio = true,
     width = 1280,
     height,
     fps = 30,
     jobs = 2,
     theme = 'light',
     signal,
+    onProgress = (done, count) => console.log(`${done}/${count} frames`),
   } = {},
 ) {
   signal?.throwIfAborted();
@@ -61,7 +63,7 @@ export async function deliver(
         { cause: error },
       );
   }
-  if (!silent) await prepareNarration(source, { audible: true, signal });
+  if (!silent && prepareAudio) await prepareNarration(source, { audible: true, signal });
   const include = (path) => {
     return sceneInput(relative(source, path)) && path !== out && !path.startsWith(out + sep);
   };
@@ -86,7 +88,7 @@ export async function deliver(
       throw new Error('Scene or package changed during delivery; retry after edits finish');
   }
   const built = join(source, 'dist');
-  await buildScene(source, built, { silent, exclude: [out] });
+  await buildScene(source, built, { silent, exclude: [out], signal });
   signal?.throwIfAborted();
   const identity = ({ name, version, build, status }) => ({
     package: name,
@@ -130,7 +132,7 @@ export async function deliver(
           theme,
           signal,
           silent,
-          onProgress: (done, count) => console.log(`${done}/${count} frames`),
+          onProgress,
         });
         receipt.video = { ...video, output: 'story.mp4' };
         receipt.files.push('story.mp4');

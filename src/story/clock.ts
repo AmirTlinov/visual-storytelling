@@ -3,6 +3,7 @@ export interface MediaClock extends EventTarget {
   readonly paused: boolean;
   readonly ended: boolean;
   muted: boolean;
+  playbackRate?: number;
   play(): Promise<void>;
   pause(): void;
 }

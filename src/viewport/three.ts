@@ -299,6 +299,51 @@ function mount(
     get following() {
       return following;
     },
+    capture() {
+      return {
+        kind: 'three',
+        following,
+        position: camera.position.toArray(),
+        target: controls.target.toArray(),
+        aspect: camera.aspect,
+      };
+    },
+    restore(value: unknown) {
+      const state = value as {
+        kind?: string;
+        following?: boolean;
+        position?: number[];
+        target?: number[];
+        aspect?: number;
+      };
+      if (
+        state?.kind !== 'three' ||
+        typeof state.following !== 'boolean' ||
+        !state.position ||
+        !state.target ||
+        state.position.length !== 3 ||
+        state.target.length !== 3 ||
+        ![...state.position, ...state.target].every(Number.isFinite)
+      )
+        return;
+      if (state.following) {
+        reset();
+        return;
+      }
+      following = false;
+      camera.position.fromArray(state.position);
+      controls.target.fromArray(state.target);
+      if (state.aspect && Number.isFinite(state.aspect) && state.aspect > 0) {
+        const aperture = (aspect: number) =>
+          Math.sin(Math.atan(Math.tan((camera.fov * Math.PI) / 360) * Math.min(aspect, 1)));
+        camera.position
+          .sub(controls.target)
+          .multiplyScalar(aperture(state.aspect) / aperture(camera.aspect))
+          .add(controls.target);
+      }
+      controls.update();
+      invalidate();
+    },
     setObject(next: ThreeKit.Object3D, { fitView = true } = {}) {
       if (object === next) return;
       next.removeFromParent();

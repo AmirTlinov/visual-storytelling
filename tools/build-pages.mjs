@@ -158,6 +158,7 @@ export async function buildScene(source, target, options = {}) {
   };
   const configuration = new Set(['package.json', 'package-lock.json', 'scene.json']);
   async function visit(directory, output) {
+    options.signal?.throwIfAborted();
     const entries = (await readdir(directory, { withFileTypes: true })).filter((entry) => {
       const from = resolve(directory, entry.name);
       return (
@@ -179,7 +180,7 @@ export async function buildScene(source, target, options = {}) {
     for (const entry of entries)
       if (entry.isFile() && entry.name.endsWith('.html'))
         await buildPage(resolve(directory, entry.name), output, options);
-    await generateScene(directory, output);
+    await generateScene(directory, output, options);
   }
   await buildOutput(source, target, (output) => visit(source, output));
 }

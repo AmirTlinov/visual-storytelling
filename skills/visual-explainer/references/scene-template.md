@@ -1,9 +1,9 @@
 # Рассказ с исследованием
 
-Для морфингов и собственных моделей `MathMorph.model` используй [MorphStory](../../docs/morph-stories.md).
+Для морфингов и собственных моделей `MathMorph.model` используй [MorphStory](../../../docs/morph-stories.md).
 Задай `presenter: MathMorph` или `InkMorph`, параметры и операции глав: общая оболочка
-свяжет их с метками, полями, камерой и перемоткой. [Числа и тела](../../examples/morph-story/scene.js),
-[слова](../../examples/ink-story/scene.js), [связанная 2D/3D-модель](../../examples/gradient-descent/scene.js).
+свяжет их с метками, полями, камерой и перемоткой. [Числа и тела](../../../examples/morph-story/scene.js),
+[слова](../../../examples/ink-story/scene.js), [связанная 2D/3D-модель](../../../examples/gradient-descent/scene.js).
 
 Начни с ближайшего готового рисунка; общая оболочка уже подключена:
 
@@ -116,15 +116,15 @@ window.galleryReady = (async () => {
 освобождает рассказ, камеру и callbacks `shell.onDispose`: добавляй туда наблюдатели,
 подписки и движение предмета. `controller.subscribe((mode, values) => …)` сразу сообщает
 состояние и возвращает функцию отписки; `controller.onSeek(time => …)` сообщает целевое время до рендера.
-`notebook.attach(controller)` возвращает тот же `SceneHandle`, опубликованный в `root.scene`; `notebook.onDispose` регистрирует очистку у оболочки — см. [вектор](../../examples/vector/index.ts).
+`notebook.attach(controller)` возвращает тот же `SceneHandle`, опубликованный в `root.scene`; `notebook.onDispose` регистрирует очистку у оболочки — см. [вектор](../../../examples/vector/index.ts).
 
 ## Превращение предметов
 
-Вместо собственной хореографии создай `Morph.merge([Morph.box([1,1,1], 1), Morph.sphere(.5, 2)], Morph.capsule(.5, 2, 3))` и передай в `Morph3D.mount(view, operation)` или `Morph2D.mount(stage, operation, {id})`. В `render` достаточно `body.render(frame, 'merge')`; надпись, контакт и грани принадлежат телу. Для самостоятельных слов и абзацев — `await InkMorph.mount(stage, {sources, targets})` с тем же прогрессом. Для вычисления величин — `MathMorph`. [Рабочий исходник](../../examples/written-morph/scene.js), [контракт и примеры](../../docs/morphing.md).
+Вместо собственной хореографии создай `Morph.merge([Morph.box([1,1,1], 1), Morph.sphere(.5, 2)], Morph.capsule(.5, 2, 3))` и передай в `Morph3D.mount(view, operation)` или `Morph2D.mount(stage, operation, {id})`. В `render` достаточно `body.render(frame, 'merge')`; надпись, контакт и грани принадлежат телу. Для самостоятельных слов и абзацев — `await InkMorph.mount(stage, {sources, targets})` с тем же прогрессом. Для вычисления величин — `MathMorph`. [Рабочий исходник](../../../examples/written-morph/scene.js), [контракт и примеры](../../../docs/morphing.md).
 
 ## Рассказ → самостоятельный опыт → восстановление
 
-[Полный SVG-пример](../../examples/explorer-svg/scene.js) уже содержит этот цикл.
+[Полный SVG-пример](../../../examples/explorer-svg/scene.js) уже содержит этот цикл.
 При завершении голос останавливается на последнем кадре; «Исследовать» открывает поля.
 Ручной поворот и масштаб доступны при голосе. Изменение входа переводит **модель** в опыт.
 «Рассказ» и перемотка восстанавливают исходные значения выбранного времени.
@@ -197,7 +197,7 @@ view.label('Объём', () => cube.localToWorld(new T.Vector3(0, 1, 0)), {
 После изменения модели вызывай `view.invalidate()`; `shot` делает это сам, средняя кнопка и Shift+левая переносят камеру.
 `view.loadGLB(urlOrBuffer)` загружает самодостаточный GLB, включая Draco: декодер поставляется с библиотекой и работает офлайн. KTX2 требует отдельного настроенного загрузчика текстур; WebP поддерживается браузером.
 
-Арифметикой владеет [MathMorph](../../docs/morphing.md); для перестановки уже существующих ячеек используй `arrangeTensorRows` и `deliverTensorCells`, сохраняя идентичность предметов. `readableFrame` учитывает геометрию, экранные подписи и область заголовка/плеера; контракт и пример вызова находятся в [движении тензоров](../../docs/tensor-motion.md).
+Арифметикой владеет [MathMorph](../../../docs/morphing.md); для перестановки уже существующих ячеек используй `arrangeTensorRows` и `deliverTensorCells`, сохраняя идентичность предметов. `readableFrame` учитывает геометрию, экранные подписи и область заголовка/плеера; контракт и пример вызова находятся в [движении тензоров](../../../docs/tensor-motion.md).
 
 ## Проверить результат
 
@@ -219,4 +219,4 @@ view.label('Объём', () => cube.localToWorld(new T.Vector3(0, 1, 0)), {
 сигнал или карточку вместе со штрихом. У пустого пути результат `undefined`.
 Пустой след, одна точка, изменение числа точек, пунктир и обратная перемотка
 поддерживаются тем же владельцем. Время передавай через `frame.reveal(cue)`.
-[Копируемый пример](../../examples/ink-trace/scene.js) меняет число витков живого следа.
+[Копируемый пример](../../../examples/ink-trace/scene.js) меняет число витков живого следа.

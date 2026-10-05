@@ -149,6 +149,39 @@ function mount(svg: SVGSVGElement, { onInteract = () => {} } = {}) {
     get pose() {
       return { ...camera.matrix };
     },
+    capture() {
+      return { kind: 'svg', following, pose: { ...camera.matrix }, size: { ...camera.size } };
+    },
+    restore(value: unknown) {
+      const state = value as {
+        kind?: string;
+        following?: boolean;
+        pose?: { x: number; y: number; s: number };
+        size?: { w: number; h: number };
+      };
+      if (
+        state?.kind !== 'svg' ||
+        typeof state.following !== 'boolean' ||
+        !state.pose ||
+        ![state.pose.s, state.pose.x, state.pose.y].every(Number.isFinite) ||
+        state.pose.s <= 0
+      )
+        return;
+      if (state.following) {
+        reset();
+        return;
+      }
+      following = false;
+      camera.cancel();
+      const size = camera.size;
+      const old = state.size;
+      const ratio = old && old.w > 0 && old.h > 0 ? Math.min(size.w / old.w, size.h / old.h) : 1;
+      camera.set({
+        s: state.pose.s * ratio,
+        x: size.w / 2 - ((old?.w ?? size.w) / 2 - state.pose.x) * ratio,
+        y: size.h / 2 - ((old?.h ?? size.h) / 2 - state.pose.y) * ratio,
+      });
+    },
     dispose() {
       observer.disconnect();
       abort.abort();

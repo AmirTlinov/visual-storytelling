@@ -2,7 +2,7 @@
 
 Сцены и их предметную логику автор пишет свободно в JS. `sketch-audio` отвечает
 за голос, акустическое выравнивание текста, паузы и музыкальный микс.
-Код инструмента находится в `../tools/`; модели, окружение и кэш — вне скилла,
+Код инструмента находится в `../../tools/`; модели, окружение и кэш — вне скилла,
 в `~/.cache/sketch-visualization` (можно задать `SKETCH_AUDIO_CACHE`).
 
 ## Запуск
@@ -11,15 +11,15 @@
 sketch-audio doctor
 sketch-audio build narration.json --out ./audio
 sketch-audio check narration.json --timeline ./audio/timeline.json
-node ../tools/scene.mjs preview ./audio
+node ../../tools/scene.mjs preview ./audio
 ```
 
 Для прослушивания открой `/voice-preview.html` на выданном адресе; готовую сцену
 запускай той же командой `preview`, передав её каталог сборки.
 
-Если команды нет в PATH, используй `../tools/sketch-audio` из этого скилла.
-Для нового Mac с Apple Silicon: `../tools/sketch-audio setup`. Нужны `uv`, Python 3.12 и FFmpeg;
-Python-зависимости зафиксированы в `../tools/uv.lock`. Setup один раз загружает
+Если команды нет в PATH, используй `../../tools/sketch-audio` из этого скилла.
+Для нового Mac с Apple Silicon: `../../tools/sketch-audio setup`. Нужны `uv`, Python 3.12 и FFmpeg;
+Python-зависимости зафиксированы в `../../tools/uv.lock`. Setup один раз загружает
 Higgs TTS 3 BF16 (около 9.3 GB), русский выравниватель (около 1.3 GB)
 и пример музыки. Принятый мужской образец уже входит в скилл:
 `dist/assets/audio/narrator-male.wav` в библиотеке; повторно создавать голос не нужно.
@@ -32,7 +32,7 @@ Higgs TTS 3 BF16 (около 9.3 GB), русский выравниватель 
 смысловой разрыв, вернись к сцене и пересобери затронутую фразу.
 
 Минимальный сценарий для озвучки — одна мысль одним дублем; для рисунка добавь
-`cues`, как в [рабочем примере](../../examples/remainder-story/narration.json):
+`cues`, как в [рабочем примере](../../../examples/remainder-story/narration.json):
 
 ```json
 {
@@ -111,7 +111,7 @@ Higgs TTS 3 BF16 (около 9.3 GB), русский выравниватель 
 
 ```sh
 sketch-audio audition narration.json --segment question --out artifacts/voice
-node ../tools/scene.mjs preview artifacts/voice
+node ../../tools/scene.mjs preview artifacts/voice
 ```
 
 `index.html` содержит три варианта; `--seeds 42 43` задаёт свои. Выбранный `seed` запиши
@@ -252,7 +252,7 @@ visual-story review dist --out review-narrow --cue copy --width 375 --theme dark
 Бэкэнд: [Higgs TTS 3 BF16](https://huggingface.co/bosonai/higgs-tts-3-4b)
 через MLX Audio на GPU Apple Silicon;
 [русский Wav2Vec2](https://huggingface.co/jonatasgrosman/wav2vec2-large-xlsr-53-russian)
-создаёт метки. Ревизии обеих моделей закреплены в `../tools/audio/resources.py`.
+создаёт метки. Ревизии обеих моделей закреплены в `../../tools/audio/resources.py`.
 Выравниватель использует MPS, когда доступен; `--device cpu` меняет только его устройство.
 `timeline.json` сохраняет модель, ревизию, версию MLX Audio и хеш образца голоса.
 `CREDITS.txt` всегда содержит атрибуцию Boson AI. Лицензия Higgs допускает

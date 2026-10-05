@@ -21,7 +21,7 @@ try {
   const cli = join(runtime, 'tools/scene.mjs');
   const installed = JSON.parse(run(process.execPath, [cli, 'info', '--json']).toString());
   assert.equal(installed.cli.status, 'packaged');
-  for (const name of ['examples/catalog.json', 'skill/SKILL.md', 'docs/book.md'])
+  for (const name of ['examples/catalog.json', 'skills/visual-explainer/SKILL.md', 'docs/book.md'])
     await access(join(runtime, name));
   await assert.rejects(access(join(runtime, 'src')), { code: 'ENOENT' });
   const packed = JSON.parse(

@@ -7,6 +7,7 @@ export interface PlayerState {
   canBack?: boolean;
   canNext?: boolean;
   muted?: boolean;
+  rate?: number;
 }
 
 /* One player view; audio, step and SVG controllers own their respective clocks. */
@@ -30,6 +31,7 @@ function mount(
   {
     chapters = false,
     sound = false,
+    speed = false,
     forwardOnly = false,
     seekable = true,
     max = 1,
@@ -38,6 +40,7 @@ function mount(
   }: {
     chapters?: boolean;
     sound?: boolean;
+    speed?: boolean;
     forwardOnly?: boolean;
     seekable?: boolean;
     max?: number;
@@ -83,6 +86,18 @@ function mount(
   time.setAttribute('aria-live', 'off');
   element.append(seek, time);
   const mute = sound ? button('mute', 'Выключить звук') : null;
+  const rate = speed ? document.createElement('select') : null;
+  if (rate) {
+    rate.setAttribute('aria-label', 'Скорость рассказа');
+    rate.className = 've-playback-rate';
+    for (const value of [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3]) {
+      const option = document.createElement('option');
+      option.value = String(value);
+      option.textContent = `${value}×`;
+      rate.append(option);
+    }
+    element.append(rate);
+  }
   function update({
     value,
     paused,
@@ -92,6 +107,7 @@ function mount(
     canBack,
     canNext,
     muted = false,
+    rate: playbackRate = 1,
   }: PlayerState) {
     seek.value = String(value);
     if (valueText) seek.setAttribute('aria-valuetext', valueText);
@@ -102,6 +118,7 @@ function mount(
     play.title = label;
     if (back) back.disabled = !canBack;
     if (next) next.disabled = !canNext;
+    if (rate) rate.value = String(playbackRate);
     if (mute) {
       const label = muted ? 'Включить звук' : 'Выключить звук';
       mute.setAttribute('aria-label', label);
@@ -118,6 +135,7 @@ function mount(
     seek,
     time,
     mute,
+    rate,
     update,
     dispose() {
       element.replaceChildren();

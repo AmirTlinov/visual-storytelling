@@ -1,5 +1,6 @@
 import { svg } from './dom.js';
 import { color, type Pigment } from './palette.js';
+import { describeObject, type ObjectMeaning } from '../scene-objects.js';
 
 /** Placement belongs to layout; motion is relative. Labels inherit both and pigment. */
 export function object(parent: SVGElement, id: string, pigment: Pigment = 'ink') {
@@ -10,6 +11,9 @@ export function object(parent: SVGElement, id: string, pigment: Pigment = 'ink')
   return {
     element,
     content: motion,
+    describe(meaning: ObjectMeaning) {
+      describeObject(element, meaning);
+    },
     at(x: number, y: number, rotate = 0) {
       element.setAttribute('transform', `translate(${x} ${y}) rotate(${rotate})`);
     },
