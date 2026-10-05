@@ -48,6 +48,7 @@
 
 /* Keep the active input beside a long, stacked mathematical explanation. */
 @media(max-width:480px){
+  .ve-scene .ve-captions{white-space:normal;text-wrap:balance}
   .ve-scene:has([data-content-layout="fit"]:not([hidden],[hidden] *)):not(:has(>.ve-frame)) .ve-parameters{position:sticky;top:0;z-index:20;background:var(--ve-surface);grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(240px,85%);gap:16px;overflow-x:auto;scroll-snap-type:x proximity;padding:8px 4px;scroll-padding:4px}
   .ve-scene:has([data-content-layout="fit"]:not([hidden],[hidden] *)):not(:has(>.ve-frame)) .ve-parameters>.ve-control{scroll-snap-align:start;min-width:0}
 }

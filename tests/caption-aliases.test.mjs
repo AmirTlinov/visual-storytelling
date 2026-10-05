@@ -186,17 +186,32 @@ test('SceneShell uses the same display aliases for visible and accessible chapte
       assert.equal(await page.locator('[data-caption]').textContent(), wrapped);
       assert.equal(await page.locator('[data-caption]').getAttribute('role'), 'status');
       if (captions) {
-        const box = await page.locator('[data-caption]').evaluate((el) => ({
-          height: el.getBoundingClientRect().height,
-          lineHeight: parseFloat(getComputedStyle(el).lineHeight),
-          whiteSpace: getComputedStyle(el).whiteSpace,
-          overflows: el.scrollWidth > el.clientWidth,
-          top: el.getBoundingClientRect().top,
-          bottom: el.getBoundingClientRect().bottom,
-          controlsBottom: document.querySelector('[data-player]').getBoundingClientRect().bottom,
-        }));
-        assert.equal(box.whiteSpace, 'pre-line');
+        const box = await page.locator('[data-caption]').evaluate((el) => {
+          const wordsPerLine = {};
+          for (const word of el.textContent.matchAll(/\S+/g)) {
+            const range = document.createRange();
+            range.setStart(el.firstChild, word.index);
+            range.setEnd(el.firstChild, word.index + word[0].length);
+            const top = range.getBoundingClientRect().top;
+            wordsPerLine[top] = (wordsPerLine[top] ?? 0) + 1;
+          }
+          return {
+            height: el.getBoundingClientRect().height,
+            lineHeight: parseFloat(getComputedStyle(el).lineHeight),
+            whiteSpace: getComputedStyle(el).whiteSpace,
+            wordsPerLine: Object.values(wordsPerLine),
+            overflows: el.scrollWidth > el.clientWidth,
+            top: el.getBoundingClientRect().top,
+            bottom: el.getBoundingClientRect().bottom,
+            controlsBottom: document.querySelector('[data-player]').getBoundingClientRect().bottom,
+          };
+        });
+        assert.equal(box.whiteSpace, width === 375 ? 'normal' : 'pre-line');
         assert.equal(box.overflows, false);
+        assert.ok(
+          box.wordsPerLine.every((count) => count > 1),
+          JSON.stringify(box.wordsPerLine),
+        );
         const rows = box.height / box.lineHeight;
         assert.ok(
           rows >= 2 - 0.01 && rows <= (width === 375 ? 3 : 2) + 0.01,
