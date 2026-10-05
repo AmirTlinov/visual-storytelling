@@ -12,6 +12,7 @@ export const shippedExamples = [
   'product-walkthrough',
   'ink-story',
   'morph-story',
+  'connected-diagram',
 ];
 
 /** A distributable local beta: runtime, authoring tools, docs and licensed assets travel together. */
