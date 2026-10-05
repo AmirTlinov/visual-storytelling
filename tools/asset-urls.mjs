@@ -168,7 +168,7 @@ export async function embedRuntimeAssets(output) {
 }
 
 /** Vite-compatible ?url assets are embedded by the offline scene builder. */
-export function assetURLs({ onAsset } = {}) {
+export function assetURLs({ onAsset, transformModule } = {}) {
   return {
     name: 'scene-asset-urls',
     setup(build) {
@@ -178,10 +178,11 @@ export function assetURLs({ onAsset } = {}) {
       }));
       build.onLoad({ filter: /\.[cm]?[jt]sx?$/, namespace: 'file' }, async (args) => {
         const source = await readFile(args.path, 'utf8');
-        if (!source.includes('import.meta')) return;
+        const transformed = transformModule ? await transformModule(source, args.path) : source;
+        if (transformed === source && !source.includes('import.meta')) return;
         const extension = extname(args.path).slice(1);
         return {
-          contents: await moduleAssetURLs(source, args.path),
+          contents: await moduleAssetURLs(transformed, args.path),
           loader: extension.endsWith('ts')
             ? 'ts'
             : ['jsx', 'tsx'].includes(extension)

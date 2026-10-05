@@ -1,5 +1,6 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { failure } from './errors.mjs';
+import { presentSession } from './mcp/presentation.mjs';
 
 const digest = (value) =>
   createHash('sha256')
@@ -81,6 +82,7 @@ export class SessionDirectory {
       generation: session.generation,
       stateRevision: session.stateRevision,
       renderStatus: session.renderStatus,
+      observationError: session.observationError,
       status: session.renderer
         ? this.expired(session)
           ? 'unresponsive'
@@ -279,6 +281,7 @@ export class SessionDirectory {
         s.checkpoint = report.checkpoint;
         s.stateRevision = report.stateRevision;
         s.renderStatus = report.renderStatus ?? 'rendered';
+        s.observationError = report.observationError;
         s.observedAt = new Date().toISOString();
         s.ready = true;
         s.wake?.();
@@ -298,6 +301,7 @@ export class SessionDirectory {
             ack.error || 'The view could not execute this command.',
             {
               ...ack.failure,
+              current: presentSession(this.describe(s)),
               action: 'story_inspect',
             },
           ),

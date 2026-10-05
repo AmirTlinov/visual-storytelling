@@ -64,18 +64,23 @@ test('concurrent repeated preparation shares one worker and persists every reque
     alias = randomUUID();
   const input = { projectId: 'project', value: 12 };
   const started = await Promise.all([
-    runner.enqueue('build', input, requestId),
-    runner.enqueue('build', input, requestId),
-    runner.enqueue('build', input, alias),
+    runner.enqueue('review', input, requestId),
+    runner.enqueue('review', input, requestId),
+    runner.enqueue('review', input, alias),
   ]);
   assert.equal(new Set(started.map((job) => job.id)).size, 1);
   const done = await terminal(runner, started[0].id);
   assert.equal(done.status, 'succeeded');
   assert.deepEqual(done.result, { value: 12 });
+  assert.ok(
+    runner.snapshotLeases().includes(done.id),
+    'recent review evidence retains its source files',
+  );
   const reopened = new JobRunner(directory, entry);
   await reopened.start();
-  assert.equal((await reopened.enqueue('build', input, alias)).id, done.id);
-  await assert.rejects(reopened.enqueue('build', { ...input, value: 13 }, alias), /requestId/);
+  assert.equal((await reopened.enqueue('review', input, alias)).id, done.id);
+  assert.ok(reopened.snapshotLeases().includes(done.id));
+  await assert.rejects(reopened.enqueue('review', { ...input, value: 13 }, alias), /requestId/);
   await reopened.close();
 });
 

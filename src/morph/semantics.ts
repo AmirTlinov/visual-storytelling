@@ -1,6 +1,7 @@
 import type { ObjectMeaning } from '../scene-objects.js';
 import type { MathMorphFrame, MathPart } from './types.js';
 import { mathNumber } from './numbers.js';
+import { sourceOf } from '../scene-source.js';
 
 interface SemanticPart {
   part: MathPart;
@@ -9,14 +10,17 @@ interface SemanticPart {
 }
 
 /** Both renderers expose the identities and origins authored by the same math plan. */
-export function mathSemantics(id: string, file: string) {
+export function mathSemantics(id: string, file: string, operation: () => unknown) {
   let frame: MathMorphFrame | undefined;
   const originIds = new Map<string, string>();
   const parts = new Map<string, SemanticPart>();
   const meaning: ObjectMeaning = {
     label: 'Математическое преобразование',
     value: () => frame?.result,
-    source: { file },
+    get source() {
+      return sourceOf(operation());
+    },
+    implementation: { file },
     inputs: () => [...new Set(originIds.values())],
     provenance: () =>
       frame && {
@@ -62,7 +66,10 @@ export function mathSemantics(id: string, file: string) {
                 return `Величина ${mathNumber(record.part.value)}`;
               },
               value: () => record.part.value,
-              source: { file },
+              get source() {
+                return sourceOf(operation());
+              },
+              implementation: { file },
               inputs: () => [
                 ...new Set(
                   (record.part.origins ?? []).flatMap((origin) => {

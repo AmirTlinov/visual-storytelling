@@ -26,7 +26,8 @@ export const command = z.discriminatedUnion('type', [
 ]);
 export const viewReport = z.object({
   stateRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  renderStatus: z.enum(['rendered', 'prepared']).optional(),
+  renderStatus: z.enum(['rendered', 'prepared', 'failed']).optional(),
+  observationError: z.string().max(4096).optional(),
   state: z.record(z.string(), z.unknown()),
   checkpoint: z.object({
     time: z.number().finite().nonnegative(),

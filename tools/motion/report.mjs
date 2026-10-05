@@ -141,7 +141,10 @@ export async function writeMotionReport(report, out, { context } = {}) {
   report.previews = { available: true };
   if (!context) {
     try {
-      browser = await chromium.launch({ timeout: 5000 });
+      browser = await chromium.launch({
+        timeout: 5000,
+        executablePath: process.env.VISUAL_STORY_CHROMIUM,
+      });
     } catch (error) {
       report.previews = { available: false, reason: startupFailureReason(error) };
     }

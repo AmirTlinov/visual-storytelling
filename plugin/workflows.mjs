@@ -1,4 +1,14 @@
-import { readFile, mkdir, mkdtemp, cp, symlink, access, rm, rename } from 'node:fs/promises';
+import {
+  readFile,
+  mkdir,
+  mkdtemp,
+  cp,
+  symlink,
+  access,
+  rm,
+  rename,
+  realpath,
+} from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
@@ -7,7 +17,7 @@ import { createScene } from '../tools/create-scene.mjs';
 import { buildScene } from '../tools/build-pages.mjs';
 import { packDirectory } from '../tools/standalone.mjs';
 import { deliver } from '../tools/deliver.mjs';
-import { snapshotProject, projectFiles, digest } from './project-files.mjs';
+import { snapshotProject, projectFiles, projectFile, digest } from './project-files.mjs';
 import { writeJSON, readJSON } from './runtime/storage.mjs';
 import { prepareEnvironment } from './environment.mjs';
 import { buildNarration } from '../tools/narration.mjs';
@@ -241,5 +251,63 @@ export const workflows = {
       sourceRevision: source.revision,
       files: result.files.map((file) => join(output, file)),
     };
+  },
+  async review(input, task) {
+    const { snapshot, source, preparedRevision, silent } = await prepare(input, task);
+    const cli = join(snapshot, 'node_modules/@visual-storytelling/core/tools/scene.mjs');
+    await access(cli).catch((error) => {
+      if (error.code !== 'ENOENT') throw error;
+      throw new Error(
+        'The pinned project runtime has no review CLI. Migrate this project before reviewing it.',
+      );
+    });
+    task.progress('Собираю сцену для просмотра…');
+    await buildScene(snapshot, join(snapshot, 'dist'), { signal: task.signal, silent });
+    await unchangedInputs(snapshot, preparedRevision);
+    await prepareEnvironment(input.data, { ...task, browser: true });
+    const options = input.options ?? {};
+    const args = [cli, 'review', join(snapshot, 'dist')];
+    for (const key of ['cue', 'from', 'seconds', 'frames', 'width', 'height', 'theme', 'object'])
+      if (options[key] !== undefined) args.push('--' + key, String(options[key]));
+    if (options.reduced) args.push('--reduced');
+    if (options.crop) args.push('--crop', options.crop.join(','));
+    if (options.scenario) args.push('--scenario', await projectFile(snapshot, options.scenario));
+    const parent = join(input.projectPath, 'artifacts');
+    await mkdir(parent, { recursive: true });
+    const output = join(parent, task.jobId + '-review');
+    // Reports contain their own absolute inspection command. Keep that location stable,
+    // claim a fresh directory, and expose it only after the complete review passes its guard.
+    await mkdir(output);
+    try {
+      task.progress('Просматриваю сцену и сохраняю наблюдения…');
+      const { stdout } = await execute(process.execPath, [...args, '--out', output], {
+        cwd: snapshot,
+        signal: task.signal,
+        maxBuffer: 2_000_000,
+      }).catch((error) => {
+        // Exit 2 is a completed review that recorded an interaction error. Its evidence
+        // is the result the author needs; only execution failure discards partial output.
+        if (error.code === 2 && !task.signal.aborted) return { stdout: error.stdout };
+        throw error;
+      });
+      const result = JSON.parse(stdout);
+      task.signal.throwIfAborted();
+      await unchangedInputs(snapshot, preparedRevision);
+      const canonicalOutput = await realpath(output);
+      for (const key of ['path', 'data', 'session', 'captureManifest']) {
+        if (typeof result[key] !== 'string' || !result[key].startsWith(canonicalOutput + '/'))
+          throw new Error(
+            'The pinned review CLI did not return a complete report. Migrate the project before reviewing it.',
+          );
+        await access(result[key]);
+      }
+      const files = ['path', 'image', 'framesImage', 'photometryImage']
+        .map((key) => result[key])
+        .filter((path) => typeof path === 'string' && path.startsWith(canonicalOutput + '/'));
+      return { ...result, sourceRevision: source.revision, files };
+    } catch (error) {
+      await rm(output, { recursive: true, force: true });
+      throw error;
+    }
   },
 };

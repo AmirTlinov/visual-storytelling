@@ -56,7 +56,10 @@ export async function captureBrowser(options, out) {
         .find((p) => p.url() === url);
       if (!page) throw new Error(`No existing CDP tab matches ${url}`);
     } else {
-      browser = await chromium.launch({ headless: !scenario.headed });
+      browser = await chromium.launch({
+        headless: !scenario.headed,
+        executablePath: process.env.VISUAL_STORY_CHROMIUM,
+      });
       page = await browser.newPage({
         viewport: { width: scenario.width, height: scenario.height },
         colorScheme: scenario.theme,

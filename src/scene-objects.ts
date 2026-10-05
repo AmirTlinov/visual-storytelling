@@ -1,22 +1,31 @@
+import { containingSource, sourceAt, sourceOf, type SourceSpan } from './scene-source.js';
+
 export interface ObjectMeaning {
   label: string;
   value?: () => unknown;
   unit?: string;
-  source?: { file: string; line?: number; column?: number };
+  source?: SourceSpan;
+  implementation?: { file: string };
   inputs?: () => readonly string[];
   provenance?: () => unknown;
 }
-const meanings = new WeakMap<Element, ObjectMeaning>();
+const meanings = new WeakMap<Element, { meaning: ObjectMeaning }>();
 
 /** Meaning belongs to the rendered object. Geometry and labels keep its existing stable ID. */
 export function describeObject(element: Element, meaning: ObjectMeaning) {
   if (!element.getAttribute('data-object')?.trim() || !meaning.label.trim())
     throw new Error('A scene object needs a stable ID and a meaningful label');
-  meanings.set(element, meaning);
+  const registration = { meaning };
+  meanings.set(element, registration);
+  sourceAt(element, sourceOf(meaning) ?? containingSource(element.parentElement));
   element.setAttribute('aria-label', meaning.label);
   element.setAttribute('role', 'button');
   element.setAttribute('tabindex', '0');
-  return () => meanings.delete(element);
+  return () => {
+    if (meanings.get(element) !== registration) return;
+    meanings.delete(element);
+    sourceAt(element, undefined);
+  };
 }
 
 export function sceneObjects(root: Element) {
@@ -39,13 +48,14 @@ export function sceneObjects(root: Element) {
     }
     return [...representations].map(([id, elements]) => {
       const node = elements[0]!;
-      const meaning = meanings.get(node)!;
+      const meaning = meanings.get(node)!.meaning;
       return {
         id,
         label: meaning.label,
         value: meaning.value?.(),
         unit: meaning.unit,
-        source: meaning.source,
+        source: meaning.source ?? sourceOf(node),
+        implementation: meaning.implementation,
         inputs: meaning.inputs?.(),
         provenance: meaning.provenance?.(),
         visible: elements.some((node) => !node.closest('[aria-hidden="true"]') && isRendered(node)),

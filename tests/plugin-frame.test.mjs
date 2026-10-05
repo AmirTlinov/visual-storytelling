@@ -19,7 +19,7 @@ test('a native host without RAF keeps prepared observations, reversible suspensi
       const shell=SceneShell.mount(root,{title:'Async scene',parameters:[{key:'x',label:'X',value:1,min:0,max:10}]});
       const drawn=document.createElement('output'); drawn.id='drawn'; shell.stage.append(drawn);
       shell.attachStory({script:{duration:4,cues:{all:{start:0,end:4}},segments:[{id:'all',text:'Long lesson',start:0,end:4,words:Array.from({length:2000},()=>({text:'word',start:0,end:4}))}]},stateAt:()=>({x:1,payload:'x'.repeat(300000)}),
-        prepare(values){if(values.x===8)throw new Error('Candidate cannot restore this condition');if(values.x===7)return new Promise(resolve=>setTimeout(resolve,180))},
+        prepare(values){if(values.x===8)return new Promise((_,reject)=>setTimeout(()=>reject(new Error('Candidate cannot restore this condition')),25));if(values.x===7)return new Promise(resolve=>setTimeout(resolve,180))},
         render(values){drawn.textContent=values.x},
       });
       window.requestAnimationFrame=()=>123;
@@ -112,6 +112,60 @@ test('a native host without RAF keeps prepared observations, reversible suspensi
     });
     assert.equal(accepted.error, undefined);
     assert.equal(accepted.report.checkpoint.values.x, 9);
+
+    const failed = await command({
+      op: 'control',
+      stateRevision: accepted.report.stateRevision,
+      commands: [{ type: 'parameters', values: { x: 8 } }],
+    });
+    assert.match(failed.error, /cannot restore/);
+    assert.equal(failed.failure.completedCommands, 0);
+    assert.equal(failed.failure.commandIndex, 0);
+    assert.equal(failed.report.stateRevision, accepted.report.stateRevision + 1);
+    assert.equal(failed.report.renderStatus, 'failed');
+    assert.equal(failed.report.state.parameters[0].value, 8);
+    assert.equal(failed.report.checkpoint.values.x, 8);
+    assert.equal(await frame.locator('#drawn').innerText(), '9');
+    const stopped = await command({ op: 'control', commands: [{ type: 'pause' }] });
+    assert.equal(stopped.error, undefined, 'pause remains available after preparation failure');
+    assert.equal(stopped.report.renderStatus, 'failed');
+    assert.equal(stopped.report.state.playing, false);
+    const failedState = await command({ op: 'inspect' });
+    assert.equal(failedState.error, undefined, 'inspect exposes the failed accepted state');
+    assert.equal(failedState.report.renderStatus, 'failed');
+    assert.match(failedState.report.observationError, /cannot restore/);
+    assert.equal(failedState.report.state.parameters[0].value, 8);
+    const corrected = await command({
+      op: 'control',
+      stateRevision: failedState.report.stateRevision,
+      commands: [{ type: 'parameters', values: { x: 7 } }],
+    });
+    assert.equal(corrected.error, undefined, 'correction needs no manual input or reopening');
+    assert.equal(corrected.report.renderStatus, 'prepared');
+    assert.equal(corrected.report.observationError, undefined);
+    assert.equal(await frame.locator('#drawn').innerText(), '7');
+    const partial = await command({
+      op: 'control',
+      stateRevision: corrected.report.stateRevision,
+      commands: [
+        { type: 'seek', time: 0.5 },
+        { type: 'focus', ids: ['missing'] },
+      ],
+    });
+    assert.equal(partial.failure.completedCommands, 1);
+    assert.equal(partial.failure.commandIndex, 1);
+    assert.equal(partial.report.state.time, 0.5);
+    assert.equal(partial.report.stateRevision, corrected.report.stateRevision + 1);
+    const afterPartial = await command({ op: 'inspect' });
+    assert.equal(afterPartial.report.renderStatus, 'prepared');
+    assert.equal(afterPartial.report.state.time, 0.5);
+    assert.equal(afterPartial.report.observationError, undefined);
+    const resumed = await command({
+      op: 'control',
+      stateRevision: afterPartial.report.stateRevision,
+      commands: [{ type: 'parameters', values: { x: 9 } }],
+    });
+    assert.equal(resumed.error, undefined);
 
     const mountPreview = async () => {
       await page.evaluate((html) => {

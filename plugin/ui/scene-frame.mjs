@@ -16,6 +16,7 @@ let scene,
   lastLayout,
   commandController,
   renderStatus = 'prepared',
+  observationError,
   disposed = false;
 const gestures = new Set();
 const hostRequests = new Map();
@@ -72,6 +73,7 @@ const rendered = async (signal) => {
     }),
     signal,
   );
+  observationError = undefined;
 };
 const send = (value) => {
   if (!disposed) parent.postMessage({ channel, generation: config.generation, ...value }, '*');
@@ -89,7 +91,8 @@ async function acknowledge(request, reason) {
     await rendered(controller.signal);
     if (!disposed) send({ type: 'ack', id: request.id, report: report(reason) });
   } catch (error) {
-    send({ type: 'ack', id: request.id, error: error.message });
+    // Pausing already succeeded. A broken preparation must not make stop unavailable.
+    send({ type: 'ack', id: request.id, report: failedReport(error, reason) });
   } finally {
     clearTimeout(timer);
   }
@@ -123,8 +126,16 @@ const report = (reason, detail = 'state') => ({
   checkpoint: scene.capture(),
   stateRevision,
   renderStatus,
+  observationError,
   reason,
 });
+function failedReport(error, reason, detail) {
+  // These are the accepted runtime inputs, not a completed or displayed frame.
+  // Publishing their revision is essential for inspect -> corrective control.
+  renderStatus = 'failed';
+  observationError = String(error?.message ?? error).slice(0, 4096);
+  return report(reason, detail === 'presentation' ? 'state' : detail);
+}
 function renew() {
   clearTimeout(leaseTimer);
   leaseTimer = setTimeout(() => {
@@ -151,7 +162,10 @@ async function observe(reason) {
     await rendered();
     if (scene && !suspended) send({ type: 'report', report: report(reason) });
   } catch (error) {
-    if (!suspended) send({ type: 'error', message: error.message });
+    if (scene && !suspended) {
+      send({ type: 'report', report: failedReport(error, reason) });
+      send({ type: 'error', message: observationError });
+    }
   }
 }
 for (const type of [
@@ -321,8 +335,9 @@ addEventListener('message', (event) => {
         send({
           type: 'ack',
           id: request.id,
-          error: error.message,
-          failure: error.code?.startsWith('scene_control_')
+          report: scene ? failedReport(error, request.op, request.detail) : undefined,
+          error: request.op === 'inspect' && scene ? undefined : String(error?.message ?? error),
+          failure: error?.code?.startsWith('scene_control_')
             ? {
                 code: error.code,
                 commandIndex: error.commandIndex,

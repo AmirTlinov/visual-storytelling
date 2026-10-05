@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { resolvePackage } from './build-info.mjs';
 
 /** A scene owns its generator; the builder owns its output and runtime dependencies. */
-export async function generateScene(source, output, { signal } = {}) {
+export async function generateScene(source, output, { signal, sourceRoot = source } = {}) {
   let config;
   try {
     config = JSON.parse(await readFile(join(source, 'scene.json'), 'utf8'));
@@ -34,6 +34,7 @@ export async function generateScene(source, output, { signal } = {}) {
           ? join(runtime, 'tools')
           : fileURLToPath(new URL('.', import.meta.url)),
         VISUAL_STORY_OUTPUT: resolve(output),
+        VISUAL_STORY_SOURCE: resolve(sourceRoot),
       },
       signal,
       maxBuffer: 4_000_000,

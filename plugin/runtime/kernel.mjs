@@ -35,7 +35,9 @@ const watched = new ProjectWatch(async (id) => {
       .list(id)
       .some(
         (j) =>
-          j.sourceRevision === project.sourceRevision && ['queued', 'running'].includes(j.status),
+          ['build', 'create'].includes(j.kind) &&
+          j.sourceRevision === project.sourceRevision &&
+          ['queued', 'running'].includes(j.status),
       )
   )
     return;
@@ -490,6 +492,16 @@ const operations = {
       requestId,
     );
   },
+  async review({ projectId, sourceRevision, requestId, options }) {
+    const project = await projects.inspect(projectId);
+    if (sourceRevision !== project.sourceRevision)
+      throw new Error('Source changed. Inspect before reviewing this revision.');
+    return jobs.enqueue(
+      'review',
+      { data, projectId, projectPath: project.path, sourceRevision, options },
+      requestId,
+    );
+  },
   async migrate({ projectId, sourceRevision, requestId }) {
     const project = await projects.inspect(projectId);
     if (sourceRevision !== project.sourceRevision)
@@ -556,7 +568,7 @@ const operations = {
     return { detached };
   },
   async list() {
-    return [...sessions.sessions.values()].map((s) => sessions.describe(s));
+    return [...sessions.sessions.values()].map(decorate);
   },
 };
 

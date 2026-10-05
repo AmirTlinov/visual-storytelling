@@ -28,6 +28,7 @@ import { deformation } from './construction/deformation.js';
 import { createModel } from './model/index.js';
 import type { ConstructionPlan, ScalarFunction } from './construction/types.js';
 import { clamp, smooth, mix, mathNumber, equation } from './numbers.js';
+import { sourceAt, sourceOf } from '../scene-source.js';
 const expression = (formula: string) => formula.split(/ [=≈] /)[0]!;
 function quantity(n: number) {
   if (!(n > 0) || !Number.isFinite(n))
@@ -124,6 +125,11 @@ export function mathPlan(
   operation: MathOperation | MathMorphPlan | ConstructionPlan,
 ): MathMorphPlan | ConstructionPlan;
 export function mathPlan(
+  operation: MathOperation | MathMorphPlan | ConstructionPlan,
+): MathMorphPlan | ConstructionPlan {
+  return sourceAt(preparePlan(operation), sourceOf(operation));
+}
+function preparePlan(
   operation: MathOperation | MathMorphPlan | ConstructionPlan,
 ): MathMorphPlan | ConstructionPlan {
   if ('sample' in operation) return operation;

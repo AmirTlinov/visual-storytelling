@@ -48,7 +48,7 @@ function mount(
     lettering(sheet.layer, '', { size: 20 }),
   ];
   const notes = new Map<string, ReturnType<typeof lettering>>();
-  const semantics = mathSemantics(options.id, 'src/morph/svg.ts');
+  const semantics = mathSemantics(options.id, 'src/morph/svg.ts', () => configured);
   // Transparent logical regions share the body coordinates and the common scene selection.
   // Sibling targets retain keyboard access instead of nesting buttons inside the root object.
   const semanticLayer = svg('g'),

@@ -391,6 +391,12 @@ test('a cold-scene execution failure preserves the completed command prefix thro
   await directory.exchange({
     ...view,
     wait: false,
+    report: viewReport.parse({
+      ...report(1, 4),
+      state: { ...report(1, 4).state, snapshot: { payload: 'x'.repeat(300000) } },
+      renderStatus: 'failed',
+      observationError: 'Object is unavailable in this chapter.',
+    }),
     acknowledgements: [
       acknowledgement.parse({
         id: command.id,
@@ -405,6 +411,22 @@ test('a cold-scene execution failure preserves the completed command prefix thro
       error.code === 'scene_control_failed' &&
       error.completedCommands === 1 &&
       error.commandIndex === 1 &&
+      error.current.stateRevision === 1 &&
+      error.current.state.time === 4 &&
+      error.current.state.snapshot === undefined &&
+      error.current.renderStatus === 'failed' &&
       error.action === 'story_inspect',
   );
+  const correction = request(directory, session.id, {
+    op: 'control',
+    buildRevision: build.revision,
+    stateRevision: 1,
+    commands: [{ type: 'seek', time: 0 }],
+  });
+  const [next] = (await directory.exchange(view)).commands;
+  await acknowledge(directory, view, next.id, report(2, 0));
+  const recovered = await correction;
+  assert.equal(recovered.stateRevision, 2);
+  assert.equal(recovered.renderStatus, 'rendered');
+  assert.equal(recovered.observationError, undefined);
 });

@@ -53,5 +53,7 @@ export function toolResult(value) {
     ? `${value.title}. ${playback}; position ${state.time.toFixed(2)} / ${state.duration.toFixed(2)} s; ${state.mode}. Session ${value.sessionId}.`
     : `${value.title ?? 'Visual Storytelling'}. Session ${value.sessionId}.`;
   if (value.renderStatus === 'prepared') text += ' Frame prepared; host repaint deferred.';
+  if (value.renderStatus === 'failed')
+    text += ` Scene observation failed: ${value.observationError ?? 'inspect the accepted state before correcting it'}. State describes accepted inputs, not a completed frame.`;
   return { content: [{ type: 'text', text }], structuredContent: value };
 }

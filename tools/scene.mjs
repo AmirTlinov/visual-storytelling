@@ -93,7 +93,7 @@ if (process.argv[2] === 'characters') {
   const [command, directory = '.'] = positionals,
     destination = resolve(directory);
   const catalog = ['examples', 'new'].includes(command) ? await readCatalog() : undefined;
-  const newUsage = `visual-story new DIRECTORY --example NAME [--no-audio | --silent${hasSpeechTools ? ' | --audio' : ''}]`;
+  const newUsage = `visual-story new DIRECTORY --example NAME [--no-audio | --silent | --audio]`;
   const help = `${newUsage}
 visual-story examples [QUERY] [--json] [--recommended] [--group explanations|techniques]
 visual-story info [DIRECTORY] [--json]        actual packages, build identity and stale sources
@@ -122,7 +122,7 @@ Compare content even when versions match; detect stale sources or modified runti
   else if (values.help || command === 'help' || !command)
     console.log(
       command === 'new'
-        ? `${newUsage}\n\n--no-audio defers narration while keeping its editable script.\n--silent creates a scene without speech files or audio controls, preserving cues and asset credits.\n${hasSpeechTools ? '--audio synthesizes the template narration immediately.' : 'For speech, use story_voice in Codex, or add voice.json with {"provider":"macos","enabled":true,"language":"ru-RU"} to the project, then run visual-story audio DIRECTORY. The system voice must be installed for that language.'}`
+        ? `${newUsage}\n\n--no-audio defers narration while keeping its editable script.\n--silent creates a scene without speech files or audio controls, preserving cues and asset credits.\n--audio synthesizes the template narration immediately using voice.json.${hasSpeechTools ? ' Without a provider, the full repository uses local Higgs.' : ' Without a provider, an installed system voice is selected and saved in the project.'}`
         : command === 'deliver'
           ? `visual-story deliver DIRECTORY [--out artifacts/release] [--formats mp4,html,srt,vtt,source]
 
@@ -176,18 +176,6 @@ Re-run the same command after changing a line; unchanged voice segments use the 
     console.log(text);
     if (missing.length) process.exitCode = 1;
   } else if (command === 'new') {
-    if (!hasSpeechTools && values.audio && catalog[values.example]) {
-      const voice = await readFile(
-        join(root, 'examples', values.example, 'voice.json'),
-        'utf8',
-      ).then(JSON.parse, (error) => {
-        if (error.code !== 'ENOENT') throw error;
-      });
-      if (voice?.provider !== 'macos')
-        throw new Error(
-          'This template has no system voice selected and this runtime does not include Higgs. Create with --no-audio, then use story_voice or configure voice.json with provider:"macos" before visual-story audio DIRECTORY.',
-        );
-    }
     await createScene(destination, {
       example: values.example,
       deferAudio: values['no-audio'],

@@ -1,4 +1,5 @@
 import type { ChapterPresentation, SceneChapter } from './composition.js';
+import { sourceAt, sourceOf } from '../scene-source.js';
 
 export interface MountedChapter {
   element: HTMLDivElement;
@@ -19,6 +20,7 @@ export function chapterPresentations(chapters: readonly SceneChapter[], parent: 
     try {
       item.drawing.dispose();
     } finally {
+      sourceAt(item.element, undefined);
       item.element.remove();
     }
   }
@@ -29,6 +31,7 @@ export function chapterPresentations(chapters: readonly SceneChapter[], parent: 
     signal.throwIfAborted();
     if (mounted.has(index)) return;
     const element = document.createElement('div');
+    sourceAt(element, sourceOf(chapters[index]));
     element.dataset.chapter = chapters[index]!.id;
     element.inert = true;
     // Hidden visibility keeps the actual viewport dimensions available during mount/capture.
@@ -45,6 +48,7 @@ export function chapterPresentations(chapters: readonly SceneChapter[], parent: 
       element.style.removeProperty('visibility');
       mounted.set(index, { element, drawing });
     } catch (cause) {
+      sourceAt(element, undefined);
       element.remove();
       throw cause;
     }

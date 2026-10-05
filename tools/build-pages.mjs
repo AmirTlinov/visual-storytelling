@@ -12,13 +12,20 @@ import { checkNarration, setNarrationMode, playbackTimeline } from './narration.
 import { resolvePackage } from './build-info.mjs';
 import { readCatalog } from './catalog.mjs';
 import { writeBundleNotices } from './bundle-notices.mjs';
-import { writeSourceReferences } from './build-sources.mjs';
+import { sourceAnnotations, writeSourceReferences } from './build-sources.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 export async function buildPage(
   source,
   target,
-  { sourcePackage = false, tsconfig, cdn = false, html: suppliedHTML, silent = false } = {},
+  {
+    sourcePackage = false,
+    sourceRoot = dirname(source),
+    tsconfig,
+    cdn = false,
+    html: suppliedHTML,
+    silent = false,
+  } = {},
 ) {
   let html = suppliedHTML ?? (await readFile(source, 'utf8'));
   if (silent) html = setNarrationMode(html, true);
@@ -63,6 +70,14 @@ export async function buildPage(
   await mkdir(target, { recursive: true });
   if (code.trim()) {
     const assets = new Set();
+    const runtimeRoot = sourcePackage
+      ? root
+      : await resolvePackage('@visual-storytelling/core', dirname(source));
+    const transformModule = await sourceAnnotations({
+      directory: sourceRoot,
+      runtimeRoot,
+      sourcePackage,
+    });
     const result = await build({
       stdin: {
         contents: await moduleAssetURLs(code, source),
@@ -79,7 +94,7 @@ export async function buildPage(
       ...(tsconfig ? { tsconfig } : { tsconfigRaw: { compilerOptions: {} } }),
       ...(sourcePackage ? { alias: sourceAliases } : {}),
       plugins: [
-        assetURLs({ onAsset: (file) => assets.add(file) }),
+        assetURLs({ onAsset: (file) => assets.add(file), transformModule }),
         ...(cdn
           ? [
               {
@@ -127,10 +142,8 @@ export async function buildPage(
     });
     await writeBundleNotices(out, result.metafile, { assets });
     await writeSourceReferences(out, result.metafile, {
-      directory: dirname(source),
-      runtimeRoot: sourcePackage
-        ? root
-        : await resolvePackage('@visual-storytelling/core', dirname(source)),
+      directory: sourceRoot,
+      runtimeRoot,
     });
     if (Object.values(result.metafile.outputs).some((output) => output.cssBundle)) {
       const at =
@@ -161,6 +174,7 @@ export async function buildScene(source, target, options = {}) {
   const tsconfig = resolve(source, 'tsconfig.json');
   options = {
     ...options,
+    sourceRoot: source,
     tsconfig: await access(tsconfig).then(
       () => tsconfig,
       () => undefined,

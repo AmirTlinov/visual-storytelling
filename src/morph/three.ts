@@ -71,7 +71,7 @@ function mount(
     frame: currentFrame,
   });
   const id = options.id ?? 'math-morph';
-  const semantics = mathSemantics(id, 'src/morph/three.ts');
+  const semantics = mathSemantics(id, 'src/morph/three.ts', () => configured);
   const parts = new Map<string, { object: Object3D; dispose(): void }>();
   const rootMeaning = view.describe(object, id, semantics.meaning, {
     bounds: () => bounds.clone().applyMatrix4(object.matrixWorld),

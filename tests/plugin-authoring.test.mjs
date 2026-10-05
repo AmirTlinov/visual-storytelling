@@ -134,12 +134,14 @@ test(
       const voiceList = (await call('story_voice', { projectId: project.id })).structuredContent;
       assert.equal(voiceList.ready, true);
       assert.ok(voiceList.voices.length);
+      const selectedVoice =
+        voiceList.voices.find((voice) => voice.language.startsWith('ru')) ?? voiceList.voices[0];
       const voiceDisabled = await call('story_voice', {
         projectId: project.id,
         sourceRevision: undone.structuredContent.project.sourceRevision,
         requestId: randomUUID(),
         enabled: false,
-        voice: voiceList.voices[0].id,
+        voice: selectedVoice.id,
         language: 'ru',
       });
       await finish(voiceDisabled.structuredContent.job.id);
@@ -153,7 +155,7 @@ test(
       await finish(narrated.structuredContent.job.id);
       const voiceSettings = (await call('story_voice', { projectId: project.id })).structuredContent
         .settings;
-      assert.equal(voiceSettings.voice, voiceList.voices[0].id);
+      assert.equal(voiceSettings.voice, selectedVoice.id);
       assert.equal(
         voiceSettings.language,
         'ru',
@@ -248,6 +250,25 @@ test(
       }
       assert.ok(copied, 'the restored archive is an independent editable project');
       assert.notEqual(copied.id, project.id);
+      const spokenCLI = join(directory, 'spoken-cli');
+      await promisify(execFile)(
+        resolve('.plugin-release/runtime/node'),
+        [
+          resolve('.plugin-release/tools/scene.mjs'),
+          'new',
+          spokenCLI,
+          '--example',
+          'explorer-svg',
+          '--audio',
+        ],
+        { env: { ...process.env, VISUAL_STORY_DATA_DIR: join(directory, 'data') }, timeout: 60000 },
+      );
+      const chosen = JSON.parse(await readFile(join(spokenCLI, 'voice.json'), 'utf8'));
+      assert.equal(chosen.provider, 'macos');
+      assert.equal(chosen.enabled, true);
+      assert.ok(chosen.voice);
+      assert.equal((await readFile(join(spokenCLI, 'audio.wav'))).toString('ascii', 0, 4), 'RIFF');
+
       assert.equal(
         (await call('story_inspect', {})).structuredContent.sessions.find(
           (s) => s.sessionId === sessionId,

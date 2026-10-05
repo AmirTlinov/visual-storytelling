@@ -107,6 +107,7 @@ export class JobRunner {
           action: {
             create: 'story_create',
             produce: 'story_produce',
+            review: 'story_review',
             migrate: 'story_migrate',
             build: 'story_open',
           }[job.kind],
@@ -161,7 +162,9 @@ export class JobRunner {
       ...new Set(
         [...this.jobs.values()].flatMap((job) =>
           ['queued', 'running', 'cancelling'].includes(job.status) ||
-          (recent.has(job.id) && ['failed', 'cancelled', 'interrupted'].includes(job.status))
+          (recent.has(job.id) &&
+            (['failed', 'cancelled', 'interrupted'].includes(job.status) ||
+              (job.kind === 'review' && job.status === 'succeeded')))
             ? [job.id, job.input.resumeFrom].filter(Boolean)
             : [],
         ),

@@ -80,10 +80,51 @@ export function authoringTools(server, runtime, uri, safely) {
     safely(async (args) => result(await runtime.call('produce', args), 'Готовлю выпуск.')),
   );
   server.registerTool(
+    'story_review',
+    {
+      description:
+        'Review a fixed project revision with its pinned CLI. Returns a persistent job; story_inspect reads progress and the final HTML, frame, and evidence paths. By default captures deterministic scene checkpoints, not playback cadence. Select a cue or time window; scenario names an authored JSON file for a real browser interaction. The source stays unchanged. Use story_cancel or story_retry for interrupted work.',
+      inputSchema: {
+        projectId,
+        sourceRevision: z.string(),
+        requestId,
+        options: z
+          .object({
+            cue: z.string().min(1).max(256).optional(),
+            from: z.number().finite().nonnegative().optional(),
+            seconds: z.number().finite().positive().optional(),
+            frames: z.number().int().min(2).max(32).optional(),
+            width: z.number().int().min(320).max(3840).optional(),
+            height: z.number().int().min(240).max(3840).optional(),
+            theme: z.enum(['light', 'dark']).optional(),
+            reduced: z.boolean().optional(),
+            object: z.string().min(1).max(256).optional(),
+            crop: z
+              .tuple([
+                z.number().finite().nonnegative(),
+                z.number().finite().nonnegative(),
+                z.number().finite().positive(),
+                z.number().finite().positive(),
+              ])
+              .optional(),
+            scenario: z.string().min(1).max(500).optional(),
+          })
+          .strict()
+          .refine(
+            (options) => !options.scenario || !options.cue,
+            'Use a cue for checkpoints, or a scenario for browser interaction.',
+          )
+          .optional(),
+      },
+      annotations: changeView,
+    },
+    safely(async (args) => result(await runtime.call('review', args), 'Готовлю просмотр сцены.')),
+  );
+  server.registerTool(
     'story_cancel',
     {
       description:
-        'Cancel a queued or running preparation/export. Cancellation is confirmed after its worker releases resources.',
+        'Cancel a queued or running preparation, review or export. Cancellation is confirmed after its worker releases resources.',
       inputSchema: { jobId: z.string().uuid() },
       annotations: changeView,
     },
