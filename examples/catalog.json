@@ -541,6 +541,24 @@
     "guides": ["docs/book.md", "docs/characters.md"],
     "recommended": true
   },
+  "notebook-entry": {
+    "title": "Тесла · Живая страница",
+    "summary": "Вход в раскрытую тетрадь с одним временем: ток движется прямо во время приближения, тот же SVG остаётся интерактивным. Готовое подключение к существующему ролику.",
+    "page": "index.html",
+    "source": "scene.js",
+    "time": 3.6,
+    "checkpoints": [0, 2, 3.4, 3.8, 4, 6, 8],
+    "group": "explanations",
+    "tags": [
+      "тетрадь",
+      "персонажи",
+      "живой SVG",
+      "NotebookPresentation",
+      "камера",
+      "электричество"
+    ],
+    "guides": ["docs/book.md", "docs/characters.md"]
+  },
   "tesla-circuit": {
     "title": "Тесла · Путь к свету",
     "summary": "Тесла подходит к доске и размыкает электрическую цепь; тот же выключатель, источник и лампа переходят на интерактивную страницу.",

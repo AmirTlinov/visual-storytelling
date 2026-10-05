@@ -99,17 +99,27 @@ export function notebookOpening(view: Viewport3DHandle, topic: string) {
   let previousSource: NotebookSource | undefined, previousPage: HTMLCanvasElement | undefined;
   return {
     root,
-    render(progress: number, source: NotebookSource, page: HTMLCanvasElement) {
+    render(
+      progress: number,
+      source: NotebookSource,
+      page: HTMLCanvasElement | { liveAspect: number },
+    ) {
       // At the close establishing pose the complete book must fit. The later orbit enters it.
       framed = progress >= 0.64 && progress <= 0.68;
-      const { model, project } = notebookCamera(source, progress);
+      const live = 'liveAspect' in page;
+      const { model, project } = notebookCamera(
+        source,
+        progress,
+        live ? page.liveAspect : undefined,
+      );
       view.shot(project);
       if (source !== previousSource) {
         roomMap.image = source.image;
         roomMap.needsUpdate = true;
         previousSource = source;
       }
-      if (page !== previousPage) {
+      sheet.visible = !live;
+      if (!live && page !== previousPage) {
         pageMap.image = page;
         pageMap.needsUpdate = true;
         previousPage = page;
@@ -148,9 +158,10 @@ export function notebookOpening(view: Viewport3DHandle, topic: string) {
       );
       for (let i = index; i < solids.length; i++) solids[i]!.visible = false;
       // Expanded Ink captures fill the paper; arbitrary chapter captures retain their aspect.
-      geometry(sheet, model.content(page.width / page.height));
+      if (!live) geometry(sheet, model.content(page.width / page.height));
       geometry(front, model.front);
       geometry(inside, model.front);
+      return model;
     },
   };
 }

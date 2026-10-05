@@ -10,7 +10,7 @@ const ease = (p: number) => p * p * (3 - 2 * p);
 const mix = (a: number, b: number, p: number) => a + (b - a) * p;
 
 /** The stage's pinhole projection, followed by a continuous orbit above its real notebook. */
-export function notebookCamera(source: NotebookSource, progress: number) {
+export function notebookCamera(source: NotebookSource, progress: number, contentAspect?: number) {
   const space = source.projection;
   const model = notebookGeometry(
     source.book,
@@ -52,7 +52,7 @@ export function notebookCamera(source: NotebookSource, progress: number) {
       y: mix(from.y + from.height / 2, to.y + to.height / 2, weight) - w / aspect / 2,
       width: w,
     };
-    const content = model.content(aspect),
+    const content = model.content(contentAspect ?? aspect),
       target = content
         .reduce((a, p) => a.add(new Vector3(p.x, p.height ?? 0, -p.z)), new Vector3())
         .multiplyScalar(0.25);
@@ -70,7 +70,10 @@ export function notebookCamera(source: NotebookSource, progress: number) {
     );
     camera.rotation.set((-orbit * Math.PI) / 2, 0, 0);
     camera.updateMatrixWorld(true);
-    const finalWidth = content[1].x - content[0].x;
+    const finalWidth = Math.max(
+      content[1].x - content[0].x,
+      (content[0].z - content[3].z) * aspect,
+    );
     const focal = Math.exp(
       mix(
         Math.log((space.unit * space.distance * width) / w),

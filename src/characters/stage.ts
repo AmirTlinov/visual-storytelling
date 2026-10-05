@@ -88,6 +88,7 @@ export async function characterStage(
   resize();
   let prepared: Awaited<ReturnType<typeof world>> | undefined;
   let disposed = false;
+  let releasePresentation: (() => void) | undefined;
   let inspect: (() => unknown) | undefined;
   const inspected = canvas as HTMLCanvasElement & { __visualReview?: () => unknown };
   const dispose = () => {
@@ -97,6 +98,7 @@ export async function characterStage(
     observer.disconnect();
     if (inspected.__visualReview === inspect) delete inspected.__visualReview;
     surfaces?.dispose();
+    releasePresentation?.();
     prepared?.dispose();
     if (!shared) graphics.dispose();
     element.remove();
@@ -259,6 +261,9 @@ export async function characterStage(
     };
 
     const stage = {
+      get set() {
+        return set;
+      },
       get canvas() {
         if (surfaces)
           throw new Error(
@@ -433,13 +438,39 @@ export async function characterStage(
       snapshot: () => snapshot,
       /** Flatten only a requested transition boundary; live content keeps all DOM layers. */
       restingBook: (id: string) => prepared?.restingBook(id),
+      /** A host-driven presentation borrows a surface while its world keeps sampling time. */
+      presentSurface(id: string, parent: HTMLElement) {
+        if (disposed || !surfaces)
+          throw new Error('A presentation needs an active drawing surface');
+        if (releasePresentation) throw new Error('The stage already presents a drawing surface');
+        const drawing = surfaces.present(id, parent),
+          releaseDrawing = drawing.release,
+          visibility = element.style.visibility;
+        let released = false;
+        element.style.visibility = 'hidden';
+        const release = () => {
+          if (released) return;
+          released = true;
+          releasePresentation = undefined;
+          try {
+            releaseDrawing();
+          } finally {
+            element.style.visibility = visibility;
+          }
+        };
+        releasePresentation = release;
+        drawing.release = release;
+        return drawing;
+      },
       async capture(captureView?: CaptureView) {
         if (disposed || !snapshot || canvas.parentElement !== aperture)
           throw new Error('Render the active character stage before capture');
         const restore = latest;
+        const visibility = element.style.visibility;
         const cast = document.createElement('canvas');
         let captured;
         try {
+          if (releasePresentation) element.style.visibility = 'visible';
           if (captureView) stage.render(...restore, captureView);
           cast.width = canvas.width;
           cast.height = canvas.height;
@@ -450,7 +481,11 @@ export async function characterStage(
             snapshotSVG(front, cast.width / front.viewBox.baseVal.width),
           ]);
         } finally {
-          if (captureView) stage.render(...restore);
+          try {
+            if (captureView) stage.render(...restore);
+          } finally {
+            element.style.visibility = visibility;
+          }
         }
         const [background, layers, foreground] = await captured;
         const result = document.createElement('canvas');

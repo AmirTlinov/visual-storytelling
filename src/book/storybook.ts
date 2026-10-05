@@ -4,8 +4,7 @@ import { compileScore } from '../characters/score.js';
 import type { CharacterPack, CharacterStageOptions } from '../characters/types.js';
 import { SceneStory, type SceneChapter, type SceneStoryOptions } from '../story/composition.js';
 import { bookChapters } from './chapters.js';
-import { notebookWorld, notebookSupport, studySource } from './world.js';
-import { furnitureParts } from '../characters/staging/furniture.js';
+import { notebookWorld, notebookSource, studySource } from './world.js';
 import type { NotebookSource } from './opening.js';
 
 export interface CastChapter
@@ -67,39 +66,12 @@ async function mount(parent: HTMLElement, options: StorybookOptions) {
                 !worlds[index + 1] &&
                 latestTime >= score.script.duration
               ) {
-                const current = ++revision,
-                  book = drawing.restingBook(notebook.bookId);
-                if (!book)
-                  throw new Error(
-                    `Put ${notebook.bookId} on a support before entering a paper chapter`,
-                  );
-                const camera = (drawing.snapshot() as { camera: NotebookSource['camera'] }).camera,
-                  support = notebookSupport(entry.set, book);
-                if (!support)
-                  throw new Error(
-                    `Place ${notebook.bookId} on furniture before entering a paper chapter`,
-                  );
-                const result = drawing.capture(),
-                  background = drawing.capture({
-                    camera: { x: 0, y: 0, width: entry.set.width, height: entry.set.height },
-                    omit: [
-                      notebook.bookId,
-                      ...(furnitureParts(support[1], entry.set.staging!.projection).length
-                        ? [support[0]]
-                        : []),
-                    ],
-                  });
-                return Promise.all([result, background]).then(([image, room]) => {
-                  if (revision === current)
-                    entries[index + 1] = {
-                      image: room,
-                      width: entry.set.width,
-                      height: entry.set.height,
-                      camera,
-                      projection: entry.set.staging!.projection,
-                      book,
-                      support: support[1],
-                    };
+                const current = ++revision;
+                return Promise.all([
+                  drawing.capture(),
+                  notebookSource(drawing, notebook.bookId),
+                ]).then(([image, source]) => {
+                  if (revision === current) entries[index + 1] = source;
                   return image;
                 });
               }

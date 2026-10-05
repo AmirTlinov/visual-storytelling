@@ -1,5 +1,5 @@
 import { surface, type Surface } from '../ink/surface.js';
-import { theme } from '../ink/palette.js';
+import { theme, type Theme } from '../ink/palette.js';
 import { projective, paintPlane, type Quad } from '../ink/projective.js';
 import type { InkDrawing } from '../story/ink-chapter.js';
 import type { ChapterFrame } from '../story/composition.js';
@@ -38,14 +38,23 @@ export function characterSurfaces(
       colors?: ReturnType<typeof theme>;
       quad?: Quad;
       frame?: ChapterFrame;
+      presentation?: { marker: Comment; aspect: number; theme: Theme; release(): void };
     }
   >();
   const strata: HTMLCanvasElement[] = [];
   let order: (HTMLCanvasElement | string)[] = [],
     camera: FrameBox,
     layoutCamera: FrameBox;
+  let disposed = false;
+  const worldTheme = (id: string): Theme => {
+    const item = options.set.staging!.objects[id]!;
+    return item.surface?.theme ?? (item.kind === 'board' ? 'dark' : 'light');
+  };
   const cleanup = () => {
+    if (disposed) return;
+    disposed = true;
     for (const e of entries.values()) {
+      e.presentation?.release();
       e.drawing.dispose?.();
       e.colors?.dispose();
       e.view.dispose();
@@ -75,6 +84,8 @@ export function characterSurfaces(
         top: '0',
         transformOrigin: '0 0',
         padding: '0',
+        margin: '0',
+        maxWidth: 'none',
         overflow: 'hidden',
       });
       const size = definition.size ?? { width: 640, height: 320 };
@@ -85,7 +96,7 @@ export function characterSurfaces(
       try {
         colors =
           item.surface?.theme || item.kind === 'board' || item.kind === 'book'
-            ? theme(host, item.surface?.theme ?? (item.kind === 'board' ? 'dark' : 'light'))
+            ? theme(host, worldTheme(id))
             : undefined;
         view = surface(host, {
           id: `world-ink-${++sequence}`,
@@ -106,6 +117,7 @@ export function characterSurfaces(
       // The browser maps pointer coordinates through the homography. Respect the
       // alpha of later world passes so an occluding hand cannot click a hidden button.
       const pointer = (event: Event) => {
+        if (entries.get(id)?.presentation) return;
         if (!(event instanceof MouseEvent)) return;
         const position = order.indexOf(id);
         if (position < 0) return;
@@ -149,7 +161,7 @@ export function characterSurfaces(
     // Explicit aperture dimensions remain usable under a hidden or detached host.
     const width = parseFloat(parent.style.width) || parent.clientWidth || options.set.width;
     const height = parseFloat(parent.style.height) || parent.clientHeight || options.set.height;
-    if (!e.definition.size) {
+    if (!e.definition.size && !e.presentation) {
       const visible = parent.getBoundingClientRect();
       const q = projected(quad, layoutCamera, visible.width || width, visible.height || height);
       const edge = (a: number, b: number) => Math.hypot(q[a]!.x - q[b]!.x, q[a]!.y - q[b]!.y);
@@ -180,19 +192,22 @@ export function characterSurfaces(
       pass = 0;
       for (const [id, e] of entries) {
         e.quad = undefined;
-        e.host.hidden = true;
+        if (!e.presentation) e.host.hidden = true;
         e.host.dataset.reviewFraming = focus?.includes(`${id}.content`) ? 'subject' : 'background';
         e.frame =
           resolveValues && frame.mode === 'story'
             ? { ...frame, values: { ...frame.values, ...e.definition.valuesAt?.(frame) } }
             : frame;
+        if (e.presentation) e.drawing.render(e.frame, e.size);
       }
       for (const layer of strata) layer.hidden = true;
     },
     resize() {
       for (const e of entries.values())
-        if (e.quad) {
-          e.host.style.transform = layout(e, e.quad)!.css;
+        if (e.quad && !e.presentation) {
+          const mapping = layout(e, e.quad);
+          e.host.hidden = !mapping;
+          if (mapping) e.host.style.transform = mapping.css;
           e.drawing.render(e.frame!, e.size);
         }
     },
@@ -201,7 +216,7 @@ export function characterSurfaces(
       if (!entry) return;
       const mapping = layout(entry, quad);
       if (!mapping) return; // Edge-on planes must not discard a world pass.
-      entry.drawing.render(entry.frame!, entry.size);
+      if (!entry.presentation) entry.drawing.render(entry.frame!, entry.size);
       const { canvas, renderer, context } = graphics;
       renderer.end();
       let layer = strata[pass++];
@@ -219,13 +234,78 @@ export function characterSurfaces(
       c.drawImage(canvas, 0, 0);
       layer.hidden = false;
       parent.insertBefore(layer, canvas);
-      parent.insertBefore(entry.host, canvas);
-      entry.host.style.transform = mapping.css;
-      entry.host.hidden = false;
+      parent.insertBefore(entry.presentation?.marker ?? entry.host, canvas);
+      if (!entry.presentation) {
+        entry.host.style.transform = mapping.css;
+        entry.host.hidden = false;
+      }
       entry.quad = quad;
       order.push(layer, id);
       context.gl.clear(context.gl.COLOR_BUFFER_BIT);
       renderer.begin();
+    },
+    /** Lend DOM placement; the stage remains the sole owner of drawing state and time. */
+    present(id: string, host: HTMLElement) {
+      const e = entries.get(id);
+      if (!e) throw new Error(`Object ${id} has no live drawing surface`);
+      if (e.presentation) throw new Error(`Drawing surface ${id} is already presented`);
+      // A closed book has no world plane, but entry/reduced motion still needs its current ink.
+      // Sample before changing ownership so a failed authored render leaves the world intact.
+      if (e.frame) e.drawing.render(e.frame, e.size);
+      const marker = document.createComment(`surface:${id}`);
+      e.host.replaceWith(marker);
+      host.append(e.host);
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        e.presentation = undefined;
+        marker.replaceWith(e.host);
+        if (disposed) return;
+        e.colors?.set(worldTheme(id));
+        const mapping = e.quad && layout(e, e.quad);
+        e.view.fitViewport(e.size.width, e.size.height);
+        Object.assign(e.host.style, { width: `${e.size.width}px`, height: `${e.size.height}px` });
+        e.host.hidden = !mapping;
+        if (mapping) e.host.style.transform = mapping.css;
+        if (e.frame) e.drawing.render(e.frame, e.size);
+      };
+      const presentation = {
+        marker,
+        aspect: e.size.width / e.size.height,
+        theme: worldTheme(id),
+        release,
+      };
+      e.presentation = presentation;
+      return {
+        get size() {
+          return { ...e.size };
+        },
+        theme: (value: Theme) => {
+          if (released) return;
+          presentation.theme = value;
+          e.colors?.set(value);
+        },
+        project(quad: Quad | undefined, aspect = e.size.width / e.size.height) {
+          if (released) return;
+          if (!Number.isFinite(aspect) || aspect <= 0)
+            throw new Error('Presentation aspect must be finite and positive');
+          if (!quad) {
+            e.host.hidden = true;
+            return;
+          }
+          const width = Math.max(e.size.width, e.size.height * aspect),
+            height = width / aspect;
+          presentation.aspect = aspect;
+          e.view.fitViewport(width, height);
+          Object.assign(e.host.style, { width: `${width}px`, height: `${height}px` });
+          const mapping = projective(quad, width, height);
+          e.host.hidden = !mapping;
+          if (mapping) e.host.style.transform = mapping.css;
+        },
+        snapshot: () => e.drawing.snapshot?.(),
+        release,
+      };
     },
     async capture() {
       // Freeze canvases, geometry and SVG styles before any decoder can yield.
@@ -235,8 +315,21 @@ export function characterSurfaces(
       const layers = order.map((layer) => {
         if (typeof layer === 'string') {
           const e = entries.get(layer)!;
+          let image: Promise<HTMLCanvasElement>;
+          if (e.presentation) {
+            // Capture the world's page viewport and pigment, restoring the lent
+            // DOM synchronously before the SVG decoder can yield.
+            try {
+              e.view.fitViewport(e.size.width, e.size.height);
+              e.colors?.set(worldTheme(layer));
+              image = snapshotSVG(e.view.element, 2);
+            } finally {
+              e.view.fitViewport(e.presentation.aspect, 1);
+              e.colors?.set(e.presentation.theme);
+            }
+          } else image = snapshotSVG(e.view.element, 2);
           return {
-            image: snapshotSVG(e.view.element, 2),
+            image,
             quad: e.quad!.map((p) => ({
               x: ((p.x - box.x) / box.width) * width,
               y: ((p.y - box.y) / box.height) * height,

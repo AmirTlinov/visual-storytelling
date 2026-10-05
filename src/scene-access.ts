@@ -8,7 +8,7 @@ export type SceneCommand =
   | { type: 'mode'; value: 'story' | 'explore' }
   | { type: 'parameters'; values: Record<string, ControlValue> }
   | { type: 'focus'; ids: readonly string[] }
-  | { type: 'theme'; value: 'auto' | 'light' | 'dark' }
+  | { type: 'theme'; value: 'auto' | 'light' | 'dark' | 'inherit' }
   | { type: 'reduced'; value: boolean };
 export interface SceneInspection {
   time: number;
@@ -105,7 +105,7 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
           throw new Error('Unknown scene mode');
         if (
           c.type === 'theme' &&
-          (!handle.setTheme || !['auto', 'light', 'dark'].includes(c.value))
+          (!handle.setTheme || !['auto', 'light', 'dark', 'inherit'].includes(c.value))
         )
           throw new Error('Theme is unavailable or invalid');
         if (

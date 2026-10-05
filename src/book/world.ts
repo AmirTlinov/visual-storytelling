@@ -6,6 +6,36 @@ import type { StageSet } from '../characters/types.js';
 import type { Furniture } from '../characters/staging/types.js';
 import type { NotebookSource } from './opening.js';
 import { snapshotSVG } from '../export/index.js';
+import type { characterStage } from '../characters/stage.js';
+
+/** Freeze the actual stage boundary before decoding its background image. */
+export async function notebookSource(
+  stage: Awaited<ReturnType<typeof characterStage>>,
+  bookId: string,
+): Promise<NotebookSource> {
+  const set = stage.set,
+    book = stage.restingBook(bookId);
+  if (!book) throw new Error(`Put ${bookId} on a support before entering its page`);
+  const support = notebookSupport(set, book);
+  if (!support) throw new Error(`Place ${bookId} on furniture before entering its page`);
+  const camera = (stage.snapshot() as { camera: NotebookSource['camera'] }).camera;
+  const image = stage.capture({
+    camera: { x: 0, y: 0, width: set.width, height: set.height },
+    omit: [
+      bookId,
+      ...(furnitureParts(support[1], set.staging!.projection).length ? [support[0]] : []),
+    ],
+  });
+  return {
+    image: await image,
+    width: set.width,
+    height: set.height,
+    camera,
+    projection: set.staging!.projection,
+    book,
+    support: support[1],
+  };
+}
 
 /** A semantic book/support pair is prepared once; story authors do not tune camera coordinates. */
 export function notebookWorld(set: StageSet) {
