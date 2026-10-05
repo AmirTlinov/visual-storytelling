@@ -1,9 +1,19 @@
 import type { Actor } from '../types.js';
-import type { Placement } from './blocking.js';
+import type { Placement, Plan } from './blocking.js';
 import type { BipedRig, GroundPoint, Projection } from './types.js';
 import { project } from './space.js';
+import { durationOf } from './timing.js';
 
 export const pressTravel = 4;
+
+/** The button switches at maximum finger travel; all reactions share this story instant. */
+export function pressTime(plan: Pick<Plan, 'start' | 'end' | 'timing'>) {
+  const t = plan.timing;
+  return (
+    plan.start +
+    ((plan.end - plan.start) * (t.rise + t.approach + t.engage + t.act / 2)) / durationOf(t)
+  );
+}
 
 /** Put the chosen shoulder inside the control's reachable annulus, then invert the projection. */
 export function pressApproach(

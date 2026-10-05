@@ -1,7 +1,7 @@
 import { characterRenderer, type CharacterRenderer } from './renderer.js';
 import { destination } from './staging/layout.js';
 import { project } from './staging/space.js';
-import { stageFrame, type FrameBox } from './staging/camera.js';
+import { stageFrame, sameShot, type FrameBox } from './staging/camera.js';
 import { world } from './staging/world.js';
 import { performance } from './performance.js';
 import { compileScore, smooth, type CharacterScore } from './score.js';
@@ -11,6 +11,7 @@ import { characterSurfaces } from './surfaces.js';
 import type { Shot } from './staging/types.js';
 import type { ChapterFrame } from '../story/composition.js';
 import { characterDetails } from './framing.js';
+import { shotFraming } from './shot-framing.js';
 import { snapshotSVG } from '../export/index.js';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -187,12 +188,29 @@ export async function characterStage(
       };
     };
 
-    const sample = (time: number, reduced: boolean) => {
+    const sampleCast = (time: number, reduced: boolean) => {
       const actions =
         prepared?.sample(time, reduced) ??
         Object.fromEntries(
           Object.entries(actors).map(([id, actor]) => [id, actor.sample(time, reduced)]),
         );
+      const actorBounds = Object.fromEntries(
+        Object.entries(actors).map(([id, actor]) => {
+          const b = actor.skeleton.getBoundsRect();
+          return [id, { x: b.x, y: set.height - b.y - b.height, width: b.width, height: b.height }];
+        }),
+      );
+      details = Object.fromEntries(
+        Object.entries(actors).flatMap(([id, actor]) =>
+          Object.entries(characterDetails(actor.skeleton, pack.rig, set.height)).map(
+            ([part, box]) => [`${id}.${part}`, box],
+          ),
+        ),
+      );
+      return { actions, actorBounds };
+    };
+    const sample = (time: number, reduced: boolean) => {
+      const { actions, actorBounds } = sampleCast(time, reduced);
       const propState: Record<string, unknown> = {};
       for (const [id, prop] of Object.entries(score.props)) {
         const key = score.propTracks[id]!.findLast((key) => key.start <= time);
@@ -227,15 +245,7 @@ export async function characterStage(
       }
       bounds = {
         ...prepared?.bounds(),
-        ...Object.fromEntries(
-          Object.entries(actors).map(([id, actor]) => {
-            const b = actor.skeleton.getBoundsRect();
-            return [
-              id,
-              { x: b.x, y: set.height - b.y - b.height, width: b.width, height: b.height },
-            ];
-          }),
-        ),
+        ...actorBounds,
       };
       for (const [id, node] of Object.entries(nodes)) {
         if (Number(node.getAttribute('opacity')) <= 0) continue;
@@ -250,15 +260,24 @@ export async function characterStage(
           height: box.height * scale,
         };
       }
-      details = Object.fromEntries(
-        Object.entries(actors).flatMap(([id, actor]) =>
-          Object.entries(characterDetails(actor.skeleton, pack.rig, set.height)).map(
-            ([part, box]) => [`${id}.${part}`, box],
-          ),
-        ),
-      );
       return { actions, propState };
     };
+    const framing = shotFraming(options.beats, score, actors, set.height, (time) => {
+      const { actorBounds } = sampleCast(time, false);
+      return { ...actorBounds, ...details };
+    });
+    // Measure before playback; opening a new shot must not pause the running story.
+    // The cast sampler avoids repainting SVG props or forcing layout while measuring poses.
+    let yieldedAt = globalThis.performance.now();
+    for (const [index, beat] of options.beats.entries()) {
+      if (index && sameShot(options.beats[index - 1]!.shot, beat.shot)) continue;
+      framing.prepare(index, beat.shot?.focus);
+      if (globalThis.performance.now() - yieldedAt > 12) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        yieldedAt = globalThis.performance.now();
+      }
+    }
+    sampleCast(0, false);
 
     const stage = {
       get set() {
@@ -292,10 +311,12 @@ export async function characterStage(
         const mix =
           reduced || manualShot ? 1 : smooth((time - score.script.cues[beat.id]!.start) / 0.45);
         const previousShot = options.beats[Math.max(0, index - 1)]!.shot;
-        const differentShot =
-          previousShot?.framing !== beat.shot?.framing ||
-          previousShot?.focus.length !== beat.shot?.focus.length ||
-          previousShot?.focus.some((id) => !beat.shot?.focus.includes(id));
+        const differentShot = !sameShot(previousShot, beat.shot);
+        const envelope = framing.prepare(index, beat.shot?.focus);
+        const outgoing =
+          mix < 1 && differentShot
+            ? framing.prepare(Math.max(0, index - 1), previousShot?.focus)
+            : envelope;
         let previous: FrameBox | undefined;
         if (mix < 1 && differentShot) {
           // The outgoing subject may disappear during this beat. Sample its shot
@@ -304,7 +325,7 @@ export async function characterStage(
           previous = stageFrame(
             set.width,
             set.height,
-            previousShot ? { ...bounds, ...details } : bounds,
+            framing.subjects(previousShot ? { ...bounds, ...details } : bounds, outgoing),
             previousShot,
             aspect,
           );
@@ -313,7 +334,7 @@ export async function characterStage(
         const current = stageFrame(
           set.width,
           set.height,
-          beat.shot ? { ...bounds, ...details } : bounds,
+          framing.subjects(beat.shot ? { ...bounds, ...details } : bounds, envelope),
           beat.shot,
           aspect,
         );

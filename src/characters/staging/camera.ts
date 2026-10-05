@@ -5,6 +5,10 @@ export interface FrameBox {
   width: number;
   height: number;
 }
+export const sameShot = (a?: Shot, b?: Shot) =>
+  a?.framing === b?.framing &&
+  a?.focus.length === b?.focus.length &&
+  !a?.focus.some((id) => !b?.focus.includes(id));
 export const union = (boxes: FrameBox[]): FrameBox => {
   const x = Math.min(...boxes.map((b) => b.x)),
     y = Math.min(...boxes.map((b) => b.y));

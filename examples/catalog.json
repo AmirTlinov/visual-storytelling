@@ -637,6 +637,16 @@
     "guides": ["docs/book.md", "docs/characters.md"],
     "recommended": true
   },
+  "press-reaction": {
+    "title": "Нажатие запускает опыт",
+    "page": "index.html",
+    "time": 6.4,
+    "group": "techniques",
+    "summary": "Реакция отдельного предмета в момент нажатия: подход, контакт, изменение данных и обратная перемотка.",
+    "tags": ["CharacterStory", "press", "on.press", "кнопка", "реакция", "персонажи"],
+    "source": "scene.js",
+    "guides": ["docs/characters.md"]
+  },
   "ink-trace": {
     "title": "Как возникает траектория?",
     "page": "index.html",

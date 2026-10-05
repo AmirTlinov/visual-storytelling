@@ -1,21 +1,42 @@
 import { boardPlane } from './drawing-plane.js';
 import { doorPassage } from './doorway.js';
 import type { StageSet } from '../types.js';
-import type { Destination, Furniture, GroundPoint, RelativePlace, Staging } from './types.js';
+import type { Destination, Furniture, GroundPoint, Staging } from './types.js';
 import { footprint, supportPoint, stairEnd } from './objects.js';
 import { project } from './space.js';
 
+interface PlaceReference {
+  kind: 'objects' | 'spots';
+  id: string;
+  content?: true;
+}
+/** Exact names precede a surface suffix; relations prefer physical furniture. */
+function placeReferences(place: Destination): PlaceReference[] {
+  if (typeof place === 'string') {
+    const refs: PlaceReference[] = [
+      { kind: 'spots', id: place },
+      { kind: 'objects', id: place },
+    ];
+    if (place.endsWith('.content'))
+      refs.push({ kind: 'objects', id: place.slice(0, -8), content: true });
+    return refs;
+  }
+  return place && typeof place === 'object' && 'of' in place
+    ? [
+        { kind: 'objects', id: place.of },
+        { kind: 'spots', id: place.of },
+      ]
+    : [];
+}
+
 /** Resolve a place using the current arrangement. Rendering and action planning use metres. */
 export function destination(staging: Staging, place: Destination): GroundPoint {
+  const reference = placeReferences(place).find(({ kind, id }) => Object.hasOwn(staging[kind], id));
+  const item = reference?.kind === 'objects' ? staging.objects[reference.id] : undefined;
+  const origin = reference?.kind === 'spots' ? staging.spots[reference.id] : item?.at;
   let at: GroundPoint | undefined;
   if (typeof place === 'string') {
-    at = Object.hasOwn(staging.spots, place)
-      ? staging.spots[place]
-      : Object.hasOwn(staging.objects, place)
-        ? staging.objects[place]!.at
-        : undefined;
-    if (!at && place.endsWith('.content')) {
-      const item = staging.objects[place.slice(0, -8)];
+    if (reference?.content) {
       const corners = item?.surface?.corners ?? (item?.kind === 'board' ? boardPlane : undefined);
       if (item && corners) {
         const s = item.scale ?? 1;
@@ -26,11 +47,8 @@ export function destination(staging: Staging, place: Destination): GroundPoint {
             (item.at.height ?? 0) + (corners.reduce((n, p) => n + (p.height ?? 0), 0) / 4) * s,
         };
       }
-    }
+    } else at = origin;
   } else if (place && typeof place === 'object' && 'of' in place) {
-    const item = Object.hasOwn(staging.objects, place.of) ? staging.objects[place.of] : undefined;
-    const origin =
-      item?.at ?? (Object.hasOwn(staging.spots, place.of) ? staging.spots[place.of] : undefined);
     if (!origin) throw new Error(`Unknown placement reference: ${place.of}`);
     const gap = place.gap ?? 0.75;
     if (!Number.isFinite(gap) || gap < 0) throw new Error('Placement gap must be non-negative');
@@ -90,6 +108,48 @@ export function arrange(base: StageSet, layout: SetLayout): StageSet {
     objects[id] = item as Omit<Furniture, 'at'> & { at: Destination };
   }
   const spots = { ...(base.staging.layout?.spots ?? base.staging.spots), ...layout.spots };
+  const visiting = new Set<string>(),
+    done = new Set<string>();
+  const solve = (kind: 'objects' | 'spots', id: string): boolean => {
+    const key = `${kind}:${id}`;
+    const entry = (kind === 'objects' ? objects : spots)[id];
+    if (!entry) return false;
+    if (done.has(key)) return true;
+    if (visiting.has(key)) throw new Error(`Circular stage placement: ${id}`);
+    visiting.add(key);
+    const place = kind === 'objects' ? (entry as Furniture).at : (entry as Destination);
+    const refs = placeReferences(place);
+    if (refs.length) {
+      let removed = false,
+        resolved = false;
+      for (const { kind: owner, id: reference } of refs) {
+        const entries = owner === 'objects' ? objects : spots;
+        if (!Object.hasOwn(entries, reference)) continue;
+        if (removed && owner === kind && reference === id) continue;
+        if (solve(owner, reference)) {
+          resolved = true;
+          break;
+        }
+        removed = true;
+      }
+      // Removing set furniture also removes its inherited attachments and marks.
+      // Explicitly authored dangling references still fail in destination().
+      if (!resolved && removed && !Object.hasOwn(layout[kind] ?? {}, id)) {
+        (kind === 'objects' ? objects : spots)[id] = null;
+        visiting.delete(key);
+        return false;
+      }
+    }
+    const at = destination(staging, place);
+    if (kind === 'objects')
+      (staging.objects as Record<string, Furniture>)[id] = { ...(entry as Furniture), at };
+    else (staging.spots as Record<string, GroundPoint>)[id] = at;
+    visiting.delete(key);
+    done.add(key);
+    return true;
+  };
+  for (const id of Object.keys(objects)) solve('objects', id);
+  for (const id of Object.keys(spots)) solve('spots', id);
   staging.layout = {
     objects: Object.fromEntries(
       Object.entries(objects).filter(
@@ -101,48 +161,6 @@ export function arrange(base: StageSet, layout: SetLayout): StageSet {
       Object.entries(spots).filter((entry): entry is [string, Destination] => entry[1] !== null),
     ),
   };
-  const visiting = new Set<string>(),
-    done = new Set<string>();
-  const solve = (kind: 'objects' | 'spots', id: string) => {
-    const key = `${kind}:${id}`;
-    if (done.has(key)) return;
-    if (visiting.has(key)) throw new Error(`Circular stage placement: ${id}`);
-    const entry = (kind === 'objects' ? objects : spots)[id];
-    if (!entry) return;
-    visiting.add(key);
-    const place = kind === 'objects' ? (entry as Furniture).at : (entry as Destination);
-    const ref =
-      typeof place === 'string'
-        ? place
-        : place && typeof place === 'object' && 'of' in place
-          ? (place as RelativePlace).of
-          : undefined;
-    if (ref) {
-      // Names denote spots first; a spatial relation denotes physical furniture first.
-      // Use the same precedence as destination, including while dependencies are unresolved.
-      const reference =
-        typeof place === 'string' && ref.endsWith('.content') ? ref.slice(0, -8) : ref;
-      const owners =
-        typeof place === 'string'
-          ? (['spots', 'objects'] as const)
-          : (['objects', 'spots'] as const);
-      for (const owner of owners) {
-        const entries = owner === 'objects' ? objects : spots;
-        if (Object.hasOwn(entries, reference) && entries[reference]) {
-          solve(owner, reference);
-          break;
-        }
-      }
-    }
-    const at = destination(staging, place);
-    if (kind === 'objects')
-      (staging.objects as Record<string, Furniture>)[id] = { ...(entry as Furniture), at };
-    else (staging.spots as Record<string, GroundPoint>)[id] = at;
-    visiting.delete(key);
-    done.add(key);
-  };
-  for (const id of Object.keys(objects)) solve('objects', id);
-  for (const id of Object.keys(spots)) solve('spots', id);
   return {
     ...base,
     staging,

@@ -63,7 +63,9 @@ export interface PropChange {
   values?: Readonly<Record<string, number>>;
   /** The curved flight's height in stage units; endpoints stay attached to their owners. */
   arc?: number;
-  /** Delay from the cue's start, in seconds. */
+  /** Start at the named control's press contact in this beat, including approach and retiming. */
+  on?: { press: string };
+  /** Seconds after the cue starts, or after contact when on.press is set. */
   delay?: number;
   /** Transition duration; defaults to the rest of the cue. */
   over?: number;

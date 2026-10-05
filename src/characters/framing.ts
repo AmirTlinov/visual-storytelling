@@ -7,6 +7,8 @@ import {
 import type { BipedRig } from './staging/types.js';
 import type { FrameBox } from './staging/camera.js';
 
+export const characterPartNames = ['face', 'hand-left', 'hand-right'] as const;
+
 /** Camera details follow the vertices actually drawn by the rig, including weighted meshes. */
 export function characterDetails(
   skeleton: Skeleton,
@@ -20,7 +22,8 @@ export function characterDetails(
     'hand-right': rig.arms.right.lower,
   };
   const result: Record<string, FrameBox> = {};
-  for (const [id, root] of Object.entries(roots)) {
+  for (const id of characterPartNames) {
+    const root = roots[id];
     const descendants = new Set<number>();
     for (const candidate of skeleton.bones)
       for (let bone: Bone | null = candidate; bone; bone = bone.parent)

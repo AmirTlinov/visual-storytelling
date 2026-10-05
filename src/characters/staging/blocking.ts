@@ -10,6 +10,7 @@ import { destination } from './layout.js';
 import { route, meetingPoint } from './navigation.js';
 import { coordinateTraffic } from './traffic.js';
 import { pressApproach } from './press.js';
+import { propStart } from '../prop-timing.js';
 import { transferApproach } from './transfer.js';
 import { actionTiming, durationOf, type ActionTiming } from './timing.js';
 
@@ -580,12 +581,16 @@ export function compileBlocking(options: CharacterStageOptions, script?: Script)
     }
     const beatPlans = plans.slice(firstPlan);
     const resolveTiming = () => {
-      for (const plan of beatPlans)
+      for (const plan of beatPlans) {
         plan.timing = actionTiming(plan, staging, scales, options.pack.actions);
+        plan.end = start + durationOf(plan.timing);
+      }
       const natural = Math.max(
         beatPlans.length || cue ? 0 : 2.5,
         ...beatPlans.map((p) => durationOf(p.timing)),
-        ...Object.values(beat.props ?? {}).map((p) => (p.delay ?? 0) + (p.over ?? 0)),
+        ...Object.values(beat.props ?? {}).map(
+          (p) => propStart(p, beatPlans, start, beat.id) - start + (p.delay ?? 0) + (p.over ?? 0),
+        ),
       );
       const end = cue?.end ?? start + (beat.seconds ?? natural);
       if (cue && beat.seconds === undefined && end - start < natural - 1e-6)

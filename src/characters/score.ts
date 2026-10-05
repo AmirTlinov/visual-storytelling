@@ -2,6 +2,7 @@ import { cueSheet, type Script } from '../story/cues.js';
 import type { CharacterStageOptions, Place, PropChange } from './types.js';
 import { destination } from './staging/layout.js';
 import { compileBlocking } from './staging/blocking.js';
+import { propStart } from './prop-timing.js';
 
 export const smooth = (t: number) => {
   t = Math.max(0, Math.min(1, t));
@@ -14,10 +15,11 @@ export interface ActionKey {
 export interface PropKey {
   start: number;
   end: number;
-  from: PropChange;
-  to: PropChange;
+  from: PropState;
+  to: PropState;
   arc: number;
 }
+type PropState = Pick<PropChange, 'at' | 'opacity' | 'values'>;
 
 /** Compile a storyboard once; the existing Story owns validation, time and playback. */
 export function compileScore(options: CharacterStageOptions) {
@@ -85,7 +87,7 @@ export function compileScore(options: CharacterStageOptions) {
       throw new Error('Prop channels must be finite');
     if (state.arc !== undefined && !finite(state.arc)) throw new Error('Prop arc must be finite');
   }
-  const states: Record<string, PropChange> = Object.create(null);
+  const states: Record<string, PropState> = Object.create(null);
   const propTracks: Record<string, PropKey[]> = Object.create(null);
   for (const [id, prop] of Object.entries(props)) {
     if (Object.hasOwn(cast, id)) throw new Error(`Actor and prop share an ID: ${id}`);
@@ -140,20 +142,31 @@ export function compileScore(options: CharacterStageOptions) {
       const from = states[id];
       if (!from) throw new Error(`Unknown prop: ${id}`);
       propState(change);
-      const to = { ...from, ...change, values: { ...from.values, ...change.values } };
+      const to = {
+        at: change.at ?? from.at,
+        opacity: change.opacity ?? from.opacity,
+        values: { ...from.values, ...change.values },
+      };
+      const origin = propStart(
+        change,
+        blocking?.plans.filter((p) => p.start === cue.start) ?? [],
+        cue.start,
+        beat.id,
+      );
       const delay = change.delay ?? 0,
-        over = change.over ?? cue.end - cue.start - delay;
+        start = origin + delay,
+        over = change.over ?? cue.end - start;
       if (
         !finite(delay) ||
         !finite(over) ||
         delay < 0 ||
         over <= 0 ||
-        delay + over > cue.end - cue.start + 0.000001
+        start + over > cue.end + 0.000001
       )
         throw new Error(`Prop ${id}: delay and duration must fit cue ${beat.id}`);
       propTracks[id]!.push({
-        start: cue.start + delay,
-        end: cue.start + delay + over,
+        start,
+        end: start + over,
         from,
         to,
         arc: change.arc ?? 0,

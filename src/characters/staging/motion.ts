@@ -4,6 +4,7 @@ import type { GroundPoint } from './types.js';
 import { objectShape, stairEnd } from './objects.js';
 import { doorApproach, doorHandle } from './doorway.js';
 import { clamp, ease, distance, interpolate, facing, alongPath } from './space.js';
+import { pressTime } from './press.js';
 
 /** Pure sampling of prepared actions at absolute story time. */
 function moving(
@@ -90,18 +91,17 @@ export function blockAt(blocking: Blocking, time: number, reduced = false) {
       }
       continue;
     }
+    if (plan.effect)
+      objects[plan.effect.id] = time < pressTime(plan) ? plan.effect.from : plan.effect.to;
     if (time >= plan.end || reduced) {
       place(plan.to);
       if (plan.transfer && !plan.transfer.taking) items[plan.transfer.id] = { ...plan.transfer.at };
       if (a.action === 'openDoor' || a.action === 'closeDoor') objects[a.door] = plan.objectTo!;
       if (a.action === 'read' || a.action === 'openBook' || a.action === 'closeBook')
         objects[a.book] = plan.objectTo!;
-      if (plan.effect) objects[plan.effect.id] = plan.effect.to;
       continue;
     }
     place(plan.from);
-    if (plan.effect)
-      objects[plan.effect.id] = phase('act') < 0.5 ? plan.effect.from : plan.effect.to;
     const weight = ease(phase('engage')) * (1 - ease(phase('release')));
     if ('actor' in a) {
       const p = actors[a.actor]!,
