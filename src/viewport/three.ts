@@ -437,6 +437,7 @@ function mount(
       materials.clear();
       detachInspection();
       renderer.dispose();
+      renderer.forceContextLoss();
       canvas.remove();
       sample.remove();
     },

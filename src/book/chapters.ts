@@ -9,7 +9,7 @@ import { notebookPageAspect } from '../characters/staging/notebook.js';
 export function bookChapters(
   topic: string,
   worlds: readonly boolean[],
-  entries: readonly (NotebookSource | undefined)[],
+  entry: (index: number) => NotebookSource | undefined,
 ): ChapterTransition {
   return {
     captureAspect: notebookPageAspect,
@@ -59,7 +59,7 @@ export function bookChapters(
           const introduction = state.open < 1;
           overlay.hidden = state.reduced || (!introduction && state.progress >= 1);
           if (overlay.hidden) return;
-          const source = entries[state.chapter],
+          const source = entry(state.chapter),
             progress = introduction ? state.open : state.progress;
           overlay.dataset.bookPhase = source ? 'enter' : 'turn';
           const aspect = (parent.clientWidth || 960) / (parent.clientHeight || 640);

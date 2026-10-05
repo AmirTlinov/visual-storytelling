@@ -42,6 +42,8 @@ export interface SceneRuntime {
   setRate?(value: number): void;
   play?(): void | Promise<void>;
   seek?(time: number): void;
+  /** Resolve when the latest requested frame is prepared and rendered. */
+  ready?(): Promise<void>;
   pause?(): void;
   setReduced?(value: boolean): void;
   snapshot?(): unknown;

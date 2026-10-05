@@ -19,7 +19,7 @@ export function transport({ duration, audio }: TransportOptions) {
   if (!(duration > 0) || !Number.isFinite(duration))
     throw new Error('Playback duration must be positive');
   const media = audio ?? new SilentMedia(duration),
-    listeners = new Set<(state: Playback) => void>(),
+    listeners = new Set<(state: Playback, mediaFrame: boolean) => void>(),
     abort = new AbortController();
   let pending = false,
     disposed = false,
@@ -27,17 +27,19 @@ export function transport({ duration, audio }: TransportOptions) {
     error: string | null = null;
   let permission: AbortController | undefined;
   let unmutePermission: AbortController | undefined;
+  let preparation: Promise<void> | undefined;
+  let resumePrepared = false;
   const state = (): Playback => ({
     time: clock.time,
     duration,
-    playing: pending || !media.paused,
+    playing: pending || resumePrepared || !media.paused,
     muted: media.muted,
     hasAudio: !(media instanceof SilentMedia),
     rate: media.playbackRate ?? 1,
     error,
   });
-  const notify = () => {
-    for (const listener of listeners) listener(state());
+  const notify = (mediaFrame = false) => {
+    for (const listener of listeners) listener(state(), mediaFrame);
   };
   const clock = mediaTimeline(media, duration, notify);
   function pause() {
@@ -47,8 +49,9 @@ export function transport({ duration, audio }: TransportOptions) {
     permission = undefined;
     unmutePermission?.abort();
     pending = false;
+    resumePrepared = false;
     media.pause();
-    clock.update();
+    clock.update('state');
   }
   function seek(time: number) {
     if (disposed) throw new Error('Playback has been disposed');
@@ -56,7 +59,7 @@ export function transport({ duration, audio }: TransportOptions) {
     clock.seek(time);
   }
   async function play() {
-    if (disposed || pending || !media.paused) return;
+    if (disposed || pending || resumePrepared || !media.paused) return;
     if (media.currentTime >= duration - 0.02) seek(0);
     const token = ++request;
     error = null;
@@ -71,10 +74,11 @@ export function transport({ duration, audio }: TransportOptions) {
         signal: approval.signal,
       });
       if (disposed || token !== request || approval.signal.aborted) return;
-      await media.play();
-      if (disposed || token !== request) return;
-      pending = false;
-      clock.update();
+      while (preparation) {
+        await preparation;
+        if (disposed || token !== request || approval.signal.aborted) return;
+      }
+      await startMedia(token);
     } catch (cause) {
       if (disposed || token !== request) return;
       pending = false;
@@ -82,6 +86,45 @@ export function transport({ duration, audio }: TransportOptions) {
       notify();
       throw cause;
     }
+  }
+  async function startMedia(token: number) {
+    if (disposed || token !== request) return;
+    await media.play();
+    if (disposed || token !== request) return;
+    pending = false;
+    clock.update('state');
+  }
+  function prepare(task: Promise<void>) {
+    if (disposed) return;
+    error = null;
+    preparation = task;
+    resumePrepared ||= !media.paused;
+    if (!media.paused) media.pause();
+    else notify();
+    void task.then(
+      () => {
+        if (disposed || preparation !== task) return;
+        preparation = undefined;
+        const resume = resumePrepared;
+        resumePrepared = false;
+        if (resume) {
+          const token = request;
+          void startMedia(token).catch((cause) => {
+            if (disposed || token !== request) return;
+            pause();
+            error = cause instanceof Error ? cause.message : String(cause);
+            notify();
+          });
+        } else notify();
+      },
+      (cause) => {
+        if (disposed || preparation !== task) return;
+        preparation = undefined;
+        pause();
+        error = cause instanceof Error ? cause.message : String(cause);
+        notify();
+      },
+    );
   }
   if (audio) {
     audio.addEventListener(
@@ -108,7 +151,7 @@ export function transport({ duration, audio }: TransportOptions) {
       { signal: abort.signal },
     );
   }
-  media.addEventListener('volumechange', notify, { signal: abort.signal });
+  media.addEventListener('volumechange', () => notify(), { signal: abort.signal });
   globalThis.document?.addEventListener(
     'visibilitychange',
     () => {
@@ -121,10 +164,11 @@ export function transport({ duration, audio }: TransportOptions) {
       return state();
     },
     play,
+    prepare,
     pause,
     seek,
     toggle() {
-      return pending || !media.paused ? pause() : play();
+      return pending || resumePrepared || !media.paused ? pause() : play();
     },
     async mute(value = !media.muted) {
       if (disposed) throw new Error('Playback has been disposed');
@@ -158,9 +202,9 @@ export function transport({ duration, audio }: TransportOptions) {
       media.playbackRate = value;
       notify();
     },
-    subscribe(listener: (state: Playback) => void) {
+    subscribe(listener: (state: Playback, mediaFrame: boolean) => void) {
       listeners.add(listener);
-      listener(state());
+      listener(state(), true);
       return () => listeners.delete(listener);
     },
     dispose() {
@@ -170,6 +214,8 @@ export function transport({ duration, audio }: TransportOptions) {
       permission?.abort();
       unmutePermission?.abort();
       pending = false;
+      resumePrepared = false;
+      preparation = undefined;
       clock.dispose();
       abort.abort();
       listeners.clear();

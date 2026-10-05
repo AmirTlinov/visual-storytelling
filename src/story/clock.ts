@@ -8,15 +8,21 @@ export interface MediaClock extends EventTarget {
   pause(): void;
 }
 /** Observe media time. Cue interpretation belongs exclusively to the story's cue sheet. */
-export function mediaTimeline(audio: MediaClock, duration: number, render: () => void) {
+export function mediaTimeline(
+  audio: MediaClock,
+  duration: number,
+  render: (mediaFrame: boolean) => void,
+) {
   let frame = 0,
     disposed = false;
   let sought: { requested: number; reported: number } | undefined;
-  const update = () => {
+  const update = (reason?: Event | number | 'state') => {
     cancelAnimationFrame(frame);
     frame = 0;
     if (disposed) return;
-    render();
+    render(
+      reason !== 'state' && !(reason instanceof Event && ['play', 'pause'].includes(reason.type)),
+    );
     if (!audio.paused && !audio.ended) frame = requestAnimationFrame(update);
   };
   const seek = (time: number) => {

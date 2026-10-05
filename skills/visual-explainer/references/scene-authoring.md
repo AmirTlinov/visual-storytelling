@@ -47,6 +47,9 @@ import timing from './timeline.json' with { type: 'json' };
 Начни с `interaction-studio`: `Storybook` объединяет персонажей, Ink и физику.
 Для истории без обложки используй `SceneStory`. Глава владеет представлением через
 `mount → render/capture/snapshot/dispose`; часы и параметры принадлежат общему Story.
+Представления создаются по потребности: `render` восстанавливает кадр из времени
+и общих параметров, `dispose` освобождает ресурсы. Прямой `scene.seek()` сопровождай
+`await scene.ready?.()` перед захватом; команды инструмента и экспорт ожидают сами.
 `inkChapter` сохраняет живой SVG, `areaDiagram` даёт готовую адаптивную композицию
 измерения, `PhysicsReplay` перематывает физику. [Контракт глав](../../../docs/book.md).
 

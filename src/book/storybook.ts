@@ -25,8 +25,8 @@ async function mount(parent: HTMLElement, options: StorybookOptions) {
   let graphics: CharacterRenderer | undefined;
   try {
     const worlds = options.chapters.map((chapter) => !('mount' in chapter));
-    const entries: (NotebookSource | undefined)[] = [];
-    if (!worlds[0]) entries[0] = await studySource(parent);
+    let introduction = worlds[0] ? undefined : await studySource(parent);
+    let incoming: { index: number; source: NotebookSource } | undefined;
     const chapters: SceneChapter[] = options.chapters.map((chapter, index) => {
       if ('mount' in chapter) return chapter;
       if (!options.pack) throw new Error('Character chapters need a character pack');
@@ -71,13 +71,16 @@ async function mount(parent: HTMLElement, options: StorybookOptions) {
                   drawing.capture(),
                   notebookSource(drawing, notebook.bookId),
                 ]).then(([image, source]) => {
-                  if (revision === current) entries[index + 1] = source;
+                  if (revision === current) incoming = { index: index + 1, source };
                   return image;
                 });
               }
               return drawing.capture();
             },
-            dispose: drawing.dispose,
+            dispose() {
+              revision++;
+              drawing.dispose();
+            },
           };
         },
       };
@@ -86,9 +89,15 @@ async function mount(parent: HTMLElement, options: StorybookOptions) {
       ...options,
       title: options.topic,
       chapters,
-      transition: bookChapters(options.topic, worlds, entries),
+      transition: bookChapters(options.topic, worlds, (index) =>
+        index === 0 ? introduction : incoming?.index === index ? incoming.source : undefined,
+      ),
     });
-    result.shell.onDispose(() => graphics?.dispose());
+    result.shell.onDispose(() => {
+      incoming = undefined;
+      introduction = undefined;
+      graphics?.dispose();
+    });
     return result;
   } catch (error) {
     graphics?.dispose();

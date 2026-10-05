@@ -6,6 +6,13 @@ export type StoryOptions<P, K extends string, S = P> = {
   script: Script<K>;
   audio?: HTMLAudioElement | null;
   stateAt(frame: Frame<K>): P;
+  /** Prepare the requested presentation before drawing it. Story owns cancellation and readiness. */
+  prepare?(
+    state: NoInfer<S>,
+    frame: Frame<K>,
+    mode: 'story' | 'explore',
+    signal: AbortSignal,
+  ): void | Promise<void>;
   render(state: NoInfer<S>, frame: Frame<K>, mode: 'story' | 'explore'): void;
 } & (
   | {
@@ -31,6 +38,28 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
   let changing = false;
   const listeners = new Set<(mode: 'story' | 'explore', values: P) => void>();
   const seeks = new Set<(time: number) => void>();
+  let preparation:
+    | {
+        controller: AbortController;
+        done: Promise<void>;
+        resolve(): void;
+      }
+    | undefined;
+  let preparationError: unknown;
+  function cancelPreparation() {
+    const previous = preparation;
+    preparation = undefined;
+    previous?.controller.abort();
+    previous?.resolve();
+  }
+  async function ready() {
+    assertLive();
+    while (preparation) {
+      await preparation.done;
+      if (disposed) return;
+    }
+    if (preparationError) throw preparationError;
+  }
   function compute(next: P, frame: Frame<K>) {
     return {
       values: next,
@@ -39,13 +68,53 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
     };
   }
   function publish(next: ReturnType<typeof compute>) {
+    cancelPreparation();
+    preparationError = undefined;
     values = next.values;
     state = next.state;
-    options.render(state, next.frame, mode);
-    for (const listener of listeners) listener(mode, values);
+    const requestedMode = mode;
+    const draw = () => {
+      options.render(next.state, next.frame, requestedMode);
+      for (const listener of listeners) listener(requestedMode, next.values);
+    };
+    if (!options.prepare) return draw();
+    const controller = new AbortController();
+    const prepared = options.prepare(next.state, next.frame, requestedMode, controller.signal);
+    if (!prepared) return draw();
+    let resolve!: () => void, reject!: (cause: unknown) => void;
+    const done = new Promise<void>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    const request = (preparation = { controller, done, resolve });
+    // Pausing media can synchronously publish its state. It does not create a new request.
+    const previous = changing;
+    changing = true;
+    try {
+      player.prepare(done);
+    } finally {
+      changing = previous;
+    }
+    void prepared
+      .then(() => {
+        if (controller.signal.aborted || disposed) return;
+        draw();
+      })
+      .then(
+        () => {
+          if (preparation === request) preparation = undefined;
+          resolve();
+        },
+        (cause) => {
+          if (controller.signal.aborted || disposed) return resolve();
+          if (preparation === request) preparation = undefined;
+          preparationError = cause;
+          reject(cause);
+        },
+      );
   }
   function update() {
-    if (disposed || changing) return;
+    if (disposed || changing || preparationError) return;
     const frame = sheet.at(player.state.time, forcedReduced ?? media.matches);
     publish(compute(mode === 'story' ? options.stateAt(frame) : values, frame));
   }
@@ -61,7 +130,12 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
   }
   let unsubscribe: () => void;
   try {
-    unsubscribe = player.subscribe(update);
+    unsubscribe = player.subscribe((playback, mediaFrame) => {
+      if (preparationError && playback.playing) {
+        preparationError = undefined;
+        update();
+      } else if (mediaFrame) update();
+    });
   } catch (error) {
     player.dispose();
     throw error;
@@ -73,6 +147,7 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
     review: sheet.review,
     pause: player.pause,
     duration: options.script.duration,
+    ready,
     get currentTime() {
       return player.state.time;
     },
@@ -135,6 +210,7 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
     dispose() {
       if (disposed) return;
       disposed = true;
+      cancelPreparation();
       unsubscribe();
       player.dispose();
       media.removeEventListener('change', update);

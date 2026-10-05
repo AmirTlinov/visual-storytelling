@@ -1,14 +1,15 @@
 import { SceneShell, type SceneOptions } from '../scene.js';
 import { theme, type Theme } from '../ink/palette.js';
 import type { ControlValue } from '../controls/fields.js';
-import { activeCue, type Script } from './cues.js';
+import { activeCue, type Frame, type Script } from './cues.js';
 import {
   composeChapters,
   chapterTime,
   type ChapterTiming,
   type ChapterIntroduction,
 } from './composition-plan.js';
-import { chapterPreviews, type MountedChapter } from './composition-previews.js';
+import { chapterPreviews } from './composition-previews.js';
+import { chapterPresentations } from './composition-presentations.js';
 import type { Story } from './story.js';
 
 export interface ChapterFrame {
@@ -114,43 +115,27 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
     captions: options.captions,
   });
   shell.onDispose(colors.dispose);
-  const mounted: MountedChapter[] = [];
+  const presentations = chapterPresentations(options.chapters, shell.stage);
+  shell.onDispose(presentations.dispose);
   let current = 0,
     latest: ChapterFrame | undefined;
   try {
-    for (const chapter of options.chapters) {
-      const element = document.createElement('div');
-      element.dataset.chapter = chapter.id;
-      element.inert = true;
-      Object.assign(element.style, { position: 'absolute', inset: '0' });
-      shell.stage.append(element);
-      const drawing = await chapter.mount(element);
-      mounted.push({ element, drawing });
-      shell.onDispose(() => {
-        drawing.dispose();
-        element.remove();
-      });
-      element.hidden = true;
-    }
     let story: Story<Record<string, ControlValue>> | undefined;
     let transition: ReturnType<ChapterTransition['mount']> | undefined;
-    let transitionState: Parameters<NonNullable<typeof transition>['render']>[0] | undefined;
     const previews = options.transition
       ? chapterPreviews(
           options.chapters,
-          mounted,
           shell.stage,
           defaults,
-          () => story?.update(),
+          presentations.get,
           () => {
-            if (transitionState) transition?.render(transitionState);
+            if (latest) presentations.active?.drawing.render(latest);
           },
           options.transition.captureAspect,
         )
       : undefined;
     if (previews) {
       shell.onDispose(previews.dispose);
-      await previews.refresh();
     }
     transition = options.transition?.mount(shell.stage, previews!.images);
     if (transition) shell.onDispose(transition.dispose);
@@ -174,6 +159,42 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
         },
       };
     };
+    const selection = (
+      values: Record<string, ControlValue>,
+      frame: Frame,
+      mode: 'story' | 'explore',
+    ) => {
+      const state = at(frame.time, frame.reduced);
+      const index =
+        mode === 'explore'
+          ? options.chapters.findIndex((chapter) => chapter.id === values.chapter)
+          : state.index;
+      if (index < 0) throw new Error(`Unknown chapter: ${values.chapter}`);
+      const chapter = options.chapters[index]!,
+        progress = mode === 'explore' ? Number(values.sceneTime) : state.frame.progress;
+      if (!Number.isFinite(progress) || progress < 0 || progress > 1)
+        throw new Error('Chapter progress must be between zero and one');
+      const transition = {
+        chapter: index,
+        time: frame.time,
+        open:
+          mode === 'explore' || frame.reduced || plan.introduction === 0
+            ? 1
+            : Math.min(1, frame.time / Math.max(0.001, plan.introduction)),
+        progress:
+          mode === 'explore' || frame.reduced || index === 0 || frame.time >= state.timing.content
+            ? 1
+            : Math.max(
+                0,
+                Math.min(
+                  1,
+                  (frame.time - state.timing.start) / Math.max(0.001, state.timing.transition),
+                ),
+              ),
+        reduced: frame.reduced,
+      };
+      return { state, index, chapter, progress, transition };
+    };
     story = shell.attachStory({
       script: plan.script,
       audio: options.audio,
@@ -187,24 +208,38 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
           sceneTime: state.frame.progress,
         };
       },
+      prepare(values, frame, mode, signal) {
+        const selected = selection(values, frame, mode);
+        const boundary = Boolean(
+          previews && (selected.transition.open < 1 || selected.transition.progress < 1),
+        );
+        const capture = boundary && !previews!.has(selected.index);
+        if (presentations.get(selected.index) && !capture) return;
+        shell.stage.setAttribute('aria-busy', 'true');
+        const indices =
+          capture && selected.index ? [selected.index - 1, selected.index] : [selected.index];
+        return presentations
+          .prepare(
+            indices,
+            signal,
+            capture ? () => previews!.prepare(selected.index, signal) : undefined,
+          )
+          .catch((cause) => {
+            if (!signal.aborted) shell.stage.removeAttribute('aria-busy');
+            throw cause;
+          });
+      },
       render(values, frame, mode) {
-        const state = at(frame.time, frame.reduced);
-        const index =
-          mode === 'explore'
-            ? options.chapters.findIndex((c) => c.id === values.chapter)
-            : state.index;
-        if (index < 0) throw new Error(`Unknown chapter: ${values.chapter}`);
-        const chapter = options.chapters[index]!,
-          progress = mode === 'explore' ? Number(values.sceneTime) : state.frame.progress;
-        if (!Number.isFinite(progress) || progress < 0 || progress > 1)
-          throw new Error('Chapter progress must be between zero and one');
-        if (index !== current) {
-          mounted[current]!.element.hidden = true;
-          mounted[current]!.element.inert = true;
-        }
+        const {
+          state,
+          index,
+          chapter,
+          progress,
+          transition: nextTransition,
+        } = selection(values, frame, mode);
         current = index;
-        const presentation = mounted[index]!;
-        presentation.element.hidden = false;
+        const presentation = presentations.show(index);
+        shell.stage.removeAttribute('aria-busy');
         latest = {
           ...state.frame,
           progress,
@@ -224,30 +259,11 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
           'sceneTime',
           ...(chapter.controls ?? (options.parameters ?? []).map((p) => p.key)),
         ]);
-        transitionState = {
-          chapter: index,
-          time: frame.time,
-          open:
-            mode === 'explore' || frame.reduced || plan.introduction === 0
-              ? 1
-              : Math.min(1, frame.time / Math.max(0.001, plan.introduction)),
-          progress:
-            mode === 'explore' || frame.reduced || index === 0 || frame.time >= state.timing.content
-              ? 1
-              : Math.max(
-                  0,
-                  Math.min(
-                    1,
-                    (frame.time - state.timing.start) / Math.max(0.001, state.timing.transition),
-                  ),
-                ),
-          reduced: frame.reduced,
-        };
         // A covered page is still rendered for the transition, but cannot receive input or focus.
         presentation.element.inert = Boolean(
-          transition && (transitionState.open < 1 || transitionState.progress < 1),
+          transition && (nextTransition.open < 1 || nextTransition.progress < 1),
         );
-        transition?.render(transitionState);
+        transition?.render(nextTransition);
         for (const id of Object.keys(plan.script.cues))
           if (id === chapter.id || id.startsWith(chapter.id + '.')) {
             frame.has(id);
@@ -256,7 +272,6 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
       },
     });
     const scene = parent.scene!;
-    if (mounted[current]!.drawing.focus) scene.focus = mounted[current]!.drawing.focus;
     scene.snapshot = () => ({
       chapter: options.chapters[current]!.id,
       frame: latest && {
@@ -267,7 +282,7 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
         values: latest.values,
         beat: latest.beat,
       },
-      content: mounted[current]!.drawing.snapshot?.(),
+      content: presentations.active?.drawing.snapshot?.(),
     });
     scene.checkpoints = [
       ...new Set([
@@ -277,13 +292,16 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
     ].sort((a, b) => a - b);
     scene.setTheme = (value) => {
       colors.set(value);
+      previews?.refresh();
       story!.update();
-      return previews?.refresh();
+      return story!.ready();
     };
     if (previews) {
       const refresh = () => {
         try {
-          void previews.refresh().catch((error) => {
+          if (!previews.refresh()) return;
+          story!.update();
+          void story!.ready().catch((error) => {
             shell.status.textContent = error.message;
           });
         } catch (error) {
@@ -297,14 +315,15 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
           attributeFilter: ['class', 'style', 'data-theme'],
         });
       const resize = new ResizeObserver(refresh);
-      resize.observe(shell.stage);
+      resize.observe(shell.stage.closest('.ve-frame') ?? shell.stage);
       shell.onDispose(() => {
         observer.disconnect();
         resize.disconnect();
       });
     }
-    shell.attachView({ reset: () => mounted[current]!.drawing.reset?.(), dispose() {} });
-    return { shell, story, scene, presentations: mounted.map((m) => m.drawing) };
+    shell.attachView({ reset: () => presentations.active?.drawing.reset?.(), dispose() {} });
+    await story.ready();
+    return { shell, story, scene };
   } catch (error) {
     shell.dispose();
     throw error;

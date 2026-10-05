@@ -1,20 +1,15 @@
+import type { ChapterFrame, SceneChapter } from './composition.js';
+import type { MountedChapter } from './composition-presentations.js';
 import { activeCue } from './cues.js';
 import type { ControlValue } from '../controls/fields.js';
-import type { SceneChapter, ChapterPresentation, ChapterFrame } from './composition.js';
 
-export interface MountedChapter {
-  element: HTMLDivElement;
-  drawing: ChapterPresentation;
-}
-
-/** Boundary images use the live presentation once; capture must freeze its inputs before awaiting. */
+/** Freeze only the two sides of the requested boundary, independently of live GPU owners. */
 export function chapterPreviews(
   chapters: readonly SceneChapter[],
-  mounted: readonly MountedChapter[],
   parent: HTMLElement,
-  defaults: Readonly<Record<string, ControlValue>>,
+  defaults: Record<string, ControlValue>,
+  get: (index: number) => MountedChapter | undefined,
   restore: () => void,
-  publish: () => void,
   captureAspect?: number,
 ) {
   const images: {
@@ -22,90 +17,109 @@ export function chapterPreviews(
     end?: HTMLCanvasElement;
     surface?: HTMLCanvasElement;
   }[] = chapters.map(() => ({}));
-  let disposed = false,
-    generation = 0,
-    signature = '',
-    pending: Promise<void> = Promise.resolve();
-  const refresh = () => {
-    if (disposed) return Promise.resolve();
-    const style = getComputedStyle(parent),
-      box = parent.getBoundingClientRect();
+  let signature = '',
+    revision = 0,
+    disposed = false;
+  let ready: { index: number; revision: number } | undefined;
+  const retained = new Set<number>();
+  function clear() {
+    for (const index of retained) {
+      delete images[index]!.start;
+      delete images[index]!.end;
+      delete images[index]!.surface;
+    }
+    retained.clear();
+    ready = undefined;
+  }
+  function refresh() {
+    if (disposed) return false;
+    const box = parent.getBoundingClientRect(),
+      style = getComputedStyle(parent);
     const key = JSON.stringify([
       box.width,
       box.height,
       style.colorScheme,
-      ...[...style]
+      Array.from(style)
         .filter((name) => name.startsWith('--ve-'))
         .map((name) => [name, style.getPropertyValue(name)]),
     ]);
-    if (key === signature) return pending;
+    if (key === signature) return false;
     signature = key;
-    const revision = ++generation,
-      captures: {
+    revision++;
+    clear();
+    return true;
+  }
+  refresh();
+  return {
+    images,
+    refresh,
+    has(index: number) {
+      return ready?.index === index && ready.revision === revision;
+    },
+    async prepare(index: number, signal: AbortSignal) {
+      const version = revision;
+      const pending: {
         index: number;
         key: 'start' | 'end' | 'surface';
         image: Promise<HTMLCanvasElement | undefined>;
       }[] = [];
-    try {
-      for (const [index, chapter] of chapters.entries()) {
-        const { element, drawing } = mounted[index]!;
-        element.hidden = false;
-        try {
-          for (const end of [false, true]) {
-            const frame: ChapterFrame = {
-              time: end ? chapter.seconds : 0,
-              progress: Number(end),
-              reduced: false,
-              mode: 'story',
-              values: defaults,
-              beat: activeCue(chapter.script, end ? chapter.seconds : 0),
-            };
-            frame.values = { ...defaults, ...chapter.valuesAt?.(frame) };
+      try {
+        for (const id of index ? [index - 1, index] : [index]) {
+          signal.throwIfAborted();
+          const chapter = chapters[id]!,
+            { element, drawing } = get(id)!;
+          const end = id !== index;
+          const frame: ChapterFrame = {
+            time: end ? chapter.seconds : 0,
+            progress: Number(end),
+            reduced: false,
+            mode: 'story',
+            values: defaults,
+            beat: activeCue(chapter.script, end ? chapter.seconds : 0),
+          };
+          frame.values = { ...defaults, ...chapter.valuesAt?.(frame) };
+          const hidden = element.hidden,
+            visibility = element.style.visibility;
+          element.hidden = false;
+          element.style.removeProperty('visibility');
+          try {
             drawing.render(frame);
-            captures.push({
-              index,
+            pending.push({
+              index: id,
               key: end ? 'end' : 'start',
               image: Promise.resolve(drawing.capture?.()),
             });
             if (!end && captureAspect)
-              captures.push({
-                index,
+              pending.push({
+                index: id,
                 key: 'surface',
                 image: Promise.resolve(drawing.capture?.({ aspect: captureAspect })),
               });
+          } finally {
+            element.hidden = hidden;
+            element.style.visibility = visibility;
           }
-        } finally {
-          element.hidden = true;
         }
+      } catch (cause) {
+        void Promise.allSettled(pending.map((item) => item.image));
+        throw cause;
+      } finally {
+        restore();
       }
-    } catch (error) {
-      void Promise.allSettled(captures.map((c) => c.image));
-      signature = '';
-      throw error;
-    } finally {
-      restore();
-    }
-    pending = Promise.all(captures.map((c) => c.image)).then(
-      (result) => {
-        if (disposed || revision !== generation) return;
-        for (const [i, capture] of captures.entries())
-          images[capture.index]![capture.key] = result[i];
-        publish();
-      },
-      (error) => {
-        if (revision === generation) signature = '';
-        throw error;
-      },
-    );
-    return pending;
-  };
-  return {
-    images,
-    refresh,
+      const captures = await Promise.all(pending.map((item) => item.image));
+      signal.throwIfAborted();
+      if (disposed || version !== revision) return;
+      clear();
+      for (const [offset, item] of pending.entries()) {
+        images[item.index]![item.key] = captures[offset];
+        retained.add(item.index);
+      }
+      ready = { index, revision };
+    },
     dispose() {
       disposed = true;
-      generation++;
-      images.length = 0;
+      revision++;
+      clear();
     },
   };
 }

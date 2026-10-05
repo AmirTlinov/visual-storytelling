@@ -397,8 +397,15 @@ function mount(
     });
     // Layout can change the stage height. Render outside ResizeObserver delivery so
     // that surface.resize() cannot create a same-frame observation loop.
-    let layoutFrame = 0;
+    let layoutFrame = 0,
+      stageWidth = stage.clientWidth,
+      stageHeight = stage.clientHeight;
     const layout = new ResizeObserver(() => {
+      const width = stage.clientWidth,
+        height = stage.clientHeight;
+      if (width === stageWidth && height === stageHeight) return;
+      stageWidth = width;
+      stageHeight = height;
       if (layoutFrame) return;
       layoutFrame = requestAnimationFrame(() => {
         layoutFrame = 0;
@@ -435,6 +442,7 @@ function mount(
         return controller.player.play();
       },
       seek: controller.seek,
+      ready: controller.ready,
       pause: controller.pause,
       mute: controller.player.mute,
       setRate: controller.player.rate,

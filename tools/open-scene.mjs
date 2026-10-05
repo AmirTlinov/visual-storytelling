@@ -66,7 +66,7 @@ export async function openScene(page, url) {
           checkpoints: scene?.checkpoints ?? [0],
         };
       },
-      seek(time) {
+      async seek(time) {
         if (!Number.isFinite(time) || time < 0)
           throw new Error('Capture time must be finite and non-negative');
         pause();
@@ -75,6 +75,7 @@ export async function openScene(page, url) {
         else if (!scene) for (const svg of nativeSVGs()) svg.setCurrentTime(time);
         else if (time > 0)
           throw new Error('This scene has no timeline; capture its current state at time 0');
+        await scene?.ready?.();
       },
       review() {
         const handle = owner();
@@ -116,7 +117,7 @@ export async function openScene(page, url) {
 /** Allow layout and the scene's invalidated WebGL draw to reach the displayed frame. */
 export function seekScene(capture, time) {
   return capture.evaluate(async (scene, time) => {
-    scene.seek(time);
+    await scene.seek(time);
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   }, time);
 }

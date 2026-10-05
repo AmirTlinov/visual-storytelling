@@ -312,6 +312,7 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
             handle.setReduced!(c.value);
             break;
         }
+        await handle.ready?.();
         signal?.throwIfAborted();
       }
       return inspect();

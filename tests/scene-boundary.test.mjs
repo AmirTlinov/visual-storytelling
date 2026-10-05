@@ -152,8 +152,10 @@ test('one scene boundary preserves capabilities, live time and model ownership t
     );
     await assert.rejects(
       page.evaluate(() => lab.root.scene.control([{ type: 'parameters', values: { x: 8 } }])),
-      /disabled/,
+      /Invalid scene parameter: x/,
     );
+    assert.equal(await page.evaluate(() => lab.story.values.x), 3);
+    assert.equal(await page.getByRole('slider', { name: 'Locked value' }).inputValue(), '3');
     await assert.rejects(
       page.evaluate(() => lab.shell.syncParameters({ x: 8 })),
       /story.explore/,

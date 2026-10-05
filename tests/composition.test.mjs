@@ -224,8 +224,10 @@ test('boundary capture, fast theme changes and disposal preserve the current pre
       import './dist/style.css';
       const root = document.querySelector('main');
       window.removed = [];
+      window.mounted = []; window.captured = [];
       const chapter = id => ({ id, title:id, text:id, seconds:2,
         mount(parent) {
+          window.mounted.push(id);
           const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
           svg.setAttribute('viewBox','0 0 80 60');
           svg.innerHTML='<rect y="0" width="20" height="20" style="fill:light-dark(rgb(180,20,30),rgb(20,170,220))"/>';
@@ -233,14 +235,14 @@ test('boundary capture, fast theme changes and disposal preserve the current pre
           return {
             render(value) { frame=value; svg.firstChild.setAttribute('x', String(value.progress * 40)); },
             snapshot: () => ({time:frame.time, mode:frame.mode}),
-            capture() { const pending = snapshotSVG(svg,1); return pending.then(image => new Promise(resolve => setTimeout(() => resolve(image),12))); },
+            capture() { window.captured.push(id); const pending = snapshotSVG(svg,1); return pending.then(image => new Promise(resolve => setTimeout(() => resolve(image),12))); },
             dispose() { window.removed.push(id); svg.remove(); },
           };
         },
       });
-      window.galleryReady = SceneStory.mount(root, { title:'Composition', chapters:[chapter('a'),chapter('b')], frame:{width:80,height:60},
-        transition: { duration:0, mount(parent, previews) {
-          return { render(state) { window.boundaries = previews.map(pair => ['start','end'].map((key,i) => Array.from(pair[key].getContext('2d').getImageData(i?45:5,5,1,1).data))); window.transitionState=state; }, dispose() { window.removed.push('transition'); } };
+      window.galleryReady = SceneStory.mount(root, { title:'Composition', chapters:[chapter('a'),chapter('b'),...Array.from({length:85},(_,i)=>chapter('unused'+i))], frame:{width:80,height:60},
+        transition: { duration:.4, introduction:{id:'opening',title:'Opening',text:'Opening',seconds:.25}, mount(parent, previews) {
+          return { render(state) { window.boundaries = [previews[state.chapter-1]?.end,previews[state.chapter]?.start].map((image,i)=>image ? Array.from(image.getContext('2d').getImageData(i?5:45,5,1,1).data) : null); window.transitionState=state; }, dispose() { window.removed.push('transition'); } };
         } },
       }).then(value => window.lab=value);
     `,
@@ -265,13 +267,23 @@ test('boundary capture, fast theme changes and disposal preserve the current pre
     capture = await renderer({ directory: root, controls: true, width: 400 });
     const result = await capture.page.evaluate(async () => {
       const scene = window.lab.scene;
-      scene.seek(0.5);
+      const startup = { mounted: [...window.mounted], captures: [...window.captured] };
+      scene.seek(0.75);
+      await scene.ready();
       const before = scene.snapshot();
       const a = scene.setTheme('dark'),
         b = scene.setTheme('light'),
         c = scene.setTheme('dark');
-      scene.seek(3);
+      scene.seek(2.35);
       await Promise.all([a, b, c]);
+      await scene.ready();
+      const capturesBeforeResize = window.captured.length;
+      document.querySelector('main').style.width = '280px';
+      await new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      );
+      await scene.ready();
+      const capturesAfterResize = window.captured.length;
       const after = scene.snapshot(),
         boundaries = window.boundaries,
         transition = window.transitionState;
@@ -280,24 +292,30 @@ test('boundary capture, fast theme changes and disposal preserve the current pre
       await pending;
       return {
         before,
+        startup,
         after,
         boundaries,
         transition,
         removed: window.removed,
+        mounted: window.mounted,
+        captured: window.captured,
+        capturesBeforeResize,
+        capturesAfterResize,
         children: document.querySelector('main').childElementCount,
       };
     });
     assert.equal(result.before.content.time, 0.5);
+    assert.deepEqual(result.startup, { mounted: ['a'], captures: ['a'] });
     assert.equal(result.after.chapter, 'b');
-    assert.equal(result.after.content.time, 1);
+    assert.equal(result.after.content.time, 0);
     assert.equal(result.transition.chapter, 1);
-    assert.deepEqual(
-      result.boundaries,
-      Array.from({ length: 2 }, () => [
-        [20, 170, 220, 255],
-        [20, 170, 220, 255],
-      ]),
-    );
+    assert.deepEqual(result.boundaries, [
+      [20, 170, 220, 255],
+      [20, 170, 220, 255],
+    ]);
+    assert.deepEqual(result.mounted, ['a', 'b']);
+    assert(result.captured.every((id) => id === 'a' || id === 'b'));
+    assert.equal(result.capturesAfterResize - result.capturesBeforeResize, 2);
     assert.deepEqual(result.removed, ['a', 'b', 'transition']);
     assert.equal(result.children, 0);
   } finally {
