@@ -113,7 +113,11 @@ await CharacterStory.mount(root, {
 исполняет родную анимацию; при контакте постановка сохраняет опору и захват, а эмоция
 управляет лицом. Независимые каналы `perform` можно сочетать.
 
-`readingRoom` принимает `theme: library | laboratory | classroom`, `seat: chair | bench`,
+`readingRoom` и `teachingRoom` принимают `width` в единицах рисунка
+(минимум и значение по умолчанию — 960; для широкого кадра — 1680).
+Расширение сохраняет мировые координаты, размеры предметов и высоту декорации 650.
+Остальные параметры комнаты:
+`theme: library | laboratory | classroom`, `seat: chair | bench`,
 `furnitureScale`, `depth`; `street` — `theme: town | park`, `depth`; `courtyard`
 принимает `theme: workshop | library`, `entranceScale` и содержит вход с комнатой,
 фасад и лестницу с площадкой. [Одна цепочка для двух разных героев](../examples/chibi-reading/scene.js)

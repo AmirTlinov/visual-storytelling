@@ -9,7 +9,7 @@ import { blockAt } from '../dist/characters/staging/motion.js';
 import { body, connect } from '../dist/characters/staging/pose.js';
 import { world } from '../dist/characters/staging/world.js';
 import { ground, project } from '../dist/characters/staging/space.js';
-import { readingRoom, courtyard } from '../dist/characters/staging/sets.js';
+import { readingRoom, teachingRoom, courtyard } from '../dist/characters/staging/sets.js';
 import { doorway, doorHandle, doorPassage } from '../dist/characters/staging/doorway.js';
 import { performance, readSkeleton } from '../dist/characters/performance.js';
 
@@ -32,6 +32,29 @@ function scene(beats = [beat()]) {
     beats: beats.map((b, i) => ({ ...b, id: `beat-${i}` })),
   };
 }
+
+test('room width preserves world placement and keeps projected marks inside the set', () => {
+  for (const room of [readingRoom, teachingRoom]) {
+    for (const perspective of ['stage', 'overview']) {
+      const base = room({ perspective }),
+        wide = room({ perspective, width: 1680 });
+      assert.deepEqual(room({ perspective, width: 960 }), base);
+      assert.equal(wide.width, 1680);
+      assert.equal(wide.height, base.height);
+      assert.deepEqual(wide.staging.objects, base.staging.objects);
+      assert.deepEqual(wide.staging.spots, base.staging.spots);
+      for (const [id, point] of Object.entries(base.spots)) {
+        assert.ok(Math.abs(wide.spots[id].x - point.x - 360) < 1e-10, id);
+        assert.equal(wide.spots[id].y, point.y, id);
+        assert.equal(wide.spots[id].scale, point.scale, id);
+        assert.ok(point.x >= 0 && point.x <= base.width, id);
+        assert.ok(wide.spots[id].x >= 0 && wide.spots[id].x <= wide.width, id);
+      }
+    }
+    for (const width of [640, 959, NaN, Infinity])
+      assert.throws(() => room({ width }), /at least 960 drawing units/);
+  }
+});
 
 test('view skins retain their own artwork while preserving native rig and mesh dependencies', async () => {
   const rig = JSON.parse(await readFile(template + '/rig.json', 'utf8'));

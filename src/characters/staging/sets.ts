@@ -8,6 +8,8 @@ import { arrange } from './layout.js';
 
 export type StagePerspective = 'stage' | 'overview';
 export interface RoomOptions {
+  /** Drawing width, at least 960. World placement and the 650-unit height stay unchanged. */
+  width?: number;
   perspective?: StagePerspective;
   theme?: 'library' | 'laboratory' | 'classroom';
   seat?: 'chair' | 'bench';
@@ -38,6 +40,10 @@ export function prepareSet(
 export function readingRoom(options: RoomOptions = {}): StageSet {
   const { theme = 'library', seat = 'chair', furnitureScale = 1, depth = 1 } = options;
   const space = projection(options.perspective);
+  const width = options.width ?? 960;
+  if (!Number.isFinite(width) || width < 960)
+    throw new Error('Room width must be at least 960 drawing units');
+  space.center = width / 2;
   const backY = project(space, ground(0, 14.3)).y;
   const wall = { library: '#73817a', laboratory: '#3f626b', classroom: '#8a9b87' }[theme];
   const wood = { library: '#b09061', laboratory: '#9e8667', classroom: '#ba9c70' }[theme];
@@ -45,35 +51,34 @@ export function readingRoom(options: RoomOptions = {}): StageSet {
     `<g transform="translate(${x} 75)" stroke="#344747" stroke-width="4" stroke-linejoin="round"><path fill="${wood}" d="M0 0h195v290H0z"/><path fill="#394e4f" d="M13 14h169v261H13z"/>${[0, 1, 2].map((row) => `<g transform="translate(20 ${26 + row * 86})">${[0, 1, 2, 3, 4, 5].map((i) => `<path fill="${['#b97958', '#768d90', '#cfb47b', '#8c9c72', '#a7aca0', '#8d787c'][i]}" d="M${i * 26} ${(i % 2) * 9}h19v64h-19z"/><path stroke="#e4d2a4" stroke-width="2" d="M${i * 26 + 4} 23h11m-11 7h11"/>`).join('')}<path fill="${wood}" d="M-8 67h172v9H-8z"/></g>`).join('')}</g>`;
   const wallArt =
     theme === 'library'
-      ? shelf(44) + shelf(720)
-      : `<g stroke="#344b4c" stroke-width="5"><path fill="#b4a27a" d="M50 80h190v240H50z"/><path fill="#314f4e" d="M64 94h162v212H64z"/></g><g stroke="#d9d7b7" stroke-width="3" fill="none"><path d="M83 227h119M101 221V158m42 63V128m42 93V177"/><circle cx="153" cy="135" r="35"/></g><g transform="translate(742 115)" stroke="#bfbb98" fill="none" stroke-width="4"><circle cx="60" cy="60" r="51"/><path d="M60 17v48l29 21"/></g>`;
-  const svg = `<defs><linearGradient id="$id-room" x2="0" y2="1"><stop stop-color="${wall}"/><stop offset="1" stop-color="#455f5c"/></linearGradient></defs><path fill="url(#$id-room)" d="M0 0h960v650H0z"/><path d="M0 ${backY}h960v${650 - backY}H0z" fill="#b8a581"/><path d="M0 ${backY}h960" stroke="#d1c5a0" stroke-width="9"/>${floorGrid(space, '#6e7565', 14.3)}<g transform="translate(0 ${backY - 425})">${wallArt}<path fill="#aec3b7" stroke="#34504f" stroke-width="6" d="M323 46h310v265H323z"/><path d="M326 267q61-109 125-51 76-110 178-19v110H326z" fill="#73958a"/><circle cx="562" cy="109" r="28" fill="#f1ddb0"/><path d="M479 49v260M326 181h305" stroke="#34504f" stroke-width="7"/><path d="M311 310h333v12H311z" fill="${wood}" stroke="#34504f" stroke-width="4"/></g>`;
-  return arrange(
-    prepareSet(
-      svg,
-      space,
-      {
-        entry: ground(-3.5, depth),
-        reader: ground(0.2, depth - objectShape.chair.halfDepth * furnitureScale - 0.75),
-        exit: ground(3.5, depth),
-        partner: ground(2.7, depth),
-      },
-      {
-        seat: { kind: seat, at: ground(0.2, depth), scale: furnitureScale, color: wood },
-        book: {
-          kind: 'book',
-          at: ground(2.8, depth + 0.9, 1.86 * 0.8 + 0.04),
-          color: theme === 'laboratory' ? '#b08b57' : '#8d4c4d',
-        },
-        sideTable: { kind: 'table', at: ground(2.8, depth + 0.9), scale: 0.8, color: wood },
-        plant: { kind: 'tree', at: ground(-3.8, depth + 3), scale: 0.65 },
-      },
-    ),
+      ? shelf(44) + shelf(width - 240)
+      : `<g stroke="#344b4c" stroke-width="5"><path fill="#b4a27a" d="M50 80h190v240H50z"/><path fill="#314f4e" d="M64 94h162v212H64z"/></g><g stroke="#d9d7b7" stroke-width="3" fill="none"><path d="M83 227h119M101 221V158m42 63V128m42 93V177"/><circle cx="153" cy="135" r="35"/></g><g transform="translate(${width - 218} 115)" stroke="#bfbb98" fill="none" stroke-width="4"><circle cx="60" cy="60" r="51"/><path d="M60 17v48l29 21"/></g>`;
+  const svg = `<defs><linearGradient id="$id-room" x2="0" y2="1"><stop stop-color="${wall}"/><stop offset="1" stop-color="#455f5c"/></linearGradient></defs><path fill="url(#$id-room)" d="M0 0h${width}v650H0z"/><path d="M0 ${backY}h${width}v${650 - backY}H0z" fill="#b8a581"/><path d="M0 ${backY}h${width}" stroke="#d1c5a0" stroke-width="9"/>${floorGrid(space, '#6e7565', 14.3)}<g transform="translate(0 ${backY - 425})">${wallArt}<g transform="translate(${(width - 960) / 2} 0)"><path fill="#aec3b7" stroke="#34504f" stroke-width="6" d="M323 46h310v265H323z"/><path d="M326 267q61-109 125-51 76-110 178-19v110H326z" fill="#73958a"/><circle cx="562" cy="109" r="28" fill="#f1ddb0"/><path d="M479 49v260M326 181h305" stroke="#34504f" stroke-width="7"/><path d="M311 310h333v12H311z" fill="${wood}" stroke="#34504f" stroke-width="4"/></g></g>`;
+  const set = prepareSet(
+    svg,
+    space,
     {
-      objects: { book: { at: { of: 'sideTable', side: 'on' } } },
-      spots: { reader: { of: 'seat', side: 'front', gap: 0.75 } },
+      entry: ground(-3.5, depth),
+      reader: ground(0.2, depth - objectShape.chair.halfDepth * furnitureScale - 0.75),
+      exit: ground(3.5, depth),
+      partner: ground(2.7, depth),
+    },
+    {
+      seat: { kind: seat, at: ground(0.2, depth), scale: furnitureScale, color: wood },
+      book: {
+        kind: 'book',
+        at: ground(2.8, depth + 0.9, 1.86 * 0.8 + 0.04),
+        color: theme === 'laboratory' ? '#b08b57' : '#8d4c4d',
+      },
+      sideTable: { kind: 'table', at: ground(2.8, depth + 0.9), scale: 0.8, color: wood },
+      plant: { kind: 'tree', at: ground(-3.8, depth + 3), scale: 0.65 },
     },
   );
+  set.width = width;
+  return arrange(set, {
+    objects: { book: { at: { of: 'sideTable', side: 'on' } } },
+    spots: { reader: { of: 'seat', side: 'front', gap: 0.75 } },
+  });
 }
 export interface StreetOptions {
   perspective?: StagePerspective;
