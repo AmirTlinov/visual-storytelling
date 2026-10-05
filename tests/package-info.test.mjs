@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, cp, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, cp, rm } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
@@ -11,6 +11,7 @@ import {
   sourceDigest,
   writeBuildInfo,
 } from '../tools/build-info.mjs';
+const { files } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 
 async function fixture(root) {
   await mkdir(join(root, 'src'), { recursive: true });
@@ -22,7 +23,7 @@ async function fixture(root) {
       name: '@visual-storytelling/core',
       version: '0.9.0',
       type: 'module',
-      files: ['dist', 'tools', 'examples/**/*.js', 'README.md', 'THIRD_PARTY.md'],
+      files,
       exports: { '.': { import: './dist/index.js' } },
     }),
   );
@@ -74,20 +75,32 @@ test('package identity follows npm contents, including notices and excluding uns
     await fixture(root);
     await writeFile(join(root, 'README.md'), 'Authored guide');
     await writeFile(join(root, 'THIRD_PARTY.md'), 'Dependency notices');
+    await writeFile(join(root, 'tools/voice.py'), '# shipped source');
     await writeBuildInfo(root, join(root, 'dist'));
     const before = await packageInfo(root);
     await mkdir(join(root, 'examples'));
     await writeFile(join(root, 'examples/preview.mp4'), 'Unpublished preview');
-    assert.equal((await packageInfo(root)).build, before.build);
+    await mkdir(join(root, 'tools/audio/__pycache__'), { recursive: true });
+    await writeFile(join(root, 'tools/audio/__pycache__/voice.cpython-313.pyc'), 'Local cache');
+    await writeFile(join(root, 'tools/audio/__pycache__/local.py'), 'Local cache metadata');
+    await writeFile(join(root, 'tools/voice.pyc'), 'Legacy local bytecode');
+    const withLocalCache = await packageInfo(root);
+    assert.equal(withLocalCache.build, before.build);
+    assert.equal(withLocalCache.status, 'current');
     const { stdout } = await run(
       'npm',
       ['pack', '--ignore-scripts', '--json', '--pack-destination', directory],
       { cwd: root },
     );
+    const packed = JSON.parse(stdout)[0];
+    assert(packed.files.some((file) => file.path === 'tools/voice.py'));
+    assert(
+      !packed.files.some((file) => file.path.includes('__pycache__') || file.path.endsWith('.pyc')),
+    );
     await mkdir(installed);
     await run('tar', [
       '-xzf',
-      join(directory, JSON.parse(stdout)[0].filename),
+      join(directory, packed.filename),
       '-C',
       installed,
       '--strip-components=1',
