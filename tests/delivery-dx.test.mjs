@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { gunzipSync } from 'node:zlib';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import sharp from 'sharp';
@@ -281,6 +282,16 @@ test('a nested release keeps editable sources, captions and silent HTML together
       '{"name":"plain-illustration","private":true}',
     );
     await writeFile(join(directory, 'timeline.json'), JSON.stringify({ ...script, cues: {} }));
+    const payload = Buffer.from([0, 1, 127, 128, 255, 13, 10]);
+    const payloadPath = join(directory, 'authored.bin');
+    await writeFile(payloadPath, payload);
+    if (process.platform === 'darwin')
+      execFileSync('xattr', [
+        '-w',
+        'org.visual-storytelling.test',
+        'authored metadata',
+        payloadPath,
+      ]);
     const out = join(directory, 'artifacts/release');
     await mkdir(out, { recursive: true });
     const activeExport = await mkdtemp(join(out, '.visual-story-video-'));
@@ -300,6 +311,19 @@ test('a nested release keeps editable sources, captions and silent HTML together
     }).split('\n');
     assert(entries.includes('source/index.html'));
     assert(entries.includes('source/package.json'));
+    // macOS tar -t hides AppleDouble entries, so inspect the actual tar headers.
+    const archive = gunzipSync(await readFile(join(out, 'source.tar.gz')));
+    for (let offset = 0; offset + 512 <= archive.length && archive[offset]; ) {
+      const name = archive.toString('utf8', offset, offset + 100).split('\0')[0];
+      assert(!name.split('/').some((part) => part.startsWith('._')), name);
+      const size = parseInt(archive.toString('ascii', offset + 124, offset + 136), 8);
+      offset += 512 + Math.ceil(size / 512) * 512;
+    }
+    assert.deepEqual(
+      execFileSync('tar', ['-xOf', join(out, 'source.tar.gz'), 'source/authored.bin']),
+      payload,
+    );
+    assert.deepEqual(await readFile(payloadPath), payload);
     assert(
       !entries.some(
         (path) =>

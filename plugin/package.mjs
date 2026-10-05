@@ -191,17 +191,21 @@ export async function packagePlugin(root) {
     `visual-storytelling-${version}-darwin-arm64.tar.gz`,
   );
   await mkdir(dirname(archive), { recursive: true });
-  await execute('/usr/bin/tar', [
-    '-czf',
-    archive,
-    '-C',
-    root,
-    '.agents/plugins/marketplace.json',
-    '.plugin-release',
-    '-C',
-    join(root, 'plugin'),
-    'INSTALL.md',
-  ]);
+  await execute(
+    '/usr/bin/tar',
+    [
+      '-czf',
+      archive,
+      '-C',
+      root,
+      '.agents/plugins/marketplace.json',
+      '.plugin-release',
+      '-C',
+      join(root, 'plugin'),
+      'INSTALL.md',
+    ],
+    { env: { ...process.env, COPYFILE_DISABLE: '1' } },
+  );
   await writeFile(
     archive + '.sha256',
     createHash('sha256')

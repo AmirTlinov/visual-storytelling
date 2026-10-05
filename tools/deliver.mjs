@@ -164,6 +164,7 @@ export async function deliver(
           await closeSceneDependencies(source, sourceCopy, { signal, runtime: packages.consumer });
         await execute('tar', ['-czf', join(staging, 'source.tar.gz'), '-C', staging, 'source'], {
           signal,
+          env: { ...process.env, COPYFILE_DISABLE: '1' },
         });
         await rm(sourceCopy, { recursive: true });
         receipt.files.push('source.tar.gz');
