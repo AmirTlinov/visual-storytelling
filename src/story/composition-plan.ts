@@ -20,6 +20,7 @@ export interface ChapterSpan {
   content: number;
   end: number;
   seconds: number;
+  transition: number;
   clock: { local: number; global: number }[];
 }
 function interpolate(
@@ -50,14 +51,18 @@ export function composeChapters(
   options: {
     script?: Script;
     introduction?: ChapterIntroduction;
-    transition?: number;
+    transition?: number | ((index: number) => number);
   } = {},
 ) {
   if (!chapters.length) throw new Error('A composition needs at least one chapter');
   const opening = options.introduction;
   const lead = opening?.seconds ?? 0,
     transition = options.transition ?? 0;
-  if (![lead, transition].every((n) => Number.isFinite(n) && n >= 0))
+  if (
+    !Number.isFinite(lead) ||
+    lead < 0 ||
+    (typeof transition === 'number' && (!Number.isFinite(transition) || transition < 0))
+  )
     throw new Error('Chapter transitions need non-negative durations');
   if (opening && (!opening.id?.trim() || !opening.title?.trim() || !opening.text?.trim()))
     throw new Error('Chapter introduction needs an ID, title and text');
@@ -76,8 +81,11 @@ export function composeChapters(
       options.script?.cues[chapter.id] ??
       options.script?.segments?.find((s) => s.id === chapter.id);
     if (options.script && !supplied) throw new Error(`Narration needs chapter cue: ${chapter.id}`);
+    const delay = index ? (typeof transition === 'function' ? transition(index) : transition) : 0;
+    if (!Number.isFinite(delay) || delay < 0)
+      throw new Error('Chapter transition must be non-negative');
     const start = supplied?.start ?? cursor,
-      content = start + (index ? transition : 0),
+      content = start + delay,
       end = supplied?.end ?? content + chapter.seconds;
     if (content >= end) throw new Error(`Chapter ${chapter.id} has no time after its transition`);
     if (index && start < cursor) throw new Error('Composed chapters overlap');
@@ -125,7 +133,15 @@ export function composeChapters(
         unique.push(point);
       }
     }
-    return { id: chapter.id, start, content, end, seconds: chapter.seconds, clock: unique };
+    return {
+      id: chapter.id,
+      start,
+      content,
+      end,
+      seconds: chapter.seconds,
+      transition: delay,
+      clock: unique,
+    };
   });
   const introduction = Math.min(lead, timings[0]!.start);
   if (introduction && opening) {
@@ -181,5 +197,5 @@ export function composeChapters(
     ),
   };
   cueSheet(script);
-  return { script, timings, introduction, transition };
+  return { script, timings, introduction };
 }

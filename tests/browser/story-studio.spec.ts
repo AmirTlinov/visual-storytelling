@@ -42,6 +42,10 @@ for (const variant of ['', '?variant=mira'])
     page.on('pageerror', (e) => errors.push(e.message));
     await page.goto('/interaction-studio/index.html' + variant);
     await page.evaluate(() => window.galleryReady);
+    const cues = await page.evaluate(() => {
+      const scene = (document.querySelector('.ve-scene') as any).scene;
+      return Object.fromEntries(scene.review().cues.map((cue: any) => [cue.id, cue]));
+    });
     const sample = (time: number) =>
       page.evaluate((t) => {
         const scene = (document.querySelector('.ve-scene') as any).scene;
@@ -68,14 +72,14 @@ for (const variant of ['', '?variant=mira'])
     expect(contact.state.content.world.objects.meter).toBe(1);
     expect(contact.state.content.world.items.hero.id).toBe('letter');
     expect(contact.presentation.clipped).toEqual([]);
-    const pullback = await sample(12.35);
+    const pullback = await sample(cues['letter.put'].start + 0.15);
     expect(pullback.state.content.framing.changingShot).toBe(true);
     expect(pullback.presentation.clipped).toEqual([]);
-    const wide = await sample(12.7);
+    const wide = await sample(cues['letter.put'].start + 0.5);
     expect(wide.state.content.framing.changingShot).toBe(false);
     expect(wide.state.content.framing.clipped).toEqual([]);
     expect(wide.presentation.clipped).toEqual([]);
-    const seated = await sample(20.1);
+    const seated = await sample(cues['letter.sit'].end - 0.1);
     expect(seated.state.content.world.actors.hero.seated).toBeGreaterThan(0.98);
     expect(seated.state.content.world.actors.friend.seated).toBeGreaterThan(0.98);
     expect(
@@ -83,10 +87,10 @@ for (const variant of ['', '?variant=mira'])
         seated.state.content.world.actors.hero.at.x - seated.state.content.world.actors.friend.at.x,
       ),
     ).toBeGreaterThan(1);
-    const first = await sample(30.8);
+    const first = await sample(cues.experiment.start + 2.5);
     expect(first.state.chapter).toBe('experiment');
-    await sample(33.8);
-    const rewound = await sample(30.8);
+    await sample(cues.experiment.start + 5.5);
+    const rewound = await sample(cues.experiment.start + 2.5);
     expect(rewound.state.content).toEqual(first.state.content);
     expect((await sample(contact.time)).state).toEqual(contact.state);
     expect(errors).toEqual([]);

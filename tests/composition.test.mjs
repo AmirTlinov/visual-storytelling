@@ -79,6 +79,138 @@ test('narrated local cues retain intervening pauses, words and reversible chapte
   );
 });
 
+test('each boundary owns its transition duration and retains reversible local time', () => {
+  const chapters = ['room', 'paper', 'next'].map((id) => ({ id, title: id, text: id, seconds: 3 }));
+  const plan = composeChapters(chapters, { transition: (index) => (index === 1 ? 4.2 : 1.1) });
+  assert.deepEqual(
+    plan.timings.map((t) => t.transition),
+    [0, 4.2, 1.1],
+  );
+  assert.deepEqual(
+    [3, 5, 7.2, 8.2, 7.2].map((t) => +chapterTime(plan.timings[1], t).toFixed(8)),
+    [0, 0, 0, 1, 0],
+  );
+  assert.throws(() => composeChapters(chapters, { transition: () => NaN }), /non-negative/);
+});
+
+test('full-page capture preserves portrait and wide paper while the notebook shot survives resize', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'notebook-capture-'));
+  let capture;
+  try {
+    const bundle = await build({
+      plugins: [assetURLs()],
+      stdin: {
+        contents: `
+          import { inkChapter } from './dist/story/ink-chapter.js';
+          import { Viewport3D } from './dist/viewport/three.js';
+          import { Box3, Vector3, PerspectiveCamera } from './dist/viewport/engine.js';
+          import { notebookCamera } from './dist/book/camera.js';
+          import { notebookPageAspect } from './dist/characters/staging/notebook.js';
+          import './dist/style.css';
+          const host=document.querySelector('#paper'), stage=document.querySelector('#stage');
+          const frame={time:0,progress:0,mode:'story',reduced:false,values:{}};
+          window.galleryReady=inkChapter({id:'ink',title:'Ink',text:'Ink',seconds:1,
+            size:{width:640,height:250},grid:{step:30,x:5,y:7},
+            create(view) {
+              window.surface=view;
+              view.layer.innerHTML='<rect x="200" y="80" width="100" height="40" fill="#b4141e"/>';
+              return {render(){},dispose(){window.removed=true;}};
+            },
+          }).mount(host).then(presentation=>{
+            const view=Viewport3D.mount(stage);
+            view.controls.enabled=false;
+            const source={width:960,height:650,camera:{x:100,y:40,width:700,height:530},
+              projection:{center:480,horizon:270,floor:610,unit:100,distance:12},
+              book:{kind:'book',at:{x:2,z:3,height:1.5},scale:.8}};
+            const current=notebookCamera(source,.55);
+            window.proof=async()=>{
+              const frames=[], pending=[];
+              for(const [width,height] of [[440,1000],[900,600]]) {
+                host.style.width=width+'px'; host.style.height=height+'px';
+                presentation.render(frame);
+                const before=window.surface.element.outerHTML;
+                const {x,y,width:w,height:h}=window.surface.element.viewBox.baseVal;
+                const image=presentation.capture({aspect:notebookPageAspect});
+                const restored=before===window.surface.element.outerHTML;
+                const fullW=Math.max(w,h*notebookPageAspect),fullH=fullW/notebookPageAspect;
+                const left=x+(w-fullW)/2,top=y+(h-fullH)/2;
+                pending.push(image.then(canvas=>({
+                  width:canvas.width,height:canvas.height,
+                  pixel:[...canvas.getContext('2d').getImageData(Math.round((250-left)*2),Math.round((100-top)*2),1,1).data],
+                })));
+                frames.push({restored,w,h,fullW,fullH,aspect:width/height});
+              }
+              const original=window.surface.element.outerHTML;
+              let error;
+              try {window.surface.withViewport(.7,()=>{throw new Error('capture failed');});}
+              catch(e){error=e.message;}
+              const restoredAfterError=original===window.surface.element.outerHTML;
+              const invalid=[0,NaN,-1].map(aspect=>{
+                try{window.surface.withViewport(aspect,()=>{});return false;}catch{return true;}
+              });
+              // Switch from an ordinary page-turn camera to the pinhole owner, then resize while paused.
+              view.shot({target:new Box3(new Vector3(-5,-3,0),new Vector3(5,3,0)),direction:[0,0,1],padding:0,reduced:false});
+              view.shot(current.project);
+              const cameraFrames=[];
+              for(const [width,height] of [[440,1000],[900,600],[440,1000]]) {
+                stage.style.width=width+'px';stage.style.height=height+'px';
+                await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+                const expected=new PerspectiveCamera(); current.project(expected,width,height);
+                cameraFrames.push({actual:[...view.camera.matrixWorld.elements,...view.camera.projectionMatrix.elements],
+                  expected:[...expected.matrixWorld.elements,...expected.projectionMatrix.elements]});
+              }
+              view.camera.position.set(100,100,100);view.reset();
+              const reset=[...view.camera.position];
+              // Captures are already frozen; disposing the live owners cannot invalidate their inputs.
+              presentation.dispose();view.dispose();
+              return {frames,images:await Promise.all(pending),error,restoredAfterError,invalid,cameraFrames,reset,
+                removed:window.removed,children:host.childElementCount+stage.childElementCount};
+            };
+          });
+        `,
+        resolveDir: fileURLToPath(new URL('../', import.meta.url)),
+      },
+      bundle: true,
+      write: false,
+      outdir: '.',
+      format: 'iife',
+      loader: { '.woff2': 'dataurl' },
+    });
+    await writeFile(
+      join(root, 'index.html'),
+      '<!doctype html><head><link rel="stylesheet" href="style.css"></head><main id="paper" style="position:relative;width:440px;height:1000px"></main><div id="stage" style="position:relative;width:900px;height:600px"></div><script src="index.js"></script>',
+    );
+    for (const output of bundle.outputFiles)
+      await writeFile(
+        join(root, output.path.endsWith('.css') ? 'style.css' : 'index.js'),
+        output.text,
+      );
+    capture = await renderer({ directory: root, controls: true, width: 1000 });
+    const result = await capture.page.evaluate(() => window.proof());
+    for (const [i, frame] of result.frames.entries()) {
+      assert.equal(frame.restored, true);
+      assert.equal(result.images[i].width, Math.round(frame.fullW * 2));
+      assert.equal(result.images[i].height, Math.round(frame.fullH * 2));
+      assert.deepEqual(result.images[i].pixel, [180, 20, 30, 255]);
+      // The final camera crops the full physical sheet to exactly the preceding live aperture.
+      // SVGAnimatedRect exposes float32 coordinates, so compare below a thousandth of a pixel.
+      assert.ok(Math.abs(Math.min(frame.fullW, frame.fullH * frame.aspect) - frame.w) < 1e-4);
+      assert.ok(Math.abs(Math.min(frame.fullH, frame.fullW / frame.aspect) - frame.h) < 1e-4);
+    }
+    assert.equal(result.error, 'capture failed');
+    assert.equal(result.restoredAfterError, true);
+    assert.deepEqual(result.invalid, [true, true, true]);
+    for (const frame of result.cameraFrames)
+      frame.actual.forEach((value, i) => assert.ok(Math.abs(value - frame.expected[i]) < 1e-12));
+    assert.deepEqual(result.reset, result.cameraFrames.at(-1).expected.slice(12, 15));
+    assert.equal(result.removed, true);
+    assert.equal(result.children, 0);
+  } finally {
+    await capture?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('boundary capture, fast theme changes and disposal preserve the current presentation', async () => {
   const root = await mkdtemp(join(tmpdir(), 'composition-capture-'));
   let capture;

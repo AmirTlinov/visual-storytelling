@@ -1,178 +1,156 @@
+import type { FrameBox } from '../characters/staging/camera.js';
+import type { Furniture, GroundPoint, Projection } from '../characters/staging/types.js';
+import { furnitureParts } from '../characters/staging/furniture.js';
+import { coverTexture } from './cover.js';
+import { notebookCamera } from './camera.js';
 import * as T from '../viewport/engine.js';
 import type { Viewport3DHandle } from '../viewport/three.js';
-import { bookSize } from './geometry.js';
-import { coverTexture } from './cover.js';
-import { bookOpening } from './timing.js';
+import { inkLine, updateInkLine } from '../viewport/ink-line.js';
+import { stageInk } from '../characters/staging/geometry.js';
 
-const clamp = (n: number) => Math.max(0, Math.min(1, n));
+export interface NotebookSource {
+  image: HTMLCanvasElement;
+  width: number;
+  height: number;
+  camera: FrameBox;
+  projection: Projection;
+  book: Furniture;
+  support: Furniture;
+}
 
-/** An opening shot owns a physical desk and ruled paper, never a chapter screenshot. */
+/** All binding, cover and furniture vertices stay in the stage's metres under one camera. */
 export function notebookOpening(view: Viewport3DHandle, topic: string) {
-  const root = new T.Group(),
-    notebook = new T.Group();
-  const { width: w, height: h } = bookSize;
-  const cloth = new T.MeshStandardMaterial({ color: '#345660', roughness: 0.95 });
-  const binding = new T.MeshStandardMaterial({ color: '#203e46', roughness: 0.95 });
-  const edges = new T.MeshStandardMaterial({ color: '#deded6', roughness: 1 });
-  const paper = view.ink(new T.MeshBasicMaterial(), 'surface');
-  const map = new T.CanvasTexture(coverTexture(topic));
-  map.colorSpace = T.SRGBColorSpace;
-  map.anisotropy = 8;
-  const cover = new T.MeshBasicMaterial({ map });
-  const board = (face: T.MeshBasicMaterial, z: number) => {
-    const mesh = new T.Mesh(new T.BoxGeometry(w + 0.16, h + 0.16, 0.085), [
-      cloth,
-      binding,
-      cloth,
-      cloth,
-      face,
-      paper,
-    ]);
-    mesh.position.set(w / 2, 0, z);
-    return mesh;
+  const root = new T.Group();
+  root.name = 'notebook-entry';
+  const material = (fill: string) => new T.MeshBasicMaterial({ color: fill, side: T.DoubleSide });
+  const paper = view.ink(new T.MeshBasicMaterial({ side: T.BackSide }), 'surface');
+  const texture = (image: HTMLCanvasElement) => {
+    const map = new T.CanvasTexture(image);
+    map.colorSpace = T.SRGBColorSpace;
+    map.anisotropy = 8;
+    return map;
   };
-  notebook.add(board(paper, -0.1));
-  const stack = new T.Mesh(new T.BoxGeometry(w - 0.08, h - 0.1, 0.21), edges);
-  stack.position.set(w / 2, 0, 0.055);
-  notebook.add(stack);
-  for (let i = 0; i < 6; i++) {
-    const line = new T.Mesh(
-      new T.BoxGeometry(w - 0.08, 0.012, 0.006),
-      new T.MeshBasicMaterial({ color: '#9aadae' }),
-    );
-    line.position.set(w / 2, -h / 2 + 0.04, -0.025 + i * 0.032);
-    notebook.add(line);
-  }
-  const sheet = new T.Mesh(new T.PlaneGeometry(w - 0.09, h - 0.11), paper);
-  sheet.position.set(w / 2, 0, 0.166);
-  notebook.add(sheet);
-  const coordinates: number[] = [];
-  const step = 0.32;
-  for (let x = 0.2; x < w - 0.15; x += step)
-    coordinates.push(x, -h / 2 + 0.15, 0.168, x, h / 2 - 0.15, 0.168);
-  for (let y = -h / 2 + 0.2; y < h / 2 - 0.15; y += step)
-    coordinates.push(0.15, y, 0.168, w - 0.15, y, 0.168);
-  const grid = new T.LineSegments(
-    new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(coordinates, 3)),
-    view.ink(new T.LineBasicMaterial({ transparent: true, opacity: 0.14 }), 'ink'),
-  );
-  notebook.add(grid);
-  const margin = new T.LineSegments(
-    new T.BufferGeometry().setAttribute(
-      'position',
-      new T.Float32BufferAttribute([1.12, -h / 2 + 0.15, 0.169, 1.12, h / 2 - 0.15, 0.169], 3),
-    ),
-    view.ink(new T.LineBasicMaterial({ transparent: true, opacity: 0.3 }), 'red'),
-  );
-  notebook.add(margin);
-  const hinge = new T.Group();
-  hinge.position.set(-0.025, 0, 0.22);
-  const front = board(cover, 0);
-  hinge.add(front);
-  notebook.add(hinge);
-  const ribbon = new T.Mesh(
-    new T.BoxGeometry(0.22, 1.7, 0.014),
-    new T.MeshBasicMaterial({ color: '#b56c51' }),
-  );
-  ribbon.position.set(w * 0.73, -h / 2 - 0.5, -0.02);
-  notebook.add(ribbon);
-  root.add(notebook);
-
-  const desk = new T.Mesh(
-    new T.PlaneGeometry(160, 120),
-    new T.MeshBasicMaterial({ color: '#687b7b' }),
-  );
-  desk.position.z = -0.25;
-  root.add(desk);
-  const joints: number[] = [];
-  for (let y = -55; y < 60; y += 9) joints.push(-80, y, -0.246, 80, y, -0.246);
-  root.add(
-    new T.LineSegments(
-      new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(joints, 3)),
-      new T.LineBasicMaterial({ color: '#3d5559', transparent: true, opacity: 0.35 }),
-    ),
-  );
-  const shadowCanvas = document.createElement('canvas');
-  shadowCanvas.width = shadowCanvas.height = 256;
-  const c = shadowCanvas.getContext('2d')!;
-  const shade = c.createRadialGradient(128, 128, 55, 128, 128, 124);
-  shade.addColorStop(0, '#122a30b3');
-  shade.addColorStop(1, '#122a3000');
-  c.fillStyle = shade;
-  c.fillRect(0, 0, 256, 256);
-  const shadow = new T.Mesh(
-    new T.PlaneGeometry(w * 1.55, h * 1.3),
-    new T.MeshBasicMaterial({
-      map: new T.CanvasTexture(shadowCanvas),
-      transparent: true,
-      depthWrite: false,
-    }),
-  );
-  shadow.position.set(w / 2 + 0.12, -0.14, -0.23);
-  root.add(shadow);
-  const pencil = new T.Group();
-  const shaft = new T.Mesh(
-    new T.CylinderGeometry(0.095, 0.095, 8.5, 6),
-    new T.MeshStandardMaterial({ color: '#d6a657', roughness: 0.8 }),
-  );
-  const wood = new T.Mesh(
-    new T.CylinderGeometry(0.095, 0.018, 0.6, 6),
-    new T.MeshStandardMaterial({ color: '#dfc598', roughness: 0.9 }),
-  );
-  wood.position.y = -4.55;
-  const graphite = new T.Mesh(
-    new T.CylinderGeometry(0.022, 0, 0.15, 6),
-    new T.MeshStandardMaterial({ color: '#26393d', roughness: 0.8 }),
-  );
-  graphite.position.y = -4.925;
-  pencil.add(shaft, wood, graphite);
-  pencil.position.set(w + 1.35, -1.1, -0.1);
-  pencil.rotation.z = -0.16;
-  root.add(pencil);
-
-  // Fit the cover's complete swept volume once, so it cannot pass through the camera.
-  const envelope = new T.Box3().makeEmpty();
-  for (const angle of [0, -Math.PI / 2, -Math.PI]) {
-    hinge.rotation.y = angle;
-    notebook.updateWorldMatrix(true, true);
-    envelope.union(new T.Box3().setFromObject(notebook));
-  }
-  hinge.rotation.y = 0;
-  envelope.union(new T.Box3().setFromObject(pencil));
-  const establish = {
-    target: envelope,
-    direction: [3, -6, 16] as const,
-    padding: 36,
-  };
-  let progress = 0;
-  root.traverse((node) => {
-    if (node instanceof T.Mesh || node instanceof T.LineSegments)
-      node.userData.visualReview = () => ({
-        framing:
-          progress < 0.32 && (node === front || node.parent === notebook)
-            ? 'subject'
-            : 'background',
-      });
+  const coverMap = texture(coverTexture(topic)),
+    pageMap = texture(document.createElement('canvas')),
+    roomMap = texture(document.createElement('canvas'));
+  const coverMaterial = new T.MeshBasicMaterial({ map: coverMap, side: T.FrontSide });
+  const pageMaterial = new T.MeshBasicMaterial({
+    map: pageMap,
+    transparent: true,
+    side: T.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
+  const roomMaterial = new T.MeshBasicMaterial({ map: roomMap, side: T.DoubleSide });
+  const mesh = (name: string, paint: T.MeshBasicMaterial) => {
+    const geometry = new T.BufferGeometry();
+    geometry.setAttribute('position', new T.Float32BufferAttribute(new Array(12).fill(0), 3));
+    geometry.setAttribute('uv', new T.Float32BufferAttribute([0, 1, 1, 1, 1, 0, 0, 0], 2));
+    geometry.setIndex([0, 2, 1, 0, 3, 2]);
+    const result = new T.Mesh(geometry, paint);
+    result.name = name;
+    result.userData.visualReview = () => ({ framing: 'background' });
+    root.add(result);
+    return result;
+  };
+  const room = mesh('historical-room', roomMaterial),
+    sheet = mesh('paper-ink', pageMaterial),
+    front = mesh('cover', coverMaterial),
+    inside = mesh('inside-cover', paper);
+  const solids: T.Mesh<T.BufferGeometry, T.MeshBasicMaterial>[] = [];
+  let framed = false;
+  for (const subject of [sheet, front, inside])
+    subject.userData.visualReview = () => ({
+      framing: framed ? 'subject' : 'background',
+      source: 'notebook',
+    });
+  const geometry = (mesh: T.Mesh, points: readonly GroundPoint[]) => {
+    const position = mesh.geometry.getAttribute('position');
+    points.forEach((p, i) => position.setXYZ(i, p.x, p.height ?? 0, -p.z));
+    position.needsUpdate = true;
+    mesh.geometry.computeBoundingBox();
+    mesh.geometry.computeBoundingSphere();
+  };
+  let index = 0;
+  const solid = (name: string, points: readonly GroundPoint[], fill: string, stroke = 0.6) => {
+    let node = solids[index];
+    if (!node) {
+      node = mesh(name, material(fill));
+      const line = inkLine(false);
+      line.material.color.set(stageInk);
+      line.userData.visualReview = () => ({ framing: 'background' });
+      node.add(line);
+      solids.push(node);
+    }
+    node.name = name;
+    node.visible = true;
+    node.material.color.set(fill);
+    geometry(node, points);
+    const line = node.children[0] as T.Line2;
+    line.visible = stroke > 0;
+    line.material.linewidth = (stroke * (view.renderer.domElement.clientWidth || 960)) / 960;
+    updateInkLine(
+      line,
+      [...points, points[0]!].map((p) => [p.x, p.height ?? 0, -p.z]),
+    );
+    index++;
+  };
+  let previousSource: NotebookSource | undefined, previousPage: HTMLCanvasElement | undefined;
   return {
     root,
-    render(value: number, aspect: number) {
-      progress = clamp(value);
-      const motion = bookOpening(progress);
-      hinge.rotation.y = -Math.PI * motion.cover;
-      const width = Math.min(w * 0.78, h * 0.76 * aspect),
-        height = width / aspect;
-      view.shot({
-        target: new T.Box3(
-          new T.Vector3(w / 2 - width / 2, -height / 2, 0.17),
-          new T.Vector3(w / 2 + width / 2, height / 2, 0.17),
-        ),
-        direction: [0, 0, 1],
-        padding: 0,
-        from: establish,
-        progress: motion.camera,
-        reduced: false, // The chapter owner already skips the entire introduction for reduced motion.
+    render(progress: number, source: NotebookSource, page: HTMLCanvasElement) {
+      // At the close establishing pose the complete book must fit. The later orbit enters it.
+      framed = progress >= 0.64 && progress <= 0.68;
+      const { model, project } = notebookCamera(source, progress);
+      view.shot(project);
+      if (source !== previousSource) {
+        roomMap.image = source.image;
+        roomMap.needsUpdate = true;
+        previousSource = source;
+      }
+      if (page !== previousPage) {
+        pageMap.image = page;
+        pageMap.needsUpdate = true;
+        previousPage = page;
+      }
+      // A single historical backdrop stays rigid; the physical support and book retain depth.
+      const s = source.projection,
+        z = source.book.at.z + 6,
+        scale = s.distance / (s.distance + z);
+      const at = (x: number, y: number): GroundPoint => ({
+        x: (x - s.center) / (s.unit * scale),
+        z,
+        height: (s.floor - s.horizon - (y - s.horizon) / scale) / s.unit,
       });
+      geometry(room, [
+        at(0, 0),
+        at(source.width, 0),
+        at(source.width, source.height),
+        at(0, source.height),
+      ]);
+      index = 0;
+      for (const part of furnitureParts(source.support, s))
+        for (const face of part.polygons) solid('support', face.world, face.fill, face.stroke);
+      for (const face of model.faces)
+        if (face.name !== 'page')
+          solid(
+            `binding-${face.name}`,
+            face.points,
+            face.fill === '#f5f5ef' ? view.palette.surface!.getStyle() : face.fill,
+            ['paper', 'spine'].includes(face.name) ? 0 : 0.6,
+          );
+      solid(
+        'hinge',
+        [model.front[0], model.page[0], model.page[3], model.front[3]],
+        view.palette.surface!.getStyle(),
+        0,
+      );
+      for (let i = index; i < solids.length; i++) solids[i]!.visible = false;
+      // Expanded Ink captures fill the paper; arbitrary chapter captures retain their aspect.
+      geometry(sheet, model.content(page.width / page.height));
+      geometry(front, model.front);
+      geometry(inside, model.front);
     },
   };
 }

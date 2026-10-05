@@ -50,6 +50,17 @@ export function projective(quad: Quad, width: number, height: number) {
   };
   return {
     at,
+    inverse(x: number, y: number) {
+      const a = m[0]! - x * g,
+        b = m[1]! - x * h;
+      const d = m[3]! - y * g,
+        e = m[4]! - y * h;
+      const determinant = a * e - b * d;
+      return {
+        x: (((x - m[2]!) * e - b * (y - m[5]!)) / determinant) * width,
+        y: ((a * (y - m[5]!) - (x - m[2]!) * d) / determinant) * height,
+      };
+    },
     css: `matrix3d(${m[0]! / width},${m[3]! / width},0,${g / width},${m[1]! / height},${m[4]! / height},0,${h / height},0,0,1,0,${a.x},${a.y},0,1)`,
   };
 }

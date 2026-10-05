@@ -6,7 +6,6 @@ import {
   documentNarration,
   type StoryDocument,
 } from './document.js';
-import { bookTiming } from './timing.js';
 import { inkChapter } from '../story/ink-chapter.js';
 import type { CharacterSurface } from '../characters/surfaces.js';
 import type { CharacterStageOptions } from '../characters/types.js';
@@ -33,12 +32,12 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
   const { document, world, drawings } = options;
   documentNarration(document); // Same author contract before rendering and before speech synthesis.
   const aligned = options.script && documentScript(document, options.script);
-  const chapters = document.chapters.map((chapter, index) => {
+  const chapters = document.chapters.map((chapter) => {
     const content = drawings[chapter.drawing];
     if (!content) throw new Error(`Chapter ${chapter.id}: unknown drawing ${chapter.drawing}`);
     const authored = authoredChapter(document, chapter.id);
     const span = aligned?.cues[chapter.id];
-    const offset = span ? span.start + (index ? bookTiming.turn : 0) : 0;
+    const offset = aligned?.segments?.find((segment) => segment.id === chapter.id)?.start ?? 0;
     let local: Script | undefined = span && {
       duration: span.end - offset,
       cues: Object.fromEntries(

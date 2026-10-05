@@ -15,6 +15,10 @@ import { snapshotSVG } from '../export/index.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 let nextStage = 0;
+interface CaptureView {
+  camera?: FrameBox;
+  omit?: readonly string[];
+}
 /** One WebGL context for the entire cast; set, props and rigs share a single viewBox. */
 export async function characterStage(
   parent: HTMLElement,
@@ -168,7 +172,7 @@ export async function characterStage(
           );
         return canvas;
       },
-      render(time: number, reduced = false, frame?: ChapterFrame) {
+      render(time: number, reduced = false, frame?: ChapterFrame, captureView?: CaptureView) {
         if (disposed) return;
         latest = [time, reduced, frame];
         graphics.activate(aperture, front);
@@ -278,6 +282,7 @@ export async function characterStage(
             return [key, previous[key] + (current[key] - previous[key]) * mix];
           }),
         ) as unknown as FrameBox;
+        camera = captureView?.camera ?? camera;
         for (const svg of [back, front])
           svg.setAttribute('viewBox', `${camera.x} ${camera.y} ${camera.width} ${camera.height}`);
         renderer!.camera.position.set(
@@ -317,7 +322,7 @@ export async function characterStage(
         );
         renderer!.begin();
         try {
-          if (prepared) prepared.draw(renderer!, surfaces?.place);
+          if (prepared) prepared.draw(renderer!, surfaces?.place, captureView?.omit);
           else for (const id of order) renderer!.drawSkeleton(actors[id]!.skeleton);
         } finally {
           renderer!.end();
@@ -367,18 +372,27 @@ export async function characterStage(
       },
       snapshot: () => snapshot,
       /** Flatten only a requested transition boundary; live content keeps all DOM layers. */
-      async capture() {
+      restingBook: (id: string) => prepared?.restingBook(id),
+      async capture(captureView?: CaptureView) {
         if (disposed || !snapshot || canvas.parentElement !== aperture)
           throw new Error('Render the active character stage before capture');
+        const restore = latest;
         const cast = document.createElement('canvas');
-        cast.width = canvas.width;
-        cast.height = canvas.height;
-        cast.getContext('2d')!.drawImage(canvas, 0, 0);
-        const [background, layers, foreground] = await Promise.all([
-          snapshotSVG(back, 1),
-          surfaces?.capture(),
-          snapshotSVG(front, 1),
-        ]);
+        let captured;
+        try {
+          if (captureView) stage.render(...restore, captureView);
+          cast.width = canvas.width;
+          cast.height = canvas.height;
+          cast.getContext('2d')!.drawImage(canvas, 0, 0);
+          captured = Promise.all([
+            snapshotSVG(back, cast.width / back.viewBox.baseVal.width),
+            surfaces?.capture(),
+            snapshotSVG(front, cast.width / front.viewBox.baseVal.width),
+          ]);
+        } finally {
+          if (captureView) stage.render(...restore);
+        }
+        const [background, layers, foreground] = await captured;
         const result = document.createElement('canvas');
         result.width = cast.width;
         result.height = cast.height;

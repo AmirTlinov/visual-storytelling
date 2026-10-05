@@ -1,8 +1,8 @@
 {
   "version": 1,
   "sample_rate": 48000,
-  "duration": 35.08,
-  "source_sha256": "1f728418bce295c08e95366427f1438a56862286e9b6a3c36221d95377e5a312",
+  "duration": 37.68,
+  "source_sha256": "2b8045b8bb1e8771bdd0cf7990e1a440b8f8cd058975fa542c15d62bca247998",
   "audio": "audio.wav",
   "voice": "voice.wav",
   "music": null,
@@ -20,8 +20,7 @@
     "reference_sha256": "d061da33bfd052b387f9589dfb87b7f44b014f2c2f705e4db53acfd7905cb249",
     "parameters": {
       "temperature": 0.8,
-      "top_k": 50,
-      "max_new_tokens": 1200
+      "top_k": 50
     }
   },
   "segments": [
@@ -221,99 +220,99 @@
     {
       "id": "experiment",
       "text": "Измените ширину и высоту. Каждый квадратный сантиметр по-прежнему содержит четыре маленькие клетки. Мера остаётся одной.",
-      "start": 23.48026,
-      "end": 32.33927,
-      "audio_start": 23.36,
-      "audio_end": 32.68,
+      "start": 26.08026,
+      "end": 34.93927,
+      "audio_start": 25.96,
+      "audio_end": 35.28,
       "words": [
         {
           "text": "Измените",
-          "start": 23.48026,
-          "end": 23.94125,
+          "start": 26.08026,
+          "end": 26.54125,
           "score": 1.0
         },
         {
           "text": "ширину",
-          "start": 24.06151,
-          "end": 24.38219,
+          "start": 26.66151,
+          "end": 26.98219,
           "score": 1.0
         },
         {
           "text": "и",
-          "start": 24.68284,
-          "end": 24.70288,
+          "start": 27.28284,
+          "end": 27.30288,
           "score": 1.0
         },
         {
           "text": "высоту",
-          "start": 24.78305,
-          "end": 25.14383,
+          "start": 27.38305,
+          "end": 27.74383,
           "score": 1.0
         },
         {
           "text": "Каждый",
-          "start": 25.88542,
-          "end": 26.20611,
+          "start": 28.48542,
+          "end": 28.80611,
           "score": 1.0
         },
         {
           "text": "квадратный",
-          "start": 26.26624,
-          "end": 26.74727,
+          "start": 28.86624,
+          "end": 29.34727,
           "score": 1.0
         },
         {
           "text": "сантиметр",
-          "start": 26.8074,
-          "end": 27.34856,
+          "start": 29.4074,
+          "end": 29.94856,
           "score": 0.982
         },
         {
           "text": "по-прежнему",
-          "start": 27.84963,
-          "end": 28.3908,
+          "start": 30.44963,
+          "end": 30.9908,
           "score": 0.999
         },
         {
           "text": "содержит",
-          "start": 28.49101,
-          "end": 28.93196,
+          "start": 31.09101,
+          "end": 31.53196,
           "score": 0.951
         },
         {
           "text": "четыре",
-          "start": 29.05222,
-          "end": 29.3729,
+          "start": 31.65222,
+          "end": 31.9729,
           "score": 1.0
         },
         {
           "text": "маленькие",
-          "start": 29.45308,
-          "end": 29.85394,
+          "start": 32.05308,
+          "end": 32.45394,
           "score": 0.933
         },
         {
           "text": "клетки",
-          "start": 29.91406,
-          "end": 30.27484,
+          "start": 32.51406,
+          "end": 32.87484,
           "score": 1.0
         },
         {
           "text": "Мера",
-          "start": 30.9563,
-          "end": 31.19682,
+          "start": 33.5563,
+          "end": 33.79682,
           "score": 1.0
         },
         {
           "text": "остаётся",
-          "start": 31.39725,
-          "end": 31.89832,
+          "start": 33.99725,
+          "end": 34.49832,
           "score": 1.0
         },
         {
           "text": "одной",
-          "start": 32.01858,
-          "end": 32.33927,
+          "start": 34.61858,
+          "end": 34.93927,
           "score": 1.0
         }
       ],
@@ -348,13 +347,13 @@
     },
     "experiment": {
       "text": "Измените ширину и высоту. Каждый квадратный сантиметр по-прежнему содержит четыре маленькие клетки. Мера остаётся одной.",
-      "start": 23.48026,
-      "end": 32.33927
+      "start": 26.08026,
+      "end": 34.93927
     },
     "experiment.change": {
       "text": "Измените ширину и высоту Каждый квадратный сантиметр по-прежнему содержит четыре маленькие клетки Мера остаётся одной",
-      "start": 23.48026,
-      "end": 32.33927,
+      "start": 26.08026,
+      "end": 34.93927,
       "action": "Меняем стороны; мера и сетка сохраняют масштаб."
     }
   },
@@ -371,13 +370,18 @@
   },
   "warnings": [],
   "build": {
-    "seconds": 0.033,
+    "seconds": 0.042,
     "segments": [
       {
         "id": "workshop",
         "synthesis": {
           "cached": true,
-          "seconds": 0.0
+          "seconds": 0.0,
+          "parameters": {
+            "temperature": 0.8,
+            "top_k": 50,
+            "max_new_tokens": 1200
+          }
         },
         "alignment": {
           "cached": true,
@@ -389,7 +393,12 @@
         "id": "experiment",
         "synthesis": {
           "cached": true,
-          "seconds": 0.0
+          "seconds": 0.0,
+          "parameters": {
+            "temperature": 0.8,
+            "top_k": 50,
+            "max_new_tokens": 1200
+          }
         },
         "alignment": {
           "cached": true,

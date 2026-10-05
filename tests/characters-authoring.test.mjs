@@ -16,6 +16,8 @@ import { compileScore } from '../dist/characters/score.js';
 import { blockAt } from '../dist/characters/staging/motion.js';
 import { routines } from '../dist/characters/routines.js';
 import { world } from '../dist/characters/staging/world.js';
+import { drawBook, bookBounds } from '../dist/characters/staging/book.js';
+import { notebookParts } from '../dist/characters/staging/notebook.js';
 import { performance, readSkeleton, unpackCharacter } from '../dist/characters/performance.js';
 
 const { data } = readSkeleton(await unpackCharacter(chibi));
@@ -88,7 +90,10 @@ test('relative names resolve before routing to an edge contact without crossing 
     'a named spot has the same meaning during placement and actions',
   );
   assert.equal(contact.z, 2.4);
-  assert.ok(Math.abs(destination(set.staging, { of: 'table', side: 'on' }).height - 1.9) < 1e-10);
+  assert.ok(
+    Math.abs(destination(set.staging, { of: 'table', side: 'on' }).height - objectShape.table.top) <
+      1e-10,
+  );
   assert.deepEqual(base, original, 'arrangement leaves its source set reusable');
 
   const from = ground(0, 6),
@@ -170,6 +175,71 @@ test('an arranged reading routine reaches the book, opens and closes it, then re
 
   const subject = await actorWorld(options, score);
   try {
+    // The actual transfer mesh meets the lying notebook, not merely its centre.
+    const resting = notebookParts(set.staging.objects.book, set.staging.projection)[0];
+    const vertices = (draw) => {
+      const points = [];
+      draw({
+        triangle(_filled, ax, ay, bx, by, cx, cy) {
+          points.push([ax, set.height - ay], [bx, set.height - by], [cx, set.height - cy]);
+        },
+        rectLine() {},
+      });
+      return [...new Set(points.map((p) => p.map((v) => v.toFixed(5)).join(',')))].sort();
+    };
+    const restVertices = [
+      ...new Set(
+        resting.polygons.flatMap((p) =>
+          p.points.map(({ x, y }) => [x, y].map((v) => v.toFixed(5)).join(',')),
+        ),
+      ),
+    ].sort();
+    for (const time of [plans.take.start, plans.put.end - 1e-8]) {
+      subject.sample(time, false);
+      const frame = subject.snapshot().items.hero;
+      assert.deepEqual(
+        vertices((renderer) => drawBook(renderer, frame, set.height)),
+        restVertices,
+        `take/put changes the resting silhouette at ${time}`,
+      );
+      for (const [axis, value] of Object.entries(resting.bounds))
+        assert.ok(Math.abs(bookBounds(frame)[axis] - value) < 1e-6, `resting bounds ${axis}`);
+    }
+    for (const plan of [plans.take, plans.put])
+      for (let i = 0; i <= 12; i++) {
+        subject.sample(actionTime(plan, 'act', i / 12), false);
+        const frame = subject.snapshot().items.hero;
+        assert.ok(Object.values(bookBounds(frame)).every(Number.isFinite));
+        if (i > 0 && i < 12) {
+          const cover = parseInt(frame.color.slice(1), 16),
+            winding = [];
+          drawBook(
+            {
+              triangle(_filled, ax, ay, bx, by, cx, cy, fill) {
+                if (
+                  Math.abs(fill.r - (cover >> 16) / 255) < 1e-8 &&
+                  Math.abs(fill.g - ((cover >> 8) & 255) / 255) < 1e-8 &&
+                  Math.abs(fill.b - (cover & 255) / 255) < 1e-8
+                )
+                  winding.push(Math.sign((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)));
+              },
+              rectLine() {},
+            },
+            frame,
+            set.height,
+          );
+          assert.deepEqual(
+            winding,
+            [-1, -1, -1, -1, 1, 1],
+            'back, spine and front cover keep their winding while lifted',
+          );
+        }
+        for (const hand of subject.snapshot().actors.hero.contacts)
+          assert.ok(
+            hand.error < 1,
+            `${plan.action.action}: moving cover misses hand by ${hand.error}`,
+          );
+      }
     const times = blocking.plans.flatMap((p) => [p.start, (p.start + p.end) / 2, p.end - 1e-6]);
     const expected = times.map((time) => {
       subject.sample(time, false);

@@ -62,7 +62,10 @@ export function inkChapter(
       return {
         render,
         snapshot: () => drawing.snapshot?.(),
-        capture: () => snapshotSVG(view.element),
+        capture(viewport) {
+          if (!viewport) return snapshotSVG(view.element);
+          return view.withViewport(viewport.aspect, () => snapshotSVG(view.element));
+        },
         dispose() {
           observer.disconnect();
           try {

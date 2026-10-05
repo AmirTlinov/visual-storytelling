@@ -1,24 +1,37 @@
 import { fitFrame } from '../scene-frame.js';
 import { bookTransition } from './transition.js';
-import { bookTiming, bookOpening } from './timing.js';
+import { bookTiming, bookBoundary } from './timing.js';
+import type { NotebookSource } from './opening.js';
 import type { ChapterTransition } from '../story/composition.js';
+import { notebookPageAspect } from '../characters/staging/notebook.js';
 
-/** The notebook opens on a desk, then yields its entire frame to the existing chapter. */
-export function bookChapters(topic: string): ChapterTransition {
+/** Establish a world, enter its notebook, then turn full-frame pages. Exploration uses live chapters. */
+export function bookChapters(
+  topic: string,
+  worlds: readonly boolean[],
+  entries: readonly (NotebookSource | undefined)[],
+): ChapterTransition {
   return {
-    introduction: {
-      seconds: bookTiming.introduction,
-      id: 'book-open',
-      title: `Tlinov · ${topic}`,
-      text: 'Раскроем тетрадь и заглянем в записи.',
-    },
-    duration: bookTiming.turn,
+    captureAspect: notebookPageAspect,
+    introduction: worlds[0]
+      ? undefined
+      : {
+          seconds: bookTiming.introduction,
+          id: 'book-open',
+          title: `Tlinov · ${topic}`,
+          text: 'Из исторической мастерской — к записям в тетради.',
+        },
+    duration: (index) => bookBoundary(Boolean(worlds[index - 1]), Boolean(worlds[index])),
     mount(parent, previews) {
-      const page = () => document.createElement('canvas');
-      const current = page(),
-        previous = page(),
+      const current = document.createElement('canvas'),
+        previous = document.createElement('canvas'),
         overlay = document.createElement('div');
-      Object.assign(overlay.style, { position: 'absolute', inset: '0', pointerEvents: 'none' });
+      Object.assign(overlay.style, {
+        position: 'absolute',
+        inset: '0',
+        pointerEvents: 'none',
+        background: 'var(--ve-surface)',
+      });
       overlay.setAttribute('aria-hidden', 'true');
       overlay.dataset.bookTransition = '';
       parent.append(overlay);
@@ -27,10 +40,9 @@ export function bookChapters(topic: string): ChapterTransition {
         previousSource: HTMLCanvasElement | undefined,
         imageAspect = 0;
       const copy = (canvas: HTMLCanvasElement, aspect: number, source?: HTMLCanvasElement) => {
-        const c = canvas.getContext('2d')!;
         canvas.width = 1440;
         canvas.height = Math.round(1440 / aspect);
-        c.reset();
+        const c = canvas.getContext('2d')!;
         if (source) {
           const box = fitFrame(source.width, source.height, canvas.width, canvas.height);
           c.drawImage(
@@ -44,38 +56,30 @@ export function bookChapters(topic: string): ChapterTransition {
       };
       return {
         render(state) {
-          overlay.hidden = state.reduced || (state.open >= 1 && state.progress >= 1);
+          const introduction = state.open < 1;
+          overlay.hidden = state.reduced || (!introduction && state.progress >= 1);
           if (overlay.hidden) return;
-          const opening = state.open < 1;
-          overlay.dataset.bookPhase = opening ? 'opening' : 'turn';
-          overlay.style.background = opening ? 'var(--ve-surface)' : 'transparent';
-          // Reveal the chapter only after the camera has entered the paper and its edges are gone.
-          overlay.style.opacity = String(opening ? 1 - bookOpening(state.open).reveal : 1);
+          const source = entries[state.chapter],
+            progress = introduction ? state.open : state.progress;
+          overlay.dataset.bookPhase = source ? 'enter' : 'turn';
           const aspect = (parent.clientWidth || 960) / (parent.clientHeight || 640);
-          if (!opening) {
-            const next = previews[state.chapter]?.start,
-              before = previews[state.chapter - 1]?.end;
-            const resized = imageAspect !== aspect;
-            const changed = currentSource !== next || previousSource !== before || resized;
-            if (currentSource !== next || resized) {
-              currentSource = next;
-              copy(current, aspect, next);
-            }
-            if (previousSource !== before || resized) {
-              previousSource = before;
-              copy(previous, aspect, before);
-            }
-            if (changed) {
-              imageAspect = aspect;
-              drawing.pagesChanged();
-            }
+          const next = previews[state.chapter]?.start,
+            before = previews[state.chapter - 1]?.end;
+          const resized = aspect !== imageAspect,
+            changed = currentSource !== next || previousSource !== before || resized;
+          if (currentSource !== next || resized) {
+            currentSource = next;
+            copy(current, aspect, next);
           }
-          drawing.render({
-            page: state.chapter,
-            open: state.open,
-            turn: state.progress,
-            aspect,
-          });
+          if (previousSource !== before || resized) {
+            previousSource = before;
+            copy(previous, aspect, before);
+          }
+          if (changed) {
+            imageAspect = aspect;
+            drawing.pagesChanged();
+          }
+          drawing.render(progress, aspect, source, previews[state.chapter]?.surface ?? current);
         },
         dispose() {
           drawing.dispose();

@@ -326,10 +326,17 @@ export function body(
     book(
       id: string,
       color: string,
-      placement?: { x: number; y: number; scale: number; weight: number; grip: number },
+      placement?: {
+        x: number;
+        y: number;
+        scale: number;
+        weight: number;
+        grip: number;
+        resting: NonNullable<BookFrame['resting']>['faces'];
+      },
     ): BookFrame {
       const p = hips.appliedPose.localToWorld(vector.set(0, 27));
-      const book = {
+      const book: BookFrame = {
         id,
         x: p.x,
         y: height - p.y,
@@ -343,6 +350,7 @@ export function body(
         book.x += (placement.x - book.x) * placement.weight;
         book.y += (placement.y - book.y) * placement.weight;
         book.scale += (placement.scale - book.scale) * placement.weight;
+        book.resting = { faces: placement.resting, weight: placement.weight };
       }
       const hands = bookHands(book);
       const left = this.sideToward(hands.left),

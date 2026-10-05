@@ -64,6 +64,8 @@ export function pageTurn(
       geometry.computeBoundingSphere();
       drawing.visible = t < 0.5;
       leaf.visible = t < 1;
+      // A curl keeps the same perspective after any notebook zoom or rewind.
+      view.camera.fov = 36;
       view.shot({
         target: new T.Box3(new T.Vector3(-w / 2, -h / 2, 0), new T.Vector3(w / 2, h / 2, 0)),
         direction: [0, 0, 1],

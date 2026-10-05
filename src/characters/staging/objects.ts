@@ -80,7 +80,7 @@ export function supportPoint(item: Furniture): GroundPoint {
         ? objectShape.chair.seat
         : undefined);
   if (height === undefined) throw new Error(`Object ${item.kind} has no support surface`);
-  return { ...item.at, height: (item.at.height ?? 0) + height * (item.scale ?? 1) + 0.04 };
+  return { ...item.at, height: (item.at.height ?? 0) + height * (item.scale ?? 1) };
 }
 export function seatPlaces(item: Furniture): GroundPoint[] {
   const local =

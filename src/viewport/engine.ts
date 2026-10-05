@@ -25,6 +25,7 @@ export {
   LineDashedMaterial,
   ShapeUtils,
   FrontSide,
+  BackSide,
   SphereGeometry,
   BoxGeometry,
   MOUSE,

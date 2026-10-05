@@ -26,7 +26,7 @@ export interface ChapterPresentation {
   render(frame: ChapterFrame): void;
   snapshot?(): unknown;
   /** Freeze the current frame before returning; decoding its boundary image may be asynchronous. */
-  capture?(): Promise<HTMLCanvasElement> | HTMLCanvasElement;
+  capture?(viewport?: { aspect: number }): Promise<HTMLCanvasElement> | HTMLCanvasElement;
   reset?(): void;
   focus?(ids: readonly string[]): void;
   dispose(): void;
@@ -38,10 +38,15 @@ export interface SceneChapter extends ChapterTiming {
 }
 export interface ChapterTransition {
   introduction?: ChapterIntroduction;
-  duration: number;
+  duration: number | ((index: number) => number);
+  captureAspect?: number;
   mount(
     parent: HTMLElement,
-    previews: readonly { start?: HTMLCanvasElement; end?: HTMLCanvasElement }[],
+    previews: readonly {
+      start?: HTMLCanvasElement;
+      end?: HTMLCanvasElement;
+      surface?: HTMLCanvasElement;
+    }[],
   ): {
     render(state: {
       chapter: number;
@@ -140,6 +145,7 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
           () => {
             if (transitionState) transition?.render(transitionState);
           },
+          options.transition.captureAspect,
         )
       : undefined;
     if (previews) {
@@ -222,15 +228,18 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
           chapter: index,
           time: frame.time,
           open:
-            mode === 'explore' || frame.reduced
+            mode === 'explore' || frame.reduced || plan.introduction === 0
               ? 1
               : Math.min(1, frame.time / Math.max(0.001, plan.introduction)),
           progress:
-            mode === 'explore' || frame.reduced || index === 0
+            mode === 'explore' || frame.reduced || index === 0 || frame.time >= state.timing.content
               ? 1
               : Math.max(
                   0,
-                  Math.min(1, (frame.time - state.timing.start) / Math.max(0.001, plan.transition)),
+                  Math.min(
+                    1,
+                    (frame.time - state.timing.start) / Math.max(0.001, state.timing.transition),
+                  ),
                 ),
           reduced: frame.reduced,
         };

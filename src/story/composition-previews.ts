@@ -15,8 +15,13 @@ export function chapterPreviews(
   defaults: Readonly<Record<string, ControlValue>>,
   restore: () => void,
   publish: () => void,
+  captureAspect?: number,
 ) {
-  const images: { start?: HTMLCanvasElement; end?: HTMLCanvasElement }[] = chapters.map(() => ({}));
+  const images: {
+    start?: HTMLCanvasElement;
+    end?: HTMLCanvasElement;
+    surface?: HTMLCanvasElement;
+  }[] = chapters.map(() => ({}));
   let disposed = false,
     generation = 0,
     signature = '',
@@ -36,7 +41,11 @@ export function chapterPreviews(
     if (key === signature) return pending;
     signature = key;
     const revision = ++generation,
-      captures: Promise<HTMLCanvasElement | undefined>[] = [];
+      captures: {
+        index: number;
+        key: 'start' | 'end' | 'surface';
+        image: Promise<HTMLCanvasElement | undefined>;
+      }[] = [];
     try {
       for (const [index, chapter] of chapters.entries()) {
         const { element, drawing } = mounted[index]!;
@@ -53,24 +62,34 @@ export function chapterPreviews(
             };
             frame.values = { ...defaults, ...chapter.valuesAt?.(frame) };
             drawing.render(frame);
-            captures.push(Promise.resolve(drawing.capture?.()));
+            captures.push({
+              index,
+              key: end ? 'end' : 'start',
+              image: Promise.resolve(drawing.capture?.()),
+            });
+            if (!end && captureAspect)
+              captures.push({
+                index,
+                key: 'surface',
+                image: Promise.resolve(drawing.capture?.({ aspect: captureAspect })),
+              });
           }
         } finally {
           element.hidden = true;
         }
       }
     } catch (error) {
-      void Promise.allSettled(captures);
+      void Promise.allSettled(captures.map((c) => c.image));
       signature = '';
       throw error;
     } finally {
       restore();
     }
-    pending = Promise.all(captures).then(
+    pending = Promise.all(captures.map((c) => c.image)).then(
       (result) => {
         if (disposed || revision !== generation) return;
-        for (let index = 0; index < images.length; index++)
-          images[index] = { start: result[index * 2], end: result[index * 2 + 1] };
+        for (const [i, capture] of captures.entries())
+          images[capture.index]![capture.key] = result[i];
         publish();
       },
       (error) => {

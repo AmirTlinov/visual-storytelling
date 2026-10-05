@@ -10,6 +10,10 @@ import { shotPose, type Shot3D, type ShotTransition3D } from './shots.js';
 import * as ThreeKit from './engine.js';
 import { orbitControls, orbitHelp } from './orbit.js';
 /* Camera, GPU resources and projected labels belong to this surface. */
+/** A custom projection uses the same resize/reset owner as a fitted shot. */
+export type CameraShot =
+  | ShotTransition3D
+  | ((camera: ThreeKit.PerspectiveCamera, width: number, height: number) => void);
 
 function mount(
   stage: HTMLElement,
@@ -68,7 +72,7 @@ function mount(
   let object: ThreeKit.Object3D | undefined,
     home: { position: ThreeKit.Vector3; target: ThreeKit.Vector3 } | undefined;
   let following = true,
-    lastShot: ShotTransition3D | undefined;
+    lastShot: CameraShot | undefined;
   const hemisphere = new T.HemisphereLight(0xffffff, 0xb8c1c8, 2.4),
     light = new T.DirectionalLight(0xffffff, 2.2);
   light.position.set(-3, 5, 7);
@@ -200,11 +204,18 @@ function mount(
       invalidate();
     }
   }
-  function shot(options: ShotTransition3D) {
+  function shot(options: CameraShot) {
     lastShot = options;
-    if (!following || !stage.clientWidth || !stage.clientHeight) return;
+    const width = stage.clientWidth,
+      height = stage.clientHeight;
+    if (!following || !width || !height) return;
+    if (typeof options === 'function') {
+      options(camera, width, height);
+      invalidate();
+      return;
+    }
     const anchors = (shot: Shot3D) => [...labels.anchors(shot.target), ...(shot.anchors ?? [])];
-    const pose = shotPose(camera, stage.clientWidth, stage.clientHeight, {
+    const pose = shotPose(camera, width, height, {
       ...options,
       anchors: anchors(options),
       from: options.from && { ...options.from, anchors: anchors(options.from) },
@@ -348,6 +359,7 @@ function mount(
     dispose() {
       if (disposed) return;
       disposed = true;
+      lastShot = undefined;
       renderListeners.clear();
       void gltf?.then(
         (owner) => owner.dispose(),

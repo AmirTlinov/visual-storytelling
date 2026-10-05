@@ -1,8 +1,8 @@
 {
   "version": 1,
   "sample_rate": 48000,
-  "duration": 33.36,
-  "source_sha256": "f0ebc467e4cf2d7a951aba72bb031ba3d629b5ec2fefd701bef6961b2b3494f3",
+  "duration": 35.96,
+  "source_sha256": "10e5afd54fc4ffdf733eec3ec7db0ee76f0ad53dd3d5fbb2193f9efddde5fb81",
   "audio": "audio.wav",
   "voice": "voice.wav",
   "music": null,
@@ -20,8 +20,7 @@
     "reference_sha256": "d061da33bfd052b387f9589dfb87b7f44b014f2c2f705e4db53acfd7905cb249",
     "parameters": {
       "temperature": 0.8,
-      "top_k": 50,
-      "max_new_tokens": 1200
+      "top_k": 50
     }
   },
   "segments": [
@@ -203,123 +202,123 @@
     {
       "id": "experiment",
       "text": "Поменяйте температуру. Сравните её с порогом на одной шкале. Если температура меньше порога, нагрев включён. При равенстве он выключен.",
-      "start": 20.78027,
-      "end": 30.61934,
-      "audio_start": 20.64,
-      "audio_end": 30.96,
+      "start": 23.38027,
+      "end": 33.21934,
+      "audio_start": 23.24,
+      "audio_end": 33.56,
       "words": [
         {
           "text": "Поменяйте",
-          "start": 20.78027,
-          "end": 21.22113,
+          "start": 23.38027,
+          "end": 23.82113,
           "score": 1.0
         },
         {
           "text": "температуру",
-          "start": 21.30128,
-          "end": 21.90245,
+          "start": 23.90128,
+          "end": 24.50245,
           "score": 1.0
         },
         {
           "text": "Сравните",
-          "start": 22.54369,
-          "end": 22.98454,
+          "start": 25.14369,
+          "end": 25.58454,
           "score": 1.0
         },
         {
           "text": "её",
-          "start": 23.10478,
-          "end": 23.18493,
+          "start": 25.70478,
+          "end": 25.78493,
           "score": 1.0
         },
         {
           "text": "с",
-          "start": 23.30517,
-          "end": 23.3252,
+          "start": 25.90517,
+          "end": 25.9252,
           "score": 1.0
         },
         {
           "text": "порогом",
-          "start": 23.36528,
-          "end": 23.7861,
+          "start": 25.96528,
+          "end": 26.3861,
           "score": 1.0
         },
         {
           "text": "на",
-          "start": 23.84621,
-          "end": 23.90633,
+          "start": 26.44621,
+          "end": 26.50633,
           "score": 1.0
         },
         {
           "text": "одной",
-          "start": 23.96645,
-          "end": 24.20691,
+          "start": 26.56645,
+          "end": 26.80691,
           "score": 1.0
         },
         {
           "text": "шкале",
-          "start": 24.28707,
-          "end": 24.54757,
+          "start": 26.88707,
+          "end": 27.14757,
           "score": 0.802
         },
         {
           "text": "Если",
-          "start": 25.36917,
-          "end": 25.58959,
+          "start": 27.96917,
+          "end": 28.18959,
           "score": 1.0
         },
         {
           "text": "температура",
-          "start": 25.64971,
-          "end": 26.23083,
+          "start": 28.24971,
+          "end": 28.83083,
           "score": 0.992
         },
         {
           "text": "меньше",
-          "start": 26.33103,
-          "end": 26.61157,
+          "start": 28.93103,
+          "end": 29.21157,
           "score": 1.0
         },
         {
           "text": "порога",
-          "start": 26.69173,
-          "end": 27.07247,
+          "start": 29.29173,
+          "end": 29.67247,
           "score": 1.0
         },
         {
           "text": "нагрев",
-          "start": 27.57344,
-          "end": 27.95417,
+          "start": 30.17344,
+          "end": 30.55417,
           "score": 0.833
         },
         {
           "text": "включён",
-          "start": 28.01429,
-          "end": 28.49522,
+          "start": 30.61429,
+          "end": 31.09522,
           "score": 0.997
         },
         {
           "text": "При",
-          "start": 29.09639,
-          "end": 29.19658,
+          "start": 31.69639,
+          "end": 31.79658,
           "score": 0.999
         },
         {
           "text": "равенстве",
-          "start": 29.29678,
-          "end": 29.77771,
+          "start": 31.89678,
+          "end": 32.37771,
           "score": 0.957
         },
         {
           "text": "он",
-          "start": 29.95806,
-          "end": 30.05825,
+          "start": 32.55806,
+          "end": 32.65825,
           "score": 1.0
         },
         {
           "text": "выключен",
-          "start": 30.13841,
-          "end": 30.61934,
+          "start": 32.73841,
+          "end": 33.21934,
           "score": 1.0
         }
       ],
@@ -354,13 +353,13 @@
     },
     "experiment": {
       "text": "Поменяйте температуру. Сравните её с порогом на одной шкале. Если температура меньше порога, нагрев включён. При равенстве он выключен.",
-      "start": 20.78027,
-      "end": 30.61934
+      "start": 23.38027,
+      "end": 33.21934
     },
     "experiment.change": {
       "text": "Поменяйте температуру Сравните её с порогом на одной шкале Если температура меньше порога нагрев включён При равенстве он выключен",
-      "start": 20.78027,
-      "end": 30.61934,
+      "start": 23.38027,
+      "end": 33.21934,
       "action": "Сравниваем температуру с порогом на общей шкале."
     }
   },
@@ -377,13 +376,18 @@
   },
   "warnings": [],
   "build": {
-    "seconds": 0.033,
+    "seconds": 0.043,
     "segments": [
       {
         "id": "workshop",
         "synthesis": {
           "cached": true,
-          "seconds": 0.0
+          "seconds": 0.0,
+          "parameters": {
+            "temperature": 0.8,
+            "top_k": 50,
+            "max_new_tokens": 1200
+          }
         },
         "alignment": {
           "cached": true,
@@ -395,7 +399,12 @@
         "id": "experiment",
         "synthesis": {
           "cached": true,
-          "seconds": 0.0
+          "seconds": 0.0,
+          "parameters": {
+            "temperature": 0.8,
+            "top_k": 50,
+            "max_new_tokens": 1200
+          }
         },
         "alignment": {
           "cached": true,

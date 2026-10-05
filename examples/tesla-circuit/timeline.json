@@ -1,8 +1,8 @@
 {
   "version": 1,
   "sample_rate": 48000,
-  "duration": 36.48,
-  "source_sha256": "6120de393a7f98259183fd47cebb0ca60947d4c8b776110755d136198f5b0878",
+  "duration": 39.08,
+  "source_sha256": "fa30a936eba16c58b6a76210c33b3599f6cdde6fad3b991890c39c586ad60db6",
   "audio": "audio.wav",
   "voice": "voice.wav",
   "music": null,
@@ -20,8 +20,7 @@
     "reference_sha256": "d061da33bfd052b387f9589dfb87b7f44b014f2c2f705e4db53acfd7905cb249",
     "parameters": {
       "temperature": 0.8,
-      "top_k": 50,
-      "max_new_tokens": 1200
+      "top_k": 50
     }
   },
   "segments": [
@@ -233,99 +232,99 @@
     {
       "id": "experiment",
       "text": "Теперь попробуйте сами: замыкайте и размыкайте цепь. Источник остаётся тем же, меняется только путь тока.",
-      "start": 25.14022,
-      "end": 33.67911,
-      "audio_start": 25.04,
-      "audio_end": 34.08,
+      "start": 27.74022,
+      "end": 36.27911,
+      "audio_start": 27.64,
+      "audio_end": 36.68,
       "words": [
         {
           "text": "Теперь",
-          "start": 25.14022,
-          "end": 25.48098,
+          "start": 27.74022,
+          "end": 28.08098,
           "score": 1.0
         },
         {
           "text": "попробуйте",
-          "start": 25.72151,
-          "end": 26.24266,
+          "start": 28.32151,
+          "end": 28.84266,
           "score": 0.998
         },
         {
           "text": "сами",
-          "start": 26.36293,
-          "end": 26.6235,
+          "start": 28.96293,
+          "end": 29.2235,
           "score": 0.981
         },
         {
           "text": "замыкайте",
-          "start": 27.20479,
-          "end": 27.76603,
+          "start": 29.80479,
+          "end": 30.36603,
           "score": 1.0
         },
         {
           "text": "и",
-          "start": 28.32727,
-          "end": 28.34732,
+          "start": 30.92727,
+          "end": 30.94732,
           "score": 1.0
         },
         {
           "text": "размыкайте",
-          "start": 28.44754,
-          "end": 29.00878,
+          "start": 31.04754,
+          "end": 31.60878,
           "score": 0.957
         },
         {
           "text": "цепь",
-          "start": 29.12905,
-          "end": 29.38962,
+          "start": 31.72905,
+          "end": 31.98962,
           "score": 1.0
         },
         {
           "text": "Источник",
-          "start": 30.05109,
-          "end": 30.57224,
+          "start": 32.65109,
+          "end": 33.17224,
           "score": 1.0
         },
         {
           "text": "остаётся",
-          "start": 30.71255,
-          "end": 31.21366,
+          "start": 33.31255,
+          "end": 33.81366,
           "score": 1.0
         },
         {
           "text": "тем",
-          "start": 31.29384,
-          "end": 31.49428,
+          "start": 33.89384,
+          "end": 34.09428,
           "score": 1.0
         },
         {
           "text": "же",
-          "start": 31.57446,
-          "end": 31.65463,
+          "start": 34.17446,
+          "end": 34.25463,
           "score": 1.0
         },
         {
           "text": "меняется",
-          "start": 32.21588,
-          "end": 32.69694,
+          "start": 34.81588,
+          "end": 35.29694,
           "score": 0.947
         },
         {
           "text": "только",
-          "start": 32.75707,
-          "end": 33.01765,
+          "start": 35.35707,
+          "end": 35.61765,
           "score": 0.918
         },
         {
           "text": "путь",
-          "start": 33.13792,
-          "end": 33.33836,
+          "start": 35.73792,
+          "end": 35.93836,
           "score": 1.0
         },
         {
           "text": "тока",
-          "start": 33.41854,
-          "end": 33.67911,
+          "start": 36.01854,
+          "end": 36.27911,
           "score": 0.998
         }
       ],
@@ -360,13 +359,13 @@
     },
     "experiment": {
       "text": "Теперь попробуйте сами: замыкайте и размыкайте цепь. Источник остаётся тем же, меняется только путь тока.",
-      "start": 25.14022,
-      "end": 33.67911
+      "start": 27.74022,
+      "end": 36.27911
     },
     "experiment.change": {
       "text": "Теперь попробуйте сами замыкайте и размыкайте цепь Источник остаётся тем же меняется только путь тока",
-      "start": 25.14022,
-      "end": 33.67911,
+      "start": 27.74022,
+      "end": 36.27911,
       "action": "Исследуем состояние выключателя."
     }
   },
@@ -383,13 +382,18 @@
   },
   "warnings": [],
   "build": {
-    "seconds": 0.045,
+    "seconds": 0.036,
     "segments": [
       {
         "id": "workshop",
         "synthesis": {
           "cached": true,
-          "seconds": 0.0
+          "seconds": 0.0,
+          "parameters": {
+            "temperature": 0.8,
+            "top_k": 50,
+            "max_new_tokens": 1200
+          }
         },
         "alignment": {
           "cached": true,
@@ -401,7 +405,12 @@
         "id": "experiment",
         "synthesis": {
           "cached": true,
-          "seconds": 0.0
+          "seconds": 0.0,
+          "parameters": {
+            "temperature": 0.8,
+            "top_k": 50,
+            "max_new_tokens": 1200
+          }
         },
         "alignment": {
           "cached": true,

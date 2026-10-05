@@ -110,6 +110,25 @@ test('one authored document feeds action IDs, speech and aligned page transition
   assert.equal(owned.narration.music.path, 'a.wav');
 });
 
+test('entering the world notebook reserves camera time without moving spoken cues', () => {
+  const story = {
+    ...document,
+    chapters: document.chapters.map((chapter, i) => ({ ...chapter, view: i ? 'paper' : 'cast' })),
+  };
+  assert.equal(documentNarration(story).segments[0].pause_after, 4.2);
+  const aligned = {
+    duration: 15,
+    cues: { 'room.switch': { start: 4.4, end: 7 }, 'paper.try': { start: 12, end: 14 } },
+    segments: [
+      { id: 'room', start: 4.4, end: 7 },
+      { id: 'paper', start: 12, end: 14 },
+    ],
+  };
+  const script = documentScript(story, aligned);
+  assert.equal(script.cues.paper.start, 7.8);
+  assert.deepEqual(script.cues['paper.try'], aligned.cues['paper.try']);
+});
+
 test('repeated thoughts bind to their own spoken words, including a quote inside an earlier thought', async () => {
   const sayings = [
     'Сначала цепь замкнута.',

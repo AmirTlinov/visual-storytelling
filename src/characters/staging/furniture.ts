@@ -7,7 +7,7 @@ import {
 import { objectShape } from './objects.js';
 import type { Furniture, Projection } from './types.js';
 
-import { projectedParts, stageInk as ink, type Part } from './geometry.js';
+import { projectedParts, cuboid, stageInk as ink, type Part } from './geometry.js';
 import { doorwayParts } from './doorway.js';
 
 /** Furniture keeps its physical contacts in the same projected world as its artwork. */
@@ -175,35 +175,10 @@ export function furnitureParts(item: Furniture, space: Projection, open?: number
   } else if (item.kind === 'table') {
     group(0, (path) => {
       let out = '';
-      for (const x of [-0.78, 0.78])
-        for (const z of [-0.34, 0.34])
-          out += path(
-            [
-              [x - 0.055, 0, z],
-              [x + 0.055, 0, z],
-              [x + 0.055, 1.8, z],
-              [x - 0.055, 1.8, z],
-            ],
-            wood,
-          );
-      out += path(
-        [
-          [-0.95, 1.74, -0.48],
-          [0.95, 1.74, -0.48],
-          [0.95, 1.86, -0.48],
-          [-0.95, 1.86, -0.48],
-        ],
-        wood,
-      );
-      out += path(
-        [
-          [-0.95, 1.86, -0.48],
-          [0.95, 1.86, -0.48],
-          [0.95, 1.86, 0.48],
-          [-0.95, 1.86, 0.48],
-        ],
-        '#c5a573',
-      );
+      for (const z of [0.34, -0.34])
+        for (const x of [-0.78, 0.78])
+          out += cuboid(path, [x - 0.055, 0, z - 0.055], [x + 0.055, 1.8, z + 0.055], wood);
+      out += cuboid(path, [-0.95, 1.74, -0.48], [0.95, 1.86, 0.48], wood, '#c5a573');
       return out;
     });
   } else if (item.kind === 'tree') {

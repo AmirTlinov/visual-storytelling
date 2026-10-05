@@ -6,7 +6,8 @@ import type { Blocking } from './blocking.js';
 import { blockAt } from './motion.js';
 import { body, connect } from './pose.js';
 import { drawFurniture, furnitureParts, loadFurniture, color } from './furniture.js';
-import { drawBook, bookPage, type BookFrame } from './book.js';
+import { drawBook, bookPage, bookBounds, type BookFrame } from './book.js';
+import { notebookFaces, notebookParts } from './notebook.js';
 import { drawingPlane } from './drawing-plane.js';
 import type { Quad } from '../../ink/projective.js';
 import { project } from './space.js';
@@ -95,19 +96,32 @@ export async function world(
           heldItems[id] =
             item.kind === 'prop'
               ? b.carry(itemId, item.art!, placement)
-              : b.book(itemId, item.color ?? '#855057', placement);
+              : b.book(
+                  itemId,
+                  item.color ?? '#855057',
+                  placement && {
+                    ...placement,
+                    resting: notebookFaces({ ...item, at: transfer!.at }, staging.projection),
+                  },
+                );
         }
       }
       return actions;
     },
-    draw(renderer: SceneRenderer, surface?: (id: string, quad: Quad) => void) {
-      const items: { depth: number; draw: () => void }[] = furniture.parts.map((part) => ({
-        depth: part.depth,
-        draw: () => {
-          const b = part.bounds;
-          renderer.drawTexture(part.texture, b.x, height - b.y - b.height, b.width, b.height);
-        },
-      }));
+    draw(
+      renderer: SceneRenderer,
+      surface?: (id: string, quad: Quad) => void,
+      omit: readonly string[] = [],
+    ) {
+      const items: { depth: number; draw: () => void }[] = furniture.parts
+        .filter((part) => !omit.includes(part.id))
+        .map((part) => ({
+          depth: part.depth,
+          draw: () => {
+            const b = part.bounds;
+            renderer.drawTexture(part.texture, b.x, height - b.y - b.height, b.width, b.height);
+          },
+        }));
       if (options.background !== false)
         for (const [id, item] of Object.entries(staging.objects))
           if (item.kind === 'door')
@@ -123,7 +137,7 @@ export async function world(
       const held = new Set(Object.values(heldItems).map((b) => b.id));
       if (options.background !== false)
         for (const [id, at] of Object.entries(frames.items))
-          if (!held.has(id)) {
+          if (!held.has(id) && !omit.includes(id)) {
             const item = staging.objects[id]!,
               p = project(staging.projection, at),
               book = {
@@ -136,8 +150,16 @@ export async function world(
                 handTurn: 0,
                 color: item.color ?? '#855057',
               };
-            const frame: ItemFrame = item.kind === 'prop' ? { ...book, portable: true } : book;
-            items.push({ depth: at.z - 0.01, draw: () => drawItem(renderer, frame, surface) });
+            if (item.kind === 'book') {
+              for (const part of notebookParts({ ...item, at }, staging.projection))
+                items.push({
+                  depth: part.depth,
+                  draw: () => drawFurniture(renderer, part, height),
+                });
+            } else {
+              const frame: ItemFrame = { ...book, portable: true };
+              items.push({ depth: at.z - 0.01, draw: () => drawItem(renderer, frame, surface) });
+            }
           }
       for (const [id, b] of Object.entries(bodies))
         items.push({
@@ -199,24 +221,22 @@ export async function world(
           if (item.kind === 'door')
             for (const part of furnitureParts(item, staging.projection, frames.objects[id] ?? 0))
               add(id, part.bounds);
-      const bookBounds = (b: ItemFrame) =>
-        'portable' in b
-          ? portableBounds(b, staging.objects[b.id]!.art!)
-          : {
-              x: b.x - 89 * b.scale,
-              y: b.y - 99 * b.scale,
-              width: 178 * b.scale,
-              height: 129 * b.scale,
-            };
+      const itemBounds = (b: ItemFrame) =>
+        'portable' in b ? portableBounds(b, staging.objects[b.id]!.art!) : bookBounds(b);
       const held = new Set(Object.values(heldItems).map((b) => b.id));
-      for (const b of Object.values(heldItems)) add(b.id, bookBounds(b));
+      for (const b of Object.values(heldItems)) add(b.id, itemBounds(b));
       if (options.background !== false)
         for (const [id, at] of Object.entries(frames.items))
           if (!held.has(id)) {
+            if (staging.objects[id]!.kind === 'book') {
+              for (const part of notebookParts({ ...staging.objects[id]!, at }, staging.projection))
+                add(id, part.bounds);
+              continue;
+            }
             const p = project(staging.projection, at);
             add(
               id,
-              bookBounds({
+              itemBounds({
                 id,
                 x: p.x,
                 y: p.y,
@@ -251,6 +271,12 @@ export async function world(
         }
       }
       return Object.fromEntries(Object.entries(grouped).map(([id, boxes]) => [id, union(boxes)]));
+    },
+    restingBook(id: string) {
+      const item = staging.objects[id];
+      if (!item || item.kind !== 'book' || Object.values(heldItems).some((b) => b.id === id))
+        return undefined;
+      return { ...item, at: frames.items[id] ?? item.at };
     },
     snapshot: () => ({
       actors: Object.fromEntries(Object.entries(bodies).map(([id, b]) => [id, b.snapshot()])),

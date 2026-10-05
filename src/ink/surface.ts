@@ -1,4 +1,4 @@
-import { svg, seed } from './dom.js';
+import { svg } from './dom.js';
 import { pen } from './pen.js';
 
 export interface Grid {
@@ -62,12 +62,10 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
     const start = (edge: number, origin = 0) =>
       origin + Math.ceil((edge - origin) / grid.step) * grid.step;
     for (let x = start(left, grid.x); x <= right; x += grid.step) {
-      const bow = ((seed(`${options.id}:v:${x}`) % 13) - 6) / 12;
-      parts.push(`M${x} ${top} Q${x + bow} ${(top + bottom) / 2} ${x} ${bottom}`);
+      parts.push(`M${x} ${top}L${x} ${bottom}`);
     }
     for (let y = start(top, grid.y); y <= bottom; y += grid.step) {
-      const bow = ((seed(`${options.id}:h:${y}`) % 13) - 6) / 12;
-      parts.push(`M${left} ${y} Q${(left + right) / 2} ${y + bow} ${right} ${y}`);
+      parts.push(`M${left} ${y}L${right} ${y}`);
     }
     paper.append(
       svg('path', {
@@ -78,17 +76,23 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
       }),
     );
   };
+  const setViewport = (next: typeof bounds) => {
+    if (
+      bounds.x !== next.x ||
+      bounds.y !== next.y ||
+      bounds.width !== next.width ||
+      bounds.height !== next.height
+    ) {
+      bounds = next;
+      element.setAttribute('viewBox', `${next.x} ${next.y} ${next.width} ${next.height}`);
+      element.style.aspectRatio = `${next.width} / ${next.height}`;
+    }
+    drawGrid();
+  };
   const updateViewport = () => {
     const w = viewportRatio ? Math.max(width, height * viewportRatio) : width;
     const h = viewportRatio ? Math.max(height, width / viewportRatio) : height;
-    const x = (width - w) / 2,
-      y = (height - h) / 2;
-    if (bounds.x !== x || bounds.y !== y || bounds.width !== w || bounds.height !== h) {
-      bounds = { x, y, width: w, height: h };
-      element.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
-      element.style.aspectRatio = `${w} / ${h}`;
-    }
-    drawGrid();
+    setViewport({ x: (width - w) / 2, y: (height - h) / 2, width: w, height: h });
   };
   const resize = (w: number, h: number, grid: Grid | false = gridOptions) => {
     if (![w, h].every((value) => Number.isFinite(value) && value > 0))
@@ -105,6 +109,24 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
     viewportRatio = w / h;
     updateViewport();
   };
+  /** Freeze an expanded view of the current paper, restoring it before an async capture resolves. */
+  const withViewport = <T>(aspect: number, capture: () => T): T => {
+    if (!Number.isFinite(aspect) || aspect <= 0) throw new Error('Capture aspect must be positive');
+    const previous = bounds,
+      w = Math.max(previous.width, previous.height * aspect),
+      h = w / aspect;
+    try {
+      setViewport({
+        x: previous.x + (previous.width - w) / 2,
+        y: previous.y + (previous.height - h) / 2,
+        width: w,
+        height: h,
+      });
+      return capture();
+    } finally {
+      setViewport(previous);
+    }
+  };
   resize(options.width, options.height);
   return {
     element,
@@ -112,6 +134,7 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
     pen: pen(element),
     resize,
     fitViewport,
+    withViewport,
     grid: drawGrid,
     onDispose(cleanup: () => void) {
       if (disposed) throw new Error('Drawing surface has been disposed');
