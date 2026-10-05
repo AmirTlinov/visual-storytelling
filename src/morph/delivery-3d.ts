@@ -44,6 +44,16 @@ function receiverBounds({ to, bounds }: MathDelivery3DOptions) {
   });
   return result;
 }
+function validateReceiver(options: MathDelivery3DOptions, current?: Object3D) {
+  const { to } = options;
+  if (!to?.isObject3D) throw new Error('Math delivery needs a receiving Object3D');
+  if (to !== current && receivers.has(to))
+    throw new Error('A result receiver already has a MathMorph delivery owner');
+  if (options.via && (options.via.length !== 3 || !options.via.every(Number.isFinite)))
+    throw new Error('Math delivery control point must contain three finite world coordinates');
+  if (!validBounds(receiverBounds(options)))
+    throw new Error('Math delivery needs non-empty three-dimensional receiver bounds');
+}
 function partBounds(frame: MathMorphFrame) {
   const result = new Box3();
   for (const part of frame.targets) {
@@ -87,22 +97,35 @@ function rootOf(object: Object3D) {
 
 /** Pose and handoff only. MathMorph and Story remain the computation and time owners. */
 export function mathDelivery3D(source: Object3D, options: MathDelivery3DOptions) {
-  const { to } = options;
-  if (!to?.isObject3D) throw new Error('Math delivery needs a receiving Object3D');
-  if (receivers.has(to))
-    throw new Error('A result receiver already has a MathMorph delivery owner');
-  if (options.via && (options.via.length !== 3 || !options.via.every(Number.isFinite)))
-    throw new Error('Math delivery control point must contain three finite world coordinates');
-  if (!validBounds(receiverBounds(options)))
-    throw new Error('Math delivery needs non-empty three-dimensional receiver bounds');
+  validateReceiver(options);
+  let { to } = options;
   if (source.matrixAutoUpdate) source.updateMatrix();
   const originalMatrix = source.matrix.clone(),
     originalAutoUpdate = source.matrixAutoUpdate,
-    originalSourceVisible = source.visible,
-    originalReceiverVisible = to.visible;
+    originalSourceVisible = source.visible;
+  let originalReceiverVisible = to.visible;
   let disposed = false;
   receivers.add(to);
+  function resetSource() {
+    source.matrix.copy(originalMatrix);
+    source.matrixAutoUpdate = originalAutoUpdate;
+    source.matrixWorldNeedsUpdate = true;
+    source.visible = originalSourceVisible;
+  }
   return {
+    /** Reuse one calculation across receiving addresses; the released address keeps its last state. */
+    setOptions(next: MathDelivery3DOptions) {
+      if (disposed) throw new Error('Math delivery has been disposed');
+      validateReceiver(next, to);
+      if (next.to !== to) {
+        receivers.delete(to);
+        to = next.to;
+        originalReceiverVisible = to.visible;
+        receivers.add(to);
+        resetSource();
+      }
+      options = next;
+    },
     render(frame: MathMorphFrame, stages: number, progress: number, reduced = false) {
       if (disposed) throw new Error('Math delivery has been disposed');
       if (!Number.isFinite(progress) || progress < 0 || progress > 1)
@@ -176,10 +199,7 @@ export function mathDelivery3D(source: Object3D, options: MathDelivery3DOptions)
     dispose() {
       if (disposed) return;
       disposed = true;
-      source.matrix.copy(originalMatrix);
-      source.matrixAutoUpdate = originalAutoUpdate;
-      source.matrixWorldNeedsUpdate = true;
-      source.visible = originalSourceVisible;
+      resetSource();
       to.visible = originalReceiverVisible;
       receivers.delete(to);
     },

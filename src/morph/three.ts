@@ -54,7 +54,7 @@ function mount(
     disposed = false;
   let progress = 0;
   const stage = view.renderer.domElement.parentElement!;
-  const viewport =
+  let viewport =
     options.layout === 'scene' || options.delivery ? undefined : contentViewport(stage);
   let arrangement: ReturnType<typeof cellLayout> | undefined,
     layoutWidth = 0;
@@ -145,6 +145,22 @@ function mount(
     layoutWidth = 0;
     prepare();
     render(0);
+  }
+  function setDelivery(next?: MathDelivery3DOptions) {
+    if (disposed) throw new Error('Math morph has been disposed');
+    if (next) {
+      if (delivery) delivery.setOptions(next);
+      else delivery = mathDelivery3D(volume.object, next);
+      // A receiving address belongs to the authored scene, whose viewport owns framing.
+      viewport?.dispose();
+      viewport = undefined;
+    } else {
+      delivery?.dispose();
+      delivery = undefined;
+      if (!viewport && options.layout !== 'scene') viewport = contentViewport(stage);
+    }
+    lastDelivery = undefined;
+    view.invalidate();
   }
   function prepare() {
     volume.prepare(
@@ -324,6 +340,7 @@ function mount(
     bounds,
     render,
     setOperation,
+    setDelivery,
     dispose,
     get surface() {
       return volume;
