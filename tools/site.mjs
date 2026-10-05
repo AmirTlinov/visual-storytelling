@@ -11,7 +11,7 @@ export async function serve(directory = 'site', port = 0, { handle, html } = {})
       if (await handle?.(req, res)) return;
       const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
       const file = resolve(root, `.${pathname === '/' ? '/index.html' : pathname}`);
-      if (!file.startsWith(root + sep)) {
+      if (!file.startsWith(root.endsWith(sep) ? root : root + sep)) {
         res.writeHead(403).end();
         return;
       }

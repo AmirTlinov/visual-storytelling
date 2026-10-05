@@ -1,5 +1,5 @@
-import { mkdir, writeFile, readdir } from 'node:fs/promises';
-import { join, relative, basename } from 'node:path';
+import { readdir } from 'node:fs/promises';
+import { join, basename } from 'node:path';
 import { buildOutput } from '../build-output.mjs';
 import { spawn } from 'node:child_process';
 import { captureWriter } from './session.mjs';
@@ -72,28 +72,9 @@ export async function videoFrames(input, from, count, seconds, out) {
 }
 
 export async function saveCapture(samples, source, out, telemetry, context) {
-  // Reference existing raw images, including offline selections; preserve names and order.
-  const folder = join(out, 'capture');
-  if (samples.every((s) => s.file)) {
-    await mkdir(folder, { recursive: true });
-    const frames = samples.map(({ file, png, epoch, ...s }) => ({
-      ...s,
-      file: relative(folder, file),
-    }));
-    const path = join(folder, 'frames.json');
-    await writeFile(
-      path,
-      JSON.stringify({
-        source,
-        context,
-        frames,
-        ...(telemetry ? { telemetry: '../telemetry.json' } : {}),
-      }) + '\n',
-    );
-    if (telemetry) await writeFile(join(out, 'telemetry.json'), JSON.stringify(telemetry) + '\n');
-    return path;
-  }
-  const writer = await captureWriter(out);
+  // Existing raw images (including offline selections) retain their names and order.
+  const writer = await captureWriter(out, { reference: true });
+  await writer.begin({ source, context });
   for (const sample of samples) await writer.append(sample);
   return writer.finish(source, telemetry, context);
 }

@@ -4,7 +4,6 @@ import { readFile, writeFile, mkdir, readdir, cp, access } from 'node:fs/promise
 import { resolve, join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildScene } from './build-pages.mjs';
-import { serve } from './site.mjs';
 import { packDirectory } from './standalone.mjs';
 import { readCatalog, describeExamples } from './catalog.mjs';
 import { buildNarration } from './narration.mjs';
@@ -209,7 +208,8 @@ Re-run the same command after changing a line; unchanged voice segments use the 
         process.exit(0);
       });
   } else if (command === 'preview') {
-    const server = await serve(destination, Number(values.port));
+    const { previewReport } = await import('./motion/preview.mjs');
+    const server = await previewReport(destination, Number(values.port));
     console.log(server.url);
     for (const signal of ['SIGINT', 'SIGTERM'])
       process.once(signal, async () => {

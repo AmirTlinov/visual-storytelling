@@ -54,6 +54,12 @@ export function queryEvidence(data, query = {}) {
   };
   const visible = (o) =>
     !o.missing && o.visible !== false && o.opacity !== 0 && o.width > 0 && o.height > 0;
+  // View-level facts are stored once per frame. Old saved captures already carry them on objects.
+  const frameObjects = (frame) =>
+    (frame.objects ?? []).map((o) => {
+      const view = frame.views?.find((v) => v.id === o.viewId);
+      return view ? { ...o, camera: view.camera, receipt: view.receipt } : o;
+    });
   let selected = frames.filter((f) => f.time >= from && f.time <= to);
   const observedFrames = selected.length;
   if (selected.length < 2) {
@@ -81,7 +87,7 @@ export function queryEvidence(data, query = {}) {
       latest.set(e.selector, e);
   const scene = (telemetry.scene ?? []).findLast((s) => s.time <= at);
   const allObjects = [
-    ...(currentFrame.objects ?? []),
+    ...frameObjects(currentFrame),
     ...(scene?.objects ?? []),
     ...[...latest.values()].map((e) => ({
       ...e,
@@ -131,7 +137,9 @@ export function queryEvidence(data, query = {}) {
         ...frames
           .filter((f) => f.time >= from && f.time <= to)
           .flatMap((f) =>
-            (f.objects ?? []).filter((o) => o.id === wanted).map((o) => ({ ...o, time: f.time })),
+            frameObjects(f)
+              .filter((o) => o.id === wanted)
+              .map((o) => ({ ...o, time: f.time })),
           ),
       ]
         .map((o) => pixels(o))
@@ -201,7 +209,7 @@ export function queryEvidence(data, query = {}) {
       cueReads: f.cueReads,
       diagnostics: f.diagnostics,
       presentation: f.presentation,
-      objects: (f.objects ?? [])
+      objects: frameObjects(f)
         .filter((o) => (wanted ? o.id === wanted : visible(o)))
         .slice(0, wanted ? 32 : 12)
         .map((o) => (wanted ? pixels(o, f) : compact(pixels(o, f)))),

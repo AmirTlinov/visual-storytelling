@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { join, dirname, basename, resolve, sep } from 'node:path';
 import { renderer } from '../render.mjs';
 import { captureWriter } from './session.mjs';
-import { storyEpisodes, selectEpisode } from './episodes.mjs';
+import { sceneCheckpoints } from './scene-checkpoints.mjs';
 import { sourceReferences } from './sources.mjs';
 import { subjectDigests } from './subject-digests.mjs';
 
@@ -37,36 +37,20 @@ export async function captureScene({
       throw new Error('This page has no seekable scene. Use --capture to record the interaction.');
     let review = await capture.capture.evaluate((s) => s.review());
     const duration = capture.info.duration;
-    const episodes = review ? storyEpisodes(review) : [];
-    const selected = cue ? selectEpisode(episodes, cue) : undefined;
-    const lo = Math.max(0, selected ? selected.start - 0.15 : (from ?? 0));
-    const hi = Math.min(
+    const { times, selected } = sceneCheckpoints({
+      review,
       duration,
-      selected ? selected.end + 0.15 : seconds !== undefined ? lo + seconds : duration,
-    );
-    if (lo >= hi) throw new Error('Selected interval contains fewer than two frames');
-    const times = new Set([lo, hi]);
-    const addRange = (a, b, n) => {
-      for (let i = 0; i < n; i++)
-        times.add(Math.min(hi, Math.max(lo, a + ((b - a) * i) / Math.max(1, n - 1))));
-    };
-    if (selected) {
-      addRange(selected.start, selected.end, frames);
-    } else if (from !== undefined && seconds === undefined) {
-      times.clear();
-      addRange(lo, Math.min(hi, lo + (frames - 1) / (fps ?? 60)), frames);
-    } else if (episodes.length && from === undefined && seconds === undefined) {
-      // Chapter coverage is cheap; every operation retains its exact boundaries.
-      for (const e of episodes.filter((e) => e.kind === 'chapter')) addRange(e.start, e.end, 5);
-      for (const e of episodes.filter((e) => e.kind !== 'chapter')) {
-        times.add(Math.max(lo, e.start));
-        times.add(Math.min(hi, e.end));
-      }
-    } else addRange(lo, hi, frames);
+      cue,
+      from,
+      seconds,
+      frames,
+      fps,
+    });
     const writer = await captureWriter(out);
     const source = {
       kind: 'scene-seek',
       path: input,
+      title: await capture.page.title(),
       duration,
       theme,
       reduced,
@@ -83,8 +67,9 @@ export async function captureScene({
     const references = await sourceReferences(directory ? input : dirname(input), capture.page);
     source.fingerprint = references.fingerprint;
     source.assets = references.assets;
+    await writer.begin({ source, context: { review } });
     const identities = await capture.page.evaluateHandle(() => ({ nodes: new WeakMap(), next: 0 }));
-    for (const time of [...times].filter((t) => t >= lo && t <= hi).sort((a, b) => a - b)) {
+    for (const time of times) {
       await capture.seek(time);
       const state = await capture.capture.evaluate((s) => s.snapshot());
       const cueReads = review
@@ -92,7 +77,7 @@ export async function captureScene({
         : undefined;
       const diagnostics = await capture.capture.evaluate((s) => s.diagnostics());
       const presentation = await capture.capture.evaluate((s) => s.presentation());
-      const objects = await identities.evaluate((cache) => {
+      const { objects, views } = await identities.evaluate((cache) => {
         const root = document.querySelector('.ve-scene'),
           origin = root?.getBoundingClientRect() ?? { x: 0, y: 0 };
         const dom = [...document.querySelectorAll('svg text,[data-review-id],[data-layout-error]')]
@@ -117,17 +102,27 @@ export async function captureScene({
               evidence: 'DOM at model checkpoint',
             };
           });
-        const views = [...document.querySelectorAll('canvas')].flatMap((node) => {
+        const views = [],
+          objects = [...dom];
+        for (const node of document.querySelectorAll('canvas')) {
           const view = node.__visualReview?.();
-          return (view?.objects ?? []).map((o) => ({
-            ...o,
-            x: o.x - origin.x,
-            y: o.y - origin.y,
-            receipt: view.receipt,
-            camera: view.camera,
-          }));
-        });
-        return [...dom, ...views];
+          if (!view) continue;
+          let id = cache.nodes.get(node);
+          if (!id) {
+            id = `view:${cache.next++}`;
+            cache.nodes.set(node, id);
+          }
+          views.push({ id, camera: view.camera, receipt: view.receipt });
+          objects.push(
+            ...(view.objects ?? []).map((o) => ({
+              ...o,
+              x: o.x - origin.x,
+              y: o.y - origin.y,
+              viewId: id,
+            })),
+          );
+        }
+        return { objects, views };
       });
       for (const object of objects)
         object.sourceFile = await references.owner(object.source ?? object.owner);
@@ -169,6 +164,7 @@ export async function captureScene({
         diagnostics,
         presentation,
         objects,
+        views,
         digest: createHash('sha256').update(png).digest('hex'),
         subjects,
         png,

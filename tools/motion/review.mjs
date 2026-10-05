@@ -272,7 +272,7 @@ export async function reviewMotion({
   });
   const report = {
     ...(await analyzeMotionFrames(detail, { crop, threshold, maxSize })),
-    title: source.app ?? basename(source.path ?? input),
+    title: source.title || source.app || basename(source.path ?? input),
     source,
     sampling: source.kind === 'scene-seek' ? 'model-checkpoints' : 'captured-window',
     timeline,

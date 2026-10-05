@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, appendFile, readdir, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import sharp from 'sharp';
-import { captureWriter, loadCapture } from '../tools/motion/session.mjs';
+import { captureWriter, loadCapture, saveSession } from '../tools/motion/session.mjs';
+import { saveCapture } from '../tools/motion/media.mjs';
 import { queryEvidence } from '../tools/motion/inspection.mjs';
 import { buildEpisodes } from '../tools/motion/episodes.mjs';
 import { inspectSession } from '../tools/motion/inspect.mjs';
@@ -117,6 +118,197 @@ test('interrupted capture recovers completed frames; inspection never recaptures
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('replacing a review recovers only the new run, with its source, cues and untouched old pixels', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'review-generations-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const oldPNG = await sharp({
+    create: { width: 20, height: 10, channels: 4, background: '#a00000' },
+  })
+    .png()
+    .toBuffer();
+  const newPNG = await sharp({
+    create: { width: 20, height: 10, channels: 4, background: '#00b000' },
+  })
+    .png()
+    .toBuffer();
+  const old = await captureWriter(directory);
+  await old.append({ time: 0, png: oldPNG });
+  await old.append({ time: 1, png: oldPNG });
+  const oldSource = { kind: 'scene-seek', path: 'old-scene', clock: 'model time' };
+  const captureManifest = await old.finish(oldSource);
+  await saveSession(directory, {
+    captureManifest,
+    source: oldSource,
+    samples: old.frames,
+    episodes: [],
+  });
+  for (const file of ['index.html', 'motion.json', 'motion.png', 'frames.png', 'photometry.png'])
+    await writeFile(join(directory, file), 'old report');
+  await writeFile(join(directory, 'notes.txt'), 'keep my notes');
+  await writeFile(join(directory, 'capture', 'diagram.png'), oldPNG);
+
+  const source = { kind: 'scene-seek', path: 'new-scene', clock: 'model time' };
+  const context = {
+    review: {
+      segments: [{ id: 'new-chapter', start: 10, end: 12 }],
+      cues: [{ id: 'new-action', kind: 'action', start: 10, end: 11, action: 'Move' }],
+    },
+  };
+  const writer = await captureWriter(directory);
+  assert.equal(
+    (await loadCapture(directory)).source.path,
+    'old-scene',
+    'creation alone does not erase a review',
+  );
+  await writer.begin({ source, context });
+  await assert.rejects(loadCapture(directory), /no saved frames/);
+  for (const file of [
+    'session.json',
+    'capture/frames.json',
+    'index.html',
+    'motion.json',
+    'motion.png',
+    'frames.png',
+    'photometry.png',
+  ])
+    await assert.rejects(readFile(join(directory, file)), { code: 'ENOENT' });
+  await writer.append({ time: 10, png: newPNG });
+  await writer.append({ time: 11, png: newPNG });
+  await appendFile(join(directory, 'capture', 'frames.jsonl'), '{"time":12,"file":');
+  const recovered = await loadCapture(directory);
+  assert.equal(recovered.source.path, 'new-scene');
+  assert.equal(recovered.source.truncated, true);
+  assert.deepEqual(recovered.context, context);
+  assert.deepEqual(
+    recovered.samples.map((frame) => frame.time),
+    [10, 11],
+  );
+  for (const frame of recovered.samples) {
+    assert(!old.frames.some((previous) => previous.file === frame.file));
+    assert.deepEqual(await readFile(frame.file), newPNG);
+  }
+  for (const frame of old.frames) assert.deepEqual(await readFile(frame.file), oldPNG);
+  assert(
+    (await inspectSession(directory)).episodes.some((episode) => episode.cue === 'new-action'),
+  );
+
+  // A failed final serialization must leave the completed journal recoverable.
+  writer.frames[1].invalid = 1n;
+  await assert.rejects(writer.finish(source, undefined, context), /BigInt/);
+  await assert.rejects(readFile(captureManifest), { code: 'ENOENT' });
+  assert.equal((await loadCapture(directory)).samples.length, 2);
+  assert(!(await readdir(join(directory, 'capture'))).some((file) => file.endsWith('.tmp')));
+  delete writer.frames[1].invalid;
+  await writer.finish(source, undefined, context);
+  const completed = await loadCapture(directory);
+  assert.deepEqual(completed.source, source);
+  assert.deepEqual(completed.context, context);
+  assert.deepEqual(
+    completed.samples.map((frame) => frame.file),
+    recovered.samples.map((frame) => frame.file),
+  );
+  for (const frame of old.frames) await assert.rejects(readFile(frame.file), { code: 'ENOENT' });
+  assert.equal(await readFile(join(directory, 'notes.txt'), 'utf8'), 'keep my notes');
+  assert.deepEqual(await readFile(join(directory, 'capture', 'diagram.png')), oldPNG);
+  await assert.rejects(writer.append({ time: 12, png: newPNG }), /finished/);
+});
+
+test('saved capture reuse keeps raw references and shares the writer metadata contract', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'review-reference-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const png = await sharp({ create: { width: 8, height: 4, channels: 4, background: '#123456' } })
+    .png()
+    .toBuffer();
+  const writer = await captureWriter(join(directory, 'source'));
+  await writer.append({ epoch: 1000, png });
+  await writer.append({ epoch: 1250, png });
+  writer.frames.forEach((frame) => {
+    frame.time = (frame.epoch - 1000) / 1000;
+  });
+  const source = { kind: 'browser-capture', path: 'source', clock: 'capture time' };
+  const context = { title: 'Selected interval' };
+  const telemetry = { events: [{ type: 'click', time: 0.1 }] };
+  const sourceManifest = await writer.finish(source, telemetry, context);
+  const output = join(directory, 'selection');
+  const selectedManifest = await saveCapture(writer.frames, source, output, telemetry, context);
+  const selected = await loadCapture(selectedManifest);
+  assert.deepEqual(
+    selected.samples.map((frame) => frame.file),
+    writer.frames.map((frame) => frame.file),
+  );
+  assert.deepEqual(
+    selected.samples.map((frame) => frame.time),
+    [0, 0.25],
+  );
+  assert(selected.samples.every((frame) => !('epoch' in frame)));
+  assert.deepEqual(selected.source, source);
+  assert.deepEqual(selected.context, context);
+  assert.deepEqual(selected.telemetry, telemetry);
+  assert.deepEqual(
+    await readdir(join(output, 'capture')),
+    ['frames.json'],
+    'offline analysis does not copy raw images',
+  );
+  await writeFile(join(output, 'replay.json'), '{}');
+  const session = await saveSession(output, {
+    captureManifest: join(output, 'capture', 'frames.json'),
+    replayPath: join(output, 'replay.json'),
+    source,
+    samples: selected.samples,
+    context,
+    telemetry,
+    episodes: [],
+  });
+  assert.equal(session.capture, 'capture/frames.json');
+  assert.equal(session.replay, 'replay.json');
+  assert.deepEqual((await loadCapture(output)).samples, selected.samples);
+  assert.equal((await loadCapture(sourceManifest)).samples.length, 2);
+});
+
+test('legacy manifests and headerless interrupted journals remain readable, including epoch zero', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'review-legacy-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await mkdir(join(directory, 'capture'));
+  const journal = join(directory, 'capture', 'frames.jsonl');
+  await writeFile(
+    journal,
+    '{"epoch":0,"file":"000000000.png"}\n{"epoch":250,"file":"000000001.png"}\n{"epoch":',
+  );
+  const partial = await loadCapture(directory);
+  assert.equal(partial.source.clock, 'capture epoch');
+  assert.deepEqual(
+    partial.samples.map((frame) => frame.time),
+    [0, 0.25],
+  );
+  const source = { kind: 'frame-manifest', path: 'old-input' };
+  await writeFile(
+    join(directory, 'capture', 'frames.json'),
+    JSON.stringify({
+      source,
+      frames: [
+        { time: 2, file: '000000000.png' },
+        { time: 3, file: '000000001.png' },
+      ],
+    }),
+  );
+  await writeFile(
+    join(directory, 'session.json'),
+    JSON.stringify({
+      kind: 'visual-review-session',
+      version: 1,
+      capture: 'capture/frames.json',
+      id: 'legacy',
+    }),
+  );
+  const saved = await loadCapture(directory);
+  assert.equal(saved.session.id, 'legacy');
+  assert.deepEqual(saved.source, source);
+  assert.deepEqual(
+    saved.samples.map((frame) => frame.time),
+    [2, 3],
+  );
 });
 
 test('manual recorder stops a pending scenario, finalizes evidence and never performs its later click', async () => {

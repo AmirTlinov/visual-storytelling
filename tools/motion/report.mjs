@@ -1,5 +1,5 @@
-import { mkdir, writeFile, readFile, lstat, readdir, rm } from 'node:fs/promises';
-import { join, dirname, relative } from 'node:path';
+import { mkdir, writeFile, lstat, readdir, rm } from 'node:fs/promises';
+import { join, relative } from 'node:path';
 import { chromium } from 'playwright';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { motionData } from './frames.mjs';
@@ -7,6 +7,7 @@ import { escapeText as escape, playbackMarkup } from './diagnostics.mjs';
 import { orderedInsights, reviewFocus } from './focus.mjs';
 import { motionMarkup } from './report-view.mjs';
 import { sessionMarkup } from './session-view.mjs';
+import { reportUrl, writeReportEvidence } from './report-evidence.mjs';
 import { startupFailureReason } from './doctor.mjs';
 export { motionMarkup } from './report-view.mjs';
 
@@ -125,17 +126,10 @@ export async function writeMotionReport(report, out, { context } = {}) {
     frame.file = `analysis/${String(i).padStart(3, '0')}.png`;
     await writeFile(join(out, frame.file), Buffer.from(frame.image.split(',')[1], 'base64'));
   }
-  let playback = report.frames.map((f) => ({ time: f.time, image: f.image }));
-  if (report.captureManifest) {
-    const manifest = JSON.parse(await readFile(report.captureManifest, 'utf8'));
-    playback = manifest.frames.map((f) => ({
-      time: f.time,
-      image: relative(out, join(dirname(report.captureManifest), f.file))
-        .split('/')
-        .map(encodeURIComponent)
-        .join('/'),
-    }));
-  }
+  const playback = report.captureManifest
+    ? report.samples.map((f) => ({ time: f.time, image: reportUrl(out, f.file) }))
+    : report.frames.map((f) => ({ time: f.time, image: f.image }));
+  const evidence = await writeReportEvidence(report, out);
   const focus = reviewFocus(report);
   // A previous run's covers must never stand in for previews that could not be rendered.
   await Promise.all(
@@ -168,7 +162,7 @@ export async function writeMotionReport(report, out, { context } = {}) {
           .join('/')
       : undefined;
     const player = `<section class="motion-sheet">${playbackMarkup(playback, { unsynchronized: report.source.domSynchronized === false, audio, open: Boolean(report.session) })}</section>`;
-    const session = sessionMarkup(report, out, player);
+    const session = sessionMarkup(report, out, player, evidence);
     const html = document(session ? session + main : main + player);
     await writeFile(join(out, 'index.html'), html);
     const data = { ...motionData(report), focus };
