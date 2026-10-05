@@ -1,5 +1,58 @@
 import { test, expect } from '@playwright/test';
 
+for (const name of ['interaction-studio', 'tlinov-book'])
+  test(`${name}: the notebook is an opaque opening shot and yields the complete frame`, async ({
+    page,
+  }) => {
+    await page.goto(`/${name}/index.html`);
+    await page.evaluate(() => window.galleryReady);
+    const seek = (time: number) =>
+      page.evaluate(async (time) => {
+        await (document.querySelector('.ve-scene') as any).scene.control([
+          { type: 'pause' },
+          { type: 'seek', time },
+        ]);
+      }, time);
+    const frame = page.locator('.ve-frame');
+    const active = page.locator('[data-chapter]:not([hidden])');
+    const opening = page.locator('[data-book-transition]');
+    for (const time of [0, 1.8, 3.9]) {
+      await seek(time);
+      await expect(opening).toBeVisible();
+      await expect(active).toHaveAttribute('inert', '');
+      const visibleChapter = await frame.screenshot();
+      await active.evaluate((element: HTMLElement) => {
+        element.style.visibility = 'hidden';
+      });
+      const hiddenChapter = await frame.screenshot();
+      await active.evaluate((element: HTMLElement) => {
+        element.style.visibility = '';
+      });
+      // Changing what is behind the notebook cannot change any opening-shot pixel.
+      expect(hiddenChapter.equals(visibleChapter)).toBe(true);
+    }
+    await seek(4.2);
+    await expect(opening).toBeHidden();
+    await expect(active).not.toHaveAttribute('inert');
+    await seek(1.8);
+    await page.locator('[data-mode=explore]').click();
+    await expect(opening).toBeHidden();
+    await expect(active).not.toHaveAttribute('inert');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await seek(0);
+    await expect(opening).toBeHidden();
+    await page.evaluate(async () => {
+      await (document.querySelector('.ve-scene') as any).scene.control([
+        { type: 'reduced', value: false },
+      ]);
+    });
+    await seek(1.8);
+    const overridden = await frame.screenshot();
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await seek(1.8);
+    expect((await frame.screenshot()).equals(overridden)).toBe(true);
+  });
+
 test('book transitions suspend page input and restore it for explore, rewind and reduced motion', async ({
   page,
 }) => {
