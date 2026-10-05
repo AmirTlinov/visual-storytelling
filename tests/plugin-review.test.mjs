@@ -62,7 +62,14 @@ test(
       projectId,
       sourceRevision: project.sourceRevision,
       requestId: randomUUID(),
-      options: { from: 0, seconds: 0.3, frames: 3, width: 360, height: 480 },
+      options: {
+        from: 0,
+        seconds: 0.3,
+        frames: 3,
+        width: 360,
+        height: 480,
+        crop: { x: 12, y: 16, width: 120, height: 96 },
+      },
     };
     const review = await call('story_review', request);
     assert.equal(review.kind, 'review');
@@ -82,6 +89,8 @@ test(
     assert.ok(completed.result.files.every((file) => /\.(html|png)$/.test(file)));
     for (const file of completed.result.files) await access(file);
     const originalReport = await readFile(completed.result.path);
+    const measurements = JSON.parse(await readFile(completed.result.data, 'utf8'));
+    assert.deepEqual(measurements.crop, request.options.crop);
     const capture = JSON.parse(await readFile(completed.result.captureManifest, 'utf8'));
     assert.ok(capture.frames.length >= 3);
     assert.equal((await projectFiles(project.path)).revision, before.revision);

@@ -391,12 +391,16 @@ addEventListener('message', (event) => {
   if (candidate?.ready && !report?.state.playing) void applyUpdate();
 });
 $('expand').onclick = async () => {
+  const mode = document.documentElement.dataset.mode === 'fullscreen' ? 'inline' : 'fullscreen';
+  if ($('expand').disabled || !app.getHostContext()?.availableDisplayModes?.includes(mode)) return;
+  $('expand').disabled = true;
   try {
-    await app.requestDisplayMode({
-      mode: app.getHostContext()?.displayMode === 'fullscreen' ? 'inline' : 'fullscreen',
-    });
+    const result = await app.requestDisplayMode({ mode });
+    host({ displayMode: result.mode });
   } catch (e) {
     error(e.message);
+  } finally {
+    $('expand').disabled = false;
   }
 };
 function host(context) {
@@ -406,11 +410,15 @@ function host(context) {
   }
   if (context.styles?.variables) applyHostStyleVariables(context.styles.variables);
   modelContext.host(context);
-  const mode = context.displayMode ?? app.getHostContext()?.displayMode;
+  // Both host notifications and request responses carry the actual negotiated mode.
+  const mode =
+    context.displayMode ??
+    document.documentElement.dataset.mode ??
+    app.getHostContext()?.displayMode;
   document.documentElement.dataset.mode = mode ?? 'inline';
   $('expand').textContent = mode === 'fullscreen' ? 'Свернуть' : 'Развернуть';
   const modes = context.availableDisplayModes ?? app.getHostContext()?.availableDisplayModes ?? [];
-  $('expand').hidden = !modes.includes('fullscreen');
+  $('expand').hidden = !modes.includes(mode === 'fullscreen' ? 'inline' : 'fullscreen');
 }
 async function dispose() {
   closed = true;

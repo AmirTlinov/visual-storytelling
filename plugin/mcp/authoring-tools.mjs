@@ -100,12 +100,14 @@ export function authoringTools(server, runtime, uri, safely) {
             reduced: z.boolean().optional(),
             object: z.string().min(1).max(256).optional(),
             crop: z
-              .tuple([
-                z.number().finite().nonnegative(),
-                z.number().finite().nonnegative(),
-                z.number().finite().positive(),
-                z.number().finite().positive(),
-              ])
+              .object({
+                x: z.number().finite().nonnegative(),
+                y: z.number().finite().nonnegative(),
+                width: z.number().finite().positive(),
+                height: z.number().finite().positive(),
+              })
+              .strict()
+              .describe('Region in source pixels.')
               .optional(),
             scenario: z.string().min(1).max(500).optional(),
           })

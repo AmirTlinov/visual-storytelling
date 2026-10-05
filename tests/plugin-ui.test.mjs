@@ -69,6 +69,32 @@ test(
       assert.deepEqual(isolation, { parentAccess: false, hostSDK: false, fonts: true });
       await app.getByRole('button', { name: 'Развернуть', exact: true }).click();
       await app.getByRole('button', { name: 'Свернуть', exact: true }).waitFor();
+      await app.getByRole('button', { name: 'Свернуть', exact: true }).click();
+      await app.getByRole('button', { name: 'Развернуть', exact: true }).waitFor();
+      await page.evaluate(() => window.pluginTest.display('fullscreen', ['fullscreen']));
+      await app.locator('#expand').waitFor({ state: 'hidden' });
+      const displayRequests = await page.evaluate(() => window.pluginTest.displayRequests.length);
+      await app.locator('#expand').evaluate((button) => button.click());
+      assert.equal(
+        await page.evaluate(() => window.pluginTest.displayRequests.length),
+        displayRequests,
+        'fullscreen-only entrypoints do not offer or request an unavailable collapse',
+      );
+      await page.evaluate(() =>
+        window.pluginTest.display('inline', ['inline', 'fullscreen'], true),
+      );
+      await app.getByRole('button', { name: 'Развернуть', exact: true }).click();
+      await app.getByRole('button', { name: 'Свернуть', exact: true }).waitFor();
+      await page.evaluate(() => window.pluginTest.theme('dark'));
+      await app.locator('html[data-theme="dark"][data-mode="fullscreen"]').waitFor();
+      await app.getByRole('button', { name: 'Свернуть', exact: true }).click();
+      await app.getByRole('button', { name: 'Развернуть', exact: true }).waitFor();
+      await page.evaluate(() => window.pluginTest.theme('light'));
+      assert.deepEqual(
+        await page.evaluate(() => window.pluginTest.displayRequests),
+        ['fullscreen', 'inline', 'fullscreen', 'inline'],
+        'the host response owns the actual mode even without a context notification',
+      );
       assert.equal((await inspect()).state.time, controlled.structuredContent.state.time);
       assert.equal(
         page.frames().includes(oldFrame),

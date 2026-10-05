@@ -265,6 +265,16 @@ test(
     assert.equal((await runtime.call('hello')).pid, hello.pid);
     const updating = await f.stdio();
     const { tools } = await updating.listTools();
+    assert.doesNotMatch(
+      JSON.stringify(tools.map((tool) => tool.inputSchema)),
+      /"items":\[/,
+      'Codex skips tools whose array items contain positional tuple schemas',
+    );
+    const crop = tools.find((tool) => tool.name === 'story_review').inputSchema.properties.options
+      .properties.crop;
+    assert.equal(crop.type, 'object');
+    assert.equal(crop.additionalProperties, false);
+    assert.deepEqual(crop.required, ['x', 'y', 'width', 'height']);
     const resourceUri = tools.find((item) => item.name === 'story_open')._meta.ui.resourceUri;
     assert.ok((await updating.readResource({ uri: resourceUri })).contents[0].text);
     const unavailable = await updating.callTool({ name: 'story_open', arguments: {} });

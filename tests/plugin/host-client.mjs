@@ -17,6 +17,8 @@ let bridge,
 const resources = new Map();
 let focusDelay = 0,
   focusRequests = 0;
+let displayRequests = [],
+  displayResponseOnly = false;
 let hostContext = {
   theme: 'light',
   displayMode: 'inline',
@@ -68,8 +70,11 @@ async function mount(sessionId, result) {
     }
   });
   bridge.onrequestdisplaymode = async ({ mode }) => {
+    displayRequests.push(mode);
+    if (!hostContext.availableDisplayModes.includes(mode)) return { mode: hostContext.displayMode };
     iframe.style.height = mode === 'fullscreen' ? '900px' : `${inlineHeight}px`;
-    bridge.setHostContext((hostContext = { ...hostContext, displayMode: mode }));
+    hostContext = { ...hostContext, displayMode: mode };
+    if (!displayResponseOnly) bridge.setHostContext(hostContext);
     return { mode };
   };
   bridge.addEventListener('initialized', async () => {
@@ -86,6 +91,15 @@ window.pluginTest = {
   },
   get focusRequests() {
     return focusRequests;
+  },
+  get displayRequests() {
+    return displayRequests;
+  },
+  display(mode, availableDisplayModes, responseOnly = false) {
+    displayResponseOnly = responseOnly;
+    bridge.setHostContext(
+      (hostContext = { ...hostContext, displayMode: mode, availableDisplayModes }),
+    );
   },
   async openFile(uri, text) {
     resources.set(uri, text);
@@ -117,7 +131,8 @@ window.pluginTest = {
     bridge.setHostContext((hostContext = { ...hostContext, 'openai/modelContext': null }));
   },
   async theme(theme) {
-    bridge.setHostContext((hostContext = { ...hostContext, theme }));
+    hostContext = { ...hostContext, theme };
+    bridge.setHostContext({ theme });
   },
 };
 await mount();

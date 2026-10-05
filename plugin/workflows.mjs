@@ -270,7 +270,10 @@ export const workflows = {
     for (const key of ['cue', 'from', 'seconds', 'frames', 'width', 'height', 'theme', 'object'])
       if (options[key] !== undefined) args.push('--' + key, String(options[key]));
     if (options.reduced) args.push('--reduced');
-    if (options.crop) args.push('--crop', options.crop.join(','));
+    if (options.crop) {
+      const { x, y, width, height } = options.crop;
+      args.push('--crop', [x, y, width, height].join(','));
+    }
     if (options.scenario) args.push('--scenario', await projectFile(snapshot, options.scenario));
     const parent = join(input.projectPath, 'artifacts');
     await mkdir(parent, { recursive: true });
