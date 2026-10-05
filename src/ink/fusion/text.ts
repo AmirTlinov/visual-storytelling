@@ -1,3 +1,4 @@
+import { MotionPathPlugin } from 'gsap/MotionPathPlugin';
 import { glyphs } from '../glyphs.js';
 import { fusionShape, type FusionGlyph, type FusionShape, type FusionText } from './shape.js';
 import type { InkPoint, InkPath } from './transport.js';
@@ -30,7 +31,6 @@ export function fusionText(value: string, options: FusionTextOptions = {}): Fusi
     throw new Error('Text dimensions must be positive and finite');
   const context = document.createElement('canvas').getContext('2d')!;
   context.font = `400 ${size}px ${font}`;
-  const vector = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   const paths: InkPath[] = [],
     letters: FusionGlyph[] = [],
     words: FusionText['words'] = [];
@@ -82,15 +82,26 @@ export function fusionText(value: string, options: FusionTextOptions = {}): Fusi
           const sx = advance / 6.7,
             sy = size * 0.082;
           for (const d of strokes) {
-            vector.setAttribute('d', d);
-            const length = vector.getTotalLength(),
+            // Measure each path once. Repeated SVG point queries redo native curve
+            // traversal and stall the first frame that needs a new character.
+            const path = MotionPathPlugin.cacheRawPathMeasurements(
+              MotionPathPlugin.stringToRawPath(d),
+              120,
+            ) as number[][] & { totalLength: number };
+            const length = path.totalLength,
               count = Math.max(2, Math.ceil((length * Math.max(sx, sy)) / 1.5));
             local.push(
               Array.from({ length: count }, (_, i): InkPoint => {
                 const at = (length * i) / (count - 1),
-                  point = vector.getPointAtLength(at);
-                const before = vector.getPointAtLength(Math.max(0, at - 0.01)),
-                  after = vector.getPointAtLength(Math.min(length, at + 0.01));
+                  point = MotionPathPlugin.getPositionOnPath(path, at / length);
+                const before = MotionPathPlugin.getPositionOnPath(
+                    path,
+                    Math.max(0, at - 0.01) / length,
+                  ),
+                  after = MotionPathPlugin.getPositionOnPath(
+                    path,
+                    Math.min(length, at + 0.01) / length,
+                  );
                 const tx = (after.x - before.x) * sx,
                   ty = (after.y - before.y) * sy,
                   norm = Math.hypot(tx, ty) || 1;
