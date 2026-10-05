@@ -74,7 +74,7 @@ window.galleryReady = (async () => {
     },
   });
   const snapshot = root.scene.snapshot;
-  Object.assign(root.scene, { story, snapshot: () => ({ ...snapshot(), ...current }) });
+  root.scene.extend({ story, snapshot: () => ({ ...snapshot(), ...current }) });
   shell.onDispose(() => {
     question.remove();
     hint.remove();

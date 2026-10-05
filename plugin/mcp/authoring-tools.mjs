@@ -96,12 +96,92 @@ export function authoringTools(server, runtime, uri, safely) {
     {
       description:
         'Discover recent projects, shipped example templates or precise public API declarations. Query a public API name to read only that declaration. Source paths point to this installed release.',
-      inputSchema: { query: z.string().max(300).optional() },
+      inputSchema: { query: z.string().max(300).optional(), projectId: projectId.optional() },
       annotations: read,
     },
     safely(async (args) => {
       const value = await runtime.call(args.query ? 'help' : 'catalog', args);
       return result(value, value.text ?? 'Доступные проекты и основы.');
     }),
+  );
+  server.registerTool(
+    'story_retry',
+    {
+      description:
+        'Resume a failed, cancelled or interrupted preparation with its original inputs. Completed dependency and speech stages are reused; incomplete video is rebuilt.',
+      inputSchema: { jobId: z.string().uuid(), requestId },
+      annotations: changeView,
+    },
+    safely(async (args) => result(await runtime.call('retry', args), 'Возобновляю подготовку.')),
+  );
+  server.registerTool(
+    'story_migrate',
+    {
+      description:
+        'Explicitly upgrade a project to this plugin’s core. Prepares and builds a separate candidate first, then applies package and lockfile as one undoable authoring edit. The previous runtime archive is retained for story_edit undo. Existing views remain visible during preparation.',
+      inputSchema: { projectId, sourceRevision: z.string(), requestId },
+      annotations: changeView,
+    },
+    safely(async (args) =>
+      result(await runtime.call('migrate', args), 'Подготавливаю обновление проекта.'),
+    ),
+  );
+  server.registerTool(
+    'story_voice',
+    {
+      description:
+        'List available local macOS voices without downloading models. With enabled, update project narration in one undoable edit and prepare synchronized audio/cues. This is distinct from instantly muting playback. A changed phrase reuses unchanged speech fragments.',
+      inputSchema: {
+        projectId: projectId.optional(),
+        sourceRevision: z.string().optional(),
+        requestId: requestId.optional(),
+        enabled: z.boolean().optional(),
+        voice: z.string().max(200).optional(),
+        language: z.string().max(35).optional(),
+      },
+      annotations: changeView,
+    },
+    safely(async (args) => {
+      if (
+        args.enabled !== undefined &&
+        (!args.projectId || !args.sourceRevision || !args.requestId)
+      )
+        throw new Error('Changing narration requires projectId, sourceRevision and requestId.');
+      return result(
+        await runtime.call('voice', args),
+        args.enabled === undefined ? 'Доступные голоса.' : 'Подготавливаю рассказ.',
+      );
+    }),
+  );
+  registerAppTool(
+    server,
+    'story_preferences',
+    {
+      title: 'Настройки Visual Storytelling',
+      description:
+        'Read or change user defaults for new projects. Existing project content is unchanged.',
+      inputSchema: {
+        patch: z
+          .object({
+            projectsDirectory: z.string().min(1).max(1000).optional(),
+            language: z.string().min(2).max(35).optional(),
+            voice: z.string().max(200).nullable().optional(),
+            cacheLimitMB: z.number().int().min(256).max(32768).optional(),
+          })
+          .strict()
+          .optional(),
+      },
+      annotations: changeView,
+      _meta: {
+        ui: { resourceUri: uri, visibility: ['model', 'app'] },
+        'openai/ui': {
+          entrypoints: [{ type: 'settings', searchTerms: ['голос', 'voice', 'projects'] }],
+        },
+      },
+    },
+    safely(async (args) => ({
+      ...result(await runtime.call('preferences', args), 'Настройки.'),
+      _meta: { preferences: true },
+    })),
   );
 }

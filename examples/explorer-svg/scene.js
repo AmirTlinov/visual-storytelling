@@ -194,7 +194,7 @@ window.galleryReady = (async () => {
   const saved = widgetState('displacements', restore);
   restore(saved.read());
   shell.onDispose(saved.dispose);
-  Object.assign(root.scene, {
+  root.scene.extend({
     shell,
     story,
     camera,

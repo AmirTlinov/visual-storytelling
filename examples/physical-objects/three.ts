@@ -31,6 +31,11 @@ window.galleryReady = (async () => {
     mesh.position.set((i - 1) * 1.45, 1.8 + i * 0.15, 0);
     group.add(mesh);
     const physical = physics.body(`material-${i}`, mesh, { material, cellSize: 0.23 });
+    view.describe(mesh, `material-${i}`, {
+      label: ['Твёрдое тело', 'Упругое тело', 'Мягкое тело'][i]!,
+      value: () => ({ material, position: physical.position }),
+      source: { file: 'three.ts' },
+    });
     view.label(String(i + 1), mesh, {
       tone: tones[i],
       size: 22,
@@ -57,26 +62,22 @@ window.galleryReady = (async () => {
     beforeSeek: () => player.pause(false),
     afterSeek: player.update,
   });
-  Object.defineProperties(
-    root.scene!,
-    Object.getOwnPropertyDescriptors({
-      world,
-      bodies,
-      view,
-      duration: replay.duration,
-      get currentTime() {
-        return world.time;
-      },
-      get playing() {
-        return player.playing;
-      },
-      play: player.play,
-      pause: player.pause,
-      seek: replay.seek,
-      snapshot: () =>
-        bodies.map((b) => ({ id: b.id, position: b.position, soft: Boolean(b.soft) })),
-    }),
-  );
+  root.scene!.extend({
+    world,
+    bodies,
+    view,
+    duration: replay.duration,
+    get currentTime() {
+      return world.time;
+    },
+    get playing() {
+      return player.playing;
+    },
+    play: player.play,
+    pause: player.pause,
+    seek: replay.seek,
+    snapshot: () => bodies.map((b) => ({ id: b.id, position: b.position, soft: Boolean(b.soft) })),
+  });
   shell.onDispose(() => {
     world.dispose();
     view.dispose();

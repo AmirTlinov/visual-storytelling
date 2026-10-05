@@ -102,7 +102,7 @@ window.galleryReady = (async () => {
       };
     },
   });
-  Object.assign(root.scene, {
+  root.scene.extend({
     snapshot: () => ({ ...current }),
     svg: () => drawing.element,
     checkpoints: lessons.flatMap(({ start }) => [start, start + 3.5, start + 5, start + 7.5]),

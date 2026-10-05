@@ -2,13 +2,16 @@ export interface ObjectMeaning {
   label: string;
   value?: () => unknown;
   unit?: string;
-  source?: { file: string };
+  source?: { file: string; line?: number; column?: number };
   inputs?: () => readonly string[];
+  provenance?: () => unknown;
 }
 const meanings = new WeakMap<Element, ObjectMeaning>();
 
 /** Meaning belongs to the rendered object. Geometry and labels keep its existing stable ID. */
 export function describeObject(element: Element, meaning: ObjectMeaning) {
+  if (!element.getAttribute('data-object')?.trim() || !meaning.label.trim())
+    throw new Error('A scene object needs a stable ID and a meaningful label');
   meanings.set(element, meaning);
   element.setAttribute('aria-label', meaning.label);
   element.setAttribute('role', 'button');
@@ -25,19 +28,28 @@ export function sceneObjects(root: Element) {
       meanings.has(node),
     );
   };
-  const objects = () =>
-    nodes().map((node) => {
+  const objects = () => {
+    const representations = new Map<string, (HTMLElement | SVGElement)[]>();
+    for (const node of nodes()) {
+      const id = node.dataset.object!;
+      if (!representations.has(id)) representations.set(id, []);
+      representations.get(id)!.push(node);
+    }
+    return [...representations].map(([id, elements]) => {
+      const node = elements[0]!;
       const meaning = meanings.get(node)!;
       return {
-        id: node.dataset.object!,
+        id,
         label: meaning.label,
         value: meaning.value?.(),
         unit: meaning.unit,
         source: meaning.source,
         inputs: meaning.inputs?.(),
-        visible: !node.closest('[aria-hidden="true"]') && isRendered(node),
+        provenance: meaning.provenance?.(),
+        visible: elements.some((node) => !node.closest('[aria-hidden="true"]') && isRendered(node)),
       };
     });
+  };
   const select = (ids: readonly string[]) => {
     const elements = nodes(),
       known = new Set(elements.map((node) => node.dataset.object!));
@@ -92,11 +104,20 @@ export function sceneObjects(root: Element) {
     { signal: abort.signal },
   );
   root.addEventListener(
+    'click',
+    (event) => {
+      const node = target(event);
+      // Native keyboard activation and a renderer's hit-test enter the same owner.
+      if (node && (event as MouseEvent).detail === 0) select([node.dataset.object!]);
+    },
+    { signal: abort.signal },
+  );
+  root.addEventListener(
     'keydown',
     (event) => {
       const e = event as KeyboardEvent,
         node = target(e);
-      if (node && ['Enter', ' '].includes(e.key)) {
+      if (node && !node.matches('button') && ['Enter', ' '].includes(e.key)) {
         e.preventDefault();
         select([node.dataset.object!]);
       } else if (e.key === 'Escape' && selected.length) select([]);

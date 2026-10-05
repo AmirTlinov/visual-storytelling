@@ -11,9 +11,9 @@ import { player as statePlayer } from './controls/player.js';
 import type { SceneHandle } from './scene-handle.js';
 import type { SceneInspection } from './scene-access.js';
 import type { SceneCheckpoint, SceneView } from './scene-checkpoint.js';
-export type { SceneCheckpoint, SceneView } from './scene-checkpoint.js';
+export type { SceneCheckpoint, SceneView, SceneRestoreNotice } from './scene-checkpoint.js';
 export { mountScene } from './scene-handle.js';
-export type { SceneHandle, SceneRuntime } from './scene-handle.js';
+export type { SceneHandle, SceneRuntime, SceneHost } from './scene-handle.js';
 export interface SceneOptions {
   title: string;
   /** Shared controls can follow a product interface while the subject owns its brand. */
@@ -142,6 +142,23 @@ function mount(
       role: 'status',
     }),
     status = node('p', { class: 've-status', role: 'alert' });
+  root.addEventListener(
+    'scene-restored',
+    (event) => {
+      const notices = (event as CustomEvent<import('./scene-checkpoint.js').SceneRestoreNotice[]>)
+        .detail;
+      status.textContent = notices.map((notice) => notice.message).join(' ');
+    },
+    options,
+  );
+  root.addEventListener(
+    'scene-playback-error',
+    (event) => {
+      const error = (event as CustomEvent<unknown>).detail;
+      status.textContent = error instanceof Error ? error.message : String(error);
+    },
+    options,
+  );
   const composition = frame ? sceneFrame(stage, frame) : undefined;
   if (composition) cleanups.add(composition.dispose);
   root.append(heading, modes, actions, fields, composition?.element ?? stage, controls, status);
@@ -325,6 +342,8 @@ function mount(
       if (view === next) return;
       view?.dispose();
       view = next;
+      if (next.focus) handle.extend({ focus: next.focus });
+      else delete handle.focus;
       modes.hidden = false;
     },
     dispose: handle.dispose,
@@ -409,33 +428,30 @@ function mount(
       chapters.update(controller.currentTime, exploration === 'view' || next === 'story');
     });
     setMode('story');
-    Object.defineProperties(
-      handle,
-      Object.getOwnPropertyDescriptors({
-        play: () => {
-          assertLive();
-          preparePlayback();
-          return controller.player.play();
-        },
-        seek: controller.seek,
-        pause: controller.pause,
-        mute: controller.player.mute,
-        setRate: controller.player.rate,
-        get muted() {
-          return controller.player.state.muted;
-        },
-        get rate() {
-          return controller.player.state.rate;
-        },
-        review: controller.review,
-        duration: controller.duration,
-        get currentTime() {
-          return controller.currentTime;
-        },
-        snapshot: () => controller.state,
-        setReduced: controller.setReduced,
-      }),
-    );
+    handle.extend({
+      play: () => {
+        assertLive();
+        preparePlayback();
+        return controller.player.play();
+      },
+      seek: controller.seek,
+      pause: controller.pause,
+      mute: controller.player.mute,
+      setRate: controller.player.rate,
+      get muted() {
+        return controller.player.state.muted;
+      },
+      get rate() {
+        return controller.player.state.rate;
+      },
+      review: controller.review,
+      duration: controller.duration,
+      get currentTime() {
+        return controller.currentTime;
+      },
+      snapshot: () => controller.state,
+      setReduced: controller.setReduced,
+    });
     return handle;
     function preparePlayback() {
       if (controller.currentTime >= controller.duration - 0.02) view?.reset();

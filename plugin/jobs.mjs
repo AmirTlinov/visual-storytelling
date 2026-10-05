@@ -58,6 +58,20 @@ export class JobRunner {
       .slice(0, 30)
       .map((j) => this.describe(j));
   }
+  snapshotLeases() {
+    const projectIds = new Set([...this.jobs.values()].map((job) => job.projectId));
+    const recent = new Set([...projectIds].flatMap((id) => this.list(id).map((job) => job.id)));
+    return [
+      ...new Set(
+        [...this.jobs.values()].flatMap((job) =>
+          ['queued', 'running', 'cancelling'].includes(job.status) ||
+          (recent.has(job.id) && ['failed', 'cancelled', 'interrupted'].includes(job.status))
+            ? [job.id, job.input.resumeFrom].filter(Boolean)
+            : [],
+        ),
+      ),
+    ];
+  }
   save(job) {
     const copy = structuredClone(job),
       id = job.id;
@@ -142,6 +156,17 @@ export class JobRunner {
       await this.save(job);
     }
     return this.describe(job);
+  }
+  retry(id, requestId) {
+    const job = this.jobs.get(id);
+    if (!job) throw new Error('Unknown job.');
+    if (!['failed', 'cancelled', 'interrupted'].includes(job.status))
+      throw new Error('Only stopped preparations can be resumed.');
+    return this.enqueue(
+      job.kind,
+      { ...job.input, resumeFrom: job.input.resumeFrom ?? job.id },
+      requestId,
+    );
   }
   pump() {
     if (this.closed || this.active || !this.queue.length) return;

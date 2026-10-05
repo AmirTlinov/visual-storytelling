@@ -1,4 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto';
+import { failure } from './errors.mjs';
 
 const digest = (value) =>
   createHash('sha256')
@@ -76,6 +77,7 @@ export class SessionDirectory {
       projectId: session.build.projectId,
       sourceRevision: session.build.sourceRevision,
       title: session.build.title,
+      returnAvailable: Boolean(session.returnTo?.length),
       generation: session.generation,
       stateRevision: session.stateRevision,
       status: session.renderer
@@ -178,7 +180,7 @@ export class SessionDirectory {
       s.ready = false;
       s.state = null;
       s.wake?.();
-      return { ...this.describe(s), checkpoint: s.checkpoint };
+      return { ...this.describe(s), checkpoint: s.checkpoint, widgetState: s.widgetState ?? {} };
     } finally {
       s.handoff = false;
     }
@@ -242,6 +244,20 @@ export class SessionDirectory {
 
   request(id, request) {
     const s = this.get(id);
+    const pauseOnly =
+      request.op === 'control' &&
+      request.commands?.length &&
+      request.commands.every((c) => c.type === 'pause');
+    if (
+      request.op === 'control' &&
+      !pauseOnly &&
+      (!request.buildRevision || request.stateRevision === undefined)
+    )
+      return Promise.reject(
+        failure('revision_required', 'Inspect the scene before changing it.', {
+          action: 'story_inspect',
+        }),
+      );
     const key = request.requestId ?? randomUUID();
     const identity = request.requestId ? digest(request) : undefined;
     const previous = s.receipts.get(key);
@@ -250,8 +266,10 @@ export class SessionDirectory {
         ? previous.promise
         : Promise.reject(new Error('requestId already belongs to a different command.'));
     if (!s.renderer || this.expired(s))
-      return Promise.reject(new Error('Open the scene before controlling it.'));
-    if (!s.ready && request.op !== 'suspend')
+      return Promise.reject(
+        failure('view_closed', 'Open the scene before controlling it.', { action: 'story_open' }),
+      );
+    if (!s.ready && !['suspend', 'inspect'].includes(request.op))
       return Promise.reject(
         new Error('The view is still opening. Wait for it before controlling the scene.'),
       );
@@ -259,8 +277,30 @@ export class SessionDirectory {
       return Promise.reject(
         new Error('The scene is moving to another view. Inspect after it opens.'),
       );
-    if (request.buildRevision && request.buildRevision !== s.build.revision)
-      return Promise.reject(new Error('The shown build changed. Inspect the scene again.'));
+    if (!pauseOnly && request.buildRevision && request.buildRevision !== s.build.revision)
+      return Promise.reject(
+        failure('build_conflict', 'The shown build changed. Inspect the scene again.', {
+          field: 'buildRevision',
+          current: { buildRevision: s.build.revision },
+          action: 'story_inspect',
+        }),
+      );
+    if (
+      !pauseOnly &&
+      request.stateRevision !== undefined &&
+      request.stateRevision !== s.stateRevision
+    )
+      return Promise.reject(
+        failure(
+          'state_conflict',
+          'The user changed the scene. Inspect the latest state before controlling it.',
+          {
+            field: 'stateRevision',
+            current: { stateRevision: s.stateRevision },
+            action: 'story_inspect',
+          },
+        ),
+      );
     this.expirePending(s);
     if (s.pending.size >= 32)
       return Promise.reject(new Error('Too many pending commands. Wait for the current action.'));
@@ -284,17 +324,18 @@ export class SessionDirectory {
       clearTimeout(pending.timer);
       s.pending.delete(id);
       s.queue = s.queue.filter((command) => command.id !== id);
-      pending.reject(new Error(commandExpired));
+      pending.reject(failure('command_expired', commandExpired, { action: 'story_inspect' }));
     }
   }
 
   detach({ sessionId, renderer, generation }) {
     const s = this.get(sessionId);
-    if (s.renderer !== renderer || s.generation !== generation) return;
+    if (s.renderer !== renderer || s.generation !== generation) return false;
     s.renderer = null;
     s.ready = false;
     this.rejectPending(s, 'View closed before confirming the command.');
     s.wake?.();
+    return true;
   }
 
   rejectPending(s, message) {

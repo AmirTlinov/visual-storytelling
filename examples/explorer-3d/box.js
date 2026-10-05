@@ -26,6 +26,20 @@ export function measuringBox(view) {
         cells.push({ x, y, z, cube });
       }
   const first = cells[0].cube;
+  view.describe(first, 'unit-cube', {
+    label: 'Единичный кубик',
+    value: () => 1,
+    unit: 'см³',
+    source: { file: 'box.js' },
+  });
+  let capacity = 0;
+  view.describe(group, 'measuring-box', {
+    label: 'Объём коробки',
+    value: () => capacity,
+    unit: 'см³',
+    inputs: () => ['unit-cube'],
+    source: { file: 'box.js' },
+  });
   const unitVolume = view.label('1 см³', first, {
     face: ['front', 'back'],
     tone: 'blue',
@@ -119,6 +133,9 @@ export function measuringBox(view) {
     group,
     first,
     render(state, frame, exploring) {
+      capacity = volume(state);
+      frame.target('unit_volume', 'unit-cube');
+      frame.target('volume_result', 'measuring-box');
       let settled = 0;
       cells.forEach(({ x, y, z, cube }) => {
         const cell = cellState(x, y, z, state, exploring);

@@ -10,9 +10,13 @@ const call = async (name, args = {}) => {
 };
 let bridge,
   iframe,
+  inlineHeight = 730,
   opened,
   context,
   messages = [];
+const resources = new Map();
+let focusDelay = 0,
+  focusRequests = 0;
 let hostContext = {
   theme: 'light',
   displayMode: 'inline',
@@ -29,13 +33,24 @@ async function mount(sessionId, result) {
     { name: 'Visual Storytelling contract host', version: '1' },
     {
       serverTools: {},
+      serverResources: {},
       updateModelContext: {},
       message: {},
-      experimental: { 'openai/modelContext': {} },
+      experimental: { 'openai/modelContext': {}, 'openai/resource': {} },
     },
     { hostContext },
   );
-  bridge.oncalltool = ({ name, arguments: args }) => call(name, args);
+  bridge.oncalltool = async ({ name, arguments: args }) => {
+    if (name === 'story_view' && args.action === 'focus') {
+      focusRequests++;
+      if (focusDelay) await new Promise((resolve) => setTimeout(resolve, focusDelay));
+    }
+    return call(name, args);
+  };
+  bridge.onreadresource = async ({ uri }) => {
+    if (!resources.has(uri)) throw new Error('Unknown host resource');
+    return { contents: [{ uri, text: resources.get(uri), mimeType: 'application/json' }] };
+  };
   bridge.onupdatemodelcontext = async (value) => {
     context = value;
     const updateId = crypto.randomUUID();
@@ -46,8 +61,14 @@ async function mount(sessionId, result) {
     messages.push(message);
     return {};
   };
+  bridge.addEventListener('sizechange', ({ height }) => {
+    if (hostContext.displayMode !== 'fullscreen' && Number.isFinite(height)) {
+      inlineHeight = Math.ceil(height);
+      iframe.style.height = `${inlineHeight}px`;
+    }
+  });
   bridge.onrequestdisplaymode = async ({ mode }) => {
-    iframe.style.height = mode === 'fullscreen' ? '900px' : '730px';
+    iframe.style.height = mode === 'fullscreen' ? '900px' : `${inlineHeight}px`;
     bridge.setHostContext((hostContext = { ...hostContext, displayMode: mode }));
     return { mode };
   };
@@ -60,6 +81,16 @@ async function mount(sessionId, result) {
 }
 window.pluginTest = {
   call,
+  delayFocus(ms) {
+    focusDelay = ms;
+  },
+  get focusRequests() {
+    return focusRequests;
+  },
+  async openFile(uri, text) {
+    resources.set(uri, text);
+    await bridge.sendToolInput({ arguments: { file: { name: 'story.vstory', resourceUri: uri } } });
+  },
   get session() {
     return opened.structuredContent;
   },

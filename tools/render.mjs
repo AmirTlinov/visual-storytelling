@@ -38,7 +38,7 @@ export async function renderer({
     void close().catch(() => {});
   };
   try {
-    launched = chromium.launch();
+    launched = chromium.launch({ executablePath: process.env.VISUAL_STORY_CHROMIUM });
     signal?.addEventListener('abort', abort, { once: true });
     const browser = await launched;
     signal?.throwIfAborted();

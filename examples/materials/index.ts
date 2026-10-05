@@ -108,7 +108,7 @@ export function mount(parent: HTMLElement): Example {
   book.parameters.append(colour.element);
   book.onDispose(colour.dispose);
   book.onDispose(layout.dispose);
-  return Object.assign(book.attach(controller), {
+  return book.attach(controller).extend({
     checkpoints: [1, 2, 4],
     setTheme: book.theme,
     svg: () => layout.current.view.element,

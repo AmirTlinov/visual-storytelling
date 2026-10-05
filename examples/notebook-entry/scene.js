@@ -82,7 +82,7 @@ window.galleryReady = (async () => {
         else entry.render(frame.progress('enter'), frame.reduced);
       },
     });
-    Object.assign(root.scene, {
+    root.scene.extend({
       snapshot: () => ({ stage: stage.snapshot(), page: entry.snapshot() }),
     });
   } catch (error) {

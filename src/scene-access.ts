@@ -1,6 +1,12 @@
 import type { SceneHandle } from './scene-handle.js';
 import type { ControlParameter, ControlValue } from './controls/fields.js';
-import type { SceneView } from './scene-checkpoint.js';
+import type { SceneView, SceneRestoreNotice } from './scene-checkpoint.js';
+import type { CueReview } from './story/cues.js';
+
+export type SceneSearchResult =
+  | ({ type: 'cue' } & CueReview['cues'][number])
+  | ({ type: 'chapter' } & CueReview['segments'][number])
+  | { type: 'object'; id: string; label: string; cues: string[] };
 
 export type SceneCommand =
   | { type: 'pause' | 'play' }
@@ -19,6 +25,7 @@ export interface SceneControlOptions {
   signal?: AbortSignal;
 }
 export interface SceneInspection {
+  restoreNotices?: readonly SceneRestoreNotice[];
   time: number;
   duration: number;
   playing: boolean;
@@ -55,6 +62,7 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
     const objects = handle.objects?.(),
       review = handle.review();
     return {
+      restoreNotices: handle.restoreNotices,
       time: handle.currentTime ?? 0,
       duration: handle.duration ?? 0,
       playing: owner.playing?.() ?? false,
@@ -95,23 +103,59 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
   };
   return {
     inspect,
-    find(query: string) {
+    find(query: string): SceneSearchResult[] {
       owner.assertLive();
       if (typeof query !== 'string') throw new Error('Find needs text');
-      const words = query.toLocaleLowerCase().replaceAll('ё', 'е').split(/\s+/).filter(Boolean);
+      const normalize = (text: string) => text.toLocaleLowerCase().replaceAll('ё', 'е');
+      const words = normalize(query).split(/\s+/).filter(Boolean);
       if (!words.length) return [];
-      return handle
-        .review()
-        .cues.filter((c) =>
-          words.every((word) =>
-            [c.id, c.action, c.hold, c.quote, c.text]
-              .join(' ')
-              .toLocaleLowerCase()
-              .replaceAll('ё', 'е')
-              .includes(word),
-          ),
-        )
-        .slice(0, 20);
+      const review = handle.review();
+      const objects = handle.objects?.() ?? [];
+      const results: { value: SceneSearchResult; score: number }[] = [];
+      const add = (value: SceneSearchResult, label: string, context: string) => {
+        const text = normalize([value.id, label, context].join(' '));
+        if (!words.every((word) => text.includes(word))) return;
+        const phrase = words.join(' ');
+        const score =
+          normalize(value.id) === phrase
+            ? 100
+            : normalize(label) === phrase
+              ? 80
+              : words.filter((word) => normalize(label).includes(word)).length * 5 + 1;
+        results.push({ value, score });
+      };
+      for (const c of review.cues)
+        add(
+          { ...c, type: 'cue' },
+          c.action ?? c.hold ?? c.quote ?? c.text ?? c.id,
+          [
+            c.text,
+            c.quote,
+            ...review.segments
+              .filter((ch) => ch.start <= c.start && ch.end > c.start)
+              .map((ch) => ch.title),
+            ...objects.filter((o) => c.targets?.includes(o.id)).map((o) => o.label),
+          ].join(' '),
+        );
+      for (const chapter of review.segments) {
+        const { words: _words, ...summary } = chapter;
+        add({ ...summary, type: 'chapter' }, chapter.title ?? chapter.id, chapter.text);
+      }
+      for (const object of objects)
+        add(
+          {
+            type: 'object',
+            id: object.id,
+            label: object.label,
+            cues: review.cues.filter((c) => c.targets?.includes(object.id)).map((c) => c.id),
+          },
+          object.label,
+          '',
+        );
+      return results
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 20)
+        .map((result) => result.value);
     },
     async control(commands: readonly SceneCommand[], { signal }: SceneControlOptions = {}) {
       owner.assertLive();
@@ -185,6 +229,7 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
             const p = owner.parameters?.find((p) => p.key === key);
             if (
               !p ||
+              p.disabled ||
               typeof value !== typeof p.value ||
               (typeof value === 'number' &&
                 (!Number.isFinite(value) ||
@@ -228,7 +273,7 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
             await handle.redoExperiment!();
             break;
           case 'mute':
-            handle.mute!(c.value);
+            await handle.mute!(c.value);
             break;
           case 'rate':
             handle.setRate!(c.value);
@@ -254,9 +299,6 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
             owner.setMode!(c.value);
             break;
           case 'parameters':
-            for (const key of Object.keys(c.values))
-              if (owner.parameters?.find((p) => p.key === key)?.disabled)
-                throw new Error(`Scene parameter is disabled: ${key}`);
             owner.setValues!({ ...owner.values?.(), ...c.values });
             break;
           case 'focus':

@@ -13,6 +13,7 @@ export { InkStroke3D } from './ink-line.js';
 export type { InkStrokeOptions } from './ink-line.js';
 export type { SvgArtworkOptions } from './artwork.js';
 export type { Viewport3DHandle } from './three.js';
+export type { SubjectOptions3D } from './semantics.js';
 export { SvgOrbit } from './svg-orbit.js';
 export type { SvgOrbitPose } from './svg-orbit.js';
 export type { Shot3D, ShotTransition3D } from './shots.js';

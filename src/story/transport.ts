@@ -1,5 +1,6 @@
 import { SilentMedia } from './media.js';
 import { mediaTimeline, type MediaClock } from './clock.js';
+import { sceneHost } from '../host/adapter.js';
 export interface Playback {
   time: number;
   duration: number;
@@ -24,6 +25,8 @@ export function transport({ duration, audio }: TransportOptions) {
     disposed = false,
     request = 0,
     error: string | null = null;
+  let permission: AbortController | undefined;
+  let unmutePermission: AbortController | undefined;
   const state = (): Playback => ({
     time: clock.time,
     duration,
@@ -40,6 +43,9 @@ export function transport({ duration, audio }: TransportOptions) {
   function pause() {
     if (disposed) return;
     request++;
+    permission?.abort();
+    permission = undefined;
+    unmutePermission?.abort();
     pending = false;
     media.pause();
     clock.update();
@@ -57,6 +63,14 @@ export function transport({ duration, audio }: TransportOptions) {
     pending = true;
     notify();
     try {
+      permission?.abort();
+      const approval = (permission = new AbortController());
+      await sceneHost()?.beforePlay?.({
+        muted: media.muted,
+        hasAudio: !(media instanceof SilentMedia),
+        signal: approval.signal,
+      });
+      if (disposed || token !== request || approval.signal.aborted) return;
       await media.play();
       if (disposed || token !== request) return;
       pending = false;
@@ -66,6 +80,7 @@ export function transport({ duration, audio }: TransportOptions) {
       pending = false;
       error = cause instanceof Error ? cause.message : String(cause);
       notify();
+      throw cause;
     }
   }
   if (audio) {
@@ -111,7 +126,27 @@ export function transport({ duration, audio }: TransportOptions) {
     toggle() {
       return pending || !media.paused ? pause() : play();
     },
-    mute(value = !media.muted) {
+    async mute(value = !media.muted) {
+      if (disposed) throw new Error('Playback has been disposed');
+      unmutePermission?.abort();
+      if (!value && media.muted && !media.paused) {
+        const token = request,
+          approval = new AbortController();
+        unmutePermission = approval;
+        try {
+          await sceneHost()?.beforePlay?.({
+            muted: false,
+            hasAudio: !(media instanceof SilentMedia),
+            signal: approval.signal,
+          });
+        } catch (cause) {
+          if (approval.signal.aborted) return;
+          error = cause instanceof Error ? cause.message : String(cause);
+          notify();
+          throw cause;
+        }
+        if (disposed || token !== request || approval.signal.aborted) return;
+      }
       media.muted = value;
       notify();
     },
@@ -132,6 +167,8 @@ export function transport({ duration, audio }: TransportOptions) {
       if (disposed) return;
       disposed = true;
       request++;
+      permission?.abort();
+      unmutePermission?.abort();
       pending = false;
       clock.dispose();
       abort.abort();

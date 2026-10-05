@@ -29,6 +29,10 @@
 
 Профиль `.plugin-release` исключает Spine/Chibi, связанные экспорты core, Higgs backend, модели голоса и озвученные демо. Библиотека в репозитории сохраняет эти возможности отдельно.
 
+Системная озвучка использует установленные на Mac голоса через AVSpeechSynthesizer; веса голосов в комплект не включаются. Бинарник адаптера собран из `tools/voice/macos.swift` (0BSD). Доступность языков определяется установленными голосами.
+
+Первое видео отдельно загружает Chrome Headless Shell 153.0.8010.12 из официального Chrome for Testing CDN и FFmpeg 8.0.3-build4 из [AtlasYang/ffmpeg-static-builds](https://github.com/AtlasYang/ffmpeg-static-builds/releases/tag/ffmpeg-8.0.3-build4). URL, SHA-256 и пути закреплены в `plugin/environment.mjs`; receipt сохраняет источник, версию и хеш бинарника. FFmpeg-сборка имеет LGPL-профиль без GPL/nonfree компонентов; исходники и сборочные инструкции доступны у поставщика. Видео кодируется системным VideoToolbox. Chromium сохраняет собственные notices в архиве. Эти загрузки не входят в установочный архив плагина.
+
 ## Chibi и Spine
 
 `./characters` использует `@esotericsoftware/spine-webgl` **4.3.13** и Chibi Stickers

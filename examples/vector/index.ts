@@ -79,7 +79,7 @@ export function mount(parent: HTMLElement): Example {
     render: (state) => layout.current.render(state),
   });
   book.onDispose(layout.dispose);
-  return Object.assign(book.attach(controller), {
+  return book.attach(controller).extend({
     checkpoints: [0, 5, 10, 16],
     setTheme: book.theme,
     svg: () => layout.current.view.element,

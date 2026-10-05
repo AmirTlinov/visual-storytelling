@@ -117,7 +117,7 @@ iframe {
   border: 0;
   display: block;
   width: 100%;
-  height: 570px;
+  height: var(--scene-height, 570px);
   background: transparent;
 }
 html[data-mode='fullscreen'],
@@ -135,17 +135,60 @@ html[data-mode='fullscreen'] main {
 }
 html[data-mode='fullscreen'] iframe {
   height: 100%;
-  min-height: 570px;
+  min-height: 300px;
 }
 footer {
   font-size: 11px;
   opacity: 0.55;
   padding: 4px 12px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+#preferences {
+  padding: 12px;
+}
+#voice-options {
+  padding: 12px;
+}
+#voice-options select {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  padding: 8px;
+  border: 1px solid #8888;
+  border-radius: 6px;
+}
+#preferences form,
+#preferences label {
+  display: grid;
+  gap: 8px;
+}
+#preferences form {
+  margin-top: 16px;
+  gap: 16px;
+}
+#preferences input {
+  font: inherit;
+  padding: 8px;
+  width: 100%;
+  color: inherit;
+  background: transparent;
+  border: 1px solid #8888;
+  border-radius: 6px;
+}
+#preferences p {
+  margin: 0;
+  font-size: 12px;
 }
 #error {
   color: light-dark(#97304b, #f294a7);
   margin: 8px 12px;
   white-space: pre-wrap;
+}
+#notice {
+  margin: 8px 12px;
+  font-size: 12px;
 }
 [hidden] {
   display: none !important;
@@ -165,6 +208,6 @@ footer {
     min-height: 40px;
   }
   iframe {
-    height: 640px;
+    height: var(--scene-height, 640px);
   }
 }

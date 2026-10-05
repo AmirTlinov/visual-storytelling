@@ -8,7 +8,10 @@ import { buildScene } from '../tools/build-pages.mjs';
 import { packDirectory } from '../tools/standalone.mjs';
 import { deliver } from '../tools/deliver.mjs';
 import { snapshotProject, projectFiles, digest } from './project-files.mjs';
-import { writeJSON } from './runtime/storage.mjs';
+import { writeJSON, readJSON } from './runtime/storage.mjs';
+import { prepareEnvironment } from './environment.mjs';
+import { buildNarration } from '../tools/narration.mjs';
+import { updateSceneRuntime } from '../tools/runtime-package.mjs';
 const execute = promisify(execFile);
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -93,31 +96,76 @@ async function prepare(input, task) {
   const { data, projectPath, sourceRevision } = input;
   const snapshot = join(data, 'snapshots', task.jobId);
   task.progress('Сохраняю исходники…');
-  const source = await snapshotProject(projectPath, snapshot, sourceRevision);
+  const original = input.resumeFrom && join(data, 'snapshots', input.resumeFrom);
+  const receipt = original && (await readJSON(join(original, '.vstory-input.json')));
+  if (original && !receipt && !sourceRevision)
+    throw new Error(
+      'The original preparation inputs expired. Open the project to prepare its current revision.',
+    );
+  let source;
+  if (receipt && (!sourceRevision || receipt.revision === sourceRevision)) {
+    await snapshotProject(original, snapshot);
+    source = receipt;
+  } else source = await snapshotProject(projectPath, snapshot, sourceRevision);
+  await writeJSON(join(snapshot, '.vstory-input.json'), source);
   await dependencies(snapshot, data, task);
+  const voice = await readJSON(join(snapshot, 'voice.json'));
+  if (voice?.enabled) await buildNarration(snapshot, { ...task, cache: join(data, 'speech') });
   task.signal.throwIfAborted();
-  return { snapshot, source };
+  return { snapshot, source, silent: voice?.enabled === false };
 }
 
 export const workflows = {
+  async migrate(input, task) {
+    const snapshot = join(input.data, 'snapshots', task.jobId);
+    await snapshotProject(input.projectPath, snapshot, input.sourceRevision);
+    task.progress('Подготавливаю новую библиотеку…');
+    const updated = await updateSceneRuntime(snapshot, { root, build: false, signal: task.signal });
+    if (!updated.changed) return { upToDate: true };
+    await buildScene(snapshot, join(snapshot, 'dist'), { signal: task.signal });
+    const path = updated.dependency.replace(/^file:(?:\.\/)?/, '');
+    const bytes = await readFile(join(snapshot, path));
+    return {
+      migration: {
+        changes: await Promise.all(
+          ['package.json', 'package-lock.json'].map(async (name) => ({
+            path: name,
+            content: await readFile(join(snapshot, name), 'utf8'),
+          })),
+        ),
+        assets: [{ path, source: join(snapshot, path), hash: digest(bytes) }],
+      },
+    };
+  },
   async create(input, task) {
     task.progress('Создаю проект…');
-    const created = await createScene(input.projectPath, {
-      root,
-      example: input.example,
-      deferAudio: true,
-      signal: task.signal,
-    });
+    const exists =
+      input.resumeFrom &&
+      (await access(join(input.projectPath, 'package.json')).then(
+        () => true,
+        () => false,
+      ));
+    const created = exists
+      ? { directory: input.projectPath, example: input.example }
+      : await createScene(input.projectPath, {
+          root,
+          example: input.example,
+          deferAudio: true,
+          signal: task.signal,
+        });
     return {
       ...created,
-      ...(await workflows.build({ ...input, sourceRevision: undefined }, task)),
+      ...(await workflows.build(
+        { ...input, resumeFrom: exists ? input.resumeFrom : undefined, sourceRevision: undefined },
+        task,
+      )),
     };
   },
   async build(input, task) {
-    const { snapshot, source } = await prepare(input, task);
+    const { snapshot, source, silent } = await prepare(input, task);
     const output = join(snapshot, 'dist');
     task.progress('Собираю объяснение…');
-    await buildScene(snapshot, output, { signal: task.signal });
+    await buildScene(snapshot, output, { signal: task.signal, silent });
     task.signal.throwIfAborted();
     const html = await packDirectory(output, 'index.html', {
       audio: 'original',
@@ -143,11 +191,23 @@ export const workflows = {
     return { buildRevision: revision, sourceRevision: source.revision, snapshot };
   },
   async produce(input, task) {
-    const { snapshot, source } = await prepare(input, task);
+    const { snapshot, source, silent } = await prepare(input, task);
+    const formats = input.options?.formats ?? ['html'];
+    await prepareEnvironment(input.data, {
+      ...task,
+      browser: formats.some((format) => ['mp4', 'srt', 'vtt'].includes(format)),
+      encoder:
+        formats.includes('mp4') ||
+        (await access(join(snapshot, 'audio.wav')).then(
+          () => true,
+          () => false,
+        )),
+    });
     task.progress('Готовлю выпуск…');
     const output = join(input.projectPath, 'artifacts', task.jobId);
     const result = await deliver(snapshot, {
       ...input.options,
+      silent: input.options?.silent ?? silent,
       out: output,
       prepareAudio: false,
       signal: task.signal,

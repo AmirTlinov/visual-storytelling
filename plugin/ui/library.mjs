@@ -27,7 +27,7 @@ export function libraryUI(app, extensions, { open, session, error }) {
       button.disabled = true;
       try {
         const result = await run();
-        await open(result);
+        if (result) await open(result);
         closeLibrary();
       } catch (e) {
         error(e.message);
@@ -62,7 +62,12 @@ export function libraryUI(app, extensions, { open, session, error }) {
         for (const item of entries)
           content.append(
             row(item.title, item.summary ?? item.path, () =>
-              call('story_open', item.path ? { projectId: item.id } : { example: item.id }),
+              session()
+                ? call('story_navigate', {
+                    sessionId: session().sessionId,
+                    target: item.path ? { projectId: item.id } : { example: item.id },
+                  }).then(() => undefined)
+                : call('story_open', item.path ? { projectId: item.id } : { example: item.id }),
             ),
           );
       }
@@ -116,6 +121,8 @@ export function libraryUI(app, extensions, { open, session, error }) {
   return {
     update(current) {
       $('release').hidden = !current?.projectId;
+      $('release-options').hidden = true;
+      artifactsKey = undefined;
     },
     artifacts(files) {
       if (artifactsKey === JSON.stringify(files)) return;

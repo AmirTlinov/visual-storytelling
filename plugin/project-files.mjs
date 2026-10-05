@@ -1,4 +1,13 @@
-import { readdir, readFile, mkdir, realpath, lstat, copyFile, rm } from 'node:fs/promises';
+import {
+  readdir,
+  readFile,
+  writeFile,
+  mkdir,
+  realpath,
+  lstat,
+  copyFile,
+  rm,
+} from 'node:fs/promises';
 import { join, dirname, relative, resolve, sep, isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
 import { sceneInput } from '../tools/assets.mjs';
@@ -90,12 +99,25 @@ export async function snapshotProject(root, target, expected) {
   if (inside(root, location) || inside(location, root))
     throw new Error('A snapshot must be outside its working project.');
   const before = await projectFiles(root);
+  // Identity is metadata rather than authored content, but portable delivery needs it.
+  const readManifest = async () => {
+    const path = join(root, 'story.vstory');
+    const stat = await lstat(path).catch((error) => {
+      if (error.code !== 'ENOENT') throw error;
+      return null;
+    });
+    if (!stat) return null;
+    if (!stat.isFile()) throw new Error('story.vstory must be a regular project file.');
+    return readFile(path);
+  };
+  const manifest = await readManifest();
   if (expected && before.revision !== expected)
     throw new Error('Project changed before preparation. Inspect the working revision.');
   await mkdir(dirname(target), { recursive: true });
   // Only a directory created by this operation may be cleaned up on failure.
   await mkdir(target);
   try {
+    if (manifest) await writeFile(join(target, 'story.vstory'), manifest, { flag: 'wx' });
     for (const name of Object.keys(before.files)) {
       const to = join(target, name);
       await mkdir(dirname(to), { recursive: true });
@@ -104,6 +126,12 @@ export async function snapshotProject(root, target, expected) {
     const [after, copied] = await Promise.all([projectFiles(root), projectFiles(target)]);
     if (after.revision !== before.revision || copied.revision !== before.revision)
       throw new Error('Project changed while capturing its inputs. Retry after edits finish.');
+    const latestManifest = await readManifest();
+    if (
+      Boolean(manifest) !== Boolean(latestManifest) ||
+      (manifest && !manifest.equals(latestManifest))
+    )
+      throw new Error('Project identity changed while capturing its inputs. Open it again.');
     return before;
   } catch (error) {
     await rm(target, { recursive: true, force: true });

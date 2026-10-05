@@ -37,7 +37,7 @@ export function player(parent: HTMLElement, options: PlayerOptions) {
     'click',
     () => {
       options.onPlay?.();
-      void clock.toggle();
+      void Promise.resolve(clock.toggle()).catch(() => {});
     },
     listen,
   );
@@ -52,7 +52,13 @@ export function player(parent: HTMLElement, options: PlayerOptions) {
     listen,
   );
   view.seek.addEventListener('input', () => seek(view.seek.valueAsNumber), listen);
-  view.mute?.addEventListener('click', () => clock.mute(), listen);
+  view.mute?.addEventListener(
+    'click',
+    () => {
+      void clock.mute().catch(() => {});
+    },
+    listen,
+  );
   view.rate?.addEventListener('change', () => clock.rate(Number(view.rate!.value)), listen);
   const unsubscribe = clock.subscribe((state) => {
     const stamp = `${formatTime(state.time)} / ${formatTime(state.duration)}`;

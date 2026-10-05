@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir, cp, rm, chmod } from 'node:fs/promises';
 import { join, dirname, basename } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { createHash } from 'node:crypto';
 import { buildAPI } from '../tools/api.mjs';
 import { sourceDigest, writeBuildInfo } from '../tools/build-info.mjs';
 const execute = promisify(execFile);
@@ -107,5 +108,33 @@ export async function packagePlugin(root) {
       2,
     ) + '\n',
   );
+  const version = JSON.parse(await readFile(join(release, 'plugin.json'), 'utf8')).version;
+  const archive = join(
+    root,
+    'artifacts/plugin',
+    `visual-storytelling-${version}-darwin-arm64.tar.gz`,
+  );
+  await mkdir(dirname(archive), { recursive: true });
+  await execute('/usr/bin/tar', [
+    '-czf',
+    archive,
+    '-C',
+    root,
+    '.agents/plugins/marketplace.json',
+    '.plugin-release',
+    '-C',
+    join(root, 'plugin'),
+    'INSTALL.md',
+  ]);
+  await writeFile(
+    archive + '.sha256',
+    createHash('sha256')
+      .update(await readFile(archive))
+      .digest('hex') +
+      '  ' +
+      basename(archive) +
+      '\n',
+  );
+  console.log(`Installable archive: ${archive}`);
   return release;
 }

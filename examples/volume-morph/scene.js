@@ -61,7 +61,7 @@ window.galleryReady = (async () => {
       });
     },
   });
-  Object.assign(root.scene, { view, story, morph });
+  root.scene.extend({ view, story, morph });
   shell.onDispose(() => caption.remove());
 })().catch((error) => {
   const alert = document.createElement('p');

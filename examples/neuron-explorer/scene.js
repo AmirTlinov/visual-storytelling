@@ -188,7 +188,7 @@ window.galleryReady = document.fonts.ready.then(() => {
   paint();
   restore(storage.read());
   observer.observe(viewport);
-  Object.assign(root.scene, {
+  root.scene.extend({
     svg: () => svg,
     setTheme: (value) => appearance.set(value),
     setReduced: (value) => {

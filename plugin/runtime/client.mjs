@@ -51,7 +51,12 @@ function rpc(socket) {
         pending.delete(message.id);
         clearTimeout(request.timer);
         message.error !== undefined
-          ? request.reject(new Error(message.error || 'Local operation failed.'))
+          ? request.reject(
+              Object.assign(
+                new Error(message.error.message ?? message.error ?? 'Local operation failed.'),
+                message.error,
+              ),
+            )
           : request.resolve(message.result);
       } catch (error) {
         socket.destroy(error);
@@ -65,6 +70,9 @@ function rpc(socket) {
     rejectAll();
   });
   return {
+    get closed() {
+      return closed || socket.destroyed || socket.writableEnded;
+    },
     call(method, params = {}, timeout = 20000) {
       if (closed || socket.destroyed || socket.writableEnded)
         return Promise.reject(new Error('Local runtime disconnected.'));
@@ -94,6 +102,44 @@ function rpc(socket) {
       closed = true;
       rejectAll();
       socket.destroy();
+    },
+  };
+}
+
+/** Discovery stays available when an older installed runtime needs to be reconnected. */
+export function runtimeClient(serverDirectory) {
+  let connection,
+    closed = false;
+  const open = () =>
+    (connection ??= connectRuntime(serverDirectory).catch((error) => {
+      connection = undefined;
+      throw error;
+    }));
+  return {
+    async call(...args) {
+      if (closed) throw new Error('Local runtime disconnected.');
+      let pending = open(),
+        client = await pending;
+      if (client.closed && !closed) {
+        if (connection === pending) connection = undefined;
+        pending = open();
+        client = await pending;
+      }
+      if (closed) throw new Error('Local runtime disconnected.');
+      try {
+        return await client.call(...args);
+      } catch (error) {
+        // The caller decides whether to repeat an operation whose acknowledgement was lost.
+        if (client.closed && connection === pending) connection = undefined;
+        throw error;
+      }
+    },
+    close() {
+      closed = true;
+      void connection?.then(
+        (client) => client.close(),
+        () => {},
+      );
     },
   };
 }
@@ -145,6 +191,7 @@ export async function connectRuntime(serverDirectory) {
           'The local runtime belongs to another plugin build. Close Visual Storytelling panels and reconnect the plugin to finish updating.',
         );
         error.code = 'RUNTIME_VERSION_CONFLICT';
+        error.action = 'Close Visual Storytelling panels and reconnect the plugin, then retry.';
         throw error;
       }
       return client;

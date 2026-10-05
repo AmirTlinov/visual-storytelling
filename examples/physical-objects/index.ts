@@ -50,31 +50,28 @@ window.galleryReady = (async () => {
     beforeSeek: () => player.pause(false),
     afterSeek: player.update,
   });
-  Object.defineProperties(
-    root.scene!,
-    Object.getOwnPropertyDescriptors({
-      world,
-      bodies,
-      view: drawing,
-      duration: replay.duration,
-      get currentTime() {
-        return world.time;
-      },
-      get playing() {
-        return player.playing;
-      },
-      play: player.play,
-      pause: player.pause,
-      seek: replay.seek,
-      snapshot: () =>
-        bodies.map((b) => ({
-          id: b.id,
-          position: b.position,
-          soft: Boolean(b.soft),
-          sleeping: (b.soft ?? b.rigid).isSleeping(),
-        })),
-    }),
-  );
+  root.scene!.extend({
+    world,
+    bodies,
+    view: drawing,
+    duration: replay.duration,
+    get currentTime() {
+      return world.time;
+    },
+    get playing() {
+      return player.playing;
+    },
+    play: player.play,
+    pause: player.pause,
+    seek: replay.seek,
+    snapshot: () =>
+      bodies.map((b) => ({
+        id: b.id,
+        position: b.position,
+        soft: Boolean(b.soft),
+        sleeping: (b.soft ?? b.rigid).isSleeping(),
+      })),
+  });
   shell.onDispose(() => {
     world.dispose();
     drawing.dispose();

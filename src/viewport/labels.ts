@@ -5,6 +5,8 @@ import { surfaceLettering, type SurfaceOptions, type LabelAnchor } from './surfa
 import type { FrameAnchor } from './framing.js';
 import { placeLabels } from '../layout/labels.js';
 import { objectVisible } from './visibility.js';
+import { subjectOf } from './semantics.js';
+import { describeObject } from '../scene-objects.js';
 export type { Face } from './label-faces.js';
 
 export interface LabelOptions extends SurfaceOptions {
@@ -28,6 +30,8 @@ type ScreenLabel = {
   anchor: LabelAnchor;
   options: LabelOptions;
   opacity: number;
+  subject?: ReturnType<typeof subjectOf>;
+  forget?: () => void;
 };
 type Surface = ReturnType<typeof surfaceLettering>;
 function visible(anchor: LabelAnchor) {
@@ -55,6 +59,30 @@ export function projectedLabels(
   function measure(items: Iterable<ScreenLabel>) {
     const pending = [...items].flatMap((item) => {
       const { annotation: a, options } = item;
+      const subject = typeof item.anchor === 'function' ? undefined : subjectOf(item.anchor);
+      if (subject !== item.subject) {
+        item.forget?.();
+        item.forget = undefined;
+        item.subject = subject;
+        if (subject) {
+          a.element.dataset.object = subject.id;
+          item.forget = describeObject(a.element, subject.meaning);
+          // Keyboard traversal has one target per object, owned by the viewport.
+          a.element.tabIndex = -1;
+          a.element.style.pointerEvents = 'auto';
+        } else {
+          for (const name of [
+            'data-object',
+            'role',
+            'tabindex',
+            'aria-label',
+            'aria-pressed',
+            'data-selected',
+          ])
+            a.element.removeAttribute(name);
+          a.element.style.pointerEvents = '';
+        }
+      }
       if (typeof item.text === 'function') {
         const text = item.text();
         if (a.element.textContent !== text) a.element.textContent = text;
@@ -212,6 +240,7 @@ export function projectedLabels(
         },
         remove() {
           labels.delete(item);
+          item.forget?.();
           a.remove();
           invalidate();
         },
@@ -220,6 +249,7 @@ export function projectedLabels(
     dispose(root?: T.Object3D) {
       for (const item of labels)
         if (!root || belongs(item.anchor, [root])) {
+          item.forget?.();
           item.annotation.remove();
           labels.delete(item);
         }

@@ -48,6 +48,8 @@ test('reports and acknowledgements cannot consume commands belonging to the poll
   const { directory, session, view } = await fixture(t);
   const pending = request(directory, session.id, {
     op: 'control',
+    buildRevision: build.revision,
+    stateRevision: 0,
     requestId: 'seek-once',
     commands: [{ type: 'seek', time: 4 }],
   });
@@ -65,12 +67,20 @@ test('reports and acknowledgements cannot consume commands belonging to the poll
 
 test('request IDs survive many later commands and detach; reordered JSON is the same retry', async (t) => {
   const { directory, session, view } = await fixture(t);
-  const first = { op: 'control', requestId: 'first-action', commands: [{ type: 'seek', time: 4 }] };
+  const first = {
+    op: 'control',
+    buildRevision: build.revision,
+    stateRevision: 0,
+    requestId: 'first-action',
+    commands: [{ type: 'seek', time: 4 }],
+  };
   const pending = request(directory, session.id, first);
   assert.equal(
     directory.request(session.id, {
       commands: [{ time: 4, type: 'seek' }],
       requestId: 'first-action',
+      stateRevision: 0,
+      buildRevision: build.revision,
       op: 'control',
     }),
     pending,
@@ -99,11 +109,45 @@ test('request IDs survive many later commands and detach; reordered JSON is the 
   assert.equal(directory.describe(session).status, 'closed');
 });
 
+test('pause alone remains available without an inspection or with an outdated observation', async (t) => {
+  const { directory, session, view } = await fixture(t);
+  await directory.exchange({ ...view, report: report(5, 12), wait: false });
+  for (const [index, observation] of [
+    {},
+    { buildRevision: 'older-build', stateRevision: 0 },
+  ].entries()) {
+    const id = `pause-without-inspect-${index}`;
+    const pending = request(directory, session.id, {
+      op: 'control',
+      requestId: id,
+      commands: [{ type: 'pause' }],
+      ...observation,
+    });
+    const polled = await directory.exchange(view);
+    assert.equal(polled.commands[0].id, id);
+    await acknowledge(directory, view, id, report(6 + index, 12));
+    assert.equal((await pending).acknowledgement, 'rendered');
+  }
+  await assert.rejects(
+    directory.request(session.id, {
+      op: 'control',
+      commands: [{ type: 'pause' }, { type: 'seek', time: 4 }],
+    }),
+    (error) => error.code === 'revision_required',
+  );
+});
+
 test('deadline checks reject late acknowledgements even before the timer callback runs', async (t) => {
   let now = 10000;
   t.mock.method(Date, 'now', () => now);
   const { directory, session, view } = await fixture(t, { timeout: 100, rendererTimeout: 10000 });
-  const args = { op: 'control', requestId: 'expired-action', commands: [{ type: 'play' }] };
+  const args = {
+    op: 'control',
+    buildRevision: build.revision,
+    stateRevision: 0,
+    requestId: 'expired-action',
+    commands: [{ type: 'play' }],
+  };
   const pending = request(directory, session.id, args);
   await directory.exchange(view);
   now += 101;
@@ -184,8 +228,19 @@ test('opening, detach and shutdown cannot leave commands or long polls alive', a
     renderer = randomUUID();
   const attached = await directory.attach(session.id, renderer);
   const view = connection(session.id, renderer, attached.generation);
-  await assert.rejects(directory.request(session.id, { op: 'inspect' }), /still opening/);
+  const inspection = request(directory, session.id, { op: 'inspect' });
+  let delivered = false;
+  const opening = directory.exchange(view).then((value) => {
+    delivered = true;
+    return value;
+  });
+  await Promise.resolve();
+  assert.equal(delivered, false, 'opening must wait for the first rendered report');
   await directory.exchange({ ...view, report: report(), wait: false });
+  const first = await opening;
+  assert.equal(first.commands[0].op, 'inspect');
+  await acknowledge(directory, view, first.commands[0].id, report());
+  assert.equal((await inspection).acknowledgement, 'rendered');
   const polling = directory.exchange(view);
   directory.detach(view);
   await assert.rejects(polling, /replaced/);

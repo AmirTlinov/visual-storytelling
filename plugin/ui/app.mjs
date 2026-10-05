@@ -4,6 +4,9 @@ import manifest from '../../plugin.json' with { type: 'json' };
 import { sceneDocument } from './scene-document.mjs';
 import { frameContext } from './frame-context.mjs';
 import { libraryUI } from './library.mjs';
+import { preferencesUI } from './preferences.mjs';
+import { fileEntrypoint } from './file-entrypoint.mjs';
+import { voiceUI } from './voice.mjs';
 
 const app = new App({ name: 'Visual Storytelling', version: manifest.version });
 const extensions = new OpenAIExtensions(app);
@@ -79,6 +82,14 @@ async function poll() {
       send({ type: 'renew' });
       for (const command of result.structuredContent.commands) send({ type: 'command', command });
       updateJobs(result.structuredContent.jobs ?? []);
+      if (result.structuredContent.navigation) {
+        closed = true;
+        const destination = result.structuredContent.navigation;
+        queueMicrotask(
+          () => void open({ structuredContent: destination }).catch((e) => error(e.message)),
+        );
+        break;
+      }
       if (result.structuredContent.update)
         void prepareUpdate(result.structuredContent.update).catch((e) => error(e.message));
     } catch (e) {
@@ -102,11 +113,14 @@ async function poll() {
 }
 async function mount(result) {
   if (!result.structuredContent?.sessionId || session) return;
+  error('');
   session = result.structuredContent;
   $('connection').textContent = 'Открываю сцену…';
   const attached = await call('attach');
   session = attached.structuredContent;
   library.update(session);
+  voice.update();
+  $('back').hidden = !session.returnAvailable;
   $('title').textContent = session.title;
   updateJobs(session.jobs ?? []);
   const config = {
@@ -114,6 +128,7 @@ async function mount(result) {
     generation: session.generation,
     checkpoint: session.checkpoint,
     stateRevision: session.stateRevision,
+    widgetState: session.widgetState,
   };
   if (attached._meta.sceneHTML) {
     frame.srcdoc = sceneDocument(attached._meta.sceneHTML, config);
@@ -155,6 +170,7 @@ async function prepareUpdate(update) {
       generation: candidate.generation,
       checkpoint: next.checkpoint,
       stateRevision: next.stateRevision,
+      widgetState: next.widgetState,
     });
   } finally {
     preparing = false;
@@ -191,6 +207,7 @@ async function applyUpdate() {
         nextGeneration: session.generation,
         checkpoint: session.checkpoint,
         stateRevision: session.stateRevision,
+        widgetState: session.widgetState,
       },
       '*',
     );
@@ -217,6 +234,22 @@ function updateJobs(jobs) {
       void app.callServerTool({ name: 'story_cancel', arguments: { jobId: active.id } });
   }
   const last = jobs[0];
+  $('retry').hidden = !last || !['failed', 'cancelled', 'interrupted'].includes(last.status);
+  $('retry').onclick = async () => {
+    $('retry').disabled = true;
+    try {
+      const result = await app.callServerTool({
+        name: 'story_retry',
+        arguments: { jobId: last.id, requestId: crypto.randomUUID() },
+      });
+      if (result.isError) throw new Error(result.content[0].text);
+      error('');
+    } catch (e) {
+      error(e.message);
+    } finally {
+      $('retry').disabled = false;
+    }
+  };
   if (last?.status === 'failed') error(last.error);
   if (last?.status === 'succeeded' && last.result?.files) {
     library.artifacts(last.result.files);
@@ -245,14 +278,43 @@ addEventListener('message', (event) => {
     data.generation !== session?.generation
   )
     return;
+  if (data.type === 'layout') {
+    if (
+      document.documentElement.dataset.mode !== 'fullscreen' &&
+      Number.isFinite(data.height) &&
+      data.height > 0
+    )
+      frame.style.setProperty('--scene-height', `${Math.ceil(data.height)}px`);
+    return;
+  }
   if (data.report) report = data.report;
+  if (data.type === 'widget-state') {
+    void call('widget', { widget: { id: data.id, snapshot: data.snapshot } }).catch((e) =>
+      error(e.message),
+    );
+    return;
+  }
+  if (data.type === 'host-request') {
+    if (data.action === 'focus') {
+      void call('focus', { report: data.report }).then(
+        () => send({ type: 'host-response', id: data.id }),
+        (e) => send({ type: 'host-response', id: data.id, error: e.message }),
+      );
+    }
+    return;
+  }
   if (data.type === 'ready') {
     $('connection').textContent = 'Готово';
     clearTimeout(loadTimer);
+    const notices = report.state.restoreNotices?.map((notice) => notice.message) ?? [];
+    if (report.state.compatibility?.message) notices.push(report.state.compatibility.message);
+    $('notice').textContent = [...new Set(notices)].join(' ');
+    $('notice').hidden = !notices.length;
     sync();
     void publishContext();
   }
   if (data.type === 'report') {
+    if (data.report.reason === 'input') $('notice').hidden = true;
     sync();
     void publishContext();
   }
@@ -303,23 +365,46 @@ async function dispose() {
   candidate?.frame.remove();
   return {};
 }
-const library = libraryUI(app, extensions, {
-  session: () => session,
-  error,
-  open: async (result) => {
-    await dispose();
-    session = undefined;
-    report = undefined;
-    closed = false;
-    candidate = undefined;
-    failedRevision = undefined;
-    modelContext = frameContext(app, extensions);
-    $('artifacts').hidden = true;
-    error('');
-    await mount(result);
-  },
-});
+async function open(result) {
+  await dispose();
+  session = undefined;
+  report = undefined;
+  closed = false;
+  candidate = undefined;
+  failedRevision = undefined;
+  modelContext = frameContext(app, extensions);
+  $('artifacts').hidden = true;
+  error('');
+  await mount(result);
+}
+const library = libraryUI(app, extensions, { session: () => session, error, open });
+const voice = voiceUI(app, { session: () => session, error });
+const preferences = preferencesUI(app, error);
+fileEntrypoint(app, extensions, { open, error });
+$('back').onclick = async () => {
+  $('back').disabled = true;
+  try {
+    const result = await app.callServerTool({
+      name: 'story_navigate',
+      arguments: { sessionId: session.sessionId, back: true },
+    });
+    if (result.isError) throw new Error(result.content[0].text);
+  } catch (e) {
+    error(e.message);
+  } finally {
+    $('back').disabled = false;
+  }
+};
 app.ontoolresult = (result) => {
+  if (result.isError) {
+    $('connection').textContent = 'Не удалось открыть';
+    error(result.content?.find((c) => c.type === 'text')?.text ?? 'Не удалось открыть объяснение.');
+    return;
+  }
+  if (result._meta?.preferences) {
+    void preferences.open(result.structuredContent);
+    return;
+  }
   void mount(result).catch((e) => error(e.message));
 };
 app.onhostcontextchanged = host;
@@ -327,9 +412,17 @@ app.onteardown = dispose;
 addEventListener('pagehide', () => {
   void dispose();
 });
+const connectionTimer = setTimeout(() => {
+  $('connection').textContent = 'Нет связи с Codex';
+  error('Codex не ответил на подключение. Закройте и откройте плагин снова.');
+}, 10000);
 try {
   await app.connect();
+  clearTimeout(connectionTimer);
+  if (!session && $('error').hidden) $('connection').textContent = 'Выберите объяснение';
   host(app.getHostContext() ?? {});
 } catch (e) {
+  clearTimeout(connectionTimer);
+  $('connection').textContent = 'Нет связи с Codex';
   error('Не удалось подключиться к Codex: ' + e.message);
 }

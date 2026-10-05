@@ -121,7 +121,7 @@ window.galleryReady = (async () => {
     },
   });
   const snapshot = root.scene.snapshot;
-  Object.assign(root.scene, {
+  root.scene.extend({
     view,
     story,
     snapshot: () => ({ ...snapshot(), ...current, representation: representation.value }),

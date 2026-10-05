@@ -6,6 +6,7 @@ export interface StepOptions {
   interval?: number;
 }
 import { PlayerControls } from '../controls/player-view.js';
+import { sceneHost } from '../host/adapter.js';
 /* Discrete, silent demonstrations. The subject owns its states and transitions. */
 
 function mount(
@@ -32,10 +33,11 @@ function mount(
   let index = Math.max(0, Math.min(count - 1, initial)),
     playing = false,
     timer: ReturnType<typeof setTimeout> | undefined;
+  let permission: AbortController | undefined;
   function controls() {
     view.update({
       value: index,
-      paused: !playing,
+      paused: !playing && !permission,
       ended: !playing && index === count - 1,
       stamp: `${index + 1} / ${count}`,
       valueText: `Шаг ${index + 1} из ${count}`,
@@ -44,6 +46,8 @@ function mount(
     });
   }
   function stop() {
+    permission?.abort();
+    permission = undefined;
     playing = false;
     clearTimeout(timer);
     controls();
@@ -65,14 +69,40 @@ function mount(
       else schedule();
     }, interval);
   }
-  function start() {
-    if (abort.signal.aborted || playing) return;
+  async function start() {
+    if (abort.signal.aborted || playing || permission) return;
+    const policy = sceneHost()?.beforePlay;
+    if (policy) {
+      const request = (permission = new AbortController());
+      controls();
+      try {
+        await policy({ muted: true, hasAudio: false, signal: request.signal });
+      } catch (error) {
+        if (!request.signal.aborted) throw error;
+      } finally {
+        if (permission === request) permission = undefined;
+        if (!abort.signal.aborted) controls();
+      }
+      if (abort.signal.aborted || request.signal.aborted) return;
+    }
     if (index === count - 1) go(0, false);
     playing = true;
     controls();
     schedule();
   }
-  play.addEventListener('click', () => (playing ? stop() : start()), listen);
+  play.addEventListener(
+    'click',
+    () => {
+      if (playing || permission) stop();
+      else
+        void start().catch((error) =>
+          root.dispatchEvent(
+            new CustomEvent('scene-playback-error', { bubbles: true, detail: error }),
+          ),
+        );
+    },
+    listen,
+  );
   back!.addEventListener(
     'click',
     () => {

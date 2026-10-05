@@ -1,5 +1,6 @@
 import { PlayerControls } from '../controls/player-view.js';
 import { mountScene } from '../scene-handle.js';
+import { sceneHost } from '../host/adapter.js';
 /* SVG's native animation time remains the sole clock. */
 
 function mount(root: HTMLElement, { duration }: { duration: number }) {
@@ -18,6 +19,7 @@ function mount(root: HTMLElement, { duration }: { duration: number }) {
     listen = { signal: abort.signal };
   let svg: SVGSVGElement | null = null,
     frame = 0;
+  let permission: AbortController | undefined;
   let resolveReady: () => void, rejectReady: (error: Error) => void;
   const readyPromise = new Promise<void>((resolve, reject) => {
     resolveReady = resolve;
@@ -28,16 +30,33 @@ function mount(root: HTMLElement, { duration }: { duration: number }) {
     return svg;
   };
   function pause() {
+    permission?.abort();
+    permission = undefined;
     svg?.pauseAnimations();
     update();
   }
-  function play() {
+  async function play() {
+    if (permission || abort.signal.aborted) return;
+    const policy = sceneHost()?.beforePlay;
+    if (policy) {
+      const request = (permission = new AbortController());
+      update();
+      try {
+        await policy({ muted: true, hasAudio: false, signal: request.signal });
+      } catch (error) {
+        if (!request.signal.aborted) throw error;
+      } finally {
+        if (permission === request) permission = undefined;
+        if (!abort.signal.aborted) update();
+      }
+      if (abort.signal.aborted || request.signal.aborted) return;
+    }
     current().unpauseAnimations();
     update();
   }
   function seek(time: number) {
     if (!Number.isFinite(time)) throw new Error('SVG time must be finite');
-    current().pauseAnimations();
+    pause();
     current().setCurrentTime(Math.max(0, Math.min(duration, time)));
     update();
   }
@@ -61,6 +80,8 @@ function mount(root: HTMLElement, { duration }: { duration: number }) {
     dispose() {
       rejectReady(new Error('SVG player was disposed before it became ready'));
       abort.abort();
+      permission?.abort();
+      permission = undefined;
       cancelAnimationFrame(frame);
       svg?.pauseAnimations();
       controls.dispose();
@@ -73,7 +94,12 @@ function mount(root: HTMLElement, { duration }: { duration: number }) {
     if (!svg) return;
     const value = scene.currentTime;
     const stamp = `${value.toFixed(1)} / ${duration} с`;
-    controls.update({ value, paused: svg.animationsPaused(), stamp, valueText: stamp });
+    controls.update({
+      value,
+      paused: svg.animationsPaused() && !permission,
+      stamp,
+      valueText: stamp,
+    });
     if (!svg.animationsPaused()) frame = requestAnimationFrame(update);
   }
   const ready = () => {
@@ -99,7 +125,15 @@ function mount(root: HTMLElement, { duration }: { duration: number }) {
   controls.play.addEventListener(
     'click',
     () => {
-      svg?.animationsPaused() ? play() : pause();
+      if (!svg?.animationsPaused() || permission) pause();
+      else
+        void play().catch((error) => {
+          const status =
+            controlsHost.querySelector('[role=alert]') ??
+            controlsHost.appendChild(document.createElement('p'));
+          status.setAttribute('role', 'alert');
+          status.textContent = error.message;
+        });
     },
     listen,
   );
@@ -113,7 +147,7 @@ function mount(root: HTMLElement, { duration }: { duration: number }) {
   reduced.addEventListener(
     'change',
     () => {
-      if (reduced.matches) svg?.pauseAnimations();
+      if (reduced.matches) pause();
       update();
     },
     listen,
@@ -121,7 +155,7 @@ function mount(root: HTMLElement, { duration }: { duration: number }) {
   document.addEventListener(
     'visibilitychange',
     () => {
-      if (document.hidden) svg?.pauseAnimations();
+      if (document.hidden) pause();
       update();
     },
     listen,

@@ -91,7 +91,7 @@ window.galleryReady = (async () => {
       }
     },
   });
-  Object.assign(root.scene, { shell, view, story, snapshot: () => current });
+  root.scene.extend({ shell, view, story, snapshot: () => current });
 })().catch((error) => {
   const message = document.createElement('p');
   message.setAttribute('role', 'alert');

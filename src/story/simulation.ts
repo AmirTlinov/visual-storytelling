@@ -1,4 +1,5 @@
 import { PlayerControls } from '../controls/player-view.js';
+import { sceneHost } from '../host/adapter.js';
 export interface SimulationState {
   value: number;
   done: boolean;
@@ -22,11 +23,12 @@ function mount(element: HTMLElement, model: SimulationOptions) {
   let playing = false,
     frame = 0,
     disposed = false;
+  let permission: AbortController | undefined;
   function update() {
     const state = model.read();
     view.update({
       value: state.value,
-      paused: !playing,
+      paused: !playing && !permission,
       ended: state.done,
       stamp: state.stamp,
       canNext: state.canStep ?? true,
@@ -34,6 +36,8 @@ function mount(element: HTMLElement, model: SimulationOptions) {
     element.dataset.playing = String(playing);
   }
   function pause(persist = true) {
+    permission?.abort();
+    permission = undefined;
     const wasPlaying = playing;
     playing = false;
     cancelAnimationFrame(frame);
@@ -41,8 +45,22 @@ function mount(element: HTMLElement, model: SimulationOptions) {
     update();
     if (persist && wasPlaying) model.commit();
   }
-  function play() {
-    if (disposed || playing) return;
+  async function play() {
+    if (disposed || playing || permission) return;
+    const policy = sceneHost()?.beforePlay;
+    if (policy) {
+      const request = (permission = new AbortController());
+      update();
+      try {
+        await policy({ muted: true, hasAudio: false, signal: request.signal });
+      } catch (error) {
+        if (!request.signal.aborted) throw error;
+      } finally {
+        if (permission === request) permission = undefined;
+        if (!disposed) update();
+      }
+      if (disposed || request.signal.aborted) return;
+    }
     model.prepare();
     playing = true;
     model.render();
@@ -69,7 +87,19 @@ function mount(element: HTMLElement, model: SimulationOptions) {
     update();
     model.commit();
   }
-  view.play.addEventListener('click', () => (playing ? pause() : play()), listen);
+  view.play.addEventListener(
+    'click',
+    () => {
+      if (playing || permission) pause();
+      else
+        void play().catch((error) =>
+          element.dispatchEvent(
+            new CustomEvent('scene-playback-error', { bubbles: true, detail: error }),
+          ),
+        );
+    },
+    listen,
+  );
   view.next!.addEventListener('click', step, listen);
   document.addEventListener(
     'visibilitychange',

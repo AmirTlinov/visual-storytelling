@@ -243,7 +243,16 @@ test(
     await writeFile(entry, original + '\n// a newer binary\n');
     await assert.rejects(direct(f.directory, f.data), /another plugin build/);
     assert.equal((await runtime.call('hello')).pid, hello.pid);
+    const updating = await f.stdio();
+    const { tools } = await updating.listTools();
+    const resourceUri = tools.find((item) => item.name === 'story_open')._meta.ui.resourceUri;
+    assert.ok((await updating.readResource({ uri: resourceUri })).contents[0].text);
+    const unavailable = await updating.callTool({ name: 'story_open', arguments: {} });
+    assert.equal(unavailable.isError, true);
+    assert.equal(unavailable.structuredContent.error.code, 'RUNTIME_VERSION_CONFLICT');
+    assert.match(unavailable.structuredContent.error.action, /reconnect/);
     await writeFile(entry, original);
+    assert.ok((await tool(updating, 'story_open')).sessionId, 'the same MCP connection can retry');
     const reopened = await f.runtime();
     assert.equal((await reopened.call('hello')).serverInstance, hello.serverInstance);
     const opened = await runtime.call('open');
@@ -259,6 +268,12 @@ test(
     await assert.rejects(waiting, /disconnected/);
     await assert.rejects(runtime.call('hello'), /disconnected/);
     assert.equal((await reopened.call('hello')).pid, hello.pid);
+    process.kill(hello.pid, 'SIGTERM');
+    await gone(hello.pid);
+    const recovered = await tool(updating, 'story_open');
+    assert.notEqual(recovered.serverInstance, hello.serverInstance);
+    const nextRuntime = await f.runtime();
+    assert.equal((await nextRuntime.call('hello')).serverInstance, recovered.serverInstance);
   },
 );
 

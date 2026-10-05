@@ -71,4 +71,4 @@ export type {
 
 export type { DeformationOptions } from './morph/construction/deformation.js';
 
-export type { SceneCommand, SceneInspection } from './scene-access.js';
+export type { SceneCommand, SceneInspection, SceneSearchResult } from './scene-access.js';

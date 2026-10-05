@@ -176,7 +176,7 @@ window.galleryReady = (async () => {
       }
     },
   });
-  Object.assign(root.scene, { view, story, morph });
+  root.scene.extend({ view, story, morph });
   shell.onDispose(() => {
     flat.dispose();
     writing.dispose();

@@ -1,8 +1,20 @@
-import { readFile, writeFile, mkdir, rename, rm, realpath, readdir, stat } from 'node:fs/promises';
+import {
+  readFile,
+  writeFile,
+  mkdir,
+  rename,
+  rm,
+  realpath,
+  readdir,
+  stat,
+  copyFile,
+} from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { readJSON, writeJSON } from './runtime/storage.mjs';
 import { projectFiles, projectFile, digest } from './project-files.mjs';
+import { failure } from './errors.mjs';
 
 const readOptional = (file) =>
   readFile(file).catch((error) => {
@@ -201,7 +213,7 @@ export class ProjectStore {
       await rm(temporary, { force: true });
     }
   }
-  edit({ projectId, sourceRevision, requestId, changes, undo }) {
+  edit({ projectId, sourceRevision, requestId, changes, undo, assets = [] }) {
     if (!validRequest(requestId))
       throw new Error('requestId must contain 8–100 letters, digits, underscores or hyphens.');
     return this.serial(projectId, async () => {
@@ -209,7 +221,14 @@ export class ProjectStore {
       await this.recover(p);
       const directory = await this.historyDirectory(p),
         journalPath = join(directory, 'transaction.json');
-      const signature = digest(JSON.stringify({ sourceRevision, changes, undo }));
+      const signature = digest(
+        JSON.stringify({
+          sourceRevision,
+          changes,
+          undo,
+          assets: assets.map(({ path, hash }) => ({ path, hash })),
+        }),
+      );
       const prior = await readJSON(join(directory, 'history', requestId + '.json'));
       if (prior) {
         if (prior.signature !== signature)
@@ -218,9 +237,42 @@ export class ProjectStore {
       }
       const state = await this.inspect(projectId);
       if (state.sourceRevision !== sourceRevision)
-        throw new Error(
+        throw failure(
+          'source_conflict',
           `Source conflict. Expected ${sourceRevision}; current ${state.sourceRevision}. Read the changed files before retrying.`,
+          {
+            field: 'sourceRevision',
+            current: { sourceRevision: state.sourceRevision },
+            action: 'story_inspect',
+          },
         );
+      // Migration adds immutable packages; undo retains the previous package and restores its lockfile.
+      for (const asset of assets) {
+        if (!/^dependencies\/visual-storytelling-core-[a-f0-9]{64}\.tgz$/.test(asset.path))
+          throw new Error('Migration assets must be content-addressed runtime archives.');
+        const bytes = await readFile(asset.source);
+        if (digest(bytes) !== asset.hash || !asset.path.includes(asset.hash))
+          throw new Error('Runtime archive integrity changed.');
+        const target = await projectFile(p.path, asset.path, { writable: true });
+        await mkdir(dirname(target), { recursive: true });
+        try {
+          await copyFile(asset.source, target, constants.COPYFILE_EXCL);
+        } catch (error) {
+          if (error.code !== 'EEXIST' || digest(await readFile(target)) !== asset.hash) throw error;
+        }
+        state.files[asset.path] = asset.hash;
+      }
+      if (assets.length) {
+        const current = await projectFiles(p.path);
+        if (
+          Object.keys(current.files).length !== Object.keys(state.files).length ||
+          Object.entries(current.files).some(([name, hash]) => state.files[name] !== hash)
+        )
+          throw failure('source_conflict', 'Source changed while preparing the runtime update.', {
+            action: 'story_inspect',
+          });
+        state.sourceRevision = current.revision;
+      }
       const cursor = (await readJSON(join(directory, 'history.json')))?.cursor ?? null;
       if (!validCursor(cursor))
         throw new Error('Invalid authoring history cursor. Resolve .vstory/history.json first.');
@@ -234,8 +286,10 @@ export class ProjectStore {
           const current = state.files[entry.path] ?? null,
             expected = entry.after === null ? null : digest(entry.after);
           if (current !== expected)
-            throw new Error(
+            throw failure(
+              'undo_conflict',
               `Undo would replace an external change in ${entry.path}. Read it first.`,
+              { field: entry.path, action: 'story_inspect' },
             );
         }
       }

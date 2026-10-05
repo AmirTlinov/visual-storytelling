@@ -166,10 +166,10 @@ function mount(svg: SVGSVGElement, { onInteract = () => {} } = {}) {
         ![state.pose.s, state.pose.x, state.pose.y].every(Number.isFinite) ||
         state.pose.s <= 0
       )
-        return;
+        return false;
       if (state.following) {
         reset();
-        return;
+        return true;
       }
       following = false;
       camera.cancel();
@@ -181,6 +181,7 @@ function mount(svg: SVGSVGElement, { onInteract = () => {} } = {}) {
         x: size.w / 2 - ((old?.w ?? size.w) / 2 - state.pose.x) * ratio,
         y: size.h / 2 - ((old?.h ?? size.h) / 2 - state.pose.y) * ratio,
       });
+      return true;
     },
     dispose() {
       observer.disconnect();

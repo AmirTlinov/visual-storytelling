@@ -5,6 +5,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { narrationSource } from './story-document.mjs';
 import { parse } from 'parse5';
+import { systemNarration, voiceDigest } from './voice/macos.mjs';
 
 function editAudioTags(html, edit) {
   const edits = [];
@@ -60,21 +61,31 @@ export async function silenceSceneCopy(directory) {
 }
 
 /** The same cached synthesis/alignment route for audio, scaffolding and delivery. */
-export async function buildNarration(directory, { signal } = {}) {
+export async function buildNarration(directory, { signal, progress, cache } = {}) {
   signal?.throwIfAborted();
   const source = await narrationSource(directory);
   if (!source) throw new Error('Provide story.json or narration.json for speech');
-  await new Promise((resolve, reject) => {
-    const child = spawn(
-      fileURLToPath(new URL('sketch-audio', import.meta.url)),
-      ['build', source.file, '--source-directory', source.directory, '--out', directory],
-      { signal, stdio: 'inherit' },
-    );
-    child.on('error', reject);
-    child.on('close', (code) =>
-      code === 0 ? resolve() : reject(new Error(`Narration build failed (exit ${code})`)),
-    );
-  });
+  const settings = await readFile(join(directory, 'voice.json'), 'utf8').then(
+    JSON.parse,
+    (error) => {
+      if (error.code !== 'ENOENT') throw error;
+    },
+  );
+  let result;
+  if (settings?.provider === 'macos')
+    result = await systemNarration(directory, source.file, settings, { signal, progress, cache });
+  else
+    await new Promise((resolve, reject) => {
+      const child = spawn(
+        fileURLToPath(new URL('sketch-audio', import.meta.url)),
+        ['build', source.file, '--source-directory', source.directory, '--out', directory],
+        { signal, stdio: 'inherit' },
+      );
+      child.on('error', reject);
+      child.on('close', (code) =>
+        code === 0 ? resolve() : reject(new Error(`Narration build failed (exit ${code})`)),
+      );
+    });
   for (const name of await readdir(directory)) {
     signal?.throwIfAborted();
     if (!name.endsWith('.html')) continue;
@@ -83,6 +94,7 @@ export async function buildNarration(directory, { signal } = {}) {
     const audible = setNarrationMode(html, false);
     if (audible !== html) await writeFile(file, audible);
   }
+  return result;
 }
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -133,6 +145,17 @@ export async function checkNarration(html, directory, { signal } = {}) {
       matched = true;
       if (!receipt.source_sha256)
         throw new Error('Generated narration has no source receipt. Run visual-story audio.');
+      if (receipt.digest_format === 'canonical-json-v1') {
+        if (
+          receipt.source_sha256 !== voiceDigest(JSON.parse(await readFile(script.file, 'utf8'))) ||
+          voiceDigest(receipt.voice_settings) !==
+            voiceDigest(JSON.parse(await readFile(join(directory, 'voice.json'), 'utf8')))
+        )
+          throw new Error(
+            'Narration or voice changed. Prepare the current narration before building.',
+          );
+        break;
+      }
       try {
         await promisify(execFile)(
           'python3',

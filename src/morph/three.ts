@@ -16,7 +16,7 @@ import { mathPlan } from './math.js';
 import { mathNumber } from './numbers.js';
 import { cellLayout, validateCellColumns } from './layout.js';
 import { contentViewport } from '../layout/content.js';
-import type { MathOperation, MathMorphPlan } from './types.js';
+import type { MathOperation, MathMorphPlan, MathPart } from './types.js';
 import {
   morphTiming,
   mathMotionFrame,
@@ -30,6 +30,8 @@ function mount(
   view: ReturnType<typeof Viewport3D.mount>,
   operation: MathOperation | MathMorphPlan,
   options: {
+    /** Stable namespace when several mathematical operations share a viewport. */
+    id?: string;
     pigment?: string;
     /** Embedded operations keep their host's authored size; standalone content fits its rows. */
     layout?: 'scene' | 'content';
@@ -61,6 +63,108 @@ function mount(
     progress,
     frame: currentFrame,
   });
+  const id = options.id ?? 'math-morph';
+  const originIds = new Map<string, string>();
+  const parts = new Map<
+    string,
+    { object: Object3D; part: MathPart; visible: boolean; dispose(): void }
+  >();
+  const rootMeaning = view.describe(
+    object,
+    id,
+    {
+      label: 'Математическое преобразование',
+      value: () => currentFrame?.result,
+      source: { file: 'src/morph/three.ts' },
+      inputs: () => [...new Set(originIds.values())],
+      provenance: () =>
+        currentFrame && {
+          formula: currentFrame.formula,
+          stage: currentFrame.stage,
+          phase: currentFrame.phase,
+          result: currentFrame.result,
+          sources: currentFrame.sources.map((part) => ({
+            id: part.id && `${id}:${part.id}`,
+            value: part.value,
+            origins: part.origins,
+          })),
+          targets: currentFrame.targets.map((part) => ({
+            id: part.id && `${id}:${part.id}`,
+            value: part.value,
+            origins: part.origins,
+          })),
+        },
+    },
+    { bounds: () => bounds.clone().applyMatrix4(object.matrixWorld) },
+  );
+  function clearParts() {
+    for (const part of parts.values()) {
+      part.dispose();
+      part.object.removeFromParent();
+    }
+    parts.clear();
+    originIds.clear();
+  }
+  function describeParts(frame: NonNullable<typeof currentFrame>) {
+    for (const record of parts.values()) record.visible = false;
+    const visible = new Set(
+      (frame.morph < 0.5 ? frame.sources : frame.targets).map((part) => part.id),
+    );
+    for (const part of [...frame.sources, ...frame.targets]) {
+      if (!part.id) continue;
+      const key = `${id}:${part.id}`;
+      if (!parts.has(key)) {
+        const anchor = new Object3D();
+        object.add(anchor);
+        const record = { object: anchor, part, visible: false, dispose: () => {} };
+        parts.set(key, record);
+        for (const origin of part.origins ?? []) {
+          const originKey = `${origin.operand}:${origin.index}`;
+          if (!originIds.has(originKey) && part.origins?.length === 1)
+            originIds.set(originKey, key);
+        }
+        record.dispose = view.describe(
+          anchor,
+          key,
+          {
+            get label() {
+              return `Величина ${mathNumber(record.part.value)}`;
+            },
+            value: () => record.part.value,
+            source: { file: 'src/morph/three.ts' },
+            inputs: () => [
+              ...new Set(
+                (record.part.origins ?? []).flatMap((origin) => {
+                  const source = originIds.get(`${origin.operand}:${origin.index}`);
+                  return source && source !== key ? [source] : [];
+                }),
+              ),
+            ],
+            provenance: () => ({
+              origins: record.part.origins ?? [],
+              formula: currentFrame?.formula,
+              stage: currentFrame?.stage,
+            }),
+          },
+          {
+            visible: () => record.visible,
+            bounds: () => {
+              const part = record.part,
+                scale = part.scale ?? [1, 1, 1];
+              const size = new Vector3(...part.size).multiply(new Vector3(...scale));
+              return new Box3()
+                .setFromCenterAndSize(new Vector3(...part.position), size)
+                .applyMatrix4(object.matrixWorld);
+            },
+          },
+        );
+      }
+      const record = parts.get(key)!;
+      record.part = part;
+      record.visible = visible.has(part.id);
+      record.object.position.set(...part.position);
+    }
+  }
   const notes = new Map<string, { anchor: Object3D; label: ReturnType<typeof view.label> }>();
   const ruler = new LineSegments(
     new BufferGeometry(),
@@ -92,6 +196,7 @@ function mount(
     if (disposed) throw new Error('Math morph has been disposed');
     const prepared = mathPlan(next); // Validate before replacing the visible operation.
     clear();
+    clearParts();
     plan = prepared;
     configured = next;
     layoutWidth = 0;
@@ -127,6 +232,7 @@ function mount(
     lastTime = input;
     lastCues = cues;
     currentFrame = frame;
+    describeParts(frame);
     progress = p;
     const [min, max] = arrangement?.bounds ?? quantityBounds(plan, frame);
     bounds.set(new Vector3(...min), new Vector3(...max));
@@ -220,6 +326,8 @@ function mount(
     resizeObserver.disconnect();
     viewport?.dispose();
     clear();
+    clearParts();
+    rootMeaning();
     volume.dispose();
     formula.remove();
     dimensionLabels.forEach((l) => l.remove());

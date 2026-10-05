@@ -1,4 +1,5 @@
 import { Box3, Vector3, type Camera, type Object3D, type Mesh } from 'three';
+import { subjectOf } from './semantics.js';
 
 type InspectableCanvas = HTMLCanvasElement & { __visualReview?: () => unknown };
 
@@ -16,17 +17,20 @@ export function attachInspection(
     const identify = (node: Object3D): string => {
       let id = ids.get(node);
       if (!id) {
+        const subject = subjectOf(node);
         id =
-          node === scene
-            ? '3d:scene'
-            : `${node.parent ? identify(node.parent) : '3d'}/${node.name || node.type}:${node.parent?.children.indexOf(node) ?? 0}`;
+          node === scene ? '3d:scene' : subject?.object === node ? subject.id : `3d:${node.uuid}`;
         ids.set(node, id);
       }
       return id;
     };
     const objects: unknown[] = [];
     scene.traverse((node) => {
-      if (objects.length >= 400 || (!(node as Mesh).isMesh && !node.userData.visualReview)) return;
+      if (
+        objects.length >= 400 ||
+        (!(node as Mesh).isMesh && !node.userData.visualReview && subjectOf(node)?.object !== node)
+      )
+        return;
       const box = new Box3().setFromObject(node);
       if (box.isEmpty()) return;
       const points = [];
@@ -48,13 +52,16 @@ export function attachInspection(
         typeof node.userData.visualReview === 'function'
           ? node.userData.visualReview()
           : node.userData.visualReview;
+      const subject = subjectOf(node);
       objects.push({
         id: identify(node),
+        subjectId: subject?.id,
+        identity: subject?.object === node ? 'authored' : 'render-local',
         uuid: node.uuid,
         ancestors,
         parent: node.parent ? identify(node.parent) : undefined,
-        text: details?.text,
-        source: details?.source,
+        text: subject?.meaning.label ?? details?.text,
+        source: subject?.meaning.source ?? details?.source,
         data: details,
         x: viewport.x + ((left + 1) * viewport.width) / 2,
         y: viewport.y + ((1 - top) * viewport.height) / 2,

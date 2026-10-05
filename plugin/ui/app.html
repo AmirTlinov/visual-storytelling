@@ -11,6 +11,8 @@
         <span id="title">Visual Storytelling</span> ▾
       </button>
       <div>
+        <button id="back" hidden>Вернуться к уроку</button>
+        <button id="voice" hidden>Голос</button>
         <button id="update" hidden>Показать правку</button
         ><button id="release" hidden>Выпустить</button
         ><button id="expand" hidden>Развернуть</button>
@@ -20,11 +22,35 @@
       <button id="library-close">Закрыть библиотеку</button>
       <div id="library-content"></div>
     </section>
+    <section id="preferences" hidden aria-label="Настройки">
+      <button id="preferences-close">Закрыть настройки</button>
+      <form>
+        <label>Новые проекты <input name="projectsDirectory" required /></label>
+        <label>Язык голоса <input name="language" required placeholder="ru-RU" /></label>
+        <label
+          >Кэш подготовки, МБ
+          <input name="cacheLimitMB" type="number" min="256" max="32768" required
+        /></label>
+        <p>Исходники, выпуски и история правок сохраняются в папках проектов.</p>
+        <button type="submit">Сохранить</button>
+      </form>
+    </section>
     <div id="release-options" hidden role="group" aria-label="Формат выпуска">
       <button data-format="html">Интерактив · HTML</button
       ><button data-format="mp4">Видео · MP4</button
       ><button data-format="source">Редактируемый проект</button>
     </div>
+    <section id="voice-options" hidden aria-label="Озвучка">
+      <form id="voice-form">
+        <label
+          >Голос рассказа
+          <select id="voice-choice"></select
+        ></label>
+        <p id="voice-status"></p>
+        <button id="voice-apply" type="submit">Применить</button>
+        <button id="voice-close" type="button">Закрыть</button>
+      </form>
+    </section>
     <aside id="job" hidden>
       <span id="job-text" role="status"></span><button id="cancel">Отменить</button>
     </aside>
@@ -36,8 +62,13 @@
         allow="autoplay"
       ></iframe>
     </main>
+    <p id="notice" role="status" hidden></p>
     <p id="error" role="alert" hidden></p>
+    <button id="retry" hidden>Продолжить подготовку</button>
     <p id="artifacts" hidden></p>
-    <footer><span id="connection" role="status">Подключение…</span></footer>
+    <footer>
+      <span id="connection" role="status">Подключение…</span
+      ><button id="settings">Настройки</button>
+    </footer>
   </body>
 </html>

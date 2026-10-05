@@ -17,9 +17,16 @@ export function presentSession(value, detail = 'state') {
     moreObjects: state.objects?.length > 20 ? state.objects.length - 20 : undefined,
     experimentHistory: state.experimentHistory,
     capabilities: state.capabilities,
+    compatibility: state.compatibility,
+    restoreNotices: state.restoreNotices,
     parameters: state.parameters,
     cue: state.review?.cues
-      .filter((cue) => cue.start <= state.time && state.time <= cue.end)
+      .filter(
+        (cue) =>
+          cue.start <= state.time &&
+          cue.end > cue.start &&
+          (state.time < cue.end || (state.time === state.duration && cue.end === state.duration)),
+      )
       .sort((a, b) => a.end - a.start - (b.end - b.start))[0],
   };
   if (detail === 'model') session.state.snapshot = state.snapshot;
@@ -30,8 +37,14 @@ export function presentSession(value, detail = 'state') {
 }
 export function toolResult(value) {
   const state = value.state;
+  const playback =
+    state?.playing === true
+      ? 'Playing'
+      : state?.playing === false
+        ? 'Paused'
+        : 'Playback state unavailable';
   const text = state
-    ? `${value.title}. ${state.playing ? 'Playing' : 'Paused'} at ${state.time.toFixed(2)} / ${state.duration.toFixed(2)} s; ${state.mode}. Session ${value.sessionId}.`
+    ? `${value.title}. ${playback}; position ${state.time.toFixed(2)} / ${state.duration.toFixed(2)} s; ${state.mode}. Session ${value.sessionId}.`
     : `${value.title ?? 'Visual Storytelling'}. Session ${value.sessionId}.`;
   return { content: [{ type: 'text', text }], structuredContent: value };
 }

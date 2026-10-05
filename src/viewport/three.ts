@@ -1,6 +1,7 @@
 import type { Material, Texture, Color } from 'three';
 import { pigments } from '../ink/palette.js';
 import { attachInspection } from './inspection.js';
+import { semanticObjects3D } from './semantics.js';
 type Palette = Record<string, Color>;
 type ColorMaterial = Material & { color: Color };
 /** A derived pigment is resolved on each invalidated frame and on theme changes. */
@@ -62,6 +63,7 @@ function mount(
   const abort = new AbortController(),
     listen = { signal: abort.signal };
   const labels = projectedLabels(stage, camera, scene, ink, release, invalidate, labelInsets);
+  const subjects = semanticObjects3D(stage, canvas, scene, camera, invalidate);
   const materials = new Map<ColorMaterial, MaterialInk>(),
     palette: Palette = {};
   const cleanups = new Set<() => void>();
@@ -85,6 +87,7 @@ function mount(
     scene.updateMatrixWorld(true);
     camera.updateMatrixWorld(true);
     labels.render();
+    subjects.render();
     renderer.render(scene, camera);
     frameSequence++;
     renderedAt = performance.now();
@@ -286,6 +289,10 @@ function mount(
   resize();
   theme();
   return {
+    describe: subjects.describe,
+    focus(ids: readonly string[]) {
+      shot({ target: subjects.bounds(ids), padding: 36 });
+    },
     scene,
     camera,
     controls,
@@ -306,6 +313,7 @@ function mount(
         position: camera.position.toArray(),
         target: controls.target.toArray(),
         aspect: camera.aspect,
+        subjects: subjects.ids(),
       };
     },
     restore(value: unknown) {
@@ -315,6 +323,7 @@ function mount(
         position?: number[];
         target?: number[];
         aspect?: number;
+        subjects?: string[];
       };
       if (
         state?.kind !== 'three' ||
@@ -325,10 +334,12 @@ function mount(
         state.target.length !== 3 ||
         ![...state.position, ...state.target].every(Number.isFinite)
       )
-        return;
+        return false;
+      if (state.subjects?.length && !state.subjects.some((id) => subjects.ids().includes(id)))
+        return false;
       if (state.following) {
         reset();
-        return;
+        return true;
       }
       following = false;
       camera.position.fromArray(state.position);
@@ -343,6 +354,7 @@ function mount(
       }
       controls.update();
       invalidate();
+      return true;
     },
     setObject(next: ThreeKit.Object3D, { fitView = true } = {}) {
       if (object === next) return;
@@ -352,6 +364,7 @@ function mount(
       for (let node = object; node; node = node.parent ?? undefined)
         if (node === next) retained = true;
       if (object && !retained) {
+        subjects.remove(object);
         labels.dispose(object);
         for (const remove of [...removals]) remove(object);
         object.removeFromParent();
@@ -419,6 +432,7 @@ function mount(
       sizeObserver.disconnect();
       themeObserver.disconnect();
       labels.dispose();
+      subjects.dispose();
       release(scene);
       materials.clear();
       detachInspection();

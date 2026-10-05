@@ -5,21 +5,22 @@ import {
   registerAppTool,
   RESOURCE_MIME_TYPE,
 } from '@modelcontextprotocol/ext-apps/server';
-import { OpenAIExtensions } from '@openai/mcp-extensions/server';
+import { OpenAIExtensions, OpenAIFileEntrypointInputSchema } from '@openai/mcp-extensions/server';
 import { z } from 'zod';
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { connectRuntime } from '../runtime/client.mjs';
+import { runtimeClient } from '../runtime/client.mjs';
 import { command, sessionId, read, changeView, viewReport, acknowledgement } from './schema.mjs';
 import { presentSession, toolResult } from './presentation.mjs';
 import { authoringTools } from './authoring-tools.mjs';
 import manifest from '../../plugin.json' with { type: 'json' };
+import { errorData } from '../errors.mjs';
 
 const directory = dirname(process.argv[1]);
 process.env.PATH = join(directory, '../../runtime/bin') + ':' + process.env.PATH;
 const html = await readFile(join(directory, 'app.html'), 'utf8');
-const runtime = await connectRuntime(directory);
+const runtime = runtimeClient(directory);
 const request = (sessionId, request) => runtime.call('request', { sessionId, request });
 const server = new McpServer({
   name: 'visual-storytelling',
@@ -36,7 +37,11 @@ const safely = (fn) => async (args) => {
   try {
     return await fn(args);
   } catch (error) {
-    return { isError: true, content: [{ type: 'text', text: error.message }] };
+    return {
+      isError: true,
+      content: [{ type: 'text', text: error.message }],
+      structuredContent: { error: errorData(error) },
+    };
   }
 };
 registerAppResource(server, 'Визуальное объяснение', uri, {}, async () => ({
@@ -71,14 +76,45 @@ registerAppTool(
       projectId: z.string().uuid().optional(),
       path: z.string().optional(),
       example: z.string().optional(),
+      file: OpenAIFileEntrypointInputSchema.shape.file.optional(),
     },
     annotations: changeView,
     _meta: {
       ui: { resourceUri: uri, visibility: ['model', 'app'] },
-      'openai/ui': { entrypoints: [{ type: 'global' }, { type: 'thread' }] },
+      'openai/ui': {
+        entrypoints: [
+          { type: 'global' },
+          { type: 'thread' },
+          { type: 'file', extensions: ['.vstory'] },
+        ],
+      },
     },
   },
-  safely(async (args) => toolResult(presentSession(await runtime.call('open', args)))),
+  safely(async (args) =>
+    args.file ? { content: [] } : toolResult(presentSession(await runtime.call('open', args))),
+  ),
+);
+
+server.registerTool(
+  'story_navigate',
+  {
+    description:
+      'Visit an additional explanation in the existing panel, preserving a return point. Back returns to the paused lesson. Use story_open only for a new card or to explicitly reuse a session.',
+    inputSchema: {
+      sessionId,
+      back: z.boolean().optional(),
+      target: z
+        .object({
+          sessionId: sessionId.optional(),
+          projectId: z.string().uuid().optional(),
+          path: z.string().optional(),
+          example: z.string().optional(),
+        })
+        .optional(),
+    },
+    annotations: changeView,
+  },
+  safely(async (args) => toolResult(presentSession(await runtime.call('navigate', args)))),
 );
 
 server.registerTool(
@@ -107,7 +143,7 @@ server.registerTool(
   'story_find',
   {
     description:
-      'Find moments by words in the narration, action or stable cue ID. Returns matching semantic cues from the live scene.',
+      'Find live cues, chapters or semantic objects by narration, action, title, label or ID. Ranked results identify their type. Use cue control for cues, seek for chapter start, select/focus for objects.',
     inputSchema: { sessionId, query: z.string().min(1).max(500) },
     annotations: read,
   },
@@ -119,11 +155,11 @@ server.registerTool(
   'story_control',
   {
     description:
-      'Control the existing live scene through its SceneHandle. Supply the inspected buildRevision and stateRevision, plus a unique requestId. Retries of the same requestId reuse the result. Acknowledgement means the renderer completed two animation frames, not a screenshot or transition completion.',
+      'Control the existing live scene through its SceneHandle. Supply the inspected buildRevision and stateRevision, plus a unique requestId. Pause alone needs no prior inspection. Retries reuse the result. Acknowledgement means two renderer frames, not a screenshot or transition completion.',
     inputSchema: {
       sessionId,
-      buildRevision: z.string(),
-      stateRevision: z.number().int().nonnegative(),
+      buildRevision: z.string().optional(),
+      stateRevision: z.number().int().nonnegative().optional(),
       requestId: z.string().min(8).max(100),
       commands: z.array(command).min(1).max(32),
     },
@@ -143,7 +179,16 @@ registerAppTool(
       sessionId,
       renderer: z.string().uuid(),
       generation: z.number().int().optional(),
-      action: z.enum(['attach', 'exchange', 'detach', 'candidate', 'replace']),
+      action: z.enum(['attach', 'exchange', 'detach', 'candidate', 'replace', 'focus', 'widget']),
+      widget: z
+        .object({
+          id: z.string().min(1).max(120),
+          snapshot: z.object({
+            modelContent: z.unknown().optional(),
+            privateContent: z.unknown().optional(),
+          }),
+        })
+        .optional(),
       buildRevision: z.string().optional(),
       report: viewReport.optional(),
       acknowledgements: z.array(acknowledgement).max(32).optional(),

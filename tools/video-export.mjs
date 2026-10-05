@@ -85,6 +85,10 @@ export async function exportVideo({
     { once: true },
   );
   const children = new Set();
+  const videoEncoding =
+    process.env.VISUAL_STORY_VIDEO_ENCODER === 'h264_videotoolbox'
+      ? ['-c:v', 'h264_videotoolbox', '-q:v', '75', '-allow_sw', '1', '-profile:v', 'high']
+      : ['-c:v', 'libx264', '-threads', '2', '-preset', 'medium', '-crf', '18'];
   const open = async () => {
     abort.signal.throwIfAborted();
     const render = await renderer(view);
@@ -108,7 +112,7 @@ export async function exportVideo({
     const png = await first.png();
     const even = (value) => Math.round(value / 2) * 2;
     const w = even(view.width ?? 960),
-      h = even(height ?? w * png.readUInt32BE(20) / png.readUInt32BE(16));
+      h = even(height ?? (w * png.readUInt32BE(20)) / png.readUInt32BE(16));
     output = resolve(output);
     await mkdir(dirname(output), { recursive: true });
     temporary = await mkdtemp(join(dirname(output), '.visual-story-video-'));
@@ -147,14 +151,7 @@ export async function exportVideo({
             '-an',
             '-vf',
             `scale=${w}:${h}:force_original_aspect_ratio=decrease:eval=frame,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=${view.theme === 'dark' ? 'black' : 'white'}:eval=frame,setsar=1`,
-            '-c:v',
-            'libx264',
-            '-threads',
-            '2',
-            '-preset',
-            'medium',
-            '-crf',
-            '18',
+            ...videoEncoding,
             '-pix_fmt',
             'yuv420p',
             chunk.file,

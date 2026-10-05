@@ -30,6 +30,8 @@ export const viewReport = z.object({
   checkpoint: z.object({
     time: z.number().finite().nonnegative(),
     cue: id.optional(),
+    chapter: id.optional(),
+    chapters: z.array(id).max(1000).optional(),
     progress: z.number().min(0).max(1),
     mode: z.enum(['story', 'explore']),
     muted: z.boolean().optional(),

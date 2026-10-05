@@ -6,9 +6,12 @@ import { createHash } from 'node:crypto';
 import { buildScene } from '../tools/build-pages.mjs';
 import { packDirectory } from '../tools/standalone.mjs';
 import { packagePlugin, shippedExamples } from './package.mjs';
+import { packageInfo } from '../tools/build-info.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url)),
   out = join(root, 'plugin/dist');
 await mkdir(out, { recursive: true });
+if ((await packageInfo(root)).status !== 'current')
+  throw new Error('Build the core before packaging the plugin: npm run build.');
 const catalog = JSON.parse(await readFile(join(root, 'examples/catalog.json'), 'utf8'));
 await writeFile(
   join(out, 'catalog.json'),
@@ -46,7 +49,19 @@ const app = await build({
       name: 'frame-source',
       setup(build) {
         build.onLoad({ filter: /scene-frame\.mjs$/ }, async (args) => ({
-          contents: await readFile(args.path, 'utf8'),
+          contents: (
+            await import('esbuild').then(({ build }) =>
+              build({
+                entryPoints: [args.path],
+                bundle: true,
+                platform: 'browser',
+                format: 'iife',
+                target: 'es2022',
+                write: false,
+                minify: true,
+              }),
+            )
+          ).outputFiles[0].text,
           loader: 'text',
         }));
       },

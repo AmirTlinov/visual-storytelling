@@ -8,6 +8,11 @@ import { readJSON, writeJSON } from './storage.mjs';
 import { ProjectStore } from '../projects.mjs';
 import { JobRunner } from '../jobs.mjs';
 import { ProjectWatch } from '../project-watch.mjs';
+import { Preferences } from '../preferences.mjs';
+import { environmentStatus } from '../environment.mjs';
+import { macosVoice } from '../../tools/voice/macos.mjs';
+import { collectCache } from '../cache.mjs';
+import { errorData } from '../errors.mjs';
 
 const [socketPath, data] = process.argv.slice(2),
   directory = dirname(process.argv[1]);
@@ -20,6 +25,7 @@ const build = createHash('sha256')
 const example = JSON.parse(await readFile(join(directory, 'example.json'), 'utf8'));
 const sessions = new SessionDirectory();
 const projects = new ProjectStore(data);
+const preferences = new Preferences(data);
 await projects.start();
 const watched = new ProjectWatch(async (id) => {
   const project = await projects.inspect(id);
@@ -45,6 +51,15 @@ const watched = new ProjectWatch(async (id) => {
     await prepareProject(project);
 });
 const jobs = new JobRunner(data, join(directory, 'worker.mjs'), async (job, result) => {
+  if (result.migration) {
+    const project = await projects.edit({
+      projectId: job.projectId,
+      sourceRevision: job.sourceRevision,
+      requestId: job.id + '-migration',
+      ...result.migration,
+    });
+    return { project, job: await prepareProject(project, job.id + '-build') };
+  }
   if (result.buildRevision) {
     const current = await projects.inspect(job.projectId);
     if (result.sourceRevision !== current.sourceRevision) return { ...result, superseded: true };
@@ -61,6 +76,12 @@ const jobs = new JobRunner(data, join(directory, 'worker.mjs'), async (job, resu
       }
   }
   setTimeout(scheduleClose, 0);
+  await collectCache(data, {
+    limitMB: (await preferences.read()).cacheLimitMB,
+    projects: await projects.list(),
+    sessions: [...sessions.sessions.values()],
+    snapshotLeases: jobs.snapshotLeases(),
+  }).catch((error) => console.error('Cache: ' + error.message));
   return result;
 });
 await jobs.start();
@@ -73,6 +94,7 @@ let closing = false,
   shutdown,
   idleTimer,
   socketIdentity;
+let playbackClaim = Promise.resolve();
 
 function load(id) {
   if (closing) return Promise.reject(new Error('Runtime shutting down.'));
@@ -103,6 +125,8 @@ function load(id) {
       generation: saved.generation,
       stateRevision: saved.stateRevision,
       observedAt: saved.observedAt,
+      returnTo: saved.returnTo ?? [],
+      widgetState: saved.widgetState ?? {},
     });
     sessions.sessions.set(id, session);
     return session;
@@ -123,6 +147,8 @@ function save(s) {
     generation: s.generation,
     stateRevision: s.stateRevision,
     observedAt: s.observedAt,
+    returnTo: s.returnTo ?? [],
+    widgetState: s.widgetState ?? {},
   };
   // A transient disk failure must not prevent every later checkpoint from being saved.
   const next = (saves.get(s.id) ?? Promise.resolve())
@@ -156,10 +182,8 @@ async function prepareProject(project, requestId = randomUUID()) {
     requestId,
   );
 }
-async function openProject(project, { prepare = true } = {}) {
+async function openProject(project, { prepare = true, session } = {}) {
   watched.open(project);
-  let session = [...sessions.sessions.values()].find((s) => s.build.projectId === project.id);
-  if (!session && project.lastSessionId) session = await load(project.lastSessionId);
   const prepared =
     project.buildRevision &&
     (await readJSON(join(data, 'builds', project.buildRevision + '.json')));
@@ -172,6 +196,13 @@ async function openProject(project, { prepare = true } = {}) {
         html: '',
       },
     );
+    if (project.lastSessionId) {
+      const previous = await load(project.lastSessionId).catch(() => null);
+      if (previous?.build.projectId === project.id) {
+        session.checkpoint = structuredClone(previous.checkpoint);
+        session.widgetState = structuredClone(previous.widgetState ?? {});
+      }
+    }
     // Persist the placeholder as well so interrupted creation can be reopened.
     if (!prepared)
       await writeJSON(join(data, 'builds', session.build.revision + '.json'), session.build);
@@ -200,6 +231,12 @@ const operations = {
     return { protocol, build, serverInstance: sessions.instance, pid: process.pid };
   },
   async open({ sessionId, projectId, path, example: exampleId }) {
+    if (sessionId) {
+      const session = await load(sessionId);
+      return session.build.projectId
+        ? openProject(await projects.inspect(session.build.projectId), { session })
+        : decorate(session);
+    }
     if (path && basename(path) === 'story.vstory') path = dirname(path);
     if (path || projectId)
       return openProject(path ? await projects.register(path) : await projects.inspect(projectId));
@@ -213,8 +250,7 @@ const operations = {
         throw new Error('This example has no prepared preview. Create a project from it.');
       await writeJSON(join(data, 'builds', prepared.revision + '.json'), prepared);
     }
-    const s = sessionId ? await load(sessionId) : sessions.open(prepared);
-    if (s.build.projectId) return openProject(await projects.inspect(s.build.projectId));
+    const s = sessions.open(prepared);
     await save(s);
     return decorate(s);
   },
@@ -231,13 +267,15 @@ const operations = {
         )
           throw new Error('requestId already belongs to another project creation.');
         return {
-          ...(await openProject(await projects.inspect(previous.projectId), { prepare: false })),
+          ...(await openProject(await projects.inspect(previous.projectId), {
+            prepare: false,
+            session: await load(previous.input.sessionId),
+          })),
           job: jobs.describe(previous),
         };
       }
       path ??= join(
-        data,
-        'projects',
+        (await preferences.read()).projectsDirectory,
         `${title.replace(/[^\p{L}\p{N}-]+/gu, '-').slice(0, 60)}-${randomUUID().slice(0, 8)}`,
       );
       const project = await projects.create(path, { title, example });
@@ -252,7 +290,14 @@ const operations = {
       await projects.remember({ ...projects.get(project.id), lastSessionId: session.id });
       const job = await jobs.enqueue(
         'create',
-        { data, projectPath: project.path, projectId: project.id, title, example },
+        {
+          data,
+          projectPath: project.path,
+          projectId: project.id,
+          title,
+          example,
+          sessionId: session.id,
+        },
         requestId,
       );
       return { ...decorate(session), project, job };
@@ -265,11 +310,126 @@ const operations = {
     return {
       projects: await projects.list(),
       examples: await readJSON(join(directory, 'catalog.json')),
+      environment: await environmentStatus(data),
     };
   },
-  async help({ query }) {
-    const root = resolve(directory, '../..');
-    const catalog = JSON.parse(await readFile(join(root, 'examples/catalog.json'), 'utf8'));
+  async preferences({ patch } = {}) {
+    return patch ? preferences.update(patch) : preferences.read();
+  },
+  async voice({ projectId, sourceRevision, requestId, enabled, voice, language }) {
+    const defaults = await preferences.read();
+    if (enabled === undefined) {
+      const status = await macosVoice.doctor();
+      const settings = projectId
+        ? await readJSON(join(projects.get(projectId).path, 'voice.json'))
+        : undefined;
+      const selectedLanguage = language ?? settings?.language ?? defaults.language;
+      const voices = status.voices.filter((v) => v.language === selectedLanguage);
+      return {
+        ...status,
+        ready: status.ready && voices.length > 0,
+        reason:
+          status.reason ??
+          (voices.length
+            ? undefined
+            : `На этом Mac нет голоса для ${selectedLanguage}. Выберите другой язык в настройках.`),
+        voices,
+        settings,
+      };
+    }
+    const settings = {
+      enabled,
+      provider: 'macos',
+      voice: voice ?? defaults.voice,
+      language: language ?? defaults.language,
+    };
+    if (enabled) await macosVoice.prepare(settings, {});
+    return operations.edit({
+      projectId,
+      sourceRevision,
+      requestId,
+      changes: [{ path: 'voice.json', content: JSON.stringify(settings, null, 2) + '\n' }],
+    });
+  },
+  async focus({ sessionId, renderer, generation, report }) {
+    const claim = playbackClaim
+      .catch(() => {})
+      .then(async () => {
+        const current = sessions.get(sessionId);
+        sessions.validate(current, renderer, generation);
+        await sessions.exchange({ sessionId, renderer, generation, report, wait: false });
+        if (!report || report.stateRevision !== current.stateRevision)
+          throw new Error('Playback intent was superseded by a newer action.');
+        await Promise.all(
+          [...sessions.sessions.values()]
+            .filter(
+              (other) =>
+                other.id !== sessionId && other.ready && other.renderer && !sessions.expired(other),
+            )
+            .map((other) => sessions.request(other.id, { op: 'park' })),
+        );
+        sessions.validate(sessions.get(sessionId), renderer, generation);
+        if (report.stateRevision !== current.stateRevision)
+          throw new Error('Playback intent was superseded by a newer action.');
+        return { granted: true };
+      });
+    playbackClaim = claim;
+    return claim;
+  },
+  async widget({ sessionId, renderer, generation, widget }) {
+    const session = sessions.get(sessionId);
+    sessions.validate(session, renderer, generation);
+    const state = { ...session.widgetState, [widget.id]: widget.snapshot };
+    if (JSON.stringify(state).length > 64000)
+      throw new Error(
+        'Scene persistence is limited to 64 KB. Store authored content in project files.',
+      );
+    session.widgetState = state;
+    await save(session);
+    return { saved: true };
+  },
+  async navigate({ sessionId, target, back = false }) {
+    const source = await load(sessionId);
+    if (source.navigation) return source.navigation;
+    if (source.navigating) return source.navigating;
+    source.navigating = (async () => {
+      if (source.renderer && source.ready) await sessions.request(sessionId, { op: 'park' });
+      await save(source);
+      let destination;
+      if (back) {
+        const id = source.returnTo?.at(-1);
+        if (!id) throw new Error('No earlier explanation to return to.');
+        destination = await operations.open({ sessionId: id });
+      } else {
+        destination = await operations.open(target ?? {});
+        const next = sessions.get(destination.sessionId);
+        next.returnTo = [...(source.returnTo ?? []), source.id].slice(-16);
+        await save(next);
+        destination = decorate(next);
+      }
+      if (destination.sessionId === sessionId) return destination;
+      source.navigation = destination;
+      source.wake?.();
+      return destination;
+    })();
+    try {
+      return await source.navigating;
+    } finally {
+      source.navigating = undefined;
+    }
+  },
+  async help({ query, projectId }) {
+    let root = resolve(directory, '../..');
+    if (projectId) {
+      const project = await projects.inspect(projectId);
+      const build =
+        project.buildRevision &&
+        (await readJSON(join(data, 'builds', project.buildRevision + '.json')));
+      if (!build?.snapshot)
+        throw new Error('Prepare this project before requesting its pinned API.');
+      root = join(build.snapshot, 'node_modules/@visual-storytelling/core');
+    }
+    const catalog = (await readJSON(join(root, 'examples/catalog.json'))) ?? {};
     const matches = Object.entries(catalog).filter(([id, e]) =>
       [id, e.title, e.summary].join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase()),
     );
@@ -279,7 +439,10 @@ const operations = {
           .slice(0, 12)
           .map(([id, e]) => ({ id, ...e, source: join(root, 'examples', id, e.source) })),
       };
-    const { describeAPI } = await import(pathToFileURL(join(root, 'tools/api.mjs')).href);
+    // The reader is trusted plugin code; declarations and examples come from the project version.
+    const { describeAPI } = await import(
+      pathToFileURL(join(directory, '../../tools/api.mjs')).href
+    );
     return describeAPI(root, query);
   },
   async edit(args) {
@@ -302,11 +465,24 @@ const operations = {
       requestId,
     );
   },
+  async migrate({ projectId, sourceRevision, requestId }) {
+    const project = await projects.inspect(projectId);
+    if (sourceRevision !== project.sourceRevision)
+      throw new Error('Project changed. Inspect its source before migrating.');
+    return jobs.enqueue(
+      'migrate',
+      { data, projectId, projectPath: project.path, sourceRevision },
+      requestId,
+    );
+  },
   async job({ jobId }) {
     return jobs.get(jobId);
   },
   async cancel({ jobId }) {
     return jobs.cancel(jobId);
+  },
+  async retry({ jobId, requestId }) {
+    return jobs.retry(jobId, requestId);
   },
   async candidate({ sessionId, renderer, generation }) {
     const session = sessions.get(sessionId);
@@ -316,6 +492,7 @@ const operations = {
       ...session.nextBuild,
       checkpoint: session.checkpoint,
       stateRevision: session.stateRevision,
+      widgetState: session.widgetState ?? {},
     };
   },
   async replace(args) {
@@ -333,6 +510,7 @@ const operations = {
     await save(s);
     return {
       ...attached,
+      widgetState: s.widgetState ?? {},
       jobs: jobs.list(s.build.projectId).filter((j) => j.projectId === s.build.projectId),
     };
   },
@@ -341,14 +519,16 @@ const operations = {
     if (params.report) await save(sessions.get(params.sessionId));
     return {
       ...result,
+      navigation: sessions.get(params.sessionId).navigation,
       jobs: jobs
         .list(sessions.get(params.sessionId).build.projectId)
         .filter((j) => j.projectId === sessions.get(params.sessionId).build.projectId),
     };
   },
   async detach(params) {
-    sessions.detach(params);
-    return { detached: true };
+    const detached = sessions.detach(params);
+    if (detached) delete sessions.get(params.sessionId).navigation;
+    return { detached };
   },
   async list() {
     return [...sessions.sessions.values()].map((s) => sessions.describe(s));
@@ -394,7 +574,8 @@ const server = createServer((socket) => {
           const result = await operations[request.method](request.params);
           if (!socket.destroyed) socket.write(JSON.stringify({ id, result }) + '\n');
         } catch (error) {
-          if (!socket.destroyed) socket.write(JSON.stringify({ id, error: error.message }) + '\n');
+          if (!socket.destroyed)
+            socket.write(JSON.stringify({ id, error: errorData(error) }) + '\n');
         }
       })();
       active.add(operation);

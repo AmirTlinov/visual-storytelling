@@ -1,21 +1,14 @@
-export interface WidgetSnapshot {
-  modelContent?: unknown;
-  privateContent?: unknown;
-}
-interface WidgetHost {
-  widgetState?: WidgetSnapshot;
-  setWidgetState?(snapshot: WidgetSnapshot): Promise<unknown> | void;
-}
+import { sceneHost, watchSceneHost, type WidgetSnapshot } from './adapter.js';
+export type { WidgetSnapshot } from './adapter.js';
 interface StoredContent {
   __visualStory: { origin: string; wrapped: true };
   value?: unknown;
 }
 /** Same envelope in a host widget and an offline page; subjects own schema validation. */
 export function widgetState(id: string, restore: (snapshot: WidgetSnapshot) => void) {
-  const host = () => (window as Window & { openai?: WidgetHost }).openai;
   const key = `visual-story:${id}`,
     abort = new AbortController(),
-    origin = crypto.randomUUID();
+    origin = crypto.randomUUID?.() ?? [...crypto.getRandomValues(new Uint32Array(4))].join('-');
   // Keep transport metadata outside the author's value, including primitive values.
   function envelope(snapshot?: WidgetSnapshot) {
     const content = snapshot?.privateContent as StoredContent | undefined;
@@ -33,28 +26,29 @@ export function widgetState(id: string, restore: (snapshot: WidgetSnapshot) => v
       : publicContent;
   }
   function read(): WidgetSnapshot | undefined {
-    if (host()) return unpack(host()!.widgetState);
+    if (sceneHost()?.widgetState) return unpack(sceneHost()!.widgetState!.read(id));
     try {
       return unpack(JSON.parse(localStorage.getItem(key) ?? 'null') ?? undefined);
     } catch {
       return undefined;
     }
   }
-  window.addEventListener(
-    'openai:set_globals',
-    (event) => {
-      const snapshot = (event as CustomEvent<{ globals?: { widgetState?: WidgetSnapshot } }>).detail
-        ?.globals?.widgetState;
-      if (snapshot && envelope(snapshot)?.__visualStory.origin !== origin)
-        restore(unpack(snapshot)!);
-    },
-    { signal: abort.signal },
-  );
+  const receive = (snapshot: WidgetSnapshot) => {
+    if (!abort.signal.aborted && envelope(snapshot)?.__visualStory.origin !== origin)
+      restore(unpack(snapshot)!);
+  };
+  let unsubscribe = sceneHost()?.widgetState?.subscribe?.(id, receive);
+  const unwatch = watchSceneHost(() => {
+    unsubscribe?.();
+    unsubscribe = sceneHost()?.widgetState?.subscribe?.(id, receive);
+    const saved = read();
+    if (saved !== undefined) receive(saved);
+  });
   return {
     read,
     save(snapshot: WidgetSnapshot) {
       if (abort.signal.aborted) return;
-      const bridge = host();
+      const bridge = sceneHost()?.widgetState;
       snapshot = {
         ...snapshot,
         privateContent: {
@@ -62,9 +56,9 @@ export function widgetState(id: string, restore: (snapshot: WidgetSnapshot) => v
           ...(Object.hasOwn(snapshot, 'privateContent') ? { value: snapshot.privateContent } : {}),
         },
       };
-      if (bridge?.setWidgetState) {
+      if (bridge) {
         try {
-          Promise.resolve(bridge.setWidgetState(snapshot)).catch(() => {});
+          Promise.resolve(bridge.save(id, snapshot)).catch(() => {});
         } catch {
           /* Host may be detaching. */
         }
@@ -78,6 +72,8 @@ export function widgetState(id: string, restore: (snapshot: WidgetSnapshot) => v
     },
     dispose() {
       abort.abort();
+      unsubscribe?.();
+      unwatch();
     },
   };
 }

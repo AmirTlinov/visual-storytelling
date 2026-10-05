@@ -71,29 +71,26 @@ window.galleryReady = (async () => {
     text.remove();
     controls.remove();
   });
-  Object.defineProperties(
-    root.scene,
-    Object.getOwnPropertyDescriptors({
-      view,
-      world,
-      model,
-      body,
-      duration: replay.duration,
-      get currentTime() {
-        return world.time;
-      },
-      get playing() {
-        return player.playing;
-      },
-      seek: replay.seek,
-      play: player.play,
-      pause: () => player.pause(false),
-      snapshot: () => ({
-        time: world.time,
-        ball: body.position,
-        phase: model.plan.sample(Math.max(0, Math.min(1, (world.time - 1) / 4))).phase,
-      }),
+  root.scene.extend({
+    view,
+    world,
+    model,
+    body,
+    duration: replay.duration,
+    get currentTime() {
+      return world.time;
+    },
+    get playing() {
+      return player.playing;
+    },
+    seek: replay.seek,
+    play: player.play,
+    pause: () => player.pause(false),
+    snapshot: () => ({
+      time: world.time,
+      ball: body.position,
+      phase: model.plan.sample(Math.max(0, Math.min(1, (world.time - 1) / 4))).phase,
     }),
-  );
+  });
   player.play();
 })();

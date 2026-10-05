@@ -7,6 +7,7 @@ import { buildOutput } from './build-output.mjs';
 import { sourceDigest, writeBuildInfo } from './build-info.mjs';
 import { embedRuntimeAssets } from './asset-urls.mjs';
 import { buildBuiltinCharacters } from './characters/build-builtin.mjs';
+import { buildSystemVoice } from './voice/build.mjs';
 export async function buildPackage() {
   const root = fileURLToPath(new URL('../', import.meta.url));
   const output = join(root, 'dist');
@@ -25,6 +26,7 @@ export async function buildPackage() {
     await cp(join(root, 'src/style.css'), join(staging, 'style.css'));
     await embedRuntimeAssets(staging);
     await buildAPI(root, staging);
+    await buildSystemVoice(staging);
     if ((await sourceDigest(root)) !== source)
       throw new Error(
         'Library sources changed during the build. Run the build again; the previous package is preserved.',
