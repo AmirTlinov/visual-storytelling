@@ -19,11 +19,16 @@ const symbols: Record<Arithmetic, string> = {
   power: '^',
 };
 const cellSize = 1.4;
+const maxTerms = 64;
+// A long operation uses a readable row and a small ray-marched field per step.
+const batchTerms = 4;
+// Vector addition displays its entire result instead of reducing to a scalar.
+const vectorTerms = 16;
 const term = (n: number) => (n < 0 ? `(${mathNumber(n)})` : mathNumber(n));
 function evaluate(operator: Arithmetic, values: readonly number[]) {
   if (!Object.hasOwn(symbols, operator)) throw new Error('Unknown arithmetic operation');
-  if (!values.length || values.length > 16 || values.some((n) => !Number.isFinite(n)))
-    throw new Error('A calculation needs 1 to 16 finite numbers');
+  if (!values.length || values.length > maxTerms || values.some((n) => !Number.isFinite(n)))
+    throw new Error(`A calculation needs 1 to ${maxTerms} finite numbers`);
   if ((operator === 'divide' || operator === 'power') && values.length !== 2)
     throw new Error('Division and powers need exactly two operands');
   if (operator === 'divide' && values[1] === 0) throw new Error('Division by zero is undefined');
@@ -117,6 +122,10 @@ function reduceCells(
   inputs: MathPart[],
   operator: Arithmetic,
   provenance: MathMorphFrame['notes'] = [],
+  layout?: {
+    start(columns?: number): MathPart[];
+    contact?(columns?: number): MorphPoint[];
+  },
 ): Stage {
   const result = evaluate(
     operator,
@@ -134,15 +143,17 @@ function reduceCells(
     sample(p, columns) {
       const approach = smooth(p / 0.4),
         morph = smooth((p - 0.4) / 0.5);
-      const starts =
-        columns === undefined
+      const starts = layout
+        ? layout.start(columns).map((part) => part.position)
+        : columns === undefined
           ? inputs.map((p) => p.position)
           : slots(
               inputs.length,
               columns,
               inputs.length > 1 ? Math.abs(inputs[1]!.position[0] - inputs[0]!.position[0]) : 3.4,
             );
-      const packed = slots(inputs.length, columns, cellSize, cellSize);
+      const packed =
+        layout?.contact?.(columns) ?? slots(inputs.length, columns, cellSize, cellSize);
       const sources = inputs.map((part, i) => ({
         ...part,
         position: [
@@ -204,6 +215,7 @@ function pairs(
   left: readonly number[],
   right: readonly number[],
   operator: 'add' | 'multiply',
+  offset = 0,
 ): Stage {
   const n = left.length,
     spacing = 3.4;
@@ -211,9 +223,9 @@ function pairs(
     const value = (operand ? right : left)[i]!;
     return cell(
       value,
-      `${operand ? 'right' : 'left'}:${i}`,
+      `${operand ? 'right' : 'left'}:${offset + i}`,
       [(i - (n - 1) / 2) * spacing, y, 0],
-      [{ operand, index: i, value }],
+      [{ operand, index: offset + i, value }],
     );
   };
   const starts = [
@@ -223,7 +235,7 @@ function pairs(
   const targets = left.map((a, i) =>
     cell(
       evaluate(operator, [a, right[i]!]),
-      `pair:${i}`,
+      `pair:${offset + i}`,
       [(i - (n - 1) / 2) * spacing, 0, 0],
       [starts[i]!.origins![0]!, starts[n + i]!.origins![0]!],
     ),
@@ -253,7 +265,7 @@ function pairs(
         phase: p < 0.4 ? 'approach' : p < 0.9 ? 'contact' : 'hold',
         notes: [
           ...left.map((a, i) => ({
-            id: `pair:${i}`,
+            id: `pair:${offset + i}`,
             position: [
               destinations[i]!.position[0],
               destinations[i]!.position[1] - 3,
@@ -264,12 +276,110 @@ function pairs(
             opacity: smooth((p - 0.34) / 0.24),
           })),
           ...left.map((_, i) =>
-            between(sources[i]!, sources[n + i]!, symbols[operator], `operator:${i}`),
+            between(sources[i]!, sources[n + i]!, symbols[operator], `operator:${offset + i}`),
           ),
         ],
       };
     },
   };
+}
+
+/** New inputs sit above the same carried result, so a batch boundary never teleports it. */
+function aboveResult(parts: MathPart[]) {
+  const lift = 4.5 - Math.min(...parts.map((part) => part.position[1]));
+  return parts.map((part) => ({
+    ...part,
+    position: [part.position[0], part.position[1] + lift, part.position[2]] as MorphPoint,
+  }));
+}
+
+function contactAboveResult(count: number, columns?: number): MorphPoint[] {
+  const positions = slots(count, columns, cellSize, cellSize);
+  const bottom = Math.min(...positions.map((p) => p[1]));
+  return [[0, 0, 0], ...positions.map(([x, y, z]): MorphPoint => [x, y - bottom + cellSize, z])];
+}
+
+function dotStages(left: readonly number[], right: readonly number[]): Stage[] {
+  const stages: Stage[] = [];
+  let carried: MathPart | undefined;
+  for (let offset = 0; offset < left.length; offset += batchTerms) {
+    const end = Math.min(left.length, offset + batchTerms);
+    const paired = pairs(left.slice(offset, end), right.slice(offset, end), 'multiply', offset);
+    const previous = carried;
+    const sample = (p: number, columns?: number) => {
+      const frame = paired.sample(p, columns);
+      // Each partial sum retains its own field while the next pairs make contact.
+      const lift =
+        4.5 - Math.min(...paired.sample(0, columns).sources.map((part) => part.position[1]));
+      const move = (part: MathPart): MathPart => ({
+        ...part,
+        material: `pair:${part.origins![0]!.index}`,
+        position: [part.position[0], part.position[1] + lift, part.position[2]],
+      });
+      const accumulator = previous ? [{ ...previous, material: 'accumulator' }] : [];
+      return {
+        ...frame,
+        sources: [...frame.sources.map(move), ...accumulator],
+        targets: [...frame.targets.map(move), ...accumulator],
+        notes: frame.notes?.map((note) => ({
+          ...note,
+          position: [note.position[0], note.position[1] + lift, note.position[2]] as MorphPoint,
+        })),
+        formula: `Умножаем пары ${offset + 1}–${end} из ${left.length}`,
+      };
+    };
+    stages.push({ bounds: sample(0).sources, sample });
+    const inputs = (columns?: number) => {
+      const targets = sample(1, columns).targets;
+      // Retain the original left-to-right accumulation order, including floating point rounding.
+      const ordered = previous ? [targets.at(-1)!, ...targets.slice(0, -1)] : targets;
+      return ordered.map(({ material: _, ...part }) => part);
+    };
+    const reduction = reduceCells(
+      inputs(),
+      'add',
+      sample(1).notes?.filter((note) => note.opacity > 0),
+      {
+        start: inputs,
+        contact: previous ? (columns) => contactAboveResult(end - offset, columns) : undefined,
+      },
+    );
+    stages.push(reduction);
+    carried = reduction.sample(1).targets[0]!;
+  }
+  return stages;
+}
+
+function calculationStages(values: readonly number[], operator: Arithmetic): Stage[] {
+  const stages: Stage[] = [];
+  let offset = 0,
+    carried: MathPart | undefined;
+  while (offset < values.length) {
+    const end = Math.min(values.length, offset + batchTerms - (carried ? 1 : 0));
+    const previous = carried,
+      index = offset;
+    const inputs = (columns?: number) => {
+      const locations = slots(end - index, columns, 3);
+      const fresh = aboveResult(
+        values
+          .slice(index, end)
+          .map((value, i) =>
+            cell(value, `input:${index + i}`, locations[i]!, [
+              { operand: 0, index: index + i, value },
+            ]),
+          ),
+      );
+      return previous ? [previous, ...fresh] : fresh;
+    };
+    const reduction = reduceCells(inputs(), operator, [], {
+      start: inputs,
+      contact: previous ? (columns) => contactAboveResult(end - index, columns) : undefined,
+    });
+    stages.push(reduction);
+    carried = reduction.sample(1).targets[0]!;
+    offset = end;
+  }
+  return stages;
 }
 
 export function arithmeticPlan(operation: CellOperation): MathMorphPlan {
@@ -309,36 +419,44 @@ export function arithmeticPlan(operation: CellOperation): MathMorphPlan {
   } else if (operation.kind === 'calculate') {
     const values = [...operation.values];
     result = evaluate(operation.operator, values);
-    stages.push(
-      reduceCells(
-        values.map((value, i) =>
-          cell(
-            value,
-            `input:${i}`,
-            [(i - (values.length - 1) / 2) * 3, 0, 0],
-            [{ operand: 0, index: i, value }],
+    if (values.length > batchTerms) stages.push(...calculationStages(values, operation.operator));
+    else
+      stages.push(
+        reduceCells(
+          values.map((value, i) =>
+            cell(
+              value,
+              `input:${i}`,
+              [(i - (values.length - 1) / 2) * 3, 0, 0],
+              [{ operand: 0, index: i, value }],
+            ),
           ),
+          operation.operator,
         ),
-        operation.operator,
-      ),
-    );
+      );
   } else {
     const left = [...operation.left],
       right = [...operation.right];
-    if (!left.length || left.length > 16 || right.length !== left.length)
-      throw new Error('Vector operations need equally sized rows of 1 to 16 numbers');
-    const paired = pairs(left, right, operation.kind === 'dot' ? 'multiply' : 'add');
-    stages.push(paired);
-    const products = paired.sample(1).targets;
-    if (operation.kind === 'dot') {
-      const sum = reduceCells(
-        products,
-        'add',
-        paired.sample(1).notes?.filter((note) => note.opacity > 0),
-      );
-      stages.push(sum);
-      result = sum.sample(1).targets[0]!.value;
-    } else result = products.map((p) => p.value);
+    const limit = operation.kind === 'dot' ? maxTerms : vectorTerms;
+    if (!left.length || left.length > limit || right.length !== left.length)
+      throw new Error(`Vector operations need equally sized rows of 1 to ${limit} numbers`);
+    if (operation.kind === 'dot' && left.length > batchTerms) {
+      stages.push(...dotStages(left, right));
+      result = stages.at(-1)!.sample(1).targets[0]!.value;
+    } else {
+      const paired = pairs(left, right, operation.kind === 'dot' ? 'multiply' : 'add');
+      stages.push(paired);
+      const products = paired.sample(1).targets;
+      if (operation.kind === 'dot') {
+        const sum = reduceCells(
+          products,
+          'add',
+          paired.sample(1).notes?.filter((note) => note.opacity > 0),
+        );
+        stages.push(sum);
+        result = sum.sample(1).targets[0]!.value;
+      } else result = products.map((p) => p.value);
+    }
   }
   const bounds = partBounds(stages.flatMap((s) => s.bounds));
   // Equations stay below their own column without shrinking or colliding with its cell.

@@ -99,6 +99,98 @@ test('replacing a 3D subject retains shared resources and their theme until fina
   }
 });
 
+test('transparent packed annotations neither displace visible labels nor enlarge their shot', async () => {
+  const bundle = await build({
+    stdin: {
+      contents:
+        "import { Viewport3D } from './src/viewport/three.ts'; import * as T from './src/viewport/engine.ts'; window.Kit = { Viewport3D, T };",
+      resolveDir: resolve('.'),
+    },
+    bundle: true,
+    write: false,
+    format: 'iife',
+    plugins: [assetURLs()],
+    define: { 'import.meta.url': 'document.baseURI' },
+  });
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent(
+      '<main class="ve-scene" style="position:relative;width:400px;height:300px;--ve-surface:white;--ve-ink:black"></main>',
+    );
+    await page.addStyleTag({ path: 'src/styles/scene-shell.css' });
+    await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    const initial = await page.evaluate(async () => {
+      const { Viewport3D, T } = Kit;
+      const view = Viewport3D.mount(document.querySelector('main'));
+      const cube = new T.Mesh(new T.BoxGeometry(), new T.MeshBasicMaterial());
+      view.setObject(cube);
+      const current = view.label('Текущий шаг', cube, { avoidOverlap: true, order: 1, size: 20 });
+      const sample = async (reduced = false) => {
+        view.shot({ target: cube, direction: [0, 0, 1], reduced });
+        await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+        return {
+          top: current.element.parentElement.getBoundingClientRect().top,
+          position: view.camera.position.toArray(),
+          target: view.controls.target.toArray(),
+        };
+      };
+      window.lab = { view, cube, current, sample, T };
+      return sample();
+    });
+    const transparent = await page.evaluate(async () => {
+      const { view, cube, T, sample } = lab;
+      const next = view.label('Следующий шаг', cube, { avoidOverlap: true, order: 0, size: 20 });
+      next.opacity(0);
+      const far = new T.Object3D();
+      far.position.y = 100;
+      cube.add(far);
+      const future = view.label('Далёкий будущий шаг', far, { avoidOverlap: true, size: 20 });
+      future.opacity(0);
+      Object.assign(lab, { next, future });
+      const shot = await sample();
+      return { shot, hidden: [next.element.hidden, future.element.hidden] };
+    });
+    assert.deepEqual(transparent.shot, initial, 'transparent labels must not reserve screen space');
+    assert.deepEqual(transparent.hidden, [true, true]);
+
+    const frames = new Map();
+    for (const alpha of [0.01, 0.5, 1, 0, 1, 0.5, 0.01, 0]) {
+      const frame = await page.evaluate(async (alpha) => {
+        lab.next.opacity(alpha);
+        const shot = await lab.sample();
+        const style = getComputedStyle(lab.next.element.parentElement);
+        return {
+          shot,
+          hidden: lab.next.element.hidden,
+          alpha: style.display === 'none' ? 0 : Number(style.opacity),
+        };
+      }, alpha);
+      assert.equal(frame.hidden, alpha === 0);
+      if (alpha > 0) {
+        assert.equal(frame.alpha, alpha, 'fractional fades retain their authored opacity');
+        assert(frame.shot.top > initial.top + 10, 'visible labels still avoid each other');
+      } else assert.deepEqual(frame.shot, initial);
+      if (frames.has(alpha)) assert.deepEqual(frame, frames.get(alpha), 'rewind is history-free');
+      frames.set(alpha, frame);
+    }
+    assert.equal(frames.get(0.01).shot.top, frames.get(1).shot.top);
+    const refitted = await page.evaluate(async () => {
+      lab.future.opacity(1);
+      const visible = await lab.sample();
+      lab.future.opacity(0);
+      return { visible, hidden: await lab.sample(), reduced: await lab.sample(true) };
+    });
+    assert(refitted.visible.position[2] > initial.position[2] * 10);
+    assert.deepEqual(refitted.hidden, initial);
+    assert.deepEqual(refitted.reduced, initial);
+    await page.evaluate(() => lab.view.dispose());
+    assert.equal(await page.locator('.ve-annotation').count(), 0);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('3D annotations stay readable, attached and non-intercepting during orbit and pan', async () => {
   const source = await mkdtemp(join(tmpdir(), 'story-annotations-'));
   let server, browser;

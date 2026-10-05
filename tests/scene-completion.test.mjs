@@ -132,6 +132,46 @@ test('3D hit testing, labels, keyboard and provenance share stable semantic obje
         !morph.some((o) => o.id === 'amount'),
         'removing geometry removes its semantic lifetime',
       );
+      const batched = await page.evaluate(async () => {
+        const operation = lab.MathMorph.dot(Array(32).fill(1), Array(32).fill(1));
+        const stages = lab.MathMorph.plan(operation).stages;
+        const at = (stages / 2 + 1) / stages;
+        const morph = lab.MathMorph3D.mount(lab.view, operation, { id: 'dot' });
+        lab.view.setObject(morph.object);
+        morph.render(at);
+        await new Promise(requestAnimationFrame);
+        const collecting = lab.root.scene.objects();
+        morph.render(at + (1 - 1e-6) / stages);
+        await new Promise(requestAnimationFrame);
+        const partial = lab.root.scene.objects();
+        morph.render(1);
+        await new Promise(requestAnimationFrame);
+        const complete = lab.root.scene.objects();
+        morph.render(at);
+        await new Promise(requestAnimationFrame);
+        return { collecting, partial, complete, reverse: lab.root.scene.objects() };
+      });
+      for (const state of [batched.collecting, batched.reverse]) {
+        const carried = state.find((o) => o.id === 'dot:result');
+        assert.equal(carried.value, 16, 'a carried result describes the currently visible value');
+        assert.equal(carried.provenance.origins.length, 32);
+      }
+      assert.equal(batched.partial.find((o) => o.id === 'dot:result').value, 20);
+      const complete = batched.complete.find((o) => o.id === 'dot:result');
+      assert.equal(complete.value, 32);
+      assert.equal(
+        complete.inputs.length,
+        64,
+        'direct seeking retains input IDs from stages that have never been displayed',
+      );
+      assert.equal(batched.complete.find((o) => o.id === 'dot').inputs.length, 64);
+      assert.deepEqual(
+        batched.complete
+          .filter((o) => o.visible)
+          .map((o) => o.id)
+          .sort(),
+        ['dot', 'dot:result'],
+      );
     },
   );
 });

@@ -217,6 +217,17 @@
     "source": "scene.js",
     "guides": ["examples/neuron-morph/README.md"]
   },
+  "long-calculation": {
+    "title": "Как множество вкладов становится числом",
+    "page": "index.html",
+    "time": 15,
+    "checkpoints": [0, 3.9, 4, 5.9, 6, 15, 17.9, 18, 35, 39, 41.9, 42, 61],
+    "group": "techniques",
+    "summary": "Сигнал нейрона и баланс из 16–64 вкладов. Один расчёт и одна метка рассказа ведут все части к общему результату.",
+    "tags": ["MathMorph", "MorphStory", "вычисление", "вектор", "сумма", "нейрон", "3d"],
+    "source": "scene.js",
+    "guides": ["docs/morphing.md", "docs/morph-stories.md"]
+  },
   "morph-contact": {
     "title": "Форма становится опорой",
     "page": "index.html",

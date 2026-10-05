@@ -100,7 +100,7 @@ export function projectedLabels(
         !a.element.textContent ||
         !visible(item.anchor) ||
         options.visible?.() === false ||
-        (item.opacity <= 0 && !options.avoidOverlap)
+        item.opacity <= 0
       ) {
         a.hidden(true);
         return [];

@@ -113,8 +113,8 @@ function mount(
   }
   function describeParts(frame: NonNullable<typeof currentFrame>) {
     for (const record of parts.values()) record.visible = false;
-    const visible = new Set(
-      (frame.morph < 0.5 ? frame.sources : frame.targets).map((part) => part.id),
+    const active = new Map(
+      (frame.morph < 0.5 ? frame.sources : frame.targets).map((part) => [part.id, part]),
     );
     for (const part of [...frame.sources, ...frame.targets]) {
       if (!part.id) continue;
@@ -166,9 +166,9 @@ function mount(
         );
       }
       const record = parts.get(key)!;
-      record.part = part;
-      record.visible = visible.has(part.id);
-      record.object.position.set(...part.position);
+      record.part = active.get(part.id) ?? part;
+      record.visible = active.has(part.id);
+      record.object.position.set(...record.part.position);
     }
   }
   const notes = new Map<string, { anchor: Object3D; label: ReturnType<typeof view.label> }>();
@@ -213,6 +213,9 @@ function mount(
     volume.prepare(
       Array.from({ length: plan.stages }, (_, stage) => {
         const frame = plan.sample(stage / plan.stages);
+        // A direct seek must retain the inputs of stages that have never been displayed.
+        // render() then selects the active parts from this prepared semantic inventory.
+        describeParts(frame);
         return { sources: frame.sources.length, targets: frame.targets.length };
       }),
     );

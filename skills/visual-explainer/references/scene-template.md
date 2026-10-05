@@ -203,6 +203,9 @@ view.label('Объём', () => cube.localToWorld(new T.Vector3(0, 1, 0)), {
 [Пример](../../../examples/svg-artwork/scene.js) переиспользует один SVG на разных планах.
 
 Арифметикой владеет [MathMorph](../../../docs/morphing.md).
+Скалярную сумму и `dot` до 64 входов передавай целиком: движок сам ведёт порции
+и накопленный результат. Одна метка покрывает весь расчёт; готовая основа —
+[long-calculation](../../../examples/long-calculation/scene.js).
 Для записи вычисленного числа задай `MathMorph3D.mount(view, operation, {delivery:{to:cell}})`
 и `render(frame, 'calculate', 'place')`: владелец измеряет получателя и ведёт
 полёт, размер, появление и перемотку. [Пример](../../../examples/result-delivery/scene.js)

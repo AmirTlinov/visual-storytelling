@@ -48,6 +48,98 @@ test('signed dot product keeps zeros, original inputs and products through the t
   assert.deepEqual(plan.sample(0.15), earlier);
 });
 
+test('full 32 and 64 input reductions carry one result through bounded visible batches', () => {
+  for (const count of [32, 64]) {
+    const left = Array.from({ length: count }, (_, i) => ((i % 7) - 3) / 7),
+      right = Array.from({ length: count }, (_, i) => ((i % 5) - 2) / 3);
+    const operation = MathMorph.dot(left, right),
+      dot = MathMorph.plan(operation);
+    assert.equal(
+      dot.result,
+      left.reduce((sum, value, i) => sum + value * right[i], 0),
+    );
+    const seen = new Map();
+    for (let stage = 0; stage < dot.stages; stage++) {
+      const frame = dot.sample(stage / dot.stages, { columns: 4 });
+      assert.ok(
+        frame.sources.length + frame.targets.length <= 14,
+        'a full vector must not overflow the shared field on a 1024-uniform GPU',
+      );
+      for (const phase of [0.1, 0.3, 0.5, 0.7, 0.9]) {
+        const moving = dot.sample((stage + phase) / dot.stages, { columns: 4 }).sources;
+        for (let i = 0; i < moving.length; i++)
+          for (let j = i + 1; j < moving.length; j++)
+            assert.ok(
+              moving[i].position.some(
+                (x, axis) =>
+                  Math.abs(x - moving[j].position[axis]) >=
+                  (moving[i].size[axis] + moving[j].size[axis]) / 2 - 1e-8,
+              ),
+              'new inputs reach the carried sum without passing through it',
+            );
+      }
+      for (const part of frame.sources)
+        if (/^(left|right):/.test(part.id)) seen.set(part.id, part.origins);
+      if (stage) {
+        const previous = dot.sample((stage - 1e-8) / dot.stages, { columns: 4 });
+        for (const target of previous.targets) {
+          const source = frame.sources.find((part) => part.id === target.id);
+          assert.ok(source, 'the preceding result enters the next operation as the same object');
+          assert.equal(source.value, target.value);
+          assert.deepEqual(source.origins, target.origins);
+          assert.deepEqual(source.position, target.position);
+        }
+      }
+    }
+    assert.equal(seen.size, count * 2);
+    for (let i = 0; i < count; i++) {
+      assert.deepEqual(seen.get(`left:${i}`), [{ operand: 0, index: i, value: left[i] }]);
+      assert.deepEqual(seen.get(`right:${i}`), [{ operand: 1, index: i, value: right[i] }]);
+    }
+    assert.deepEqual(
+      dot.sample(1).targets[0].origins,
+      left.flatMap((value, index) => [
+        { operand: 0, index, value },
+        { operand: 1, index, value: right[index] },
+      ]),
+    );
+    const before = structuredClone(dot.sample(0.13, { columns: 4 }));
+    for (const progress of [1, 0.7, 0.4, 0]) dot.sample(progress, { columns: 4 });
+    assert.deepEqual(dot.sample(0.13, { columns: 4 }), before);
+    assert.equal(
+      MathMorph.plan(MathMorph.chain(operation, { operator: 'add', value: 0.25 })).result,
+      dot.result + 0.25,
+    );
+
+    for (const operator of ['add', 'subtract', 'multiply']) {
+      const values = Array.from({ length: count }, (_, i) => 0.97 + i / 1000);
+      const plan = MathMorph.plan(MathMorph.calculate(operator, ...values));
+      const expected =
+        operator === 'add'
+          ? values.reduce((a, b) => a + b, 0)
+          : operator === 'multiply'
+            ? values.reduce((a, b) => a * b, 1)
+            : values.slice(1).reduce((a, b) => a - b, values[0]);
+      assert.equal(plan.result, expected);
+      assert.equal(plan.sample(1).targets[0].value, expected);
+      assert.deepEqual(
+        plan.sample(1).targets[0].origins,
+        values.map((value, index) => ({ operand: 0, index, value })),
+      );
+      for (let stage = 1; stage < plan.stages; stage++) {
+        const frame = plan.sample(stage / plan.stages, { columns: 4 });
+        const result = plan.sample((stage - 1e-8) / plan.stages, { columns: 4 }).targets[0];
+        assert.deepEqual(frame.sources[0], result);
+      }
+    }
+  }
+  assert.throws(() => MathMorph.plan(MathMorph.dot(Array(65).fill(1), Array(65).fill(1))), /64/);
+  assert.throws(
+    () => MathMorph.plan(MathMorph.vectorAdd(Array(32).fill(1), Array(32).fill(1))),
+    /16/,
+  );
+});
+
 test('sources meet before their shared shape transforms', () => {
   for (const operation of [
     MathMorph.calculate('add', 1, 2, 3),
