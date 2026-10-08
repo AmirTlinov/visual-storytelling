@@ -18,7 +18,7 @@ def mix(voice, music_spec, output):
     else:
         source = Path(music_spec.get("path", MUSIC))
         if not source.exists():
-            raise FileNotFoundError(f"Music is missing: {source}; run sketch-audio setup")
+            raise FileNotFoundError(f"Music is missing: {source}")
         credit = dict(music_spec.get("credit", MUSIC_CREDIT))
         raw = subprocess.check_output([
             "ffmpeg", "-v", "error", "-stream_loop", "-1", "-ss", str(music_spec["offset"]),

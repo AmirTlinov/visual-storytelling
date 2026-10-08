@@ -22,6 +22,38 @@ EXAMPLE = Path(__file__).resolve().parents[2] / "examples" / "remainder-story" /
 
 
 class AudioChecks(unittest.TestCase):
+    def test_music_prepares_only_when_used_and_before_input_receipt(self):
+        class FixtureSpeaker:
+            identity = {"model": "fixture", "reference_sha256": file_digest(REFERENCE_AUDIO)}
+            def synthesize(self, segment):
+                return np.full(SAMPLE_RATE, .1, dtype=np.float32), segment["text"], {"cached": True, "seconds": 0}
+        class FixtureAligner:
+            device = "cpu"
+            def align(self, audio, text, key):
+                return [{"text": token, "start": .1 + i * .2, "end": .25 + i * .2, "score": .9}
+                        for i, token in enumerate(words(text))], {"cached": True, "seconds": 0}
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            script, music = root / "narration.json", root / "music.wav"
+            spec = {"version": 3, "intro": 0, "outro": 0, "music": None,
+                    "segments": [{"id": "result", "text": "Путь стал длиннее."}]}
+            speaker = FixtureSpeaker()
+            def prepare():
+                sf.write(music, .1 * np.sin(np.arange(SAMPLE_RATE * 2) * .03), SAMPLE_RATE)
+            with patch('assembly.prepare_music', side_effect=prepare) as setup, \
+                 patch('script.MUSIC', music), patch('mixing.MUSIC', music):
+                script.write_text(json.dumps(spec, ensure_ascii=False))
+                speaker.voice = read_script(script)["voice"]
+                build_audio(script, root / "quiet", "cpu", speaker=speaker, aligner=FixtureAligner(), report=False)
+                setup.assert_not_called()
+                self.assertFalse(music.exists())
+                spec["music"] = {"track": "inspired"}
+                script.write_text(json.dumps(spec, ensure_ascii=False))
+                timeline = build_audio(script, root / "with-music", "cpu", speaker=speaker, aligner=FixtureAligner(), report=False)
+                setup.assert_called_once()
+                self.assertEqual(timeline["mix"]["music"]["source_sha256"], file_digest(music))
+                check_timeline(script, root / "with-music/timeline.json")
+
     def test_cached_whole_paragraph_precedes_new_sentence_splitting(self):
         paragraph = " ".join(start + " слово" * 28 + " " + end for start, end in [
             ("Первое", "завершено."), ("Второе", "готово."), ("Третье", "проверено."),

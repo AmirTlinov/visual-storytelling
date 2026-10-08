@@ -8,7 +8,12 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { buildScene } from '../tools/build-pages.mjs';
-import { checkNarration, prepareNarration, silenceSceneCopy } from '../tools/narration.mjs';
+import {
+  checkNarration,
+  prepareNarration,
+  silenceSceneCopy,
+  setNarrationMode,
+} from '../tools/narration.mjs';
 import { narrationSource } from '../tools/story-document.mjs';
 
 const run = promisify(execFile);
@@ -308,7 +313,7 @@ test('scene builds reject stale generated narration while silent and independent
         ],
         { env: { ...process.env, SKETCH_AUDIO_BIN: join(directory, 'missing-higgs') } },
       ),
-      /Higgs недоступна/,
+      /Голос ещё не подготовлен/,
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -390,4 +395,17 @@ with wave.open(str(root/'audio.wav'),'wb') as wav:
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('adding voice to a quiet lesson creates one real audio element without altering quoted markup', () => {
+  const quiet =
+    '<!doctype html><html><body><main>Урок</main><script>const quoted="<audio src=example>";</script></body></html>';
+  const audible = setNarrationMode(quiet, false);
+  assert.equal((audible.match(/data-story-audio/g) ?? []).length, 1);
+  assert.ok(audible.includes('const quoted="<audio src=example>";'));
+  assert.ok(
+    audible.includes('<audio data-story-audio src="audio.wav" preload="auto"></audio></body>'),
+  );
+  assert.equal(setNarrationMode(audible, false), audible);
+  assert.ok(setNarrationMode(audible, true).includes('data-silent="true"'));
 });

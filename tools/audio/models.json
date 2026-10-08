@@ -1,0 +1,16 @@
+{
+  "speech": {
+    "repository": "bosonai/higgs-tts-3-4b",
+    "revision": "239f63fb7b02b1aa085f98d9efae5e35cc5523e8",
+    "directory": "higgs-tts-3-bf16",
+    "patterns": ["*.json", "*.safetensors", "*.jinja", "LICENSE", "README.md", "PROMPTING.md"],
+    "required": ["config.json", "tokenizer.json", "tokenizer_config.json", "model.safetensors", "model.safetensors.index.json"]
+  },
+  "alignment": {
+    "repository": "jonatasgrosman/wav2vec2-large-xlsr-53-russian",
+    "revision": "2329100508896c6d9b157019803ab5601e6f3406",
+    "directory": "ru-aligner",
+    "patterns": ["config.json", "preprocessor_config.json", "vocab.json", "special_tokens_map.json", "pytorch_model.bin", "README.md", "LICENSE"],
+    "required": ["config.json", "preprocessor_config.json", "vocab.json", "pytorch_model.bin"]
+  }
+}

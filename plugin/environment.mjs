@@ -4,10 +4,23 @@ import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { writeJSON, readJSON } from './runtime/storage.mjs';
+import {
+  configureVoiceEnvironment,
+  voiceEnvironmentStatus,
+  prepareVoiceEnvironment,
+} from './environment/voice.mjs';
 const execute = promisify(execFile);
 
 // Immutable upstream artifacts for the supported macOS ARM64 release.
 const resources = {
+  uv: {
+    version: '0.11.3',
+    url: 'https://releases.astral.sh/github/uv/releases/download/0.11.3/uv-aarch64-apple-darwin.tar.gz',
+    algorithm: 'sha256',
+    digest: '2bc3d0c7bf2bd08325b1e170abac6f7e5b3346e1d4eab3370d17cefec934996f',
+    binary: 'uv-aarch64-apple-darwin/uv',
+    archive: 'tgz',
+  },
   chromium: {
     version: '153.0.8010.12',
     url: 'https://cdn.playwright.dev/builds/cft/153.0.8010.12/mac-arm64/chrome-headless-shell-mac-arm64.zip',
@@ -28,7 +41,7 @@ const resources = {
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 export async function environmentStatus(data) {
-  return Object.fromEntries(
+  const status = Object.fromEntries(
     await Promise.all(
       Object.entries(resources).map(async ([id, resource]) => {
         const directory = join(data, 'environment', `${id}-${resource.version}`);
@@ -43,6 +56,7 @@ export async function environmentStatus(data) {
       }),
     ),
   );
+  return { ...status, higgs: await voiceEnvironmentStatus(data) };
 }
 
 async function prepareResource(data, id, { signal, progress }) {
@@ -60,7 +74,9 @@ async function prepareResource(data, id, { signal, progress }) {
     return binary;
   if (process.platform !== 'darwin' || process.arch !== 'arm64')
     throw new Error('Automatic export preparation supports macOS Apple Silicon.');
-  progress(`Подготавливаю ${id === 'chromium' ? 'движок видео' : 'кодировщик звука и видео'}…`);
+  progress(
+    `Подготавливаю ${{ chromium: 'движок видео', ffmpeg: 'кодировщик звука и видео', uv: 'установщик Python' }[id]}…`,
+  );
   await mkdir(dirname(directory), { recursive: true });
   const temporary = await mkdtemp(directory + '.preparing-');
   try {
@@ -118,10 +134,31 @@ async function prepareResource(data, id, { signal, progress }) {
 }
 
 /** Called only by the serial JobRunner worker, on demand. Doctor never downloads. */
-export async function prepareEnvironment(data, { browser = false, encoder = false, ...task }) {
+export async function configureEnvironment(data) {
+  await configureVoiceEnvironment(data);
+  const ffmpeg = join(
+    data,
+    'environment',
+    `ffmpeg-${resources.ffmpeg.version}`,
+    resources.ffmpeg.binary,
+  );
+  if (
+    await access(ffmpeg).then(
+      () => true,
+      () => false,
+    )
+  )
+    process.env.PATH = dirname(ffmpeg) + ':' + process.env.PATH;
+}
+
+export async function prepareEnvironment(
+  data,
+  { browser = false, encoder = false, voice = false, ...task },
+) {
   if (encoder)
     process.env.PATH =
       dirname(await prepareResource(data, 'ffmpeg', task)) + ':' + process.env.PATH;
   if (encoder) process.env.VISUAL_STORY_VIDEO_ENCODER = 'h264_videotoolbox';
   if (browser) process.env.VISUAL_STORY_CHROMIUM = await prepareResource(data, 'chromium', task);
+  if (voice) await prepareVoiceEnvironment(data, await prepareResource(data, 'uv', task), task);
 }

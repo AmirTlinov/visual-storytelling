@@ -22,7 +22,9 @@ function editAudioTags(html, edit) {
 
 /** Change actual audio tags without touching scripts, styles or quoted examples. */
 export function setNarrationMode(html, silent) {
-  return editAudioTags(html, (location, edits) => {
+  let found = false;
+  const prepared = editAudioTags(html, (location, edits) => {
+    found = true;
     const attribute = location?.attrs?.['data-silent'];
     if (attribute)
       edits.push({
@@ -36,6 +38,16 @@ export function setNarrationMode(html, silent) {
       edits.push({ start: end, end, text: ' data-silent="true"' });
     }
   });
+  if (!silent && !found) {
+    const audio = '<audio data-story-audio src="audio.wav" preload="auto"></audio>';
+    // Source documents may begin as quiet lessons without an audio element.
+    const body = parse(html, { sourceCodeLocationInfo: true })
+      .childNodes.find((node) => node.tagName === 'html')
+      ?.childNodes.find((node) => node.tagName === 'body');
+    const end = body?.sourceCodeLocation?.endTag?.startOffset ?? prepared.length;
+    return prepared.slice(0, end) + audio + prepared.slice(end);
+  }
+  return prepared;
 }
 
 /** The viewer needs semantic timing, not a synthesis receipt or local voice paths. */

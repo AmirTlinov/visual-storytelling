@@ -9,6 +9,16 @@ while [ -L "$entry" ]; do
 done
 tool_dir="$(cd -P "$(dirname "$entry")" && pwd)"
 export UV_PROJECT_ENVIRONMENT="${SKETCH_AUDIO_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/sketch-visualization}/venv"
+if [[ -n "${SKETCH_AUDIO_PYTHON:-}" ]]; then
+  exec "$SKETCH_AUDIO_PYTHON" "$tool_dir/audio/cli.py" "$@"
+fi
+if [[ "${1:-}" = doctor || "${1:-}" = check ]] && [[ -x "$UV_PROJECT_ENVIRONMENT/bin/python" ]]; then
+  exec "$UV_PROJECT_ENVIRONMENT/bin/python" "$tool_dir/audio/cli.py" "$@"
+fi
+if [[ "${1:-}" = doctor ]]; then
+  printf '%s\n' '{"speech_ready":false,"reference_ready":false,"aligner":false,"verified":false,"ffmpeg":null,"reason":"Run sketch-audio setup to prepare local voice"}'
+  exit 0
+fi
 export TOKENIZERS_PARALLELISM=false
 export PYTHONDONTWRITEBYTECODE=1
 exec uv run --quiet --locked --project "$tool_dir" python "$tool_dir/audio/cli.py" "$@"

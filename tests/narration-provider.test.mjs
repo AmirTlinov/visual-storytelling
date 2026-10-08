@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { checkNarration } from '../tools/narration.mjs';
 
 test(
-  'packaged CLI defaults to external Higgs, checks with that installation, and never falls back to system speech',
+  'explicit external Higgs overrides the packaged Python, checks with that installation, and never falls back to system speech',
   { skip: process.platform !== 'darwin', timeout: 60000 },
   async (t) => {
     const directory = await mkdtemp(join(tmpdir(), 'story-provider-'));
@@ -61,7 +61,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + '\\n');
-if (args[0] === 'doctor') console.log(JSON.stringify({speech_ready:true,reference_ready:true,aligner:true,ffmpeg:'/ffmpeg'}));
+if (args[0] === 'doctor') console.log(JSON.stringify({speech_ready:true,verified:true,reference_ready:true,aligner:true,ffmpeg:'/ffmpeg'}));
 else if (args[0] === 'build') {
   if (process.env.FAIL_HIGGS) process.exit(1);
   const out = args[args.indexOf('--out') + 1];
@@ -82,7 +82,7 @@ else if (args[0] === 'build') {
         timeout: 30000,
       });
     await assert.rejects(audio({ SKETCH_AUDIO_BIN: join(directory, 'missing-higgs') }), (error) =>
-      /Higgs недоступна/.test(error.stderr),
+      /Голос ещё не подготовлен/.test(error.stderr),
     );
     await assert.rejects(readFile(join(scene, 'voice.json')), { code: 'ENOENT' });
     await assert.rejects(readFile(join(scene, 'audio.wav')), { code: 'ENOENT' });

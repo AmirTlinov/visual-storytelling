@@ -10,7 +10,7 @@ from alignment import Aligner
 from credits import audio_credits
 from listening import write_listening_page
 from mixing import mix
-from resources import ALIGN_REPO, ALIGN_REVISION, digest
+from resources import ALIGN_REPO, ALIGN_REVISION, digest, prepare_music
 from script import read_script, timed_cues, check_action_windows, speech_passages, dependency_digests
 from speech import SAMPLE_RATE, Speaker
 from quality import complete_take
@@ -50,6 +50,8 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
     started = time.perf_counter()
     source_digest = digest(json.loads(script_path.read_text()))
     spec = read_script(script_path, source_directory=source_directory)
+    if spec.get("music") and not spec["music"].get("path"):
+        prepare_music()
     inputs = dependency_digests(spec)
     if speaker is not None and speaker.voice != spec["voice"]:
         raise ValueError("A shared speaker must use the same voice settings")

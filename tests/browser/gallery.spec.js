@@ -8,8 +8,9 @@ test('search, sections and the return from a scene preserve the chosen context',
   const search = page.getByRole('searchbox', { name: 'Найти пример' });
   await search.fill('НейРон');
   await page.getByRole('button', { name: 'Приёмы и API', exact: true }).click();
-  await expect(page.locator('[data-example]:visible')).toHaveCount(1);
+  await expect(page.locator('[data-example]:visible')).toHaveCount(2);
   await expect(page.locator('[data-example="neuron-morph"]')).toBeVisible();
+  await expect(page.locator('[data-example="long-calculation"]')).toBeVisible();
   await search.fill('нет-такого-примера');
   await expect(page.locator('#empty')).toBeVisible();
   await page.getByRole('button', { name: 'Сбросить' }).click();

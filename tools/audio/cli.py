@@ -10,8 +10,10 @@ from resources import doctor, setup
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    prep = commands.add_parser("setup", help="Download local models and a credited example music track once")
+    prep = commands.add_parser("setup", help="Prepare pinned local voice and alignment models")
     prep.add_argument("--music-from", type=Path)
+    prep.add_argument("--music", action="store_true", help="Prepare the optional credited music track")
+    prep.add_argument("--progress-json", action="store_true")
     commands.add_parser("doctor", help="Inspect local resources")
     check = commands.add_parser("check", help="Check a generated timeline against its narration without loading models")
     check.add_argument("script", type=Path)
@@ -31,7 +33,7 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "setup":
-            setup(args.music_from)
+            setup(args.music_from, music=args.music, progress_json=args.progress_json)
         elif args.command == "doctor":
             print(json.dumps(doctor(), ensure_ascii=False, indent=2))
         elif args.command == "check":
