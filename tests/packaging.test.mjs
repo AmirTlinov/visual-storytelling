@@ -80,7 +80,7 @@ test('a production-only installation of the packed public API typechecks outside
     const cli = join(installed, 'tools/scene.mjs');
     const entries = JSON.parse(
       (
-        await execute(process.execPath, [cli, 'examples', 'interaction-studio', '--json'], {
+        await execute(process.execPath, [cli, 'examples', 'character-lesson', '--json'], {
           cwd: directory,
         })
       ).stdout,

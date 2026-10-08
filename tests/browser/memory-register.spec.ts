@@ -24,18 +24,18 @@ test('drawn register writes only at an enabled edge and keeps prediction before 
   await page.locator('#clock').click();
   await expect(saved).toHaveText('165');
   await page.locator('#challenge-start').click();
-  await expect(page.locator('#verify')).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Проверить фронтом ↑' })).toBeDisabled();
   await page.locator('[data-bit="7"]').click({ force: true });
   await expect(input).toHaveText('165');
-  await page.locator('[data-guess="165"]').click();
-  await page.locator('#verify').click();
+  await page.locator('.ve-prediction').getByRole('button', { name: '165', exact: true }).click();
+  await page.getByRole('button', { name: 'Проверить фронтом ↑' }).click();
   await expect(saved).toHaveText('42');
-  await expect(page.locator('#feedback')).toContainText('Получилось 42');
+  await expect(page.locator('.ve-prediction [role=status]')).toContainText('Получилось 42');
   await page.locator('#next-challenge').click();
-  await page.locator('[data-guess="165"]').click();
-  await page.locator('#verify').click();
+  await page.locator('.ve-prediction').getByRole('button', { name: '165', exact: true }).click();
+  await page.getByRole('button', { name: 'Проверить фронтом ↑' }).click();
   await expect(saved).toHaveText('165');
-  await expect(page.locator('#feedback')).toContainText('Верно');
+  await expect(page.locator('.ve-prediction [role=status]')).toContainText('Верно');
 });
 
 test('narrow notebook keeps drawn targets apart and keyboard activation changes one bit', async ({

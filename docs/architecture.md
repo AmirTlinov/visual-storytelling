@@ -49,14 +49,13 @@
 ресурсы; `composition-previews.ts` фиксирует только выбранную границу перехода.
 Story владеет отменой подготовки и `ready()`, transport удерживает общие часы;
 SceneHandle, команды и экспорт используют ту же готовность.
-Вступление передаёт выбранный переход. `book/` владеет Tlinov, StoryDocument,
-проекцией речи и общим временем открытия/перелистывания. `Storybook` подключает
-персонажей; `IllustratedStory` соединяет речь, действия и рисунки.
-`NotebookPresentation` использует ту же книгу и камеру с часами внешнего ролика;
-`characters/surfaces.ts` временно передаёт размещение живого SVG, сохраняя его модель.
+`story/document.ts` владеет `StoryDocument`, проекцией речи и тихой разметкой.
+`IllustratedStory` соединяет документ с `SceneStory`; адаптер `characterChapter`
+принадлежит `characters`. `characters/surfaces.ts` размещает живой SVG в декорации,
+сохраняя его модель и интерактивность.
 
-`characters/stage.ts` рисует позу по абсолютному времени. Spine ведёт суставы,
-сетки и клипы; `score.ts` компилирует эпизоды, `staging/` — пути и контакты.
+`characters/stage.ts` рисует позу по абсолютному времени. Three.js ведёт скелет glTF,
+деформируемые поверхности и смешивание клипов; `score.ts` компилирует эпизоды, `staging/` — пути и контакты.
 `CharacterSurface` и `inkChapter` используют один рисунок в декорации и на странице.
 Риг и SVG-облики — `assets/characters`; компилятор атласа — `tools/characters/compile.mjs`.
 `recipes/area.ts` согласует единицы рисунка и прозрачную сетку.

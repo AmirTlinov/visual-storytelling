@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cueSheet, activeCue } from '../dist/story/cues.js';
 import { composeChapters } from '../dist/story/composition-plan.js';
-import { documentScript } from '../dist/book/document.js';
+import { documentScript } from '../dist/story/document.js';
 import { morphTiming } from '../dist/morph/timing.js';
 
 test('one action window retains speech anchors, observed progress and reversible morph time', () => {
@@ -118,7 +118,7 @@ test('action windows reject missing, nonfinite, empty and out-of-story timing', 
   }
 });
 
-test('chapter and notebook projections retain both action and speech coordinates', () => {
+test('chapter and document projections retain both action and speech coordinates', () => {
   const local = {
     duration: 10,
     cues: {

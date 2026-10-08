@@ -67,10 +67,6 @@
     "./characters": {
       "types": "./dist/characters/index.d.ts",
       "import": "./dist/characters/index.js"
-    },
-    "./book": {
-      "types": "./dist/book/index.d.ts",
-      "import": "./dist/book/index.js"
     }
   },
   "sideEffects": [
@@ -100,7 +96,6 @@
     "@babel/parser": "7.29.9",
     "@dimforge/rapier2d-compat": "0.21.0",
     "@dimforge/rapier3d-compat": "0.21.0",
-    "@esotericsoftware/spine-webgl": "4.3.13",
     "@types/three": "0.183.1",
     "esbuild": "0.28.2",
     "gsap": "3.15.0",

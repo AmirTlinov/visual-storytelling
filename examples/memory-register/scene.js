@@ -1,4 +1,5 @@
 import { SceneShell, widgetState } from '@visual-storytelling/core';
+import { predictionPrompt } from '@visual-storytelling/core/controls';
 import '@visual-storytelling/core/style.css';
 import './subject.css';
 import timing from './timeline.json' with { type: 'json' };
@@ -25,13 +26,8 @@ window.galleryReady = (async () => {
     '</div>',
     '<p class="memory-event" id="event" role="status" aria-live="polite"></p>',
     '<div class="memory-actions"><button type="button" id="challenge-start">Предскажи результат</button><button type="button" id="reset">Очистить пример</button></div>',
-    '<section id="challenge" class="memory-challenge" hidden aria-label="Опыт с прогнозом"><p id="question"></p>',
-    '<div class="guesses" role="group" aria-label="Ваш прогноз">',
-    ...[42, 165, 0].map(
-      (v) => '<button type="button" data-guess="' + v + '" aria-pressed="false">' + v + '</button>',
-    ),
-    '</div><p id="feedback" aria-live="polite"></p><div class="memory-actions">',
-    '<button id="verify" type="button">Проверить фронтом ↑</button><button id="next-challenge" type="button" hidden>Теперь разрешим запись</button><button id="free" type="button">Свободный опыт</button>',
+    '<section id="challenge" class="memory-challenge" hidden><div id="prediction"></div><div class="memory-actions">',
+    '<button id="next-challenge" type="button" hidden>Теперь разрешим запись</button><button id="free" type="button">Свободный опыт</button>',
     '</div></section>',
     '<details class="memory-detail" id="inside"><summary>Почему один бит удерживает значение?</summary><p id="detail-bit"></p><div id="feedback-drawing"></div><p id="loop-explanation"></p>',
     '<p>Это сердце запоминающего элемента. Управляемые входы D-триггера позволяют переключить его по фронту такта. Регистр удерживает данные, пока есть питание.</p></details>',
@@ -46,7 +42,12 @@ window.galleryReady = (async () => {
   shell.stage.append(notes);
   const loop = feedbackDrawing($('feedback-drawing'));
   const presets = [...root.querySelectorAll('[data-value]')];
-  const guesses = [...root.querySelectorAll('[data-guess]')];
+  const prediction = predictionPrompt($('prediction'), {
+    choices: [42, 165, 0].map((value) => ({ value, label: String(value) })),
+    runLabel: 'Проверить фронтом ↑',
+    onChoose: (value) => dispatch({ type: 'guess', value }),
+    onRun: () => dispatch({ type: 'clock' }),
+  });
   let lastNotice = '',
     lastTrace = '';
   const story = shell.attachStory({
@@ -68,26 +69,21 @@ window.galleryReady = (async () => {
       }
       $('event').dataset.event = s.event;
       $('challenge').hidden = !quiz;
-      $('question').textContent =
-        'Вход: 165. Память: 42. WE = ' + Number(s.we) + '. Что будет в памяти после фронта ↑?';
-      guesses.forEach((button) => {
-        button.setAttribute('aria-pressed', String(Number(button.dataset.guess) === s.guess));
-        button.disabled = s.checked;
-      });
-      $('verify').disabled = s.guess === null || s.checked;
-      $('verify').hidden = s.checked;
       $('next-challenge').hidden = !s.checked || s.challenge === 'write';
-      $('feedback').textContent = s.checked
-        ? (s.guess === s.saved ? 'Верно. ' : 'Твой прогноз: ' + s.guess + '. ') +
+      prediction.render({
+        question:
+          'Вход: 165. Память: 42. WE = ' + Number(s.we) + '. Что будет в памяти после фронта ↑?',
+        guess: s.guess,
+        checked: s.checked,
+        feedback:
+          (s.guess === s.saved ? 'Верно. ' : 'Твой прогноз: ' + s.guess + '. ') +
           'Получилось ' +
           s.saved +
           '. ' +
           (s.we
             ? 'WE = 1 и фронт ↑ перенесли входной байт в память.'
-            : 'WE = 0 запретил запись: прежний байт сохранился.')
-        : s.guess === null
-          ? 'Сначала выбери свой прогноз.'
-          : 'Прогноз записан: ' + s.guess + '. Теперь проверь его тактом.';
+            : 'WE = 0 запретил запись: прежний байт сохранился.'),
+      });
       const q = bit(s.saved, s.selected);
       $('detail-bit').textContent =
         'Бит ' +
@@ -147,13 +143,8 @@ window.galleryReady = (async () => {
     (button) =>
       (button.onclick = () => dispatch({ type: 'input', value: Number(button.dataset.value) })),
   );
-  guesses.forEach(
-    (button) =>
-      (button.onclick = () => dispatch({ type: 'guess', value: Number(button.dataset.guess) })),
-  );
   $('reset').onclick = () => dispatch({ type: 'reset' });
   $('challenge-start').onclick = () => dispatch({ type: 'challenge', value: 'hold' });
-  $('verify').onclick = () => dispatch({ type: 'clock' });
   $('next-challenge').onclick = () => dispatch({ type: 'challenge', value: 'write' });
   $('free').onclick = () => dispatch({ type: 'free' });
   function restore(snapshot) {
@@ -178,6 +169,7 @@ window.galleryReady = (async () => {
   restore(saved.read());
   shell.onDispose(() => {
     saved.dispose();
+    prediction.dispose();
     drawing.dispose();
     loop.dispose();
   });

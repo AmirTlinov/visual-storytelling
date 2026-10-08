@@ -2,11 +2,18 @@ import type { Surface } from '../ink/surface.js';
 import { lettering } from '../ink/lettering.js';
 import { object } from '../ink/object.js';
 import type { InkDrawing } from '../story/ink-chapter.js';
+import type { ChapterFrame } from '../story/composition.js';
 
 /** One centimetre is always two grid cells. Layout changes; the measurement does not. */
 export function areaDiagram(
   view: Surface,
-  options: { width?: string; height?: string; maxColumns?: number; maxRows?: number } = {},
+  options: {
+    width?: string;
+    height?: string;
+    maxColumns?: number;
+    maxRows?: number;
+    revealResult?: (frame: ChapterFrame) => boolean;
+  } = {},
 ): InkDrawing {
   const columnKey = options.width ?? 'width',
     rowKey = options.height ?? 'height';
@@ -15,11 +22,13 @@ export function areaDiagram(
   let signature = '',
     cleanups: (() => void)[] = [],
     cells: SVGGElement[] = [],
+    answers: SVGGElement[] = [],
     snapshot: unknown;
   const clear = () => {
     cleanups.forEach((f) => f());
     cleanups = [];
     cells = [];
+    answers = [];
   };
   return {
     render(frame, viewport) {
@@ -97,6 +106,7 @@ export function areaDiagram(
           color: 'blue' | 'orange' | 'ink' = 'ink',
         ) => {
           const mark = object(view.layer, id, color);
+          if (id === 'formula' || id === 'total-cells') answers.push(mark.element);
           cleanups.push(mark.dispose);
           const text = lettering(mark.content, value, { x: lx, y: ly, size });
           cleanups.push(text.dispose);
@@ -151,8 +161,13 @@ export function areaDiagram(
       cells.forEach((cell, i) => {
         cell.style.visibility = i < count ? '' : 'hidden';
       });
-      view.element.querySelector('desc')!.textContent =
-        `${columns} на ${rows} см: ${columns * rows} см²; ${columns * rows * 4} клеток.`;
+      const revealed = options.revealResult?.(frame) !== false;
+      answers.forEach((element) => {
+        element.style.visibility = revealed ? '' : 'hidden';
+      });
+      view.element.querySelector('desc')!.textContent = revealed
+        ? `${columns} на ${rows} см: ${columns * rows} см²; ${columns * rows * 4} клеток.`
+        : `Прямоугольник: ширина ${columns} см, высота ${rows} см.`;
       snapshot = {
         columns,
         rows,

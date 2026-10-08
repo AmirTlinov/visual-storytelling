@@ -1,190 +1,11 @@
 import { test, expect } from '@playwright/test';
-import sharp from 'sharp';
-
-for (const { name, cue, world } of [
-  { name: 'tesla-circuit', cue: 'experiment', world: true },
-  { name: 'interaction-studio', cue: 'measure', world: true },
-  { name: 'tlinov-book', cue: 'book-open', world: false },
-])
-  test(`${name}: the story establishes a room and enters its opaque notebook page`, async ({
-    page,
-  }, testInfo) => {
-    await page.goto(`/${name}/index.html`);
-    await page.evaluate(() => window.galleryReady);
-    const seek = (time: number) =>
-      page.evaluate(async (time) => {
-        await (document.querySelector('.ve-scene') as any).scene.control([
-          { type: 'pause' },
-          { type: 'seek', time },
-        ]);
-      }, time);
-    const frame = page.locator('.ve-frame');
-    const pixels = async () => {
-      const box = (await frame.boundingBox())!;
-      // Exclude the outer CSS-scaled aperture's subpixel antialiasing, not page content.
-      return page.screenshot({
-        clip: { x: box.x + 2, y: box.y + 2, width: box.width - 4, height: box.height - 4 },
-      });
-    };
-    const active = page.locator('[data-chapter]:not([hidden])');
-    const opening = page.locator('[data-book-transition]');
-    const start = await page.evaluate(async (cue) => {
-      const scene = (document.querySelector('.ve-scene') as any).scene;
-      await scene.control([{ type: 'pause' }, { type: 'cue', id: cue, progress: 0 }]);
-      return scene.inspect().time;
-    }, cue);
-    if (world) {
-      await seek(0);
-      await expect(opening).toBeHidden();
-      await expect(active).not.toHaveAttribute('inert');
-    }
-    for (const time of [0, 1.8, 3.9]) {
-      await seek(start + time);
-      await expect(opening).toBeVisible();
-      await expect(opening).toHaveAttribute('data-book-phase', 'enter');
-      await expect(active).toHaveAttribute('inert', '');
-      const visibleChapter = await pixels();
-      await active.evaluate((element: HTMLElement) => {
-        element.style.visibility = 'hidden';
-      });
-      const hiddenChapter = await pixels();
-      await active.evaluate((element: HTMLElement) => {
-        element.style.visibility = '';
-      });
-      // Changing what is behind the notebook cannot change any opening-shot pixel.
-      if (!hiddenChapter.equals(visibleChapter)) {
-        await testInfo.attach(`visible-${time}`, {
-          body: visibleChapter,
-          contentType: 'image/png',
-        });
-        await testInfo.attach(`hidden-${time}`, { body: hiddenChapter, contentType: 'image/png' });
-      }
-      expect(hiddenChapter.equals(visibleChapter), `opaque page at ${time}s`).toBe(true);
-    }
-    await seek(start + 4.2 - 0.000001);
-    const arrived = await pixels();
-    await seek(start + 4.2);
-    await expect(opening).toBeHidden();
-    await expect(active).not.toHaveAttribute('inert');
-    const live = await pixels();
-    const [a, b] = await Promise.all([
-      sharp(arrived).removeAlpha().raw().toBuffer(),
-      sharp(live).removeAlpha().raw().toBuffer(),
-    ]);
-    const error = a.reduce((sum, channel, i) => sum + Math.abs(channel - b[i]!), 0) / a.length;
-    if (error >= 2) {
-      await testInfo.attach('page-arrival', { body: arrived, contentType: 'image/png' });
-      await testInfo.attach('page-live', { body: live, contentType: 'image/png' });
-    }
-    // Raster antialiasing may differ; the drawing and grid must not move at handoff.
-    expect(error, 'notebook-to-live pixel registration').toBeLessThan(2);
-    await seek(start + 1.8);
-    await page.locator('[data-mode=explore]').click();
-    await expect(opening).toBeHidden();
-    await expect(active).not.toHaveAttribute('inert');
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await seek(start + 1.8);
-    await expect(opening).toBeHidden();
-    await page.evaluate(async () => {
-      await (document.querySelector('.ve-scene') as any).scene.control([
-        { type: 'reduced', value: false },
-      ]);
-    });
-    await seek(start + 1.8);
-    const overridden = await pixels();
-    await page.emulateMedia({ reducedMotion: 'no-preference' });
-    await seek(start + 1.8);
-    const restored = await pixels();
-    if (!restored.equals(overridden)) {
-      await testInfo.attach('overridden', { body: overridden, contentType: 'image/png' });
-      await testInfo.attach('restored', { body: restored, contentType: 'image/png' });
-    }
-    expect(restored.equals(overridden)).toBe(true);
-  });
-
-test('book transitions suspend page input and restore it for explore, rewind and reduced motion', async ({
-  page,
-}) => {
-  await page.goto('/tesla-circuit/index.html');
-  await page.evaluate(() => window.galleryReady);
-  const control = (commands: unknown[]) =>
-    page.evaluate(async (commands) => {
-      await (document.querySelector('#story') as any).scene.control(commands);
-    }, commands);
-  const active = page.locator('[data-chapter]:not([hidden])');
-  const switchButton = page.getByRole('button', { name: 'Замкнуть или разомкнуть цепь' });
-  const coveredInput = async () => {
-    // Browser input and focus honor inert; a DOM role query still finds the covered SVG.
-    const pressed = await switchButton.getAttribute('aria-pressed');
-    expect(
-      await switchButton.evaluate((element: SVGElement) => {
-        element.focus();
-        return document.activeElement === element;
-      }),
-    ).toBe(false);
-    const box = (await switchButton.boundingBox())!;
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-    await expect(switchButton).toHaveAttribute('aria-pressed', pressed!);
-  };
-  await control([{ type: 'pause' }, { type: 'seek', time: 0 }]);
-  await expect(active).not.toHaveAttribute('inert');
-  await control([{ type: 'cue', id: 'workshop.explain', progress: 0.7 }]);
-  await expect(active).not.toHaveAttribute('inert');
-  await expect(switchButton).toHaveCount(1);
-  await switchButton.focus();
-  await control([{ type: 'cue', id: 'experiment', progress: 0 }]);
-  await expect(active).toHaveAttribute('inert', '');
-  await coveredInput();
-  await page.locator('[data-mode=explore]').click();
-  await expect(active).not.toHaveAttribute('inert');
-  await expect(switchButton).toHaveCount(1);
-  const before = await switchButton.getAttribute('aria-pressed');
-  await switchButton.press('Enter');
-  await expect(switchButton).toHaveAttribute('aria-pressed', before === 'true' ? 'false' : 'true');
-  await control([{ type: 'seek', time: 0 }]);
-  await expect(active).not.toHaveAttribute('inert');
-  await control([{ type: 'cue', id: 'experiment', progress: 0 }]);
-  await expect(active).toHaveAttribute('inert', '');
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await control([{ type: 'cue', id: 'experiment', progress: 0 }]);
-  await expect(active).not.toHaveAttribute('inert');
-  await expect(switchButton).toHaveCount(1);
-});
-
-test('page curl keeps its perspective after rewinding through different notebook zooms', async ({
-  page,
-}) => {
-  await page.goto('/interaction-studio/index.html');
-  await page.evaluate(() => window.galleryReady);
-  const times = await page.evaluate(() =>
-    Object.fromEntries(
-      (document.querySelector('.ve-scene') as any).scene
-        .review()
-        .cues.map((cue: any) => [cue.id, cue.start]),
-    ),
-  );
-  const seek = (time: number) =>
-    page.evaluate(async (time) => {
-      await (document.querySelector('.ve-scene') as any).scene.control([
-        { type: 'pause' },
-        { type: 'seek', time },
-      ]);
-    }, time);
-  await seek(times.measure + 1.8);
-  await seek(times.experiment + 0.36);
-  const first = await page.locator('.ve-frame').screenshot();
-  await seek(times.measure + 4.199);
-  await seek(times.experiment + 0.36);
-  expect((await page.locator('.ve-frame').screenshot()).equals(first)).toBe(true);
-});
 
 for (const [name, values] of [
   ['tesla-circuit', { closed: false }],
-  ['area-notebook', { width: 6, height: 5 }],
   ['thermostat-story', { temperature: 22, target: 22 }],
 ] as const)
   for (const variant of [false, true]) {
-    test(`${name}: narrated world and live page share state, framing and rewind ${variant ? 'compact alternate set' : 'wide'}`, async ({
+    test(`${name}: character chapter and live drawing share state, framing and rewind ${variant ? 'compact alternate set' : 'wide'}`, async ({
       page,
     }) => {
       const errors: string[] = [];
@@ -229,7 +50,12 @@ for (const [name, values] of [
         const inspection = await command([{ type: 'theme', value: theme }]);
         expect(inspection.presentation.clipped).toEqual([]);
         expect(inspection.presentation.unreadableText).toEqual([]);
-        await expect(grid).toHaveAttribute('d', gridLines!);
+        const numbers = (value: string) =>
+          [...value.matchAll(/-?\d+(?:\.\d+)?/g)].map((match) => Number(match[0]));
+        const expected = numbers(gridLines!),
+          actual = numbers((await grid.getAttribute('d'))!);
+        expect(actual).toHaveLength(expected.length);
+        actual.forEach((number, index) => expect(number).toBeCloseTo(expected[index]!, 3));
       }
       const paperBounds = await grid.evaluate((path: SVGGraphicsElement) => {
         const drawing = path.ownerSVGElement!,
@@ -260,10 +86,6 @@ for (const [name, values] of [
           .press('Enter');
         expect((await command([{ type: 'pause' }])).snapshot.content.closed).toBe(true);
       }
-      if (name === 'area-notebook') {
-        expect(paper.snapshot.content.area).toBe(30);
-        expect(paper.snapshot.content.gridStep * 2).toBe(paper.snapshot.content.pixelsPerCm);
-      }
       if (name === 'thermostat-story')
         expect(paper.snapshot.content.conclusion).toBe('Нагрев выключен');
       expect(errors).toEqual([]);
@@ -291,3 +113,60 @@ test('an interactive control on the world plane edits the same parameter as its 
   expect(state.mode).toBe('explore');
   expect(state.parameters.find((p: any) => p.key === 'closed').value).toBe(true);
 });
+
+for (const theme of ['light', 'dark'] as const)
+  test(`quiet lesson records a prediction before revealing feedback: ${theme}`, async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.setViewportSize({ width: 390, height: 850 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto('/area-lesson/index.html');
+    await page.evaluate(() => window.galleryReady);
+    await page.evaluate(async (theme) => {
+      const scene = (document.querySelector('.ve-scene') as any).scene;
+      await scene.control([
+        { type: 'theme', value: theme },
+        { type: 'parameters', values: { chapter: 'prediction', sceneTime: 1 } },
+      ]);
+    }, theme);
+    const trial = page.locator('.ve-prediction');
+    const run = trial.getByRole('button', { name: 'Удвоить ширину и проверить' });
+    await expect(trial).toBeVisible();
+    await expect(run).toBeDisabled();
+    await expect(trial.getByRole('status')).not.toContainText('Получилось');
+    const choice = trial.getByRole('button', { name: '24 см²', exact: true });
+    await choice.focus();
+    await choice.press('Enter');
+    await expect(choice).toHaveAttribute('aria-pressed', 'true');
+    await expect(run).toBeEnabled();
+    await expect(trial.getByRole('status')).not.toContainText('Получилось');
+    await run.focus();
+    await run.press('Enter');
+    await expect(trial.getByRole('status')).toContainText('Ваш прогноз: 24 см². Получилось 12 см²');
+    await expect(trial.getByRole('status')).toBeFocused();
+    const state = await page.evaluate(() =>
+      (document.querySelector('.ve-scene') as any).scene.inspect(),
+    );
+    expect(state.snapshot.content.area).toBe(12);
+    await page.getByRole('button', { name: 'Попробовать свои стороны' }).click();
+    await expect(trial).toBeHidden();
+    await page.getByRole('slider', { name: 'Высота, см', exact: true }).fill('5');
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => (document.querySelector('.ve-scene') as any).scene.snapshot().content.area,
+        ),
+      )
+      .toBe(30);
+    await page.evaluate(async () =>
+      (document.querySelector('.ve-scene') as any).scene.control([
+        { type: 'cue', id: 'prediction', progress: 0.5 },
+      ]),
+    );
+    await expect(trial).toBeVisible();
+    await expect(run).toBeDisabled();
+    await expect(trial.getByRole('status')).not.toContainText('Получилось');
+    expect(errors).toEqual([]);
+  });

@@ -17,8 +17,8 @@ export async function narrationSource(directory) {
   if (document) {
     const runtime = await resolvePackage('@visual-storytelling/core', directory);
     const projection = runtime
-      ? pathToFileURL(join(runtime, 'dist/book/document.js'))
-      : new URL('../dist/book/document.js', import.meta.url);
+      ? pathToFileURL(join(runtime, 'dist/story/document.js'))
+      : new URL('../dist/story/document.js', import.meta.url);
     const { documentNarration } = await import(projection.href);
     const spec = documentNarration(document);
     const text = JSON.stringify(spec, null, 2) + '\n';

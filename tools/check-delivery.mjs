@@ -21,7 +21,11 @@ try {
   const cli = join(runtime, 'tools/scene.mjs');
   const installed = JSON.parse(run(process.execPath, [cli, 'info', '--json']).toString());
   assert.equal(installed.cli.status, 'packaged');
-  for (const name of ['examples/catalog.json', 'skills/visual-explainer/SKILL.md', 'docs/book.md'])
+  for (const name of [
+    'examples/catalog.json',
+    'skills/visual-explainer/SKILL.md',
+    'docs/lessons.md',
+  ])
     await access(join(runtime, name));
   await assert.rejects(access(join(runtime, 'src')), { code: 'ENOENT' });
   const packed = JSON.parse(
@@ -85,7 +89,7 @@ try {
     import * as recipes from '@visual-storytelling/core/recipes';
     import * as output from '@visual-storytelling/core/export';
     import {Viewport3D} from '@visual-storytelling/core/three';
-    import {IllustratedStory, documentNarration} from '@visual-storytelling/core/book';
+    import {IllustratedStory, documentNarration} from '@visual-storytelling/core/story';
     import {physicsChapter} from '@visual-storytelling/core/physics/2d';
     window.publicAPI = [
       core.SketchMotion === ink.SketchMotion, typeof core.story === 'function' && core.story === story.story,

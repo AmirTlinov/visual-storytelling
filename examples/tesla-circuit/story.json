@@ -4,8 +4,6 @@
     {
       "id": "workshop",
       "title": "В мастерской",
-      "view": "cast",
-      "drawing": "circuit",
       "beats": [
         {
           "id": "approach",
@@ -31,7 +29,9 @@
             }
           ],
           "shot": {
-            "focus": ["board.content"],
+            "focus": [
+              "board.content"
+            ],
             "framing": "detail"
           }
         },
@@ -50,7 +50,9 @@
             "hero": "idea"
           },
           "shot": {
-            "focus": ["hero"],
+            "focus": [
+              "hero"
+            ],
             "framing": "medium"
           }
         }
@@ -59,8 +61,6 @@
     {
       "id": "experiment",
       "title": "Попробуйте сами",
-      "view": "paper",
-      "drawing": "circuit",
       "beats": [
         {
           "id": "change",
@@ -69,5 +69,8 @@
         }
       ]
     }
-  ]
+  ],
+  "narration": {
+    "enabled": false
+  }
 }

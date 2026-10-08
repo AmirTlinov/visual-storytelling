@@ -9,14 +9,14 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { narrationSource } from '../tools/story-document.mjs';
 const source = await build({
-  entryPoints: ['src/book/document.ts'],
+  entryPoints: ['src/story/document.ts'],
   bundle: true,
   write: false,
   format: 'esm',
   platform: 'node',
 });
 
-const { documentNarration, documentScript, authoredChapter } = await import(
+const { documentNarration, documentScript, documentChapter, authoredChapter } = await import(
   'data:text/javascript;base64,' + Buffer.from(source.outputFiles[0].text).toString('base64')
 );
 const document = {
@@ -47,14 +47,14 @@ test('speech projection follows the scene consumer inherited from its workspace'
   try {
     const consumer = join(directory, 'node_modules/@visual-storytelling/core');
     const scene = join(directory, 'scenes/circuit');
-    await mkdir(join(consumer, 'dist/book'), { recursive: true });
+    await mkdir(join(consumer, 'dist/story'), { recursive: true });
     await mkdir(scene, { recursive: true });
     await writeFile(
       join(consumer, 'package.json'),
       JSON.stringify({ name: '@visual-storytelling/core', version: '7.0.0', type: 'module' }),
     );
     await writeFile(
-      join(consumer, 'dist/book/document.js'),
+      join(consumer, 'dist/story/document.js'),
       'export const documentNarration = document => ({ owner: "scene-consumer-7", title: document.title, intro: .75 });',
     );
     await writeFile(join(scene, 'story.json'), JSON.stringify(document));
@@ -70,7 +70,7 @@ test('speech projection follows the scene consumer inherited from its workspace'
     if (projection) await rm(projection.file, { force: true });
   }
 });
-test('one authored document feeds action IDs, speech and aligned page transitions', () => {
+test('one authored document feeds action IDs, speech and exact aligned chapter boundaries', () => {
   const spec = documentNarration(document);
   assert.equal(spec.segments[0].text, document.chapters[0].beats[0].say);
   assert.equal(spec.segments[0].cues[0].id, 'room.switch');
@@ -88,14 +88,14 @@ test('one authored document feeds action IDs, speech and aligned page transition
   };
   const script = documentScript(document, aligned);
   assert.deepEqual(script.cues['paper.try'], aligned.cues['paper.try']);
-  assert.equal(script.cues.paper.start, 8.9);
+  assert.equal(script.cues.paper.start, 10);
   assert.throws(
     () =>
       documentScript(document, {
         ...aligned,
-        segments: [aligned.segments[0], { ...aligned.segments[1], start: 7.5 }],
+        segments: [aligned.segments[0], { ...aligned.segments[1], start: 6.5 }],
       }),
-    /before chapter/,
+    /overlaps the preceding action/,
   );
   assert.throws(
     () =>
@@ -110,23 +110,62 @@ test('one authored document feeds action IDs, speech and aligned page transition
   assert.equal(owned.narration.music.path, 'a.wav');
 });
 
-test('entering the world notebook reserves camera time without moving spoken cues', () => {
-  const story = {
-    ...document,
-    chapters: document.chapters.map((chapter, i) => ({ ...chapter, view: i ? 'paper' : 'cast' })),
-  };
-  assert.equal(documentNarration(story).segments[0].pause_after, 4.2);
-  const aligned = {
-    duration: 15,
-    cues: { 'room.switch': { start: 4.4, end: 7 }, 'paper.try': { start: 12, end: 14 } },
-    segments: [
-      { id: 'room', start: 4.4, end: 7 },
-      { id: 'paper', start: 12, end: 14 },
+test('quiet chapters start immediately, retain action timing and need no speech installation', () => {
+  const quiet = {
+    title: 'Проверка площади',
+    chapters: [
+      {
+        id: 'area',
+        title: 'Удвоение',
+        beats: [
+          {
+            id: 'predict',
+            text: 'Запишите предположение.',
+            seconds: 3,
+            timing: { until: 'change' },
+          },
+          { id: 'change', text: 'Удвоим ширину.', seconds: 2, timing: { duration: 4 } },
+        ],
+      },
     ],
   };
-  const script = documentScript(story, aligned);
-  assert.equal(script.cues.paper.start, 7.8);
-  assert.deepEqual(script.cues['paper.try'], aligned.cues['paper.try']);
+  const projection = documentNarration(quiet);
+  assert.equal(projection.intro, 0);
+  assert.equal(projection.segments[0].pause_after, 0.6);
+  assert.equal(projection.segments[0].text, 'Запишите предположение. Удвоим ширину.');
+  const chapter = documentChapter(quiet, 'area');
+  assert.equal(chapter.seconds, 7);
+  assert.equal(chapter.script.cues.predict.start, 0);
+  assert.equal(chapter.script.cues.predict.end, 3);
+  assert.equal(chapter.script.cues.change.end, 7);
+  assert.deepEqual(chapter.script.cues.change.speech, { start: 3, end: 5 });
+  assert.equal(chapter.beats[0].timing, undefined);
+});
+
+test('aligned chapter local time preserves spoken words and the final action tail', () => {
+  const aligned = documentScript(document, {
+    duration: 13,
+    cues: {
+      'room.switch': { start: 4.4, end: 7, speech: { start: 4.4, end: 5 } },
+      'paper.try': { start: 10, end: 12 },
+    },
+    segments: [
+      {
+        id: 'room',
+        start: 4.4,
+        end: 5,
+        text: 'Разомкнём цепь.',
+        words: [{ text: 'Разомкнём', start: 4.4, end: 4.8 }],
+      },
+      { id: 'paper', start: 10, end: 12, text: 'Проверьте сами.' },
+    ],
+  });
+  const chapter = documentChapter(document, 'room', aligned);
+  assert.equal(chapter.seconds, 7 - 4.4);
+  assert.equal(chapter.script.cues.switch.start, 0);
+  assert.deepEqual(chapter.script.cues.switch.speech, { start: 0, end: 5 - 4.4 });
+  assert.equal(chapter.script.segments[0].words[0].start, 0);
+  assert.deepEqual(chapter.beats[0].perform, document.chapters[0].beats[0].perform);
 });
 
 test('document action timing survives speech projection and uses existing time after its phrase', () => {

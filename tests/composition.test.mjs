@@ -45,8 +45,8 @@ test('narrated local cues retain intervening pauses, words and reversible chapte
     script,
   });
   assert.equal(plan.script.cues.opening.action, 'Introduction');
-  assert.equal(plan.script.cues['book-open'], undefined);
-  assert.doesNotThrow(() => composeChapters([{ ...chapter, id: 'book-open' }]));
+  assert.equal(plan.script.cues['another-id'], undefined);
+  assert.doesNotThrow(() => composeChapters([{ ...chapter, id: 'another-id' }]));
   assert.deepEqual(
     [7, 0, 5, 3, 9, 1, 8].map((time) => chapterTime(plan.timings[0], time)),
     [3, 0, 2, 1, 4, 0, 4],
@@ -93,8 +93,8 @@ test('each boundary owns its transition duration and retains reversible local ti
   assert.throws(() => composeChapters(chapters, { transition: () => NaN }), /non-negative/);
 });
 
-test('full-page capture preserves portrait and wide paper while the notebook shot survives resize', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'notebook-capture-'));
+test('full-page capture freezes portrait and wide drawings and restores their live viewport', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'chapter-capture-'));
   let capture;
   try {
     const bundle = await build({
@@ -102,10 +102,7 @@ test('full-page capture preserves portrait and wide paper while the notebook sho
       stdin: {
         contents: `
           import { inkChapter } from './dist/story/ink-chapter.js';
-          import { Viewport3D } from './dist/viewport/three.js';
-          import { Box3, Vector3, PerspectiveCamera } from './dist/viewport/engine.js';
-          import { notebookCamera } from './dist/book/camera.js';
-          import { notebookPageAspect } from './dist/characters/staging/notebook.js';
+          const captureAspect=1.5;
           import './dist/style.css';
           const host=document.querySelector('#paper'), stage=document.querySelector('#stage');
           const frame={time:0,progress:0,mode:'story',reduced:false,values:{}};
@@ -117,12 +114,6 @@ test('full-page capture preserves portrait and wide paper while the notebook sho
               return {render(){},dispose(){window.removed=true;}};
             },
           }).mount(host).then(presentation=>{
-            const view=Viewport3D.mount(stage);
-            view.controls.enabled=false;
-            const source={width:960,height:650,camera:{x:100,y:40,width:700,height:530},
-              projection:{center:480,horizon:270,floor:610,unit:100,distance:12},
-              book:{kind:'book',at:{x:2,z:3,height:1.5},scale:.8}};
-            const current=notebookCamera(source,.55);
             window.proof=async()=>{
               const frames=[], pending=[];
               for(const [width,height] of [[440,1000],[900,600]]) {
@@ -130,9 +121,9 @@ test('full-page capture preserves portrait and wide paper while the notebook sho
                 presentation.render(frame);
                 const before=window.surface.element.outerHTML;
                 const {x,y,width:w,height:h}=window.surface.element.viewBox.baseVal;
-                const image=presentation.capture({aspect:notebookPageAspect});
+                const image=presentation.capture({aspect:captureAspect});
                 const restored=before===window.surface.element.outerHTML;
-                const fullW=Math.max(w,h*notebookPageAspect),fullH=fullW/notebookPageAspect;
+                const fullW=Math.max(w,h*captureAspect),fullH=fullW/captureAspect;
                 const left=x+(w-fullW)/2,top=y+(h-fullH)/2;
                 pending.push(image.then(canvas=>({
                   width:canvas.width,height:canvas.height,
@@ -148,22 +139,9 @@ test('full-page capture preserves portrait and wide paper while the notebook sho
               const invalid=[0,NaN,-1].map(aspect=>{
                 try{window.surface.withViewport(aspect,()=>{});return false;}catch{return true;}
               });
-              // Switch from an ordinary page-turn camera to the pinhole owner, then resize while paused.
-              view.shot({target:new Box3(new Vector3(-5,-3,0),new Vector3(5,3,0)),direction:[0,0,1],padding:0,reduced:false});
-              view.shot(current.project);
-              const cameraFrames=[];
-              for(const [width,height] of [[440,1000],[900,600],[440,1000]]) {
-                stage.style.width=width+'px';stage.style.height=height+'px';
-                await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-                const expected=new PerspectiveCamera(); current.project(expected,width,height);
-                cameraFrames.push({actual:[...view.camera.matrixWorld.elements,...view.camera.projectionMatrix.elements],
-                  expected:[...expected.matrixWorld.elements,...expected.projectionMatrix.elements]});
-              }
-              view.camera.position.set(100,100,100);view.reset();
-              const reset=[...view.camera.position];
               // Captures are already frozen; disposing the live owners cannot invalidate their inputs.
-              presentation.dispose();view.dispose();
-              return {frames,images:await Promise.all(pending),error,restoredAfterError,invalid,cameraFrames,reset,
+              presentation.dispose();
+              return {frames,images:await Promise.all(pending),error,restoredAfterError,invalid,
                 removed:window.removed,children:host.childElementCount+stage.childElementCount};
             };
           });
@@ -192,7 +170,7 @@ test('full-page capture preserves portrait and wide paper while the notebook sho
       assert.equal(result.images[i].width, Math.round(frame.fullW * 2));
       assert.equal(result.images[i].height, Math.round(frame.fullH * 2));
       assert.deepEqual(result.images[i].pixel, [180, 20, 30, 255]);
-      // The final camera crops the full physical sheet to exactly the preceding live aperture.
+      // Aspect expansion preserves every pixel from the live aperture.
       // SVGAnimatedRect exposes float32 coordinates, so compare below a thousandth of a pixel.
       assert.ok(Math.abs(Math.min(frame.fullW, frame.fullH * frame.aspect) - frame.w) < 1e-4);
       assert.ok(Math.abs(Math.min(frame.fullH, frame.fullW / frame.aspect) - frame.h) < 1e-4);
@@ -200,9 +178,6 @@ test('full-page capture preserves portrait and wide paper while the notebook sho
     assert.equal(result.error, 'capture failed');
     assert.equal(result.restoredAfterError, true);
     assert.deepEqual(result.invalid, [true, true, true]);
-    for (const frame of result.cameraFrames)
-      frame.actual.forEach((value, i) => assert.ok(Math.abs(value - frame.expected[i]) < 1e-12));
-    assert.deepEqual(result.reset, result.cameraFrames.at(-1).expected.slice(12, 15));
     assert.equal(result.removed, true);
     assert.equal(result.children, 0);
   } finally {

@@ -1,5 +1,10 @@
-import { IllustratedStory } from '@visual-storytelling/core/book';
-import { chibi, teachingRoom, arrange } from '@visual-storytelling/core/characters';
+import { IllustratedStory, inkChapter } from '@visual-storytelling/core/story';
+import {
+  chibi,
+  teachingRoom,
+  arrange,
+  characterChapter,
+} from '@visual-storytelling/core/characters';
 import document from './story.json';
 import { circuitDiagram } from '@visual-storytelling/core/recipes';
 import '@visual-storytelling/core/style.css';
@@ -19,8 +24,7 @@ window.galleryReady = (async () => {
     create: circuitDiagram,
   };
   const parameters = [{ key: 'closed', label: 'Цепь замкнута', type: 'toggle', value: true }];
-  const drawingId = 'circuit',
-    skin = 'tesla-workshop',
+  const skin = 'tesla-workshop',
     other = 'mira-scholar';
   const room = teachingRoom({
     theme: alternate ? 'library' : 'laboratory',
@@ -29,23 +33,33 @@ window.galleryReady = (async () => {
   const set = alternate
     ? arrange(room, { objects: { board: { at: { x: 0.7, z: 5.3 }, scale: 1.15 } } })
     : room;
+  const world = {
+    pack: chibi,
+    set,
+    cast: {
+      hero: {
+        skin: alternate ? other : skin,
+        scale: alternate ? 0.64 : 0.8,
+        at: 'entry',
+        action: 'think',
+      },
+    },
+  };
   return IllustratedStory.mount(globalThis.document.getElementById('story'), {
-    document: alternate ? { ...document, title: 'Мира · Путь к свету' } : document,
+    document: alternate ? { ...document, title: 'Путь энергии: исследование цепи' } : document,
     script,
     audio,
     parameters,
-    drawings: { [drawingId]: drawing },
-    world: {
-      pack: chibi,
-      set,
-      cast: {
-        hero: {
-          skin: alternate ? other : skin,
-          scale: alternate ? 0.64 : 0.8,
-          at: 'entry',
-          action: 'think',
-        },
-      },
+    chapters: {
+      workshop: (chapter) =>
+        characterChapter({
+          ...world,
+          ...chapter,
+          surfaces: { board: drawing },
+          controls: drawing.controls,
+          valuesAt: drawing.valuesAt,
+        }),
+      experiment: (chapter) => inkChapter({ ...drawing, ...chapter }),
     },
   });
 })();

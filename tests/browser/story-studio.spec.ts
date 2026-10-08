@@ -4,9 +4,13 @@ test('the measured Ink chapter keeps its grid and readable labels through input,
   page,
 }) => {
   await page.setViewportSize({ width: 375, height: 760 });
-  await page.goto('/tlinov-book/index.html');
+  await page.goto('/area-lesson/index.html');
   await page.evaluate(() => window.galleryReady);
-  await page.locator('[data-mode=explore]').click();
+  await page.evaluate(async () =>
+    (document.querySelector('.ve-scene') as any).scene.control([
+      { type: 'parameters', values: { chapter: 'experiment', sceneTime: 1 } },
+    ]),
+  );
   const active = page.locator('[data-chapter]:not([hidden])');
   await page.getByRole('slider', { name: 'Ширина, см', exact: true }).fill('6');
   await page.getByRole('slider', { name: 'Высота, см', exact: true }).fill('5');
@@ -40,25 +44,25 @@ for (const variant of ['', '?variant=mira'])
   }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    await page.goto('/interaction-studio/index.html' + variant);
+    await page.goto('/character-lesson/index.html' + variant);
     await page.evaluate(() => window.galleryReady);
     const cues = await page.evaluate(() => {
       const scene = (document.querySelector('.ve-scene') as any).scene;
       return Object.fromEntries(scene.review().cues.map((cue: any) => [cue.id, cue]));
     });
     const sample = (time: number) =>
-      page.evaluate((t) => {
+      page.evaluate(async (t) => {
         const scene = (document.querySelector('.ve-scene') as any).scene;
-        scene.seek(t);
+        await scene.control([{ type: 'seek', time: t }]);
         return { state: scene.snapshot(), presentation: scene.presentation() };
       }, time);
-    const contact = await page.evaluate(() => {
+    const contact = await page.evaluate(async () => {
       const scene = (document.querySelector('.ve-scene') as any).scene;
       const cue = scene.review().cues.find((cue: { id: string }) => cue.id === 'letter.switch');
       // Route length determines approach time. Observe activation during real hand contact.
       for (let step = 1; step < 24; step++) {
         const time = cue.start + ((cue.end - cue.start) * step) / 24;
-        scene.seek(time);
+        await scene.control([{ type: 'seek', time }]);
         const state = scene.snapshot();
         const press = state.content.world.actors.hero.contacts.find(
           (c: { kind: string }) => c.kind === 'press',
@@ -87,10 +91,11 @@ for (const variant of ['', '?variant=mira'])
         seated.state.content.world.actors.hero.at.x - seated.state.content.world.actors.friend.at.x,
       ),
     ).toBeGreaterThan(1);
-    const first = await sample(cues.experiment.start + 2.5);
+    const sampleTime = cues.experiment.start + (cues.experiment.end - cues.experiment.start) * 0.4;
+    const first = await sample(sampleTime);
     expect(first.state.chapter).toBe('experiment');
-    await sample(cues.experiment.start + 5.5);
-    const rewound = await sample(cues.experiment.start + 2.5);
+    await sample(cues.experiment.start + (cues.experiment.end - cues.experiment.start) * 0.8);
+    const rewound = await sample(sampleTime);
     expect(rewound.state.content).toEqual(first.state.content);
     expect((await sample(contact.time)).state).toEqual(contact.state);
     expect(errors).toEqual([]);

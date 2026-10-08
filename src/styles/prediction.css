@@ -1,0 +1,17 @@
+.ve-prediction {
+  max-width: 58rem;
+  margin: 18px auto;
+  color: var(--ve-ink);
+  font-family: var(--ve-font);
+  font-size: clamp(18px, 2.5vw, 22px);
+  line-height: 1.5;
+}
+.ve-prediction-choices {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ve-prediction [role='status'] {
+  min-height: 1.5em;
+}

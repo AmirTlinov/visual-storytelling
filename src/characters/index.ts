@@ -1,5 +1,6 @@
 export { CharacterStory } from './story.js';
 export { CharacterStage } from './stage.js';
+export { characterChapter } from './chapter.js';
 export { chibi } from './packs/chibi.js';
 export { laboratory, conservatory, workshop } from './sets.js';
 export { bulb, seedling, spark, workbench } from './props.js';

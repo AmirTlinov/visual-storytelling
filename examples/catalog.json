@@ -3,94 +3,257 @@
     "title": "От идеи к опыту",
     "page": "index.html",
     "time": 4.4,
-    "checkpoints": [0, 4.4, 7, 8, 9, 11],
+    "checkpoints": [
+      0,
+      4.4,
+      7,
+      8,
+      9,
+      11
+    ],
     "group": "techniques",
     "summary": "Прозрачный CharacterStage внутри Viewport3D: один плеер ведёт героев, текстуру, уход и приближение камеры.",
-    "tags": ["CharacterStage", "персонажи", "3d", "CanvasTexture"],
+    "tags": [
+      "CharacterStage",
+      "персонажи",
+      "3d",
+      "CanvasTexture"
+    ],
     "source": "scene.js",
-    "guides": ["docs/characters.md"]
+    "guides": [
+      "docs/characters.md"
+    ],
+    "useFor": "Прозрачный CharacterStage внутри Viewport3D: один плеер ведёт героев, текстуру, уход и приближение камеры.",
+    "visibleAction": "От идеи к опыту",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "chibi-tesla": {
     "title": "Тесла · Момент открытия",
     "page": "index.html",
     "time": 4.6,
-    "checkpoints": [0, 2, 3.2, 4.6, 6.5, 7.8],
+    "checkpoints": [
+      0,
+      2,
+      3.2,
+      4.6,
+      6.5,
+      7.8
+    ],
     "group": "explanations",
     "summary": "Принятый персонаж на готовом риге: три эпизода, свет и декорация без ручного скелета.",
-    "tags": ["персонажи", "Chibi", "CharacterStory", "рассказ"],
+    "tags": [
+      "персонажи",
+      "Chibi",
+      "CharacterStory",
+      "рассказ"
+    ],
     "source": "scene.js",
-    "guides": ["docs/characters.md"],
+    "guides": [
+      "docs/characters.md"
+    ],
     "recommended": true,
-    "reference": true
+    "reference": true,
+    "useFor": "Принятый персонаж на готовом риге: три эпизода, свет и декорация без ручного скелета.",
+    "visibleAction": "Тесла · Момент открытия",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "chibi-garden": {
     "title": "Мира · Дать ростку время",
     "page": "index.html",
     "time": 5.6,
-    "checkpoints": [0, 2.6, 4, 5.6, 7.2],
+    "checkpoints": [
+      0,
+      2.6,
+      4,
+      5.6,
+      7.2
+    ],
     "group": "explanations",
     "summary": "Другой персонаж и окружение на том же риге; рост растения связан с эпизодом.",
-    "tags": ["персонажи", "Chibi", "CharacterStory", "рассказ"],
+    "tags": [
+      "персонажи",
+      "Chibi",
+      "CharacterStory",
+      "рассказ"
+    ],
     "source": "scene.js",
-    "guides": ["docs/characters.md"]
+    "guides": [
+      "docs/characters.md"
+    ],
+    "useFor": "Другой персонаж и окружение на том же риге; рост растения связан с эпизодом.",
+    "visibleAction": "Мира · Дать ростку время",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "chibi-transfer": {
     "title": "Идея становится общей",
     "page": "index.html",
     "time": 7.7,
-    "checkpoints": [0, 2.5, 4.5, 5.3, 6.5, 7.7, 9, 10.2],
+    "checkpoints": [
+      0,
+      2.5,
+      4.5,
+      5.3,
+      6.5,
+      7.7,
+      9,
+      10.2
+    ],
     "group": "explanations",
     "summary": "Два героя и один предмет: привязка к ладоням, полёт и совместная реакция.",
-    "tags": ["персонажи", "Chibi", "CharacterStory", "рассказ"],
+    "tags": [
+      "персонажи",
+      "Chibi",
+      "CharacterStory",
+      "рассказ"
+    ],
     "source": "scene.js",
-    "guides": ["docs/characters.md"]
+    "guides": [
+      "docs/characters.md"
+    ],
+    "useFor": "Два героя и один предмет: привязка к ладоням, полёт и совместная реакция.",
+    "visibleAction": "Идея становится общей",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "morph-story": {
     "title": "Те же части, новое целое",
     "page": "index.html",
     "time": 14.5,
-    "checkpoints": [0, 2.5, 4.5, 7.5, 9.5, 12.5, 14.5],
+    "checkpoints": [
+      0,
+      2.5,
+      4.5,
+      7.5,
+      9.5,
+      12.5,
+      14.5
+    ],
     "group": "explanations",
     "summary": "Деление, удвоение и сборка через MorphStory: параметры, операция и метки времени без ручной обвязки.",
-    "tags": ["морфинг", "MorphStory", "авторский API", "деление", "3d"],
+    "tags": [
+      "морфинг",
+      "MorphStory",
+      "авторский API",
+      "деление",
+      "3d"
+    ],
     "source": "scene.js",
-    "guides": ["docs/morph-stories.md"],
-    "recommended": true
+    "guides": [
+      "docs/morph-stories.md"
+    ],
+    "recommended": true,
+    "useFor": "Деление, удвоение и сборка через MorphStory: параметры, операция и метки времени без ручной обвязки.",
+    "visibleAction": "Те же части, новое целое",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "ink-story": {
     "title": "Как складывается образ",
     "page": "index.html",
     "time": 5.5,
-    "checkpoints": [0, 1.5, 3, 5.5],
+    "checkpoints": [
+      0,
+      1.5,
+      3,
+      5.5
+    ],
     "group": "explanations",
     "summary": "Слова соединяются через тот же MorphStory; текст, поля и время ведут существующие владельцы.",
-    "tags": ["текст", "морфинг", "MorphStory", "InkMorph"],
+    "tags": [
+      "текст",
+      "морфинг",
+      "MorphStory",
+      "InkMorph"
+    ],
     "source": "scene.js",
-    "guides": ["docs/morph-stories.md"]
+    "guides": [
+      "docs/morph-stories.md"
+    ],
+    "useFor": "Слова соединяются через тот же MorphStory; текст, поля и время ведут существующие владельцы.",
+    "visibleAction": "Как складывается образ",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "area-story": {
     "title": "Почему 4 × 5 = 20?",
     "page": "index.html",
     "time": 61.929,
-    "checkpoints": [0, 5.189, 8.195, 23.709, 40.669, 61.729, 75.83],
+    "checkpoints": [
+      0,
+      5.189,
+      8.195,
+      23.709,
+      40.669,
+      61.729,
+      75.83
+    ],
     "group": "explanations",
     "summary": "Одна клетка → ряд → площадь. Рисунок раскрывает смысл умножения.",
-    "tags": ["площадь", "умножение", "рассказ", "озвучка", "story"],
+    "tags": [
+      "площадь",
+      "умножение",
+      "рассказ",
+      "озвучка",
+      "story"
+    ],
     "source": "scene.js",
-    "guides": ["skills/visual-explainer/references/scene-template.md"],
-    "reference": true
+    "guides": [
+      "skills/visual-explainer/references/scene-template.md"
+    ],
+    "reference": true,
+    "useFor": "Одна клетка → ряд → площадь. Рисунок раскрывает смысл умножения.",
+    "visibleAction": "Почему 4 × 5 = 20?",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "remainder-story": {
     "title": "Откуда берётся остаток",
     "page": "index.html",
     "time": 32.927,
-    "checkpoints": [0, 9.827, 19.619, 28.929, 32.727],
+    "checkpoints": [
+      0,
+      9.827,
+      19.619,
+      28.929,
+      32.727
+    ],
     "group": "explanations",
     "summary": "23 предмета собираются в семь троек; два остаются за пределами групп.",
-    "tags": ["деление", "остаток", "рассказ", "озвучка", "story"],
+    "tags": [
+      "деление",
+      "остаток",
+      "рассказ",
+      "озвучка",
+      "story"
+    ],
     "source": "scene.js",
-    "guides": ["skills/visual-explainer/references/scene-template.md"],
-    "reference": true
+    "guides": [
+      "skills/visual-explainer/references/scene-template.md"
+    ],
+    "reference": true,
+    "useFor": "23 предмета собираются в семь троек; два остаются за пределами групп.",
+    "visibleAction": "Откуда берётся остаток",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "fraction-of-a-set": {
     "title": "Доля от двенадцати",
@@ -98,8 +261,20 @@
     "time": 0,
     "group": "explanations",
     "summary": "Те же 12 фишек делятся на равные группы и показывают выбранную долю.",
-    "tags": ["дроби", "доля", "группировка", "интерактив"],
-    "source": "scene.js"
+    "tags": [
+      "дроби",
+      "доля",
+      "группировка",
+      "интерактив"
+    ],
+    "source": "scene.js",
+    "guides": [],
+    "useFor": "Те же 12 фишек делятся на равные группы и показывают выбранную долю.",
+    "visibleAction": "Доля от двенадцати",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "equation-balance": {
     "title": "Равновесие уравнения",
@@ -107,8 +282,20 @@
     "time": 0,
     "group": "explanations",
     "summary": "Одинаковые действия с обеих сторон весов приводят к решению уравнения.",
-    "tags": ["алгебра", "уравнение", "весы", "шаги"],
-    "source": "scene.js"
+    "tags": [
+      "алгебра",
+      "уравнение",
+      "весы",
+      "шаги"
+    ],
+    "source": "scene.js",
+    "guides": [],
+    "useFor": "Одинаковые действия с обеих сторон весов приводят к решению уравнения.",
+    "visibleAction": "Равновесие уравнения",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "threshold-neuron": {
     "title": "Когда нейрон включается",
@@ -116,8 +303,22 @@
     "time": 0,
     "group": "explanations",
     "summary": "Взвешенные входы складываются и проверяются на пороге включения.",
-    "tags": ["нейрон", "веса", "сумма", "порог", "числа", "формулы"],
-    "source": "scene.js"
+    "tags": [
+      "нейрон",
+      "веса",
+      "сумма",
+      "порог",
+      "числа",
+      "формулы"
+    ],
+    "source": "scene.js",
+    "guides": [],
+    "useFor": "Взвешенные входы складываются и проверяются на пороге включения.",
+    "visibleAction": "Когда нейрон включается",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "bubble-sort": {
     "title": "Пузырьковая сортировка",
@@ -133,8 +334,20 @@
     ],
     "group": "explanations",
     "summary": "Сравнивайте соседние числа и следите за обменами до готового порядка.",
-    "tags": ["алгоритм", "сортировка", "массив", "шаги"],
-    "source": "scene.js"
+    "tags": [
+      "алгоритм",
+      "сортировка",
+      "массив",
+      "шаги"
+    ],
+    "source": "scene.js",
+    "guides": [],
+    "useFor": "Сравнивайте соседние числа и следите за обменами до готового порядка.",
+    "visibleAction": "Пузырьковая сортировка",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "shared-memory": {
     "title": "Общая память CPU и GPU",
@@ -150,32 +363,96 @@
     ],
     "group": "explanations",
     "summary": "Проследите передачу данных между процессорами и общей памятью.",
-    "tags": ["cpu", "gpu", "память", "передача", "данные"],
-    "source": "scene.js"
+    "tags": [
+      "cpu",
+      "gpu",
+      "память",
+      "передача",
+      "данные"
+    ],
+    "source": "scene.js",
+    "guides": [],
+    "useFor": "Проследите передачу данных между процессорами и общей памятью.",
+    "visibleAction": "Общая память CPU и GPU",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "explorer-3d": {
     "title": "Сколько места внутри коробки?",
     "page": "index.html",
     "time": 63.31,
-    "checkpoints": [0, 17.347, 30.769, 44.666, 63.31, 72.929, 84.624, 99.525],
+    "checkpoints": [
+      0,
+      17.347,
+      30.769,
+      44.666,
+      63.31,
+      72.929,
+      84.624,
+      99.525
+    ],
     "group": "explanations",
     "summary": "Кубик → ряд → слой → объём. Рассказ с вращением и исследованием коробки.",
-    "tags": ["объём", "3d", "рассказ", "камера", "SceneShell"],
+    "tags": [
+      "объём",
+      "3d",
+      "рассказ",
+      "камера",
+      "SceneShell"
+    ],
     "source": "scene.js",
-    "guides": ["skills/visual-explainer/references/scene-template.md"],
-    "recommended": true
+    "guides": [
+      "skills/visual-explainer/references/scene-template.md"
+    ],
+    "recommended": true,
+    "form": "spatial",
+    "useFor": "Устройство объёмного предмета",
+    "visibleAction": "Камера приближает выбранный узел",
+    "capabilities": [
+      "png",
+      "html",
+      "interactive",
+      "camera"
+    ]
   },
   "explorer-svg": {
     "title": "Сложение перемещений",
     "page": "index.html",
     "time": 18.828,
-    "checkpoints": [0, 9.178, 13.338, 18.628],
+    "checkpoints": [
+      0,
+      9.178,
+      13.338,
+      18.628
+    ],
     "group": "explanations",
     "summary": "Перемещения складываются на плоскости. Готовая основа рассказа с камерой.",
-    "tags": ["вектор", "сложение", "svg", "2d", "рассказ", "камера", "SceneShell"],
+    "tags": [
+      "вектор",
+      "сложение",
+      "svg",
+      "2d",
+      "рассказ",
+      "камера",
+      "SceneShell"
+    ],
     "source": "scene.js",
-    "guides": ["skills/visual-explainer/references/scene-template.md"],
-    "recommended": true
+    "guides": [
+      "skills/visual-explainer/references/scene-template.md"
+    ],
+    "recommended": true,
+    "form": "illustration",
+    "useFor": "Устройство и вложенные части предмета",
+    "visibleAction": "Выделение части раскрывает её связь с целым",
+    "capabilities": [
+      "svg",
+      "png",
+      "html",
+      "interactive",
+      "detail"
+    ]
   },
   "controls": {
     "title": "Рисованные элементы управления",
@@ -183,64 +460,205 @@
     "time": 0,
     "group": "techniques",
     "summary": "Кнопки, поля, ползунки и выбор в общем рисованном стиле.",
-    "tags": ["управление", "кнопки", "ползунки", "поля", "controls"],
+    "tags": [
+      "управление",
+      "кнопки",
+      "ползунки",
+      "поля",
+      "controls"
+    ],
     "source": "scene.js",
-    "guides": ["skills/visual-explainer/references/scene-authoring.md"]
+    "guides": [
+      "skills/visual-explainer/references/scene-authoring.md"
+    ],
+    "useFor": "Кнопки, поля, ползунки и выбор в общем рисованном стиле.",
+    "visibleAction": "Рисованные элементы управления",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "ink-fusion": {
     "title": "Живые чернила",
     "page": "index.html",
     "time": 2.2,
-    "checkpoints": [0, 0.5, 0.9, 1.3, 1.9, 2.4, 3.6, 4],
+    "checkpoints": [
+      0,
+      0.5,
+      0.9,
+      1.3,
+      1.9,
+      2.4,
+      3.6,
+      4
+    ],
     "group": "techniques",
     "summary": "Буквы и маски соединяются, сохраняя характер рисованных штрихов.",
-    "tags": ["морфинг", "текст", "чернила", "InkMorph", "InkFusion"],
+    "tags": [
+      "морфинг",
+      "текст",
+      "чернила",
+      "InkMorph",
+      "InkFusion"
+    ],
     "source": "scene.js",
-    "guides": ["examples/ink-fusion/README.md"]
+    "guides": [
+      "examples/ink-fusion/README.md"
+    ],
+    "useFor": "Буквы и маски соединяются, сохраняя характер рисованных штрихов.",
+    "visibleAction": "Живые чернила",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "volume-morph": {
     "title": "Как меняется объёмная форма?",
     "page": "index.html",
     "time": 17,
-    "checkpoints": [0, 6.8, 9.5, 17, 20, 26.5, 34, 42, 50],
+    "checkpoints": [
+      0,
+      6.8,
+      9.5,
+      17,
+      20,
+      26.5,
+      34,
+      42,
+      50
+    ],
     "group": "techniques",
     "summary": "Объёмные формы соединяются и разделяются вместе с надписями.",
-    "tags": ["морфинг", "объём", "3d", "Morph3D"],
+    "tags": [
+      "морфинг",
+      "объём",
+      "3d",
+      "Morph3D"
+    ],
     "source": "scene.js",
-    "guides": ["examples/volume-morph/README.md"]
+    "guides": [
+      "examples/volume-morph/README.md"
+    ],
+    "useFor": "Объёмные формы соединяются и разделяются вместе с надписями.",
+    "visibleAction": "Как меняется объёмная форма?",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "math-morph": {
     "title": "Собрать, разделить, умножить",
     "page": "index.html",
     "time": 22,
-    "checkpoints": [0, 7, 12, 17, 22, 26, 35, 40, 48, 54, 63, 69],
+    "checkpoints": [
+      0,
+      7,
+      12,
+      17,
+      22,
+      26,
+      35,
+      40,
+      48,
+      54,
+      63,
+      69
+    ],
     "group": "techniques",
     "summary": "Сложение, деление и умножение показаны превращением самих величин.",
-    "tags": ["морфинг", "математика", "арифметика", "2d", "3d", "MathMorph"],
+    "tags": [
+      "морфинг",
+      "математика",
+      "арифметика",
+      "2d",
+      "3d",
+      "MathMorph"
+    ],
     "source": "scene.js",
-    "guides": ["docs/morphing.md"]
+    "guides": [
+      "docs/morphing.md"
+    ],
+    "useFor": "Сложение, деление и умножение показаны превращением самих величин.",
+    "visibleAction": "Собрать, разделить, умножить",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "neuron-morph": {
     "title": "Как нейрон собирает сигнал",
     "page": "index.html",
     "time": 11,
-    "checkpoints": [0, 6, 9.5, 11, 16.8, 19.5, 21],
+    "checkpoints": [
+      0,
+      6,
+      9.5,
+      11,
+      16.8,
+      19.5,
+      21
+    ],
     "group": "techniques",
     "summary": "Умножение входов на веса и сумма проходят через общий API вычислений.",
-    "tags": ["морфинг", "нейрон", "веса", "вычисление", "MathMorph"],
+    "tags": [
+      "морфинг",
+      "нейрон",
+      "веса",
+      "вычисление",
+      "MathMorph"
+    ],
     "source": "scene.js",
-    "guides": ["examples/neuron-morph/README.md"]
+    "guides": [
+      "examples/neuron-morph/README.md"
+    ],
+    "useFor": "Умножение входов на веса и сумма проходят через общий API вычислений.",
+    "visibleAction": "Как нейрон собирает сигнал",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "long-calculation": {
     "title": "Как множество вкладов становится числом",
     "page": "index.html",
     "time": 15,
-    "checkpoints": [0, 3.9, 4, 5.9, 6, 15, 17.9, 18, 35, 39, 41.9, 42, 61],
+    "checkpoints": [
+      0,
+      3.9,
+      4,
+      5.9,
+      6,
+      15,
+      17.9,
+      18,
+      35,
+      39,
+      41.9,
+      42,
+      61
+    ],
     "group": "techniques",
     "summary": "Сигнал нейрона и баланс из 16–64 вкладов. Один расчёт и одна метка рассказа ведут все части к общему результату.",
-    "tags": ["MathMorph", "MorphStory", "вычисление", "вектор", "сумма", "нейрон", "3d"],
+    "tags": [
+      "MathMorph",
+      "MorphStory",
+      "вычисление",
+      "вектор",
+      "сумма",
+      "нейрон",
+      "3d"
+    ],
     "source": "scene.js",
-    "guides": ["docs/morphing.md", "docs/morph-stories.md"]
+    "guides": [
+      "docs/morphing.md",
+      "docs/morph-stories.md"
+    ],
+    "useFor": "Сигнал нейрона и баланс из 16–64 вкладов. Один расчёт и одна метка рассказа ведут все части к общему результату.",
+    "visibleAction": "Как множество вкладов становится числом",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "morph-contact": {
     "title": "Форма становится опорой",
@@ -248,9 +666,22 @@
     "time": 0,
     "group": "techniques",
     "summary": "Меняющаяся форма остаётся опорой для соприкасающихся объектов.",
-    "tags": ["морфинг", "контакт", "физика", "Morph"],
+    "tags": [
+      "морфинг",
+      "контакт",
+      "физика",
+      "Morph"
+    ],
     "source": "scene.js",
-    "guides": ["examples/morph-contact/README.md"]
+    "guides": [
+      "examples/morph-contact/README.md"
+    ],
+    "useFor": "Меняющаяся форма остаётся опорой для соприкасающихся объектов.",
+    "visibleAction": "Форма становится опорой",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "logic-gates": {
     "title": "Логические элементы",
@@ -258,8 +689,21 @@
     "time": 0,
     "group": "explanations",
     "summary": "Восемь логических элементов с одинаковым порядком входов и таблицами истинности.",
-    "tags": ["логика", "элементы", "таблица", "схема", "svg"],
-    "source": "build.py"
+    "tags": [
+      "логика",
+      "элементы",
+      "таблица",
+      "схема",
+      "svg"
+    ],
+    "source": "build.py",
+    "guides": [],
+    "useFor": "Восемь логических элементов с одинаковым порядком входов и таблицами истинности.",
+    "visibleAction": "Логические элементы",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "geometric-tensor": {
     "title": "Геометрия тензора",
@@ -267,51 +711,141 @@
     "time": 0,
     "group": "explanations",
     "summary": "Оси, срезы и компоненты помогают прочитать многомерный массив.",
-    "tags": ["тензор", "массив", "геометрия", "svg"],
+    "tags": [
+      "тензор",
+      "массив",
+      "геометрия",
+      "svg"
+    ],
     "source": "build.mjs",
-    "guides": ["skills/visual-explainer/references/interactive-tensors.md"]
+    "guides": [
+      "skills/visual-explainer/references/interactive-tensors.md"
+    ],
+    "useFor": "Оси, срезы и компоненты помогают прочитать многомерный массив.",
+    "visibleAction": "Геометрия тензора",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "parameter-cube": {
     "title": "Как веса BERT собирают запрос",
     "page": "preview.html",
     "time": 7.2,
-    "checkpoints": [0, 1, 2.65, 3.7, 5, 6.3, 7.2],
+    "checkpoints": [
+      0,
+      1,
+      2.65,
+      3.7,
+      5,
+      6.3,
+      7.2
+    ],
     "group": "explanations",
     "summary": "Выберите вес BERT и проследите вклады входов до компоненты запроса.",
-    "tags": ["bert", "параметры", "веса", "матрица", "тензор", "нейрон", "проекция"],
+    "tags": [
+      "bert",
+      "параметры",
+      "веса",
+      "матрица",
+      "тензор",
+      "нейрон",
+      "проекция"
+    ],
     "source": "cube.mjs",
-    "guides": ["skills/visual-explainer/references/interactive-tensors.md"]
+    "guides": [
+      "skills/visual-explainer/references/interactive-tensors.md"
+    ],
+    "useFor": "Выберите вес BERT и проследите вклады входов до компоненты запроса.",
+    "visibleAction": "Как веса BERT собирают запрос",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "lc-oscillator": {
     "title": "Колебательный LC-контур",
     "page": "preview.html",
     "time": 0.75,
-    "checkpoints": [0, 0.75, 1.5, 2.25],
+    "checkpoints": [
+      0,
+      0.75,
+      1.5,
+      2.25
+    ],
     "group": "explanations",
     "summary": "Заряд и ток связывают электрическое и магнитное поля колебательного контура.",
-    "tags": ["физика", "lc", "колебания", "электричество", "поле"],
+    "tags": [
+      "физика",
+      "lc",
+      "колебания",
+      "электричество",
+      "поле"
+    ],
     "source": "build.py",
-    "guides": ["skills/visual-explainer/references/lc-oscillator.md"]
+    "guides": [
+      "skills/visual-explainer/references/lc-oscillator.md"
+    ],
+    "useFor": "Заряд и ток связывают электрическое и магнитное поля колебательного контура.",
+    "visibleAction": "Колебательный LC-контур",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "vector": {
     "title": "Матрица меняет вектор",
     "page": "index.html",
     "time": 16,
-    "checkpoints": [0, 8, 16],
+    "checkpoints": [
+      0,
+      8,
+      16
+    ],
     "group": "explanations",
     "summary": "Изменяйте матрицу и наблюдайте, как она преобразует вектор на плоскости.",
-    "tags": ["матрица", "вектор", "линейная алгебра", "2d"],
-    "source": "index.ts"
+    "tags": [
+      "матрица",
+      "вектор",
+      "линейная алгебра",
+      "2d"
+    ],
+    "source": "index.ts",
+    "guides": [],
+    "useFor": "Изменяйте матрицу и наблюдайте, как она преобразует вектор на плоскости.",
+    "visibleAction": "Матрица меняет вектор",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "materials": {
     "title": "Инструменты одного почерка",
     "page": "index.html",
     "time": 4,
-    "checkpoints": [0, 2, 4],
+    "checkpoints": [
+      0,
+      2,
+      4
+    ],
     "group": "techniques",
     "summary": "Перо, маркер, штриховка и подписи на одной поверхности.",
-    "tags": ["материалы", "палитра", "перо", "маркер", "штриховка", "SketchInk"],
-    "source": "index.ts"
+    "tags": [
+      "материалы",
+      "палитра",
+      "перо",
+      "маркер",
+      "штриховка",
+      "SketchInk"
+    ],
+    "source": "index.ts",
+    "guides": [],
+    "useFor": "Перо, маркер, штриховка и подписи на одной поверхности.",
+    "visibleAction": "Инструменты одного почерка",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "computer-explorer": {
     "title": "Внутри компьютера",
@@ -319,9 +853,26 @@
     "time": 0,
     "group": "explanations",
     "summary": "Раскройте компьютер от устройств до ячеек памяти и транзисторов.",
-    "tags": ["компьютер", "cpu", "gpu", "ssd", "ram", "lcd", "вложенность", "камера"],
+    "tags": [
+      "компьютер",
+      "cpu",
+      "gpu",
+      "ssd",
+      "ram",
+      "lcd",
+      "вложенность",
+      "камера"
+    ],
     "source": "scenes.js",
-    "guides": ["skills/visual-explainer/references/nested-explorer.md"]
+    "guides": [
+      "skills/visual-explainer/references/nested-explorer.md"
+    ],
+    "useFor": "Раскройте компьютер от устройств до ячеек памяти и транзисторов.",
+    "visibleAction": "Внутри компьютера",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "neuron-explorer": {
     "title": "Внутри нейрона",
@@ -329,39 +880,117 @@
     "time": 0,
     "group": "explanations",
     "summary": "Исследуйте устройство нейрона, переходя от целого к деталям сигнала.",
-    "tags": ["нейрон", "вложенность", "камера", "сигнал"],
+    "tags": [
+      "нейрон",
+      "вложенность",
+      "камера",
+      "сигнал"
+    ],
     "source": "scene.js",
-    "guides": ["skills/visual-explainer/references/nested-explorer.md"]
+    "guides": [
+      "skills/visual-explainer/references/nested-explorer.md"
+    ],
+    "useFor": "Исследуйте устройство нейрона, переходя от целого к деталям сигнала.",
+    "visibleAction": "Внутри нейрона",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "physical-objects": {
     "title": "Физические материалы",
     "page": "index.html",
     "time": 0.65,
-    "checkpoints": [0, 0.5, 0.65, 1, 2],
+    "checkpoints": [
+      0,
+      0.5,
+      0.65,
+      1,
+      2
+    ],
     "group": "techniques",
     "summary": "Столкновения, упругость, деформация и захват объектов в 2D и 3D.",
-    "tags": ["физика", "материалы", "2d", "3d", "Physics2D", "Physics3D"],
+    "tags": [
+      "физика",
+      "материалы",
+      "2d",
+      "3d",
+      "Physics2D",
+      "Physics3D"
+    ],
     "source": "index.ts",
-    "guides": ["docs/physics.md"]
+    "guides": [
+      "docs/physics.md"
+    ],
+    "useFor": "Столкновения, упругость, деформация и захват объектов в 2D и 3D.",
+    "visibleAction": "Физические материалы",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "written-morph": {
     "title": "Форма несёт смысл",
     "page": "index.html",
     "time": 16.5,
     "checkpoints": [
-      0, 2.5, 5.5, 8, 9.7, 12, 14.5, 16.5, 18.5, 20.3, 22.1, 22.5, 23.5, 28.3, 35, 38
+      0,
+      2.5,
+      5.5,
+      8,
+      9.7,
+      12,
+      14.5,
+      16.5,
+      18.5,
+      20.3,
+      22.1,
+      22.5,
+      23.5,
+      28.3,
+      35,
+      38
     ],
     "group": "techniques",
     "summary": "Формы, числа, слова и абзацы меняются согласованно в 2D и 3D.",
-    "tags": ["морфинг", "текст", "числа", "абзацы", "Morph", "InkMorph"],
+    "tags": [
+      "морфинг",
+      "текст",
+      "числа",
+      "абзацы",
+      "Morph",
+      "InkMorph"
+    ],
     "source": "scene.js",
-    "guides": ["docs/morphing.md"]
+    "guides": [
+      "docs/morphing.md"
+    ],
+    "useFor": "Формы, числа, слова и абзацы меняются согласованно в 2D и 3D.",
+    "visibleAction": "Форма несёт смысл",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "arithmetic-objects": {
     "title": "Что делают четыре действия",
     "page": "index.html",
     "time": 27.5,
-    "checkpoints": [0, 4.5, 7.5, 10, 15, 17.5, 20, 24.5, 27.5, 30, 33, 35, 37.5],
+    "checkpoints": [
+      0,
+      4.5,
+      7.5,
+      10,
+      15,
+      17.5,
+      20,
+      24.5,
+      27.5,
+      30,
+      33,
+      35,
+      37.5
+    ],
     "group": "explanations",
     "summary": "Собрать шарики, отдать монеты, повторить клетки и разделить пироги. Разные действия видны на самих предметах.",
     "tags": [
@@ -377,15 +1006,42 @@
       "морфинг"
     ],
     "source": "scene.js",
-    "guides": ["examples/arithmetic-objects/README.md"]
+    "guides": [
+      "examples/arithmetic-objects/README.md"
+    ],
+    "useFor": "Собрать шарики, отдать монеты, повторить клетки и разделить пироги. Разные действия видны на самих предметах.",
+    "visibleAction": "Что делают четыре действия",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "formula-objects": {
     "title": "Математика меняет форму",
     "page": "index.html",
     "time": 97,
     "checkpoints": [
-      3.56, 9.89, 16.07, 22.43, 29.49, 35.82, 41.21, 49.58, 57.95, 65.81, 74.57, 82, 88.13, 96.36,
-      103.9, 109.52, 118.52, 131.33, 142.6, 149.79, 159.31
+      3.56,
+      9.89,
+      16.07,
+      22.43,
+      29.49,
+      35.82,
+      41.21,
+      49.58,
+      57.95,
+      65.81,
+      74.57,
+      82,
+      88.13,
+      96.36,
+      103.9,
+      109.52,
+      118.52,
+      131.33,
+      142.6,
+      149.79,
+      159.31
     ],
     "group": "techniques",
     "summary": "Восемь озвученных механизмов: разрез площади, матрица, синусоида, касательная, интеграл, обмен энергией, перенос штрихов и цепочка над объёмными телами.",
@@ -401,14 +1057,29 @@
       "MathMorph"
     ],
     "source": "scene.js",
-    "guides": ["docs/morphing.md"],
-    "recommended": true
+    "guides": [
+      "docs/morphing.md"
+    ],
+    "recommended": true,
+    "useFor": "Восемь озвученных механизмов: разрез площади, матрица, синусоида, касательная, интеграл, обмен энергией, перенос штрихов и цепочка над объёмными телами.",
+    "visibleAction": "Математика меняет форму",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "interface-walkthrough": {
     "title": "Как промокод меняет заказ",
     "page": "index.html",
     "time": 18,
-    "checkpoints": [0, 3, 6, 12, 18, 24],
+    "checkpoints": [
+      0,
+      3,
+      6,
+      12,
+      18,
+      24
+    ],
     "group": "techniques",
     "summary": "Рисованный учебный разбор: ввод кода, нажатие, изменение суммы; общие storyActions и постоянный видеокадр.",
     "tags": [
@@ -427,15 +1098,32 @@
       "actions"
     ],
     "source": "scene.js",
-    "guides": ["skills/visual-explainer/references/scene-authoring.md"],
+    "guides": [
+      "skills/visual-explainer/references/scene-authoring.md"
+    ],
     "reference": true,
-    "recommended": true
+    "recommended": true,
+    "useFor": "Рисованный учебный разбор: ввод кода, нажатие, изменение суммы; общие storyActions и постоянный видеокадр.",
+    "visibleAction": "Как промокод меняет заказ",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "product-walkthrough": {
     "title": "Ортоматика · перед оплатой заказа",
     "page": "index.html",
     "time": 16,
-    "checkpoints": [0, 5, 8, 12, 16, 22, 28, 34],
+    "checkpoints": [
+      0,
+      5,
+      8,
+      12,
+      16,
+      22,
+      28,
+      34
+    ],
     "group": "techniques",
     "summary": "Продуктовая инструкция: узнаваемый кабинет и оформление бренда, ввод и переход к оплате на словах рассказчика.",
     "tags": [
@@ -453,14 +1141,31 @@
       "нажатие"
     ],
     "source": "scene.js",
-    "guides": ["skills/visual-explainer/references/scene-authoring.md"],
-    "recommended": true
+    "guides": [
+      "skills/visual-explainer/references/scene-authoring.md"
+    ],
+    "recommended": true,
+    "useFor": "Продуктовая инструкция: узнаваемый кабинет и оформление бренда, ввод и переход к оплате на словах рассказчика.",
+    "visibleAction": "Ортоматика · перед оплатой заказа",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "mathematical-relations": {
     "title": "Одна связь — весь рисунок",
     "page": "index.html",
     "time": 94,
-    "checkpoints": [0, 10, 25, 42.3, 65, 85, 94, 103],
+    "checkpoints": [
+      0,
+      10,
+      25,
+      42.3,
+      65,
+      85,
+      94,
+      103
+    ],
     "group": "techniques",
     "summary": "Общий математический граф: комплексный квадрат, нелинейная карта, фазовый портрет и подписанная поверхность в 3D. Сцена задаёт зависимости без новых методов движка.",
     "tags": [
@@ -473,116 +1178,160 @@
       "3D"
     ],
     "source": "models.js",
-    "guides": ["docs/morphing.md"],
-    "recommended": true
+    "guides": [
+      "docs/morphing.md"
+    ],
+    "recommended": true,
+    "useFor": "Общий математический граф: комплексный квадрат, нелинейная карта, фазовый портрет и подписанная поверхность в 3D. Сцена задаёт зависимости без новых методов движка.",
+    "visibleAction": "Одна связь — весь рисунок",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "gradient-descent": {
     "title": "Почему градиентный спуск идёт зигзагом?",
     "page": "index.html",
     "time": 84,
-    "checkpoints": [0, 18, 39, 53, 68, 84, 100, 113, 134],
+    "checkpoints": [
+      0,
+      18,
+      39,
+      53,
+      68,
+      84,
+      100,
+      113,
+      134
+    ],
     "group": "explanations",
     "summary": "Одна квадратичная модель связывает 3D-поверхность, линии уровня и предобусловленный шаг; независимая проверка авторства через публичные MathMorph и MorphStory.",
-    "tags": ["градиент", "производная", "оптимизация", "3d", "MathMorph", "MorphStory"],
+    "tags": [
+      "градиент",
+      "производная",
+      "оптимизация",
+      "3d",
+      "MathMorph",
+      "MorphStory"
+    ],
     "source": "scene.js",
-    "guides": ["docs/morphing.md", "docs/morph-stories.md"],
-    "recommended": true
+    "guides": [
+      "docs/morphing.md",
+      "docs/morph-stories.md"
+    ],
+    "recommended": true,
+    "useFor": "Одна квадратичная модель связывает 3D-поверхность, линии уровня и предобусловленный шаг; независимая проверка авторства через публичные MathMorph и MorphStory.",
+    "visibleAction": "Почему градиентный спуск идёт зигзагом?",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "chibi-reading": {
     "title": "Тесла · Тихая глава",
     "summary": "Взять книгу, подойти, сесть, листать, встать и вернуть её. Тот же сценарий у Теслы и Миры (?variant=mira), с разным ростом и мебелью.",
     "time": 13,
-    "checkpoints": [0, 2.5, 4.8, 7, 9.5, 11, 13, 16, 18, 21.5, 23.5, 26],
+    "checkpoints": [
+      0,
+      2.5,
+      4.8,
+      7,
+      9.5,
+      11,
+      13,
+      16,
+      18,
+      21.5,
+      23.5,
+      26
+    ],
     "page": "index.html",
     "group": "explanations",
-    "tags": ["персонажи", "действия", "постановка", "CharacterStory"],
+    "tags": [
+      "персонажи",
+      "действия",
+      "постановка",
+      "CharacterStory"
+    ],
     "source": "scene.js",
-    "guides": ["docs/characters.md"]
+    "guides": [
+      "docs/characters.md"
+    ],
+    "useFor": "Взять книгу, подойти, сесть, листать, встать и вернуть её. Тот же сценарий у Теслы и Миры (?variant=mira), с разным ростом и мебелью.",
+    "visibleAction": "Тесла · Тихая глава",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "chibi-partners": {
     "title": "Тесла и Мира · Вместе",
     "summary": "Общая точка встречи ладоней, герои разного роста и ходьба за руки на подготовленной улице.",
     "time": 2.6,
-    "checkpoints": [0, 2.6, 4, 5, 6, 8, 10],
+    "checkpoints": [
+      0,
+      2.6,
+      4,
+      5,
+      6,
+      8,
+      10
+    ],
     "page": "index.html",
     "group": "explanations",
-    "tags": ["персонажи", "действия", "постановка", "CharacterStory"],
+    "tags": [
+      "персонажи",
+      "действия",
+      "постановка",
+      "CharacterStory"
+    ],
     "source": "scene.js",
-    "guides": ["docs/characters.md"]
+    "guides": [
+      "docs/characters.md"
+    ],
+    "useFor": "Общая точка встречи ладоней, герои разного роста и ходьба за руки на подготовленной улице.",
+    "visibleAction": "Тесла и Мира · Вместе",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "chibi-adventure": {
     "title": "Мира · За следующей дверью",
     "summary": "Вход со стеной, светлой комнатой и порогом. Открыть, войти, выйти, подняться по лестнице; тот же маршрут с Теслой (?variant=tesla).",
     "time": 5.7,
-    "checkpoints": [0, 1.9, 3.6, 5.7, 7.7, 9.5, 11.6, 13.2, 16, 19, 22.5],
-    "page": "index.html",
-    "group": "explanations",
-    "tags": ["персонажи", "действия", "постановка", "лестница", "дверь"],
-    "source": "scene.js",
-    "guides": ["docs/characters.md"]
-  },
-  "tlinov-book": {
-    "title": "Tlinov · Как измерить идею",
-    "summary": "Книга сопровождает вступление и смену глав. Прозрачная сетка 5 мм и исследование площади с изменением сторон.",
-    "time": 14,
-    "checkpoints": [0, 1.5, 3.5, 4.2, 8, 10.2, 10.75, 11.3, 17.5, 18.85, 19.4, 25.5],
-    "page": "index.html",
-    "group": "explanations",
-    "tags": ["Tlinov", "книга", "бумага", "сетка", "Storybook", "рассказ"],
-    "source": "scene.js",
-    "guides": ["docs/book.md"],
-    "recommended": true
-  },
-  "story-workshop": {
-    "title": "Tlinov · Дом мыслей",
-    "summary": "Пять глав: дверь, чтение, исследование площади, лестница и встреча. Отношения и готовые цепочки; ?variant=tesla меняет одежду, героя, декорации и перспективу.",
-    "time": 25,
-    "checkpoints": [0, 2, 4.2, 8, 12.7, 20, 25, 32, 40, 49, 57, 62, 66, 74, 79, 82.9],
+    "checkpoints": [
+      0,
+      1.9,
+      3.6,
+      5.7,
+      7.7,
+      9.5,
+      11.6,
+      13.2,
+      16,
+      19,
+      22.5
+    ],
     "page": "index.html",
     "group": "explanations",
     "tags": [
       "персонажи",
-      "книга",
-      "Tlinov",
-      "Storybook",
-      "routines",
+      "действия",
       "постановка",
-      "одежда",
-      "математика"
+      "лестница",
+      "дверь"
     ],
     "source": "scene.js",
-    "guides": ["docs/characters.md", "docs/book.md"],
-    "recommended": true
-  },
-  "interaction-studio": {
-    "title": "Tlinov · Письмо из мастерской",
-    "summary": "Письмо в одной руке, действующий прибор, два места на скамье, адаптивная площадь и физический опыт под общим управлением. ?variant=mira меняет рост, одежду и комнату.",
-    "page": "index.html",
-    "source": "scene.js",
-    "time": 10.6,
-    "checkpoints": [0, 4.2, 6.5, 10.6, 16.4, 20.2, 24, 29, 31, 34.4],
-    "group": "explanations",
-    "tags": ["персонажи", "предметы", "физика", "Storybook", "SceneStory", "математика"],
-    "guides": ["docs/book.md", "docs/characters.md"],
-    "recommended": true
-  },
-  "notebook-entry": {
-    "title": "Тесла · Живая страница",
-    "summary": "Вход в раскрытую тетрадь с одним временем: ток движется прямо во время приближения, тот же SVG остаётся интерактивным. Готовое подключение к существующему ролику.",
-    "page": "index.html",
-    "source": "scene.js",
-    "time": 3.6,
-    "checkpoints": [0, 2, 3.4, 3.8, 4, 6, 8],
-    "group": "explanations",
-    "tags": [
-      "тетрадь",
-      "персонажи",
-      "живой SVG",
-      "NotebookPresentation",
-      "камера",
-      "электричество"
+    "guides": [
+      "docs/characters.md"
     ],
-    "guides": ["docs/book.md", "docs/characters.md"]
+    "useFor": "Вход со стеной, светлой комнатой и порогом. Открыть, войти, выйти, подняться по лестнице; тот же маршрут с Теслой (?variant=tesla).",
+    "visibleAction": "Мира · За следующей дверью",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "tesla-circuit": {
     "title": "Тесла · Путь к свету",
@@ -591,11 +1340,24 @@
     "source": "story.json",
     "time": 10,
     "checkpoints": [
-      0, 2, 4.9, 4.9, 8.47, 13.69, 13.93, 15.37, 18.63, 20.56, 25.74, 25.74, 29.41, 29.41, 36.38
+      0,
+      2,
+      4.9,
+      4.9,
+      8.47,
+      13.69,
+      13.93,
+      15.37,
+      18.63,
+      20.56,
+      25.74,
+      25.74,
+      29.41,
+      29.41,
+      36.38
     ],
     "group": "explanations",
     "tags": [
-      "Tlinov",
       "персонажи",
       "IllustratedStory",
       "доска",
@@ -607,34 +1369,29 @@
       "ток",
       "лампа"
     ],
-    "guides": ["docs/book.md", "docs/characters.md"],
-    "recommended": true
-  },
-  "area-notebook": {
-    "title": "Мира · Одна общая мера",
-    "summary": "Мира показывает площадь на доске и в тетради: 1 см² = 4 клетки. Стороны можно менять на общей прозрачной сетке.",
-    "page": "index.html",
-    "source": "story.json",
-    "time": 10,
-    "checkpoints": [
-      0, 2, 4.92, 4.92, 6.67, 10.31, 12.27, 12.9, 16.13, 18.51, 24.08, 24.08, 27.91, 27.91, 34.98
+    "guides": [
+      "docs/lessons.md",
+      "docs/characters.md"
     ],
-    "group": "explanations",
-    "tags": [
-      "Tlinov",
-      "персонажи",
-      "IllustratedStory",
-      "доска",
-      "поверхность",
-      "речь",
-      "причина",
-      "площадь",
-      "математика",
-      "сетка",
-      "измерение"
+    "recommended": true,
+    "form": "characters",
+    "useFor": "Историческая постановка с живой схемой",
+    "visibleAction": "Герой показывает механизм; ту же схему можно исследовать самому",
+    "capabilities": [
+      "png",
+      "html",
+      "chapters",
+      "characters",
+      "interactive",
+      "voice"
     ],
-    "guides": ["docs/book.md", "docs/characters.md"],
-    "recommended": true
+    "commands": [
+      {
+        "type": "cue",
+        "id": "workshop.explain",
+        "progress": 0.7
+      }
+    ]
   },
   "thermostat-story": {
     "title": "Мастерская · Как решает термостат",
@@ -643,11 +1400,24 @@
     "source": "story.json",
     "time": 10,
     "checkpoints": [
-      0, 2, 4.88, 4.88, 6.72, 10.51, 11.41, 11.45, 14.27, 16.15, 21.38, 21.38, 25.7, 25.7, 33.26
+      0,
+      2,
+      4.88,
+      4.88,
+      6.72,
+      10.51,
+      11.41,
+      11.45,
+      14.27,
+      16.15,
+      21.38,
+      21.38,
+      25.7,
+      25.7,
+      33.26
     ],
     "group": "explanations",
     "tags": [
-      "Tlinov",
       "персонажи",
       "IllustratedStory",
       "доска",
@@ -659,8 +1429,29 @@
       "температура",
       "сравнение"
     ],
-    "guides": ["docs/book.md", "docs/characters.md"],
-    "recommended": true
+    "guides": [
+      "docs/lessons.md",
+      "docs/characters.md"
+    ],
+    "recommended": true,
+    "form": "characters",
+    "useFor": "Историческая постановка с живой схемой",
+    "visibleAction": "Герой показывает механизм; ту же схему можно исследовать самому",
+    "capabilities": [
+      "png",
+      "html",
+      "chapters",
+      "characters",
+      "interactive",
+      "voice"
+    ],
+    "commands": [
+      {
+        "type": "cue",
+        "id": "workshop.explain",
+        "progress": 0.7
+      }
+    ]
   },
   "press-reaction": {
     "title": "Нажатие запускает опыт",
@@ -668,37 +1459,103 @@
     "time": 6.4,
     "group": "techniques",
     "summary": "Нажатие меняет шкалу и включает лампу. Живой SVG сохраняет показание при переносе прибора и обратной перемотке.",
-    "tags": ["CharacterStory", "press", "on.press", "кнопка", "реакция", "персонажи"],
+    "tags": [
+      "CharacterStory",
+      "press",
+      "on.press",
+      "кнопка",
+      "реакция",
+      "персонажи"
+    ],
     "source": "scene.js",
-    "guides": ["docs/characters.md"]
+    "guides": [
+      "docs/characters.md"
+    ],
+    "useFor": "Нажатие меняет шкалу и включает лампу. Живой SVG сохраняет показание при переносе прибора и обратной перемотке.",
+    "visibleAction": "Нажатие запускает опыт",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "ink-trace": {
     "title": "Как возникает траектория?",
     "page": "index.html",
     "time": 4.5,
-    "checkpoints": [0, 1.5, 3, 4.5, 6, 8],
+    "checkpoints": [
+      0,
+      1.5,
+      3,
+      4.5,
+      6,
+      8
+    ],
     "group": "techniques",
     "summary": "Рисующийся пространственный след: длина штриха, пунктир, перемотка и изменение пути принадлежат InkStroke3D.",
-    "tags": ["InkStroke3D", "линия", "траектория", "3d"],
+    "tags": [
+      "InkStroke3D",
+      "линия",
+      "траектория",
+      "3d"
+    ],
     "source": "scene.js",
-    "guides": ["skills/visual-explainer/references/scene-template.md"]
+    "guides": [
+      "skills/visual-explainer/references/scene-template.md"
+    ],
+    "useFor": "Рисующийся пространственный след: длина штриха, пунктир, перемотка и изменение пути принадлежат InkStroke3D.",
+    "visibleAction": "Как возникает траектория?",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "result-delivery": {
     "title": "Куда попадает результат?",
     "page": "index.html",
     "time": 9.5,
-    "checkpoints": [0, 4, 7.5, 9.5, 10.95, 11, 13],
+    "checkpoints": [
+      0,
+      4,
+      7.5,
+      9.5,
+      10.95,
+      11,
+      13
+    ],
     "group": "techniques",
     "summary": "Сумма записывается в память, скалярное произведение — в вектор. MathMorph ведёт размер, путь, появление ячейки и перемотку по двум меткам рассказа.",
-    "tags": ["MathMorph", "ячейка", "перенос", "вычисление", "память", "вектор", "3d"],
+    "tags": [
+      "MathMorph",
+      "ячейка",
+      "перенос",
+      "вычисление",
+      "память",
+      "вектор",
+      "3d"
+    ],
     "source": "scene.js",
-    "guides": ["docs/morphing.md"]
+    "guides": [
+      "docs/morphing.md"
+    ],
+    "useFor": "Сумма записывается в память, скалярное произведение — в вектор. MathMorph ведёт размер, путь, появление ячейки и перемотку по двум меткам рассказа.",
+    "visibleAction": "Куда попадает результат?",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "svg-artwork": {
     "title": "Почему дальний кажется меньше?",
     "page": "index.html",
     "time": 10.2,
-    "checkpoints": [0, 4, 6, 9, 10.2, 12],
+    "checkpoints": [
+      0,
+      4,
+      6,
+      9,
+      10.2,
+      12
+    ],
     "group": "techniques",
     "summary": "Один SVG в двух обличьях: глубина, масштаб, прозрачность и камера на общих часах рассказа.",
     "tags": [
@@ -711,37 +1568,105 @@
       "повторное использование"
     ],
     "source": "scene.js",
-    "guides": ["docs/svg-artwork.md"]
+    "guides": [
+      "docs/svg-artwork.md"
+    ],
+    "useFor": "Один SVG в двух обличьях: глубина, масштаб, прозрачность и камера на общих часах рассказа.",
+    "visibleAction": "Почему дальний кажется меньше?",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "connected-diagram": {
     "title": "Как из слов получается ответ?",
     "page": "index.html",
     "source": "scene.js",
     "time": 10.5,
-    "checkpoints": [0, 1.2, 3.8, 5.5, 8, 10.5, 14],
+    "checkpoints": [
+      0,
+      1.2,
+      3.8,
+      5.5,
+      8,
+      10.5,
+      14
+    ],
     "group": "techniques",
     "summary": "Карточки меняют расположение, связи обходят фигуры и подписи. Линия, стрелка и сигнал следуют одному маршруту, включая обратную связь.",
-    "tags": ["InkConnection3D", "SvgLayout", "стрелка", "связи", "диаграмма", "адаптивность", "3d"],
-    "guides": ["docs/connections.md"]
+    "tags": [
+      "InkConnection3D",
+      "SvgLayout",
+      "стрелка",
+      "связи",
+      "диаграмма",
+      "адаптивность",
+      "3d"
+    ],
+    "guides": [
+      "docs/connections.md"
+    ],
+    "form": "diagram",
+    "useFor": "Связи, поток и обратная связь",
+    "visibleAction": "Сигнал проходит по связям между объектами",
+    "capabilities": [
+      "png",
+      "html",
+      "interactive",
+      "connections"
+    ]
   },
   "tensor-slices": {
     "title": "Какие числа принадлежат одному дню?",
     "page": "index.html",
     "source": "scene.js",
     "time": 10,
-    "checkpoints": [0, 3, 5.5, 8, 10, 14],
+    "checkpoints": [
+      0,
+      3,
+      5.5,
+      8,
+      10,
+      14
+    ],
     "group": "techniques",
     "summary": "Срез обновляется из того же снимка измерений и сохраняет исходные адреса. Перемотка, смена дня и изменение числа используют общую сцену.",
-    "tags": ["TensorData", "Tensor3D", "TensorSlice3D", "тензор", "срез", "адрес", "3d"],
-    "guides": ["docs/tensors.md"],
-    "recommended": true
+    "tags": [
+      "TensorData",
+      "Tensor3D",
+      "TensorSlice3D",
+      "тензор",
+      "срез",
+      "адрес",
+      "3d"
+    ],
+    "guides": [
+      "docs/tensors.md"
+    ],
+    "recommended": true,
+    "useFor": "Срез обновляется из того же снимка измерений и сохраняет исходные адреса. Перемотка, смена дня и изменение числа используют общую сцену.",
+    "visibleAction": "Какие числа принадлежат одному дню?",
+    "capabilities": [
+      "html",
+      "png"
+    ]
   },
   "math-workbench": {
     "title": "Откуда взялся результат?",
     "page": "index.html",
     "source": "scene.js",
     "time": 21,
-    "checkpoints": [0, 3, 5, 10, 16.9, 18, 20, 21, 24],
+    "checkpoints": [
+      0,
+      3,
+      5,
+      10,
+      16.9,
+      18,
+      20,
+      21,
+      24
+    ],
     "group": "techniques",
     "summary": "Канал тензора участвует в вычислении MathMorph; готовое число занимает ячейку. Каждый результат связан с исходными измерениями.",
     "tags": [
@@ -753,19 +1678,177 @@
       "происхождение",
       "3d"
     ],
-    "guides": ["docs/tensors.md", "docs/morphing.md"],
-    "recommended": true
+    "guides": [
+      "docs/tensors.md",
+      "docs/morphing.md"
+    ],
+    "recommended": true,
+    "form": "math",
+    "useFor": "Разбор вычисления и происхождение результата",
+    "visibleAction": "Ячейки входов соединяются по действительным зависимостям",
+    "capabilities": [
+      "png",
+      "html",
+      "interactive",
+      "provenance",
+      "camera"
+    ]
   },
   "memory-register": {
     "title": "Как 8 бит запоминают число",
     "page": "index.html",
     "time": 30,
-    "checkpoints": [0, 12, 23, 30, 42],
+    "checkpoints": [
+      0,
+      12,
+      23,
+      30,
+      42
+    ],
     "group": "explanations",
     "summary": "Тетрадная интерактивная схема: восемь ячеек, общая линия такта, прогноз перед записью. surface, node, pen и svgButton сохраняют единый рисунок.",
-    "tags": ["память", "биты", "схема", "тетрадь", "интерактив", "svgButton"],
+    "tags": [
+      "память",
+      "биты",
+      "схема",
+      "тетрадь",
+      "интерактив",
+      "svgButton"
+    ],
     "source": "scene.js",
-    "guides": ["skills/visual-explainer/references/scene-template.md"],
-    "recommended": true
+    "guides": [
+      "skills/visual-explainer/references/scene-template.md"
+    ],
+    "recommended": true,
+    "form": "experiment",
+    "useFor": "Причина и результат в логической схеме",
+    "visibleAction": "Прогноз и фронт такта изменяют память",
+    "capabilities": [
+      "svg",
+      "png",
+      "html",
+      "interactive",
+      "prediction"
+    ]
+  },
+  "character-lesson": {
+    "title": "Как проверить предположение",
+    "summary": "Два героя включают переносимый прибор и переходят к живому опыту: общие главы, контакты, SVG и физика.",
+    "page": "index.html",
+    "source": "scene.js",
+    "time": 10.6,
+    "checkpoints": [
+      0,
+      4,
+      6,
+      8,
+      12,
+      15.9,
+      18,
+      22,
+      25,
+      28
+    ],
+    "group": "explanations",
+    "tags": [
+      "персонажи",
+      "предметы",
+      "физика",
+      "SceneStory",
+      "математика"
+    ],
+    "guides": [
+      "docs/lessons.md",
+      "docs/characters.md"
+    ],
+    "recommended": true,
+    "form": "characters",
+    "useFor": "Рассказ, предметное действие и общий опыт",
+    "visibleAction": "Герои включают прибор, переходят к измерению и физическому опыту",
+    "capabilities": [
+      "png",
+      "html",
+      "chapters",
+      "characters",
+      "interactive"
+    ]
+  },
+  "area-lesson": {
+    "title": "Площадь: от меры к правилу",
+    "summary": "Подробный урок: одинаковая мера, строки и столбцы, собственный прогноз и проверка площади.",
+    "page": "index.html",
+    "source": "story.json",
+    "time": 20,
+    "checkpoints": [
+      0,
+      7,
+      15,
+      25,
+      35,
+      45,
+      55
+    ],
+    "group": "explanations",
+    "tags": [
+      "урок",
+      "площадь",
+      "обучение",
+      "прогноз",
+      "IllustratedStory",
+      "SVG"
+    ],
+    "guides": [
+      "docs/lessons.md"
+    ],
+    "recommended": true,
+    "form": "lesson",
+    "useFor": "Подробное обучение с проверкой предположения",
+    "visibleAction": "Единицы складываются в правило, прогноз проверяется опытом",
+    "capabilities": [
+      "svg",
+      "png",
+      "html",
+      "chapters",
+      "interactive",
+      "prediction",
+      "voice"
+    ]
+  },
+  "graph-lab": {
+    "title": "Скорость — наклон графика",
+    "summary": "График пути: измените скорость и время, сравните два движения и прочитайте координаты одной точки.",
+    "page": "index.html",
+    "source": "scene.js",
+    "time": 12,
+    "checkpoints": [
+      0,
+      3,
+      8,
+      12,
+      16
+    ],
+    "group": "explanations",
+    "tags": [
+      "график",
+      "данные",
+      "graph",
+      "plot",
+      "скорость",
+      "сравнение"
+    ],
+    "guides": [
+      "skills/visual-explainer/references/data-plots.md"
+    ],
+    "recommended": true,
+    "form": "graph",
+    "useFor": "Изменение величины и сравнение зависимостей",
+    "visibleAction": "Ползунок скорости меняет наклон и измеренное расстояние",
+    "capabilities": [
+      "svg",
+      "png",
+      "html",
+      "interactive",
+      "data"
+    ]
   }
 }

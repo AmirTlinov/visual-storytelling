@@ -49,7 +49,10 @@ export function sceneFrame(stage: HTMLElement, { width, height }: SceneFrameOpti
       const top = Math.max(0, box.top + scrollY);
       const body = getComputedStyle(document.body);
       const bottom = (parseFloat(body.marginBottom) || 0) + (parseFloat(body.paddingBottom) || 0);
-      availableHeight = Math.max(1, innerHeight - top - chrome - bottom);
+      // A lesson may have more controls and notes than one screen can hold. Keep
+      // its drawing readable and let the document scroll instead of collapsing it.
+      const minimumHeight = Math.min(320, (availableWidth * height) / width);
+      availableHeight = Math.max(minimumHeight, innerHeight - top - chrome - bottom);
     }
     const fit = fitFrame(width, height, availableWidth, availableHeight);
     element.style.width = `${fit.width}px`;
