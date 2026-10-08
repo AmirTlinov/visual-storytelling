@@ -1,6 +1,6 @@
 import { mountScene } from './scene-handle.js';
 import { story, type Story, type StoryOptions } from './story/story.js';
-import { chapterHeading } from './story/chapters.js';
+import { chapterNavigation } from './story/chapters.js';
 import { captionTrack, type CaptionOptions } from './story/captions.js';
 import { sceneFrame, inspectPresentation, type SceneFrameOptions } from './scene-frame.js';
 export type { SceneFrameOptions, ScenePresentation } from './scene-frame.js';
@@ -397,7 +397,7 @@ function mount(
       reflectState(controller.mode, controller.values);
     };
     playback = () => controller.player.state.playing;
-    const chapters = chapterHeading(
+    const chapters = chapterNavigation(
       heading,
       controller.sheet.script.segments ?? [],
       controller.seek,
@@ -443,7 +443,7 @@ function mount(
       for (const { key } of parameters) values[key] = (state as Record<string, ControlValue>)[key]!;
       if (exploration === 'model') setMode(next);
       refresh();
-      chapters.update(controller.currentTime, exploration === 'view' || next === 'story');
+      chapters.update(controller.currentTime);
     }
     unsubscribe = controller.subscribe(reflectState);
     setMode('story');

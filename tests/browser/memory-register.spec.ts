@@ -1,5 +1,57 @@
 import { test, expect } from '@playwright/test';
 
+test('chapter navigation stays compact while notebook disclosures retain keyboard behavior', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 1000 });
+  await page.goto('/memory-register/index.html');
+  await page.evaluate(() => (window as any).galleryReady);
+  const chapter = page.getByRole('combobox', { name: 'Глава', exact: true });
+  const title = page.locator('h1');
+  await expect(title).toHaveText('Как 8 бит запоминают число');
+  const layout = await chapter.evaluate((element) => {
+    const root = element.closest('.ve-scene')!;
+    const heading = root.querySelector('h1')!;
+    const rect = element.getBoundingClientRect();
+    return {
+      left:
+        Math.abs(
+          rect.left -
+            root.getBoundingClientRect().left -
+            parseFloat(getComputedStyle(root).paddingLeft),
+        ) < 1,
+      above: rect.bottom < heading.getBoundingClientRect().top,
+      compact:
+        rect.width <= 320 &&
+        rect.height <= 44 &&
+        parseFloat(getComputedStyle(element).fontSize) <= 17,
+      separate: !heading.contains(element),
+    };
+  });
+  expect(layout).toEqual({ left: true, above: true, compact: true, separate: true });
+  await chapter.focus();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await expect(chapter).toHaveText('Вход ещё не записан');
+  expect(Number(await page.locator('[data-seek]').inputValue())).toBeGreaterThan(10);
+  const stageTop = () =>
+    page.locator('.ve-stage').evaluate((element) => element.getBoundingClientRect().top + scrollY);
+  const before = await stageTop();
+  await page.locator('[data-bit="7"]').click();
+  await expect(page.locator('#ve-scene')).toHaveAttribute('data-scene-mode', 'explore');
+  await expect(chapter).toBeVisible();
+  expect(await stageTop()).toBe(before);
+  const detail = page.locator('#inside');
+  await detail.locator('summary').focus();
+  await page.keyboard.press('Enter');
+  await expect(detail).toHaveAttribute('open', '');
+  await page.keyboard.press('Space');
+  await expect(detail).not.toHaveAttribute('open', '');
+  for (let i = 0; i < 4; i++) await detail.locator('summary').click();
+  await expect(detail).not.toHaveAttribute('open', '');
+});
+
 test('drawn register writes only at an enabled edge and keeps prediction before reveal', async ({
   page,
 }) => {
