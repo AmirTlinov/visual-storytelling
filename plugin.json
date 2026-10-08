@@ -17,7 +17,8 @@
         "category": "Education",
         "capabilities": ["Interactive"],
         "defaultPrompt": "Открой Visual Storytelling. Помоги мне исследовать пример и понять его механизм."
-      }
+      },
+      "onboardingSkill": "./skills/setup/SKILL.md"
     }
   }
 }

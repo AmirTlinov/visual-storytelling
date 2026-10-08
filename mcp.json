@@ -3,9 +3,13 @@
   "mcpServers": {
     "visual-storytelling": {
       "type": "stdio",
-      "command": "./runtime/node",
-      "args": ["${PLUGIN_ROOT}/plugin/dist/server.mjs"],
-      "cwd": "${PLUGIN_ROOT}"
+      "command": "sh",
+      "args": [
+        "-c",
+        "if [ -n \"$VISUAL_STORY_INSTALL_DIR\" ]; then exec \"$VISUAL_STORY_INSTALL_DIR/launch\" \"$@\"; else exec \"$HOME/Library/Application Support/Visual Storytelling/installation/launch\" \"$@\"; fi",
+        "visual-storytelling"
+      ],
+      "cwd": "${PLUGIN_DATA}"
     }
   }
 }
