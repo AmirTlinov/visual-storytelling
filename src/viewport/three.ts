@@ -317,7 +317,10 @@ function mount(
       invalidate();
       return;
     }
-    const anchors = (shot: Shot3D) => [...labels.anchors(shot.target), ...(shot.anchors ?? [])];
+    const anchors = (shot: Shot3D) => [
+      ...labels.anchors(shot.target, shot.bounds !== undefined),
+      ...(shot.anchors ?? []),
+    ];
     const pose = shotPose(camera, width, height, {
       ...options,
       anchors: anchors(options),

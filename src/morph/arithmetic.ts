@@ -7,7 +7,11 @@ import type {
   MathNote,
   MorphPoint,
   MathStep,
+  MathOrigin,
+  VectorInput,
 } from './types.js';
+import { TensorData } from '../math/tensor.js';
+import { mathOrigins } from './origins.js';
 import { clamp, equation, mathNumber, mix, smooth } from './numbers.js';
 import { partBounds } from './measure.js';
 
@@ -211,12 +215,26 @@ function reduceCells(
   };
 }
 
+interface VectorOperand {
+  values: readonly number[];
+  origins: readonly MathOrigin[];
+}
+function vectorOperand(input: VectorInput, operand: number): VectorOperand {
+  const tensor = input instanceof TensorData ? input : undefined;
+  if (tensor && tensor.shape.length !== 1) throw new Error('Vector operations need rank-1 tensors');
+  const values = tensor ? tensor.values : [...(input as readonly number[])];
+  return { values, origins: mathOrigins(values, operand, tensor) };
+}
+
 function pairs(
-  left: readonly number[],
-  right: readonly number[],
+  leftOperand: VectorOperand,
+  rightOperand: VectorOperand,
   operator: 'add' | 'multiply',
   offset = 0,
+  end = leftOperand.values.length,
 ): Stage {
+  const left = leftOperand.values.slice(offset, end),
+    right = rightOperand.values.slice(offset, end);
   const n = left.length,
     spacing = 3.4;
   const source = (operand: number, i: number, y: number) => {
@@ -225,7 +243,7 @@ function pairs(
       value,
       `${operand ? 'right' : 'left'}:${offset + i}`,
       [(i - (n - 1) / 2) * spacing, y, 0],
-      [{ operand, index: offset + i, value }],
+      [(operand ? rightOperand : leftOperand).origins[offset + i]!],
     );
   };
   const starts = [
@@ -299,12 +317,12 @@ function contactAboveResult(count: number, columns?: number): MorphPoint[] {
   return [[0, 0, 0], ...positions.map(([x, y, z]): MorphPoint => [x, y - bottom + cellSize, z])];
 }
 
-function dotStages(left: readonly number[], right: readonly number[]): Stage[] {
+function dotStages(left: VectorOperand, right: VectorOperand): Stage[] {
   const stages: Stage[] = [];
   let carried: MathPart | undefined;
-  for (let offset = 0; offset < left.length; offset += batchTerms) {
-    const end = Math.min(left.length, offset + batchTerms);
-    const paired = pairs(left.slice(offset, end), right.slice(offset, end), 'multiply', offset);
+  for (let offset = 0; offset < left.values.length; offset += batchTerms) {
+    const end = Math.min(left.values.length, offset + batchTerms);
+    const paired = pairs(left, right, 'multiply', offset, end);
     const previous = carried;
     const sample = (p: number, columns?: number) => {
       const frame = paired.sample(p, columns);
@@ -325,7 +343,7 @@ function dotStages(left: readonly number[], right: readonly number[]): Stage[] {
           ...note,
           position: [note.position[0], note.position[1] + lift, note.position[2]] as MorphPoint,
         })),
-        formula: `Умножаем пары ${offset + 1}–${end} из ${left.length}`,
+        formula: `Умножаем пары ${offset + 1}–${end} из ${left.values.length}`,
       };
     };
     stages.push({ bounds: sample(0).sources, sample });
@@ -435,12 +453,16 @@ export function arithmeticPlan(operation: CellOperation): MathMorphPlan {
         ),
       );
   } else {
-    const left = [...operation.left],
-      right = [...operation.right];
+    const left = vectorOperand(operation.left, 0),
+      right = vectorOperand(operation.right, 1);
     const limit = operation.kind === 'dot' ? maxTerms : vectorTerms;
-    if (!left.length || left.length > limit || right.length !== left.length)
+    if (
+      !left.values.length ||
+      left.values.length > limit ||
+      right.values.length !== left.values.length
+    )
       throw new Error(`Vector operations need equally sized rows of 1 to ${limit} numbers`);
-    if (operation.kind === 'dot' && left.length > batchTerms) {
+    if (operation.kind === 'dot' && left.values.length > batchTerms) {
       stages.push(...dotStages(left, right));
       result = stages.at(-1)!.sample(1).targets[0]!.value;
     } else {

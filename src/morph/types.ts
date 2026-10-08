@@ -1,11 +1,14 @@
 import type { VolumeShape, VolumeFrame } from '../viewport/morph/field.js';
-import type { FormulaOperation, MathValue } from './formula/types.js';
+import type { TensorData, TensorOrigin } from '../math/tensor.js';
+import type { FormulaOperation } from './formula/types.js';
+import type { MathValue } from '../math/value.js';
 export type MorphPoint = readonly [number, number, number];
 export type Arithmetic = 'add' | 'subtract' | 'multiply' | 'divide' | 'power';
+export type VectorInput = readonly number[] | TensorData;
 export type CellOperation =
   | { kind: 'calculate'; operator: Arithmetic; values: readonly number[] }
-  | { kind: 'dot'; left: readonly number[]; right: readonly number[] }
-  | { kind: 'vectorAdd'; left: readonly number[]; right: readonly number[] }
+  | { kind: 'dot'; left: VectorInput; right: VectorInput }
+  | { kind: 'vectorAdd'; left: VectorInput; right: VectorInput }
   | { kind: 'apply'; input: number; label: string; value: (input: number) => number }
   | { kind: 'chain'; input: CellOperation; steps: readonly MathStep[] };
 /** Each step consumes the previous result, retaining its object and provenance. */
@@ -32,6 +35,8 @@ export interface MathOrigin {
   operand: number;
   index: number;
   value: number;
+  /** The original tensor cell survives selections and changes of axis order or shape. */
+  source?: TensorOrigin;
 }
 export interface MathPart {
   size: MorphPoint;

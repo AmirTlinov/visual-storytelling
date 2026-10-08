@@ -1,5 +1,5 @@
 import type { Pigment } from '../../ink/palette.js';
-import type { MathValue } from '../formula/types.js';
+import type { MathValue } from '../../math/value.js';
 import type { Input, MathState, Value } from './values.js';
 import type { DiagramCamera } from '../construction/types.js';
 

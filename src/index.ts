@@ -15,6 +15,9 @@ export { gsap } from 'gsap';
 export * from './explorer/index.js';
 export * from './host/widget-state.js';
 
+export { TensorData, tensorOriginId } from './math/tensor.js';
+export type { TensorDataOptions, TensorOrigin } from './math/tensor.js';
+export type { MathValue } from './math/value.js';
 export { MathMorph, mathPlan } from './morph/math.js';
 export type {
   Value,
@@ -40,7 +43,6 @@ export type {
   ScalarFunction,
 } from './morph/construction/types.js';
 export type {
-  MathValue,
   FormulaBody,
   FormulaInput,
   FormulaOptions,
@@ -51,6 +53,7 @@ export type {
   CellOperation,
   MathStep,
   MathOperation,
+  VectorInput,
   MathMorphFrame,
   MathMorphPlan,
   MathPart,

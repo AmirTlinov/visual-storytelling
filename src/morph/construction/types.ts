@@ -1,5 +1,5 @@
 import type { Pigment } from '../../ink/palette.js';
-import type { MathValue } from '../formula/types.js';
+import type { MathValue } from '../../math/value.js';
 
 export type DiagramPoint = readonly [number, number] | readonly [number, number, number];
 export type DiagramBounds = readonly [DiagramPoint, DiagramPoint];

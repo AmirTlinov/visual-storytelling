@@ -204,6 +204,137 @@ test('transparent packed annotations neither displace visible labels nor enlarge
   }
 });
 
+test('a fixed shot envelope reserves hidden titles without exposing them or following moving geometry', async () => {
+  const bundle = await build({
+    stdin: {
+      contents:
+        "import { Viewport3D } from './src/viewport/three.ts'; import * as T from './src/viewport/engine.ts'; window.Kit = { Viewport3D, T };",
+      resolveDir: resolve('.'),
+    },
+    bundle: true,
+    write: false,
+    format: 'iife',
+    plugins: [assetURLs()],
+    define: { 'import.meta.url': 'document.baseURI' },
+  });
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent(
+      '<main class="ve-scene" style="position:relative;width:390px;height:600px;font-family:sans-serif;--ve-surface:white;--ve-ink:black"></main>',
+    );
+    await page.addStyleTag({ path: 'src/styles/scene-shell.css' });
+    await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    const initial = await page.evaluate(async () => {
+      const { Viewport3D, T } = Kit;
+      const stage = document.querySelector('main');
+      const view = Viewport3D.mount(stage);
+      const root = new T.Group();
+      const moving = new T.Mesh(new T.BoxGeometry(), new T.MeshBasicMaterial());
+      const future = new T.Mesh(new T.BoxGeometry(), new T.MeshBasicMaterial());
+      moving.position.set(-2, -1, 0);
+      future.position.set(2, 3, 0);
+      future.visible = false;
+      root.add(moving, future);
+      const offset = [0, 0];
+      const title = view.label(
+        'Будущий результат сохраняет исходные адреса измерений',
+        {
+          object: future,
+          position: () => {
+            offset[1] = -(title.element.offsetHeight / 2 + 12);
+            return new T.Vector3(0, 0.5, 0);
+          },
+        },
+        { size: 20, avoidOverlap: true, offset },
+      );
+      view.setObject(root, { fitView: false });
+      const bounds = new T.Box3(new T.Vector3(-3, -3, -1), new T.Vector3(3, 3.5, 1));
+      const shot = () => view.shot({ target: root, bounds, direction: [0, 0, 1], padding: 24 });
+      const frame = () =>
+        new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+      const visibility = () => ({
+        textHidden: title.element.hidden,
+        groupHidden: title.element.parentElement.hidden,
+        display: getComputedStyle(title.element.parentElement).display,
+        visibility: title.element.parentElement.style.visibility,
+      });
+      const pose = () => ({
+        position: view.camera.position.toArray(),
+        target: view.controls.target.toArray(),
+      });
+      shot();
+      await frame();
+      const before = visibility();
+      shot();
+      const after = visibility();
+      window.lab = { stage, view, moving, future, title, shot, frame, visibility, pose };
+      return { before, after, pose: pose() };
+    });
+    assert.deepEqual(
+      initial.before,
+      initial.after,
+      'framing restores hidden/display state synchronously',
+    );
+    assert.deepEqual(initial.after, {
+      textHidden: true,
+      groupHidden: true,
+      display: 'none',
+      visibility: '',
+    });
+    for (const state of [
+      { object: true, title: false, opacity: 1, x: 0, scale: 2 },
+      { object: true, title: true, opacity: 0, x: -1, scale: 1 },
+      { object: true, title: true, opacity: 1, x: 1, scale: 1.5 },
+      { object: false, title: true, opacity: 1, x: -2, scale: 1 },
+    ]) {
+      const current = await page.evaluate(async (state) => {
+        const { future, moving, title, shot, frame, pose, visibility, stage } = lab;
+        future.visible = state.object;
+        title.show(state.title);
+        title.opacity(state.opacity);
+        moving.position.x = state.x;
+        moving.scale.setScalar(state.scale);
+        shot();
+        await frame();
+        const before = visibility();
+        shot();
+        const after = visibility();
+        const bounds = title.element.parentElement.getBoundingClientRect();
+        const host = stage.getBoundingClientRect();
+        return {
+          pose: pose(),
+          before,
+          after,
+          height: bounds.height,
+          inside:
+            bounds.left >= host.left + 23 &&
+            bounds.right <= host.right - 23 &&
+            bounds.top >= host.top + 23 &&
+            bounds.bottom <= host.bottom - 23,
+        };
+      }, state);
+      assert.deepEqual(
+        current.pose,
+        initial.pose,
+        'neither geometry nor title visibility changes a fixed shot',
+      );
+      assert.deepEqual(current.before, current.after, 'measuring a title never exposes its DOM');
+      const visible = state.object && state.title && state.opacity > 0;
+      assert.equal(current.after.textHidden, !visible);
+      assert.equal(current.after.groupHidden, !visible);
+      if (visible) {
+        assert(current.height > 40, 'the title is measured as multiple wrapped lines');
+        assert(current.inside, 'the complete future title was reserved from the opening frame');
+      }
+    }
+    await page.evaluate(() => lab.view.dispose());
+    assert.equal(await page.locator('.ve-annotation').count(), 0);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('computed local labels share framing, semantics and lifetime with their reparented object', async () => {
   const bundle = await build({
     stdin: {

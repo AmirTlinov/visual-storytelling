@@ -3,6 +3,7 @@ import { mathNumber } from './numbers.js';
 import type { MathMorphFrame, MathPart } from './types.js';
 import type { MorphFrame } from './objects.js';
 import { quantityStep } from './measure.js';
+import { mathOriginKey } from './origins.js';
 
 /** Arithmetic owns values and lineage; the shared body owns every visible stroke. */
 export function mathBodies(frame: MathMorphFrame, measured: boolean): MorphFrame {
@@ -15,7 +16,7 @@ export function mathBodies(frame: MathMorphFrame, measured: boolean): MorphFrame
     material: part.material,
     text: mathNumber(part.value),
     position: part.position,
-    origins: part.origins?.map((o) => `${o.operand}:${o.index}`),
+    origins: part.origins?.map(mathOriginKey),
     grid: measured ? quantityStep(part) : undefined,
   });
   return {

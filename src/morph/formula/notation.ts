@@ -1,6 +1,6 @@
 import { mathNumber } from '../numbers.js';
 import { valuesOf, type ExpressionStep } from './expression.js';
-import type { MathValue } from './types.js';
+import type { MathValue } from '../../math/value.js';
 
 export const formulaValue = (value: MathValue): string =>
   typeof value === 'number' ? mathNumber(value) : `[${value.map(formulaValue).join('; ')}]`;

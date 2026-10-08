@@ -1,4 +1,4 @@
-import type { MathValue } from '../formula/types.js';
+import type { MathValue } from '../../math/value.js';
 
 export type MathState = Record<string, MathValue>;
 export interface ModelContext<S extends MathState> {

@@ -6,7 +6,7 @@ import type {
   DiagramPoint,
   DiagramLabel,
 } from '../construction/types.js';
-import type { MathValue } from '../formula/types.js';
+import type { MathValue } from '../../math/value.js';
 import {
   contextFor,
   read,

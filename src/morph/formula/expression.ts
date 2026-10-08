@@ -9,9 +9,12 @@ import {
   type ArrayNode,
   type ParenthesisNode,
 } from 'mathjs';
-import type { FormulaBody, FormulaOperation, MathValue } from './types.js';
+import type { FormulaBody, FormulaOperation } from './types.js';
+import type { MathValue } from '../../math/value.js';
 import type { MorphObject } from '../objects.js';
 import type { MathOrigin } from '../types.js';
+import { TensorData } from '../../math/tensor.js';
+import { mathOriginKey, mathOrigins } from '../origins.js';
 import { integrate } from './calculus.js';
 
 // One mathematics owner, isolated from the global mathjs instance and from the scene.
@@ -88,12 +91,15 @@ export function compileExpression(operation: FormulaOperation) {
   const math = mathematics();
   const scope = new Map<string, unknown>();
   const bodies = new Map<string, FormulaBody>();
+  const tensors = new Map<string, TensorData>();
   Object.entries(operation.inputs).forEach(([key, input]) => {
     const authored =
       typeof input === 'object' && !Array.isArray(input) && input !== null && 'body' in input
         ? (input as FormulaBody)
         : undefined;
-    scope.set(key, real(authored ? authored.value : input, key));
+    const value = authored ? authored.value : input;
+    if (value instanceof TensorData) tensors.set(key, value);
+    scope.set(key, real(value instanceof TensorData ? value.toValue() : value, key));
     if (authored) bodies.set(key, authored);
   });
   const custom = operation.functions ?? {};
@@ -115,11 +121,13 @@ export function compileExpression(operation: FormulaOperation) {
   const leaf = (value: MathValue, name: string, body?: MorphObject): ExpressionBody[] => {
     const operand = operands.get(name) ?? operands.size;
     if (!operands.has(name)) operands.set(name, operand);
-    const result = valuesOf(value).map((value, index) => ({
+    const values = valuesOf(value),
+      origins = mathOrigins(values, operand, tensors.get(name));
+    const result = values.map((value, index) => ({
       id: `input:${serial++}`,
       value,
       body,
-      origins: [{ operand, index, value }],
+      origins: [origins[index]!],
     }));
     initial.push(...result);
     return result;
@@ -232,9 +240,7 @@ export function compileExpression(operation: FormulaOperation) {
     const id = `step:${steps.length}`;
     const origins = [
       ...new Map(
-        inputs
-          .flatMap((input) => input.origins)
-          .map((origin) => [`${origin.operand}:${origin.index}`, origin]),
+        inputs.flatMap((input) => input.origins).map((origin) => [mathOriginKey(origin), origin]),
       ).values(),
     ];
     const values = valuesOf(value);

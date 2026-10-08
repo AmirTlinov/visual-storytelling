@@ -8,6 +8,7 @@ import type {
   MorphPoint,
   CellOperation,
   MathStep,
+  VectorInput,
 } from './types.js';
 import { arithmeticPlan } from './arithmetic.js';
 import { formulaPlan } from './formula/plan.js';
@@ -16,8 +17,8 @@ import type {
   FormulaInput,
   FormulaOperation,
   FormulaOptions,
-  MathValue,
 } from './formula/types.js';
+import type { MathValue } from '../math/value.js';
 import type { MorphObject } from './objects.js';
 import { mountMath } from './presentation.js';
 import { distribution, linearMap } from './construction/algebra.js';
@@ -286,7 +287,7 @@ export const MathMorph = {
   spring: (options: { mass: number; stiffness: number; amplitude: number }) =>
     spring(options.mass, options.stiffness, options.amplitude),
   deform: deformation,
-  body: (value: MathValue, body: MorphObject): FormulaBody => ({ value, body }),
+  body: (value: FormulaBody['value'], body: MorphObject): FormulaBody => ({ value, body }),
   formula: (
     expression: string,
     inputs: Readonly<Record<string, FormulaInput>> = {},
@@ -309,17 +310,14 @@ export const MathMorph = {
     operator,
     values,
   }),
-  dot: (
-    left: readonly number[],
-    right: readonly number[],
-  ): Extract<MathOperation, { kind: 'dot' }> => ({
+  dot: (left: VectorInput, right: VectorInput): Extract<MathOperation, { kind: 'dot' }> => ({
     kind: 'dot',
     left,
     right,
   }),
   vectorAdd: (
-    left: readonly number[],
-    right: readonly number[],
+    left: VectorInput,
+    right: VectorInput,
   ): Extract<MathOperation, { kind: 'vectorAdd' }> => ({
     kind: 'vectorAdd',
     left,

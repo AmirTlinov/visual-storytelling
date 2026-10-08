@@ -176,9 +176,13 @@ const cube = new T.Mesh(
 );
 view.setObject(cube);
 view.label(() => '3.14', cube, { face: ['front', 'back'], tone: 'blue' });
-view.label('Объём', { object: cube, position: new T.Vector3(0, 1, 0) }, {
-  frame: { padding: [13, 6] },
-});
+view.label(
+  'Объём',
+  { object: cube, position: new T.Vector3(0, 1, 0) },
+  {
+    frame: { padding: [13, 6] },
+  },
+);
 // В render: view.shot({target: cube, direction: [0,0,1], padding: 36, from: overview3d, progress: frame.progress('focus')});
 ```
 
@@ -208,6 +212,10 @@ view.label('Объём', { object: cube, position: new T.Vector3(0, 1, 0) }, {
 Пример `svg-artwork` доступен в каталоге полной библиотеки.
 
 Арифметикой владеет [MathMorph](../../../docs/morphing.md).
+Для многомерных данных начни с `tensor-slices` или `math-workbench`:
+`TensorData` сохраняет исходные адреса, `Tensor3D` показывает ячейки,
+`TensorSlice3D` извлекает выборку из текущего снимка. `dot`, `vectorAdd` и `formula`
+принимают эти данные и сохраняют происхождение результата. [Контракт и пример](../../../docs/tensors.md).
 Скалярную сумму и `dot` до 64 входов передавай целиком: движок сам ведёт порции
 и накопленный результат. Одна метка покрывает весь расчёт; `api MathMorph.dot`
 показывает контракт текущей версии. В полной библиотеке есть пример `long-calculation`.

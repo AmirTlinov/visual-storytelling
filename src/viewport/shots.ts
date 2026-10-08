@@ -9,6 +9,8 @@ import {
 export interface Shot3D {
   /** Object targets include their registered screen labels; explicit bounds use anchors. */
   target: T.Object3D | T.Box3 | readonly T.Object3D[];
+  /** Fixed world envelope; target labels reserve space even while their objects are hidden. */
+  bounds?: T.Box3;
   /** Direction from the target towards the camera. */
   direction?: readonly [number, number, number];
   /** Safe margin in screen pixels. */
@@ -40,7 +42,8 @@ export function shotPose(
 ) {
   function frame(options: Shot3D) {
     const bounds = new T.Box3();
-    if (options.target instanceof T.Box3) bounds.copy(options.target);
+    if (options.bounds) bounds.copy(options.bounds);
+    else if (options.target instanceof T.Box3) bounds.copy(options.target);
     else
       for (const anchor of geometryFrameAnchors(
         Array.isArray(options.target) ? options.target : [options.target],

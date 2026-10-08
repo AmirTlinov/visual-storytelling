@@ -50,67 +50,88 @@ export function projectedLabels(
 ) {
   const labels = new Set<ScreenLabel>(),
     surfaces = new Set<Surface>();
-  function measure(items: Iterable<ScreenLabel>) {
-    const pending = [...items].flatMap((item) => {
-      const { annotation: a, options } = item;
-      const owner = item.anchor.object;
-      const subject = owner && subjectOf(owner);
-      if (subject !== item.subject) {
-        item.forget?.();
-        item.forget = undefined;
-        item.subject = subject;
-        if (subject) {
-          a.element.dataset.object = subject.id;
-          item.forget = describeObject(a.element, subject.meaning);
-          // Keyboard traversal has one target per object, owned by the viewport.
-          a.element.tabIndex = -1;
-          a.element.style.pointerEvents = 'auto';
-        } else {
-          for (const name of [
-            'data-object',
-            'role',
-            'tabindex',
-            'aria-label',
-            'aria-pressed',
-            'data-selected',
-          ])
-            a.element.removeAttribute(name);
-          a.element.style.pointerEvents = '';
+  function measure(items: Iterable<ScreenLabel>, reserveHidden = false) {
+    const restore: (() => void)[] = [];
+    try {
+      const pending = [...items].flatMap((item) => {
+        const { annotation: a, options } = item;
+        if (reserveHidden) {
+          const groupHidden = a.group.hidden,
+            textHidden = a.element.hidden,
+            visibility = a.group.style.visibility,
+            opacity = a.group.style.opacity;
+          // Removing display:none makes wrapping measurable; visibility suppresses any paint.
+          a.group.style.visibility = 'hidden';
+          restore.push(() => {
+            a.group.hidden = groupHidden;
+            a.element.hidden = textHidden;
+            a.group.style.opacity = opacity;
+            a.group.style.visibility = visibility;
+          });
         }
-      }
-      if (typeof item.text === 'function') {
-        const text = item.text();
-        if (a.element.textContent !== text) a.element.textContent = text;
-      }
-      a.hidden(false);
-      const font = options.size ? `${options.size}px` : '';
-      if (a.element.style.fontSize !== font) a.element.style.fontSize = font;
-      if (options.avoidOverlap) {
-        a.element.style.maxWidth = `${Math.max(48, Math.min(200, stage.clientWidth - 28))}px`;
-        a.element.style.whiteSpace = 'normal';
-        a.element.style.overflowWrap = 'anywhere';
-        a.element.style.textAlign = 'center';
-      }
-      if (
-        !a.element.textContent ||
-        (owner && (!objectWithin(owner, scene) || !objectVisible(owner))) ||
-        options.visible?.() === false ||
-        item.opacity <= 0
-      ) {
-        a.group.style.opacity = '0';
-        a.hidden(true);
-        return [];
-      }
-      return [{ item, point: item.anchor.world() }];
-    });
-    // Write every label first, then measure; framing and painting share these dimensions.
-    return pending.map((p) => ({
-      ...p,
-      size: p.item.annotation.frameSize(
-        p.item.annotation.element.scrollWidth,
-        p.item.annotation.element.offsetHeight,
-      ),
-    }));
+        const owner = item.anchor.object;
+        const subject = owner && subjectOf(owner);
+        if (subject !== item.subject) {
+          item.forget?.();
+          item.forget = undefined;
+          item.subject = subject;
+          if (subject) {
+            a.element.dataset.object = subject.id;
+            item.forget = describeObject(a.element, subject.meaning);
+            // Keyboard traversal has one target per object, owned by the viewport.
+            a.element.tabIndex = -1;
+            a.element.style.pointerEvents = 'auto';
+          } else {
+            for (const name of [
+              'data-object',
+              'role',
+              'tabindex',
+              'aria-label',
+              'aria-pressed',
+              'data-selected',
+            ])
+              a.element.removeAttribute(name);
+            a.element.style.pointerEvents = '';
+          }
+        }
+        if (typeof item.text === 'function') {
+          const text = item.text();
+          if (a.element.textContent !== text) a.element.textContent = text;
+        }
+        a.hidden(false);
+        const font = options.size ? `${options.size}px` : '';
+        if (a.element.style.fontSize !== font) a.element.style.fontSize = font;
+        if (options.avoidOverlap) {
+          a.element.style.maxWidth = `${Math.max(48, Math.min(200, stage.clientWidth - 28))}px`;
+          a.element.style.whiteSpace = 'normal';
+          a.element.style.overflowWrap = 'anywhere';
+          a.element.style.textAlign = 'center';
+        }
+        if (
+          !a.element.textContent ||
+          (owner && !objectWithin(owner, scene)) ||
+          (!reserveHidden &&
+            ((owner && !objectVisible(owner)) ||
+              options.visible?.() === false ||
+              item.opacity <= 0))
+        ) {
+          a.group.style.opacity = '0';
+          a.hidden(true);
+          return [];
+        }
+        return [{ item, point: item.anchor.world() }];
+      });
+      // Write every label first, then measure; framing and painting share these dimensions.
+      return pending.map((p) => ({
+        ...p,
+        size: p.item.annotation.frameSize(
+          p.item.annotation.element.scrollWidth,
+          p.item.annotation.element.offsetHeight,
+        ),
+      }));
+    } finally {
+      restore.forEach((reset) => reset());
+    }
   }
   function render() {
     for (const item of surfaces) item.update(camera);
@@ -172,20 +193,24 @@ export function projectedLabels(
   }
   return {
     render,
-    anchors(target: T.Object3D | T.Box3 | readonly T.Object3D[]): FrameAnchor[] {
+    anchors(
+      target: T.Object3D | T.Box3 | readonly T.Object3D[],
+      reserveHidden = false,
+    ): FrameAnchor[] {
       if (target instanceof T.Box3) return [];
       const roots = Array.isArray(target) ? target : [target];
       // A shot can follow a text or local-position change before the next render.
       for (const item of surfaces) if (belongs(item.object, roots)) item.prepare();
-      return measure([...labels].filter((item) => belongs(item.anchor.object, roots))).map(
-        ({ item, point, size }) => ({
-          position: point,
-          padding: [
-            size[0]! / 2 + Math.abs(item.options.offset?.[0] ?? 0),
-            size[1]! / 2 + Math.abs(item.options.offset?.[1] ?? 0),
-          ],
-        }),
-      );
+      return measure(
+        [...labels].filter((item) => belongs(item.anchor.object, roots)),
+        reserveHidden,
+      ).map(({ item, point, size }) => ({
+        position: point,
+        padding: [
+          size[0]! / 2 + Math.abs(item.options.offset?.[0] ?? 0),
+          size[1]! / 2 + Math.abs(item.options.offset?.[1] ?? 0),
+        ],
+      }));
     },
     label(text: string | (() => string), anchor: LabelAnchor, options: LabelOptions = {}) {
       if (options.face || options.space === 'world') {

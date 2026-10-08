@@ -14,6 +14,8 @@ export const shippedExamples = [
   'ink-story',
   'morph-story',
   'connected-diagram',
+  'tensor-slices',
+  'math-workbench',
 ];
 
 export const releaseInput = (path) =>

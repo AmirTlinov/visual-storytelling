@@ -1,12 +1,13 @@
 import type { MorphObject } from '../objects.js';
+import type { TensorData } from '../../math/tensor.js';
+import type { MathValue } from '../../math/value.js';
 
-export type MathValue = number | readonly MathValue[];
 /** A number or tensor carried by the supplied material. Geometry is a template, not a trajectory. */
 export interface FormulaBody {
-  readonly value: MathValue;
+  readonly value: MathValue | TensorData;
   readonly body: MorphObject;
 }
-export type FormulaInput = MathValue | FormulaBody;
+export type FormulaInput = MathValue | TensorData | FormulaBody;
 export interface FormulaOptions {
   /** Auto uses volume for positive, comparable quantities, and written values otherwise. */
   measure?: 'auto' | 'volume' | 'value';

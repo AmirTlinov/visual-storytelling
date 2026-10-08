@@ -2,6 +2,8 @@ import type { ObjectMeaning } from '../scene-objects.js';
 import type { MathMorphFrame, MathPart } from './types.js';
 import { mathNumber } from './numbers.js';
 import { sourceOf } from '../scene-source.js';
+import { tensorOriginId } from '../math/tensor.js';
+import { mathOriginKey } from './origins.js';
 
 interface SemanticPart {
   part: MathPart;
@@ -52,12 +54,13 @@ export function mathSemantics(id: string, file: string, operation: () => unknown
       for (const part of [...frame.sources, ...frame.targets]) {
         if (!part.id) continue;
         const key = `${id}:${part.id}`;
+        for (const origin of part.origins ?? []) {
+          const originKey = mathOriginKey(origin);
+          if (origin.source) originIds.set(originKey, tensorOriginId(origin.source));
+          else if (!originIds.has(originKey) && part.origins?.length === 1)
+            originIds.set(originKey, key);
+        }
         if (!parts.has(key)) {
-          for (const origin of part.origins ?? []) {
-            const originKey = `${origin.operand}:${origin.index}`;
-            if (!originIds.has(originKey) && part.origins?.length === 1)
-              originIds.set(originKey, key);
-          }
           const record: SemanticPart = {
             part,
             visible: false,
@@ -73,7 +76,7 @@ export function mathSemantics(id: string, file: string, operation: () => unknown
               inputs: () => [
                 ...new Set(
                   (record.part.origins ?? []).flatMap((origin) => {
-                    const source = originIds.get(`${origin.operand}:${origin.index}`);
+                    const source = originIds.get(mathOriginKey(origin));
                     return source && source !== key ? [source] : [];
                   }),
                 ),

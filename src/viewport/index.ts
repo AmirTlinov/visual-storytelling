@@ -22,7 +22,11 @@ export type { Shot3D, ShotTransition3D } from './shots.js';
 export type { LabelOptions, LabelInsets, Face } from './labels.js';
 export type { LabelAnchor } from './label-anchor.js';
 export { arrangeTensorRows, deliverTensorCells } from './tensor-motion.js';
-export type { TensorCell, TensorHandle, Point3 } from './tensor-motion.js';
+export type { Point3 } from './tensor-motion.js';
+export { Tensor3D } from './tensor.js';
+export type { TensorCell, TensorHandle, TensorOptions } from './tensor.js';
+export { TensorSlice3D } from './tensor-slice.js';
+export type { TensorSliceOptions } from './tensor-slice.js';
 export { readableFrame, geometryFrameAnchors } from './framing.js';
 export type { FrameAnchor, ReadableFrame } from './framing.js';
 

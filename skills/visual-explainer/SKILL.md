@@ -32,6 +32,7 @@ description: Создаёт и редактирует наглядные объ�
 - Для выбора представления и сложного авторства прочитай [приёмы объяснения](references/authoring-guide.md) и один подходящий исходник из каталога.
 - Для рассказа и ручного исследования — [SceneShell и общий маршрут](references/scene-template.md).
 - Для морфинга — [MathMorph и InkMorph](../../docs/morphing.md); для рассказа из преобразований — [MorphStory](../../docs/morph-stories.md).
+- Для тензоров, срезов и происхождения результата — [единая модель данных](../../docs/tensors.md), основы `tensor-slices` и `math-workbench`.
 - Для SVG/графика — [данные и публикация](references/data-plots.md); для вложенной модели — [камера и навигация](references/nested-explorer.md).
 - Для разрешённой локальной озвучки — [сценарий и голос](references/narration.md). Доступность провайдера и его права проверяются отдельно от голоса Codex.
 - Для проверки движения — [наблюдение и кадры](references/motion.md#проверка).
