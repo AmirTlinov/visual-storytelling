@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { serve } from '../tools/site.mjs';
+import { assetURLs } from '../tools/asset-urls.mjs';
 
 test('scene owners preserve detail framing, readable cells, atomic input and restored values', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'story-runtime-'));
@@ -85,6 +86,7 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
       format: 'iife',
       outfile: join(directory, 'index.js'),
       loader: { '.woff2': 'dataurl' },
+      plugins: [assetURLs()],
     });
     await writeFile(
       join(directory, 'index.html'),
