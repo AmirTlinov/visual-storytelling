@@ -36,7 +36,12 @@ export interface SceneOptions {
   /** Hide the shell heading when the subject supplies its own title. */
   heading?: boolean;
   /** Optional visible word-aligned captions; omitted keeps the accessible chapter text. */
-  captions?: true | CaptionOptions;
+  captions?:
+    | true
+    | (CaptionOptions & {
+        /** Below a stage frame, text keeps its screen size. Whole-scene frames include it. */
+        placement?: 'overlay' | 'below';
+      });
   parameters?: (ControlParameter & { key: string })[];
   onInput?: (values: Record<string, ControlValue>) => void;
   onMode?: (mode: 'story' | 'explore') => void;
@@ -182,7 +187,13 @@ function mount(
     fields,
     completeFrame ? stage : (composition?.element ?? stage),
   );
-  if (captions && composition && !completeFrame) stage.append(caption);
+  if (
+    captions &&
+    composition &&
+    !completeFrame &&
+    (captions === true || captions.placement !== 'below')
+  )
+    stage.append(caption);
   else sheet.append(caption);
   sheet.append(controls, status);
   if (completeFrame) root.append(composition!.element);

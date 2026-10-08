@@ -44,6 +44,7 @@ window.galleryReady = (async () => {
   return IllustratedStory.mount(globalThis.document.getElementById('story'), {
     document: alternate ? { ...document, title: 'Путь энергии: исследование цепи' } : document,
     audio,
+    captions: { placement: 'below' },
     parameters,
     chapters: {
       workshop: (chapter) =>

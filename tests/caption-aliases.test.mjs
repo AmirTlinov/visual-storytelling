@@ -203,6 +203,7 @@ test('SceneShell uses the same display aliases for visible and accessible chapte
             overflows: el.scrollWidth > el.clientWidth,
             top: el.getBoundingClientRect().top,
             bottom: el.getBoundingClientRect().bottom,
+            controlsTop: document.querySelector('[data-player]').getBoundingClientRect().top,
             controlsBottom: document.querySelector('[data-player]').getBoundingClientRect().bottom,
           };
         });
@@ -218,7 +219,7 @@ test('SceneShell uses the same display aliases for visible and accessible chapte
           JSON.stringify({ width, ...box }),
         );
         assert.ok(
-          box.top >= box.controlsBottom && box.bottom <= 812,
+          box.bottom <= box.controlsTop && box.controlsBottom <= 812,
           JSON.stringify({ width, ...box }),
         );
       }
