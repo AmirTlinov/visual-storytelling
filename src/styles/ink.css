@@ -1,6 +1,6 @@
 @import './handwriting.css';
 .ve-scene{
-  --ve-ink:light-dark(#263f83,#d7e2f2);--ve-surface:light-dark(#f1eee5,#17202b);
+  --ve-ink:light-dark(#263f83,#d7e2f2);--ve-surface:var(--background,Canvas);
   --ve-font:SketchPencil,SketchShantell,'Chalkboard SE',sans-serif;
   --ve-muted:light-dark(#646365,#a6b2c3);
   --ve-pencil:light-dark(#878681,#8192a8);
@@ -21,9 +21,9 @@
   --ve-grid-size:var(--ve-grid-major-step) var(--ve-grid-major-step),var(--ve-grid-major-step) var(--ve-grid-major-step),var(--ve-grid-step) var(--ve-grid-step),var(--ve-grid-step) var(--ve-grid-step);
   color:var(--ve-ink);font-family:var(--ve-font);font-weight:400;font-synthesis:none;line-height:1.45;
   -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
-  background-color:var(--ve-surface);background-image:var(--ve-grid);background-size:var(--ve-grid-size);background-position:var(--ve-grid-x) var(--ve-grid-y);
+  background-color:transparent;background-image:var(--ve-grid);background-size:var(--ve-grid-size);background-position:var(--ve-grid-x) var(--ve-grid-y);
 }
-.ve-scene[data-paper='false']{background-image:none;background-color:transparent;}
+.ve-scene[data-paper='false']{background-image:none}
 .ve-scene:has(> .ve-frame),.ve-scene:has(.vs-grid > path){background-image:none;}
-.ve-scene:not([data-paper='false']) > .ve-frame > .ve-frame-content:not(:has(.vs-grid > path)){background-color:var(--ve-surface);background-image:var(--ve-grid);background-size:var(--ve-grid-size);background-position:var(--ve-grid-x) var(--ve-grid-y);}
+.ve-scene:not([data-paper='false']) > .ve-frame > .ve-frame-content:not(:has(.vs-grid > path)){background-color:transparent;background-image:var(--ve-grid);background-size:var(--ve-grid-size);background-position:var(--ve-grid-x) var(--ve-grid-y);}
 svg.ve-scene{color-scheme:light dark;}

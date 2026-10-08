@@ -1,7 +1,6 @@
 /* The same shell/controls, with neutral interface typography and geometry. */
 .ve-scene[data-appearance='interface'] {
   --ve-ink: var(--foreground, light-dark(#292724, #eeece7));
-  --ve-surface: var(--background, Canvas);
   --ve-font: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-family: var(--ve-font);
   line-height: 1.5;

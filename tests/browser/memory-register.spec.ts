@@ -109,7 +109,8 @@ test('narrow notebook keeps drawn targets apart and keyboard activation changes 
   await page.emulateMedia({ colorScheme: 'light' });
   await expect.poll(paper).not.toEqual(dark);
   const light = await paper();
-  expect(light.paper).not.toBe(dark.paper);
+  expect(dark.paper).toBe('rgba(0, 0, 0, 0)');
+  expect(light.paper).toBe(dark.paper);
   expect(light.ink).not.toBe(dark.ink);
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect.poll(paper).toEqual(dark);
