@@ -13,7 +13,6 @@ export async function narrationSource(directory) {
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  if (document?.narration?.enabled === false) return;
   if (document) {
     const runtime = await resolvePackage('@visual-storytelling/core', directory);
     const projection = runtime

@@ -84,7 +84,6 @@ test(
     );
     const document = {
       title: 'Площадь',
-      narration: { enabled: true },
       chapters: [
         {
           id: 'area',

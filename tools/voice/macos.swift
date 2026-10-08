@@ -29,12 +29,24 @@ let utterance = AVSpeechUtterance(string: text)
 utterance.voice = voice
 utterance.rate = Float(input["rate"] as? Double ?? Double(AVSpeechUtteranceDefaultSpeechRate))
 let synth = AVSpeechSynthesizer()
-var audio = Data(), markers = [[String: Any]](), sampleRate = 0.0, channels = 0, finished = false
+var audio = Data(), markers = [[String: Any]](), sampleRate = 0.0, channels = 0
+var audioFinished = false, utteranceFinished = false
+var audioPartOffset = 0
 let lock = NSLock()
+final class Completion: NSObject, AVSpeechSynthesizerDelegate {
+    let finished: () -> Void
+    init(_ finished: @escaping () -> Void) { self.finished = finished }
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) { finished() }
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) { fail("Speech synthesis was cancelled.") }
+}
+let completion = Completion { lock.withLock { utteranceFinished = true } }
+synth.delegate = completion
 synth.write(utterance, toBufferCallback: { buffer in
     guard let pcm = buffer as? AVAudioPCMBuffer else { return }
     lock.lock(); defer { lock.unlock() }
-    if pcm.frameLength == 0 { finished = true; return }
+    // A voice may finish several internal chunks before the utterance finishes.
+    if pcm.frameLength == 0 { audioFinished = true; audioPartOffset = audio.count; return }
+    audioFinished = false
     guard pcm.format.commonFormat == .pcmFormatFloat32,
           pcm.format.channelCount == 1, let samples = pcm.floatChannelData?[0] else {
         fail("The voice returned an unsupported audio format.")
@@ -46,13 +58,14 @@ synth.write(utterance, toBufferCallback: { buffer in
     for marker in values where marker.mark == .word {
         let range = marker.textRange
         guard range.location + range.length <= (text as NSString).length else { continue }
-        markers.append(["text": (text as NSString).substring(with: range), "offset": marker.byteSampleOffset,
+        markers.append(["text": (text as NSString).substring(with: range), "offset": audioPartOffset + marker.byteSampleOffset,
             "location": range.location, "length": range.length])
     }
 })
 let deadline = Date().addingTimeInterval(180)
-while !lock.withLock({ finished }) && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
-let result = lock.withLock { (finished: finished, audio: audio, markers: markers, sampleRate: sampleRate, channels: channels) }
+// Empty PCM buffers end chunks; the delegate owns completion of the full utterance.
+while !lock.withLock({ audioFinished && utteranceFinished }) && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+let result = lock.withLock { (finished: audioFinished && utteranceFinished, audio: audio, markers: markers, sampleRate: sampleRate, channels: channels) }
 guard result.finished, !result.audio.isEmpty, !result.markers.isEmpty else { fail("The voice did not return audio with word markers.") }
 do { try result.audio.write(to: URL(fileURLWithPath: output), options: .atomic) }
 catch { fail("Could not write speech: \(error)") }

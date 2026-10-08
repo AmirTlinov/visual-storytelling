@@ -19,7 +19,6 @@ export interface StoryDocument {
     beats: readonly AuthoredBeat[];
   }[];
   narration?: {
-    enabled?: boolean;
     voice?: Record<string, unknown>;
     intro?: number;
     outro?: number;

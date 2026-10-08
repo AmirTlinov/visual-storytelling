@@ -80,22 +80,33 @@ export function playbackTimeline(timeline) {
   };
 }
 
+/** Defer synthesis without changing the editable speech, timing or selected provider. */
+export async function deferNarration(directory) {
+  const names = await readdir(directory);
+  if (names.some((name) => ['voice.json', 'narration.json', 'story.json'].includes(name))) {
+    const file = join(directory, 'voice.json');
+    const settings = names.includes('voice.json') ? JSON.parse(await readFile(file, 'utf8')) : {};
+    if (settings.enabled !== false)
+      await writeFile(file, JSON.stringify({ ...settings, enabled: false }, null, 2) + '\n');
+  }
+  for (const name of names) {
+    if (!name.endsWith('.html')) continue;
+    const file = join(directory, name),
+      html = await readFile(file, 'utf8'),
+      silent = setNarrationMode(html, true);
+    if (silent !== html) await writeFile(file, silent);
+  }
+}
+
 /** A permanent silent template keeps story cues and authored credits, without speech scaffolding. */
 export async function silenceSceneCopy(directory) {
+  await deferNarration(directory);
   const read = (name) =>
     readFile(join(directory, name), 'utf8').catch((error) => {
       if (error.code !== 'ENOENT') throw error;
     });
   const write = (name, value) =>
     writeFile(join(directory, name), JSON.stringify(value, null, 2) + '\n');
-  const story = await read('story.json');
-  if (story) {
-    const document = JSON.parse(story);
-    (document.narration ??= {}).enabled = false;
-    await write('story.json', document);
-  }
-  const voice = await read('voice.json');
-  if (voice) await write('voice.json', { ...JSON.parse(voice), enabled: false });
   const timing = await read('timeline.json');
   if (timing) {
     const timeline = JSON.parse(timing);
@@ -287,6 +298,14 @@ export async function checkNarration(html, directory, { signal } = {}) {
 
 /** Reuse the receipt check and speech cache before an audible development rebuild. */
 export async function prepareNarration(directory, { audible = false, signal } = {}) {
+  signal?.throwIfAborted();
+  const settings = await readFile(join(directory, 'voice.json'), 'utf8').then(
+    JSON.parse,
+    (error) => {
+      if (error.code !== 'ENOENT') throw error;
+    },
+  );
+  if (settings?.enabled === false) return deferNarration(directory);
   let rebuilt = false;
   for (const name of await readdir(directory)) {
     signal?.throwIfAborted();

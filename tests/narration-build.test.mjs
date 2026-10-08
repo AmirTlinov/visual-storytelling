@@ -38,7 +38,7 @@ test('silent creation preserves narrative timing and authored assets without Pyt
     mix: { music: 'old' },
     segments: [{ ...script.segments[0], audio_start: 0, audio_end: 4, seed: 42, delivery: {} }],
   });
-  await write('story.json', { title: 'Story', narration: { enabled: true, voice: { seed: 42 } } });
+  await write('story.json', { title: 'Story', narration: { voice: { seed: 42 } } });
   await write('voice.json', { provider: 'macos', enabled: true, language: 'ru-RU' });
   const authored = 'Product logo and fonts\nLegacy narrator attribution\n';
   await write(
@@ -75,7 +75,6 @@ test('silent creation preserves narrative timing and authored assets without Pyt
   assert.deepEqual(JSON.parse(await readFile(join(directory, 'timeline.json'), 'utf8')), script);
   assert.equal(await readFile(join(directory, 'CREDITS.txt'), 'utf8'), authored);
   assert.deepEqual(JSON.parse(await readFile(join(directory, 'story.json'), 'utf8')).narration, {
-    enabled: false,
     voice: { seed: 42 },
   });
   assert.deepEqual(JSON.parse(await readFile(join(directory, 'voice.json'), 'utf8')), {
