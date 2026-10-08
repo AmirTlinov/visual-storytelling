@@ -27,7 +27,7 @@
 
 Локальная поставка плагина включает Node.js и npm с `runtime/NODE-LICENSE`, лицензиями npm и его зависимостей. Лицензии SDK MCP, MCP Apps, OpenAI Extensions и их фактически включённых зависимостей собираются в `plugin/dist/THIRD_PARTY_NOTICES.txt`. Остальные исполняемые зависимости сохраняют notices в `node_modules`.
 
-Профиль `.plugin-release` исключает Spine/Chibi, связанные экспорты core, Higgs backend, модели голоса и озвученные демо. Библиотека в репозитории сохраняет эти возможности отдельно.
+Профиль `.plugin-release` содержит общий API, персонажей glTF/SVG, авторский инструмент Higgs и закреплённые Python-зависимости. Модели, Python, Chromium и FFmpeg подготавливаются по запросу; музыка загружается при её использовании. Каталог и исходники примеров совпадают с библиотекой.
 
 Сборка HTML переносит тексты LICENSE/NOTICE фактически включённых пакетов; вложенный Draco сохраняет Apache-2.0. Они лежат рядом с JS в `*.LICENSE.txt` и входят в автономный HTML. Локальные виртуальные окружения, кэши и служебные каталоги автора в release не копируются.
 
@@ -35,58 +35,20 @@
 
 Первое видео отдельно загружает Chrome Headless Shell 153.0.8010.12 из официального Chrome for Testing CDN и FFmpeg 8.0.3-build4 из [AtlasYang/ffmpeg-static-builds](https://github.com/AtlasYang/ffmpeg-static-builds/releases/tag/ffmpeg-8.0.3-build4). URL, SHA-256 и пути закреплены в `plugin/environment.mjs`; receipt сохраняет источник, версию и хеш бинарника. FFmpeg-сборка имеет LGPL-профиль без GPL/nonfree компонентов; исходники и сборочные инструкции доступны у поставщика. Видео кодируется системным VideoToolbox. Chromium сохраняет собственные notices в архиве. Эти загрузки не входят в установочный архив плагина.
 
-## Chibi и Spine
+## Персонажи
 
-`./characters` использует `@esotericsoftware/spine-webgl` **4.3.13** и Chibi Stickers
-из официальных примеров Spine 4.3. Скелет, ограничения и родные клипы сохранены.
-Проект рига предоставлен в public domain. Исходные изображения примера допускают
-перераспространение с уведомлением и **запрещают коммерческое использование**;
-[исходная лицензия](src/assets/characters/chibi/LICENSE.txt) входит в пакет.
-Нарисованные здесь SVG-детали Tesla/Mira — 0BSD; части SVG со встроенными исходными
-изображениями, а также глаза, эмоции и эффекты сохраняют условия примера.
+Редактируемый `rig.gltf` и клипы преобразованы из public-domain проекта Chibi Stickers
+(Esoteric Software, 2022). [Уведомление](src/assets/characters/chibi/LICENSE.txt)
+сохраняет происхождение исходного рига. Все распространяемые рисунки созданы в
+Visual Storytelling и имеют лицензию 0BSD; атласы строятся только из этих SVG.
+Скелет, деформация, смешивание и рендеринг используют Three.js по MIT.
 
-```text
-Copyright (c) 2022, Esoteric Software LLC
+## Подготовка голоса
 
-The images in this project may be redistributed as long as they are accompanied
-by this license file. The images may not be used for commercial use of any
-kind.
-
-The project file is released into the public domain. It may be used as the basis
-for derivative work.
-```
-
-Интеграция runtime и создание продуктов/SDK регулируются
-[Spine Runtimes License](https://esotericsoftware.com/spine-runtimes-license)
-и применимой лицензией Spine Editor. Лицензия 0BSD этой библиотеки их не заменяет.
-Ниже сохранено полное уведомление runtime; упаковщик включает этот документ в HTML.
-
-```
-Spine Runtimes License Agreement
-Last updated April 5, 2025. Replaces all prior versions.
-
-Copyright (c) 2013-2025, Esoteric Software LLC
-
-Integration of the Spine Runtimes into software or otherwise creating
-derivative works of the Spine Runtimes is permitted under the terms and
-conditions of Section 2 of the Spine Editor License Agreement:
-http://esotericsoftware.com/spine-editor-license
-
-Otherwise, it is permitted to integrate the Spine Runtimes into software
-or otherwise create derivative works of the Spine Runtimes (collectively,
-"Products"), provided that each user of the Products must obtain their own
-Spine Editor license and redistribution of the Products in any form must
-include this license and copyright notice.
-
-THE SPINE RUNTIMES ARE PROVIDED BY ESOTERIC SOFTWARE LLC "AS IS" AND ANY
-EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL ESOTERIC SOFTWARE LLC BE LIABLE FOR ANY
-DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES,
-BUSINESS INTERRUPTION, OR LOSS OF USE, DATA, OR PROFITS) HOWEVER CAUSED AND
-ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
-THE SPINE RUNTIMES, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-```
+`plugin/environment.mjs` закрепляет uv 0.11.3 и SHA-256 официального архива Astral.
+uv распространяется по MIT/Apache-2.0; уведомления поставляются в его архиве.
+Python 3.12.13 устанавливается управляемым uv-комплектом; зависимости и хеши
+закреплены в `tools/uv.lock`. Модели Higgs и русского выравнивания закреплены в
+`tools/audio/models.json`; подготовка сохраняет LICENSE/README поставщика и
+проверяет Git/LFS digest каждого загруженного файла. Атрибуция синтезированной
+речи сохраняется в `CREDITS.txt` выпуска.

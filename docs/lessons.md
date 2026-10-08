@@ -42,6 +42,8 @@ await IllustratedStory.mount(root, {
 
 - `inkChapter` сохраняет живой SVG, сетку, доступность и команды. `create` может быть
   асинхронным; `size` задаёт координаты, иначе размеры приходят в CSS px.
+  `create(view, signal)` и собственный `mount(parent, signal)` получают отмену:
+  передай signal загрузчику и освободи частично созданные ресурсы при ошибке.
 - `characterChapter` из `/characters` принимает `CharacterStageOptions` вместе с
   `id`, `title` и локальной разметкой. [Цепь](../examples/tesla-circuit/scene.js) и
   [термостат](../examples/thermostat-story/scene.js) связывают героя с живой схемой.

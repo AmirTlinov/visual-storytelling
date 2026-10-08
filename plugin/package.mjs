@@ -7,17 +7,10 @@ import { buildAPI } from '../tools/api.mjs';
 import { sourceDigest, writeBuildInfo } from '../tools/build-info.mjs';
 import { playbackTimeline } from '../tools/narration.mjs';
 const execute = promisify(execFile);
-export const shippedExamples = [
-  'explorer-svg',
-  'explorer-3d',
-  'product-walkthrough',
-  'ink-story',
-  'morph-story',
-  'connected-diagram',
-  'memory-register',
-  'tensor-slices',
-  'math-workbench',
-];
+// The installed plugin, CLI and gallery publish the same versioned catalog.
+export const shippedExamples = Object.keys(
+  JSON.parse(await readFile(new URL('../examples/catalog.json', import.meta.url), 'utf8')),
+);
 
 export const releaseInput = (path) =>
   !path
@@ -100,15 +93,7 @@ export async function packagePlugin(root) {
   ]) {
     await cp(join(root, name), join(release, name), {
       recursive: true,
-      filter: (path) =>
-        releaseInput(relative(root, path)) &&
-        !path.includes('/plugin/dist/scene') &&
-        !path.includes('/tools/audio') &&
-        !path.endsWith('/tools/sketch-audio') &&
-        !path.includes('/dist/characters') &&
-        !path.includes('/dist/assets/characters') &&
-        !path.includes('/dist/assets/audio') &&
-        !path.includes('/dist/book'),
+      filter: (path) => releaseInput(relative(root, path)) && !path.includes('/plugin/dist/scene'),
     });
   }
   const catalog = JSON.parse(await readFile(join(root, 'examples/catalog.json'), 'utf8'));
@@ -137,10 +122,6 @@ export async function packagePlugin(root) {
   );
   const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
   delete pkg.devDependencies;
-  delete pkg.dependencies['@esotericsoftware/spine-webgl'];
-  delete pkg.exports['./characters'];
-  delete pkg.exports['./book'];
-  delete pkg.bin['sketch-audio'];
   pkg.scripts = { build: 'visual-story build .', dev: 'visual-story dev .' };
   await writeFile(join(release, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
   await buildAPI(release, join(release, 'dist'));
@@ -181,7 +162,7 @@ export async function packagePlugin(root) {
         core: { version: pkg.version, build: core.build },
         plugin: JSON.parse(await readFile(join(root, 'plugin.json'), 'utf8')).version,
         examples: shippedExamples,
-        omitted: ['Spine/Chibi characters', 'Higgs Python runtime', 'voice models'],
+        onDemand: ['Python voice environment', 'voice models', 'Chromium', 'FFmpeg', 'music'],
       },
       null,
       2,

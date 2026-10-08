@@ -57,8 +57,9 @@ import timing from './timeline.json' with { type: 'json' };
 измерения, `PhysicsReplay` перематывает физику. Контракты доступны через
 `api SceneStory SceneChapter inkChapter physicsChapter`.
 
-В полной библиотеке с экспортами `/characters` и `/book` пример `interaction-studio`
-добавляет персонажей и `Storybook`. Эти модули и пример в поставку плагина не входят.
+`character-lesson` соединяет `characterChapter` из `/characters`, математику
+и физический опыт через общий `SceneStory`. `IllustratedStory` добавляет документ
+с главами и речью; тихая разметка доступна до подготовки голоса.
 
 В подготовленном мире меняй `arrange`, `cast` и `perform`. Отношения сохраняются
 между вариантами. `portable` даёт письмо, чашку и прибор; своя SVG-иллюстрация задаёт

@@ -32,6 +32,8 @@ function card(entry) {
     <details class="example-create" name="create-example">
       <summary>Взять за основу</summary>
       <div class="example-setup">
+        <p>${escape(entry.useFor ?? entry.summary)}</p>
+        <p>${escape(entry.visibleAction ?? entry.title)}</p>
         <p>Выполните в терминале. Новая сцена появится в папке <code>my-story</code>.</p>
         <textarea readonly spellcheck="false" aria-label="Команды создания: ${escape(entry.title)}" rows="6">${escape(command)}</textarea>
         <div class="example-actions">
