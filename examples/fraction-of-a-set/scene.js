@@ -16,6 +16,8 @@ window.galleryReady = (async () => {
     first = true,
     animateNext = false;
   const movement = { progress: 1 };
+  let movementFrom = [],
+    restoredMovement;
   let settled = true;
   const chips = Array.from({ length: total }, (_, i) => {
     const node = el('g', { 'data-chip': i }),
@@ -43,9 +45,11 @@ window.galleryReady = (async () => {
   function draw(animate = !settled) {
     if (!width) return 350;
     gsap.killTweensOf(movement);
-    const moving = animate && !first && !reduced.matches;
-    movement.progress = moving ? 0 : 1;
-    const starts = chips.map(({ pose }) => ({ ...pose }));
+    const restored = restoredMovement;
+    restoredMovement = undefined;
+    const moving = !restored && animate && !first && !reduced.matches;
+    movement.progress = restored?.progress ?? (moving ? 0 : 1);
+    const starts = (movementFrom = restored?.from ?? chips.map(({ pose }) => ({ ...pose })));
     const targets = [];
     const perPart = total / state.parts,
       chosen = perPart * state.taken;
@@ -163,7 +167,13 @@ window.galleryReady = (async () => {
     }
     paint();
     if (moving)
-      gsap.to(movement, { progress: 1, duration: 0.75, ease: 'power2.inOut', onUpdate: paint });
+      gsap.to(movement, {
+        progress: 1,
+        duration: 0.75,
+        ease: 'power2.inOut',
+        onUpdate: paint,
+        onComplete: save,
+      });
     first = false;
     return baseline + (state.mode === 'formulas' ? 67 : 32);
   }
@@ -175,23 +185,19 @@ window.galleryReady = (async () => {
         ...state,
         result: (total / state.parts) * state.taken,
       },
-      privateContent: { example: 'fraction', ...state },
+      privateContent: scene.capture(),
     });
   }
-  function restore(snapshot) {
-    const s = snapshot?.privateContent;
-    if (s?.example !== 'fraction' || ![2, 3, 4, 6].includes(s.parts)) return false;
-    state.parts = s.parts;
-    state.taken = Math.max(0, Math.min(s.parts, Math.round(Number(s.taken) || 0)));
-    state.mode = s.mode === 'formulas' ? 'formulas' : 'numbers';
-    return true;
+  async function restore(snapshot) {
+    const checkpoint = snapshot?.privateContent;
+    if (checkpoint?.subject?.example !== 'fraction') return;
+    try {
+      await scene.restore(checkpoint);
+    } catch (error) {
+      find('result').textContent = error.message;
+    }
   }
-  const storage = widgetState('fraction-of-a-set', (snapshot) => {
-    if (!restore(snapshot)) return;
-    gsap.killTweensOf(movement);
-    settled = true;
-    layout?.update();
-  });
+  const storage = widgetState('fraction-of-a-set', restore);
   root.querySelectorAll('[data-parts]').forEach((b) =>
     b.addEventListener(
       'click',
@@ -228,14 +234,44 @@ window.galleryReady = (async () => {
     ),
   );
   reduced.addEventListener('change', () => draw(), listen);
-  restore(storage.read());
   layout = await observe(svg, (w) => {
     width = w;
     const height = draw(animateNext || !settled);
     animateNext = false;
     return height;
   });
-  mountScene(root, {
+  const scene = mountScene(root, {
+    subject: {
+      capture: () => ({
+        example: 'fraction',
+        ...state,
+        movement: { progress: movement.progress, from: movementFrom },
+      }),
+      restore(value) {
+        const motion = value?.movement;
+        if (
+          value?.example !== 'fraction' ||
+          ![2, 3, 4, 6].includes(value.parts) ||
+          !Number.isInteger(value.taken) ||
+          value.taken < 0 ||
+          value.taken > value.parts ||
+          !['numbers', 'formulas'].includes(value.mode) ||
+          !Number.isFinite(motion?.progress) ||
+          motion.progress < 0 ||
+          motion.progress > 1 ||
+          !Array.isArray(motion.from) ||
+          motion.from.length !== total ||
+          motion.from.some(
+            (point) => !point || !Number.isFinite(point.x) || !Number.isFinite(point.y),
+          )
+        )
+          throw new Error('Сохранённые условия долей несовместимы с этой сценой.');
+        Object.assign(state, { parts: value.parts, taken: value.taken, mode: value.mode });
+        restoredMovement = structuredClone(motion);
+        animateNext = false;
+        layout.update();
+      },
+    },
     snapshot: () => ({
       ...state,
       total,
@@ -252,4 +288,5 @@ window.galleryReady = (async () => {
       root.replaceChildren();
     },
   });
+  await restore(storage.read());
 })();

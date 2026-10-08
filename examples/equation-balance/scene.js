@@ -12,7 +12,8 @@ import { gsap, widgetState } from '@visual-storytelling/core';
   const poses = new Map();
   let targets = [],
     instruction = [],
-    activeRoute = '';
+    activeRoute = '',
+    drawingWidth = 0;
   const states = [
     {
       equation: '3x + 2 = 8',
@@ -91,6 +92,7 @@ import { gsap, widgetState } from '@visual-storytelling/core';
   function draw(route = movement.progress < 1 ? activeRoute : '') {
     const width = Math.round(svg.getBoundingClientRect().width);
     if (!width) return;
+    drawingWidth = width;
     gsap.killTweensOf(movement);
     activeRoute = route;
     targets = [];
@@ -206,17 +208,32 @@ import { gsap, widgetState } from '@visual-storytelling/core';
     );
     paint();
     if (movement.progress < 1)
-      gsap.to(movement, { progress: 1, duration: 0.85, ease: 'power2.inOut', onUpdate: paint });
+      gsap.to(movement, {
+        progress: 1,
+        duration: 0.85,
+        ease: 'power2.inOut',
+        onUpdate: paint,
+        onComplete: save,
+      });
     root.querySelector('[data-back]').disabled = step === 0;
     root.querySelector('[data-next]').textContent = ['Убрать по 2', 'Разделить на 3', 'Сначала'][
       step
     ];
   }
-  function restore(snapshot) {
-    const saved = snapshot?.privateContent;
-    if (saved?.example !== 'balance' || !Number.isInteger(saved.step)) return false;
-    step = Math.max(0, Math.min(2, saved.step));
-    return true;
+  async function restore(snapshot) {
+    const checkpoint = snapshot?.privateContent;
+    if (checkpoint?.subject?.example !== 'balance') return;
+    try {
+      await scene.restore(checkpoint);
+    } catch (error) {
+      root.querySelector('[data-result]').textContent = error.message;
+    }
+  }
+  function save() {
+    storage.save({
+      modelContent: { example: 'balance', equation: states[step].equation },
+      privateContent: scene.capture(),
+    });
   }
   function change(next) {
     const previous = step;
@@ -230,26 +247,69 @@ import { gsap, widgetState } from '@visual-storytelling/core';
           ? ['Делим обе стороны', 'на три равные группы']
           : ['Возвращаем все предметы', 'на чаши'];
     draw(step === 2 ? 'spread' : previous === 2 ? 'gather' : 'move');
-    storage.save({
-      modelContent: { example: 'balance', equation: states[step].equation },
-      privateContent: { example: 'balance', step },
-    });
+    save();
   }
-  const storage = widgetState('equation-balance', (snapshot) => {
-    if (restore(snapshot)) draw('');
-  });
+  const storage = widgetState('equation-balance', restore);
   root.querySelector('[data-next]').addEventListener('click', () => change((step + 1) % 3), listen);
   root
     .querySelector('[data-back]')
     .addEventListener('click', () => change(Math.max(0, step - 1)), listen);
-  restore(storage.read());
-  const observer = new ResizeObserver(() => draw());
+  const observer = new ResizeObserver(() => {
+    if (Math.round(svg.getBoundingClientRect().width) !== drawingWidth) draw();
+  });
   observer.observe(svg);
-  window.galleryReady = document.fonts.ready.then(() => {
-    if (!abort.signal.aborted) draw();
+  window.galleryReady = document.fonts.ready.then(async () => {
+    if (abort.signal.aborted) return;
+    draw();
+    await restore(storage.read());
   });
   motion.addEventListener('change', () => draw(''), listen);
-  mountScene(root, {
+  const scene = mountScene(root, {
+    subject: {
+      capture: () => ({
+        example: 'balance',
+        step,
+        progress: movement.progress,
+        route: activeRoute,
+        instruction,
+        from: targets.map(({ from, wasRemoved }) => ({ ...from, removed: wasRemoved })),
+      }),
+      restore(value) {
+        if (
+          value?.example !== 'balance' ||
+          !Number.isInteger(value.step) ||
+          value.step < 0 ||
+          value.step > 2 ||
+          !Number.isFinite(value.progress) ||
+          value.progress < 0 ||
+          value.progress > 1 ||
+          !['', 'move', 'spread', 'gather'].includes(value.route) ||
+          !Array.isArray(value.instruction) ||
+          value.instruction.length > 2 ||
+          value.instruction.some((line) => typeof line !== 'string') ||
+          !Array.isArray(value.from) ||
+          value.from.length !== poses.size ||
+          value.from.some(
+            (point) =>
+              !point ||
+              !Number.isFinite(point.x) ||
+              !Number.isFinite(point.y) ||
+              typeof point.removed !== 'boolean',
+          )
+        )
+          throw new Error('Сохранённый шаг уравнения несовместим с этой сценой.');
+        step = value.step;
+        instruction = [...value.instruction];
+        [...poses.entries()].forEach(([element, pose], i) => {
+          Object.assign(pose, { x: value.from[i].x, y: value.from[i].y });
+          element.dataset.removed = String(value.from[i].removed);
+        });
+        draw(value.route);
+        gsap.killTweensOf(movement);
+        movement.progress = value.progress;
+        paint();
+      },
+    },
     snapshot: () => ({
       step,
       complete: movement.progress === 1,

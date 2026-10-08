@@ -55,6 +55,7 @@ export const viewReport = z
         rate: z.number().min(0.25).max(3).optional(),
         selected: z.array(id).max(100).optional(),
         values,
+        subject: z.unknown().optional(),
         view: z.unknown().optional(),
       })
       .optional(),

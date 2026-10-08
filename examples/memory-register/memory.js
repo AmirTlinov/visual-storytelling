@@ -14,6 +14,45 @@ export const initial = () => ({
   trace: [],
 });
 
+const byte = (value) => Number.isInteger(value) && value >= 0 && value <= 255;
+const boolean = (value) => typeof value === 'boolean';
+/** Widget persistence, reopening and current exports share the same input schema. */
+export const memoryCheckpoint = {
+  encode: (state) => ({ kind: 'memory-register', version: 1, state }),
+  decode(value) {
+    const state = value?.state;
+    if (
+      value?.kind !== 'memory-register' ||
+      value.version !== 1 ||
+      !state ||
+      !byte(state.input) ||
+      !byte(state.saved) ||
+      ![state.we, state.clock, state.checked].every(boolean) ||
+      !Number.isInteger(state.selected) ||
+      state.selected < 0 ||
+      state.selected > 7 ||
+      !['reset', 'input', 'enable', 'write', 'blocked', 'fall', 'challenge', 'guess'].includes(
+        state.event,
+      ) ||
+      !['', 'hold', 'write'].includes(state.challenge) ||
+      !(state.guess === null || byte(state.guess)) ||
+      !Array.isArray(state.trace) ||
+      state.trace.length > 5 ||
+      state.trace.some(
+        (item) =>
+          !item ||
+          !byte(item.input) ||
+          !byte(item.saved) ||
+          !boolean(item.we) ||
+          !boolean(item.write) ||
+          !['↑', '↓'].includes(item.edge),
+      )
+    )
+      throw new Error('Сохранённое состояние регистра несовместимо с этой сценой.');
+    return structuredClone(state);
+  },
+};
+
 /** One state transition owns input, the positive clock edge, and the retained byte. */
 export function act(state, action) {
   const next = { ...state };

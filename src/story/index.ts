@@ -6,6 +6,7 @@ export { story } from './story.js';
 export type {
   Story,
   StoryOptions,
+  StoryCheckpoint,
   StoryMoment,
   StoryStatus,
   StoryMode,

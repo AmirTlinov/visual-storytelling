@@ -3,7 +3,7 @@ import { predictionPrompt } from '@visual-storytelling/core/controls';
 import '@visual-storytelling/core/style.css';
 import './subject.css';
 import timing from './timeline.json' with { type: 'json' };
-import { binary, bit, act, storyState, explanation, initial } from './memory.js';
+import { binary, bit, act, storyState, explanation, memoryCheckpoint } from './memory.js';
 import { registerDrawing, feedbackDrawing } from './drawing.js';
 
 window.galleryReady = (async () => {
@@ -54,6 +54,7 @@ window.galleryReady = (async () => {
     audio: root.querySelector('[data-audio]'),
     script: timing,
     stateAt: storyState,
+    checkpoint: memoryCheckpoint,
     render(s) {
       drawing.render(s);
       const quiz = Boolean(s.challenge);
@@ -147,26 +148,20 @@ window.galleryReady = (async () => {
   $('challenge-start').onclick = () => dispatch({ type: 'challenge', value: 'hold' });
   $('next-challenge').onclick = () => dispatch({ type: 'challenge', value: 'write' });
   $('free').onclick = () => dispatch({ type: 'free' });
-  function restore(snapshot) {
-    const s = snapshot?.privateContent;
-    if (
-      s?.version !== 1 ||
-      !s.state ||
-      ![s.state.input, s.state.saved].every((v) => Number.isInteger(v) && v >= 0 && v <= 255)
-    )
-      return;
-    const value = { ...initial(), ...s.state };
-    if (!Array.isArray(value.trace)) value.trace = [];
-    story.seek(Math.min(story.duration, Math.max(0, s.time || 0)));
-    story.explore(value);
+  async function restore(snapshot) {
+    const checkpoint = snapshot?.privateContent;
+    if (checkpoint?.subject?.kind !== 'memory-register') return;
+    try {
+      await root.scene.restore(checkpoint);
+    } catch (error) {
+      shell.status.textContent = error.message;
+    }
   }
   const saved = widgetState('memory-eight-bits', restore);
   function persist() {
-    saved.save({
-      privateContent: { version: 1, time: story.currentTime, state: story.requested.values },
-    });
+    saved.save({ privateContent: root.scene.capture() });
   }
-  restore(saved.read());
+  await restore(saved.read());
   shell.onDispose(() => {
     saved.dispose();
     prediction.dispose();

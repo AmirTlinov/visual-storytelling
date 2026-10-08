@@ -1,8 +1,15 @@
 import { cueSheet, type Frame, type Script } from './cues.js';
 import { transport } from './transport.js';
 import { resolveMedia } from './media.js';
+import type { SceneSubject } from '../scene-checkpoint.js';
 
 export type StoryMode = 'story' | 'explore';
+/** Portable input schema for experiments that cannot be represented by flat controls. */
+export interface StoryCheckpoint<P> {
+  encode(values: P): unknown;
+  /** Validate the saved schema and return fresh inputs. Derived state is recomputed. */
+  decode(value: unknown): P;
+}
 /** One accepted condition, with the model derived from precisely those inputs and time. */
 export interface StoryMoment<P, S = P> {
   readonly time: number;
@@ -24,6 +31,7 @@ export type StoryOptions<P, K extends string, S = P> = {
   script: Script<K>;
   audio?: HTMLAudioElement | null;
   stateAt(frame: Frame<K>): P;
+  checkpoint?: StoryCheckpoint<P>;
   /** Prepare resources without changing the visible frame. Honour cancellation before effects. */
   prepare?(
     state: NoInfer<S>,
@@ -237,6 +245,33 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
     pause: player.pause,
     duration: options.script.duration,
     ready,
+    subject:
+      options.checkpoint &&
+      ({
+        capture({ basis = 'presented' }) {
+          const moment = basis === 'requested' ? requested.moment : presented;
+          if (!moment)
+            throw Object.assign(new Error('The story has no completed frame to capture.'), {
+              code: 'scene_not_presented',
+            });
+          return options.checkpoint!.encode(moment.values);
+        },
+        restore(value, { time, mode }) {
+          assertLive();
+          if (!Number.isFinite(time) || !['story', 'explore'].includes(mode))
+            throw new Error('Invalid subject checkpoint position');
+          const target = Math.max(0, Math.min(options.script.duration, time));
+          const frame = sheet.at(target, forcedReduced ?? media.matches);
+          const values =
+            mode === 'story' ? options.stateAt(frame) : options.checkpoint!.decode(value);
+          const next = compute(values, frame, mode);
+          change(() => {
+            for (const listener of seeks) listener(target);
+            player.pause();
+            player.seek(target);
+          }, next);
+        },
+      } satisfies SceneSubject),
     get currentTime() {
       return player.state.time;
     },

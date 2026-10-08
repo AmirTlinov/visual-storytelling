@@ -22,6 +22,7 @@ export type {
   SceneCaptureOptions,
   SceneView,
   SceneRestoreNotice,
+  SceneSubject,
 } from './scene-checkpoint.js';
 export { mountScene } from './scene-handle.js';
 export type { SceneHandle, SceneRuntime, SceneHost } from './scene-handle.js';
@@ -490,6 +491,7 @@ function mount(
         return controller.currentTime;
       },
       snapshot: () => controller.presented?.state,
+      subject: controller.subject,
       get rendering(): SceneRendering {
         const moment = (value: StoryMoment<P, S>) => ({
           time: value.time,

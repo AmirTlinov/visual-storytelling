@@ -21,8 +21,8 @@ window.galleryReady = (async () => {
       { key: 'x', label: 'По горизонтали', min: -3, max: 3, step: 0.5, value: 3 },
       { key: 'y', label: 'По вертикали', min: -3, max: 3, step: 0.5, value: 2 },
     ],
-    onInput({ x, y }) {
-      saved.save({ privateContent: { version: 1, time: story.currentTime, x, y } });
+    onInput() {
+      saved.save({ privateContent: root.scene.capture() });
     },
   });
   shell.stage.style.height = '380px';
@@ -176,23 +176,17 @@ window.galleryReady = (async () => {
     },
   });
   shell.onDispose(() => drawing.dispose());
-  function restore(snapshot) {
-    const value = snapshot?.privateContent;
-    if (
-      value?.version !== 1 ||
-      !Number.isFinite(value.time) ||
-      value.time < 0 ||
-      value.time > story.duration ||
-      ![value.x, value.y].every(
-        (n) => Number.isFinite(n) && Math.abs(n) <= 3 && Number.isInteger(n * 2),
-      )
-    )
-      return;
-    story.seek(value.time);
-    story.explore({ x: value.x, y: value.y, result: 1 });
+  async function restore(snapshot) {
+    const checkpoint = snapshot?.privateContent;
+    if (!checkpoint?.values || !('x' in checkpoint.values) || !('y' in checkpoint.values)) return;
+    try {
+      await root.scene.restore(checkpoint);
+    } catch (error) {
+      shell.status.textContent = error.message;
+    }
   }
   const saved = widgetState('displacements', restore);
-  restore(saved.read());
+  await restore(saved.read());
   shell.onDispose(saved.dispose);
   root.scene.extend({
     shell,

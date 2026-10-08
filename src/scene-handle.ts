@@ -15,6 +15,7 @@ import {
   restoreScene,
   type SceneCheckpoint,
   type SceneCaptureOptions,
+  type SceneSubject,
 } from './scene-checkpoint.js';
 import { sceneObjects } from './scene-objects.js';
 import { connectSceneHost, type SceneHost } from './host/adapter.js';
@@ -33,6 +34,7 @@ declare global {
 
 /** Capabilities supplied by the actual subject, player and drawing owners. */
 export interface SceneRuntime {
+  readonly subject?: SceneSubject;
   readonly rendering?: SceneRendering;
   readonly duration?: number;
   readonly currentTime?: number;

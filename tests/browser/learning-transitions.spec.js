@@ -111,6 +111,9 @@ test('fraction: repeated input keeps the same moving chips and reveals only the 
 test('balance: forward, interrupted reverse and restored actions keep the equation behind the movement', async ({
   page,
 }) => {
+  await page.addInitScript(() => {
+    window.openai = { setWidgetState() {} };
+  });
   const errors = await open(page, 'equation-balance');
   await page.locator('[data-next]').click();
   expect(await snapshot(page)).toMatchObject({ step: 1, complete: false, equation: null });
@@ -128,13 +131,15 @@ test('balance: forward, interrupted reverse and restored actions keep the equati
   expect(reverse.after).toMatchObject({ step: 1, complete: false, equation: null });
   expect(reverse.after.positions).toEqual(reverse.before);
   await expect(page.locator('[data-action]')).toContainText('Собираем три группы');
-  await page.evaluate(() =>
+  await page.evaluate(() => {
+    const checkpoint = document.querySelector('.ve-scene').scene.capture();
+    checkpoint.subject.progress = 1;
     window.dispatchEvent(
       new CustomEvent('openai:set_globals', {
-        detail: { globals: { widgetState: { privateContent: { example: 'balance', step: 1 } } } },
+        detail: { globals: { widgetState: { privateContent: checkpoint } } },
       }),
-    ),
-  );
+    );
+  });
   expect(await snapshot(page)).toMatchObject({ step: 1, complete: true, equation: '3x = 6' });
   await expect(page.locator('.equation')).toBeVisible();
   await expectLabelsInside(page);

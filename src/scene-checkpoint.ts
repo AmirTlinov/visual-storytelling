@@ -18,7 +18,18 @@ export interface SceneCheckpoint {
   rate?: number;
   selected?: readonly string[];
   values: Record<string, ControlValue>;
+  /** Opaque subject inputs when standard parameters cannot express the experiment. */
+  subject?: unknown;
   view?: unknown;
+}
+
+/** The model owner restores its inputs and position together, before publishing a frame. */
+export interface SceneSubject {
+  capture(options: SceneCaptureOptions): unknown;
+  restore(
+    value: unknown,
+    position: { time: number; mode: 'story' | 'explore' },
+  ): void | Promise<void>;
 }
 
 export interface SceneView {
@@ -32,10 +43,37 @@ export interface SceneView {
 }
 
 export interface SceneRestoreNotice {
-  code: 'cue-missing' | 'objects-missing' | 'parameters-changed' | 'view-incompatible';
+  code:
+    | 'cue-missing'
+    | 'objects-missing'
+    | 'parameters-changed'
+    | 'subject-incompatible'
+    | 'view-incompatible';
   message: string;
   ids?: string[];
   chapter?: string;
+}
+
+function copySubject(value: unknown, parents = new Set<object>()): unknown {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (
+    typeof value !== 'object' ||
+    !value ||
+    parents.has(value) ||
+    (!Array.isArray(value) && ![Object.prototype, null].includes(Object.getPrototypeOf(value)))
+  )
+    throw new Error('A scene subject checkpoint must contain finite JSON values.');
+  parents.add(value);
+  try {
+    return Array.isArray(value)
+      ? Array.from(value, (item) => copySubject(item, parents))
+      : Object.fromEntries(
+          Object.entries(value).map(([key, item]) => [key, copySubject(item, parents)]),
+        );
+  } finally {
+    parents.delete(value);
+  }
 }
 
 function chapterAt(review: ReturnType<SceneHandle['review']>, time: number) {
@@ -78,6 +116,7 @@ export function captureScene(
       },
     );
   const time = moment?.time ?? state.time;
+  const mode = moment?.mode ?? state.mode;
   const visible = !state.rendering || basis === 'presented' || state.rendering.phase === 'ready';
   const cue = state.review.cues
     .filter(
@@ -93,7 +132,7 @@ export function captureScene(
     chapter: chapterAt(state.review, time)?.id,
     chapters: state.review.segments.map((chapter) => chapter.id),
     progress: cue ? (time - cue.start) / (cue.end - cue.start) : 0,
-    mode: moment?.mode ?? state.mode,
+    mode,
     muted: state.muted,
     rate: state.rate,
     selected: visible ? state.selected : undefined,
@@ -102,27 +141,55 @@ export function captureScene(
         .filter((p) => !p.disabled)
         .map((p) => [p.key, moment?.values[p.key] ?? p.value]),
     ),
+    subject:
+      mode === 'explore' && handle.subject
+        ? copySubject(handle.subject.capture({ basis }))
+        : undefined,
     view: visible ? view?.capture?.() : undefined,
   };
 }
 
 /** Restore through the same validated controls as human and agent input. */
 export async function restoreScene(handle: SceneHandle, state: SceneCheckpoint, view?: SceneView) {
-  if (!state || !Number.isFinite(state.time) || !Number.isFinite(state.progress))
+  if (
+    !state ||
+    !Number.isFinite(state.time) ||
+    !Number.isFinite(state.progress) ||
+    !['story', 'explore'].includes(state.mode)
+  )
     throw new Error('Invalid scene checkpoint');
   const capabilities = handle.inspect({ presentation: false }).capabilities;
   const notices: SceneRestoreNotice[] = [];
   const review = handle.review();
-  if (state.muted !== undefined && capabilities.includes('mute'))
-    await handle.control([{ type: 'mute', value: state.muted }]);
-  if (state.rate !== undefined && capabilities.includes('rate'))
-    await handle.control([{ type: 'rate', value: state.rate }]);
-  if (capabilities.includes('pause')) await handle.control([{ type: 'pause' }]);
-  if (state.cue && capabilities.includes('cue') && review.cues.some((c) => c.id === state.cue))
-    await handle.control([
-      { type: 'cue', id: state.cue, progress: Math.min(1, Math.max(0, state.progress)) },
-    ]);
-  else if (capabilities.includes('seek')) {
+  const subject =
+    state.mode === 'explore' && state.subject !== undefined ? handle.subject : undefined;
+  if (state.subject !== undefined && !subject)
+    notices.push({
+      code: 'subject-incompatible',
+      message: 'Предметные условия изменились. Сохранены условия новой сцены.',
+    });
+  async function restorePlayback() {
+    if (state.muted !== undefined && state.muted !== handle.muted && capabilities.includes('mute'))
+      await handle.control([{ type: 'mute', value: state.muted }]);
+    if (state.rate !== undefined && state.rate !== handle.rate && capabilities.includes('rate'))
+      await handle.control([{ type: 'rate', value: state.rate }]);
+    if (capabilities.includes('pause')) await handle.control([{ type: 'pause' }]);
+  }
+  // The subject must be able to supersede pending or failed preparation before ready() is awaited.
+  if (!subject) await restorePlayback();
+  async function restorePosition(time: number) {
+    if (subject) {
+      await subject.restore(copySubject(state.subject), { time, mode: state.mode });
+      await handle.ready?.();
+    } else if (capabilities.includes('seek')) await handle.control([{ type: 'seek', time }]);
+  }
+  const cue =
+    state.cue && capabilities.includes('cue') && review.cues.find((c) => c.id === state.cue);
+  if (cue)
+    await restorePosition(
+      cue.start + (cue.end - cue.start) * Math.min(1, Math.max(0, state.progress)),
+    );
+  else if (subject || capabilities.includes('seek')) {
     let time = Math.min(handle.duration ?? 0, Math.max(0, state.time));
     if (state.cue) {
       const chapter = nearestChapter(review, state);
@@ -136,9 +203,12 @@ export async function restoreScene(handle: SceneHandle, state: SceneCheckpoint, 
           : 'Момент изменился. Рассказ открыт с начала.',
       });
     }
-    await handle.control([{ type: 'seek', time }]);
+    await restorePosition(time);
   }
+  if (subject) await restorePlayback();
   async function restoreConditions() {
+    // A subject codec owns its whole model. Flat controls are only its visible projection.
+    if (subject) return [];
     if (capabilities.includes('mode')) await handle.control([{ type: 'mode', value: state.mode }]);
     if (state.mode !== 'explore' || !capabilities.includes('parameters')) return [];
     const pending = new Map(Object.entries(state.values ?? {}));
@@ -173,7 +243,7 @@ export async function restoreScene(handle: SceneHandle, state: SceneCheckpoint, 
     chapter = nearestChapter(review, state);
     const time = chapter?.start ?? 0;
     if (handle.currentTime !== time) {
-      await handle.control([{ type: 'seek', time }]);
+      await restorePosition(time);
       // Seeking restores authored values; retain the compatible experiment at the new position.
       changedParameters = await restoreConditions();
     }

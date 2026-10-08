@@ -283,23 +283,19 @@ window.galleryReady = (async () => {
   function save() {
     storage.save({
       modelContent: { example: 'neuron', ...state, ...compute() },
-      privateContent: { example: 'neuron', ...state },
+      privateContent: scene.capture(),
     });
   }
-  function restore(snapshot) {
-    const saved = snapshot?.privateContent;
-    if (saved?.example !== 'neuron') return false;
-    for (const key of ['a', 'b'])
-      state[key] = Math.max(0, Math.min(4, Math.round(Number(saved[key]) || 0)));
-    state.mode = saved.mode === 'formulas' ? 'formulas' : 'numbers';
-    return true;
+  async function restore(snapshot) {
+    const checkpoint = snapshot?.privateContent;
+    if (checkpoint?.subject?.example !== 'neuron') return;
+    try {
+      await scene.restore(checkpoint);
+    } catch (error) {
+      select('result').textContent = error.message;
+    }
   }
-  const storage = widgetState('threshold-neuron', (snapshot) => {
-    if (!restore(snapshot)) return;
-    gsap.killTweensOf(pulse);
-    pulse.position = 1;
-    render();
-  });
+  const storage = widgetState('threshold-neuron', restore);
   for (const key of ['a', 'b'])
     select(key).addEventListener(
       'input',
@@ -316,6 +312,7 @@ window.galleryReady = (async () => {
             ease: 'none',
             overwrite: true,
             onUpdate: paintPulse,
+            onComplete: save,
           });
       },
       listen,
@@ -340,13 +337,30 @@ window.galleryReady = (async () => {
     },
     listen,
   );
-  restore(storage.read());
   render();
   geometry = await observe(svg, (value) => {
     width = value;
     return arrange();
   });
-  mountScene(root, {
+  const scene = mountScene(root, {
+    subject: {
+      capture: () => ({ example: 'neuron', ...state, progress: pulse.position }),
+      restore(value) {
+        if (
+          value?.example !== 'neuron' ||
+          ![value.a, value.b].every((n) => Number.isInteger(n) && n >= 0 && n <= 4) ||
+          !['numbers', 'formulas'].includes(value.mode) ||
+          !Number.isFinite(value.progress) ||
+          value.progress < 0 ||
+          value.progress > 1
+        )
+          throw new Error('Сохранённые условия нейрона несовместимы с этой сценой.');
+        gsap.killTweensOf(pulse);
+        Object.assign(state, { a: value.a, b: value.b, mode: value.mode });
+        pulse.position = value.progress;
+        render();
+      },
+    },
     snapshot: () => ({
       ...state,
       ...compute(),
@@ -363,6 +377,7 @@ window.galleryReady = (async () => {
       root.replaceChildren();
     },
   });
+  await restore(storage.read());
 })().catch((error) => {
   document.querySelector('[data-result]').textContent = error.message;
   throw error;
