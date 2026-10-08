@@ -1,16 +1,17 @@
 import { SketchControls } from '../controls/fields.js';
 import type { Chapter } from './cues.js';
 
-/** Named segments navigate the existing clock and replace the static heading. */
-export function chapterHeading(
+/** Compact chapter navigation shares the story clock and keeps the lesson heading intact. */
+export function chapterNavigation(
   heading: HTMLHeadingElement,
   chapters: readonly Chapter[],
   seek: (time: number) => void,
 ) {
   const named = chapters.filter((chapter) => chapter.title).sort((a, b) => a.start - b.start);
-  if (!named.length) return { update(_time: number, _active = true) {}, dispose() {} };
-  const original = heading.textContent;
-  const subject = document.createTextNode('');
+  if (!named.length || heading.hidden) return { update(_time: number) {}, dispose() {} };
+  const navigation = document.createElement('nav');
+  navigation.className = 've-chapter-navigation';
+  navigation.setAttribute('aria-label', 'Главы рассказа');
   const field = SketchControls.field(
     {
       label: 'Глава',
@@ -20,13 +21,10 @@ export function chapterHeading(
     },
     (index) => seek(named[Number(index)]!.start),
   );
-  heading.classList.add('ve-chapter-heading');
-  heading.replaceChildren(subject, field.element);
+  navigation.append(field.element);
+  heading.after(navigation);
   return {
-    update(time: number, active = true) {
-      field.element.hidden = !active;
-      subject.textContent = active ? '' : original;
-      heading.classList.toggle('ve-chapter-heading', active);
+    update(time: number) {
       const index = Math.max(
         0,
         named.findLastIndex((chapter) => chapter.start <= time),
@@ -35,8 +33,7 @@ export function chapterHeading(
     },
     dispose() {
       field.dispose();
-      heading.classList.remove('ve-chapter-heading');
-      heading.textContent = original;
+      navigation.remove();
     },
   };
 }

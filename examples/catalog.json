@@ -1700,14 +1700,8 @@
   "memory-register": {
     "title": "Как 8 бит запоминают число",
     "page": "index.html",
-    "time": 30,
-    "checkpoints": [
-      0,
-      12,
-      23,
-      30,
-      42
-    ],
+    "time": 34,
+    "checkpoints": [0, 12, 19, 23, 34, 44],
     "group": "explanations",
     "summary": "Тетрадная интерактивная схема: восемь ячеек, общая линия такта, прогноз перед записью. surface, node, pen и svgButton сохраняют единый рисунок.",
     "tags": [

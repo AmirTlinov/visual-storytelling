@@ -12,6 +12,7 @@ interface TextInk {
 import { measureText } from './text-measure.js';
 import { glyphs as SketchPencil } from './glyphs.js';
 import { SVG_NS as NS, clamp } from './dom.js';
+import { handwritingMetrics, handwritingProfiles, type Handwriting } from './handwriting.js';
 /* Seekable pen strokes. Scene composition and playback belong to their own owners. */
 
 const paths = new WeakMap<SVGPathElement, PathInk>(),
@@ -79,7 +80,18 @@ function prepareText(text: SVGTextElement) {
   }
   const group = document.createElementNS(NS, 'g'),
     style = getComputedStyle(text),
-    size = parseFloat(style.fontSize);
+    size = parseFloat(style.fontSize),
+    name = text.getAttribute('data-handwriting'),
+    profile =
+      (name && Object.hasOwn(handwritingProfiles, name)
+        ? handwritingProfiles[name as Handwriting]
+        : undefined) ??
+      Object.values(handwritingProfiles).find(({ family }) =>
+        style.fontFamily.split(',').some((font) => font.trim().replaceAll(/["']/g, '') === family),
+      ) ??
+      handwritingProfiles.body,
+    verticalScale =
+      (size * handwritingMetrics.capHeight) / handwritingMetrics.em / handwritingMetrics.baseline;
   group.setAttribute('aria-hidden', 'true');
   group.setAttribute('data-written-text', text.id);
   group.style.pointerEvents = 'none';
@@ -94,12 +106,12 @@ function prepareText(text: SVGTextElement) {
       const glyph = SketchPencil[char];
       if (!glyph)
         throw Error(`No pen strokes for ${char}; add them in src/ink/glyphs.ts or use static text`);
-      const bounds = measured.getExtentOfChar(i),
+      const advance = measured.getSubStringLength(i, 1),
         position = measured.getStartPositionOfChar(i),
         letter = document.createElementNS(NS, 'g');
       letter.setAttribute(
         'transform',
-        `translate(${bounds.x + bounds.width * 0.055} ${position.y - size * 0.82}) scale(${bounds.width / 6.7} ${size * 0.082})`,
+        `translate(${position.x + advance * handwritingMetrics.inset} ${position.y}) skewX(${-profile.slant}) scale(${advance / handwritingMetrics.glyphWidth} ${verticalScale}) translate(0 ${-handwritingMetrics.baseline})`,
       );
       group.append(letter);
       glyph.forEach((d) => {
@@ -107,7 +119,7 @@ function prepareText(text: SVGTextElement) {
         path.setAttribute('d', d);
         path.setAttribute('fill', 'none');
         path.setAttribute('stroke', 'currentColor');
-        path.setAttribute('stroke-width', '.65');
+        path.setAttribute('stroke-width', String(profile.stroke));
         path.setAttribute('stroke-linecap', 'round');
         path.setAttribute('stroke-linejoin', 'round');
         letter.append(path);

@@ -1,5 +1,25 @@
 .ve-standalone .ve-scene {
-  max-width: 920px;
+  max-width: 1080px;
+  padding: 24px 32px 20px;
+}
+.ve-scene h1.ve-heading {
+  text-align: left;
+  font-size: clamp(29px, 4.2vw, 44px);
+  line-height: 1.2;
+  max-width: 860px;
+  margin: 0 0 14px;
+  color: var(--ve-blue);
+}
+.ve-scene .modes {
+  justify-content: flex-start;
+  margin: 0 0 20px;
+}
+.ve-scene .modes button {
+  font-size: 15px;
+  padding-inline: 10px;
+}
+.memory-sheet .memory-secondary {
+  color: var(--ve-muted);
 }
 .memory-sheet {
   height: auto !important;
@@ -26,16 +46,6 @@
 }
 .ve-scene .memory-presets button {
   padding: 5px 10px;
-}
-.ve-scene .memory-event {
-  line-height: 1.5;
-  min-height: 48px;
-}
-.ve-scene .memory-event[data-event='write'] {
-  color: var(--ve-purple);
-}
-.ve-scene .memory-event[data-event='blocked'] {
-  color: var(--ve-orange);
 }
 .ve-scene .memory-actions {
   margin: 12px 0;
@@ -74,14 +84,13 @@
 .ve-scene [data-player] {
   margin-top: 16px;
 }
-.ve-scene .ve-captions:empty {
-  display: none;
-}
 @media (max-width: 480px) {
+  .ve-standalone .ve-scene {
+    padding: 12px 10px;
+  }
   .ve-scene .memory-presets span {
     flex-basis: 100%;
   }
-  .ve-scene .memory-event,
   .ve-scene .memory-detail p {
     font-size: 16px;
   }

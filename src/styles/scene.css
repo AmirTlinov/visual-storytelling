@@ -65,6 +65,24 @@ html:has(>body.ve-standalone>.ve-scene[data-theme=dark]){color-scheme:dark}
 .ve-scene button:not(:where(.ve-frame *, [data-object]))[data-mode]:hover::after,.ve-scene button:not(:where(.ve-frame *, [data-object]))[data-numbers]:hover::after,.ve-scene button:not(:where(.ve-frame *, [data-object]))[data-formulas]:hover::after{opacity:.45}
 
 .ve-scene input[type=checkbox]:not(:where(.ve-frame *)){accent-color:var(--ve-ink)}
+/* A disclosure is a margin note; native details still owns its state and keyboard. */
+.ve-scene:not([data-appearance=interface]) details:not(:where(.ve-frame *))>summary{
+  position:relative;list-style:none;min-height:44px;padding:8px 0 8px 28px;line-height:1.5;cursor:pointer;touch-action:manipulation
+}
+.ve-scene:not([data-appearance=interface]) details:not(:where(.ve-frame *))>summary::marker{content:''}
+.ve-scene:not([data-appearance=interface]) details:not(:where(.ve-frame *))>summary::-webkit-details-marker{display:none}
+.ve-scene:not([data-appearance=interface]) details:not(:where(.ve-frame *))>summary::before{
+  content:'';position:absolute;inset-inline-start:5px;top:calc(8px + .75em);width:14px;height:14px;translate:0 -50%;pointer-events:none;background:currentColor;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18'%3E%3Cpath d='M2 9.2 Q8 8.5 16 9 M8.8 2 Q9.4 9 9 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") center/contain no-repeat
+}
+.ve-scene:not([data-appearance=interface]) details[open]:not(:where(.ve-frame *))>summary::before{
+  mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18'%3E%3Cpath d='M2 9.2 Q8 8.5 16 9' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E")
+}
+.ve-scene:not([data-appearance=interface]) details:not(:where(.ve-frame *))>summary:focus{outline:none}
+.ve-scene:not([data-appearance=interface]) details:not(:where(.ve-frame *))>summary:focus-visible::after{
+  content:'';position:absolute;inset-inline-start:0;top:calc(8px + .75em);width:24px;height:24px;translate:0 -50%;pointer-events:none;background:currentColor;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Cpath d='M13 2 C5 1 2 6 2 13 C2 21 7 24 14 24 C22 24 25 18 24 11 C24 5 19 2 13 2' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E") center/contain no-repeat
+}
 /* One player row, with chapter shortcuts yielding space to the seek bar on small cards. */
 .ve-scene .ve-player{display:flex;align-items:center;flex-wrap:nowrap;gap:8px;width:100%;margin-top:14px;container:ve-playbar / inline-size}
 .ve-scene .ve-player button{flex:0 0 44px;min-width:44px;width:44px;padding:8px}

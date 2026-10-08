@@ -10,7 +10,9 @@ ASSETS = Path(__file__).resolve().parent.parent / "dist" / "assets"
 
 def themed(svg):
     ink = (ASSETS.parent / "styles" / "ink.css").read_text()
-    for filename in ("pencil.woff2", "shantell.woff2"):
+    handwriting = (ASSETS.parent / "styles" / "handwriting.css").read_text()
+    ink = ink.replace("@import './handwriting.css';", handwriting)
+    for filename in ("pencil.woff2", "pencil-heading.woff2", "pencil-note.woff2", "shantell.woff2"):
         font = base64.b64encode((ASSETS / filename).read_bytes()).decode()
         ink = ink.replace(f"url('../assets/{filename}')", f"url('data:font/woff2;base64,{font}')")
     if '<foreignObject' in svg:

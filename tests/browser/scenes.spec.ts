@@ -314,7 +314,11 @@ for (const name of ['explorer-svg', 'explorer-3d'])
     await seek.fill('12');
     expect(await pose()).toEqual(expected);
     await page.getByRole('combobox', { name: 'Глава' }).click();
-    await page.getByRole('option').last().click();
+    await page
+      .getByRole('listbox', { name: 'Глава', exact: true })
+      .getByRole('option')
+      .last()
+      .click();
     expect(Number(await seek.inputValue())).toBeGreaterThan(12);
     await expect(page.locator('[data-caption]')).not.toBeEmpty();
     if (name === 'explorer-svg') await expect(canvas).toHaveCSS('overflow', 'hidden');

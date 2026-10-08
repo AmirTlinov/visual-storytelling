@@ -1,18 +1,19 @@
 /* The same shell/controls, with neutral interface typography and geometry. */
 .ve-scene[data-appearance='interface'] {
+  --ve-ink: var(--foreground, light-dark(#292724, #eeece7));
   --ve-font: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-family: var(--ve-font);
   line-height: 1.5;
 }
 .ve-scene[data-appearance='interface']
-  :is(.ve-player, .modes, .ve-parameters, .ve-view-actions, .ve-heading)
+  :is(.ve-player, .modes, .ve-parameters, .ve-view-actions, .ve-heading, .ve-chapter-navigation)
   button {
   font-family: var(--ve-font);
   border: 1px solid color-mix(in srgb, var(--ve-ink) 18%, transparent);
   border-radius: 8px;
 }
 .ve-scene[data-appearance='interface']
-  :is(.ve-player, .modes, .ve-parameters, .ve-view-actions, .ve-heading)
+  :is(.ve-player, .modes, .ve-parameters, .ve-view-actions, .ve-heading, .ve-chapter-navigation)
   button::after {
   display: none;
 }

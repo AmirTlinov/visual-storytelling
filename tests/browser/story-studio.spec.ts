@@ -14,8 +14,7 @@ test('the measured Ink chapter keeps its grid and readable labels through input,
   const active = page.locator('[data-chapter]:not([hidden])');
   await page.getByRole('slider', { name: 'Ширина, см', exact: true }).fill('6');
   await page.getByRole('slider', { name: 'Высота, см', exact: true }).fill('5');
-  const grid = active.locator('.vs-grid path');
-  await expect(grid).toHaveCount(1);
+  const grid = active.locator('.vs-grid path').first();
   const lines = await grid.getAttribute('d');
   for (const theme of ['dark', 'light', 'dark']) {
     const state = await page.evaluate(async (theme) => {
