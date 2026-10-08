@@ -1,13 +1,13 @@
-import { readFile, mkdir, cp, access, statfs, realpath, rm } from 'node:fs/promises';
+import { readFile, mkdir, cp, access, statfs, rm } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readJSON, writeJSON } from '../runtime/storage.mjs';
+import { pythonEnvironment, pythonVersion, managedPython } from './python.mjs';
 
 const tools = fileURLToPath(new URL('../../tools/', import.meta.url));
-const pythonVersion = '3.12.13';
 export const voiceRequirements = {
   platform: 'macOS Apple Silicon',
   python: pythonVersion,
@@ -159,10 +159,8 @@ export async function prepareVoiceEnvironment(data, uv, task) {
   const receipt = await readJSON(join(selected.directory, 'receipt.json'));
   const env = {
     ...process.env,
-    UV_PYTHON_INSTALL_DIR: join(data, 'environment', 'python'),
-    UV_CACHE_DIR: join(data, 'environment', 'uv-cache'),
+    ...pythonEnvironment(data),
     UV_PROJECT_ENVIRONMENT: join(selected.directory, 'venv'),
-    PYTHONDONTWRITEBYTECODE: '1',
     TOKENIZERS_PARALLELISM: 'false',
   };
   if (
@@ -200,9 +198,7 @@ export async function prepareVoiceEnvironment(data, uv, task) {
         stage: 'Подготавливаю Python и зависимости голоса',
       },
     );
-    const managed = await realpath(selected.python);
-    if (!managed.startsWith(env.UV_PYTHON_INSTALL_DIR + '/'))
-      throw new Error('Prepared Python must belong to the voice environment.');
+    await managedPython(data, selected.python);
     await writeJSON(join(selected.directory, 'receipt.json'), {
       lock: selected.lock,
       python: pythonVersion,

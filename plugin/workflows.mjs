@@ -15,6 +15,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createScene } from '../tools/create-scene.mjs';
 import { buildScene } from '../tools/build-pages.mjs';
+import { sceneGenerator } from '../tools/generate-scene.mjs';
 import { packDirectory } from '../tools/standalone.mjs';
 import { deliver } from '../tools/deliver.mjs';
 import { snapshotProject, projectFiles, projectFile, digest } from './project-files.mjs';
@@ -194,6 +195,8 @@ async function prepareBuild(input, task) {
   if (result.prepared) return result;
   const { snapshot, source, preparedRevision, silent } = result;
   const output = join(snapshot, 'dist');
+  if ((await sceneGenerator(snapshot))?.python)
+    await prepareEnvironment(input.data, { ...task, python: true });
   task.progress('Собираю объяснение…');
   await buildScene(snapshot, output, { signal: task.signal, silent });
   task.signal.throwIfAborted();
@@ -238,6 +241,8 @@ export const workflows = {
     const updated = await updateSceneRuntime(snapshot, { root, build: false, signal: task.signal });
     if (!updated.changed) return { upToDate: true };
     const preparedRevision = (await projectFiles(snapshot)).revision;
+    if ((await sceneGenerator(snapshot))?.python)
+      await prepareEnvironment(input.data, { ...task, python: true });
     await buildScene(snapshot, join(snapshot, 'dist'), { signal: task.signal });
     await unchangedInputs(snapshot, preparedRevision);
     const path = updated.dependency.replace(/^file:(?:\.\/)?/, '');

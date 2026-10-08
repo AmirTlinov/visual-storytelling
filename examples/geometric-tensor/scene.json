@@ -1,6 +1,8 @@
 {
   "generator": {
     "file": "build.mjs",
-    "runner": "node"
-  }
+    "runner": "node",
+    "python": true
+  },
+  "entry": "geometric-tensor.svg"
 }

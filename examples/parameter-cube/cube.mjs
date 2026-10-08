@@ -143,5 +143,5 @@ const output = resolve(
   'tensor-cube.svg',
 );
 await writeFile(output, svg);
-execFileSync('python3', [`${tools}/svg_style.py`, output]);
+execFileSync(process.env.VISUAL_STORY_PYTHON ?? 'python3', [`${tools}/svg_style.py`, output]);
 console.log('Created tensor-cube.svg: one selected head and a timed full-projection explanation.');

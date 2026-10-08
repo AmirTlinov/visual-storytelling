@@ -9,6 +9,7 @@ import {
   voiceEnvironmentStatus,
   prepareVoiceEnvironment,
 } from './environment/voice.mjs';
+import { pythonEnvironment, preparePythonEnvironment } from './environment/python.mjs';
 const execute = promisify(execFile);
 
 // Immutable upstream artifacts for the supported macOS ARM64 release.
@@ -153,12 +154,23 @@ export async function configureEnvironment(data) {
 
 export async function prepareEnvironment(
   data,
-  { browser = false, encoder = false, voice = false, ...task },
+  { browser = false, encoder = false, voice = false, python = false, ...task },
 ) {
   if (encoder)
     process.env.PATH =
       dirname(await prepareResource(data, 'ffmpeg', task)) + ':' + process.env.PATH;
   if (encoder) process.env.VISUAL_STORY_VIDEO_ENCODER = 'h264_videotoolbox';
   if (browser) process.env.VISUAL_STORY_CHROMIUM = await prepareResource(data, 'chromium', task);
-  if (voice) await prepareVoiceEnvironment(data, await prepareResource(data, 'uv', task), task);
+  if (voice || python) {
+    const uv = await prepareResource(data, 'uv', task);
+    if (python) {
+      const executable = await preparePythonEnvironment(data, uv, task);
+      Object.assign(process.env, pythonEnvironment(data), {
+        VISUAL_STORY_UV: uv,
+        VISUAL_STORY_PYTHON: executable,
+        PATH: dirname(executable) + ':' + process.env.PATH,
+      });
+    }
+    if (voice) await prepareVoiceEnvironment(data, uv, task);
+  }
 }

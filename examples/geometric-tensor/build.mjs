@@ -188,5 +188,5 @@ ${script}
 </svg>`;
 const output = resolve(process.env.VISUAL_STORY_OUTPUT ?? new URL('.',import.meta.url).pathname, 'geometric-tensor.svg');
 await writeFile(output,svg);
-execFileSync('python3', [`${process.env.VISUAL_STORY_TOOLS ?? new URL('../../tools',import.meta.url).pathname}/svg_style.py`, output]);
+execFileSync(process.env.VISUAL_STORY_PYTHON ?? 'python3', [`${process.env.VISUAL_STORY_TOOLS ?? new URL('../../tools',import.meta.url).pathname}/svg_style.py`, output]);
 console.log('Created geometric-tensor.svg');
