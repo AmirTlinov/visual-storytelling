@@ -57,6 +57,7 @@ test('drawn register writes only at an enabled edge and keeps prediction before 
 }) => {
   await page.goto('/memory-register/index.html');
   await page.evaluate(() => (window as any).galleryReady);
+  await page.locator('[data-mode="explore"]').click();
   const input = page.locator('#input-value'),
     saved = page.locator('#saved-value');
   await page.locator('[data-value="42"]').click();
@@ -133,15 +134,15 @@ test('narrow notebook keeps drawn targets apart and keyboard activation changes 
       const bounds = root.getBoundingClientRect();
       return {
         grid: getComputedStyle(root).backgroundImage.includes('linear-gradient'),
-        inside: [root.querySelector('h1')!, stage, caption, player].every((element) => {
+        inside: [root.querySelector('h1')!, stage, player].every((element) => {
           const rect = element.getBoundingClientRect();
           return (
             rect.left >= bounds.left && rect.right <= bounds.right && rect.bottom <= bounds.bottom
           );
         }),
         notesInStage: stage.contains(root.querySelector('.memory-notes')),
-        captionBelow: caption.getBoundingClientRect().top >= stage.getBoundingClientRect().bottom,
-        playerBelow: player.getBoundingClientRect().top >= caption.getBoundingClientRect().bottom,
+        transcriptOnly: caption.classList.contains('sr-only'),
+        playerBelow: player.getBoundingClientRect().top >= stage.getBoundingClientRect().bottom,
         fits: document.documentElement.scrollWidth <= innerWidth,
       };
     });
@@ -149,10 +150,90 @@ test('narrow notebook keeps drawn targets apart and keyboard activation changes 
       grid: true,
       inside: true,
       notesInStage: true,
-      captionBelow: true,
+      transcriptOnly: true,
       playerBelow: true,
       fits: true,
     });
   }
   expect(errors).toEqual([]);
+});
+
+test('narration writes local causes beside changing objects and survives seeking and manual input', async ({
+  page,
+}) => {
+  await page.goto('/memory-register/index.html');
+  await page.evaluate(() => (window as any).galleryReady);
+  const seek = (time: number) =>
+    page.evaluate((t) => (document.querySelector('#ve-scene') as any).scene.seek(t), time);
+  const note = (name: string) => page.locator(`[data-narrative-note="${name}"]`);
+  for (const width of [375, 960]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (const [time, name, phrase] of [
+      [12.5, 'input', 'Выставляем 42'],
+      [16, 'memory', 'по-прежнему 0'],
+      [19.1, 'enable', 'Ждём фронт'],
+      [21, 'clock', 'из 0 в 1'],
+      [27.2, 'memory', 'Теперь здесь 42'],
+      [34, 'memory', 'нового фронта не было'],
+      [44, 'memory', 'запись запрещена'],
+      [47, 'memory', 'нужны оба условия'],
+    ] as const) {
+      await seek(time);
+      await expect(note(name)).toHaveAttribute('aria-label', new RegExp(phrase));
+      const layout = await page.evaluate(() => {
+        const svg = document.querySelector('#memory-register')!.getBoundingClientRect();
+        const controls = [
+          ...document.querySelectorAll(
+            '[data-bit], [data-select], #enable, #clock, [data-object^="note-"]',
+          ),
+        ].map((e) => e.getBoundingClientRect());
+        const notes = [...document.querySelectorAll('[data-narrative-note]')]
+          .map((e) => e.getBoundingClientRect())
+          .filter((r) => r.width > 0);
+        const overlaps = (a: DOMRect, b: DOMRect) =>
+          a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+        return {
+          fits: notes.every(
+            (r) => r.left >= svg.left && r.right <= svg.right && r.bottom <= svg.bottom,
+          ),
+          clear: notes.every(
+            (r, i) =>
+              !controls.some((c) => overlaps(r, c)) &&
+              !notes.slice(i + 1).some((n) => overlaps(r, n)),
+          ),
+          nearby:
+            document.querySelector('[data-narrative-note="input"]')!.getBoundingClientRect()
+              .bottom < document.querySelector('[data-bit]')!.getBoundingClientRect().top,
+        };
+      });
+      expect(layout, `local notes at ${time}s / ${width}px`).toEqual({
+        fits: true,
+        clear: true,
+        nearby: true,
+      });
+    }
+  }
+  await seek(34);
+  const held = await note('memory').innerHTML();
+  await expect(note('input')).toHaveAttribute('aria-label', /здесь 165/);
+  await expect(page.locator('#saved-value')).toHaveText('42');
+  await seek(58);
+  await seek(34);
+  expect(await note('memory').innerHTML()).toBe(held);
+  await seek(22.6);
+  const pulses = page.locator('[data-object="byte-transfer"]');
+  await expect(pulses).toBeVisible();
+  const heights = await pulses
+    .locator('path')
+    .evaluateAll((paths) => paths.map((p) => p.getBoundingClientRect().top));
+  expect(heights).toHaveLength(8);
+  expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(2);
+  await page.locator('[data-bit="7"]').click();
+  await expect(note('input')).toHaveAttribute('aria-label', /На входе 170/);
+  await expect(note('memory')).toHaveAttribute('aria-label', /хранится 42/);
+  await expect(pulses).not.toBeVisible();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await seek(22.6);
+  await expect(pulses).not.toBeVisible();
+  await expect(note('memory')).toHaveAttribute('aria-label', /весь байт в памяти/);
 });

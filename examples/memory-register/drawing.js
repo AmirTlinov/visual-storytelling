@@ -3,18 +3,20 @@ import {
   node,
   object,
   lettering,
+  paragraph,
   vector,
   svgButton,
   inkButton,
 } from '@visual-storytelling/core';
 import { bits, bit, binary } from './memory.js';
+import { narrative } from './narrative.js';
 
 /** The register owns its geometry; pen, labels and activation keep the shared notebook style. */
 export function registerDrawing(host, dispatch, inspect) {
   const view = surface(host, {
     id: 'memory-register',
     width: 800,
-    height: 530,
+    height: 660,
     title: 'Восемь бит памяти',
     description:
       'Входные биты соединены с восемью триггерами. Общий фронт такта записывает байт при WE = 1.',
@@ -22,7 +24,9 @@ export function registerDrawing(host, dispatch, inspect) {
   });
   view.element.setAttribute('role', 'group');
   let width = 0,
-    state;
+    state,
+    frame,
+    mode;
   const ink = object(view.layer, 'register-ink', 'ink');
   const text = (value, size = 18, pigment = 'ink') => {
     const mark = object(ink.content, 'note-' + notes.length, pigment);
@@ -35,12 +39,23 @@ export function registerDrawing(host, dispatch, inspect) {
   const capacity = text('числа 0–255', 17);
   const inputLabel = text('Вход D', 23, 'blue');
   const inputValue = text('0', 27, 'blue');
-  const hint = text('нажимай на биты', 16);
   const savedValue = text('В памяти: 0', 25, 'purple');
   const sum = text('00000000₂ = 0', 18);
-  const clockNote = text('один такт для всех восьми ячеек', 15);
   const enableNote = text('WE = 0', 17);
   const tickNote = text('CLK = 0', 17);
+  const annotations = Object.fromEntries(
+    [
+      ['input', 'blue'],
+      ['memory', 'purple'],
+      ['enable', 'orange'],
+      ['clock', 'orange'],
+    ].map(([name, pigment]) => {
+      const mark = object(view.layer, 'narrative-' + name, pigment);
+      mark.element.dataset.narrativeNote = name;
+      const label = paragraph(mark.content, { size: 18, lineHeight: 1.3 });
+      return [name, { mark, label }];
+    }),
+  );
   const controls = [];
   const inputs = bits.map((i) => {
     const mark = node(view, 'input-' + i, 0, {
@@ -91,6 +106,10 @@ export function registerDrawing(host, dispatch, inspect) {
     return { mark, hit, terminal, name };
   });
   const arrows = bits.map((i) => vector(view, 'data-wire-' + i, 'blue', 1.5));
+  const transfer = object(view.layer, 'byte-transfer', 'purple');
+  const pulses = bits.map((i) =>
+    view.pen.line(transfer.content, 'transfer-' + i, [0, 0], [0, 12], { width: 3 }),
+  );
   const timing = object(view.layer, 'common-clock', 'orange');
   const rail = view.pen.line(timing.content, 'clock-rail', [24, 342], [776, 342], { width: 1.7 });
   const feed = view.pen.path(timing.content, 'clock-feed', 'M600 417H790V342', { width: 1.5 });
@@ -116,42 +135,42 @@ export function registerDrawing(host, dispatch, inspect) {
   enable.control.id = 'enable';
   tick.control.id = 'clock';
   controls.push(enable, tick);
-  function render(next) {
+  function render(next, nextFrame, nextMode) {
     state = next;
+    frame = nextFrame;
+    mode = nextMode;
+    const story = narrative(next, frame, mode);
     const w = Math.max(320, host.clientWidth);
     const step = (w - 32) / 8;
     if (w !== width) {
       width = w;
-      view.resize(w, 530, false);
-      byte.at(w < 500 ? 95 : 115, 34);
-      capacity.at(w - 68, 34);
-      inputLabel.at(66, 81);
-      inputValue.at(w - 42, 81);
-      hint.at(w / 2, 59);
-      savedValue.at(w / 2, 470);
-      sum.at(w / 2, 508);
-      clockNote.at(w / 2, 368);
-      enable.at(w * 0.25, 417);
-      tick.at(w * 0.75, 417);
-      enableNote.at(w * 0.25, 386);
-      tickNote.at(w * 0.75, 386);
+      view.resize(w, 660, false);
+      byte.at(w < 500 ? 95 : 115, 28);
+      capacity.at(w - 68, 28);
+      inputLabel.at(66, 66);
+      inputValue.at(w - 42, 66);
+      savedValue.at(w / 2, 611);
+      sum.at(w / 2, 645);
+      enable.at(w * 0.25, 470);
+      tick.at(w * 0.75, 470);
+      enableNote.at(w * 0.25, 435);
+      tickNote.at(w * 0.75, 435);
       inputs.forEach(({ mark, weight, hit }, j) => {
         const x = 16 + step * (j + 0.5);
-        mark.at(x, 139);
-        weight.at(x, 111);
+        mark.at(x, 177);
+        weight.at(x, 146);
         hit.bounds({
           x: -Math.min(step - 2, 50) / 2,
           y: -22,
           width: Math.min(step - 2, 50),
           height: 44,
         });
-        cells[j].mark.at(x, 267);
-        cells[j].name.at(x + 11, 214);
-        arrows[j].set([x, 165], [x, 231]);
-        arrows[j].element.style.opacity = '.65';
-        branches[j].update('M' + x + ' 342L' + x + ' 298');
+        cells[j].mark.at(x, 285);
+        cells[j].name.at(x + 11, 246);
+        arrows[j].set([x, 203], [x, 249]);
+        branches[j].update('M' + x + ' 345L' + x + ' 316');
       });
-      rail.update('M' + (16 + step / 2) + ' 342H' + (w - 16 - step / 2));
+      rail.update('M' + (16 + step / 2) + ' 345H' + (w - 16 - step / 2));
     }
     inputs.forEach(({ mark, hit }, j) => {
       const value = bit(next.input, bits[j]);
@@ -169,6 +188,12 @@ export function registerDrawing(host, dispatch, inspect) {
         pressed: bits[j] === next.selected,
       });
       arrows[j].pigment(next.event === 'write' ? 'purple' : 'blue');
+      const opacity = story.single && bits[j] !== 5 ? '.25' : '1';
+      mark.element.style.opacity = opacity;
+      cells[j].mark.element.style.opacity = opacity;
+      cells[j].name.element.style.opacity = opacity;
+      inputs[j].weight.element.style.opacity = opacity;
+      arrows[j].element.style.opacity = story.single ? '.2' : story.focus === 'write' ? '1' : '.5';
     });
     inputValue.label.text(next.input);
     savedValue.label.text('В памяти: ' + next.saved);
@@ -183,11 +208,48 @@ export function registerDrawing(host, dispatch, inspect) {
     enableNote.label.text('WE = ' + Number(next.we));
     tickNote.label.text('CLK = ' + Number(next.clock));
     feed.update(
-      'M' + (w * 0.75 + tick.width / 2) + ' 417H' + (w - 6) + 'V342H' + (w - 16 - step / 2),
+      'M' + (w * 0.75 + tick.width / 2) + ' 470H' + (w - 6) + 'V345H' + (w - 16 - step / 2),
     );
     timing.pigment(next.event === 'write' ? 'purple' : 'orange');
+    const positions = {
+      input: [w / 2, 95, w - 36],
+      memory: [w / 2, 376, w - 36],
+      enable: [w * 0.25, 522, w / 2 - 24],
+      clock: [w * 0.75, 522, w / 2 - 24],
+    };
+    for (const [name, { mark, label }] of Object.entries(annotations)) {
+      const fact = story[name];
+      mark.show(Boolean(fact));
+      if (!fact) continue;
+      const [x, y, available] = positions[name];
+      label.render(fact.text, available, x, y);
+      label.write(fact.cue && !frame.reduced ? Math.min(1, frame.elapsed(fact.cue) / 0.8) : 1);
+      mark.element.dataset.cue = fact.cue ?? '';
+      mark.element.setAttribute('aria-label', fact.text);
+      if (fact.cue) {
+        frame.target(fact.cue, 'narrative-' + name);
+        const targets =
+          name === 'input'
+            ? bits.map((i) => 'input-' + i)
+            : name === 'memory'
+              ? bits.map((i) => 'saved-' + i)
+              : [name === 'enable' ? 'write-enable' : 'clock'];
+        targets.forEach((id) => frame.target(fact.cue, id));
+      }
+    }
+    // The same short emphasis crosses all eight connections together. State is atomic.
+    const elapsed = frame.elapsed('write_42');
+    const flowing = mode === 'story' && frame.has('write_42') && elapsed < 0.7 && !frame.reduced;
+    transfer.show(flowing);
+    if (flowing)
+      pulses.forEach((line, j) => {
+        const x = 16 + step * (j + 0.5),
+          y = 204 + (31 * elapsed) / 0.7;
+        line.update('M' + x + ' ' + y + 'v12');
+      });
+    view.element.dataset.focus = story.focus;
   }
-  const observer = new ResizeObserver(() => state && render(state));
+  const observer = new ResizeObserver(() => state && render(state, frame, mode));
   observer.observe(host);
   return {
     render,
@@ -195,6 +257,7 @@ export function registerDrawing(host, dispatch, inspect) {
       observer.disconnect();
       controls.forEach((c) => c.dispose());
       notes.forEach((n) => n.dispose());
+      Object.values(annotations).forEach(({ label }) => label.dispose());
       view.dispose();
     },
   };

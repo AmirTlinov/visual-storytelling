@@ -11,7 +11,6 @@ window.galleryReady = (async () => {
   // One notebook sheet contains the heading, drawing, notes and bottom transport.
   const shell = SceneShell.mount(root, {
     title: 'Как 8 бит запоминают число',
-    captions: true,
   });
   shell.stage.classList.add('memory-sheet');
   const notes = document.createElement('div');
@@ -23,7 +22,7 @@ window.galleryReady = (async () => {
       (v) => '<button type="button" data-value="' + v + '">' + v + '</button>',
     ),
     '</div>',
-    '<p class="memory-event" id="event" role="status" aria-live="polite"></p>',
+    '<p class="sr-only" id="event" role="status" aria-live="polite"></p>',
     '<div class="memory-actions"><button type="button" id="challenge-start">Предскажи результат</button><button type="button" id="reset">Очистить пример</button></div>',
     '<section id="challenge" class="memory-challenge" hidden aria-label="Опыт с прогнозом"><p id="question"></p>',
     '<div class="guesses" role="group" aria-label="Ваш прогноз">',
@@ -53,8 +52,9 @@ window.galleryReady = (async () => {
     audio: root.querySelector('[data-audio]'),
     script: timing,
     stateAt: storyState,
-    render(s) {
-      drawing.render(s);
+    render(s, frame, mode) {
+      drawing.render(s, frame, mode);
+      notes.hidden = mode === 'story' && !frame.has('your_turn');
       const quiz = Boolean(s.challenge);
       presets.forEach((button) => (button.disabled = quiz));
       $('input-value').textContent = s.input;
@@ -66,7 +66,6 @@ window.galleryReady = (async () => {
         $('event').textContent = message;
         lastNotice = message;
       }
-      $('event').dataset.event = s.event;
       $('challenge').hidden = !quiz;
       $('question').textContent =
         'Вход: 165. Память: 42. WE = ' + Number(s.we) + '. Что будет в памяти после фронта ↑?';

@@ -24,7 +24,7 @@ test('public presentation preserves material paint, narrow layout, focused input
         const drawing = await MathMorph.mount(shell.stage, MathMorph.integral('x^2',0,3));
         const field = SketchControls.field({type:'number',label:'Значение',value:2,min:-10,max:10,step:.1});
         document.querySelector('aside').append(field.element);
-        const sheet = surface(document.querySelector('footer'), {id:'zero-paint',width:200,height:120,title:'Paint',description:'Zero to area',grid:false});
+        const sheet = surface(document.querySelector('footer'), {id:'zero-paint',width:200,height:400,title:'Paint',description:'Zero to area',grid:false});
         const paint = sheet.pen.contour(sheet.layer,'area',[[20,20],[140,20],[140,20],[20,20]],{fill:'marker'});
         paint.element.style.color='blue';
         const lines = paragraph(sheet.layer, {size:20});
@@ -82,6 +82,35 @@ test('public presentation preserves material paint, narrow layout, focused input
       for (const row of rows)
         if (row.text.length > 1) assert.ok(row.width <= width + 0.01, 'visible ink fits its row');
     }
+    await page.evaluate(() => {
+      lab.lines.render('Записали байт. Память хранит число.', 110, 100, 150);
+      lab.lines.write(0.4);
+    });
+    const ink = async () => PNG.sync.read(await page.locator('footer svg').screenshot()).data;
+    const partial = await ink(),
+      bounds = await page.evaluate(() => lab.lines.bounds);
+    await page.evaluate(() => lab.lines.write(1));
+    assert.notDeepEqual(await ink(), partial, 'partial writing changes visible strokes');
+    assert.deepEqual(
+      await page.evaluate(() => lab.lines.bounds),
+      bounds,
+      'writing preserves the complete layout',
+    );
+    await page.evaluate(() => {
+      lab.lines.write(0);
+      lab.lines.write(0.4);
+    });
+    assert.deepEqual(
+      await ink(),
+      partial,
+      'the same pen position renders identically after reverse seeking',
+    );
+    await page.evaluate(() =>
+      lab.lines.render('Записали байт. Память хранит число.', 160, 100, 150),
+    );
+    const resized = await ink();
+    await page.evaluate(() => lab.lines.write(0.4));
+    assert.deepEqual(await ink(), resized, 'reflow retains the current writing progress');
     const originalInput = page.getByRole('spinbutton', { name: 'Значение', exact: true });
     await originalInput.fill('');
     await originalInput.pressSequentially('-0');

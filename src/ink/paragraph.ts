@@ -1,4 +1,4 @@
-import { svg } from './dom.js';
+import { clamp, svg } from './dom.js';
 import { lettering } from './lettering.js';
 import { measureText } from './text-measure.js';
 
@@ -26,7 +26,18 @@ export function paragraph(
   const widths = new Map<string, number>();
   const rows: ReturnType<typeof lettering>[] = [];
   let previous = '',
-    count = 0;
+    count = 0,
+    progress = 1;
+  let lengths: number[] = [];
+  const write = () => {
+    const total = lengths.reduce((sum, length) => sum + length, 0);
+    let offset = 0;
+    rows.forEach((row, i) => {
+      const length = lengths[i]!;
+      row.write(clamp((progress * total - offset) / length));
+      offset += length;
+    });
+  };
   let bounds = { x: 0, y: 0, width: 0, height: 0 };
   const widthOf = (text: string) => {
     if (!widths.has(text)) {
@@ -43,6 +54,12 @@ export function paragraph(
     element,
     get bounds() {
       return { ...bounds };
+    },
+    /** One reversible pen pass across wrapped lines, driven by the caller's clock. */
+    write(value: number) {
+      if (!Number.isFinite(value)) throw new Error('Paragraph write progress must be finite');
+      progress = clamp(value);
+      write();
     },
     render(text: string, width: number, x: number, y: number) {
       if (!(width > 0) || ![width, x, y].every(Number.isFinite))
@@ -98,6 +115,8 @@ export function paragraph(
           height: Math.max(...boxes.map((b) => b.y + b.height)) - top,
         };
         count = lines.length;
+        lengths = lines.map((line) => Math.max(1, [...line].length));
+        write();
         previous = key;
         measure.textContent = '';
       }

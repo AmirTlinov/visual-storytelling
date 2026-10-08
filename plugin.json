@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "visual-storytelling",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "Создавайте, исследуйте и обсуждайте живые визуальные объяснения вместе с Codex.",
   "author": {
     "name": "Amir Tlinov"
