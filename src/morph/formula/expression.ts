@@ -16,6 +16,7 @@ import type { MathOrigin } from '../types.js';
 import { TensorData } from '../../math/tensor.js';
 import { mathOriginKey, mathOrigins } from '../origins.js';
 import { integrate } from './calculus.js';
+import { expressionDependencies, type ExpressionValue } from './dependencies.js';
 
 // One mathematics owner, isolated from the global mathjs instance and from the scene.
 let engine: ReturnType<typeof create> | undefined;
@@ -72,6 +73,8 @@ export interface ExpressionBody {
   value: number;
   body?: MorphObject;
   origins: readonly MathOrigin[];
+  inputIds: readonly string[];
+  originPrecision: 'exact' | 'conservative';
 }
 export interface ExpressionStep {
   id: string;
@@ -118,7 +121,12 @@ export function compileExpression(operation: FormulaOperation) {
   let serial = 0;
   const explicitInputs = Object.keys(operation.inputs).length > 0;
   const operands = new Map(Object.keys(operation.inputs).map((key, i) => [key, i]));
-  const leaf = (value: MathValue, name: string, body?: MorphObject): ExpressionBody[] => {
+  const leaf = (
+    value: MathValue,
+    name: string,
+    body?: MorphObject,
+    authored = true,
+  ): ExpressionBody[] => {
     const operand = operands.get(name) ?? operands.size;
     if (!operands.has(name)) operands.set(name, operand);
     const values = valuesOf(value),
@@ -127,12 +135,14 @@ export function compileExpression(operation: FormulaOperation) {
       id: `input:${serial++}`,
       value,
       body,
-      origins: [origins[index]!],
+      origins: authored ? [origins[index]!] : [],
+      inputIds: [],
+      originPrecision: 'exact' as const,
     }));
     initial.push(...result);
     return result;
   };
-  type Value = { value: MathValue; bodies: ExpressionBody[] };
+  const visible = (value: ExpressionValue) => value.cells.filter((cell) => cell !== undefined);
   // Calculus evaluates its expression through mathjs, so collect its authored
   // parameters separately without evaluating that expression a second time.
   function dependencies(node: MathNode, excluded: string) {
@@ -143,20 +153,30 @@ export function compileExpression(operation: FormulaOperation) {
       if (name !== excluded && scope.has(name) && typeof scope.get(name) !== 'function')
         names.set(name, part);
     });
-    return [...names.values()].flatMap((part) => visit(part).bodies);
+    return [...names.values()].flatMap((part) => visible(visit(part)));
   }
-  function visit(node: MathNode): Value {
+  function visit(node: MathNode): ExpressionValue {
     if (node.type === 'ParenthesisNode') return visit((node as ParenthesisNode).content);
     if (node.type === 'SymbolNode') {
       const name = (node as SymbolNode).name;
       const value = real(scope.has(name) ? scope.get(name) : node.compile().evaluate(), name);
-      return { value, bodies: scope.has(name) ? leaf(value, name, bodies.get(name)?.body) : [] };
+      return {
+        value,
+        cells: scope.has(name)
+          ? leaf(value, name, bodies.get(name)?.body)
+          : valuesOf(value).map(() => undefined),
+      };
     }
     if (node.type === 'ConstantNode') {
       const value = real((node as ConstantNode).value, node.toString());
-      return { value, bodies: explicitInputs ? [] : leaf(value, node.toString()) };
+      return {
+        value,
+        cells: explicitInputs
+          ? valuesOf(value).map(() => undefined)
+          : leaf(value, node.toString(), undefined, false),
+      };
     }
-    let args: Value[],
+    let args: ExpressionValue[],
       value: MathValue,
       parameters: ExpressionBody[] = [],
       calculus: ExpressionStep['calculus'];
@@ -168,6 +188,13 @@ export function compileExpression(operation: FormulaOperation) {
           : (node as FunctionNode).fn.name;
     if (node.type === 'ArrayNode') {
       args = (node as ArrayNode).items.map(visit);
+      // A literal array cell is visible material, with no fabricated input origin.
+      for (const arg of args) {
+        const values = valuesOf(arg.value);
+        arg.cells = arg.cells.map(
+          (cell, index) => cell ?? leaf(values[index]!, String(values[index]), undefined, false)[0],
+        );
+      }
       value = real(
         args.map((v) => v.value),
         node.toString(),
@@ -235,38 +262,48 @@ export function compileExpression(operation: FormulaOperation) {
       if (typeof fn !== 'function') throw new Error(`Unknown mathematical function “${name}”`);
       value = real(fn(...args.map((a) => a.value)), node.toString());
     }
-    const inputs = [...args.flatMap((arg) => arg.bodies), ...parameters];
-    if (!inputs.length) return { value, bodies: [] };
+    const inputs = [...args.flatMap(visible), ...parameters];
+    if (!inputs.length) return { value, cells: valuesOf(value).map(() => undefined) };
     const id = `step:${steps.length}`;
-    const origins = [
-      ...new Map(
-        inputs.flatMap((input) => input.origins).map((origin) => [mathOriginKey(origin), origin]),
-      ).values(),
-    ];
+    const customCall = node.type === 'FunctionNode' && Object.hasOwn(custom, name);
+    const dependency = expressionDependencies(name, args, value, customCall, parameters);
     const values = valuesOf(value);
-    const outputs = values.map((value, index) => ({
-      id: inputs.length === values.length ? inputs[index]!.id : `${id}:${index}`,
-      value,
-      body: inputs[Math.min(index, inputs.length - 1)]!.body,
-      // Equal arity does not imply elementwise dependence (transpose, matrix
-      // multiplication and custom functions may mix every incoming component).
-      origins,
-    }));
+    const outputs = values.map((value, index): ExpressionBody => {
+      const sources = dependency.cells[index]!;
+      return {
+        id: `${id}:${index}`,
+        value,
+        body: sources.find((input) => input.body)?.body,
+        inputIds: [...new Set(sources.map((input) => input.id))],
+        originPrecision:
+          dependency.precision === 'conservative' ||
+          sources.some((input) => input.originPrecision === 'conservative')
+            ? 'conservative'
+            : 'exact',
+        origins: [
+          ...new Map(
+            sources
+              .flatMap((input) => input.origins)
+              .map((origin) => [mathOriginKey(origin), origin]),
+          ).values(),
+        ],
+      };
+    });
     steps.push({
       id,
       expression: node.toString({ parenthesis: 'auto' }),
       operator: name,
       arguments: args.map((arg) => arg.value),
-      custom: (node.type === 'FunctionNode' && Object.hasOwn(custom, name)) || undefined,
+      custom: customCall || undefined,
       calculus,
       value,
       inputs,
       outputs,
     });
-    return { value, bodies: outputs };
+    return { value, cells: outputs };
   }
   const result = visit(root);
-  if (!initial.length) result.bodies = leaf(result.value, operation.expression);
+  if (!initial.length) result.cells = leaf(result.value, operation.expression, undefined, false);
   if (initial.length > 64) throw new Error('A scene can carry at most 64 input objects');
   return { initial, steps, result: result.value };
 }

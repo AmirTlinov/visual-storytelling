@@ -239,3 +239,53 @@ test('orbit and Home keep tensor playback running, and the result remains keyboa
   await expectNoHorizontalOverflow(page);
   expect(errors).toEqual([]);
 });
+
+test('elementwise multiplication exposes the same pairs it animates after input changes and reverse seek', async ({
+  page,
+}) => {
+  const errors = await openScene(page, 'math-workbench');
+  await control(page, [
+    { type: 'pause' },
+    { type: 'parameters', values: { kind: 'multiply', time: 17 } },
+  ]);
+  const read = () =>
+    page.evaluate(() => {
+      const scene = (document.querySelector('main') as any).scene;
+      const frame = scene.calculation.plan.sample(0.3);
+      return {
+        results: scene
+          .objects()
+          .filter((object: any) => object.visible && object.id.startsWith('calculation:')),
+        pairs: frame.targets.map((target: any) => ({
+          ids: target.inputIds,
+          moving: frame.sources
+            .filter((input: any) => input.material === target.material)
+            .map((input: any) => input.id),
+        })),
+      };
+    });
+  const initial = await read();
+  expect(initial.results.map((object: any) => object.value)).toEqual([0.5, 2, -0.75, 2.5]);
+  for (const [index, object] of initial.results.entries()) {
+    expect(object.provenance.originPrecision).toBe('exact');
+    expect(object.provenance.origins.map((origin: any) => [origin.operand, origin.index])).toEqual([
+      [0, index],
+      [1, index],
+    ]);
+  }
+  for (const pair of initial.pairs) expect(new Set(pair.moving)).toEqual(new Set(pair.ids));
+  await control(page, [{ type: 'parameters', values: { first: 10 } }]);
+  expect((await read()).results.map((object: any) => object.value)).toEqual([2.5, 2, -0.75, 2.5]);
+  await control(page, [{ type: 'parameters', values: { time: 7 } }]);
+  await control(page, [{ type: 'parameters', values: { time: 17, first: 2 } }]);
+  expect(await read()).toEqual(initial);
+  const result = page.locator('[data-object="calculation:step:0:0"]');
+  await result.press('Enter');
+  await expect(result).toHaveAttribute('data-selected');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await control(page, [{ type: 'theme', value: 'dark' }]);
+  await expect(result).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  expect(errors).toEqual([]);
+});

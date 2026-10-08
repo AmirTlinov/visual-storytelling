@@ -52,7 +52,13 @@ export function formulaNotation(step: ExpressionStep, resolved: boolean) {
   else if (step.operator === 'unaryMinus') expression = `−${values[0]}`;
   else if (step.operator === 'unaryPlus') expression = `+${values[0]}`;
   else if (step.operator === 'sqrt') expression = `√(${values[0]})`;
-  else if (step.operator === 'sum') expression = args.flatMap(valuesOf).map(operand).join(' + ');
+  else if (step.operator === 'sum')
+    expression =
+      args.length === 2 && Array.isArray(args[0])
+        ? `Σ по оси ${values[1]}: ${values[0]}`
+        : args.flatMap(valuesOf).map(operand).join(' + ');
+  else if (step.operator === 'transpose' || step.operator === 'ctranspose')
+    expression = `${values[0]}ᵀ`;
   else if (step.operator === 'array') expression = formulaValue(step.value);
   else if (step.operator === 'diff') {
     const { expression: term, variable } = step.calculus!;

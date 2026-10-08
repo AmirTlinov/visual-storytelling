@@ -104,13 +104,13 @@ test('formula inputs and authored bodies use tensor values and retain original l
       .map((body) => body.origins[0].source.address),
     originalAddresses,
   );
-  for (const output of compiled.steps.at(-1).outputs)
+  for (const [index, output] of compiled.steps.at(-1).outputs.entries())
     assert.deepEqual(
       output.origins
         .filter((origin) => origin.operand === 0)
         .map((origin) => origin.source.address),
-      originalAddresses,
-      'a generic matrix output carries the complete truthful input dependency set',
+      originalAddresses.slice(index * 3, (index + 1) * 3),
+      'each matrix output depends on its own row and the vector',
     );
   const plan = MathMorph.plan(operation);
   assert.deepEqual(plan.result, [50, 122]);

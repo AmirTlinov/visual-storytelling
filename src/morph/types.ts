@@ -45,6 +45,9 @@ export interface MathPart {
   /** Stable identities and original inputs survive each arithmetic step. */
   id?: string;
   origins?: readonly MathOrigin[];
+  /** Immediate inputs of this computation; origins retain the original leaf cells. */
+  inputIds?: readonly string[];
+  originPrecision?: 'exact' | 'conservative';
   shape?: VolumeShape;
   scale?: MorphPoint;
   rounding?: number;

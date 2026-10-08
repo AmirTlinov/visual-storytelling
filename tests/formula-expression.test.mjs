@@ -50,6 +50,8 @@ test('literal tensor components remain outputs and matrix operations retain thei
     [1, 2],
   );
   assert.equal(array.steps.at(-1).operator, 'array');
+  assert.deepEqual(array.steps.at(-1).outputs[0].origins, []);
+  assert.deepEqual(array.steps.at(-1).outputs[1].origins, [{ operand: 0, index: 0, value: 2 }]);
   const matrix = [
       [1, 2],
       [3, 4],
@@ -67,6 +69,204 @@ test('literal tensor components remain outputs and matrix operations retain thei
     'transposition must not claim that output 3 derives solely from former position 2',
   );
   assert.deepEqual(matrix, original);
+});
+
+test('elementwise values, immediate dependencies and material groups agree', () => {
+  for (const a of [
+    [2, 4],
+    [2, 9],
+  ]) {
+    const expression = compile('a .* b', { a, b: [3, 5] });
+    const step = expression.steps.at(-1);
+    assert.deepEqual(
+      step.outputs.map((body) => body.value),
+      [6, a[1] * 5],
+    );
+    assert.deepEqual(
+      step.outputs.map((body) => body.inputIds),
+      [
+        [expression.initial[0].id, expression.initial[2].id],
+        [expression.initial[1].id, expression.initial[3].id],
+      ],
+    );
+    assert.ok(step.outputs.every((body) => body.originPrecision === 'exact'));
+    const plan = MathMorph.plan(MathMorph.formula('a .* b', { a, b: [3, 5] }));
+    const frame = plan.sample(0.3);
+    for (const target of frame.targets)
+      assert.deepEqual(
+        new Set(
+          frame.sources.filter((body) => body.material === target.material).map((body) => body.id),
+        ),
+        new Set(target.inputIds),
+      );
+    const saved = plan.sample(0.3);
+    plan.sample(1);
+    plan.sample(0);
+    assert.deepEqual(plan.sample(0.3), saved);
+  }
+});
+
+test('transpose, matrix products, reductions and partitions preserve exact structural dependencies', () => {
+  const sourceIds = (expression) =>
+    expression.steps
+      .at(-1)
+      .outputs.map((body) => body.origins.map(({ operand, index }) => [operand, index]));
+  assert.deepEqual(
+    sourceIds(
+      compile("A'", {
+        A: [
+          [1, 2],
+          [3, 4],
+        ],
+      }),
+    ),
+    [[[0, 0]], [[0, 2]], [[0, 1]], [[0, 3]]],
+  );
+  assert.deepEqual(
+    sourceIds(
+      compile('A * b', {
+        A: [
+          [1, 2],
+          [3, 4],
+        ],
+        b: [5, 6],
+      }),
+    ),
+    [
+      [
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [1, 1],
+      ],
+      [
+        [0, 2],
+        [1, 0],
+        [0, 3],
+        [1, 1],
+      ],
+    ],
+  );
+  assert.deepEqual(
+    sourceIds(
+      compile('a * B', {
+        a: [1, 2],
+        B: [
+          [3, 4],
+          [5, 6],
+        ],
+      }),
+    ),
+    [
+      [
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [1, 2],
+      ],
+      [
+        [0, 0],
+        [1, 1],
+        [0, 1],
+        [1, 3],
+      ],
+    ],
+  );
+  assert.deepEqual(
+    sourceIds(
+      compile('sum(A, 0)', {
+        A: [
+          [1, 2],
+          [3, 4],
+        ],
+      }),
+    ),
+    [
+      [
+        [0, 0],
+        [0, 2],
+      ],
+      [
+        [0, 1],
+        [0, 3],
+      ],
+    ],
+  );
+  assert.deepEqual(
+    sourceIds(
+      compile('sum(A, 1)', {
+        A: [
+          [1, 2],
+          [3, 4],
+        ],
+      }),
+    ),
+    [
+      [
+        [0, 0],
+        [0, 1],
+      ],
+      [
+        [0, 2],
+        [0, 3],
+      ],
+    ],
+  );
+  assert.deepEqual(sourceIds(compile('partition(x, n)', { x: 8, n: 2 })), [
+    [
+      [0, 0],
+      [1, 0],
+    ],
+    [
+      [0, 0],
+      [1, 0],
+    ],
+  ]);
+  assert.deepEqual(
+    sourceIds(compile('a .* b', { a: [0, 4], b: [3, 0] })),
+    [
+      [
+        [0, 0],
+        [1, 0],
+      ],
+      [
+        [0, 1],
+        [1, 1],
+      ],
+    ],
+    'zero factors retain structural dependence',
+  );
+});
+
+test('opaque functions label call inputs conservatively and keep one whole material group', () => {
+  let calls = 0;
+  const functions = {
+    f: (values) => {
+      calls++;
+      return [values[1], values[0]];
+    },
+  };
+  const operation = MathMorph.formula('f(x) + y', { x: [2, 4], y: [1, 3] }, { functions });
+  const expression = compileExpression(operation);
+  assert.equal(calls, 1);
+  for (const step of expression.steps)
+    assert.ok(step.outputs.every((body) => body.originPrecision === 'conservative'));
+  assert.deepEqual(
+    expression.steps[0].outputs[0].inputIds,
+    expression.initial.slice(0, 2).map((body) => body.id),
+  );
+  const plan = MathMorph.plan(operation);
+  const frame = plan.sample(0.1);
+  assert.equal(
+    new Set(
+      frame.sources
+        .filter((body) => !body.material.startsWith('passive:'))
+        .map((body) => body.material),
+    ).size,
+    1,
+  );
+  for (const time of [1, 0, 0.2, 0.9, 0.2]) plan.sample(time);
+  assert.equal(calls, 2);
 });
 
 test('calculus keeps coefficients and lexical integration variables with exact notation metadata', () => {

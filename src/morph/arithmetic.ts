@@ -60,6 +60,7 @@ const cell = (
   value,
   id,
   origins,
+  originPrecision: 'exact',
 });
 type Stage = {
   sample(p: number, columns?: number): Omit<MathMorphFrame, 'stage'>;

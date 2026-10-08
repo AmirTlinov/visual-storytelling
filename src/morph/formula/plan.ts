@@ -90,6 +90,8 @@ export function formulaPlan(operation: FormulaOperation): MathMorphPlan {
       id: entry.id,
       value: entry.value,
       origins: entry.origins,
+      inputIds: entry.inputIds,
+      originPrecision: entry.originPrecision,
       shape,
       size: bodySize({ shape, position: [0, 0, 0] }),
       position: [0, 0, 0],
@@ -120,18 +122,40 @@ export function formulaPlan(operation: FormulaOperation): MathMorphPlan {
         from: part,
         to: next.find((p) => p.id === part.id)!,
       }));
-      // Balanced groups generalize scalar, tensor and shape-changing functions.
-      // Every source belongs to exactly one group; no duplicated ghost surfaces.
-      const count = Math.min(inputs.length, targets.length);
-      const groups = Array.from({ length: count }, (_, index) => {
-        const from = inputs.slice(
-          Math.floor((index * inputs.length) / count),
-          Math.floor(((index + 1) * inputs.length) / count),
-        );
-        const to = targets.slice(
-          Math.floor((index * targets.length) / count),
-          Math.floor(((index + 1) * targets.length) / count),
-        );
+      // Connected computation components own material. Shared inputs stay in a
+      // whole operation instead of being arbitrarily assigned to one result.
+      const components: { ids: Set<string>; targets: MathPart[] }[] = [];
+      for (const target of targets) {
+        const ids = new Set(target.inputIds);
+        const connected = components.filter((group) => [...ids].some((id) => group.ids.has(id)));
+        const component = { ids, targets: [target] };
+        for (const group of connected) {
+          group.ids.forEach((id) => ids.add(id));
+          component.targets.push(...group.targets);
+          components.splice(components.indexOf(group), 1);
+        }
+        components.push(component);
+      }
+      const groups = components.map((component, index) => {
+        const from = inputs.filter((input) => component.ids.has(input.id!));
+        const to = targets.filter((target) => component.targets.includes(target));
+        if (from.length > 1 && to.length > 1) {
+          const material = `${step.id}:${index}`;
+          // One many-to-many operation: the common material field transforms
+          // the complete input into the complete output, without false pairs.
+          return {
+            contacts: from.length,
+            sample(p: number) {
+              return {
+                material,
+                morph: smooth(p),
+                tension: 0,
+                sources: from.map((part) => ({ ...part, material })),
+                targets: to.map((part) => ({ ...part, material })),
+              };
+            },
+          };
+        }
         const asObject = (p: MathPart): MorphObject => ({
           shape: p.shape!,
           text: mathNumber(p.value),

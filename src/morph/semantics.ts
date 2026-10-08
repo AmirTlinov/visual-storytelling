@@ -34,11 +34,15 @@ export function mathSemantics(id: string, file: string, operation: () => unknown
           id: part.id && `${id}:${part.id}`,
           value: part.value,
           origins: part.origins,
+          inputIds: part.inputIds?.map((input) => `${id}:${input}`),
+          originPrecision: part.originPrecision,
         })),
         targets: frame.targets.map((part) => ({
           id: part.id && `${id}:${part.id}`,
           value: part.value,
           origins: part.origins,
+          inputIds: part.inputIds?.map((input) => `${id}:${input}`),
+          originPrecision: part.originPrecision,
         })),
       },
   };
@@ -66,23 +70,32 @@ export function mathSemantics(id: string, file: string, operation: () => unknown
             visible: false,
             meaning: {
               get label() {
-                return `Величина ${mathNumber(record.part.value)}`;
+                return `${record.part.originPrecision === 'conservative' ? 'Результат вызова' : 'Величина'} ${mathNumber(record.part.value)}`;
               },
               value: () => record.part.value,
               get source() {
                 return sourceOf(operation());
               },
               implementation: { file },
-              inputs: () => [
-                ...new Set(
-                  (record.part.origins ?? []).flatMap((origin) => {
-                    const source = originIds.get(mathOriginKey(origin));
-                    return source && source !== key ? [source] : [];
-                  }),
-                ),
-              ],
+              inputs: () =>
+                record.part.inputIds?.length
+                  ? record.part.inputIds.map((input) => `${id}:${input}`)
+                  : [
+                      ...new Set(
+                        (record.part.origins ?? []).flatMap((origin) => {
+                          const source = originIds.get(mathOriginKey(origin));
+                          return source && source !== key ? [source] : [];
+                        }),
+                      ),
+                    ],
               provenance: () => ({
                 origins: record.part.origins ?? [],
+                inputIds: record.part.inputIds?.map((input) => `${id}:${input}`),
+                originPrecision: record.part.originPrecision,
+                dependency:
+                  record.part.originPrecision === 'conservative'
+                    ? 'Входы вызова; точная зависимость каждой ячейки неизвестна'
+                    : undefined,
                 formula: frame?.formula,
                 stage: frame?.stage,
               }),
