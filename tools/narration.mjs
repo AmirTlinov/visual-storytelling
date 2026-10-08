@@ -1,11 +1,9 @@
 import { readdir, readFile, writeFile, rm } from 'node:fs/promises';
-import { spawn, execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { join, resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { narrationSource } from './story-document.mjs';
 import { parse } from 'parse5';
 import { macosVoice, systemNarration, voiceDigest } from './voice/macos.mjs';
+import { higgsVoice } from './voice/higgs.mjs';
 import { cueSheet } from '../dist/story/cues.js';
 
 function editAudioTags(html, edit) {
@@ -133,9 +131,7 @@ export async function buildNarration(directory, { signal, progress, cache } = {}
   let settings = await readFile(settingsFile, 'utf8').then(JSON.parse, (error) => {
     if (error.code !== 'ENOENT') throw error;
   });
-  const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
-  const hasHiggs = Boolean(pkg.bin?.['sketch-audio']);
-  const provider = settings?.provider ?? (hasHiggs ? 'higgs' : 'macos');
+  const provider = settings?.provider ?? 'higgs';
   let result;
   if (provider === 'macos') {
     if (settings?.provider !== 'macos' || settings?.enabled !== true || !settings?.voice) {
@@ -153,24 +149,14 @@ export async function buildNarration(directory, { signal, progress, cache } = {}
     }
     result = await systemNarration(directory, source.file, settings, { signal, progress, cache });
   } else if (provider === 'higgs') {
-    if (!hasHiggs)
-      throw new Error(
-        'This package does not include Higgs. Choose provider "macos" in voice.json, or use the full repository with your licensed local Higgs installation.',
-      );
-    await new Promise((resolve, reject) => {
-      const child = spawn(
-        fileURLToPath(new URL('sketch-audio', import.meta.url)),
-        ['build', source.file, '--source-directory', source.directory, '--out', directory],
-        { signal, stdio: 'inherit' },
-      );
-      child.on('error', reject);
-      child.on('close', (code) =>
-        code === 0 ? resolve() : reject(new Error(`Narration build failed (exit ${code})`)),
-      );
-    });
+    await higgsVoice.prepare(settings ?? {}, { signal });
+    await higgsVoice.build(source, directory, { signal, progress });
+    signal?.throwIfAborted();
+    settings = { ...settings, enabled: true, provider };
+    await writeFile(settingsFile, JSON.stringify(settings, null, 2) + '\n');
   } else
     throw new Error(
-      `Unknown narration provider: ${provider}. Choose "macos"${hasHiggs ? ' or "higgs"' : ''} in voice.json.`,
+      `Unknown narration provider: ${provider}. Choose "higgs" or explicitly "macos" in voice.json.`,
     );
   for (const name of await readdir(directory)) {
     signal?.throwIfAborted();
@@ -183,7 +169,6 @@ export async function buildNarration(directory, { signal, progress, cache } = {}
   return result;
 }
 
-const root = fileURLToPath(new URL('../', import.meta.url));
 export async function checkNarration(html, directory, { signal } = {}) {
   signal?.throwIfAborted();
   const audioFiles = new Set();
@@ -215,6 +200,12 @@ export async function checkNarration(html, directory, { signal } = {}) {
   if (!audioFiles.size) return;
   const script = await narrationSource(directory);
   if (!script) return;
+  const settings = await readFile(join(directory, 'voice.json'), 'utf8').then(
+    JSON.parse,
+    (error) => {
+      if (error.code !== 'ENOENT') throw error;
+    },
+  );
   for (const audio of audioFiles) {
     let matched = false;
     // Receipts may live beside the audio or at the authored scene root.
@@ -231,12 +222,16 @@ export async function checkNarration(html, directory, { signal } = {}) {
       matched = true;
       if (!receipt.source_sha256)
         throw new Error('Generated narration has no source receipt. Run visual-story audio.');
+      const provider =
+        receipt.synthesis?.provider ??
+        (receipt.digest_format === 'canonical-json-v1' ? 'macos' : 'higgs');
+      if (provider !== (settings?.provider ?? 'higgs'))
+        throw new Error('Narration provider changed. Prepare the selected voice before building.');
       if (receipt.digest_format === 'canonical-json-v1') {
         const authored = JSON.parse(await readFile(script.file, 'utf8'));
         if (
           receipt.source_sha256 !== voiceDigest(authored) ||
-          voiceDigest(receipt.voice_settings) !==
-            voiceDigest(JSON.parse(await readFile(join(directory, 'voice.json'), 'utf8')))
+          voiceDigest(receipt.voice_settings) !== voiceDigest(settings)
         )
           throw new Error(
             'Narration or voice changed. Prepare the current narration before building.',
@@ -255,22 +250,8 @@ export async function checkNarration(html, directory, { signal } = {}) {
         break;
       }
       try {
-        await promisify(execFile)(
-          'python3',
-          [
-            resolve(root, 'tools/audio/cli.py'),
-            'check',
-            script.file,
-            '--source-directory',
-            script.directory,
-            '--timeline',
-            timeline,
-          ],
-          { signal, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } },
-        );
+        await higgsVoice.check(script, timeline, { signal });
       } catch (error) {
-        if (error.code === 'ENOENT')
-          throw new Error('Checking generated narration requires python3 (standard library only).');
         throw new Error(`${timeline}: ${error.stderr?.trim() || error.message}`);
       }
       break;

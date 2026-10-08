@@ -12,6 +12,7 @@ import { ProjectWatch } from '../project-watch.mjs';
 import { Preferences } from '../preferences.mjs';
 import { environmentStatus } from '../environment.mjs';
 import { macosVoice } from '../../tools/voice/macos.mjs';
+import { higgsVoice } from '../../tools/voice/higgs.mjs';
 import { collectCache } from '../cache.mjs';
 import { errorData } from '../errors.mjs';
 import { runtimeBuild } from './identity.mjs';
@@ -340,35 +341,69 @@ const operations = {
   async preferences({ patch } = {}) {
     return patch ? preferences.update(patch) : preferences.read();
   },
-  async voice({ projectId, sourceRevision, requestId, enabled, voice, language }) {
+  async voice({ projectId, sourceRevision, requestId, enabled, provider, voice, language }) {
     const defaults = await preferences.read();
+    const previous = projectId
+      ? await readJSON(join(projects.get(projectId).path, 'voice.json'))
+      : undefined;
+    provider ??= previous?.provider ?? 'higgs';
+    if (!['higgs', 'macos'].includes(provider)) throw new Error('Unknown narration provider.');
+    const selectedLanguage = language ?? previous?.language ?? defaults.language;
     if (enabled === undefined) {
-      const status = await macosVoice.doctor();
-      const settings = projectId
-        ? await readJSON(join(projects.get(projectId).path, 'voice.json'))
-        : undefined;
-      const selectedLanguage = language ?? settings?.language ?? defaults.language;
-      const voices = status.voices.filter((v) => v.language === selectedLanguage);
+      const [higgs, macos] = await Promise.all([higgsVoice.doctor(), macosVoice.doctor()]);
+      const choices = [
+        { provider: 'higgs', kind: 'neural', ...higgs },
+        { provider: 'macos', kind: 'system', ...macos },
+      ].map((status) => {
+        const voices = status.voices.filter(
+          (v) => v.language.split('-')[0] === selectedLanguage.split('-')[0],
+        );
+        return {
+          ...status,
+          ready: status.ready && voices.length > 0,
+          reason:
+            status.reason ??
+            (voices.length
+              ? undefined
+              : `У провайдера ${status.provider} нет голоса для ${selectedLanguage}.`),
+          voices,
+        };
+      });
+      const status = choices.find((choice) => choice.provider === provider);
       return {
-        ...status,
-        ready: status.ready && voices.length > 0,
-        reason:
-          status.reason ??
-          (voices.length
-            ? undefined
-            : `На этом Mac нет голоса для ${selectedLanguage}. Выберите другой язык в настройках.`),
-        voices,
-        settings,
+        provider,
+        ready: status.ready,
+        reason: status.reason,
+        voices: choices.flatMap((choice) =>
+          choice.voices.map((item) => ({
+            ...item,
+            provider: choice.provider,
+            kind: choice.kind,
+            ready: choice.ready,
+            reason: choice.reason,
+          })),
+        ),
+        settings: previous,
       };
     }
-    const previous = await readJSON(join(projects.get(projectId).path, 'voice.json'));
     const settings = {
+      ...(previous?.provider === provider ? previous : {}),
       enabled,
-      provider: 'macos',
-      voice: voice ?? previous?.voice ?? defaults.voice,
-      language: language ?? previous?.language ?? defaults.language,
+      provider,
+      language: selectedLanguage,
     };
-    if (enabled) await macosVoice.prepare(settings, {});
+    if (provider === 'macos') {
+      settings.voice = voice ?? settings.voice ?? defaults.voice;
+      if (enabled) {
+        const selected = await macosVoice.prepare(settings, {});
+        settings.voice = selected.id;
+        settings.rate = selected.rate;
+      }
+    } else {
+      if (voice && voice !== 'higgs')
+        throw new Error('Для системного голоса явно выберите provider: "macos".');
+      if (enabled) await higgsVoice.prepare(settings);
+    }
     return operations.edit({
       projectId,
       sourceRevision,

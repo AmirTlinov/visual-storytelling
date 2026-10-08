@@ -178,7 +178,7 @@ export async function packagePlugin(root) {
         core: { version: pkg.version, build: core.build },
         plugin: JSON.parse(await readFile(join(root, 'plugin.json'), 'utf8')).version,
         examples: shippedExamples,
-        omitted: ['Spine/Chibi characters', 'Higgs provider', 'voice models'],
+        omitted: ['Spine/Chibi characters', 'Higgs Python runtime', 'voice models'],
       },
       null,
       2,

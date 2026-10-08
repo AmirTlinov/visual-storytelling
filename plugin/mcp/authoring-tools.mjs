@@ -173,12 +173,13 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_voice',
     {
       description:
-        'List available local macOS voices without downloading models. With enabled, update project narration in one undoable edit and prepare synchronized audio/cues. This is distinct from instantly muting playback. A changed phrase reuses unchanged speech fragments.',
+        'Inspect local neural Higgs and explicitly selectable system macOS voices. New narration defaults to Higgs through the installed sketch-audio; unavailable Higgs is an error, never a system-voice fallback. Set provider="macos" only for an explicitly requested system voice. With enabled, update narration in one undoable edit and prepare synchronized audio/cues. Toggling preserves the selected provider and voice; muting playback is separate.',
       inputSchema: {
         projectId: projectId.optional(),
         sourceRevision: z.string().optional(),
         requestId: requestId.optional(),
         enabled: z.boolean().optional(),
+        provider: z.enum(['higgs', 'macos']).optional(),
         voice: z.string().max(200).optional(),
         language: z.string().max(35).optional(),
       },

@@ -306,9 +306,9 @@ test('scene builds reject stale generated narration while silent and independent
           source,
           output,
         ],
-        { env: { ...process.env, PATH: join(directory, 'no-python') } },
+        { env: { ...process.env, SKETCH_AUDIO_BIN: join(directory, 'missing-higgs') } },
       ),
-      /requires python3 \(standard library only\)/,
+      /Higgs недоступна/,
     );
   } finally {
     await rm(directory, { recursive: true, force: true });

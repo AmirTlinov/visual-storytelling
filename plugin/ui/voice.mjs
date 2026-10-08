@@ -23,13 +23,31 @@ export function voiceUI(app, { session, error }) {
       const choices = $('voice-choice');
       choices.replaceChildren();
       choices.add(new Option('Без озвучки', ''));
-      for (const voice of status.voices) choices.add(new Option(voice.name, voice.id));
+      for (const voice of status.voices) {
+        const option = new Option(
+          `${voice.name} · ${voice.kind === 'neural' ? 'нейросетевой' : 'системный macOS'}`,
+          `${voice.provider}:${voice.id}`,
+        );
+        option.disabled = !voice.ready;
+        choices.add(option);
+      }
       choices.value = status.settings?.enabled
-        ? (status.settings.voice ?? status.voices[0]?.id ?? '')
+        ? `${status.provider}:${status.provider === 'higgs' ? 'higgs' : status.settings.voice}`
         : '';
-      $('voice-status').textContent = status.ready
-        ? 'Голос готовится на этом компьютере. Рисунок остаётся доступен.'
-        : status.reason;
+      const updateStatus = () => {
+        const chosen = status.voices.find(
+          (voice) => `${voice.provider}:${voice.id}` === choices.value,
+        );
+        $('voice-status').textContent = chosen
+          ? (chosen.reason ??
+            (chosen.kind === 'neural'
+              ? 'Нейросетевая озвучка Higgs готовится на этом компьютере.'
+              : 'Выбран системный голос macOS.'))
+          : (status.reason ??
+            'Для новой озвучки используется нейросетевой Higgs. Системные голоса выбираются явно.');
+      };
+      choices.onchange = updateStatus;
+      updateStatus();
       $('voice-options').hidden = false;
       $('voice').setAttribute('aria-expanded', 'true');
       choices.focus();
@@ -43,7 +61,10 @@ export function voiceUI(app, { session, error }) {
   $('voice-form').onsubmit = async (event) => {
     event.preventDefault();
     const owner = session(),
-      voice = $('voice-choice').value;
+      selected = $('voice-choice').value,
+      split = selected.indexOf(':'),
+      provider = selected.slice(0, split),
+      voice = selected.slice(split + 1);
     $('voice-apply').disabled = true;
     try {
       const result = await app.callServerTool({
@@ -56,8 +77,8 @@ export function voiceUI(app, { session, error }) {
         projectId: owner.projectId,
         sourceRevision: result.structuredContent.sourceRevision,
         requestId: crypto.randomUUID(),
-        enabled: Boolean(voice),
-        ...(voice ? { voice } : {}),
+        enabled: Boolean(selected),
+        ...(selected ? { provider, ...(provider === 'macos' ? { voice } : {}) } : {}),
       });
       if (session() === owner) close();
     } catch (e) {

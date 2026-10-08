@@ -1,15 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  mkdtemp,
-  mkdir,
-  writeFile,
-  rm,
-  readdir,
-  copyFile,
-  symlink,
-  access,
-} from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, readdir, copyFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,23 +24,18 @@ test('CLI discovery respects a runtime without character and Higgs authoring too
   const run = (...args) =>
     promisify(execFile)(process.execPath, [join(root, 'tools/scene.mjs'), ...args]);
   const help = (await run('--help')).stdout;
-  assert.doesNotMatch(help, /characters --help|--audio\]/);
+  assert.doesNotMatch(help, /characters --help/);
+  assert.match(help, /--audio/);
   assert.match(help, /--silent/);
   const creation = (await run('new', '--help')).stdout;
   assert.match(creation, /story_voice/);
+  assert.match(creation, /local neural Higgs/);
   assert.match(creation, /provider.*macos/);
   await assert.rejects(run('characters', '--help'), (error) => {
     assert.match(error.stderr, /does not include \.\/characters/);
     assert.doesNotMatch(error.stderr, /ERR_MODULE_NOT_FOUND/);
     return true;
   });
-  const destination = join(root, 'untouched');
-  await assert.rejects(run('new', destination, '--audio'), (error) => {
-    assert.match(error.stderr, /--no-audio/);
-    assert.doesNotMatch(error.stderr, /ENOENT|ERR_MODULE_NOT_FOUND/);
-    return true;
-  });
-  await assert.rejects(access(destination), { code: 'ENOENT' });
 });
 
 test('one morph lookup explains its inputs without unrelated implementation helpers', async () => {
