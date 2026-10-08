@@ -19,12 +19,14 @@ export function inkChapter(
     Pick<SceneChapter, 'controls' | 'valuesAt'> & {
       size?: InkViewport;
       grid?: Grid | false;
-      create(view: Surface): InkDrawing | Promise<InkDrawing>;
+      /** Pass signal to resource requests and release partial resources if preparation fails. */
+      create(view: Surface, signal: AbortSignal): InkDrawing | Promise<InkDrawing>;
     },
 ): SceneChapter {
   return {
     ...options,
-    async mount(parent) {
+    async mount(parent, signal) {
+      signal.throwIfAborted();
       const view = surface(parent, {
         id: `chapter-${++instance}`,
         title: options.title,
@@ -39,11 +41,16 @@ export function inkChapter(
         width: '100%',
         height: '100%',
       });
-      let drawing: InkDrawing;
+      let drawing: InkDrawing | undefined;
       try {
-        drawing = await options.create(view);
+        drawing = await options.create(view, signal);
+        signal.throwIfAborted();
       } catch (error) {
-        view.dispose();
+        try {
+          drawing?.dispose?.();
+        } finally {
+          view.dispose();
+        }
         throw error;
       }
       let latest: ChapterFrame | undefined;
@@ -53,7 +60,7 @@ export function inkChapter(
         const size = options.size ?? { width: box.width || 960, height: box.height || 640 };
         if (options.size) view.fitViewport(box.width || 960, box.height || 640);
         else view.resize(size.width, size.height);
-        drawing.render(frame, size);
+        drawing!.render(frame, size);
       };
       const observer = new ResizeObserver(() => {
         if (latest && parent.checkVisibility()) render(latest);
@@ -61,7 +68,7 @@ export function inkChapter(
       observer.observe(parent.closest('.ve-frame') ?? parent);
       return {
         render,
-        snapshot: () => drawing.snapshot?.(),
+        snapshot: () => drawing!.snapshot?.(),
         capture(viewport) {
           if (!viewport) return snapshotSVG(view.element);
           return view.withViewport(viewport.aspect, () => snapshotSVG(view.element));
@@ -69,7 +76,7 @@ export function inkChapter(
         dispose() {
           observer.disconnect();
           try {
-            drawing.dispose?.();
+            drawing!.dispose?.();
           } finally {
             view.dispose();
           }

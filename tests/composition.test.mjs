@@ -113,7 +113,7 @@ test('full-page capture freezes portrait and wide drawings and restores their li
               view.layer.innerHTML='<rect x="200" y="80" width="100" height="40" fill="#b4141e"/>';
               return {render(){},dispose(){window.removed=true;}};
             },
-          }).mount(host).then(presentation=>{
+          }).mount(host, new AbortController().signal).then(presentation=>{
             window.proof=async()=>{
               const frames=[], pending=[];
               for(const [width,height] of [[440,1000],[900,600]]) {

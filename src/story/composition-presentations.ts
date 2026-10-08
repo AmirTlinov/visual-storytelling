@@ -9,6 +9,7 @@ export interface MountedChapter {
 /** A story keeps its live chapter and one recent neighbour; resource preparation is serial. */
 export function chapterPresentations(chapters: readonly SceneChapter[], parent: HTMLElement) {
   const mounted = new Map<number, MountedChapter>();
+  const lifetime = new AbortController();
   let current: number | undefined,
     recent: number | undefined,
     disposed = false;
@@ -38,7 +39,7 @@ export function chapterPresentations(chapters: readonly SceneChapter[], parent: 
     Object.assign(element.style, { position: 'absolute', inset: '0', visibility: 'hidden' });
     parent.prepend(element);
     try {
-      const drawing = await chapters[index]!.mount(element);
+      const drawing = await chapters[index]!.mount(element, signal);
       if (disposed || signal.aborted) {
         drawing.dispose();
         signal.throwIfAborted();
@@ -61,6 +62,7 @@ export function chapterPresentations(chapters: readonly SceneChapter[], parent: 
       return current === undefined ? undefined : mounted.get(current);
     },
     prepare(indices: readonly number[], signal: AbortSignal, capture?: () => Promise<void>) {
+      signal = AbortSignal.any([signal, lifetime.signal]);
       const work = queue
         .catch(() => {})
         .then(async () => {
@@ -95,6 +97,7 @@ export function chapterPresentations(chapters: readonly SceneChapter[], parent: 
     dispose() {
       if (disposed) return;
       disposed = true;
+      lifetime.abort();
       current = undefined;
       retain([]);
     },

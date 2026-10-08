@@ -6,6 +6,86 @@ import { join } from 'node:path';
 import { build } from 'esbuild';
 import { assetURLs } from '../tools/asset-urls.mjs';
 import { renderer } from '../tools/render.mjs';
+import { chromium } from 'playwright';
+
+test('a superseded chapter cancels its resource request before the next mount and disposal aborts pending work', async () => {
+  const bundle = await build({
+    stdin: {
+      resolveDir: process.cwd(),
+      contents: `
+        import {SceneStory,inkChapter} from './dist/story/index.js';
+        import './dist/style.css';
+        const events=[];
+        const chapters=['a','b','c'].map(id=>inkChapter({id,title:id,text:id,seconds:1,
+          async create(view,signal){
+            events.push('create '+id);
+            if(id==='b')await new Promise((resolve,reject)=>{
+              // A resource that completes only through cancellation. C cannot wait for its success.
+              signal.addEventListener('abort',()=>{events.push('abort '+id);reject(signal.reason)},{once:true});
+            });
+            return{render(){view.layer.textContent=id},dispose(){events.push('dispose '+id)}};
+          },
+        }));
+        window.events=events;
+        window.galleryReady=SceneStory.mount(document.querySelector('main'),{title:'Cancellation',chapters}).then(lab=>window.lab=lab);
+      `,
+    },
+    bundle: true,
+    write: false,
+    outdir: '.',
+    format: 'iife',
+    loader: { '.woff2': 'dataurl' },
+    plugins: [assetURLs()],
+  });
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    page.setDefaultTimeout(5000);
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.setContent('<main class="ve-scene"></main>');
+    await page.addStyleTag({
+      content: bundle.outputFiles.find((file) => file.path.endsWith('.css')).text,
+    });
+    await page.addScriptTag({
+      content: bundle.outputFiles.find((file) => file.path.endsWith('.js')).text,
+    });
+    await page.evaluate(() => window.galleryReady);
+    await page.evaluate(() => lab.scene.seek(1.2));
+    await page.waitForFunction(() => events.includes('create b'));
+    const pending = await page.evaluate(() => ({
+      rendering: lab.scene.inspect().rendering,
+      checkpoint: lab.scene.capture(),
+    }));
+    assert.equal(pending.rendering.requested.values.chapter, 'b');
+    assert.equal(pending.rendering.presented.values.chapter, 'a');
+    assert.equal(pending.checkpoint.values.chapter, 'a');
+    await page.evaluate(async () => {
+      lab.scene.seek(2.2);
+      await lab.scene.ready();
+    });
+    assert.deepEqual(await page.evaluate(() => events.slice()), [
+      'create a',
+      'create b',
+      'abort b',
+      'create c',
+    ]);
+    assert.equal(await page.evaluate(() => lab.scene.snapshot().chapter), 'c');
+    assert.equal(await page.locator('[data-chapter="b"]').count(), 0);
+    await page.evaluate(() => lab.scene.seek(1.2));
+    await page.waitForFunction(() => events.filter((event) => event === 'create b').length === 2);
+    await page.evaluate(() => lab.scene.dispose());
+    await page.waitForFunction(() => events.filter((event) => event === 'abort b').length === 2);
+    assert.equal(await page.locator('[data-chapter]').count(), 0);
+    assert.deepEqual(
+      await page.evaluate(() => events.filter((event) => event.startsWith('dispose'))),
+      ['dispose a', 'dispose c'],
+    );
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+  }
+});
 
 test('cold and reverse chapter seeks await bounded GPU owners, including export and agent controls', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'composition-lifecycle-'));

@@ -27,9 +27,11 @@ export function physicsChapter(
   return inkChapter({
     ...options,
     size: { width: options.width ?? 960, height: options.height ?? 640 },
-    async create(view) {
+    async create(view, signal) {
+      signal.throwIfAborted();
       const world = await world2D();
       try {
+        signal.throwIfAborted();
         const ink = physicalInk(world, view, { scale: options.scale ?? 100 });
         const content = options.setup(world, ink, view);
         view.grid({ step: (options.scale ?? 100) / 2 });

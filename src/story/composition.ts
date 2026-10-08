@@ -35,7 +35,11 @@ export interface ChapterPresentation {
 export interface SceneChapter extends ChapterTiming {
   controls?: readonly string[];
   valuesAt?(frame: ChapterFrame): Record<string, ControlValue>;
-  mount(parent: HTMLElement): ChapterPresentation | Promise<ChapterPresentation>;
+  /** Cancel resource work when the selected chapter changes; release partial resources on failure. */
+  mount(
+    parent: HTMLElement,
+    signal: AbortSignal,
+  ): ChapterPresentation | Promise<ChapterPresentation>;
 }
 export interface ChapterTransition {
   introduction?: ChapterIntroduction;
