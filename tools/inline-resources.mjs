@@ -1,8 +1,17 @@
 import { readFile } from 'node:fs/promises';
-import { dirname, extname, resolve } from 'node:path';
+import { basename, dirname, extname, resolve } from 'node:path';
 import { parse } from 'parse5';
 import { build } from 'esbuild';
 import { mediaType } from './assets.mjs';
+import { playbackTimeline } from './narration.mjs';
+
+/** Media timing travels without synthesis receipts or local voice paths. */
+export async function assetContents(file) {
+  const bytes = await readFile(file);
+  return basename(file) === 'timeline.json'
+    ? Buffer.from(JSON.stringify(playbackTimeline(JSON.parse(bytes))))
+    : bytes;
+}
 
 const escape = (value) =>
   value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;');
@@ -43,7 +52,7 @@ export function inlineResources(directory) {
     if (embedded(url)) return url;
     const file = local(url, base);
     if (parents.includes(file)) throw new Error(`Circular SVG resource: ${file}`);
-    let bytes = await readFile(file);
+    let bytes = await assetContents(file);
     if (extname(file).toLowerCase() === '.svg')
       bytes = Buffer.from(await markup(bytes.toString('utf8'), dirname(file), [...parents, file]));
     const fragment = url.includes('#') ? url.slice(url.indexOf('#')) : '';
@@ -120,6 +129,8 @@ export function inlineResources(directory) {
           (name === 'image' && attr.name === 'href') ||
           (name === 'link' && attr.name === 'href' && /icon/i.test(attrs.rel ?? ''))
         )
+          value = await data(attr.value, base, parents);
+        else if (name === 'audio' && attr.name === 'data-story-timeline')
           value = await data(attr.value, base, parents);
         else if (['img', 'source'].includes(name) && attr.name === 'srcset')
           value = await srcset(attr.value, (url) => data(url, base, parents));

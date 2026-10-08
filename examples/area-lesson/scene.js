@@ -7,10 +7,6 @@ import '@visual-storytelling/core/style.css';
 window.galleryReady = (async () => {
   const root = globalThis.document.getElementById('story');
   const audio = root.querySelector('audio') ?? globalThis.document.querySelector('audio');
-  const script =
-    audio && audio.dataset.silent !== 'true'
-      ? await fetch('timeline.json').then((response) => response.json())
-      : undefined;
   const drawing = (chapter) =>
     inkChapter({
       ...chapter,
@@ -28,7 +24,6 @@ window.galleryReady = (async () => {
     });
   const lesson = await IllustratedStory.mount(root, {
     document,
-    script,
     audio,
     parameters: [
       { key: 'width', label: 'Ширина, см', value: 3, min: 1, max: 6, step: 1 },

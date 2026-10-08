@@ -9,7 +9,7 @@ function editAudioTags(html, edit) {
   const edits = [];
   const visit = (node) => {
     if (node.tagName === 'audio') {
-      edit(node.sourceCodeLocation, edits);
+      edit(node.sourceCodeLocation, edits, node);
     }
     for (const child of node.childNodes ?? []) visit(child);
     if (node.content) visit(node.content);
@@ -23,7 +23,7 @@ function editAudioTags(html, edit) {
 /** Change actual audio tags without touching scripts, styles or quoted examples. */
 export function setNarrationMode(html, silent) {
   let found = false;
-  const prepared = editAudioTags(html, (location, edits) => {
+  const prepared = editAudioTags(html, (location, edits, node) => {
     found = true;
     const attribute = location?.attrs?.['data-silent'];
     if (attribute)
@@ -37,9 +37,19 @@ export function setNarrationMode(html, silent) {
         location.startTag.endOffset - (html[location.startTag.endOffset - 2] === '/' ? 2 : 1);
       edits.push({ start: end, end, text: ' data-silent="true"' });
     }
+    if (
+      !silent &&
+      !node.attrs.some(({ name }) => name === 'data-story-timeline') &&
+      location?.startTag
+    ) {
+      const end =
+        location.startTag.endOffset - (html[location.startTag.endOffset - 2] === '/' ? 2 : 1);
+      edits.push({ start: end, end, text: ' data-story-timeline="timeline.json"' });
+    }
   });
   if (!silent && !found) {
-    const audio = '<audio data-story-audio src="audio.wav" preload="auto"></audio>';
+    const audio =
+      '<audio data-story-audio data-story-timeline="timeline.json" src="audio.wav" preload="auto"></audio>';
     // Source documents may begin as quiet lessons without an audio element.
     const body = parse(html, { sourceCodeLocationInfo: true })
       .childNodes.find((node) => node.tagName === 'html')

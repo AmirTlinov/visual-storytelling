@@ -3,17 +3,9 @@ import { build } from 'esbuild';
 import { join, dirname, basename, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from '@babel/parser';
-import { inlineResources } from './inline-resources.mjs';
+import { assetContents, inlineResources } from './inline-resources.mjs';
 import { createHash } from 'node:crypto';
-import { playbackTimeline } from './narration.mjs';
 import { writeBundleNotices } from './bundle-notices.mjs';
-
-const assetContents = async (file) => {
-  const bytes = await readFile(file);
-  return basename(file) === 'timeline.json'
-    ? Buffer.from(JSON.stringify(playbackTimeline(JSON.parse(bytes))))
-    : bytes;
-};
 
 const literal = (node) =>
   node?.type === 'StringLiteral'

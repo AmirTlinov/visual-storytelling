@@ -11,10 +11,6 @@ import '@visual-storytelling/core/style.css';
 window.galleryReady = (async () => {
   const alternate = new URL(location.href).searchParams.has('variant');
   const audio = globalThis.document.querySelector('audio');
-  const script =
-    !audio || audio.dataset.silent === 'true'
-      ? undefined
-      : await fetch('timeline.json').then((r) => r.json());
   const model = (v) => ({
     temperature: Number(v.temperature),
     target: Number(v.target),
@@ -95,7 +91,6 @@ window.galleryReady = (async () => {
   };
   return IllustratedStory.mount(globalThis.document.getElementById('story'), {
     document: document,
-    script,
     audio,
     parameters,
     chapters: {

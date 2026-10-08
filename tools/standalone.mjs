@@ -84,7 +84,7 @@ export async function packDirectory(
   const silentEdits = [];
   for (const node of audioElements(html))
     if (attribute(node, 'data-silent') === 'true') {
-      for (const name of ['src', 'data-src']) {
+      for (const name of ['src', 'data-src', 'data-story-timeline']) {
         const span = node.sourceCodeLocation?.attrs?.[name];
         if (span) silentEdits.push([span, '']);
       }

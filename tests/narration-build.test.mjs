@@ -404,8 +404,16 @@ test('adding voice to a quiet lesson creates one real audio element without alte
   assert.equal((audible.match(/data-story-audio/g) ?? []).length, 1);
   assert.ok(audible.includes('const quoted="<audio src=example>";'));
   assert.ok(
-    audible.includes('<audio data-story-audio src="audio.wav" preload="auto"></audio></body>'),
+    audible.includes(
+      '<audio data-story-audio data-story-timeline="timeline.json" src="audio.wav" preload="auto"></audio></body>',
+    ),
   );
   assert.equal(setNarrationMode(audible, false), audible);
   assert.ok(setNarrationMode(audible, true).includes('data-silent="true"'));
+  const existing = setNarrationMode('<audio data-silent="true" src="audio.wav"></audio>', false);
+  assert.ok(existing.includes('data-story-timeline="timeline.json"'));
+  assert.ok(!existing.includes('data-silent'));
+  assert.equal(setNarrationMode(existing, false), existing);
+  const authored = '<audio src="voice.wav" data-story-timeline="voice-timing.json"></audio>';
+  assert.equal(setNarrationMode(authored, false), authored);
 });
