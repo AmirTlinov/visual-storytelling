@@ -30,7 +30,7 @@ test('the authoring catalog resolves every preview, source and guide and narrows
 test('CLI search combines topic and group, handles multiple words and reports no matches', async () => {
   assert.deepEqual(
     (await examples('НейРон', '--group', 'techniques')).map(({ id }) => id),
-    ['neuron-morph'],
+    ['neuron-morph', 'long-calculation'],
   );
   assert.deepEqual(
     (await examples('3d', 'камера', '--recommended')).map(({ id }) => id),
