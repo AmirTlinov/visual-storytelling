@@ -1,4 +1,4 @@
-import { access, cp, mkdir, readdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { join, resolve, relative, sep } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -14,6 +14,7 @@ import { captionSource } from './caption-source.mjs';
 import { pinSceneProject, closeSceneDependencies } from './scene-project.mjs';
 import { contentDigest, diagnosePackage, sourceDigest } from './build-info.mjs';
 import { sceneInput } from './assets.mjs';
+import { copySceneInput } from './copy-scene-input.mjs';
 const execute = promisify(execFile);
 
 /** Assemble requested deliverables through their owners; publish only a complete release. */
@@ -193,7 +194,7 @@ export async function deliver(
           signal?.throwIfAborted();
           const entry = join(source, name);
           if (include(entry))
-            await cp(entry, join(sourceCopy, name), { recursive: true, filter: include });
+            await copySceneInput(entry, join(sourceCopy, name), { filter: include, signal });
         }
         if (
           !(await access(join(sourceCopy, 'package.json')).then(

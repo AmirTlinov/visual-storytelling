@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, readdir, cp, access } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, access } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pinSceneProject } from './scene-project.mjs';
@@ -6,6 +6,7 @@ import { sceneInput } from './assets.mjs';
 import { buildNarration, setNarrationMode, silenceSceneCopy } from './narration.mjs';
 import { buildOutput } from './build-output.mjs';
 import { sceneEntry } from './scene-entry.mjs';
+import { copySceneInput } from './copy-scene-input.mjs';
 
 /** CLI and plugin create the same editable project with an immutable runtime dependency. */
 export async function createScene(
@@ -52,9 +53,9 @@ export async function createScene(
         ((deferAudio || silent) && name === 'audio.wav')
       )
         continue;
-      await cp(join(source, name), join(destination, name), {
-        recursive: true,
+      await copySceneInput(join(source, name), join(destination, name), {
         filter: (path) => sceneInput(relative(source, path)),
+        signal,
       });
     }
     if (silent) await silenceSceneCopy(destination);

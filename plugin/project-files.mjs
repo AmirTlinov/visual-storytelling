@@ -5,12 +5,12 @@ import {
   mkdir,
   realpath,
   lstat,
-  copyFile,
   rm,
 } from 'node:fs/promises';
 import { join, dirname, relative, resolve, sep, isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
 import { sceneInput } from '../tools/assets.mjs';
+import { copySceneInput } from '../tools/copy-scene-input.mjs';
 
 const inside = (root, path) => path === root || path.startsWith(root + sep);
 export const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -134,7 +134,7 @@ export async function snapshotProject(root, target, expected) {
     for (const name of Object.keys(before.files)) {
       const to = join(target, name);
       await mkdir(dirname(to), { recursive: true });
-      await copyFile(await projectFile(root, name), to);
+      await copySceneInput(await projectFile(root, name), to);
     }
     const [after, copied] = await Promise.all([projectFiles(root), projectFiles(target)]);
     if (after.revision !== before.revision || copied.revision !== before.revision)

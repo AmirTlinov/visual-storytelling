@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { readdir, readFile, writeFile, mkdir, cp, access, rename } from 'node:fs/promises';
+import { readdir, readFile, writeFile, mkdir, access, rename } from 'node:fs/promises';
 import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'parse5';
@@ -14,6 +14,7 @@ import { readCatalog } from './catalog.mjs';
 import { writeBundleNotices } from './bundle-notices.mjs';
 import { sourceAnnotations, writeSourceReferences } from './build-sources.mjs';
 import { sceneEntry, scenePage, svgPage } from './scene-entry.mjs';
+import { copySceneInput } from './copy-scene-input.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 export async function buildPage(
@@ -213,7 +214,7 @@ export async function buildScene(source, target, options = {}) {
             to,
             JSON.stringify(playbackTimeline(JSON.parse(await readFile(from, 'utf8')))) + '\n',
           );
-        else await cp(from, to);
+        else await copySceneInput(from, to, { signal: options.signal });
       }
     }
     for (const entry of entries)
