@@ -1,0 +1,3 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="267" height="144" viewBox="0 0 267 144">
+<defs><linearGradient id="fear" x2="0" y2="1"><stop stop-color="#81729e" stop-opacity=".74"/><stop offset="1" stop-color="#b5a5ce" stop-opacity="0"/></linearGradient></defs><path d="M7 66 C9 25 59 11 83 23 C111 1 155 2 176 23 C219 5 256 32 260 68 L247 139 L17 139Z" fill="url(#fear)" stroke="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
