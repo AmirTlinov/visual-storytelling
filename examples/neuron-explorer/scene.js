@@ -11,7 +11,7 @@ import {
 } from '@visual-storytelling/core';
 import { drawing } from './drawing.js';
 import { neuron, compute } from './model.js';
-window.galleryReady = document.fonts.ready.then(() => {
+window.galleryReady = document.fonts.ready.then(async () => {
   const root = document.getElementById('neuron-explorer'),
     abort = new AbortController(),
     appearance = theme(root);
@@ -44,11 +44,7 @@ window.galleryReady = document.fonts.ready.then(() => {
   const save = () =>
     storage.save({
       modelContent: { path: path.entries.map((e) => e.node.label), ...compute(shell.parameters) },
-      privateContent: {
-        kind: 'neuron-explorer-v1',
-        parameters: { ...shell.parameters },
-        keys: path.keys,
-      },
+      privateContent: root.scene.capture(),
     });
   function paint(matrix, focus) {
     gestures.cancel();
@@ -75,7 +71,10 @@ window.galleryReady = document.fonts.ready.then(() => {
       if (i === path.length - 1) b.setAttribute('aria-current', 'location');
       breadcrumbs.append(b);
     });
-    reset.hidden = true;
+    const fitted = camera.fit(scene.box);
+    reset.hidden =
+      Math.abs(Math.log(camera.matrix.s / fitted.s)) < 0.001 &&
+      Math.hypot(camera.matrix.x - fitted.x, camera.matrix.y - fitted.y) < 0.5;
     if (focus)
       (
         [...hits.children].find((b) => b.dataset.hitKey === focus) ||
@@ -112,6 +111,7 @@ window.galleryReady = document.fonts.ready.then(() => {
     if (camera.travel) paint();
     camera.animate(camera.fit(scene.box), () => {
       reset.hidden = true;
+      save();
     });
   };
   const gestures = new SvgGestures(viewport, camera, highlight, {
@@ -121,6 +121,7 @@ window.galleryReady = document.fonts.ready.then(() => {
     changed: () => {
       reset.hidden = false;
     },
+    settled: save,
   });
   root.addEventListener(
     'click',
@@ -156,29 +157,49 @@ window.galleryReady = document.fonts.ready.then(() => {
           scene.box,
         );
         reset.hidden = false;
+        save();
       }
     },
     { signal: abort.signal },
   );
-  function restore(saved) {
-    const state = saved?.privateContent;
-    if (state?.kind !== 'neuron-explorer-v1') return;
-    shell.syncParameters(
-      Object.fromEntries(
-        ['a', 'b', 'threshold'].map((key) => [
-          key,
-          Math.max(
-            0,
-            Math.min(
-              key === 'threshold' ? 28 : 4,
-              Math.round(Number(state.parameters?.[key]) || 0),
-            ),
-          ),
-        ]),
-      ),
-    );
+  function restoreSubject(state) {
+    if (
+      state?.kind !== 'neuron-explorer-v1' ||
+      !['a', 'b', 'threshold'].every(
+        (key) =>
+          Number.isInteger(state.parameters?.[key]) &&
+          state.parameters[key] >= 0 &&
+          state.parameters[key] <= (key === 'threshold' ? 28 : 4),
+      ) ||
+      !Array.isArray(state.keys) ||
+      state.keys.length > 32 ||
+      !state.keys.every((key) => typeof key === 'string') ||
+      (state.view &&
+        (!['s', 'x', 'y', 'w', 'h'].every((key) => Number.isFinite(state.view[key])) ||
+          state.view.s <= 0 ||
+          state.view.w <= 0 ||
+          state.view.h <= 0))
+    )
+      throw new Error('Некорректные условия опыта с нейроном.');
+    gestures.cancel();
+    camera.cancel();
+    shell.syncParameters(state.parameters);
     path.restore(state.keys, () => current().hits);
-    paint();
+    const view = state.view;
+    paint(
+      view && view.w === camera.size.w && view.h === camera.size.h
+        ? { s: view.s, x: view.x, y: view.y }
+        : undefined,
+    );
+  }
+  async function restore(snapshot) {
+    const checkpoint = snapshot?.privateContent;
+    if (checkpoint?.subject?.kind !== 'neuron-explorer-v1') return;
+    try {
+      await root.scene.restore(checkpoint);
+    } catch (error) {
+      shell.status.textContent = error.message;
+    }
   }
   const storage = widgetState('neuron-explorer', restore);
   const observer = new ResizeObserver(() => {
@@ -186,9 +207,17 @@ window.galleryReady = document.fonts.ready.then(() => {
       paint(undefined, document.activeElement?.dataset.hitKey);
   });
   paint();
-  restore(storage.read());
   observer.observe(viewport);
   root.scene.extend({
+    subject: {
+      capture: () => ({
+        kind: 'neuron-explorer-v1',
+        parameters: { ...shell.parameters },
+        keys: path.keys,
+        ...(!camera.travel && !hits.hidden ? { view: { ...camera.matrix, ...camera.size } } : {}),
+      }),
+      restore: restoreSubject,
+    },
     svg: () => svg,
     setTheme: (value) => appearance.set(value),
     setReduced: (value) => {
@@ -200,6 +229,7 @@ window.galleryReady = document.fonts.ready.then(() => {
       ...compute(shell.parameters),
     }),
   });
+  await restore(storage.read());
   shell.onDispose(() => {
     observer.disconnect();
     abort.abort();

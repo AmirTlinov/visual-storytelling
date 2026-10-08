@@ -10,7 +10,10 @@ async function ready(page, name = 'computer-explorer/index.html') {
 }
 const state = (page) => page.evaluate(() => document.querySelector('.ve-scene').scene.snapshot());
 const restore = (page, saved) =>
-  page.evaluate((saved) => document.querySelector('.ve-scene').scene.restore(saved), saved);
+  page.evaluate((saved) => {
+    const scene = document.querySelector('.ve-scene').scene;
+    return scene.restore({ ...scene.capture(), subject: { ...scene.snapshot(), ...saved } });
+  }, saved);
 const idle = (page) =>
   page.waitForFunction(
     () => document.querySelector('#computer-explorer').dataset.moving === 'false',
@@ -105,6 +108,7 @@ test('computer: player completes without redrawing the static board, saves, paus
   await page.reload();
   await page.evaluate(() => window.galleryReady);
   expect((await state(page)).imageJob.phase).toBe('done');
+  const checkpoint = await page.evaluate(() => document.querySelector('.ve-scene').scene.capture());
   await page.locator('[data-job-play]').click();
   await page.evaluate(() => {
     window.releasedScene = document.querySelector('.ve-scene').scene;
@@ -118,18 +122,14 @@ test('computer: player completes without redrawing the static board, saves, paus
   expect(await released()).toEqual({ registered: false, children: 0 });
   await expect(page.evaluate(() => window.releasedScene.home())).rejects.toThrow(/disposed/);
   await page.waitForTimeout(220);
-  await page.evaluate(() =>
-    window.dispatchEvent(
-      new CustomEvent('openai:set_globals', {
-        detail: {
-          globals: {
-            widgetState: {
-              privateContent: { computerExplorer: { version: 2, architecture: 'discrete' } },
-            },
-          },
-        },
-      }),
-    ),
+  await page.evaluate(
+    (privateContent) =>
+      window.dispatchEvent(
+        new CustomEvent('openai:set_globals', {
+          detail: { globals: { widgetState: { privateContent } } },
+        }),
+      ),
+    checkpoint,
   );
   expect(await released()).toEqual({ registered: false, children: 0 });
   expect(errors).toEqual([]);

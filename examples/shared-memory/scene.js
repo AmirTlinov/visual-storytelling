@@ -1,5 +1,5 @@
 import { mountScene, StepPlayer, widgetState } from '@visual-storytelling/core';
-(() => {
+window.galleryReady = (async () => {
   const root = document.getElementById('ve-scene');
   const svg = root.querySelector('.ms-figure');
   const detail = root.querySelector('[data-detail]');
@@ -115,12 +115,19 @@ import { mountScene, StepPlayer, widgetState } from '@visual-storytelling/core';
       '</g>'
     );
   }
-  function restore(snapshot) {
-    const saved = snapshot?.privateContent;
-    return saved?.kind === 'shared-memory-v1' && Number.isInteger(saved.step)
-      ? Math.min(7, Math.max(0, saved.step))
-      : 0;
+  async function restore(snapshot) {
+    const checkpoint = snapshot?.privateContent;
+    if (!Number.isFinite(checkpoint?.time) || !Number.isInteger(checkpoint.values?.step)) return;
+    restoring = true;
+    try {
+      await root.scene.restore(checkpoint);
+    } catch (error) {
+      detail.textContent = error.message;
+    } finally {
+      restoring = false;
+    }
   }
+
   function persist() {
     if (!mounted || restoring) return;
     storage.save({
@@ -133,7 +140,7 @@ import { mountScene, StepPlayer, widgetState } from '@visual-storytelling/core';
         cpu: phases[index].cpu,
         gpu: phases[index].gpu,
       },
-      privateContent: { kind: 'shared-memory-v1', step: index },
+      privateContent: root.scene.capture(),
     });
   }
 
@@ -267,22 +274,12 @@ import { mountScene, StepPlayer, widgetState } from '@visual-storytelling/core';
     if (animate && index === previousIndex + 1) transition(previous);
     persist();
   }
-  const storage = widgetState('shared-memory', (snapshot) => {
-    const restored = restore(snapshot);
-    if (restored === index) return;
-    restoring = true;
-    try {
-      controller.go(restored);
-    } finally {
-      restoring = false;
-    }
-  });
+  const storage = widgetState('shared-memory', restore);
   reduced.addEventListener('change', () => render(), { signal: abort.signal });
   const observer = new ResizeObserver(() => {
     if (Math.abs(svg.getBoundingClientRect().width - drawnWidth) > 0.5) render();
   });
   observer.observe(svg);
-  index = restore(storage.read());
   controller = StepPlayer.mount(root, {
     count: phases.length,
     initial: index,
@@ -316,4 +313,5 @@ import { mountScene, StepPlayer, widgetState } from '@visual-storytelling/core';
       setValues: ({ step }) => controller.go(Number(step)),
     },
   );
+  await restore(storage.read());
 })();

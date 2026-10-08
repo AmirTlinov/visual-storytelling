@@ -3,6 +3,7 @@ import {
   SvgHighlight,
   SvgGestures,
   ScenePath,
+  mountScene,
   widgetState,
   theme,
   ExplorerSurface,
@@ -19,7 +20,7 @@ import { ImageJobControls } from './image-job/controls.js';
 import { imageAddress, imageJobBoard } from './image-job/scenes.js';
 import { esc } from './drawing/symbols.js';
 
-export function mountComputer(root) {
+export async function mountComputer(root) {
   const abort = new AbortController(),
     appearance = theme(root);
   const surface = ExplorerSurface.mount(root.querySelector('.explorer-stage'), {
@@ -129,7 +130,7 @@ export function mountComputer(root) {
     };
   }
   function save() {
-    const state = snapshot();
+    if (!root.scene) return;
     const cpuCycle = {
       core: 'C0',
       cycles: execution.cycles,
@@ -171,7 +172,7 @@ export function mountComputer(root) {
             }
           : {}),
       },
-      privateContent: { computerExplorer: state },
+      privateContent: root.scene.capture(),
     });
   }
   function chrome() {
@@ -344,9 +345,25 @@ export function mountComputer(root) {
     save();
     camera.moveOut(parent, child, hit, () => paint(undefined, keyboard ? last.via : null));
   }
-  function restore(widgetState) {
-    const saved = widgetState?.privateContent?.computerExplorer;
-    if (!saved || saved.version !== 2) return false;
+  function restoreSubject(saved) {
+    if (
+      saved?.version !== 2 ||
+      !['discrete', 'unified'].includes(saved.architecture) ||
+      !Array.isArray(saved.keys) ||
+      saved.keys.length > 32 ||
+      !saved.keys.every((key) => typeof key === 'string') ||
+      !saved.values ||
+      typeof saved.values !== 'object' ||
+      !Object.entries(saved.values).every(
+        ([key, value]) => Object.hasOwn(defaultValues, key) && typeof value === 'boolean',
+      ) ||
+      !saved.cpuCycle ||
+      typeof saved.cpuCycle !== 'object' ||
+      saved.display?.version !== 1 ||
+      saved.nand?.version !== 1 ||
+      saved.imageJob?.version !== 1
+    )
+      throw new Error('Некорректные условия опыта с компьютером.');
     gestures.cancel();
     camera.cancel();
     clock.pause(false);
@@ -375,7 +392,17 @@ export function mountComputer(root) {
         ? { s: v.s, x: v.x, y: v.y }
         : undefined;
     paint(matrix);
-    return true;
+  }
+  async function restore(snapshot) {
+    const checkpoint = snapshot?.privateContent;
+    if (!root.scene || checkpoint?.subject?.version !== 2) return false;
+    try {
+      await root.scene.restore(checkpoint);
+      return true;
+    } catch (error) {
+      caption.textContent = error.message;
+      return false;
+    }
   }
   function jump(depth, keyboard = false) {
     if (depth === path.length - 2) up(keyboard);
@@ -475,7 +502,6 @@ export function mountComputer(root) {
     settled: save,
   });
   const persistence = widgetState('computer-explorer', restore);
-  if (!restore(persistence.read())) paint();
   const observer = new ResizeObserver(() => {
     const { w, h } = camera.size;
     if (w === camera.viewportSize.w && h === camera.viewportSize.h) return;
@@ -490,9 +516,9 @@ export function mountComputer(root) {
   });
   observer.observe(viewport);
 
-  return {
+  const handle = mountScene(root, {
     snapshot,
-    restore: (state) => restore({ privateContent: { computerExplorer: state } }),
+    subject: { capture: snapshot, restore: restoreSubject },
     pause() {
       clock.pause(false);
       jobControls.pause(false);
@@ -523,5 +549,8 @@ export function mountComputer(root) {
       surface.dispose();
       root.replaceChildren();
     },
-  };
+  });
+  paint();
+  await restore(persistence.read());
+  return handle;
 }

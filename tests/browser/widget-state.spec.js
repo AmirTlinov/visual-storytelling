@@ -30,8 +30,10 @@ for (const name of ['bubble-sort', 'shared-memory'])
       await expect(page.locator('[data-seek]')).toHaveValue('1');
       await page.waitForTimeout(50);
       expect(await page.evaluate(() => window.receipts.length)).toBe(1);
-      const saved =
-        name === 'bubble-sort' ? { version: 1, step: 3 } : { kind: 'shared-memory-v1', step: 3 };
+      const saved = await page.evaluate(() => ({
+        ...document.querySelector('.ve-scene').scene.capture(),
+        values: { step: 3 },
+      }));
       await page.evaluate(
         (privateContent) =>
           window.dispatchEvent(
@@ -124,6 +126,7 @@ for (const scene of editableScenes)
   test(`${scene.name}: rapid input survives reversed echoes, restore and removal`, async ({
     page,
   }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.addInitScript(() => {
@@ -154,13 +157,18 @@ for (const scene of editableScenes)
           detail: { globals: { widgetState: { privateContent } } },
         }),
       );
-    await page.evaluate(restore, scene.restore);
+    const checkpoint = await page.evaluate((inputs) => {
+      const saved = document.querySelector('.ve-scene').scene.capture();
+      Object.assign(saved.subject, inputs);
+      return saved;
+    }, scene.restore);
+    await page.evaluate(restore, checkpoint);
     if (scene.attribute)
       await expect(page.locator(scene.restored)).toHaveAttribute(scene.attribute, scene.value);
     else await expect(page.locator(scene.restored)).toHaveText(scene.restoredValue);
     expect(await page.evaluate(() => window.receipts.length)).toBe(2);
     await page.evaluate(() => document.querySelector('.ve-scene').scene.dispose());
-    await page.evaluate(restore, scene.restore);
+    await page.evaluate(restore, checkpoint);
     await page.setViewportSize({ width: 500, height: 800 });
     await expect(page.locator('.ve-scene')).toBeEmpty();
     expect(errors).toEqual([]);

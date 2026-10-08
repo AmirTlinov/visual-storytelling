@@ -18,7 +18,6 @@ window.galleryReady = (async () => {
   const equation = root.querySelector('.fusion-equation');
   const abort = new AbortController();
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-  const motionRevision = 10;
   const clock = transport({ duration: 4 });
   const view = await InkMorph.mount(
     stage,
@@ -38,6 +37,7 @@ window.galleryReady = (async () => {
     scenario = 'words',
     tension = 36;
   let ready = false,
+    restoring = false,
     timer = 0,
     disposed = false;
   const persistence = widgetState('ink-fusion', restore);
@@ -103,10 +103,10 @@ window.galleryReady = (async () => {
   root.querySelector('.fusion-cases').append(cases.element);
 
   function save() {
-    if (!ready || disposed) return;
+    if (!ready || restoring || disposed) return;
     persistence.save({
       modelContent: { type: 'ink-fusion', texts: words, tension, example: scenario },
-      privateContent: { time: clock.state.time, motionRevision },
+      privateContent: root.scene.capture(),
     });
   }
   function changeTexts() {
@@ -163,19 +163,18 @@ window.galleryReady = (async () => {
   function render(time) {
     if (!disposed) view.render(time / clock.state.duration);
   }
-  function restore(snapshot) {
-    if (!ready || disposed) return;
-    const model = snapshot.modelContent;
-    if (model?.type !== 'ink-fusion') return false;
+  function restoreSubject(model, { time }) {
     if (
-      Array.isArray(model?.texts) &&
-      model.texts.length === 3 &&
-      model.texts.every((text) => typeof text === 'string' && text.trim())
-    )
-      words = model.texts.map((text) => text.slice(0, 2000));
-    if (Number.isFinite(model?.tension)) tension = Math.max(0, Math.min(64, model.tension));
-    if (
-      [
+      model?.kind !== 'ink-fusion' ||
+      !Array.isArray(model.texts) ||
+      model.texts.length !== 3 ||
+      !model.texts.every(
+        (text) => typeof text === 'string' && text.trim() && text.length <= 2000,
+      ) ||
+      !Number.isFinite(model.tension) ||
+      model.tension < 0 ||
+      model.tension > 64 ||
+      ![
         'words',
         'sentences',
         'paragraphs',
@@ -184,23 +183,36 @@ window.galleryReady = (async () => {
         'split',
         'repeat',
         'gather',
-      ].includes(model?.example)
+      ].includes(model.scenario)
     )
-      scenario = model.example;
-    clearTimeout(timer);
-    timer = 0;
-    clock.pause();
-    fields.forEach((field, i) => field.setValue(words[i]));
-    strength.setValue(tension);
-    cases.setValue(scenario);
-    rebuild();
-    if (
-      snapshot.privateContent?.motionRevision === motionRevision &&
-      Number.isFinite(snapshot.privateContent?.time)
-    )
-      clock.seek(snapshot.privateContent.time);
-    else clock.seek(0);
-    return true;
+      throw new Error('Некорректные условия опыта с формой.');
+    restoring = true;
+    try {
+      clearTimeout(timer);
+      timer = 0;
+      clock.pause();
+      words = [...model.texts];
+      tension = model.tension;
+      scenario = model.scenario;
+      fields.forEach((field, i) => field.setValue(words[i]));
+      strength.setValue(tension);
+      cases.setValue(scenario);
+      rebuild();
+      clock.seek(time);
+    } finally {
+      restoring = false;
+    }
+  }
+  async function restore(snapshot) {
+    if (!ready || disposed || snapshot?.privateContent?.subject?.kind !== 'ink-fusion')
+      return false;
+    try {
+      await root.scene.restore(snapshot.privateContent);
+      return true;
+    } catch (error) {
+      root.querySelector('.fusion-error').textContent = error.message;
+      return false;
+    }
   }
   const controls = player(root.querySelector('.fusion-player'), {
     transport: clock,
@@ -221,10 +233,6 @@ window.galleryReady = (async () => {
       save();
     }
   });
-  ready = true;
-  const saved = persistence.read();
-  const restored = saved && restore(saved);
-  if (!restored) rebuild();
   reduced.addEventListener(
     'change',
     (event) => {
@@ -233,6 +241,10 @@ window.galleryReady = (async () => {
     { signal: abort.signal },
   );
   mountScene(root, {
+    subject: {
+      capture: () => ({ kind: 'ink-fusion', texts: [...words], tension, scenario }),
+      restore: restoreSubject,
+    },
     get playing() {
       return clock.state.playing;
     },
@@ -246,7 +258,6 @@ window.galleryReady = (async () => {
       clock.seek(time);
     },
     pause: clock.pause,
-    review: () => ({ duration: 4, cues: [] }),
     snapshot: () => ({
       texts: words,
       scenario,
@@ -269,8 +280,10 @@ window.galleryReady = (async () => {
       view.dispose();
     },
   });
-  if ((!restored || saved?.privateContent?.motionRevision !== motionRevision) && !reduced.matches)
-    void clock.play();
+  ready = true;
+  rebuild();
+  const restored = await restore(persistence.read());
+  if (!restored && !reduced.matches) void clock.play();
 })().catch((error) => {
   document.querySelector('.fusion-error').textContent = error.message;
   throw error;
