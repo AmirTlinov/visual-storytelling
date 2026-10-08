@@ -1,0 +1,94 @@
+.ve-standalone .ve-scene {
+  max-width: 920px;
+}
+.memory-sheet {
+  height: auto !important;
+}
+.memory-sheet svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.ve-scene .memory-notes {
+  max-width: 800px;
+  margin: 0 auto;
+}
+.ve-scene .memory-presets,
+.ve-scene .memory-actions,
+.ve-scene .guesses {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ve-scene .memory-presets {
+  font-size: 15px;
+  margin: 8px 0 15px;
+}
+.ve-scene .memory-presets button {
+  padding: 5px 10px;
+}
+.ve-scene .memory-event {
+  line-height: 1.5;
+  min-height: 48px;
+}
+.ve-scene .memory-event[data-event='write'] {
+  color: var(--ve-purple);
+}
+.ve-scene .memory-event[data-event='blocked'] {
+  color: var(--ve-orange);
+}
+.ve-scene .memory-actions {
+  margin: 12px 0;
+}
+.ve-scene .memory-challenge {
+  padding: 8px 0 16px;
+}
+.ve-scene .memory-challenge .guesses [aria-pressed='true'] {
+  color: var(--ve-orange);
+  text-decoration: underline;
+  text-underline-offset: 5px;
+}
+.ve-scene details {
+  margin: 14px 0;
+}
+.ve-scene summary {
+  cursor: pointer;
+  line-height: 1.5;
+}
+.ve-scene .memory-detail {
+  max-width: 620px;
+}
+.ve-scene .memory-detail svg {
+  width: 100%;
+  height: auto;
+}
+.ve-scene .memory-detail p {
+  font-size: 17px;
+  line-height: 1.5;
+}
+.ve-scene .memory-trace {
+  width: 100%;
+  text-align: center;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.ve-scene .memory-trace th,
+.ve-scene .memory-trace td {
+  padding: 5px;
+}
+.ve-scene [data-player] {
+  margin-bottom: 12px;
+}
+.ve-scene .ve-captions:empty {
+  display: none;
+}
+@media (max-width: 480px) {
+  .ve-scene .memory-presets span {
+    flex-basis: 100%;
+  }
+  .ve-scene .memory-event,
+  .ve-scene .memory-detail p {
+    font-size: 16px;
+  }
+}

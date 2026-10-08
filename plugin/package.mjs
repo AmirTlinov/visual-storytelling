@@ -14,6 +14,7 @@ export const shippedExamples = [
   'ink-story',
   'morph-story',
   'connected-diagram',
+  'memory-register',
   'tensor-slices',
   'math-workbench',
 ];

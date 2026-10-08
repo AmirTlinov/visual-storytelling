@@ -9,7 +9,8 @@
 Команды ниже запускаются из каталога навыка `skills/visual-explainer/`:
 
 ```sh
-node ../../tools/scene.mjs new /absolute/output/story --example explorer-svg --no-audio
+node ../../tools/scene.mjs new /absolute/output/story --example memory-register --no-audio
+# Вложенный SVG и камера: --example explorer-svg
 # Кубик → ряд → слой → объём: --example explorer-3d
 # Морфинг тел: --example morph-story; самостоятельного текста: --example ink-story
 cd /absolute/output/story
@@ -28,7 +29,7 @@ npm run dev -- --port 0  # свободный порт; CLI печатает URL
 Ответ берётся из поставленных деклараций и указывает их настоящий путь.
 
 Меняй `narration.json` (реплики и действия), `scene.js` (модель и рисунок).
-`story_voice` включает системный голос проекта в плагине. В отдельном проекте
+`story_voice` включает нейросетевой Higgs в плагине. В отдельном проекте
 `npm run audio` использует выбранный в `voice.json` провайдер, создаёт `timeline.json`
 и убирает тихий режим.
 [Формат реплик и меток](narration.md) нужен при подготовке озвучки.
@@ -58,13 +59,14 @@ window.galleryReady = (async () => {
   const root = document.querySelector('.ve-scene');
   const shell = SceneShell.mount(root, {
     title: 'Заголовок',
-    paper: false,
+    paper: false, // Единую сетку ниже рисует surface в координатах предмета.
     parameters: [{ key: 'x', label: 'Положение', min: 0, max: 100, value: 0 }],
   });
   const drawing = surface(shell.stage, {
     id: 'path',
     width: 360,
     height: 320,
+    grid: { step: 30 },
     title: 'Движение предмета',
     description: 'Предмет перемещается вправо по измерительной сетке.',
   });
@@ -107,6 +109,8 @@ window.galleryReady = (async () => {
 Фабрики SVG возвращают объект с `element`; `object.at(x,y)` задаёт размещение,
 `move(dx,dy)` — относительное движение, `show(bool)` — общую видимость предмета и подписи.
 Высоту SVG в оболочке задаёт соотношение `surface.resize(width, height)`; она следует композиции при изменении ширины.
+В этой композиции `surface` владеет сеткой. Для HTML-композиции без собственной сетки
+сохрани стандартный `paper` оболочки; отдельную CSS-сетку поверх SVG добавлять не требуется.
 `pen` возвращает `reveal(p)` и `dispose()`, `lettering` — `text(value)` и `write(p)`.
 Передавай текущее состояние в каждом кадре: `surface.resize`, `reveal`, `text` и `write` сами пропускают неизменившиеся значения.
 Параметры расширений доступны тем же `api`: `SketchControls`, `pen`, `StoryOptions`.

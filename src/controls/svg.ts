@@ -37,3 +37,87 @@ export function fitSvgControls(root: SVGSVGElement) {
   for (const field of root.querySelectorAll('[data-native-control]'))
     field.setAttribute('height', String(52 * unit));
 }
+
+export interface SvgButtonBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface SvgButtonState {
+  label?: string;
+  pressed?: boolean;
+  disabled?: boolean;
+}
+
+/** A transparent activation region; the subject's ink remains its visible appearance. */
+export function svgButton(
+  parent: SVGElement,
+  options: SvgButtonBounds & SvgButtonState & { label: string; onPress: () => void },
+) {
+  const element = parent.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'rect'),
+    abort = new AbortController();
+  element.classList.add('ve-svg-button');
+  element.setAttribute('fill', 'transparent');
+  element.setAttribute('role', 'button');
+  let disabled = false,
+    spaceDown = false;
+  const attribute = (name: string, value: string | number | boolean) => {
+    const text = String(value);
+    if (element.getAttribute(name) !== text) element.setAttribute(name, text);
+  };
+  const bounds = (value: SvgButtonBounds) => {
+    if (abort.signal.aborted) return;
+    for (const name of ['x', 'y', 'width', 'height'] as const) attribute(name, value[name]);
+  };
+  const update = (value: SvgButtonState) => {
+    if (abort.signal.aborted) return;
+    if (value.label !== undefined) attribute('aria-label', value.label);
+    if (value.pressed !== undefined) attribute('aria-pressed', value.pressed);
+    if (value.disabled !== undefined) disabled = value.disabled;
+    attribute('aria-disabled', disabled);
+    attribute('tabindex', disabled ? '-1' : '0');
+    if (disabled) spaceDown = false;
+  };
+  const press = () => {
+    if (!disabled && !abort.signal.aborted) options.onPress();
+  };
+  element.addEventListener('click', press, { signal: abort.signal });
+  element.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      if (event.repeat || disabled) return;
+      if (event.key === 'Enter') press();
+      else spaceDown = true;
+    },
+    { signal: abort.signal },
+  );
+  element.addEventListener(
+    'keyup',
+    (event) => {
+      if (event.key !== ' ') return;
+      event.preventDefault();
+      const activate = spaceDown;
+      spaceDown = false;
+      if (activate) press();
+    },
+    { signal: abort.signal },
+  );
+  element.addEventListener('blur', () => (spaceDown = false), { signal: abort.signal });
+  bounds(options);
+  update(options);
+  parent.append(element);
+  return {
+    element,
+    update,
+    bounds,
+    dispose() {
+      spaceDown = false;
+      abort.abort();
+      element.remove();
+    },
+  };
+}

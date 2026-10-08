@@ -3,6 +3,7 @@ import { lettering } from '../ink/lettering.js';
 import type { Surface } from '../ink/surface.js';
 import type { InkDrawing } from '../story/ink-chapter.js';
 import type { ChapterFrame } from '../story/composition.js';
+import { svgButton } from '../controls/svg.js';
 
 // Subject artwork is authored once. Its coordinates belong to its own measuring surface.
 export function circuitDiagram(
@@ -49,28 +50,15 @@ export function circuitDiagram(
       { width: 3 },
     );
   }
-  const button = globalThis.document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-  for (const [name, value] of Object.entries({
+  let latest: ChapterFrame | undefined,
+    closed = true;
+  const button = svgButton(contact.content, {
     x: 245,
     y: 8,
     width: 170,
     height: 100,
-    fill: 'transparent',
-    tabindex: 0,
-    role: 'button',
-    'aria-label': 'Замкнуть или разомкнуть цепь',
-  }))
-    button.setAttribute(name, String(value));
-  contact.content.append(button);
-  let latest: ChapterFrame | undefined,
-    closed = true;
-  const toggle = () => latest?.input?.({ [closedKey]: !closed });
-  button.addEventListener('click', toggle);
-  button.addEventListener('keydown', (e) => {
-    if ((e as KeyboardEvent).key === ' ' || (e as KeyboardEvent).key === 'Enter') {
-      e.preventDefault();
-      toggle();
-    }
+    label: 'Замкнуть или разомкнуть цепь',
+    onPress: () => latest?.input?.({ [closedKey]: !closed }),
   });
   const dots = Array.from({ length: 7 }, (_, i) => {
     const dot = object(art.content, `current-${i}`, 'blue');
@@ -90,7 +78,7 @@ export function circuitDiagram(
       light.show(closed);
       bulb.element.style.opacity = closed ? '1' : '.35';
       status.text(closed ? 'Цепь замкнута' : 'Цепь разомкнута');
-      button.setAttribute('aria-pressed', String(closed));
+      button.update({ pressed: closed });
       const loop = [
           [70, 55],
           [540, 55],
@@ -121,6 +109,7 @@ export function circuitDiagram(
     },
     snapshot: () => ({ closed, voltage: volts, lamp: closed }),
     dispose() {
+      button.dispose();
       line.dispose();
       blade.dispose();
       bulb.dispose();
