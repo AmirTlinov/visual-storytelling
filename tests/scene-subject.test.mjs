@@ -149,6 +149,7 @@ test(
       page.on('pageerror', (error) => errors.push(error.message));
       await page.goto(server.url + '/memory-register/index.html');
       await page.evaluate(() => window.galleryReady);
+      await page.locator('[data-mode="explore"]').click();
       await page.locator('#challenge-start').click();
       await page.locator('#prediction').getByRole('button', { name: '42', exact: true }).click();
       await page.getByRole('button', { name: 'Проверить фронтом ↑' }).click();
