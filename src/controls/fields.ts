@@ -115,6 +115,10 @@ function selectControl(
       ),
       margin = 8 * scale,
       gap = 6 * scale;
+    if (r.bottom <= top || r.top >= bottom || r.right <= left || r.left >= right) {
+      menu.hidePopover();
+      return;
+    }
     const width = Math.max(
         0,
         Math.min(Math.max(r.width, frame ? 280 * scale : 0), right - left - margin * 2),
@@ -250,7 +254,7 @@ function selectControl(
   document.addEventListener(
     'scroll',
     (event) => {
-      if (isOpen() && !menu.contains(event.target as Node | null)) close();
+      if (isOpen() && !menu.contains(event.target as Node | null)) place();
     },
     { ...listen, capture: true },
   );

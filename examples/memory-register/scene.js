@@ -12,7 +12,8 @@ window.galleryReady = (async () => {
   // One notebook sheet contains the heading, drawing, notes and bottom transport.
   const shell = SceneShell.mount(root, {
     title: 'Как 8 бит запоминают число',
-    frame: { width: 1280, height: 720, scope: 'scene' },
+    // Below 904px, scaling the 17px toolbar would make its text smaller than 12px.
+    frame: { width: 1280, height: 720, scope: 'scene', responsiveBelow: 904 },
   });
   shell.stage.classList.add('memory-sheet');
   const drawingHost = document.createElement('div');
@@ -39,9 +40,19 @@ window.galleryReady = (async () => {
   const $ = (id) => root.querySelector('#' + id);
   let renderedPanel = null,
     panelOpener = null;
-  function renderPanel(id, focus) {
+  function renderPanel(id, focus, selected) {
     if (id === renderedPanel) return;
-    if (id && !renderedPanel) panelOpener = document.activeElement;
+    if (id) {
+      const active = document.activeElement;
+      panelOpener =
+        root.contains(active) &&
+        (active.getAttribute('data-panel') === id ||
+          (id === 'inside' && active.hasAttribute('data-select')))
+          ? active
+          : root.querySelector(
+              id === 'inside' ? `[data-select="${selected}"]` : `[data-panel="${id}"]`,
+            );
+    }
     renderedPanel = id;
     drawingHost.style.visibility = id ? 'hidden' : '';
     drawingHost.inert = Boolean(id);
@@ -72,9 +83,9 @@ window.galleryReady = (async () => {
     stateAt: storyState,
     checkpoint: memoryCheckpoint,
     render(s, frame, mode) {
-      renderPanel(s.panel || null, mode === 'explore');
-      drawing.render(s, frame, mode);
       notes.hidden = mode === 'story' && !frame.has('your_turn');
+      renderPanel(s.panel || null, mode === 'explore', s.selected);
+      drawing.render(s, frame, mode);
       const quiz = Boolean(s.challenge);
       presets.forEach((button) => (button.disabled = quiz));
       $('input-value').textContent = s.input;

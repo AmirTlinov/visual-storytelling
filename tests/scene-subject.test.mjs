@@ -239,6 +239,146 @@ test(
 );
 
 test(
+  'register details and clock history retain their visible panel through reload and current HTML',
+  { timeout: 60000 },
+  async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'story-register-panels-'));
+    const server = await serve('site');
+    const exported = await serve(directory);
+    const browser = await chromium.launch();
+    let current, fixed;
+    try {
+      const page = await browser.newPage({ viewport: { width: 960, height: 1000 } });
+      const errors = [];
+      page.on('pageerror', (error) => errors.push(error.message));
+      await page.goto(server.url + '/memory-register/index.html');
+      await page.evaluate(() => window.galleryReady);
+      await page.evaluate(() => document.querySelector('.ve-scene').scene.seek(34));
+      const cell = page.locator('[data-select="7"]');
+      await cell.focus();
+      await cell.press('Enter');
+      assert.equal(
+        await page.evaluate(() => document.activeElement.id),
+        'inside',
+        'opening a detail from narrated mode first reveals and then focuses its panel',
+      );
+      const html = await packDirectory(resolve('site/memory-register'), 'index.html', {
+        audio: 'original',
+      });
+      for (const panel of ['inside', 'trace-panel']) {
+        if (panel === 'trace-panel') {
+          await page.keyboard.press('Escape');
+          assert.equal(await cell.evaluate((element) => element === document.activeElement), true);
+          await page.locator('#clock').click();
+          await page.locator('#clock').click();
+          await page.locator('[data-panel="trace-panel"]').click();
+        }
+        const before = await page.evaluate(() => ({
+          state: document.querySelector('.ve-scene').scene.snapshot(),
+          checkpoint: document.querySelector('.ve-scene').scene.capture(),
+        }));
+        assert.equal(before.state.panel, panel);
+        assert.equal(before.state.selected, 7);
+        assert.equal(before.checkpoint.subject.state.panel, panel);
+        if (panel === 'trace-panel') {
+          assert.equal(before.state.saved, 165);
+          assert.equal(before.state.trace.at(-1).write, true);
+        }
+        await page.evaluate(async (checkpoint) => {
+          const scene = document.querySelector('.ve-scene').scene;
+          await scene.control([{ type: 'seek', time: 0 }]);
+          await scene.restore(checkpoint);
+        }, before.checkpoint);
+        assert.deepEqual(
+          await page.evaluate(() => document.querySelector('.ve-scene').scene.snapshot()),
+          before.state,
+          panel + ' capture restores after seeking away',
+        );
+        assert.equal(await page.locator('#' + panel).isVisible(), true);
+        await page.reload();
+        await page.evaluate(() => window.galleryReady);
+        assert.deepEqual(
+          await page.evaluate(() => document.querySelector('.ve-scene').scene.snapshot()),
+          before.state,
+          panel + ' widget reload uses the captured subject',
+        );
+        assert.equal(await page.locator('#' + panel).isVisible(), true);
+        assert.equal(await page.evaluate(() => document.activeElement.id), panel);
+        assert.equal(
+          await page.locator('.memory-drawing').evaluate((element) => element.inert),
+          true,
+        );
+        await writeFile(join(directory, panel + '.html'), withCheckpoint(html, before.checkpoint));
+        const context = await browser.newContext({ viewport: { width: 960, height: 1000 } });
+        const artifact = await context.newPage();
+        artifact.on('pageerror', (error) => errors.push(error.message));
+        await artifact.goto(exported.url + '/' + panel + '.html');
+        await artifact.evaluate(() => window.galleryReady);
+        assert.deepEqual(
+          await artifact.evaluate(() => document.querySelector('.ve-scene').scene.snapshot()),
+          before.state,
+          panel + ' current HTML restores without widget storage',
+        );
+        assert.equal(await artifact.locator('#' + panel).isVisible(), true);
+        if (panel === 'inside')
+          assert.match(
+            await artifact.locator('#detail-bit').innerText(),
+            /Бит 7.*вход D = 1.*Q = 0/,
+          );
+        else assert.equal(await artifact.locator('#trace tr').count(), before.state.trace.length);
+        await artifact.keyboard.press('Escape');
+        const opener = panel === 'inside' ? '[data-select="7"]' : '[data-panel="trace-panel"]';
+        assert.equal(
+          await artifact.locator(opener).evaluate((element) => element === document.activeElement),
+          true,
+          'restored detail returns keyboard focus to a visible subject control',
+        );
+        await context.close();
+      }
+      await page.setViewportSize({ width: 375, height: 1000 });
+      await page.waitForFunction(
+        () => document.querySelector('[data-scene-frame]').dataset.frameLayout === 'responsive',
+      );
+      const checkpoint = await page.evaluate(() =>
+        document.querySelector('.ve-scene').scene.capture(),
+      );
+      current = await renderer({ scene: 'memory-register', width: 375, height: 1000, checkpoint });
+      assert.equal(
+        await current.page.locator('[data-scene-frame]').getAttribute('data-frame-layout'),
+        'responsive',
+        'current PNG retains the captured narrow layout',
+      );
+      assert.deepEqual(
+        await current.page.evaluate(
+          () => document.querySelector('.ve-scene').scene.capture().subject,
+        ),
+        checkpoint.subject,
+      );
+      assert.deepEqual(
+        [...(await current.png()).subarray(0, 8)],
+        [137, 80, 78, 71, 13, 10, 26, 10],
+      );
+      fixed = await renderer({ scene: 'memory-register', width: 480, height: 300 });
+      const frame = await fixed.page.locator('[data-scene-frame]').evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return { layout: element.dataset.frameLayout, ratio: bounds.width / bounds.height };
+      });
+      assert.equal(frame.layout, 'fixed', 'authored export opts back into the original film frame');
+      assert.ok(Math.abs(frame.ratio - 16 / 9) < 0.001);
+      assert.deepEqual([...(await fixed.png()).subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+      assert.deepEqual(errors, []);
+    } finally {
+      await current?.close();
+      await fixed?.close();
+      await browser.close();
+      await exported.close();
+      await server.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
   'flat controls and manual experiment owners restore the same displayed conditions',
   { timeout: 90000 },
   async () => {

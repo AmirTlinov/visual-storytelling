@@ -57,6 +57,13 @@
 .ve-scene .ve-scene-content>:is([data-player],.ve-captions)[hidden]{display:flex!important;visibility:hidden;pointer-events:none}
 .ve-scene .ve-scene-content>.ve-status{position:absolute;inset-inline:32px;bottom:70px;max-height:3em;margin:0;font-size:14px;line-height:1.4;overflow:auto;background:var(--ve-surface);z-index:30}
 .ve-scene .ve-scene-content .vs-grid{display:none}
+.ve-scene .ve-scene-frame[data-frame-layout=responsive]{overflow:visible}
+.ve-scene .ve-scene-frame[data-frame-layout=responsive]>.ve-scene-content{position:relative;inset:auto;display:block;overflow:visible}
+.ve-scene .ve-scene-frame[data-frame-layout=responsive]>.ve-scene-content>.ve-stage{height:auto;overflow:visible}
+.ve-scene .ve-scene-frame[data-frame-layout=responsive]>.ve-scene-content>[hidden]{display:none!important}
+.ve-scene .ve-scene-frame[data-frame-layout=responsive]>.ve-scene-content>.ve-captions:not(.sr-only){height:auto;overflow:visible;display:block;margin:12px auto}
+.ve-scene .ve-scene-frame[data-frame-layout=responsive]>.ve-scene-content>[data-player]{height:auto}
+.ve-scene .ve-scene-frame[data-frame-layout=responsive]>.ve-scene-content>.ve-status{position:static;max-height:none;margin-top:12px}
 .ve-scene .ve-captions{font-size:20px;line-height:1.4;text-align:center;margin:12px auto;max-width:64ch;white-space:pre-line}
 .ve-scene .ve-frame-content>.ve-captions{position:absolute;bottom:24px;left:8%;width:84%;max-width:none;margin:0;padding:8px 16px;background:var(--ve-surface);color:var(--ve-ink);z-index:10;pointer-events:none}
 .ve-scene .ve-captions:empty{visibility:hidden}

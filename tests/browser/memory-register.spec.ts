@@ -11,12 +11,13 @@ test('the whole lesson remains one bounded 16:9 frame through narration and expl
       ['[data-scene-frame]', 'h1', '.ve-stage', '.memory-drawing', '[data-player]'].map(
         (selector) => {
           const { x, y, width, height } = document.querySelector(selector)!.getBoundingClientRect();
-          return [x, y, width, height].map((value) => Math.round(value * 100) / 100);
+          return [x + scrollX, y + scrollY, width, height].map(
+            (value) => Math.round(value * 100) / 100,
+          );
         },
       ),
     );
   for (const viewport of [
-    { width: 375, height: 800 },
     { width: 960, height: 900 },
     { width: 1440, height: 900 },
     { width: 980, height: 400 },
@@ -35,9 +36,8 @@ test('the whole lesson remains one bounded 16:9 frame through narration and expl
           return (
             Math.abs(r.width / r.height - 16 / 9) < 0.001 &&
             r.left >= 0 &&
-            r.top >= 0 &&
-            r.right <= innerWidth + 0.1 &&
-            r.bottom <= innerHeight + 0.1
+            r.top + scrollY >= 0 &&
+            r.right <= innerWidth + 0.1
           );
         }),
       )
@@ -76,6 +76,47 @@ test('the whole lesson remains one bounded 16:9 frame through narration and expl
     await page.keyboard.press('End');
     await page.keyboard.press('Enter');
     expect(await geometry()).toEqual(baseline);
+  }
+});
+
+test('the narrow lesson reflows without replacing its scene or the saved experiment', async ({
+  page,
+}) => {
+  await page.goto('/memory-register/index.html');
+  await page.evaluate(() => (window as any).galleryReady);
+  await page.locator('[data-mode="explore"]').click();
+  await page.locator('[data-value="42"]').click();
+  await page.locator('#enable').click();
+  await page.locator('#clock').click();
+  await page.locator('[data-select="7"]').click();
+  const before = await page.evaluate(() => {
+    const scene = (document.querySelector('.ve-scene') as any).scene;
+    (window as any).originalScene = scene;
+    return scene.snapshot();
+  });
+  for (const width of [375, 960, 820, 960]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await expect(page.locator('[data-scene-frame]')).toHaveAttribute(
+      'data-frame-layout',
+      width < 936 ? 'responsive' : 'fixed',
+    );
+    await expect(page.locator('#inside')).toBeVisible();
+    const current = await page.evaluate(() => {
+      const scene = (document.querySelector('.ve-scene') as any).scene;
+      const frame = document.querySelector<HTMLElement>('[data-scene-frame]')!;
+      const paragraph = document.querySelector('#detail-bit')!;
+      return {
+        sameOwner: scene === (window as any).originalScene,
+        state: scene.snapshot(),
+        textPixels:
+          parseFloat(getComputedStyle(paragraph).fontSize) * Number(frame.dataset.frameScale),
+        fits: document.documentElement.scrollWidth <= innerWidth,
+      };
+    });
+    expect(current.sameOwner).toBe(true);
+    expect(current.state).toEqual(before);
+    expect(current.textPixels).toBeGreaterThanOrEqual(width < 936 ? 18 : 14);
+    expect(current.fits).toBe(true);
   }
 });
 
