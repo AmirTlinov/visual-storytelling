@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { buildOutput } from './build-output.mjs';
 import { buildScene } from './build-pages.mjs';
 import { prepareNarration } from './narration.mjs';
-import { packDirectory } from './standalone.mjs';
+import { packDirectory, withCheckpoint } from './standalone.mjs';
+import { renderer } from './render.mjs';
 import { exportVideo } from './video-export.mjs';
 import { captionTrack } from '../dist/story/captions.js';
 import { captionSource } from './caption-source.mjs';
@@ -20,9 +21,12 @@ export async function deliver(
   source,
   {
     out,
-    formats = ['mp4'],
+    formats = ['html'],
     silent = false,
     prepareAudio = true,
+    prepared,
+    checkpoint,
+    video,
     width = 1280,
     height,
     fps = 30,
@@ -38,9 +42,25 @@ export async function deliver(
   const wanted = new Set(formats);
   if (
     !wanted.size ||
-    [...wanted].some((format) => !['mp4', 'html', 'srt', 'vtt', 'source'].includes(format))
+    [...wanted].some(
+      (format) => !['mp4', 'html', 'png', 'svg', 'srt', 'vtt', 'source'].includes(format),
+    )
   )
-    throw new Error('Delivery formats: mp4,html,srt,vtt,source');
+    throw new Error('Delivery formats: html,png,svg,mp4,srt,vtt,source');
+  if (checkpoint && [...wanted].some((format) => !['html', 'png', 'svg'].includes(format)))
+    throw new Error(
+      'Saved conditions apply to HTML and images; video and source use authored inputs',
+    );
+  if (wanted.has('mp4') && (!video || !['story', 'interval'].includes(video.kind)))
+    throw new Error('Choose the whole story or an explicit interval for video');
+  if (
+    video?.kind === 'interval' &&
+    (!Number.isFinite(video.from) ||
+      !Number.isFinite(video.to) ||
+      video.from < 0 ||
+      video.to <= video.from)
+  )
+    throw new Error('A video interval needs finite from/to seconds with 0 <= from < to');
   if (!['light', 'dark'].includes(theme))
     throw new Error('Choose light or dark for the video; the HTML follows the viewer’s theme');
   let ownedFiles = [];
@@ -48,6 +68,8 @@ export async function deliver(
     const previous = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
     const generated = new Set([
       'story.html',
+      'story.png',
+      'story.svg',
       'story.mp4',
       'story.srt',
       'story.vtt',
@@ -63,7 +85,8 @@ export async function deliver(
         { cause: error },
       );
   }
-  if (!silent && prepareAudio) await prepareNarration(source, { audible: true, signal });
+  if (!prepared && !silent && prepareAudio)
+    await prepareNarration(source, { audible: true, signal });
   const include = (path) => {
     return sceneInput(relative(source, path)) && path !== out && !path.startsWith(out + sep);
   };
@@ -86,9 +109,12 @@ export async function deliver(
       digests.some((digest, index) => digest !== sources[index])
     )
       throw new Error('Scene or package changed during delivery; retry after edits finish');
+    if (prepared && (await contentDigest(prepared.directory, ['.'])) !== prepared.outputDigest)
+      throw new Error('The prepared build changed during delivery. Choose a new revision.');
   }
-  const built = join(source, 'dist');
-  await buildScene(source, built, { silent, exclude: [out], signal });
+  const built = prepared?.directory ?? join(source, 'dist');
+  if (prepared) await unchanged();
+  else await buildScene(source, built, { silent, exclude: [out], signal });
   signal?.throwIfAborted();
   const identity = ({ name, version, build, status }) => ({
     package: name,
@@ -101,6 +127,10 @@ export async function deliver(
     toolchain: identity(packages.cli),
     formats: [...wanted],
     files: [],
+    ...(prepared
+      ? { buildRevision: prepared.revision, sourceRevision: prepared.sourceRevision }
+      : {}),
+    ...(checkpoint ? { checkpoint } : {}),
   };
   await buildOutput(
     source,
@@ -109,9 +139,24 @@ export async function deliver(
       if (wanted.has('html')) {
         await writeFile(
           join(staging, 'story.html'),
-          await packDirectory(built, 'index.html', { signal }),
+          withCheckpoint(
+            prepared?.html ?? (await packDirectory(built, 'index.html', { signal })),
+            checkpoint,
+          ),
         );
         receipt.files.push('story.html');
+      }
+      if (wanted.has('png') || wanted.has('svg')) {
+        const view = await renderer({ directory: built, width, height, theme, checkpoint, signal });
+        try {
+          for (const format of ['png', 'svg'])
+            if (wanted.has(format)) {
+              await writeFile(join(staging, `story.${format}`), await view[format]());
+              receipt.files.push(`story.${format}`);
+            }
+        } finally {
+          await view.close();
+        }
       }
       if (wanted.has('srt') || wanted.has('vtt')) {
         const track = captionTrack(await captionSource(built, { signal }));
@@ -122,7 +167,7 @@ export async function deliver(
           }
       }
       if (wanted.has('mp4')) {
-        const video = await exportVideo({
+        const exported = await exportVideo({
           directory: built,
           output: join(staging, 'story.mp4'),
           width,
@@ -132,9 +177,10 @@ export async function deliver(
           theme,
           signal,
           silent,
+          ...(video?.kind === 'interval' ? { from: video.from, to: video.to } : {}),
           onProgress,
         });
-        receipt.video = { ...video, output: 'story.mp4' };
+        receipt.video = { ...exported, output: 'story.mp4' };
         receipt.files.push('story.mp4');
       }
       if (wanted.has('source')) {

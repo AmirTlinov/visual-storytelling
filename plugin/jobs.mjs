@@ -48,6 +48,8 @@ export class JobRunner {
     this.active = null;
     this.saves = new Map();
     this.enqueues = Promise.resolve();
+    this.inputs = Promise.resolve();
+    this.observers = new Map();
     this.closed = false;
   }
   toolchain() {
@@ -70,7 +72,9 @@ export class JobRunner {
                 'plugin/runtime/storage.mjs',
                 'plugin/workflows.mjs',
                 'plugin/project-files.mjs',
+                'plugin/revision-input.mjs',
                 'plugin/environment.mjs',
+                'plugin/environment',
                 'runtime/npm/package.json',
                 'runtime/npm/bin',
                 'runtime/npm/lib',
@@ -143,6 +147,29 @@ export class JobRunner {
     if (!job) throw new Error('Unknown job.');
     return this.describe(job);
   }
+  wait(id, { until = 'settled', timeout = 15000 } = {}) {
+    const current = this.get(id);
+    const ready = (job) =>
+      !['queued', 'running', 'cancelling'].includes(job.status) ||
+      (until === 'authored' && job.authored);
+    if (ready(current) || !timeout) return Promise.resolve(current);
+    return new Promise((resolve) => {
+      const listeners = this.observers.get(id) ?? new Set();
+      this.observers.set(id, listeners);
+      const finish = () => {
+        clearTimeout(timer);
+        listeners.delete(changed);
+        if (!listeners.size) this.observers.delete(id);
+        resolve(this.get(id));
+      };
+      const changed = () => {
+        if (ready(this.get(id))) finish();
+      };
+      const timer = setTimeout(finish, Math.min(timeout, 15000));
+      listeners.add(changed);
+      changed();
+    });
+  }
   forRequest(requestId) {
     return [...this.jobs.values()].find(
       (j) => j.requestId === requestId || j.requestIds?.includes(requestId),
@@ -165,18 +192,27 @@ export class JobRunner {
           (recent.has(job.id) &&
             (['failed', 'cancelled', 'interrupted'].includes(job.status) ||
               (job.kind === 'review' && job.status === 'succeeded')))
-            ? [job.id, job.input.resumeFrom].filter(Boolean)
+            ? [job.id, job.input.resumeFrom, job.input.inputSnapshot].filter(Boolean)
             : [],
         ),
       ),
     ];
+  }
+  /** Serialize snapshot capture with eviction until its persisted job owns the lease. */
+  preserveInputs(work) {
+    const next = this.inputs.catch(() => {}).then(work);
+    this.inputs = next;
+    return next;
   }
   save(job) {
     const copy = structuredClone(job),
       id = job.id;
     const next = (this.saves.get(id) ?? Promise.resolve())
       .catch(() => {})
-      .then(() => writeJSON(join(this.data, 'jobs', id + '.json'), copy));
+      .then(() => writeJSON(join(this.data, 'jobs', id + '.json'), copy))
+      .then(() => {
+        for (const notify of this.observers.get(id) ?? []) notify();
+      });
     this.saves.set(id, next);
     void next
       .finally(() => {
@@ -222,6 +258,7 @@ export class JobRunner {
       input,
       projectId: input.projectId,
       sourceRevision: input.sourceRevision,
+      target: input.target,
       toolchain: await this.toolchain(),
       status: 'queued',
       stage: 'Ожидает подготовки',
@@ -230,6 +267,18 @@ export class JobRunner {
     await this.save(job);
     this.jobs.set(job.id, job);
     this.queue.push(job);
+    if (kind === 'build')
+      for (const previous of this.jobs.values())
+        if (
+          previous !== job &&
+          previous.projectId === job.projectId &&
+          (previous.kind === 'build' || (previous.kind === 'create' && previous.authored)) &&
+          previous.sourceRevision !== job.sourceRevision &&
+          ['queued', 'running'].includes(previous.status)
+        ) {
+          previous.supersededBy = job.id;
+          await this.cancel(previous.id);
+        }
     this.pump();
     return this.describe(job);
   }
@@ -306,6 +355,16 @@ export class JobRunner {
             terminal = { error: error.message };
           });
           child.on('message', (message) => {
+            if (message?.type === 'authored' && job.status === 'running' && !terminal) {
+              job.authored = message.project;
+              job.sourceRevision = message.project.sourceRevision;
+              job.input = {
+                ...job.input,
+                sourceRevision: message.project.sourceRevision,
+                inputSnapshot: message.project.inputSnapshot,
+              };
+              void this.save(job).catch((error) => console.error(error.message));
+            }
             if (message?.type === 'progress' && job.status === 'running' && !terminal) {
               job.stage = message.stage;
               job.progress = message.progress;

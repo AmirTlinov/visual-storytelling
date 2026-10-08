@@ -26,6 +26,10 @@ let session,
   loadTimer;
 let pollingDone = Promise.resolve();
 let updates = Promise.resolve();
+let connectionState = 'opening',
+  recovery,
+  recoveryEpoch = 0,
+  recoveryAck;
 function sync(acknowledgement) {
   const current = report,
     owner = session;
@@ -60,9 +64,124 @@ async function call(action, args = {}) {
     },
   });
   if (result.isError)
-    throw new Error(result.content?.find((c) => c.type === 'text')?.text ?? 'Connection failed');
+    throw Object.assign(
+      new Error(result.content?.find((c) => c.type === 'text')?.text ?? 'Connection failed'),
+      result.structuredContent?.error,
+    );
   return result;
 }
+function beforeDeadline(promise, deadline) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('Связь пока недоступна. Попробуйте восстановить её.')),
+      Math.max(0, deadline - Date.now()),
+    );
+    Promise.resolve(promise)
+      .then(resolve, reject)
+      .finally(() => clearTimeout(timer));
+  });
+}
+function recoverView(cause) {
+  if (recovery) return recovery;
+  const owner = session?.sessionId,
+    epoch = ++recoveryEpoch;
+  if (!owner || closed) return Promise.resolve(false);
+  connectionState = 'recovering';
+  $('connection').textContent = 'Восстанавливаю связь…';
+  $('reconnect').hidden = true;
+  send({
+    type: 'command',
+    command: { op: 'suspend', id: crypto.randomUUID(), expiresAt: Date.now() + 1000 },
+  });
+  const deadline = Date.now() + 15000;
+  recovery = (async () => {
+    let failure = cause,
+      delay = 250;
+    while (!closed && epoch === recoveryEpoch && session?.sessionId === owner) {
+      if (
+        ['view_replaced', 'RUNTIME_VERSION_CONFLICT', 'installation_missing'].includes(
+          failure?.code,
+        )
+      )
+        break;
+      try {
+        const result = await beforeDeadline(
+          call('recover', {
+            serverInstance: session.serverInstance,
+            report,
+          }),
+          deadline,
+        );
+        if (closed || epoch !== recoveryEpoch || session?.sessionId !== owner) return false;
+        session = result.structuredContent;
+        const id = crypto.randomUUID();
+        const restored = new Promise((resolve, reject) => {
+          recoveryAck = { id: result._meta?.sceneHTML ? undefined : id, resolve, reject };
+        });
+        if (result._meta?.sceneHTML) {
+          frame.srcdoc = sceneDocument(result._meta.sceneHTML, {
+            theme: app.getHostContext()?.theme,
+            generation: session.generation,
+            checkpoint: session.checkpoint,
+            stateRevision: session.stateRevision,
+            widgetState: session.widgetState,
+          });
+        } else send({ type: 'command', command: { op: 'resume', id, expiresAt: deadline } });
+        report = await beforeDeadline(restored, deadline);
+        recoveryAck = undefined;
+        await beforeDeadline(call('exchange', { report, wait: false }), deadline);
+        if (closed || epoch !== recoveryEpoch) return false;
+        connectionState = 'connected';
+        $('connection').textContent = 'Готово';
+        error('');
+        library.update(session);
+        publishContext();
+        return true;
+      } catch (e) {
+        recoveryAck = undefined;
+        failure = e;
+        if (Date.now() + delay >= deadline) break;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        delay = Math.min(delay * 2, 2000);
+      }
+    }
+    if (!closed && epoch === recoveryEpoch) {
+      connectionState = 'unavailable';
+      $('connection').textContent = 'Сцена на паузе';
+      error(failure?.message ?? 'Связь пока недоступна.');
+      $('reconnect').textContent =
+        failure?.code === 'view_replaced' ? 'Открыть здесь' : 'Восстановить связь';
+      $('reconnect').dataset.takeover = String(failure?.code === 'view_replaced');
+      $('reconnect').hidden = false;
+    }
+    return false;
+  })().finally(() => {
+    recovery = undefined;
+  });
+  return recovery;
+}
+async function ensureConnected() {
+  if (connectionState === 'connected') return;
+  if (!(await recoverView())) throw new Error('Сначала восстановите связь со сценой.');
+  void poll();
+}
+$('reconnect').onclick = async () => {
+  $('reconnect').disabled = true;
+  try {
+    if ($('reconnect').dataset.takeover === 'true') {
+      const result = await app.callServerTool({
+        name: 'story_open',
+        arguments: { sessionId: session.sessionId },
+      });
+      if (result.isError) throw new Error(result.content[0].text);
+      await open(result);
+    } else if (await recoverView()) void poll();
+  } catch (e) {
+    error(e.message);
+  } finally {
+    $('reconnect').disabled = false;
+  }
+};
 const publishContext = () => {
   if (session && report && !closed) modelContext.update(session, report);
 };
@@ -99,14 +218,7 @@ async function poll() {
         await new Promise((resolve) => setTimeout(resolve, 100));
         continue;
       }
-      error(e.message);
-      $('connection').textContent = 'Сцена остановлена';
-      send({
-        type: 'command',
-        command: { op: 'suspend', id: crypto.randomUUID(), expiresAt: Date.now() + 1000 },
-      });
-      closed = true;
-      await modelContext.close();
+      if (!(await recoverView(e))) break;
     }
   }
   polling = false;
@@ -116,6 +228,7 @@ async function mount(result) {
   if (!result.structuredContent?.sessionId || session) return;
   error('');
   session = result.structuredContent;
+  connectionState = 'opening';
   $('connection').textContent = 'Открываю сцену…';
   const attached = await call('attach');
   session = attached.structuredContent;
@@ -245,6 +358,7 @@ async function applyUpdate() {
     if (closed || session !== owner || candidate !== next) return;
     session = result.structuredContent;
     const old = frame;
+    library.update(session);
     frame = next.frame;
     old.id = '';
     frame.id = 'scene';
@@ -288,10 +402,19 @@ function updateJobs(jobs) {
     $('job-text').textContent =
       active.stage + (active.progress ? ` ${active.progress.done} / ${active.progress.total}` : '');
     $('cancel').disabled = active.status === 'cancelling';
-    $('cancel').onclick = () =>
-      void app.callServerTool({ name: 'story_cancel', arguments: { jobId: active.id } });
+    $('cancel').onclick = async () => {
+      try {
+        const result = await app.callServerTool({
+          name: 'story_cancel',
+          arguments: { jobId: active.id },
+        });
+        if (result.isError) throw new Error(result.content[0].text);
+      } catch (e) {
+        error(e.message);
+      }
+    };
   }
-  const last = jobs[0];
+  const last = jobs.find((job) => !job.supersededBy);
   $('retry').hidden = !last || !['failed', 'cancelled', 'interrupted'].includes(last.status);
   $('retry').onclick = async () => {
     $('retry').disabled = true;
@@ -330,7 +453,8 @@ addEventListener('message', (event) => {
       clearTimeout(candidate.timer);
       candidate.ready = true;
       $('update').hidden = false;
-      if (!report?.state.playing) void applyUpdate();
+      if (['opening', 'connected'].includes(connectionState) && !report?.state.playing)
+        void applyUpdate();
     }
     return;
   }
@@ -350,6 +474,14 @@ addEventListener('message', (event) => {
     return;
   }
   if (data.report) report = data.report;
+  if (
+    recoveryAck &&
+    ((data.type === 'ready' && recoveryAck.id === undefined) ||
+      (data.type === 'ack' && data.id === recoveryAck.id))
+  ) {
+    data.error ? recoveryAck.reject(new Error(data.error)) : recoveryAck.resolve(data.report);
+    return;
+  }
   if (data.type === 'widget-state') {
     void call('widget', { widget: { id: data.id, snapshot: data.snapshot } }).catch((e) =>
       error(e.message),
@@ -366,6 +498,7 @@ addEventListener('message', (event) => {
     return;
   }
   if (data.type === 'ready') {
+    connectionState = 'connected';
     $('connection').textContent = 'Готово';
     clearTimeout(loadTimer);
     const notices = report.state.restoreNotices?.map((notice) => notice.message) ?? [];
@@ -387,8 +520,17 @@ addEventListener('message', (event) => {
   if (data.type === 'error' || data.type === 'expired') {
     error(data.message);
     $('connection').textContent = 'Сцена остановлена';
+    if (data.type === 'expired')
+      void recoverView(new Error(data.message)).then((ok) => {
+        if (ok) void poll();
+      });
   }
-  if (candidate?.ready && !report?.state.playing) void applyUpdate();
+  if (
+    ['opening', 'connected'].includes(connectionState) &&
+    candidate?.ready &&
+    !report?.state.playing
+  )
+    void applyUpdate();
 });
 $('expand').onclick = async () => {
   const mode = document.documentElement.dataset.mode === 'fullscreen' ? 'inline' : 'fullscreen';
@@ -422,6 +564,10 @@ function host(context) {
 }
 async function dispose() {
   closed = true;
+  connectionState = 'closed';
+  recoveryEpoch++;
+  recoveryAck?.reject(new Error('Представление закрыто.'));
+  recoveryAck = undefined;
   candidate?.restoration?.reject(new Error('Представление закрыто.'));
   clearTimeout(loadTimer);
   clearTimeout(candidate?.timer);
@@ -448,13 +594,20 @@ async function open(result) {
   error('');
   await mount(result);
 }
-const library = libraryUI(app, extensions, { session: () => session, error, open });
+const library = libraryUI(app, extensions, {
+  session: () => session,
+  report: () => report,
+  error,
+  open,
+  ensureConnected,
+});
 const voice = voiceUI(app, { session: () => session, error });
 const preferences = preferencesUI(app, error);
 fileEntrypoint(app, extensions, { open, error });
 $('back').onclick = async () => {
   $('back').disabled = true;
   try {
+    await ensureConnected();
     const result = await app.callServerTool({
       name: 'story_navigate',
       arguments: { sessionId: session.sessionId, back: true },

@@ -124,8 +124,16 @@ test('a native host without RAF keeps prepared observations, reversible suspensi
     assert.equal(failed.report.stateRevision, accepted.report.stateRevision + 1);
     assert.equal(failed.report.renderStatus, 'failed');
     assert.equal(failed.report.state.parameters[0].value, 8);
-    assert.equal(failed.report.checkpoint.values.x, 8);
+    assert.equal(failed.report.checkpoint.values.x, 9);
+    assert.equal(failed.report.state.rendering.requested.values.x, 8);
+    assert.equal(failed.report.state.rendering.presented.values.x, 9);
     assert.equal(await frame.locator('#drawn').innerText(), '9');
+    const captured = await command({ op: 'capture' });
+    assert.equal(
+      captured.result.checkpoint.values.x,
+      9,
+      'release captures the complete visible frame after failed preparation',
+    );
     const stopped = await command({ op: 'control', commands: [{ type: 'pause' }] });
     assert.equal(stopped.error, undefined, 'pause remains available after preparation failure');
     assert.equal(stopped.report.renderStatus, 'failed');

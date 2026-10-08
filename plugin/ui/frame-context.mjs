@@ -42,18 +42,18 @@ export function frameContext(app, extensions) {
     update(session, report) {
       if (removed || closed) return;
       const cue = report.state.cue;
-      const entries = Object.entries(report.checkpoint.values);
+      const entries = Object.entries(report.checkpoint?.values ?? {});
       latest = {
         sessionId: session.sessionId,
         projectId: session.projectId,
         buildRevision: session.buildRevision,
         stateRevision: report.stateRevision,
         renderStatus: report.renderStatus,
-        time: Math.round(report.state.time * 10) / 10,
+        time: Math.round((report.checkpoint?.time ?? report.state.time) * 10) / 10,
         cue: cue
           ? { id: cue.id, label: (cue.action ?? cue.hold ?? cue.text ?? '').slice(0, 160) }
           : undefined,
-        mode: report.state.mode,
+        mode: report.checkpoint?.mode ?? report.state.mode,
         selected: report.state.selected?.slice(0, 4),
         parameters: Object.fromEntries(entries.slice(0, 8).map(([k, v]) => [k, compact(v)])),
         moreParameters: entries.length > 8 ? entries.length - 8 : undefined,

@@ -6,6 +6,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { workflows } from '../plugin/workflows.mjs';
 import { projectFiles } from '../plugin/project-files.mjs';
+import { ProjectStore } from '../plugin/projects.mjs';
+import { revisionInput } from '../plugin/revision-input.mjs';
+import { collectCache } from '../plugin/cache.mjs';
 
 async function fixture(t, mutation = '') {
   const directory = await mkdtemp(join(tmpdir(), 'story-workflow-'));
@@ -87,7 +90,7 @@ test('a generator cannot publish a different input under the captured source rev
         progress() {},
       },
     ),
-    /Scene or package changed during delivery/,
+    /changed its source inputs/,
   );
   assert.equal(await readFile(join(output, 'story.html'), 'utf8'), 'accepted delivery');
   assert.equal(await readFile(join(output, 'delivery.json'), 'utf8'), receipt);
@@ -106,4 +109,73 @@ test('retry reuses verified snapshots and rejects damaged inputs or a newer work
   const recovered = await build({ resumeFrom });
   assert.equal(recovered.sourceRevision, input.sourceRevision);
   assert.match(await html(recovered), /<main>original<\/main>/);
+});
+
+test('explicit revision survives edits, queued cancellation, retry and cache collection; a built release is reused', async (t) => {
+  const counterDirectory = await mkdtemp(join(tmpdir(), 'story-build-counter-'));
+  const counter = join(counterDirectory, 'count');
+  t.after(() => rm(counterDirectory, { recursive: true, force: true }));
+  const { input } = await fixture(
+    t,
+    `
+const counter = ${JSON.stringify(counter)};
+await writeFile(counter, String(Number(await readFile(counter, 'utf8').catch(() => '0')) + 1));
+`,
+  );
+  const projects = new ProjectStore(input.data);
+  await projects.remember({ id: input.projectId, path: input.projectPath, title: input.title });
+  const target = {
+    kind: 'working',
+    projectId: input.projectId,
+    sourceRevision: input.sourceRevision,
+  };
+  const frozen = await revisionInput(input.data, projects, target);
+  await writeFile(join(input.projectPath, 'value.txt'), 'later edit');
+  const task = () => ({ jobId: randomUUID(), signal: new AbortController().signal, progress() {} });
+  // A queued cancellation has no worker snapshot yet. Retry still uses the selected input.
+  const first = await workflows.produce(
+    { data: input.data, ...frozen, resumeFrom: randomUUID(), options: { formats: ['html'] } },
+    task(),
+  );
+  assert.match(await readFile(first.files[0], 'utf8'), /<main>original<\/main>/);
+  assert.equal(first.sourceRevision, target.sourceRevision);
+  assert.equal(await readFile(counter, 'utf8'), '1');
+  const built = await revisionInput(input.data, projects, {
+    kind: 'build',
+    projectId: input.projectId,
+    buildRevision: first.buildRevision,
+  });
+  await collectCache(input.data, {
+    limitMB: 0,
+    projects: [],
+    sessions: [],
+    snapshotLeases: [built.inputSnapshot],
+  });
+  const checkpoint = { time: 3, progress: 0.3, mode: 'explore', values: { x: 4 } };
+  const second = await workflows.produce(
+    { data: input.data, ...built, checkpoint, options: { formats: ['html'] } },
+    task(),
+  );
+  assert.equal(second.buildRevision, first.buildRevision);
+  assert.equal(
+    await readFile(counter, 'utf8'),
+    '1',
+    'ready output is reused without a generator or narration pass',
+  );
+  const receipt = JSON.parse(await readFile(join(second.directory, 'delivery.json'), 'utf8'));
+  assert.deepEqual(receipt.checkpoint, checkpoint);
+  assert.equal(receipt.sourceRevision, target.sourceRevision);
+  assert.match(await readFile(second.files[0], 'utf8'), /scene.restore/);
+  await assert.rejects(
+    revisionInput(input.data, projects, target),
+    (error) => error.code === 'source_conflict',
+  );
+  await writeFile(
+    join(input.data, 'snapshots', built.inputSnapshot, 'dist/index.html'),
+    '<main>tampered</main>',
+  );
+  await assert.rejects(
+    workflows.produce({ data: input.data, ...built, options: { formats: ['html'] } }, task()),
+    /prepared build is unavailable or changed/,
+  );
 });

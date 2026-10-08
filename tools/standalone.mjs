@@ -22,6 +22,15 @@ function elements(html, tag) {
   return nodes;
 }
 const audioElements = (html) => elements(html, 'audio');
+/** Restore a portable observation through the existing SceneHandle after its authored startup. */
+export function withCheckpoint(html, checkpoint) {
+  if (!checkpoint) return html;
+  const value = JSON.stringify(checkpoint).replaceAll('<', '\\u003c');
+  const script = `<script type="module">window.galleryReady=Promise.resolve(window.galleryReady).then(async()=>{await document.fonts.ready;const scene=document.querySelector('.ve-scene')?.scene;if(!scene?.restore)throw new Error('Saved conditions require SceneHandle.restore');scene.pause?.();await scene.restore(${value});await scene.ready?.();});</script>`;
+  return html.includes('</body>')
+    ? html.replace('</body>', () => script + '</body>')
+    : html + script;
+}
 function replaceSpans(html, edits) {
   const unique = [...new Map(edits.map((edit) => [edit[0].startOffset, edit])).values()];
   for (const [span, text] of unique.sort((a, b) => b[0].startOffset - a[0].startOffset))

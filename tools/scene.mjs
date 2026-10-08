@@ -43,7 +43,7 @@ if (process.argv[2] === 'characters') {
   const serverOptions = { port: { type: 'string', default: '8793' } };
   const commandOptions = {
     new: {
-      example: { type: 'string', default: 'explorer-svg' },
+      example: { type: 'string' },
       'no-audio': { type: 'boolean', default: false },
       silent: { type: 'boolean', default: false },
       audio: { type: 'boolean', default: false },
@@ -67,13 +67,15 @@ if (process.argv[2] === 'characters') {
     preview: serverOptions,
     deliver: {
       ...outputOption,
-      formats: { type: 'string', default: 'mp4' },
+      formats: { type: 'string', default: 'html' },
       silent: { type: 'boolean', default: false },
       width: { type: 'string', default: '1280' },
       height: { type: 'string' },
       fps: { type: 'string', default: '30' },
       jobs: { type: 'string', default: '2' },
       theme: { type: 'string', default: 'light' },
+      from: { type: 'string' },
+      to: { type: 'string' },
     },
     pack: {
       ...outputOption,
@@ -123,9 +125,10 @@ Compare content even when versions match; detect stale sources or modified runti
       command === 'new'
         ? `${newUsage}\n\n--no-audio defers narration while keeping its editable script.\n--silent creates a scene without speech files or audio controls, preserving cues and asset credits.\n--audio synthesizes the template narration immediately using voice.json. Without a provider, local neural Higgs is used through sketch-audio. Missing Higgs stops preparation; system voices require explicit provider: macos. In the plugin, story_voice owns this choice.`
         : command === 'deliver'
-          ? `visual-story deliver DIRECTORY [--out artifacts/release] [--formats mp4,html,srt,vtt,source]
+          ? `visual-story deliver DIRECTORY [--out artifacts/release] [--formats html,png,svg,mp4,srt,vtt,source]
 
-Runs cached narration, builds, and publishes the requested files together. Default: mp4.
+Runs cached narration, builds, and publishes the requested files together. Default: html.
+MP4 exports the whole story; --from SECONDS --to SECONDS selects an interval.
 Video: --width 1280 [--height 720] --fps 30 --jobs 2 --theme light|dark
 --silent keeps an explicitly silent draft. HTML follows the viewer's theme.
 Re-run the same command after changing a line; unchanged voice segments use the cache.`
@@ -192,6 +195,10 @@ Re-run the same command after changing a line; unchanged voice segments use the 
           await deliver(destination, {
             ...values,
             formats: values.formats.split(','),
+            video:
+              values.from !== undefined || values.to !== undefined
+                ? { kind: 'interval', from: Number(values.from), to: Number(values.to) }
+                : { kind: 'story' },
             width: Number(values.width),
             height: values.height === undefined ? undefined : Number(values.height),
             fps: Number(values.fps),

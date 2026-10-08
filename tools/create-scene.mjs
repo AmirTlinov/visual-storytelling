@@ -10,7 +10,7 @@ import { buildOutput } from './build-output.mjs';
 export async function createScene(
   destination,
   {
-    example = 'explorer-svg',
+    example,
     deferAudio = false,
     silent = false,
     audio = false,
@@ -21,6 +21,10 @@ export async function createScene(
   signal?.throwIfAborted();
   destination = resolve(destination);
   const catalog = JSON.parse(await readFile(join(root, 'examples/catalog.json'), 'utf8'));
+  if (!example)
+    throw new Error(
+      'Choose a starting point with visual-story examples, then pass --example NAME.',
+    );
   if ([audio, deferAudio, silent].filter(Boolean).length > 1)
     throw new Error('Choose one of --audio, --no-audio or --silent');
   if (!catalog[example]) throw new Error(`Choose an example: ${Object.keys(catalog).join(', ')}`);

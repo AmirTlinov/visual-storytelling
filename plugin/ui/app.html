@@ -36,8 +36,20 @@
       </form>
     </section>
     <div id="release-options" hidden role="group" aria-label="Формат выпуска">
+      <label
+        >Редакция
+        <select id="release-version">
+          <option value="build">Показанная версия</option>
+          <option value="working">Последние правки</option>
+        </select></label
+      >
+      <label
+        ><input id="release-current" type="checkbox" /> Текущие условия · HTML и изображения</label
+      >
       <button data-format="html">Интерактив · HTML</button
-      ><button data-format="mp4">Видео · MP4</button
+      ><button data-format="png">Изображение · PNG</button
+      ><button data-format="svg">Векторный рисунок · SVG</button
+      ><button data-format="mp4">Рассказ · MP4</button
       ><button data-format="source">Редактируемый проект</button>
     </div>
     <section id="voice-options" hidden aria-label="Озвучка">
@@ -64,6 +76,7 @@
     </main>
     <p id="notice" role="status" hidden></p>
     <p id="error" role="alert" hidden></p>
+    <button id="reconnect" hidden>Восстановить связь</button>
     <button id="retry" hidden>Продолжить подготовку</button>
     <p id="artifacts" hidden></p>
     <footer>

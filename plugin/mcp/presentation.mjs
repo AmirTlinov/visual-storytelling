@@ -23,6 +23,7 @@ export function presentSession(value, detail = 'state') {
     capabilities: state.capabilities,
     compatibility: state.compatibility,
     restoreNotices: state.restoreNotices,
+    rendering: state.rendering,
     parameters: state.parameters,
     cue:
       state.cue ??

@@ -1,5 +1,9 @@
 /** Project navigation and release choices use the same MCP operations as the agent. */
-export function libraryUI(app, extensions, { open, session, error }) {
+export function libraryUI(
+  app,
+  extensions,
+  { open, session, error, ensureConnected = async () => {} },
+) {
   const $ = (id) => document.getElementById(id);
   let opening = false;
   function closeLibrary() {
@@ -61,14 +65,15 @@ export function libraryUI(app, extensions, { open, session, error }) {
         content.append(heading);
         for (const item of entries)
           content.append(
-            row(item.title, item.summary ?? item.path, () =>
-              session()
+            row(item.title, item.summary ?? item.path, async () => {
+              if (session()) await ensureConnected();
+              return session()
                 ? call('story_navigate', {
                     sessionId: session().sessionId,
                     target: item.path ? { projectId: item.id } : { example: item.id },
                   }).then(() => undefined)
-                : call('story_open', item.path ? { projectId: item.id } : { example: item.id }),
-            ),
+                : call('story_open', item.path ? { projectId: item.id } : { example: item.id });
+            }),
           );
       }
     } catch (e) {
@@ -80,6 +85,11 @@ export function libraryUI(app, extensions, { open, session, error }) {
     $('release-options').hidden = !$('release-options').hidden;
     $('release').setAttribute('aria-expanded', String(!$('release-options').hidden));
     if (!$('release-options').hidden) $('release-options').querySelector('button').focus();
+  };
+  $('release-version').onchange = () => {
+    const working = $('release-version').value === 'working';
+    $('release-current').disabled = working;
+    if (working) $('release-current').checked = false;
   };
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
@@ -99,14 +109,36 @@ export function libraryUI(app, extensions, { open, session, error }) {
           throw new Error(
             'Для собственного выпуска сначала создайте проект из этого примера в чате.',
           );
-        const { structuredContent: project } = await call('story_inspect', {
+        let target = {
+          kind: 'build',
           projectId: current.projectId,
-        });
+          buildRevision: current.buildRevision,
+        };
+        const conditions = $('release-current').checked ? 'current' : 'authored';
+        if (conditions === 'current' && !['html', 'png', 'svg'].includes(button.dataset.format))
+          throw new Error(
+            'Текущие условия сохраняются в HTML, PNG и SVG. Для рассказа или исходников снимите этот флажок.',
+          );
+        if ($('release-version').value === 'working') {
+          const { structuredContent: project } = await call('story_inspect', {
+            projectId: current.projectId,
+          });
+          target = {
+            kind: 'working',
+            projectId: current.projectId,
+            sourceRevision: project.sourceRevision,
+          };
+        }
+        if (conditions === 'current') await ensureConnected();
         await call('story_produce', {
-          projectId: project.id,
-          sourceRevision: project.sourceRevision,
+          target,
           requestId: crypto.randomUUID(),
-          options: { formats: [button.dataset.format] },
+          options: {
+            formats: [button.dataset.format],
+            conditions,
+            ...(conditions === 'current' ? { sessionId: current.sessionId } : {}),
+            ...(button.dataset.format === 'mp4' ? { video: { kind: 'story' } } : {}),
+          },
         });
         $('release-options').hidden = true;
         $('release').setAttribute('aria-expanded', 'false');
@@ -121,7 +153,11 @@ export function libraryUI(app, extensions, { open, session, error }) {
   return {
     update(current) {
       $('release').hidden = !current?.projectId;
+      $('release').disabled = !current?.sourceRevision;
       $('release-options').hidden = true;
+      $('release-version').value = 'build';
+      $('release-current').checked = false;
+      $('release-current').disabled = false;
       artifactsKey = undefined;
     },
     artifacts(files) {

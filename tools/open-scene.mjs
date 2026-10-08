@@ -91,6 +91,13 @@ export async function openScene(page, url) {
         if (!handle) throw new Error('Scene commands need a registered owner');
         return handle.control(commands);
       },
+      async restore(checkpoint) {
+        const handle = owner();
+        if (!handle?.restore) throw new Error('Current conditions need SceneHandle.restore');
+        pause();
+        await handle.restore(checkpoint);
+        await handle.ready?.();
+      },
       presentation: () => owner()?.presentation(),
       diagnostics: () =>
         documents().flatMap((doc) =>

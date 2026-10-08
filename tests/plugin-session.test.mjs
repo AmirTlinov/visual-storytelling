@@ -44,6 +44,77 @@ async function acknowledge(directory, view, id, state = report(1, 4)) {
   });
 }
 
+test('recovery keeps its renderer and last frame, rejects uncertain commands, and cannot take over another view', async (t) => {
+  const { directory, session, view } = await fixture(t);
+  await directory.exchange({ ...view, report: report(2, 4), wait: false });
+  const args = {
+    op: 'control',
+    buildRevision: build.revision,
+    stateRevision: 2,
+    requestId: 'uncertain-once',
+    commands: [{ type: 'seek', time: 8 }],
+  };
+  const pending = request(directory, session.id, args);
+  await directory.exchange(view);
+  const recovered = await directory.recover({
+    ...view,
+    serverInstance: directory.instance,
+    report: report(2, 4),
+  });
+  assert.equal(recovered.generation, view.generation);
+  assert.equal(recovered.recovery, 'resume');
+  assert.equal(recovered.state.time, 4);
+  await assert.rejects(pending, /Connection interrupted/);
+  await assert.rejects(directory.request(session.id, args), /Connection interrupted/);
+  assert.deepEqual(
+    (await directory.exchange(view)).commands,
+    [],
+    'an uncertain intent is never replayed',
+  );
+  await assert.rejects(
+    directory.recover({ ...view, renderer: randomUUID(), serverInstance: directory.instance }),
+    (error) => error.code === 'view_replaced',
+  );
+  const checkpoint = session.checkpoint;
+  await directory.exchange({
+    ...view,
+    report: {
+      stateRevision: 3,
+      state: { time: 9, playing: false },
+      renderStatus: 'failed',
+      observationError: 'prepare failed',
+    },
+    wait: false,
+  });
+  assert.deepEqual(
+    session.checkpoint,
+    checkpoint,
+    'failed preparation retains the last confirmed checkpoint',
+  );
+});
+
+test('a persisted session reloads once after runtime restart without taking an attached owner', async (t) => {
+  const { directory, session, view } = await fixture(t);
+  const restarted = new SessionDirectory({ pollTimeout: 5 });
+  t.after(() => restarted.close());
+  const restored = restarted.open(build);
+  Object.assign(restored, { generation: view.generation, checkpoint: report(2, 4).checkpoint });
+  const input = { ...view, sessionId: restored.id, serverInstance: directory.instance };
+  const result = await restarted.recover(input);
+  assert.equal(result.recovery, 'reload');
+  assert.equal(result.generation, view.generation + 1);
+  assert.equal(result.checkpoint.time, 4);
+  assert.equal(
+    (await restarted.recover(input)).generation,
+    result.generation,
+    'lost recovery response does not attach twice',
+  );
+  await assert.rejects(
+    restarted.recover({ ...input, renderer: randomUUID() }),
+    (error) => error.code === 'view_replaced',
+  );
+});
+
 test('reports and acknowledgements cannot consume commands belonging to the poll channel', async (t) => {
   const { directory, session, view } = await fixture(t);
   const pending = request(directory, session.id, {

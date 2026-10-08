@@ -84,6 +84,9 @@ header {
 header > div {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
 }
 .brand {
   font-size: 12px;

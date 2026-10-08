@@ -84,6 +84,39 @@ test('concurrent repeated preparation shares one worker and persists every reque
   await reopened.close();
 });
 
+test('new working builds coalesce while explicit releases keep their selected input; inspect waits are bounded', async (t) => {
+  const { runner } = await fixture(t);
+  const old = await runner.enqueue(
+    'build',
+    { projectId: 'p', sourceRevision: 'a', inputSnapshot: 'a', hold: true },
+    randomUUID(),
+  );
+  await wait(() => runner.get(old.id).status === 'running');
+  const released = await runner.enqueue(
+    'produce',
+    { projectId: 'p', sourceRevision: 'a', inputSnapshot: 'a', value: 'selected' },
+    randomUUID(),
+  );
+  const middle = await runner.enqueue(
+    'build',
+    { projectId: 'p', sourceRevision: 'b', inputSnapshot: 'b', value: 'middle' },
+    randomUUID(),
+  );
+  const latest = await runner.enqueue(
+    'build',
+    { projectId: 'p', sourceRevision: 'c', inputSnapshot: 'c', value: 'latest' },
+    randomUUID(),
+  );
+  assert.equal(runner.get(middle.id).status, 'cancelled');
+  assert.equal(runner.get(middle.id).supersededBy, latest.id);
+  const start = performance.now();
+  assert.equal((await runner.wait(released.id, { timeout: 20 })).status, 'queued');
+  assert.ok(performance.now() - start < 200);
+  assert.equal((await runner.wait(released.id)).result.value, 'selected');
+  assert.equal((await runner.wait(latest.id)).result.value, 'latest');
+  assert.equal(runner.get(old.id).status, 'cancelled');
+});
+
 test('a worker that exits immediately or a failed initial save cannot strand the queue', async (t) => {
   const { runner } = await fixture(t),
     original = runner.save.bind(runner),

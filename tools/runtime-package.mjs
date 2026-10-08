@@ -154,6 +154,41 @@ async function installedRuntime(directory) {
   }
 }
 
+/** Read declared package metadata directly; API discovery never installs or builds a project. */
+export async function readPinnedRuntime(directory) {
+  const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
+  const declarations = fields.flatMap((field) =>
+    manifest[field]?.[name] ? [manifest[field][name]] : [],
+  );
+  if (declarations.length !== 1)
+    throw new Error(`Scene must declare ${name} in exactly one dependency field.`);
+  const spec = declarations[0];
+  if (typeof spec === 'string' && managed.test(spec)) {
+    if (!(await archivedBuild(spec, directory)))
+      throw new Error(
+        'The declared runtime archive is missing or changed. Restore it or explicitly migrate the project.',
+      );
+    const archive = localFile(spec, directory);
+    const read = async (file) =>
+      JSON.parse((await execute('tar', ['-xOf', archive, 'package/' + file], command())).stdout);
+    const [api, catalog] = await Promise.all([
+      read('dist/api.json'),
+      read('examples/catalog.json'),
+    ]);
+    return { root: archive + '/package', api, catalog };
+  }
+  const installed = await installedRuntime(directory);
+  if (!valid(installed))
+    throw new Error(
+      'The declared runtime archive is missing or changed. Restore it or explicitly migrate the project.',
+    );
+  return {
+    root: installed.root,
+    api: JSON.parse(await readFile(join(installed.root, 'dist/api.json'), 'utf8')),
+    catalog: JSON.parse(await readFile(join(installed.root, 'examples/catalog.json'), 'utf8')),
+  };
+}
+
 /** Update only this runtime; authored scripts, assets and other dependency specs survive. */
 export async function updateSceneRuntime(destination, options = {}) {
   destination = resolve(destination);

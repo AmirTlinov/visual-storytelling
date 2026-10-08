@@ -156,6 +156,7 @@ test(
         () =>
           document.querySelector('iframe').contentDocument.documentElement.dataset.theme === 'dark',
       );
+      await page.waitForFunction(() => window.pluginTest.context?.structuredContent?.visualStory);
       await page.evaluate(() => window.pluginTest.removeContext());
       const removed = await page.evaluate(() => window.pluginTest.context);
       await scene.getByRole('slider', { name: 'По горизонтали', exact: true }).fill('-1');

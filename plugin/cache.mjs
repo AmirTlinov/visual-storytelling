@@ -32,12 +32,17 @@ export async function collectCache(data, { limitMB, projects, sessions, snapshot
     const saved = await readJSON(join(data, 'sessions', name));
     if (saved?.buildRevision) keepBuilds.add(saved.buildRevision);
   }
+  for (const id of snapshotLeases) {
+    const snapshot = join(data, 'snapshots', id);
+    keepSnapshots.add(snapshot);
+    const input = await readJSON(join(snapshot, '.vstory-input.json'));
+    if (input?.buildRevision) keepBuilds.add(input.buildRevision);
+  }
   for (const revision of keepBuilds) {
     if (!/^[a-zA-Z0-9._-]+$/.test(revision)) continue;
     const build = await readJSON(join(data, 'builds', revision + '.json'));
     if (build?.snapshot) keepSnapshots.add(resolve(build.snapshot));
   }
-  for (const id of snapshotLeases) keepSnapshots.add(join(data, 'snapshots', id));
   for (const snapshot of keepSnapshots) {
     const link = await readlink(join(snapshot, 'node_modules')).catch((error) => {
       if (['ENOENT', 'EINVAL'].includes(error.code)) return null;

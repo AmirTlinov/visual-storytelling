@@ -22,6 +22,8 @@ import { writeJSON, readJSON } from './runtime/storage.mjs';
 import { prepareEnvironment } from './environment.mjs';
 import { buildNarration } from '../tools/narration.mjs';
 import { updateSceneRuntime } from '../tools/runtime-package.mjs';
+import { contentDigest } from '../tools/build-info.mjs';
+import { captureWorkingInput } from './revision-input.mjs';
 const execute = promisify(execFile);
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -106,36 +108,77 @@ async function prepare(input, task) {
   const { data, projectPath, sourceRevision } = input;
   const snapshot = join(data, 'snapshots', task.jobId);
   task.progress('Сохраняю исходники…');
-  const original = input.resumeFrom && join(data, 'snapshots', input.resumeFrom);
-  const receipt = original && (await readJSON(join(original, '.vstory-input.json')));
-  if (original && !receipt && !sourceRevision)
-    throw new Error(
-      'The original preparation inputs expired. Open the project to prepare its current revision.',
-    );
-  const captured = receipt && (receipt.preparedRevision ?? receipt.revision);
-  const reusable =
-    receipt &&
-    (!sourceRevision || receipt.revision === sourceRevision) &&
-    (await projectFiles(original).then(
-      (value) => value.revision === captured,
+  let original, receipt, captured;
+  for (const id of new Set([input.resumeFrom, input.inputSnapshot].filter(Boolean))) {
+    const candidate = join(data, 'snapshots', id);
+    const saved = await readJSON(join(candidate, '.vstory-input.json'));
+    if (!saved || (sourceRevision && saved.revision !== sourceRevision)) continue;
+    const revision = saved.preparedRevision ?? saved.revision;
+    const valid = await projectFiles(candidate).then(
+      (value) => value.revision === revision,
       (error) => {
         if (error.code === 'ENOENT') return false;
         throw error;
       },
-    ));
+    );
+    if (valid) {
+      original = candidate;
+      receipt = saved;
+      captured = revision;
+      break;
+    }
+  }
+  if (input.resumeFrom && !receipt && !sourceRevision)
+    throw new Error(
+      'The original preparation inputs expired. Open the project to prepare its current revision.',
+    );
+  const reusable = Boolean(receipt);
   let source;
   if (reusable) {
     await snapshotProject(original, snapshot, captured);
     source = { revision: receipt.revision, files: receipt.files };
-  } else source = await snapshotProject(projectPath, snapshot, sourceRevision ?? receipt?.revision);
+  } else {
+    if (input.inputSnapshot)
+      throw new Error(
+        'The selected immutable inputs are unavailable or changed. Choose a new revision.',
+      );
+    source = await snapshotProject(projectPath, snapshot, sourceRevision ?? receipt?.revision);
+  }
   await writeJSON(join(snapshot, '.vstory-input.json'), source);
   await dependencies(snapshot, data, task);
   const voice = await readJSON(join(snapshot, 'voice.json'));
-  if (voice?.enabled) await buildNarration(snapshot, { ...task, cache: join(data, 'speech') });
+  if (voice?.enabled && !(reusable && receipt.preparedRevision)) {
+    await prepareEnvironment(data, {
+      ...task,
+      voice: (voice.provider ?? 'higgs') === 'higgs',
+      encoder: true,
+    });
+    await buildNarration(snapshot, { ...task, cache: join(data, 'speech') });
+  }
   task.signal.throwIfAborted();
   const preparedRevision = (await projectFiles(snapshot)).revision;
-  await writeJSON(join(snapshot, '.vstory-input.json'), { ...source, preparedRevision });
-  return { snapshot, source, preparedRevision, silent: voice?.enabled === false };
+  let prepared;
+  const buildRevision = input.buildRevision ?? (reusable && receipt.buildRevision);
+  if (buildRevision) {
+    prepared = await readJSON(join(data, 'builds', buildRevision + '.json'));
+    if (
+      !prepared ||
+      prepared.sourceRevision !== source.revision ||
+      !prepared.outputDigest ||
+      !reusable ||
+      (await contentDigest(join(original, 'dist'), ['.'])) !== prepared.outputDigest
+    )
+      throw new Error(
+        'The selected prepared build is unavailable or changed. Prepare a new revision.',
+      );
+    await cp(join(original, 'dist'), join(snapshot, 'dist'), { recursive: true });
+  }
+  await writeJSON(join(snapshot, '.vstory-input.json'), {
+    ...source,
+    preparedRevision,
+    buildRevision: prepared?.revision,
+  });
+  return { snapshot, source, preparedRevision, prepared, silent: voice?.enabled === false };
 }
 
 async function unchangedInputs(snapshot, revision) {
@@ -143,6 +186,48 @@ async function unchangedInputs(snapshot, revision) {
     throw new Error(
       'Preparation changed its source inputs. Generators must write only to VISUAL_STORY_OUTPUT. Fix the generator and prepare the new project revision.',
     );
+}
+
+/** Build once; live preview, review and delivery consume the same verified artifact. */
+async function prepareBuild(input, task) {
+  const result = await prepare(input, task);
+  if (result.prepared) return result;
+  const { snapshot, source, preparedRevision, silent } = result;
+  const output = join(snapshot, 'dist');
+  task.progress('Собираю объяснение…');
+  await buildScene(snapshot, output, { signal: task.signal, silent });
+  task.signal.throwIfAborted();
+  const html = await packDirectory(output, 'index.html', {
+    audio: 'original',
+    signal: task.signal,
+  });
+  await unchangedInputs(snapshot, preparedRevision);
+  const outputDigest = await contentDigest(output, ['.']);
+  const revision = digest(
+    JSON.stringify({
+      projectId: input.projectId,
+      sourceRevision: source.revision,
+      title: input.title,
+      html,
+      outputDigest,
+    }),
+  );
+  const prepared = {
+    title: input.title,
+    projectId: input.projectId,
+    sourceRevision: source.revision,
+    revision,
+    html,
+    snapshot,
+    outputDigest,
+  };
+  await writeJSON(join(input.data, 'builds', revision + '.json'), prepared);
+  await writeJSON(join(snapshot, '.vstory-input.json'), {
+    ...source,
+    preparedRevision,
+    buildRevision: revision,
+  });
+  return { ...result, prepared };
 }
 
 export const workflows = {
@@ -185,56 +270,47 @@ export const workflows = {
           deferAudio: true,
           signal: task.signal,
         });
+    const authored = await projectFiles(
+      input.inputSnapshot ? join(input.data, 'snapshots', input.inputSnapshot) : input.projectPath,
+    );
+    const frozen = input.inputSnapshot
+      ? input
+      : await captureWorkingInput(
+          input.data,
+          {
+            id: input.projectId,
+            path: input.projectPath,
+            title: input.title,
+          },
+          authored.revision,
+        );
+    task.authored?.({
+      id: input.projectId,
+      path: input.projectPath,
+      title: input.title,
+      sourceRevision: frozen.sourceRevision,
+      files: authored.files,
+      inputSnapshot: frozen.inputSnapshot,
+    });
     return {
       ...created,
       ...(await workflows.build(
-        { ...input, resumeFrom: exists ? input.resumeFrom : undefined, sourceRevision: undefined },
+        { ...input, ...frozen, resumeFrom: exists ? input.resumeFrom : undefined },
         task,
       )),
     };
   },
   async build(input, task) {
-    const { snapshot, source, preparedRevision, silent } = await prepare(input, task);
-    const output = join(snapshot, 'dist');
-    task.progress('Собираю объяснение…');
-    await buildScene(snapshot, output, { signal: task.signal, silent });
-    task.signal.throwIfAborted();
-    const html = await packDirectory(output, 'index.html', {
-      audio: 'original',
-      signal: task.signal,
-    });
-    await unchangedInputs(snapshot, preparedRevision);
-    const revision = digest(
-      JSON.stringify({
-        projectId: input.projectId,
-        sourceRevision: source.revision,
-        title: input.title,
-        html,
-      }),
-    );
-    const build = {
-      title: input.title,
-      projectId: input.projectId,
-      sourceRevision: source.revision,
-      revision,
-      html,
-      snapshot,
-    };
-    await writeJSON(join(input.data, 'builds', revision + '.json'), build);
-    return { buildRevision: revision, sourceRevision: source.revision, snapshot };
+    const { snapshot, source, prepared } = await prepareBuild(input, task);
+    return { buildRevision: prepared.revision, sourceRevision: source.revision, snapshot };
   },
   async produce(input, task) {
-    const { snapshot, source, silent } = await prepare(input, task);
+    const { snapshot, source, silent, prepared } = await prepareBuild(input, task);
     const formats = input.options?.formats ?? ['html'];
     await prepareEnvironment(input.data, {
       ...task,
-      browser: formats.some((format) => ['mp4', 'srt', 'vtt'].includes(format)),
-      encoder:
-        formats.includes('mp4') ||
-        (await access(join(snapshot, 'audio.wav')).then(
-          () => true,
-          () => false,
-        )),
+      browser: formats.some((format) => ['png', 'svg', 'mp4', 'srt', 'vtt'].includes(format)),
+      encoder: formats.includes('mp4'),
     });
     task.progress('Готовлю выпуск…');
     const output = join(input.projectPath, 'artifacts', task.jobId);
@@ -243,17 +319,21 @@ export const workflows = {
       silent: input.options?.silent ?? silent,
       out: output,
       prepareAudio: false,
+      prepared: { ...prepared, directory: join(snapshot, 'dist') },
+      checkpoint: input.checkpoint,
       signal: task.signal,
       onProgress: (done, total) => task.progress('Собираю видео…', { done, total }),
     });
     return {
       ...result,
       sourceRevision: source.revision,
+      buildRevision: prepared.revision,
+      target: input.target,
       files: result.files.map((file) => join(output, file)),
     };
   },
   async review(input, task) {
-    const { snapshot, source, preparedRevision, silent } = await prepare(input, task);
+    const { snapshot, source, preparedRevision, prepared } = await prepareBuild(input, task);
     const cli = join(snapshot, 'node_modules/@visual-storytelling/core/tools/scene.mjs');
     await access(cli).catch((error) => {
       if (error.code !== 'ENOENT') throw error;
@@ -261,8 +341,6 @@ export const workflows = {
         'The pinned project runtime has no review CLI. Migrate this project before reviewing it.',
       );
     });
-    task.progress('Собираю сцену для просмотра…');
-    await buildScene(snapshot, join(snapshot, 'dist'), { signal: task.signal, silent });
     await unchangedInputs(snapshot, preparedRevision);
     await prepareEnvironment(input.data, { ...task, browser: true });
     const options = input.options ?? {};
@@ -307,7 +385,13 @@ export const workflows = {
       const files = ['path', 'image', 'framesImage', 'photometryImage']
         .map((key) => result[key])
         .filter((path) => typeof path === 'string' && path.startsWith(canonicalOutput + '/'));
-      return { ...result, sourceRevision: source.revision, files };
+      return {
+        ...result,
+        sourceRevision: source.revision,
+        buildRevision: prepared.revision,
+        target: { kind: 'build', projectId: input.projectId, buildRevision: prepared.revision },
+        files,
+      };
     } catch (error) {
       await rm(output, { recursive: true, force: true });
       throw error;

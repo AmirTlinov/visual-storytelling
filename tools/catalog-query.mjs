@@ -11,7 +11,19 @@ export function selectExamples(catalog, { query = '', group = '', recommended = 
   return Object.entries(catalog)
     .map(([id, entry]) => ({ id, ...entry }))
     .filter((entry) => {
-      const text = normalize([entry.id, entry.title, entry.summary, ...entry.tags].join(' '));
+      const text = normalize(
+        [
+          entry.id,
+          entry.title,
+          entry.summary,
+          entry.useFor,
+          entry.visibleAction,
+          entry.capabilities,
+          entry.tags,
+        ]
+          .flat()
+          .join(' '),
+      );
       return (
         (!group || entry.group === group) &&
         (!recommended || entry.recommended) &&

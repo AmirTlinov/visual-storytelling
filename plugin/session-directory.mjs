@@ -165,7 +165,36 @@ export class SessionDirectory {
 
   validate(s, renderer, generation) {
     if (this.closed || s.renderer !== renderer || s.generation !== generation)
-      throw new Error('This view has been replaced. Reopen it to continue here.');
+      throw failure('view_replaced', 'This view has been replaced. Reopen it to continue here.', {
+        action: 'story_open',
+      });
+  }
+
+  /** Recovery can resume its own renderer, never take ownership from another card. */
+  async recover({ sessionId, renderer, generation, serverInstance, report }) {
+    const s = this.get(sessionId);
+    if (s.handoff || s.replacement)
+      throw failure('view_handoff', 'The view is changing. Retry after the handoff.');
+    const retry =
+      s.recovery?.renderer === renderer &&
+      s.recovery.generation === generation &&
+      s.recovery.serverInstance === serverInstance;
+    if (serverInstance !== this.instance) {
+      if (!retry && (s.renderer || s.generation !== generation))
+        throw failure('view_replaced', 'Another view owns this scene. Open it here to continue.', {
+          action: 'story_open',
+        });
+      const attached = await this.attach(sessionId, renderer);
+      s.recovery = { renderer, generation, serverInstance };
+      return { ...attached, recovery: 'reload' };
+    }
+    this.validate(s, renderer, generation);
+    // An unconfirmed command may already have run. Inspection determines its outcome;
+    // reconnecting must never execute it a second time.
+    this.rejectPending(s, 'Connection interrupted. Inspect the scene before another command.');
+    if (report) await this.exchange({ sessionId, renderer, generation, report, wait: false });
+    s.lastPollAt = Date.now();
+    return { ...this.describe(s), recovery: 'resume' };
   }
 
   /** Keep the old owner until the candidate has restored its final, suspended checkpoint. */
@@ -271,14 +300,14 @@ export class SessionDirectory {
         !report.state ||
         typeof report.state !== 'object' ||
         Array.isArray(report.state) ||
-        !report.checkpoint ||
-        typeof report.checkpoint !== 'object' ||
-        Array.isArray(report.checkpoint)
+        (!report.checkpoint && report.renderStatus !== 'failed') ||
+        (report.checkpoint &&
+          (typeof report.checkpoint !== 'object' || Array.isArray(report.checkpoint)))
       )
         throw new Error('Invalid scene report.');
       if (report.stateRevision >= s.stateRevision) {
         s.state = report.state;
-        s.checkpoint = report.checkpoint;
+        if (report.checkpoint) s.checkpoint = report.checkpoint;
         s.stateRevision = report.stateRevision;
         s.renderStatus = report.renderStatus ?? 'rendered';
         s.observationError = report.observationError;

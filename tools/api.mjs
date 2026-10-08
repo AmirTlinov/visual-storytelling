@@ -151,11 +151,18 @@ export async function buildAPI(root, output) {
 
 /** Read actual public signatures without requiring TypeScript or implementation sources. */
 export async function describeAPI(root, ...queries) {
+  return describeAPIData(
+    JSON.parse(await readFile(join(root, 'dist/api.json'), 'utf8')),
+    root,
+    ...queries,
+  );
+}
+
+/** The same declaration reader works before dependencies exist, using the pinned archive. */
+export function describeAPIData(api, root, ...queries) {
   const full = queries.includes('--full');
   queries = queries.filter((query) => query !== '--full');
-  const { name, modules, signatures, members, declarations } = JSON.parse(
-    await readFile(join(root, 'dist/api.json'), 'utf8'),
-  );
+  const { name, modules, signatures, members, declarations } = api;
   const importName = (entry) => name + (entry === '.' ? '' : entry.slice(1));
   // Dedicated entry points avoid pulling aggregate browser assets into pure helpers.
   const entries = Object.entries(modules).sort(([a], [b]) => Number(a === '.') - Number(b === '.'));

@@ -17,6 +17,7 @@ export async function renderer({
   entry = 'index.html',
   reduced = false,
   signal,
+  checkpoint,
 }) {
   signal?.throwIfAborted();
   if (![width, height].every((n) => Number.isInteger(n) && n > 0 && n <= 8192))
@@ -83,7 +84,9 @@ export async function renderer({
       page.off('pageerror', onStartupFailure);
     }
     await capture.evaluate((scene) => scene.pause());
-    if (!controls)
+    // A captured viewport owns its composition size. Hiding control rows would
+    // change the available height before restoring the saved camera.
+    if (!controls && !checkpoint)
       await page.evaluate(() => {
         document.querySelector('.ve-scene')?.setAttribute('data-scene-export', '');
         const drawing = document.querySelector('svg.canvas,svg.vs-canvas');
@@ -120,6 +123,11 @@ export async function renderer({
       if (errors.length) throw new Error(`Scene failed: ${errors.join('; ')}`);
     };
     await seek(0);
+    if (checkpoint)
+      await capture.evaluate(async (scene, value) => {
+        await scene.restore(value);
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      }, checkpoint);
     signal?.throwIfAborted();
     let screenshots;
     return {
@@ -134,9 +142,16 @@ export async function renderer({
       control: (commands) => controlScene(capture, commands),
       async png() {
         const frame = page.locator('[data-scene-frame]').first();
+        const stage = page.locator('.ve-stage').first();
         const main = page.locator('.ve-scene').first();
         const target =
-          !controls && (await frame.count()) ? frame : (await main.count()) ? main : undefined;
+          !controls && (await frame.count())
+            ? frame
+            : checkpoint && (await stage.count())
+              ? stage
+              : (await main.count())
+                ? main
+                : undefined;
         if (!target) return page.screenshot({ fullPage: true });
         const area = await target.evaluate((element) => {
           const { x, y, width, height } = element.getBoundingClientRect();

@@ -118,17 +118,25 @@ function scheduleLayout() {
     }
   });
 }
-const report = (reason, detail = 'state') => ({
-  state: presentSession(
-    { state: scene.inspect({ presentation: detail === 'presentation' }) },
-    detail,
-  ).state,
-  checkpoint: scene.capture(),
-  stateRevision,
-  renderStatus,
-  observationError,
-  reason,
-});
+const report = (reason, detail = 'state') => {
+  let checkpoint;
+  try {
+    checkpoint = scene.capture();
+  } catch (error) {
+    if (error.code !== 'scene_not_presented') throw error;
+  }
+  return {
+    state: presentSession(
+      { state: scene.inspect({ presentation: detail === 'presentation' }) },
+      detail,
+    ).state,
+    checkpoint,
+    stateRevision,
+    renderStatus,
+    observationError,
+    reason,
+  };
+};
 function failedReport(error, reason, detail) {
   // These are the accepted runtime inputs, not a completed or displayed frame.
   // Publishing their revision is essential for inspect -> corrective control.
@@ -261,6 +269,31 @@ addEventListener('message', (event) => {
   }
   if (event.data.type !== 'command') return;
   const request = event.data.command;
+  if (request.op === 'capture') {
+    try {
+      if (!scene || suspended || Date.now() > request.expiresAt)
+        throw new Error(
+          'The displayed scene is unavailable. Restore its connection before saving it.',
+        );
+      send({
+        type: 'ack',
+        id: request.id,
+        result: {
+          checkpoint: scene.capture(),
+          viewport: {
+            width: innerWidth,
+            height: innerHeight,
+            theme:
+              config.theme ??
+              (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+          },
+        },
+      });
+    } catch (error) {
+      send({ type: 'ack', id: request.id, error: error.message });
+    }
+    return;
+  }
   const pauseOnly = request.op === 'control' && request.commands.every((c) => c.type === 'pause');
   if (request.op === 'resume') {
     if (!scene || Date.now() > request.expiresAt) {

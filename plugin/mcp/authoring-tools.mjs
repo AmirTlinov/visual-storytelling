@@ -1,6 +1,6 @@
 import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { z } from 'zod';
-import { read, changeView } from './schema.mjs';
+import { read, changeView, revisionTarget } from './schema.mjs';
 import { presentSession, toolResult } from './presentation.mjs';
 
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/);
@@ -13,10 +13,10 @@ export function authoringTools(server, runtime, uri, safely) {
     {
       title: 'Создать визуальное объяснение',
       description:
-        'Create an editable local project from a shipped example and open its progress in one MCP App. No voice model is required. The result includes source paths, projectId and jobId. Use story_help to choose a template; edit source files through story_edit.',
+        'Create an editable local project from an explicitly chosen shipped example. Waits up to 15 seconds for the scaffold, returning authoring=ready with its sourceRevision/files while dependencies and preview continue in JobRunner. If authoring=preparing, story_inspect(jobId,waitMs) continues the bounded wait. No voice model is required. Use story_help to choose a template; edit through story_edit.',
       inputSchema: {
         title: z.string().min(1).max(160),
-        example: z.string().default('explorer-svg'),
+        example: z.string().min(1),
         path: z.string().optional(),
         requestId,
       },
@@ -56,15 +56,14 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_produce',
     {
       description:
-        'Produce HTML, video, captions or an editable source archive locally from a fixed project revision. Returns a persistent job; inspect it for progress and actual artifact paths. Closing the viewer does not cancel production. Video requires local Chromium and FFmpeg.',
+        'Produce HTML, PNG, supported SVG, video, captions or source from an explicit shown build or working revision. Current conditions require a shown build and sessionId; they apply to HTML and images. Video requires an explicit story or interval. Returns a persistent, inspectable job.',
       inputSchema: {
-        projectId,
-        sourceRevision: z.string(),
+        target: revisionTarget,
         requestId,
         options: z
           .object({
             formats: z
-              .array(z.enum(['html', 'mp4', 'source', 'srt', 'vtt']))
+              .array(z.enum(['html', 'png', 'svg', 'mp4', 'source', 'srt', 'vtt']))
               .min(1)
               .default(['html']),
             width: z.number().int().min(320).max(3840).optional(),
@@ -72,6 +71,20 @@ export function authoringTools(server, runtime, uri, safely) {
             fps: z.number().int().min(1).max(60).optional(),
             theme: z.enum(['light', 'dark']).optional(),
             silent: z.boolean().optional(),
+            conditions: z.enum(['authored', 'current']).default('authored'),
+            sessionId: z.string().uuid().optional(),
+            video: z
+              .discriminatedUnion('kind', [
+                z.strictObject({ kind: z.literal('story') }),
+                z
+                  .strictObject({
+                    kind: z.literal('interval'),
+                    from: z.number().finite().nonnegative(),
+                    to: z.number().finite().positive(),
+                  })
+                  .refine((value) => value.to > value.from, 'Video end must follow its start.'),
+              ])
+              .optional(),
           })
           .default({ formats: ['html'] }),
       },
@@ -85,8 +98,7 @@ export function authoringTools(server, runtime, uri, safely) {
       description:
         'Review a fixed project revision with its pinned CLI. Returns a persistent job; story_inspect reads progress and the final HTML, frame, and evidence paths. By default captures deterministic scene checkpoints, not playback cadence. Select a cue or time window; scenario names an authored JSON file for a real browser interaction. The source stays unchanged. Use story_cancel or story_retry for interrupted work.',
       inputSchema: {
-        projectId,
-        sourceRevision: z.string(),
+        target: revisionTarget,
         requestId,
         options: z
           .object({
@@ -138,12 +150,20 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_help',
     {
       description:
-        'Discover recent projects, shipped example templates or precise public API declarations. Query a public API name to read only that declaration. Source paths point to this installed release.',
-      inputSchema: { query: z.string().max(300).optional(), projectId: projectId.optional() },
+        'Discover projects and examples with the shared catalog filters, or read precise public API declarations. queries accepts up to 12 API names in one response. projectId reads the pinned archive before a first successful build or dependency installation. query searches the same example tags and vocabulary as the gallery.',
+      inputSchema: {
+        query: z.string().max(300).optional(),
+        queries: z.array(z.string().min(1).max(300)).min(1).max(12).optional(),
+        projectId: projectId.optional(),
+        group: z.string().max(100).optional(),
+        recommended: z.boolean().optional(),
+      },
       annotations: read,
     },
     safely(async (args) => {
-      const value = await runtime.call(args.query ? 'help' : 'catalog', args);
+      if (args.query && args.queries)
+        throw new Error('Use query for search or queries for batched API declarations.');
+      const value = await runtime.call(args.query || args.queries ? 'help' : 'catalog', args);
       return result(value, value.text ?? 'Доступные проекты и основы.');
     }),
   );
@@ -173,7 +193,7 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_voice',
     {
       description:
-        'Inspect local neural Higgs and explicitly selectable system macOS voices. New narration defaults to Higgs through the installed sketch-audio; unavailable Higgs is an error, never a system-voice fallback. Set provider="macos" only for an explicitly requested system voice. With enabled, update narration in one undoable edit and prepare synchronized audio/cues. Toggling preserves the selected provider and voice; muting playback is separate.',
+        'Inspect local neural Higgs, its download/disk/memory requirements, and explicitly selectable macOS voices. enabled=true saves one undoable edit then prepares needed Python, models and synchronized narration through the cancellable JobRunner. New narration defaults to Higgs; choose provider="macos" only for an explicitly requested system voice. Toggling preserves the provider and voice; playback muting is separate.',
       inputSchema: {
         projectId: projectId.optional(),
         sourceRevision: z.string().optional(),

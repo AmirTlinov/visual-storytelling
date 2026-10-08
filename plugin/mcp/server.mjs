@@ -121,18 +121,19 @@ server.registerTool(
   'story_inspect',
   {
     description:
-      'Read the displayed scene, working project or persistent job. No IDs lists active sessions. sessionId + file reads the shown build source with shown and working revisions; projectId + file reads working UTF-8 source. A project returns sourceRevision and file hashes. A session returns compact state and capabilities. Request model for object values and causal inputs, timeline for all cues, or presentation for geometry.',
+      'Read the displayed scene, working project or persistent job. jobId + waitMs (0–15000) waits for completion without repeated polling. No IDs lists active sessions. sessionId + file reads the shown build source with shown and working revisions; projectId + file reads working UTF-8 source. A project returns sourceRevision and file hashes. A session returns compact state and capabilities. Request model for object values and causal inputs, timeline for all cues, or presentation for geometry.',
     inputSchema: {
       sessionId: sessionId.optional(),
       projectId: z.string().uuid().optional(),
       file: z.string().optional(),
       jobId: z.string().uuid().optional(),
+      waitMs: z.number().int().min(0).max(15000).optional(),
       detail: z.enum(['state', 'model', 'timeline', 'presentation']).default('state'),
     },
     annotations: read,
   },
-  safely(async ({ sessionId, projectId, file, jobId, detail }) => {
-    if (jobId) return result(await runtime.call('job', { jobId }));
+  safely(async ({ sessionId, projectId, file, jobId, detail, waitMs }) => {
+    if (jobId) return result(await runtime.call('job', { jobId, waitMs }));
     if (sessionId && file) return result(await runtime.call('shownSource', { sessionId, file }));
     if (projectId) return result(await runtime.call('project', { projectId, file }));
     return sessionId
@@ -180,7 +181,17 @@ registerAppTool(
       sessionId,
       renderer: z.string().uuid(),
       generation: z.number().int().optional(),
-      action: z.enum(['attach', 'exchange', 'detach', 'candidate', 'replace', 'focus', 'widget']),
+      serverInstance: z.string().uuid().optional(),
+      action: z.enum([
+        'attach',
+        'recover',
+        'exchange',
+        'detach',
+        'candidate',
+        'replace',
+        'focus',
+        'widget',
+      ]),
       widget: z
         .object({
           id: z.string().min(1).max(120),
@@ -201,7 +212,7 @@ registerAppTool(
     _meta: { ui: { visibility: ['app'] } },
   },
   safely(async ({ action, ...args }) => {
-    if (action === 'attach' || action === 'candidate') {
+    if (action === 'attach' || action === 'candidate' || action === 'recover') {
       const { html, ...state } = await runtime.call(action, args);
       return { ...result(state), _meta: { sceneHTML: html } };
     }

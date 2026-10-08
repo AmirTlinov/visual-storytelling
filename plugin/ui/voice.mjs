@@ -28,7 +28,7 @@ export function voiceUI(app, { session, error }) {
           `${voice.name} · ${voice.kind === 'neural' ? 'нейросетевой' : 'системный macOS'}`,
           `${voice.provider}:${voice.id}`,
         );
-        option.disabled = !voice.ready;
+        option.disabled = !voice.ready && voice.provider !== 'higgs';
         choices.add(option);
       }
       choices.value = status.settings?.enabled
@@ -38,13 +38,18 @@ export function voiceUI(app, { session, error }) {
         const chosen = status.voices.find(
           (voice) => `${voice.provider}:${voice.id}` === choices.value,
         );
-        $('voice-status').textContent = chosen
-          ? (chosen.reason ??
-            (chosen.kind === 'neural'
-              ? 'Нейросетевая озвучка Higgs готовится на этом компьютере.'
-              : 'Выбран системный голос macOS.'))
-          : (status.reason ??
-            'Для новой озвучки используется нейросетевой Higgs. Системные голоса выбираются явно.');
+        const requirements = chosen?.provider === 'higgs' && !chosen.ready && status.requirements;
+        const gb = (value) => Math.ceil(value / 1e9);
+        $('voice-status').textContent = requirements
+          ? `При первом применении: около ${gb(requirements.downloadBytes)} ГБ загрузки и ${gb(requirements.requiredDiskBytes)} ГБ на диске; рекомендуется ${gb(requirements.recommendedMemoryBytes)} ГБ памяти. Подготовка покажет прогресс, её можно отменить.`
+          : chosen
+            ? (chosen.reason ??
+              (chosen.kind === 'neural'
+                ? 'Нейросетевая озвучка Higgs готовится на этом компьютере.'
+                : 'Выбран системный голос macOS.'))
+            : (status.reason ??
+              'Для новой озвучки используется нейросетевой Higgs. Системные голоса выбираются явно.');
+        $('voice-apply').textContent = requirements ? 'Подготовить и озвучить' : 'Применить';
       };
       choices.onchange = updateStatus;
       updateStatus();

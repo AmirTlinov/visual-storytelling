@@ -191,10 +191,18 @@ test(
         'only the changed phrase adds a synthesized take',
       );
       const produced = await call('story_produce', {
-        projectId: project.id,
-        sourceRevision: spokenEdit.structuredContent.project.sourceRevision,
+        target: {
+          kind: 'working',
+          projectId: project.id,
+          sourceRevision: spokenEdit.structuredContent.project.sourceRevision,
+        },
         requestId: randomUUID(),
-        options: { formats: ['html', 'source', 'mp4', 'srt'], width: 640, fps: 12 },
+        options: {
+          formats: ['html', 'source', 'mp4', 'srt'],
+          video: { kind: 'story' },
+          width: 640,
+          fps: 12,
+        },
       });
       await call('story_cancel', { jobId: produced.structuredContent.id });
       let stopped;

@@ -2,6 +2,7 @@ import { createServer } from 'node:net';
 import { readFile, chmod, rm, lstat, realpath } from 'node:fs/promises';
 import { dirname, join, resolve, isAbsolute, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { SessionDirectory } from '../session-directory.mjs';
 import { readJSON, writeJSON } from './storage.mjs';
@@ -10,12 +11,15 @@ import { readProjectFile } from '../project-files.mjs';
 import { JobRunner } from '../jobs.mjs';
 import { ProjectWatch } from '../project-watch.mjs';
 import { Preferences } from '../preferences.mjs';
-import { environmentStatus } from '../environment.mjs';
+import { environmentStatus, configureEnvironment } from '../environment.mjs';
 import { macosVoice } from '../../tools/voice/macos.mjs';
 import { higgsVoice } from '../../tools/voice/higgs.mjs';
 import { collectCache } from '../cache.mjs';
 import { errorData } from '../errors.mjs';
 import { runtimeBuild } from './identity.mjs';
+import { revisionInput } from '../revision-input.mjs';
+import { selectExamples } from '../../tools/catalog-query.mjs';
+import { readPinnedRuntime } from '../../tools/runtime-package.mjs';
 
 const [socketPath, data] = process.argv.slice(2),
   directory = await realpath(dirname(process.argv[1]));
@@ -27,6 +31,7 @@ const example = JSON.parse(await readFile(join(directory, 'example.json'), 'utf8
 const sessions = new SessionDirectory();
 const projects = new ProjectStore(data);
 const preferences = new Preferences(data);
+await configureEnvironment(data);
 await projects.start();
 const watched = new ProjectWatch(async (id) => {
   const project = await projects.inspect(id);
@@ -66,7 +71,7 @@ const jobs = new JobRunner(
       });
       return { project, job: await prepareProject(project, job.id + '-build') };
     }
-    if (result.buildRevision) {
+    if (['build', 'create'].includes(job.kind) && result.buildRevision) {
       const current = await projects.inspect(job.projectId);
       if (result.sourceRevision !== current.sourceRevision) return { ...result, superseded: true };
       const prepared = await readJSON(join(data, 'builds', result.buildRevision + '.json'));
@@ -82,12 +87,16 @@ const jobs = new JobRunner(
         }
     }
     setTimeout(scheduleClose, 0);
-    await collectCache(data, {
-      limitMB: (await preferences.read()).cacheLimitMB,
-      projects: await projects.list(),
-      sessions: [...sessions.sessions.values()],
-      snapshotLeases: jobs.snapshotLeases(),
-    }).catch((error) => console.error('Cache: ' + error.message));
+    await jobs
+      .preserveInputs(async () =>
+        collectCache(data, {
+          limitMB: (await preferences.read()).cacheLimitMB,
+          projects: await projects.list(),
+          sessions: [...sessions.sessions.values()],
+          snapshotLeases: jobs.snapshotLeases(),
+        }),
+      )
+      .catch((error) => console.error('Cache: ' + error.message));
     return result;
   },
   { toolchainRoot: resolve(directory, '../..') },
@@ -178,17 +187,63 @@ const decorate = (session) => ({
   jobs: jobs.list(session.build.projectId).filter((j) => j.projectId === session.build.projectId),
 });
 async function prepareProject(project, requestId = randomUUID()) {
-  return jobs.enqueue(
-    'build',
-    {
-      data,
-      projectPath: project.path,
+  return jobs.preserveInputs(async () => {
+    const input = await revisionInput(data, projects, {
+      kind: 'working',
       projectId: project.id,
-      title: project.title,
       sourceRevision: project.sourceRevision,
-    },
-    requestId,
-  );
+    });
+    return jobs.enqueue('build', { data, ...input }, requestId);
+  });
+}
+
+async function queueRevision(kind, { target, requestId, options = {} }) {
+  return projects.serial('revision:' + requestId, async () => {
+    const previous = jobs.forRequest(requestId);
+    if (previous) {
+      if (
+        previous.kind !== kind ||
+        !isDeepStrictEqual(previous.input.target, target) ||
+        !isDeepStrictEqual(previous.input.requestOptions, options)
+      )
+        throw new Error('requestId already belongs to another preparation.');
+      return jobs.describe(previous);
+    }
+    let checkpoint, capturedView;
+    if (options.conditions === 'current') {
+      if (target.kind !== 'build' || !options.sessionId)
+        throw new Error('Current conditions need the shown build and its session.');
+      const session = await load(options.sessionId);
+      if (session.build.projectId !== target.projectId)
+        throw new Error('The view belongs to another project.');
+      const captured = await sessions.request(session.id, {
+        op: 'capture',
+        buildRevision: target.buildRevision,
+      });
+      checkpoint = captured.result.checkpoint;
+      capturedView = captured.result.viewport;
+    }
+    if (checkpoint && options.formats?.some((format) => !['html', 'png', 'svg'].includes(format)))
+      throw new Error(
+        'Current conditions can be saved as HTML, PNG or SVG. Choose the authored story for other formats.',
+      );
+    if (options.formats?.includes('mp4') && !options.video)
+      throw new Error('Choose the whole story or an explicit interval for video.');
+    return jobs.preserveInputs(async () => {
+      const input = await revisionInput(data, projects, target);
+      return jobs.enqueue(
+        kind,
+        {
+          data,
+          ...input,
+          checkpoint,
+          requestOptions: options,
+          options: capturedView ? { ...capturedView, ...options } : options,
+        },
+        requestId,
+      );
+    });
+  });
 }
 async function openProject(project, { prepare = true, session } = {}) {
   watched.open(project);
@@ -262,7 +317,7 @@ const operations = {
     await save(s);
     return decorate(s);
   },
-  async create({ path, title = 'Новое объяснение', example = 'explorer-svg', requestId }) {
+  async create({ path, title = 'Новое объяснение', example, requestId }) {
     return projects.serial('create:' + requestId, async () => {
       if (path && !isAbsolute(path)) throw new Error('Choose an absolute project path.');
       const previous = jobs.forRequest(requestId);
@@ -280,12 +335,18 @@ const operations = {
             session: await load(previous.input.sessionId),
           })),
           job: jobs.describe(previous),
+          authoring: previous.authored ? 'ready' : 'preparing',
         };
       }
       path ??= join(
         (await preferences.read()).projectsDirectory,
         `${title.replace(/[^\p{L}\p{N}-]+/gu, '-').slice(0, 60)}-${randomUUID().slice(0, 8)}`,
       );
+      const catalog = await readJSON(join(directory, 'catalog.json'));
+      if (!Object.hasOwn(catalog, example))
+        throw new Error(
+          'Choose a shipped starting point with story_help before creating a project.',
+        );
       const project = await projects.create(path, { title, example });
       const session = sessions.open({
         projectId: project.id,
@@ -308,7 +369,13 @@ const operations = {
         },
         requestId,
       );
-      return { ...decorate(session), project, job };
+      const prepared = await jobs.wait(job.id, { until: 'authored', timeout: 15000 });
+      return {
+        ...decorate(session),
+        project: prepared.authored ?? project,
+        job: prepared,
+        authoring: prepared.authored ? 'ready' : 'preparing',
+      };
     });
   },
   async project({ projectId, file }) {
@@ -331,10 +398,16 @@ const operations = {
       ...(await readProjectFile(shown.snapshot, file)),
     };
   },
-  async catalog() {
+  async catalog({ query = '', group = '', recommended = false } = {}) {
     return {
       projects: await projects.list(),
-      examples: await readJSON(join(directory, 'catalog.json')),
+      examples: Object.fromEntries(
+        selectExamples(await readJSON(join(directory, 'catalog.json')), {
+          query,
+          group,
+          recommended,
+        }).map(({ id, ...entry }) => [id, entry]),
+      ),
       environment: await environmentStatus(data),
     };
   },
@@ -350,7 +423,9 @@ const operations = {
     if (!['higgs', 'macos'].includes(provider)) throw new Error('Unknown narration provider.');
     const selectedLanguage = language ?? previous?.language ?? defaults.language;
     if (enabled === undefined) {
+      await configureEnvironment(data);
       const [higgs, macos] = await Promise.all([higgsVoice.doctor(), macosVoice.doctor()]);
+      const environment = await environmentStatus(data);
       const choices = [
         { provider: 'higgs', kind: 'neural', ...higgs },
         { provider: 'macos', kind: 'system', ...macos },
@@ -384,6 +459,7 @@ const operations = {
           })),
         ),
         settings: previous,
+        requirements: environment.higgs.requirements,
       };
     }
     const settings = {
@@ -402,7 +478,8 @@ const operations = {
     } else {
       if (voice && voice !== 'higgs')
         throw new Error('Для системного голоса явно выберите provider: "macos".');
-      if (enabled) await higgsVoice.prepare(settings);
+      if (enabled && selectedLanguage.split('-')[0] !== 'ru')
+        throw new Error('Для Higgs сейчас поддерживается русская речь. Выберите ru-RU.');
     }
     return operations.edit({
       projectId,
@@ -453,7 +530,8 @@ const operations = {
     if (source.navigation) return source.navigation;
     if (source.navigating) return source.navigating;
     source.navigating = (async () => {
-      if (source.renderer && source.ready) await sessions.request(sessionId, { op: 'park' });
+      if (source.renderer && source.ready && !sessions.expired(source))
+        await sessions.request(sessionId, { op: 'park' });
       await save(source);
       let destination;
       if (back) {
@@ -478,32 +556,34 @@ const operations = {
       source.navigating = undefined;
     }
   },
-  async help({ query, projectId }) {
+  async help({ query, queries, projectId, group, recommended }) {
     let root = resolve(directory, '../..');
+    let pinned;
     if (projectId) {
       const project = await projects.inspect(projectId);
-      const build =
-        project.buildRevision &&
-        (await readJSON(join(data, 'builds', project.buildRevision + '.json')));
-      if (!build?.snapshot)
-        throw new Error('Prepare this project before requesting its pinned API.');
-      root = join(build.snapshot, 'node_modules/@visual-storytelling/core');
+      pinned = await readPinnedRuntime(project.path);
+      root = pinned.root;
     }
     // The reader belongs to the installed plugin; declarations belong to the pinned project.
-    const { describeAPI } = await import(
+    const { describeAPI, describeAPIData } = await import(
       pathToFileURL(join(directory, '../../tools/api.mjs')).href
     );
-    const api = await describeAPI(root, query);
+    const requested = queries ?? [query];
+    const api = pinned
+      ? describeAPIData(pinned.api, root, ...requested)
+      : await describeAPI(root, ...requested);
     if (!api.missing.length) return api;
-    const catalog = (await readJSON(join(root, 'examples/catalog.json'))) ?? {};
-    const matches = Object.entries(catalog).filter(([id, e]) =>
-      [id, e.title, e.summary].join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase()),
-    );
+    const catalog = pinned?.catalog ?? (await readJSON(join(directory, 'catalog.json'))) ?? {};
+    const matches = selectExamples(catalog, {
+      query: query ?? queries.join(' '),
+      group,
+      recommended,
+    });
     if (matches.length)
       return {
         examples: matches
           .slice(0, 12)
-          .map(([id, e]) => ({ id, ...e, source: join(root, 'examples', id, e.source) })),
+          .map(({ id, ...e }) => ({ id, ...e, source: join(root, 'examples', id, e.source) })),
       };
     return api;
   },
@@ -517,26 +597,8 @@ const operations = {
         : await prepareProject(project, args.requestId + '-build'),
     };
   },
-  async produce({ projectId, sourceRevision, requestId, options }) {
-    const project = await projects.inspect(projectId);
-    if (sourceRevision !== project.sourceRevision)
-      throw new Error('Source changed. Inspect before producing this revision.');
-    return jobs.enqueue(
-      'produce',
-      { data, projectId, projectPath: project.path, title: project.title, sourceRevision, options },
-      requestId,
-    );
-  },
-  async review({ projectId, sourceRevision, requestId, options }) {
-    const project = await projects.inspect(projectId);
-    if (sourceRevision !== project.sourceRevision)
-      throw new Error('Source changed. Inspect before reviewing this revision.');
-    return jobs.enqueue(
-      'review',
-      { data, projectId, projectPath: project.path, sourceRevision, options },
-      requestId,
-    );
-  },
+  produce: (args) => queueRevision('produce', args),
+  review: (args) => queueRevision('review', args),
   async migrate({ projectId, sourceRevision, requestId }) {
     const project = await projects.inspect(projectId);
     if (sourceRevision !== project.sourceRevision)
@@ -547,8 +609,8 @@ const operations = {
       requestId,
     );
   },
-  async job({ jobId }) {
-    return jobs.get(jobId);
+  async job({ jobId, waitMs = 0 }) {
+    return jobs.wait(jobId, { timeout: waitMs });
   },
   async cancel({ jobId }) {
     return jobs.cancel(jobId);
@@ -582,6 +644,16 @@ const operations = {
     await save(s);
     return {
       ...attached,
+      widgetState: s.widgetState ?? {},
+      jobs: jobs.list(s.build.projectId).filter((j) => j.projectId === s.build.projectId),
+    };
+  },
+  async recover(args) {
+    const s = await load(args.sessionId);
+    const result = await sessions.recover(args);
+    await save(s);
+    return {
+      ...result,
       widgetState: s.widgetState ?? {},
       jobs: jobs.list(s.build.projectId).filter((j) => j.projectId === s.build.projectId),
     };
