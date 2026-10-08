@@ -1,7 +1,6 @@
 {
   "chibi-stage": {
     "title": "От идеи к опыту",
-    "page": "index.html",
     "time": 4.4,
     "checkpoints": [
       0,
@@ -32,7 +31,6 @@
   },
   "chibi-tesla": {
     "title": "Тесла · Момент открытия",
-    "page": "index.html",
     "time": 4.6,
     "checkpoints": [
       0,
@@ -65,7 +63,6 @@
   },
   "chibi-garden": {
     "title": "Мира · Дать ростку время",
-    "page": "index.html",
     "time": 5.6,
     "checkpoints": [
       0,
@@ -95,7 +92,6 @@
   },
   "chibi-transfer": {
     "title": "Идея становится общей",
-    "page": "index.html",
     "time": 7.7,
     "checkpoints": [
       0,
@@ -128,7 +124,6 @@
   },
   "morph-story": {
     "title": "Те же части, новое целое",
-    "page": "index.html",
     "time": 14.5,
     "checkpoints": [
       0,
@@ -162,7 +157,6 @@
   },
   "ink-story": {
     "title": "Как складывается образ",
-    "page": "index.html",
     "time": 5.5,
     "checkpoints": [
       0,
@@ -191,7 +185,6 @@
   },
   "area-story": {
     "title": "Почему 4 × 5 = 20?",
-    "page": "index.html",
     "time": 61.929,
     "checkpoints": [
       0,
@@ -225,7 +218,6 @@
   },
   "remainder-story": {
     "title": "Откуда берётся остаток",
-    "page": "index.html",
     "time": 32.927,
     "checkpoints": [
       0,
@@ -257,7 +249,6 @@
   },
   "fraction-of-a-set": {
     "title": "Доля от двенадцати",
-    "page": "index.html",
     "time": 0,
     "group": "explanations",
     "summary": "Те же 12 фишек делятся на равные группы и показывают выбранную долю.",
@@ -278,7 +269,6 @@
   },
   "equation-balance": {
     "title": "Равновесие уравнения",
-    "page": "index.html",
     "time": 0,
     "group": "explanations",
     "summary": "Одинаковые действия с обеих сторон весов приводят к решению уравнения.",
@@ -299,7 +289,6 @@
   },
   "threshold-neuron": {
     "title": "Когда нейрон включается",
-    "page": "index.html",
     "time": 0,
     "group": "explanations",
     "summary": "Взвешенные входы складываются и проверяются на пороге включения.",
@@ -322,7 +311,6 @@
   },
   "bubble-sort": {
     "title": "Пузырьковая сортировка",
-    "page": "index.html",
     "time": 0,
     "commands": [
       {
@@ -351,7 +339,6 @@
   },
   "shared-memory": {
     "title": "Общая память CPU и GPU",
-    "page": "index.html",
     "time": 0,
     "commands": [
       {
@@ -381,7 +368,6 @@
   },
   "explorer-3d": {
     "title": "Сколько места внутри коробки?",
-    "page": "index.html",
     "time": 63.31,
     "checkpoints": [
       0,
@@ -419,7 +405,6 @@
   },
   "explorer-svg": {
     "title": "Сложение перемещений",
-    "page": "index.html",
     "time": 18.828,
     "checkpoints": [
       0,
@@ -456,7 +441,6 @@
   },
   "controls": {
     "title": "Рисованные элементы управления",
-    "page": "index.html",
     "time": 0,
     "group": "techniques",
     "summary": "Кнопки, поля, ползунки и выбор в общем рисованном стиле.",
@@ -480,7 +464,6 @@
   },
   "ink-fusion": {
     "title": "Живые чернила",
-    "page": "index.html",
     "time": 2.2,
     "checkpoints": [
       0,
@@ -514,7 +497,6 @@
   },
   "volume-morph": {
     "title": "Как меняется объёмная форма?",
-    "page": "index.html",
     "time": 17,
     "checkpoints": [
       0,
@@ -548,7 +530,6 @@
   },
   "math-morph": {
     "title": "Собрать, разделить, умножить",
-    "page": "index.html",
     "time": 22,
     "checkpoints": [
       0,
@@ -587,7 +568,6 @@
   },
   "neuron-morph": {
     "title": "Как нейрон собирает сигнал",
-    "page": "index.html",
     "time": 11,
     "checkpoints": [
       0,
@@ -620,7 +600,6 @@
   },
   "long-calculation": {
     "title": "Как множество вкладов становится числом",
-    "page": "index.html",
     "time": 15,
     "checkpoints": [
       0,
@@ -662,7 +641,6 @@
   },
   "morph-contact": {
     "title": "Форма становится опорой",
-    "page": "index.html",
     "time": 0,
     "group": "techniques",
     "summary": "Меняющаяся форма остаётся опорой для соприкасающихся объектов.",
@@ -685,7 +663,6 @@
   },
   "logic-gates": {
     "title": "Логические элементы",
-    "page": "logic-gates.svg",
     "time": 0,
     "group": "explanations",
     "summary": "Восемь логических элементов с одинаковым порядком входов и таблицами истинности.",
@@ -708,7 +685,6 @@
   },
   "geometric-tensor": {
     "title": "Геометрия тензора",
-    "page": "index.html",
     "time": 0,
     "group": "explanations",
     "summary": "Оси, срезы и компоненты помогают прочитать многомерный массив.",
@@ -731,7 +707,6 @@
   },
   "parameter-cube": {
     "title": "Как веса BERT собирают запрос",
-    "page": "preview.html",
     "time": 7.2,
     "checkpoints": [
       0,
@@ -766,7 +741,6 @@
   },
   "lc-oscillator": {
     "title": "Колебательный LC-контур",
-    "page": "preview.html",
     "time": 0.75,
     "checkpoints": [
       0,
@@ -796,7 +770,6 @@
   },
   "vector": {
     "title": "Матрица меняет вектор",
-    "page": "index.html",
     "time": 16,
     "checkpoints": [
       0,
@@ -822,7 +795,6 @@
   },
   "materials": {
     "title": "Инструменты одного почерка",
-    "page": "index.html",
     "time": 4,
     "checkpoints": [
       0,
@@ -850,7 +822,6 @@
   },
   "computer-explorer": {
     "title": "Внутри компьютера",
-    "page": "index.html",
     "time": 0,
     "group": "explanations",
     "summary": "Раскройте компьютер от устройств до ячеек памяти и транзисторов.",
@@ -878,7 +849,6 @@
   },
   "neuron-explorer": {
     "title": "Внутри нейрона",
-    "page": "index.html",
     "time": 0,
     "group": "explanations",
     "summary": "Исследуйте устройство нейрона, переходя от целого к деталям сигнала.",
@@ -902,7 +872,6 @@
   },
   "physical-objects": {
     "title": "Физические материалы",
-    "page": "index.html",
     "time": 0.65,
     "checkpoints": [
       0,
@@ -934,7 +903,6 @@
   },
   "written-morph": {
     "title": "Форма несёт смысл",
-    "page": "index.html",
     "time": 16.5,
     "checkpoints": [
       0,
@@ -977,7 +945,6 @@
   },
   "arithmetic-objects": {
     "title": "Что делают четыре действия",
-    "page": "index.html",
     "time": 27.5,
     "checkpoints": [
       0,
@@ -1021,7 +988,6 @@
   },
   "formula-objects": {
     "title": "Математика меняет форму",
-    "page": "index.html",
     "time": 97,
     "checkpoints": [
       3.56,
@@ -1073,7 +1039,6 @@
   },
   "interface-walkthrough": {
     "title": "Как промокод меняет заказ",
-    "page": "index.html",
     "time": 18,
     "checkpoints": [
       0,
@@ -1115,7 +1080,6 @@
   },
   "product-walkthrough": {
     "title": "Ортоматика · перед оплатой заказа",
-    "page": "index.html",
     "time": 16,
     "checkpoints": [
       0,
@@ -1157,7 +1121,6 @@
   },
   "mathematical-relations": {
     "title": "Одна связь — весь рисунок",
-    "page": "index.html",
     "time": 94,
     "checkpoints": [
       0,
@@ -1194,7 +1157,6 @@
   },
   "gradient-descent": {
     "title": "Почему градиентный спуск идёт зигзагом?",
-    "page": "index.html",
     "time": 84,
     "checkpoints": [
       0,
@@ -1248,7 +1210,6 @@
       23.5,
       26
     ],
-    "page": "index.html",
     "group": "explanations",
     "tags": [
       "персонажи",
@@ -1280,7 +1241,6 @@
       8,
       10
     ],
-    "page": "index.html",
     "group": "explanations",
     "tags": [
       "персонажи",
@@ -1316,7 +1276,6 @@
       19,
       22.5
     ],
-    "page": "index.html",
     "group": "explanations",
     "tags": [
       "персонажи",
@@ -1339,7 +1298,6 @@
   "tesla-circuit": {
     "title": "Тесла · Путь к свету",
     "summary": "Тесла подходит к доске и размыкает электрическую цепь; тот же выключатель, источник и лампа переходят на интерактивную страницу.",
-    "page": "index.html",
     "source": "story.json",
     "time": 10,
     "checkpoints": [
@@ -1399,7 +1357,6 @@
   "thermostat-story": {
     "title": "Мастерская · Как решает термостат",
     "summary": "Датчик → сравнение → нагрев. Персонаж показывает правило на доске; температура и порог исследуются на одной шкале.",
-    "page": "index.html",
     "source": "story.json",
     "time": 10,
     "checkpoints": [
@@ -1457,7 +1414,6 @@
   },
   "press-reaction": {
     "title": "Нажатие запускает опыт",
-    "page": "index.html",
     "time": 6.4,
     "group": "techniques",
     "summary": "Нажатие меняет шкалу и включает лампу. Живой SVG сохраняет показание при переносе прибора и обратной перемотке.",
@@ -1482,7 +1438,6 @@
   },
   "ink-trace": {
     "title": "Как возникает траектория?",
-    "page": "index.html",
     "time": 4.5,
     "checkpoints": [
       0,
@@ -1513,7 +1468,6 @@
   },
   "result-delivery": {
     "title": "Куда попадает результат?",
-    "page": "index.html",
     "time": 9.5,
     "checkpoints": [
       0,
@@ -1548,7 +1502,6 @@
   },
   "svg-artwork": {
     "title": "Почему дальний кажется меньше?",
-    "page": "index.html",
     "time": 10.2,
     "checkpoints": [
       0,
@@ -1582,7 +1535,6 @@
   },
   "connected-diagram": {
     "title": "Как из слов получается ответ?",
-    "page": "index.html",
     "source": "scene.js",
     "time": 10.5,
     "checkpoints": [
@@ -1621,7 +1573,6 @@
   },
   "tensor-slices": {
     "title": "Какие числа принадлежат одному дню?",
-    "page": "index.html",
     "source": "scene.js",
     "time": 10,
     "checkpoints": [
@@ -1656,7 +1607,6 @@
   },
   "math-workbench": {
     "title": "Откуда взялся результат?",
-    "page": "index.html",
     "source": "scene.js",
     "time": 21,
     "checkpoints": [
@@ -1699,9 +1649,15 @@
   },
   "memory-register": {
     "title": "Как 8 бит запоминают число",
-    "page": "index.html",
     "time": 34,
-    "checkpoints": [0, 12, 19, 23, 34, 44],
+    "checkpoints": [
+      0,
+      12,
+      19,
+      23,
+      34,
+      44
+    ],
     "group": "explanations",
     "summary": "Тетрадная интерактивная схема: восемь ячеек, общая линия такта, прогноз перед записью. surface, node, pen и svgButton сохраняют единый рисунок.",
     "tags": [
@@ -1731,7 +1687,6 @@
   "character-lesson": {
     "title": "Как проверить предположение",
     "summary": "Два героя включают переносимый прибор и переходят к живому опыту: общие главы, контакты, SVG и физика.",
-    "page": "index.html",
     "source": "scene.js",
     "time": 10.6,
     "checkpoints": [
@@ -1772,7 +1727,6 @@
   "area-lesson": {
     "title": "Площадь: от меры к правилу",
     "summary": "Подробный урок: одинаковая мера, строки и столбцы, собственный прогноз и проверка площади.",
-    "page": "index.html",
     "source": "story.json",
     "time": 20,
     "checkpoints": [
@@ -1813,7 +1767,6 @@
   "graph-lab": {
     "title": "Скорость — наклон графика",
     "summary": "График пути: измените скорость и время, сравните два движения и прочитайте координаты одной точки.",
-    "page": "index.html",
     "source": "scene.js",
     "time": 12,
     "checkpoints": [

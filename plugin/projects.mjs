@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto';
 import { readJSON, writeJSON } from './runtime/storage.mjs';
 import { projectFiles, projectFile, readProjectFile, digest } from './project-files.mjs';
 import { failure } from './errors.mjs';
+import { sceneEntry } from '../tools/scene-entry.mjs';
 
 const readOptional = (file) =>
   readFile(file).catch((error) => {
@@ -106,7 +107,16 @@ export class ProjectStore {
   async inspect(id) {
     const p = this.get(id),
       source = await projectFiles(p.path);
-    return { ...p, sourceRevision: source.revision, files: source.files };
+    return {
+      ...p,
+      // A broken draft still exposes files and their revision so it can be repaired.
+      entry: await sceneEntry(p.path).then(
+        (entry) => entry.source,
+        () => undefined,
+      ),
+      sourceRevision: source.revision,
+      files: source.files,
+    };
   }
   async list() {
     return [...this.projects.values()].sort((a, b) => b.openedAt.localeCompare(a.openedAt));

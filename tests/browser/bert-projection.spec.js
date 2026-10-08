@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { standalone } from '../../tools/standalone.mjs';
 
-async function open(page, entry = 'preview.html') {
+async function open(page, entry = 'index.html') {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(`/parameter-cube/${entry}`);

@@ -16,6 +16,7 @@ import { promisify } from 'node:util';
 import { createScene } from '../tools/create-scene.mjs';
 import { buildScene } from '../tools/build-pages.mjs';
 import { sceneGenerator } from '../tools/generate-scene.mjs';
+import { sceneEntry } from '../tools/scene-entry.mjs';
 import { packDirectory } from '../tools/standalone.mjs';
 import { deliver } from '../tools/deliver.mjs';
 import { snapshotProject, projectFiles, projectFile, digest } from './project-files.mjs';
@@ -295,6 +296,7 @@ export const workflows = {
       title: input.title,
       sourceRevision: frozen.sourceRevision,
       files: authored.files,
+      entry: (await sceneEntry(join(input.data, 'snapshots', frozen.inputSnapshot))).source,
       inputSnapshot: frozen.inputSnapshot,
     });
     return {

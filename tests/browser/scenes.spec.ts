@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import catalog from '../../examples/catalog.json' with { type: 'json' };
+import { readCatalog } from '../../tools/catalog.mjs';
+const catalog = await readCatalog();
 
 async function ready(page: Page, path: string) {
   await page.goto(path);
@@ -25,7 +26,6 @@ test('all examples load in both themes at a narrow width without script errors o
   for (const [scene, item] of Object.entries(catalog))
     for (const colorScheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme });
-      if (item.page.endsWith('.svg')) continue; // Native SVG is covered by the pixel reference capture.
       await ready(page, `/${scene}/${item.page}`);
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth),
@@ -185,7 +185,7 @@ test('vector: intermediate displayed products distinguish approximation from equ
   }
 });
 test('all BERT tokens can be selected at their center and edges', async ({ page }) => {
-  await ready(page, '/parameter-cube/preview.html');
+  await ready(page, '/parameter-cube/index.html');
   const frame = page.frames().find((f) => f.url().includes('tensor-cube.svg'))!;
   const tokens = frame.locator('#tokens [data-token]');
   await expect(tokens).toHaveCount(4);
@@ -203,7 +203,7 @@ test('LC player owns native SVG time, including reverse seek and reduced motion'
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await ready(page, '/lc-oscillator/preview.html');
+  await ready(page, '/lc-oscillator/index.html');
   const seek = page.locator('[data-seek]');
   await expect(seek).toBeEnabled();
   for (const time of [0.75, 1.5, 2.25, 0]) {

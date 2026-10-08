@@ -7,12 +7,14 @@ import { buildScene } from '../tools/build-pages.mjs';
 import { packDirectory } from '../tools/standalone.mjs';
 import { packagePlugin, shippedExamples } from './package.mjs';
 import { packageInfo } from '../tools/build-info.mjs';
+import { readCatalog } from '../tools/catalog.mjs';
+import { scenePage } from '../tools/scene-entry.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url)),
   out = join(root, 'plugin/dist');
 await mkdir(out, { recursive: true });
 if ((await packageInfo(root)).status !== 'current')
   throw new Error('Build the core before packaging the plugin: npm run build.');
-const catalog = JSON.parse(await readFile(join(root, 'examples/catalog.json'), 'utf8'));
+const catalog = await readCatalog();
 await writeFile(
   join(out, 'catalog.json'),
   JSON.stringify(Object.fromEntries(shippedExamples.map((id) => [id, catalog[id]]))),
@@ -21,7 +23,7 @@ await mkdir(join(out, 'examples'), { recursive: true });
 for (const id of shippedExamples) {
   const built = join(out, 'scenes', id);
   await buildScene(join(root, 'examples', id), built, { sourcePackage: true, silent: true });
-  const html = await packDirectory(built, 'index.html', { audio: 'original' });
+  const html = await packDirectory(built, scenePage, { audio: 'original' });
   await writeFile(
     join(out, 'examples', id + '.json'),
     JSON.stringify({

@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { readdir, readFile, writeFile, mkdir, cp, access } from 'node:fs/promises';
+import { readdir, readFile, writeFile, mkdir, cp, access, rename } from 'node:fs/promises';
 import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'parse5';
@@ -13,6 +13,7 @@ import { resolvePackage } from './build-info.mjs';
 import { readCatalog } from './catalog.mjs';
 import { writeBundleNotices } from './bundle-notices.mjs';
 import { sourceAnnotations, writeSourceReferences } from './build-sources.mjs';
+import { sceneEntry, scenePage, svgPage } from './scene-entry.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 export async function buildPage(
@@ -25,6 +26,7 @@ export async function buildPage(
     cdn = false,
     html: suppliedHTML,
     silent = false,
+    outputName = basename(source),
   } = {},
 ) {
   let html = suppliedHTML ?? (await readFile(source, 'utf8'));
@@ -57,15 +59,14 @@ export async function buildPage(
         throw new Error(`Import a local script before building: ${src}`);
       return src
         ? `import ${JSON.stringify(resolve(dirname(source), decodeURIComponent(src.split(/[?#]/)[0])))};`
-        : html.slice(
-            location.startTag.endOffset,
-            location.endTag?.startOffset ?? location.endOffset,
-          );
+        : html
+            .slice(location.startTag.endOffset, location.endTag?.startOffset ?? location.endOffset)
+            .replace(/^\s*<!\[CDATA\[([\s\S]*)\]\]>\s*$/, '$1');
     })
     .join('\n');
   for (const { location } of scripts)
     edits.push({ start: location.startOffset, end: location.endOffset, value: '' });
-  const name = basename(source).replace(/\.html$/, '.js');
+  const name = outputName.replace(/\.html$/, '.js');
   const out = resolve(target, name);
   await mkdir(target, { recursive: true });
   if (code.trim()) {
@@ -163,13 +164,22 @@ export async function buildPage(
   }
   for (const edit of edits.sort((a, b) => b.start - a.start))
     html = html.slice(0, edit.start) + edit.value + html.slice(edit.end);
-  await writeFile(resolve(target, basename(source)), html);
+  await writeFile(resolve(target, outputName), html);
 }
 
 /** Both the gallery and copied projects build the same source tree. */
 export async function buildScene(source, target, options = {}) {
   source = resolve(source);
   target = resolve(target);
+  const { page: authoredPage } = await sceneEntry(source);
+  if (
+    authoredPage !== scenePage &&
+    (await access(resolve(source, scenePage)).then(
+      () => true,
+      () => false,
+    ))
+  )
+    throw new Error(`Remove the competing ${scenePage} or use it as scene.json entry`);
   // A copied scene owns its imports. Never inherit unrelated ancestor workspace aliases.
   const tsconfig = resolve(source, 'tsconfig.json');
   options = {
@@ -208,10 +218,30 @@ export async function buildScene(source, target, options = {}) {
     }
     for (const entry of entries)
       if (entry.isFile() && entry.name.endsWith('.html'))
-        await buildPage(resolve(directory, entry.name), output, options);
+        await buildPage(resolve(directory, entry.name), output, {
+          ...options,
+          ...(directory === source && entry.name === authoredPage ? { outputName: scenePage } : {}),
+        });
     await generateScene(directory, output, options);
   }
-  await buildOutput(source, target, (output) => visit(source, output));
+  await buildOutput(source, target, async (output) => {
+    await visit(source, output);
+    if (authoredPage.endsWith('.svg'))
+      await buildPage(resolve(source, authoredPage), output, {
+        ...options,
+        html: svgPage(await readFile(resolve(output, authoredPage), 'utf8')),
+        outputName: scenePage,
+      });
+    else if (
+      authoredPage !== scenePage &&
+      (await access(resolve(output, authoredPage)).then(
+        () => true,
+        () => false,
+      ))
+    )
+      await rename(resolve(output, authoredPage), resolve(output, scenePage));
+    await access(resolve(output, scenePage));
+  });
 }
 
 export async function buildPages(target = resolve(root, 'site'), catalog) {

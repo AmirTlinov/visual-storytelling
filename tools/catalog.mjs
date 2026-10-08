@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { exampleGroups, selectExamples } from './catalog-query.mjs';
+import { scenePage } from './scene-entry.mjs';
 
 const workspace = fileURLToPath(new URL('../', import.meta.url));
 const quote = (value) => `'${value.replaceAll("'", "'\"'\"'")}'`;
@@ -14,7 +15,7 @@ export function exampleDetails(entry) {
     ...entry,
     directory,
     source: resolve(directory, entry.source),
-    page: existsSync(built) ? built : resolve(directory, entry.page),
+    page: existsSync(built) ? built : undefined,
     preview: resolve(directory, 'preview.png'),
     guides: (entry.guides ?? []).map((path) => resolve(workspace, path)),
     create: `node ${quote(resolve(workspace, 'tools/scene.mjs'))} new ./my-story --example ${entry.id}`,
@@ -36,7 +37,7 @@ export function describeExamples(catalog, { query = '', group, recommended, json
       '',
       `Кадр: ${entry.preview}`,
       `Исходник: ${entry.source}`,
-      `Страница: ${entry.page}`,
+      ...(entry.page ? [`Страница: ${entry.page}`] : []),
       ...entry.guides.map((path) => `Справка: ${path}`),
       '',
       entry.create,
@@ -65,5 +66,10 @@ export function describeExamples(catalog, { query = '', group, recommended, json
 
 /** The same versioned authoring catalog ships with the runtime and CLI. */
 export async function readCatalog() {
-  return JSON.parse(await readFile(new URL('../examples/catalog.json', import.meta.url), 'utf8'));
+  const catalog = JSON.parse(
+    await readFile(new URL('../examples/catalog.json', import.meta.url), 'utf8'),
+  );
+  return Object.fromEntries(
+    Object.entries(catalog).map(([id, entry]) => [id, { ...entry, page: scenePage }]),
+  );
 }

@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 for (const [name, entry, region] of [
   ['geometric-tensor', 'index.html', '#viewport'],
-  ['parameter-cube', 'preview.html', '#stage'],
+  ['parameter-cube', 'index.html', '#stage'],
 ]) {
   test(`${name}: common orbit, middle/shift pan, zoom and reset preserve the model`, async ({
     page,
@@ -10,8 +10,13 @@ for (const [name, entry, region] of [
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto(`/${name}/${entry}`);
-    await expect.poll(() => page.frames().some((frame) => frame.url().endsWith('.svg'))).toBe(true);
-    const frame = page.frames().find((frame) => frame.url().endsWith('.svg'));
+    await page.evaluate(async () => {
+      await window.galleryReady;
+    });
+    const frame =
+      name === 'geometric-tensor'
+        ? page.mainFrame()
+        : page.frames().find((frame) => frame.url().endsWith('.svg'));
     const svg = frame.locator('svg.ve-scene');
     await expect(svg).toBeVisible();
     await expect.poll(() => svg.evaluate((n) => Boolean(n.scene))).toBe(true);

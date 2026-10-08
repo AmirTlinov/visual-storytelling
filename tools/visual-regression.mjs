@@ -3,10 +3,9 @@ import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { serve } from './site.mjs';
 import { openScene, seekScene, controlScene } from './open-scene.mjs';
+import { readCatalog } from './catalog.mjs';
 
-const catalog = JSON.parse(
-  await readFile(new URL('../examples/catalog.json', import.meta.url), 'utf8'),
-);
+const catalog = await readCatalog();
 const scenes = Object.fromEntries(
   Object.entries(catalog).map(([id, item]) => [
     id,

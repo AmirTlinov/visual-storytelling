@@ -5,6 +5,7 @@ import { pinSceneProject } from './scene-project.mjs';
 import { sceneInput } from './assets.mjs';
 import { buildNarration, setNarrationMode, silenceSceneCopy } from './narration.mjs';
 import { buildOutput } from './build-output.mjs';
+import { sceneEntry } from './scene-entry.mjs';
 
 /** CLI and plugin create the same editable project with an immutable runtime dependency. */
 export async function createScene(
@@ -56,16 +57,6 @@ export async function createScene(
         filter: (path) => sceneInput(relative(source, path)),
       });
     }
-    if (catalog[example].page !== 'index.html') {
-      const page = catalog[example].page;
-      if (page.endsWith('.html'))
-        await cp(join(destination, page), join(destination, 'index.html'));
-      else
-        await writeFile(
-          join(destination, 'index.html'),
-          `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script type="module">import '@visual-storytelling/core/style.css';</script></head><body class="ve-standalone"><main class="ve-scene" data-paper="false"><object data="${page}" type="image/svg+xml" style="width:100%;height:1200px"></object></main></body></html>`,
-        );
-    }
     if (silent) await silenceSceneCopy(destination);
     await pinSceneProject(destination, { root, signal });
     const hasAudio = await access(join(destination, 'audio.wav')).then(
@@ -91,5 +82,10 @@ export async function createScene(
     if (Boolean(current) !== Boolean(manifest) || (current && !current.equals(manifest)))
       throw new Error('The project manifest changed while preparing it. Open it again.');
   });
-  return { directory: target, example, title: catalog[example].title };
+  return {
+    directory: target,
+    example,
+    title: catalog[example].title,
+    entry: (await sceneEntry(target)).source,
+  };
 }
