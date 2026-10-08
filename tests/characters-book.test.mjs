@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { stageColor } from '../dist/characters/compositor.js';
 import assert from 'node:assert/strict';
 import { bookBounds, bookHands, bookPage, drawBook } from '../dist/characters/staging/book.js';
 import { notebookFaces } from '../dist/characters/staging/notebook.js';
@@ -19,11 +20,16 @@ function drawn(book, content) {
     lines = [];
   drawBook(
     {
-      triangle(_fill, ax, ay, bx, by, cx, cy) {
-        vertices.push({ x: ax, y: -ay }, { x: bx, y: -by }, { x: cx, y: -cy });
+      polygon(points, fill, stroke, width) {
+        vertices.push(...points.map((p) => ({ x: p.x, y: -p.y })));
+        if (width > 0)
+          for (const [i, a] of points.entries()) {
+            const b = points[(i + 1) % points.length];
+            lines.push({ a: { x: a.x, y: -a.y }, b: { x: b.x, y: -b.y }, width, color: stroke });
+          }
       },
-      rectLine(_fill, ax, ay, bx, by, width, color) {
-        lines.push({ a: { x: ax, y: -ay }, b: { x: bx, y: -by }, width, color });
+      segment(a, b, width, color) {
+        lines.push({ a: { x: a.x, y: -a.y }, b: { x: b.x, y: -b.y }, width, color });
       },
     },
     book,
@@ -78,7 +84,9 @@ test('resting text and a turning leaf leave no marks at the former held position
     maps = faces
       .filter((f) => ['page', 'cover'].includes(f.name))
       .map((f) => projective(f.points, 1, 1));
-  const rules = drawn(book).lines.filter((line) => Math.abs(line.color.r - 0xa2 / 255) < 1e-10);
+  const rules = drawn(book).lines.filter(
+    (line) => Math.abs(line.color.r - stageColor('#a2a192').r) < 1e-10,
+  );
   assert.equal(rules.length, 8);
   for (const line of rules)
     for (const p of [line.a, line.b])

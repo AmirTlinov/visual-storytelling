@@ -8,7 +8,7 @@ import { build } from 'esbuild';
 import { renderer } from '../tools/render.mjs';
 import { assetURLs } from '../tools/asset-urls.mjs';
 
-test('a responsive character host keeps SVG, Spine and Ink aligned through paused resize and book capture', async () => {
+test('a responsive character host keeps SVG, Three and Ink aligned through paused resize and book capture', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'character-camera-'));
   let capture;
   try {
@@ -109,7 +109,10 @@ test('a responsive character host keeps SVG, Spine and Ink aligned through pause
     assert.equal(book.width, 1200);
     assert.equal(book.height, 650);
     assert.ok(book.error < 0.02, `book capture changes registered layers by ${book.error}/255`);
-    assert.deepEqual(book.alpha, [255, 255, 255, 255]);
+    assert.ok(
+      book.alpha.every((alpha) => alpha >= 254),
+      'capture fills the frame within one RGBA quantization step',
+    );
     const artifacts = fileURLToPath(
       new URL('../artifacts/polish/responsive-camera/', import.meta.url),
     );

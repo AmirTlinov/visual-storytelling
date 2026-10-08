@@ -1,4 +1,4 @@
-import type { Skeleton } from '@esotericsoftware/spine-webgl';
+import type { Object3D } from 'three';
 import type { CharacterScore } from './score.js';
 import type { Beat } from './types.js';
 import { characterPartNames } from './framing.js';
@@ -9,7 +9,7 @@ import { durationOf } from './staging/timing.js';
 export function shotFraming(
   beats: readonly Beat[],
   score: CharacterScore,
-  actors: Record<string, { skeleton: Skeleton }>,
+  actors: Record<string, { object: Object3D }>,
   height: number,
   sample: (time: number) => Record<string, FrameBox>,
 ) {
@@ -23,12 +23,12 @@ export function shotFraming(
   );
   const owner = (id: string) => owners.get(id);
   const root = (id: string) => {
-    const skeleton = actors[id]!.skeleton;
+    const object = actors[id]!.object;
     return {
-      x: skeleton.x,
-      y: height - skeleton.y,
-      sx: Math.abs(skeleton.scaleX),
-      sy: Math.abs(skeleton.scaleY),
+      x: object.position.x,
+      y: height - object.position.y,
+      sx: Math.abs(object.scale.x),
+      sy: Math.abs(object.scale.y),
     };
   };
   return {

@@ -1,4 +1,4 @@
-import type { SceneRenderer } from '@esotericsoftware/spine-webgl';
+import type { CharacterCompositor } from '../compositor.js';
 import { color } from './furniture.js';
 import { projective, type Quad, type XY } from '../../ink/projective.js';
 import { notebookPageAspect, type notebookFaces, type NotebookFace } from './notebook.js';
@@ -296,7 +296,7 @@ export function bookBounds(book: BookFrame) {
   };
 }
 export function drawBook(
-  renderer: SceneRenderer,
+  renderer: CharacterCompositor,
   book: BookFrame,
   height: number,
   content?: () => void,
@@ -310,28 +310,12 @@ export function drawBook(
       return sum + p.x * next.y - p.y * next.x;
     }, 0);
     if (Math.abs(area) < 1e-8) return;
-    for (let i = 2; i < points.length; i++) {
-      const a = points[0]!,
-        b = points[i - 1]!,
-        c = points[i]!;
-      renderer.triangle(
-        true,
-        a.x,
-        height - a.y,
-        b.x,
-        height - b.y,
-        c.x,
-        height - c.y,
-        fill,
-        fill,
-        fill,
-      );
-    }
-    for (const [i, a] of points.entries()) {
-      const b = points[(i + 1) % points.length]!;
-      if (width > 0 && Math.hypot(a.x - b.x, a.y - b.y) > 1e-8)
-        renderer.rectLine(true, a.x, height - a.y, b.x, height - b.y, width, stroke);
-    }
+    renderer.polygon(
+      points.map((p) => ({ x: p.x, y: height - p.y })),
+      fill,
+      stroke,
+      width,
+    );
   };
   const faces = bookFaces(book);
   for (const face of faces) poly(face);
@@ -344,7 +328,12 @@ export function drawBook(
         const y = 0.28 + row * 0.16,
           a = map.at(0.15, y),
           b = map.at(0.75, y);
-        renderer.rectLine(true, a.x, height - a.y, b.x, height - b.y, width, color('#a2a192'));
+        renderer.segment(
+          { x: a.x, y: height - a.y },
+          { x: b.x, y: height - b.y },
+          width,
+          color('#a2a192'),
+        );
       }
     }
   }

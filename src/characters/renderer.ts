@@ -1,49 +1,24 @@
-import {
-  ManagedWebGLRenderingContext,
-  SceneRenderer,
-  GLTexture,
-} from '@esotericsoftware/spine-webgl';
-import { unpackCharacter, readSkeleton } from './performance.js';
+import { readCharacter } from './rig.js';
+import { characterCompositor } from './compositor.js';
 import type { CharacterPack } from './types.js';
 
-/** One context and atlas for every chapter. A cut changes stage state, never the graphics owner. */
+/** One GPU context and shared glTF resources across chapter changes. */
 export async function characterRenderer(pack: CharacterPack) {
-  const source = await unpackCharacter(pack);
-  const images = new Map(
-    await Promise.all(
-      Object.entries(source.textures).map(async ([name, url]) => {
-        const image = new Image();
-        image.src = url;
-        await image.decode();
-        return [name, image] as const;
-      }),
-    ),
-  );
-  const { atlas, data } = readSkeleton(source),
+  const data = await readCharacter(pack),
     canvas = document.createElement('canvas');
-  const context = new ManagedWebGLRenderingContext(canvas, {
-    alpha: true,
-    premultipliedAlpha: false,
-    preserveDrawingBuffer: true,
-  });
-  let renderer: SceneRenderer | undefined,
-    active: HTMLElement | undefined,
+  let renderer: ReturnType<typeof characterCompositor> | undefined;
+  let active: HTMLElement | undefined,
     disposed = false;
   try {
-    renderer = new SceneRenderer(canvas, context);
-    const maxTextureSize = context.gl.getParameter(context.gl.MAX_TEXTURE_SIZE) as number;
-    for (const page of atlas.pages) {
-      const image = images.get(page.name);
-      if (!image) throw new Error(`Missing character atlas page: ${page.name}`);
+    renderer = characterCompositor(canvas);
+    const maxTextureSize = renderer.renderer.capabilities.maxTextureSize;
+    for (const page of data.pages) {
+      const image = page.image as { width: number; height: number };
       if (image.width > maxTextureSize || image.height > maxTextureSize)
-        throw new Error(
-          `Character atlas page exceeds this GPU's ${maxTextureSize}px texture limit: ${page.name}`,
-        );
-      page.setTexture(new GLTexture(context, image, false));
+        throw new Error(`Character artwork exceeds this GPU's ${maxTextureSize}px texture limit`);
     }
     return {
       canvas,
-      context,
       renderer,
       data,
       maxTextureSize,
@@ -57,19 +32,15 @@ export async function characterRenderer(pack: CharacterPack) {
       dispose() {
         if (disposed) return;
         disposed = true;
-        atlas.dispose();
+        data.dispose();
         renderer?.dispose();
-        context.dispose();
-        context.gl.getExtension('WEBGL_lose_context')?.loseContext();
         canvas.width = canvas.height = 1;
         canvas.remove();
       },
     };
   } catch (error) {
-    atlas.dispose();
+    data.dispose();
     renderer?.dispose();
-    context.dispose();
-    context.gl.getExtension('WEBGL_lose_context')?.loseContext();
     throw error;
   }
 }

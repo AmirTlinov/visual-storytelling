@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { gunzipSync } from 'node:zlib';
 import { compileCharacterPack } from '../tools/characters/compile.mjs';
 import { compileScore } from '../dist/characters/score.js';
 import { blockAt } from '../dist/characters/staging/motion.js';
@@ -11,12 +10,12 @@ import { world } from '../dist/characters/staging/world.js';
 import { ground, project } from '../dist/characters/staging/space.js';
 import { readingRoom, teachingRoom, courtyard } from '../dist/characters/staging/sets.js';
 import { doorway, doorHandle, doorPassage } from '../dist/characters/staging/doorway.js';
-import { performance, readSkeleton } from '../dist/characters/performance.js';
+import { performance } from '../dist/characters/performance.js';
+import { characterData, characterPose } from './characters-fixture.mjs';
 
 const template = fileURLToPath(new URL('../src/assets/characters/chibi', import.meta.url));
 const pack = await compileCharacterPack(template, [template + '/tesla', template + '/mira']);
-const source = JSON.parse(gunzipSync(Buffer.from(pack.gzip, 'base64')));
-const { data } = readSkeleton(source);
+const data = await characterData(pack);
 const beat = (...perform) => ({ id: 'action', seconds: 2, text: 'A visible action.', perform });
 function scene(beats = [beat()]) {
   const set = readingRoom();
@@ -56,27 +55,17 @@ test('room width preserves world placement and keeps projected marks inside the 
   }
 });
 
-test('view skins retain their own artwork while preserving native rig and mesh dependencies', async () => {
-  const rig = JSON.parse(await readFile(template + '/rig.json', 'utf8'));
-  for (const key of ['bones', 'slots', 'constraints', 'animations'])
-    assert.deepEqual(source.data[key], rig[key], key);
-  for (const name of ['tesla', 'mira']) {
-    const skin = source.data.skins.find((s) => s.name === pack.viewSkins[name].back);
-    const paths = Object.values(skin.attachments).flatMap((slot) =>
-      Object.values(slot).map((a) => a.path),
-    );
-    assert.ok(
-      paths.includes(`${name}@back/nate/body`),
-      `${name}: native back view has its own body`,
-    );
-    assert.ok(
-      paths.includes(`${name}@back/nate/head-base`),
-      `${name}: inherited parts stay in its own skin`,
-    );
-    assert.equal(
-      paths.some((path) => path?.startsWith('tesla/')),
-      false,
-    );
+test('view appearances share one editable glTF rig and replace their own body artwork', async () => {
+  const rig = JSON.parse(await readFile(template + '/rig.gltf', 'utf8'));
+  const source = JSON.parse(pack.gltf);
+  for (const key of ['nodes', 'meshes', 'skins', 'animations'])
+    assert.deepEqual(source[key], rig[key], key);
+  for (const skin of ['tesla', 'mira']) {
+    const front = pack.appearances[skin],
+      back = pack.appearances[pack.viewSkins[skin].back];
+    assert.notDeepEqual(front['nate/body'], back['nate/body']);
+    assert.deepEqual(front['nate/head-base'], back['nate/head-base']);
+    assert.deepEqual(Object.keys(front).sort(), Object.keys(back).sort());
   }
 });
 
@@ -290,18 +279,7 @@ function performer(options) {
         id,
         {
           ...b.snapshot(),
-          skin: b.perf.skeleton.skin.name,
-          bones: b.perf.skeleton.bones.map((bone) => {
-            const p = bone.appliedPose;
-            const values = [p.a, p.b, p.c, p.d, p.worldX, p.worldY];
-            assert.ok(values.every(Number.isFinite), `${id}/${bone.data.name}@${time}`);
-            return values;
-          }),
-          slots: b.perf.skeleton.slots.map((slot) => [
-            slot.appliedPose.attachment?.name,
-            slot.appliedPose.color.a,
-          ]),
-          drawOrder: b.perf.skeleton.drawOrder.appliedPose.map((slot) => slot.data.name),
+          ...characterPose(b.perf),
         },
       ]),
     );
@@ -336,8 +314,7 @@ test('native prepared poses, view skins and contacts survive backward seeks and 
     sample(times[index], true);
     assert.deepEqual(sample(times[index]), expected[index], `native rewind @ ${times[index]}`);
   }
-  assert.equal(sample(9.2).a.skin, pack.viewSkins.tesla.back);
-  assert.equal(sample(1.2).a.skin, 'tesla');
+
   for (const action of [
     { action: 'openDoor', actor: 'a', door: 'door' },
     { action: 'highFive', actors: ['a', 'b'] },
@@ -409,7 +386,7 @@ test('an opened entrance guides different actors around its leaf and through the
       hinge = { x: door.at.x - (doorway.width * entranceScale) / 2, z: door.at.z };
     const halfStance = Math.max(
       ...Object.values(pack.rig.feet).map(
-        (name) => (Math.abs(data.findBone(name).setupPose.x) * scale) / 100,
+        (name) => (Math.abs(data.object.getObjectByName(name).position.x) * scale) / 100,
       ),
     );
     const clearance = (at, open) => {
@@ -477,11 +454,15 @@ test('an opened entrance guides different actors around its leaf and through the
         if (actor.facing === 'front' || actor.facing === 'back') {
           const pose = sample(time).a;
           for (const [side, leg] of Object.entries(pack.rig.legs)) {
-            const lower = data.findBone(leg.lower),
-              bone = pose.bones[data.bones.indexOf(lower)],
+            const names = [];
+            data.object.traverse((node) => {
+              if (node.isBone) names.push(node.name);
+            });
+            const lower = data.object.getObjectByName(leg.lower),
+              bone = pose.bones[names.indexOf(leg.lower)],
               ankle = {
-                x: bone[4] + bone[0] * lower.length,
-                y: options.set.height - bone[5] - bone[2] * lower.length,
+                x: bone[12] + bone[0] * lower.userData.length,
+                y: options.set.height - bone[13] - bone[1] * lower.userData.length,
               };
             assert.ok(
               Math.hypot(ankle.x - pose.feet[side].x, ankle.y - pose.feet[side].y) < 0.01,

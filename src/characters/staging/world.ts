@@ -1,5 +1,5 @@
 import { portableArt, portableBounds, type CarriedFrame } from './portable.js';
-import type { ManagedWebGLRenderingContext, SceneRenderer } from '@esotericsoftware/spine-webgl';
+import type { CharacterCompositor } from '../compositor.js';
 import type { CharacterStageOptions } from '../types.js';
 import type { performance } from '../performance.js';
 import type { Blocking } from './blocking.js';
@@ -19,7 +19,7 @@ export async function world(
   options: CharacterStageOptions,
   blocking: Blocking,
   actors: Record<string, Performer>,
-  context: ManagedWebGLRenderingContext,
+  graphics?: CharacterCompositor,
 ) {
   const { staging } = blocking,
     { height } = options.set;
@@ -31,13 +31,12 @@ export async function world(
   );
   let frames = blockAt(blocking, 0);
   const furniture = await loadFurniture(
-    context,
     options.background === false ? {} : staging.objects,
     staging.projection,
   );
   let props: Awaited<ReturnType<typeof portableArt>> | undefined;
   try {
-    if (context) props = await portableArt(context, staging.objects);
+    if (graphics) props = await portableArt(staging.objects);
   } catch (error) {
     furniture.dispose();
     throw error;
@@ -48,7 +47,7 @@ export async function world(
     return bookPage(frame, size ? size.width / size.height : 2);
   };
   const drawItem = (
-    renderer: SceneRenderer,
+    renderer: CharacterCompositor,
     frame: ItemFrame,
     surface?: (id: string, quad: Quad) => void,
   ) => {
@@ -138,7 +137,7 @@ export async function world(
       return actions;
     },
     draw(
-      renderer: SceneRenderer,
+      renderer: CharacterCompositor,
       surface?: (id: string, quad: Quad) => void,
       omit: readonly string[] = [],
     ) {
@@ -148,7 +147,7 @@ export async function world(
           depth: part.depth,
           draw: () => {
             const b = part.bounds;
-            renderer.drawTexture(part.texture, b.x, height - b.y - b.height, b.width, b.height);
+            renderer.image(part.texture, { ...b, y: height - b.y - b.height });
           },
         }));
       if (options.background !== false)
@@ -191,36 +190,27 @@ export async function world(
                   height - at.y + Math.sin(a) * 13 * b.scale,
                 );
               }
-              const shadow = color('#344f47', 0.22);
-              for (let i = 0; i < 32; i++)
-                renderer.triangle(
-                  true,
-                  at.x,
-                  height - at.y,
-                  ps[i * 2]!,
-                  ps[i * 2 + 1]!,
-                  ps[((i + 1) % 32) * 2]!,
-                  ps[((i + 1) % 32) * 2 + 1]!,
-                  shadow,
-                  shadow,
-                  shadow,
-                );
+              renderer.polygon(
+                Array.from({ length: 32 }, (_, i) => ({ x: ps[i * 2]!, y: ps[i * 2 + 1]! })),
+                color('#344f47', 0.22),
+              );
             }
-            const skeleton = b.perf.skeleton,
-              book = heldItems[id];
-            if (book) {
-              const order = skeleton.drawOrder.appliedPose,
-                torso = order.findIndex((slot) => slot.data.name === options.pack.rig!.bodySlot),
+            const item = heldItems[id];
+            if (item) {
+              const order = b.perf.orderedMeshes(),
+                torso = order.findIndex(
+                  (mesh) => mesh.userData.slot === options.pack.rig!.bodySlot,
+                ),
                 arms = order
-                  .map((slot, index) =>
-                    options.pack.rig!.frontArms.includes(slot.data.name) ? index : -1,
+                  .map((mesh, index) =>
+                    options.pack.rig!.frontArms.includes(mesh.userData.slot) ? index : -1,
                   )
                   .filter((index) => index >= 0),
-                index = arms.find((index) => index > torso) ?? arms[0] ?? -1;
-              if (index > 0) renderer.drawSkeleton(skeleton, -1, order[index - 1]!.data.index);
-              if (!omit.includes(book.id)) drawItem(renderer, book, surface);
-              renderer.drawSkeleton(skeleton, index < 0 ? -1 : order[index]!.data.index, -1);
-            } else renderer.drawSkeleton(skeleton);
+                index = arms.find((index) => index > torso) ?? arms[0] ?? order.length;
+              renderer.actor(b.perf, order.slice(0, index));
+              if (!omit.includes(item.id)) drawItem(renderer, item, surface);
+              renderer.actor(b.perf, order.slice(index));
+            } else renderer.actor(b.perf);
           },
         });
       items.sort((a, b) => b.depth - a.depth);
@@ -279,6 +269,7 @@ export async function world(
     }),
     controls: () => frames.objects,
     dispose() {
+      for (const body of Object.values(bodies)) body.dispose();
       props?.dispose();
       furniture.dispose();
     },

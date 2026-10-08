@@ -1,8 +1,13 @@
+Chibi Stickers rig and motion data
 Copyright (c) 2022, Esoteric Software LLC
-
-The images in this project may be redistributed as long as they are accompanied
-by this license file. The images may not be used for commercial use of any
-kind.
 
 The project file is released into the public domain. It may be used as the basis
 for derivative work.
+
+The rig and authored motion data in rig.gltf were converted from that public-domain
+project. The original example images and runtime are not included.
+Source: https://github.com/EsotericSoftware/spine-runtimes/tree/4.3/examples/chibi-stickers
+
+All character SVG drawings in this directory are original Visual Storytelling
+artwork, distributed under the repository's 0BSD license. Texture pages are
+built solely from these SVG sources. Rendering and animation use Three.js (MIT).

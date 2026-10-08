@@ -25,6 +25,6 @@ export async function buildBuiltinCharacters() {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const pack = await buildBuiltinCharacters();
   console.log(
-    `${pack.id}: ${pack.skins.join(', ')}, ${Object.keys(pack.actions).length} actions, ${Math.round(pack.gzip.length / 1024)} KiB packed`,
+    `${pack.id}: ${pack.skins.join(', ')}, ${Object.keys(pack.actions).length} actions, ${Math.round(pack.gltf.length / 1024)} KiB packed`,
   );
 }

@@ -1,9 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { gunzipSync } from 'node:zlib';
 import sharp from 'sharp';
-import { TextureAtlas } from '@esotericsoftware/spine-webgl';
 import { characterAtlas } from '../tools/characters/atlas.mjs';
 import { compileCharacterPack } from '../tools/characters/compile.mjs';
 
@@ -27,31 +25,22 @@ test('atlas pages have bounded dimensions and aliases reuse pixels without overl
     });
   sprites.push({ ...sprites[0], path: 'duplicate' });
   const result = await characterAtlas(sprites, { pageSize: 64 });
-  const atlas = new TextureAtlas(result.atlas);
-  assert.ok(atlas.pages.length > 1);
-  for (const page of atlas.pages) {
-    const image = await sharp(
-      Buffer.from(result.textures[page.name].split(',')[1], 'base64'),
-    ).metadata();
+  assert.ok(result.textures.length > 1);
+  for (const texture of result.textures) {
+    const image = await sharp(Buffer.from(texture.split(',')[1], 'base64')).metadata();
     assert.ok(image.width <= 64 && image.height <= 64);
-    assert.equal(image.width, page.width);
-    assert.equal(image.height, page.height);
   }
-  const original = atlas.findRegion('art-0'),
-    alias = atlas.findRegion('duplicate');
-  assert.equal(alias.page, original.page);
-  assert.equal(alias.u, original.u);
-  assert.equal(alias.v, original.v);
+  assert.deepEqual(result.regions.duplicate, result.regions['art-0']);
   for (const [i, a] of sprites.slice(0, 11).entries())
     for (const b of sprites.slice(i + 1, 11)) {
-      const x = atlas.findRegion(a.path),
-        y = atlas.findRegion(b.path);
+      const x = result.regions[a.path],
+        y = result.regions[b.path];
       assert.ok(
-        x.page !== y.page ||
-          x.x + x.width <= y.x ||
-          y.x + y.width <= x.x ||
-          x.y + x.height <= y.y ||
-          y.y + y.height <= x.y,
+        x.texture !== y.texture ||
+          x.offset[0] + x.scale[0] <= y.offset[0] ||
+          y.offset[0] + y.scale[0] <= x.offset[0] ||
+          x.offset[1] + x.scale[1] <= y.offset[1] ||
+          y.offset[1] + y.scale[1] <= x.offset[1],
       );
     }
   await assert.rejects(characterAtlas([{ ...sprites[0], w: 63 }], { pageSize: 64 }), /exceeds/);
@@ -67,7 +56,12 @@ test('atlas pages have bounded dimensions and aliases reuse pixels without overl
     { pageSize: 16 },
   );
   assert.deepEqual(
-    new TextureAtlas(edge.atlas).pages.map((p) => [p.width, p.height]),
+    await Promise.all(
+      edge.textures.map(async (uri) => {
+        const m = await sharp(Buffer.from(uri.split(',')[1], 'base64')).metadata();
+        return [m.width, m.height];
+      }),
+    ),
     [
       [16, 16],
       [16, 16],
@@ -88,9 +82,10 @@ test('thirty-three compatible characters compile into bounded atlas pages with a
     })),
   );
   assert.equal(pack.skins.length, 33);
-  const source = JSON.parse(gunzipSync(Buffer.from(pack.gzip, 'base64')));
-  const atlas = new TextureAtlas(source.atlas);
-  for (const page of atlas.pages) assert.ok(page.width <= 2048 && page.height <= 2048);
-  assert.equal(Object.keys(source.textures).length, atlas.pages.length);
-  assert.ok(source.data.skins.some((s) => s.name === 'historian-32@back'));
+  const source = JSON.parse(pack.gltf);
+  for (const image of source.images) {
+    const size = await sharp(Buffer.from(image.uri.split(',')[1], 'base64')).metadata();
+    assert.ok(size.width <= 2048 && size.height <= 2048);
+  }
+  assert.ok(pack.appearances['historian-32@back']);
 });

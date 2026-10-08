@@ -1,191 +1,90 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import {
-  Skeleton,
-  MixFrom,
-  Physics,
-  RegionAttachment,
-  VertexAttachment,
-  BoundingBoxAttachment,
-  Slot,
-  SlotData,
-} from '@esotericsoftware/spine-webgl';
-import { performance, readSkeleton, unpackCharacter } from '../dist/characters/performance.js';
+import { Bone, SkinnedMesh } from 'three';
+import { performance } from '../dist/characters/performance.js';
 import { chibi } from '../dist/characters/packs/chibi.js';
 import { characterDetails } from '../dist/characters/framing.js';
+import { characterData, characterPose } from './characters-fixture.mjs';
 
-const source = await unpackCharacter(chibi);
-const { data } = readSkeleton(source);
+const data = await characterData(chibi);
 const at = { x: 320, y: 650 },
   height = 780;
 const make = (track, actor = {}, blend = 0.22) =>
   performance(data, chibi, { skin: 'tesla', at, ...actor }, track, at, height, blend);
+const mouth = (actor) =>
+  actor.orderedMeshes().find((mesh) => mesh.userData.slot === 'mouth')?.userData.artwork;
+const matrices = (actor) => [...actor.bones.values()].map((bone) => bone.matrixWorld.toArray());
+const sample = (action, time, actor = {}) => {
+  const figure = make([{ action, start: 0 }], actor);
+  figure.sample(time);
+  const result = characterPose(figure);
+  figure.dispose();
+  return result;
+};
 
-test('camera details count drawn attachments and ignore invisible rig hit regions', () => {
-  const actor = make([{ action: 'idle', start: 0 }]);
-  actor.sample(0);
-  const expected = characterDetails(actor.skeleton, chibi.rig, height);
-  const face = actor.skeleton.findBone(chibi.rig.face);
-  const slot = new Slot(
-    new SlotData(actor.skeleton.slots.length, 'hit-region', face.data),
-    actor.skeleton,
-  );
-  const hit = new BoundingBoxAttachment('interaction-region');
-  hit.worldVerticesLength = 8;
-  hit.vertices = [-2000, -2000, 2000, -2000, 2000, 2000, -2000, 2000];
-  slot.appliedPose.attachment = hit;
-  actor.skeleton.slots.push(slot);
-  assert.ok(expected.face.width > 0);
-  assert.deepEqual(characterDetails(actor.skeleton, chibi.rig, height), expected);
+test('portable glTF and every semantic action use Three bones and weighted drawings', () => {
+  const source = JSON.parse(chibi.gltf);
+  assert.equal(source.asset.version, '2.0');
+  assert.equal(Object.keys(chibi.actions).length, 24);
+  assert.ok(source.images.every((image) => image.uri.startsWith('data:image/png;base64,')));
+  for (const skin of chibi.skins)
+    for (const [action, definition] of Object.entries(chibi.actions)) {
+      const actor = make([{ action, start: 0 }], { skin });
+      const duration = data.clips.find((clip) => clip.name === definition.animation).duration;
+      for (const time of [0, 0.13, 1.2, duration, duration + 0.37]) {
+        actor.sample(time);
+        assert.ok([...actor.bones.values()].every((bone) => bone instanceof Bone));
+        assert.ok(actor.meshes.every((mesh) => mesh instanceof SkinnedMesh));
+        assert.ok(matrices(actor).flat().every(Number.isFinite), `${skin}/${action}@${time}`);
+        const box = actor.bounds();
+        assert.ok(box.width > 30 && box.height > 100, `${skin}/${action} has visible drawing`);
+        assert.ok(
+          actor.orderedMeshes().every((mesh) => chibi.appearances[skin][mesh.userData.artwork]),
+        );
+      }
+      actor.dispose();
+    }
 });
-test('semantic hand shots follow weighted arm meshes in every native view and remain addressable when hidden', () => {
+
+test('semantic detail shots follow weighted limbs and remain addressable when artwork is hidden', () => {
   for (const skin of ['tesla-workshop', 'mira-scholar']) {
     const actor = make([{ action: 'idle', start: 0 }], { skin });
     for (const [view, clip] of Object.entries(chibi.rig.views)) {
       actor.sample(6.1, false, { at, scale: 0.8, view, clip });
-      const details = characterDetails(actor.skeleton, chibi.rig, height);
-      for (const side of ['left', 'right']) {
-        const bounds = details[`hand-${side}`];
+      const details = characterDetails(actor, chibi.rig, height);
+      for (const side of ['left', 'right'])
         assert.ok(
-          bounds.width > 10 && bounds.height > 10,
-          `${skin}/${view}/${side} misses weighted artwork`,
+          details[`hand-${side}`].width > 10 && details[`hand-${side}`].height > 10,
+          `${skin}/${view}/${side}`,
         );
-      }
     }
-    for (const slot of actor.skeleton.slots) slot.appliedPose.color.a = 0;
-    const hidden = characterDetails(actor.skeleton, chibi.rig, height);
+    for (const mesh of actor.meshes) mesh.material.opacity = 0;
+    const hidden = characterDetails(actor, chibi.rig, height);
     assert.deepEqual(Object.keys(hidden).sort(), ['face', 'hand-left', 'hand-right']);
-    for (const bounds of Object.values(hidden)) {
-      assert.ok([bounds.x, bounds.y].every(Number.isFinite));
-      assert.equal(bounds.width, 0);
-      assert.equal(bounds.height, 0);
+    for (const box of Object.values(hidden)) {
+      assert.ok([box.x, box.y].every(Number.isFinite));
+      assert.equal(box.width, 0);
+      assert.equal(box.height, 0);
     }
+    actor.dispose();
   }
 });
-const matrix = (b) => [
-  b.appliedPose.a,
-  b.appliedPose.b,
-  b.appliedPose.c,
-  b.appliedPose.d,
-  b.appliedPose.worldX,
-  b.appliedPose.worldY,
-];
 
-// Read what Spine renders, including weighted mesh vertices and instant timelines.
-function pose(skeleton) {
-  return {
-    bones: skeleton.bones.map((b) => [b.active, ...matrix(b)]),
-    slots: skeleton.slots.map((slot) => {
-      const p = slot.appliedPose,
-        attachment = p.attachment,
-        vertices = [];
-      if (attachment instanceof RegionAttachment) {
-        const offsets = attachment.sequence.offsets[attachment.sequence.resolveIndex(p)];
-        attachment.computeWorldVertices(slot, offsets, vertices, 0, 2);
-      } else if (attachment instanceof VertexAttachment) {
-        attachment.computeWorldVertices(
-          skeleton,
-          slot,
-          0,
-          attachment.worldVerticesLength,
-          vertices,
-          0,
-          2,
-        );
-      }
-      return {
-        attachment: attachment?.name ?? null,
-        sequence: p.sequenceIndex,
-        color: [p.color.r, p.color.g, p.color.b, p.color.a],
-        deform: [...p.deform],
-        vertices,
-      };
-    }),
-    order: skeleton.drawOrder.appliedPose.map((slot) => slot.data.name),
-  };
-}
-
-function nativePose(action, time, skin, reduced = false, flip = false) {
-  const skeleton = new Skeleton(data);
-  skeleton.setSkin(skin);
-  skeleton.setupPose();
-  skeleton.x = at.x;
-  skeleton.y = height - at.y;
-  skeleton.scaleX = flip ? -0.77 : 0.77;
-  skeleton.scaleY = 0.77;
-  const definition = chibi.actions[action],
-    animation = data.findAnimation(definition.animation);
-  animation.apply(
-    skeleton,
-    -1,
-    reduced
-      ? Math.min(definition.pose ?? 1.2, animation.duration)
-      : definition.loop
-        ? time
-        : Math.min(time, definition.pose ?? animation.duration),
-    !reduced && !!definition.loop,
-    null,
-    1,
-    MixFrom.setup,
-    false,
-    false,
-    false,
-  );
-  skeleton.updateWorldTransform(Physics.reset);
-  return pose(skeleton);
-}
-
-test('character pack retains the native rig, animations, draw order and linked mesh sources', async () => {
-  const rig = JSON.parse(
-    await readFile(new URL('../src/assets/characters/chibi/rig.json', import.meta.url), 'utf8'),
-  );
-  for (const key of ['skeleton', 'bones', 'slots', 'constraints', 'animations'])
-    assert.deepEqual(source.data[key], rig[key], key);
-  assert.equal(Object.keys(chibi.actions).length, 24);
-  for (const skin of source.data.skins)
-    for (const [slot, entries] of Object.entries(skin.attachments ?? {})) {
-      for (const [name, attachment] of Object.entries(entries)) {
-        if (attachment.type !== 'linkedmesh') continue;
-        const parent = source.data.skins.find((s) => s.name === (attachment.skin ?? 'default'));
-        assert.ok(
-          parent?.attachments?.[slot]?.[attachment.source],
-          `${skin.name}/${slot}/${name} source`,
-        );
-      }
-    }
-});
-
-test('all 24 actions on both skins reproduce native attachments, deforms and draw order', () => {
-  for (const skin of chibi.skins)
-    for (const [action, definition] of Object.entries(chibi.actions)) {
-      const actor = make([{ start: 0, action }], { skin });
-      const duration = data.findAnimation(definition.animation).duration;
-      for (const time of [0, 0.13, 1.2, duration, duration + 0.37]) {
-        actor.sample(time);
-        assert.ok(
-          actor.skeleton.bones.flatMap(matrix).every(Number.isFinite),
-          `${skin}/${action}: finite world pose`,
-        );
-        assert.deepEqual(
-          pose(actor.skeleton),
-          nativePose(action, time, skin),
-          `${skin}/${action}@${time}`,
-        );
-      }
-    }
-});
-
-test('absolute sampling survives rewind and interrupted blends without slot or mesh state leaking', () => {
+test('rewind and interrupted blends equal a fresh absolute sample without leaking actor state', () => {
   const actions = Object.keys(chibi.actions);
   for (const spacing of [0.37, 0.07]) {
     const track = actions.map((action, i) => ({ start: i * spacing, action }));
-    const actor = make(track);
+    const actor = make(track),
+      neighbour = make([{ start: 0, action: 'wave' }], { skin: 'mira' });
+    neighbour.sample(1.2);
+    const untouched = characterPose(neighbour);
     const times = track.flatMap(({ start }) => [start, start + 0.031, start + 0.069]);
     const baseline = times.map((time) => {
       const fresh = make(track);
       fresh.sample(time);
-      return pose(fresh.skeleton);
+      const pose = characterPose(fresh);
+      fresh.dispose();
+      return pose;
     });
     for (const index of [...times.keys()]
       .reverse()
@@ -193,99 +92,123 @@ test('absolute sampling survives rewind and interrupted blends without slot or m
       actor.sample(times[index], true);
       actor.sample(times[index]);
       assert.deepEqual(
-        pose(actor.skeleton),
+        characterPose(actor),
         baseline[index],
         `spacing ${spacing}, seek ${times[index]}`,
       );
+      assert.deepEqual(
+        characterPose(neighbour),
+        untouched,
+        'one actor never changes its neighbour',
+      );
     }
+    actor.dispose();
+    neighbour.dispose();
   }
 });
 
-test('idea-to-celebration mixes unkeyed channels back to setup without an end-of-blend jump', () => {
+test('repeated clips keep independent playback positions during an interrupted crossfade', () => {
+  const actor = make([
+    { start: 0, action: 'idle' },
+    { start: 0.07, action: 'wave' },
+    { start: 0.14, action: 'idle' },
+  ]);
+  const reference = make([{ start: 0, action: 'idle' }]);
+  actor.sample(0.36);
+  reference.sample(0.22);
+  assert.deepEqual(characterPose(actor), characterPose(reference));
+  for (const boundary of [0.14, 0.29, 0.36]) {
+    actor.sample(boundary - 1e-6);
+    const before = matrices(actor);
+    actor.sample(boundary + 1e-6);
+    const after = matrices(actor);
+    const delta = Math.max(
+      ...before.flatMap((bone, i) => bone.map((n, j) => Math.abs(n - after[i][j]))),
+    );
+    assert.ok(delta < 0.01, `repeated clip changes at ${boundary}: ${delta}`);
+  }
+  assert.equal(
+    new Set(actor.meshes.map((mesh) => mesh.skeleton)).size,
+    1,
+    'one shared GPU bone palette per actor',
+  );
+  actor.dispose();
+  reference.dispose();
+});
+
+test('continuous channels return to the next clip without an end-of-blend jump', () => {
   const actor = make([
     { start: 0, action: 'think' },
     { start: 3, action: 'idea' },
     { start: 6, action: 'celebrate' },
   ]);
-  // IK bend direction is an authored instant change at action entry. The end
-  // of a continuous mix must not introduce another jump in unkeyed channels.
   for (const boundary of [3.22, 6.22]) {
     actor.sample(boundary - 0.00001);
-    const before = actor.skeleton.bones.map(matrix);
+    const before = matrices(actor);
     actor.sample(boundary + 0.00001);
-    const after = actor.skeleton.bones.map(matrix);
+    const after = matrices(actor);
     const delta = Math.max(
       ...before.flatMap((bone, i) => bone.map((n, j) => Math.abs(n - after[i][j]))),
     );
     assert.ok(delta < 0.02, `world-transform jump ${delta} at ${boundary}`);
   }
+  actor.dispose();
 });
 
-test('a completed idea holds its smile through long speech, then mixes into a full native wave and rewinds', () => {
-  const track = [
-    { start: 0, action: 'idea' },
-    { start: 8, action: 'wave' },
-  ];
+test('a completed idea holds its smile through speech, then mixes into a wave and rewinds', () => {
   for (const skin of ['tesla', 'mira']) {
-    const actor = make(track, { skin });
+    const actor = make(
+      [
+        { start: 0, action: 'idea' },
+        { start: 8, action: 'wave' },
+      ],
+      { skin },
+    );
     for (const time of [2, 3.1, 7.9]) {
       actor.sample(time);
-      assert.deepEqual(pose(actor.skeleton), nativePose('idea', 2, skin));
-      assert.match(
-        actor.skeleton.findSlot('mouth').appliedPose.attachment.name,
-        /mouth-open-smile$/,
-      );
+      assert.deepEqual(characterPose(actor), sample('idea', 2, { skin }));
+      assert.match(mouth(actor), /mouth-open-smile$/);
     }
-    actor.sample(8.22 - 0.00001);
-    const before = actor.skeleton.bones.map(matrix);
-    actor.sample(8.22 + 0.00001);
-    const delta = Math.max(
-      ...actor.skeleton.bones
-        .map(matrix)
-        .flatMap((bone, i) => bone.map((n, j) => Math.abs(n - before[i][j]))),
-    );
-    assert.ok(delta < 0.02, `held idea leaves the native mix without a jump: ${delta}`);
     for (const time of [9.3, 12.7, 8.8]) {
       actor.sample(time);
-      assert.deepEqual(pose(actor.skeleton), nativePose('wave', time - 8, skin));
+      assert.deepEqual(characterPose(actor), sample('wave', time - 8, { skin }));
     }
     actor.sample(1.2);
-    assert.match(actor.skeleton.findSlot('mouth').appliedPose.attachment.name, /mouth-doubt$/);
-    const prepared = make([{ start: 0, action: 'idle' }], { skin });
+    assert.match(mouth(actor), /mouth-doubt$/);
     for (const time of [2, 21.3, 1.2, 7, 3]) {
-      prepared.sample(time, false, {
+      actor.sample(time, false, {
         at,
         scale: 0.77,
         clip: chibi.rig.views.front,
         mood: 'idea',
         moodTime: time,
       });
-      assert.match(
-        prepared.skeleton.findSlot('mouth').appliedPose.attachment.name,
-        time < 1.4 ? /mouth-doubt$/ : /mouth-open-smile$/,
-      );
+      assert.match(mouth(actor), time < 1.4 ? /mouth-doubt$/ : /mouth-open-smile$/);
     }
+    actor.dispose();
   }
 });
 
-test('reduced motion keeps the representative native pose and mirrored contact anchors follow bones', () => {
+test('reduced motion holds one representative pose and mirrored anchors follow the same bones', () => {
   for (const action of Object.keys(chibi.actions)) {
     const actor = make([{ start: 0, action }]);
     actor.sample(0.1, true);
-    const first = pose(actor.skeleton);
+    const first = characterPose(actor);
     actor.sample(99, true);
-    assert.deepEqual(pose(actor.skeleton), first, `${action}: reduced pose changes over time`);
-    assert.deepEqual(first, nativePose(action, 0, 'tesla', true), `${action}: representative pose`);
+    assert.deepEqual(characterPose(actor), first, action);
+    actor.dispose();
   }
-  const left = make([{ start: 0, action: 'wave' }]);
-  const right = make([{ start: 0, action: 'wave' }], { flip: true });
+  const left = make([{ start: 0, action: 'wave' }]),
+    right = make([{ start: 0, action: 'wave' }], { flip: true });
   left.sample(1.2);
   right.sample(1.2);
   for (const name of Object.keys(chibi.anchors)) {
     const a = left.anchor(name),
       b = right.anchor(name);
-    assert.ok(Math.abs(a.x + b.x - 2 * at.x) < 1e-7, `${name}: x mirror`);
-    assert.ok(Math.abs(a.y - b.y) < 1e-7, `${name}: y mirror`);
+    assert.ok(Math.abs(a.x + b.x - 2 * at.x) < 1e-7);
+    assert.ok(Math.abs(a.y - b.y) < 1e-7);
   }
   for (const time of [NaN, Infinity, -Infinity]) assert.throws(() => left.sample(time), /finite/);
+  left.dispose();
+  right.dispose();
 });

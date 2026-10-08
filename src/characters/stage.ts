@@ -34,7 +34,7 @@ export async function characterStage(
   const background = options.background !== false;
   const scope = `character-stage-${++nextStage}`;
   const graphics = shared ?? (await characterRenderer(pack));
-  const { canvas, context, renderer, data, maxTextureSize } = graphics;
+  const { canvas, renderer, data, maxTextureSize } = graphics;
   const element = document.createElement('div');
   element.className = 've-character-stage';
   const aperture = document.createElement('div');
@@ -92,6 +92,7 @@ export async function characterStage(
   resize();
   let prepared: Awaited<ReturnType<typeof world>> | undefined;
   let disposed = false;
+  let performers: Record<string, ReturnType<typeof performance>> = {};
   let releasePresentation: (() => void) | undefined;
   let inspect: (() => unknown) | undefined;
   const inspected = canvas as HTMLCanvasElement & { __visualReview?: () => unknown };
@@ -104,6 +105,7 @@ export async function characterStage(
     surfaces?.dispose();
     releasePresentation?.();
     prepared?.dispose();
+    for (const actor of Object.values(performers)) actor.dispose();
     if (!shared) graphics.dispose();
     element.remove();
   };
@@ -127,7 +129,8 @@ export async function characterStage(
         ),
       ]),
     );
-    if (score.blocking) prepared = await world(options, score.blocking, actors, context);
+    performers = actors;
+    if (score.blocking) prepared = await world(options, score.blocking, actors, renderer);
     if (Object.keys(options.surfaces ?? {}).length) {
       if (!prepared) throw new Error('Drawing surfaces need a prepared world');
       surfaces = characterSurfaces(aperture, options, graphics, snapshotSVG);
@@ -203,15 +206,15 @@ export async function characterStage(
         );
       const actorBounds = Object.fromEntries(
         Object.entries(actors).map(([id, actor]) => {
-          const b = actor.skeleton.getBoundsRect();
-          return [id, { x: b.x, y: set.height - b.y - b.height, width: b.width, height: b.height }];
+          return [id, actor.bounds()];
         }),
       );
       details = Object.fromEntries(
         Object.entries(actors).flatMap(([id, actor]) =>
-          Object.entries(characterDetails(actor.skeleton, pack.rig, set.height)).map(
-            ([part, box]) => [`${id}.${part}`, box],
-          ),
+          Object.entries(characterDetails(actor, pack.rig, set.height)).map(([part, box]) => [
+            `${id}.${part}`,
+            box,
+          ]),
         ),
       );
       return { actions, actorBounds };
@@ -362,12 +365,6 @@ export async function characterStage(
         }
         for (const svg of [back, front])
           svg.setAttribute('viewBox', `${camera.x} ${camera.y} ${camera.width} ${camera.height}`);
-        renderer!.camera.position.set(
-          camera.x + camera.width / 2,
-          set.height - camera.y - camera.height / 2,
-          0,
-        );
-        renderer!.camera.setViewport(camera.width, camera.height);
         // Logical dimensions also work when the host is hidden or detached.
         const logicalHeight = set.height,
           logicalWidth = (logicalHeight * camera.width) / camera.height;
@@ -379,13 +376,7 @@ export async function characterStage(
         );
         const width = Math.max(1, Math.round(logicalWidth * dpr)),
           height = Math.max(1, Math.round(logicalHeight * dpr));
-        if (canvas.width !== width) canvas.width = width;
-        if (canvas.height !== height) canvas.height = height;
-        const gl = context!.gl;
-        gl.viewport(0, 0, width, height);
-        renderer!.camera.update();
-        gl.clearColor(0, 0, 0, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
+        renderer.frame(camera, set.height, width, height);
         surfaces?.begin(
           frame ?? {
             time,
@@ -400,12 +391,11 @@ export async function characterStage(
           current,
           Object.fromEntries(Object.entries(propState).map(([id, state]) => [id, state.values])),
         );
-        renderer!.begin();
         try {
           if (prepared) prepared.draw(renderer!, surfaces?.place, captureView?.omit);
-          else for (const id of order) renderer!.drawSkeleton(actors[id]!.skeleton);
+          else for (const id of order) renderer.actor(actors[id]!);
         } finally {
-          renderer!.end();
+          renderer.flush();
         }
         snapshot = {
           time,
@@ -559,7 +549,7 @@ export const CharacterStage = {
   async mountMany(parent: HTMLElement, options: readonly CharacterStageOptions[]) {
     if (!options.length) throw new Error('A cast sequence needs at least one stage');
     const pack = options[0]!.pack;
-    if (options.some((o) => o.pack.gzip !== pack.gzip))
+    if (options.some((o) => o.pack.gltf !== pack.gltf))
       throw new Error('Chapters share one character pack');
     const scores = options.map(compileScore),
       graphics = await characterRenderer(pack);

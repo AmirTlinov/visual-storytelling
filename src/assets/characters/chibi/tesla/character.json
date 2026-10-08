@@ -36,68 +36,55 @@
     },
     "mouth-neutral": {
       "path": "common/mouth-neutral",
-      "file": "mouth-neutral.svg",
-      "y": 9
+      "file": "mouth-neutral.svg"
     },
     "mouth-doubt": {
       "path": "common/mouth-doubt",
-      "file": "mouth-doubt.svg",
-      "y": 9
+      "file": "mouth-doubt.svg"
     },
     "mouth-open-smile": {
       "path": "common/mouth-open-smile",
-      "file": "mouth-open-smile.svg",
-      "y": 9
+      "file": "mouth-open-smile.svg"
     },
     "mouth-3": {
       "path": "common/mouth-3",
-      "file": "mouth-3.svg",
-      "y": 9
+      "file": "mouth-3.svg"
     },
     "mouth-bracket": {
       "path": "common/mouth-bracket",
-      "file": "mouth-bracket.svg",
-      "y": 9
+      "file": "mouth-bracket.svg"
     },
     "mouth-line": {
       "path": "common/mouth-line",
-      "file": "mouth-line.svg",
-      "y": 9
+      "file": "mouth-line.svg"
     },
     "mouth-rectangle": {
       "path": "common/mouth-rectangle",
-      "file": "mouth-rectangle.svg",
-      "y": 9
+      "file": "mouth-rectangle.svg"
     },
     "mouth-reverse-v": {
       "path": "common/mouth-reverse-v",
-      "file": "mouth-reverse-v.svg",
-      "y": 9
+      "file": "mouth-reverse-v.svg"
     },
     "mouth-s": {
       "path": "common/mouth-s",
-      "file": "mouth-s.svg",
-      "y": 9
+      "file": "mouth-s.svg"
     },
     "mouth-toungue-sticking-out": {
       "path": "common/mouth-toungue-sticking-out",
-      "file": "mouth-toungue-sticking-out.svg",
-      "y": 9
+      "file": "mouth-toungue-sticking-out.svg"
     },
     "mouth-u": {
       "path": "common/mouth-u",
-      "file": "mouth-u.svg",
-      "y": 9
+      "file": "mouth-u.svg"
     },
     "mouth-v": {
       "path": "common/mouth-v",
-      "file": "mouth-v.svg",
-      "y": 9
+      "file": "mouth-v.svg"
     },
     "mouth-x": {
       "path": "common/mouth-x",
-      "file": "mouth-x.svg",
-      "y": 9
+      "file": "mouth-x.svg"
     }
   },
   "views": {

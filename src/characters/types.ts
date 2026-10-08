@@ -10,8 +10,24 @@ export interface Point {
 export type Place = string | Point | { actor: string; anchor: string };
 export interface CharacterPack {
   id: string;
-  /** gzip JSON: { data: Spine skeleton JSON, atlas: string, textures: page-name → data URL }. */
-  gzip: string;
+  /** Self-contained glTF 2.0: editable bones, weighted drawings and animation clips. */
+  gltf: string;
+  /** Named drawings share glTF texture pages across the cast. */
+  appearances: Readonly<
+    Record<
+      string,
+      Readonly<
+        Record<
+          string,
+          {
+            texture: number;
+            offset: readonly number[];
+            scale: readonly number[];
+          }
+        >
+      >
+    >
+  >;
   skins: readonly string[];
   /** pose is the reduced-motion frame and the settle/hold time for a non-looping action. */
   actions: Readonly<Record<string, { animation: string; loop?: boolean; pose?: number }>>;

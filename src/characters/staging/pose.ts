@@ -1,12 +1,7 @@
 import type { CarriedFrame } from './portable.js';
-import {
-  IkConstraint,
-  Physics,
-  ScaleYMode,
-  Vector2,
-  type Bone,
-  type Skeleton,
-} from '@esotericsoftware/spine-webgl';
+import { Vector3, type Bone } from 'three';
+import { boneLength } from '../rig.js';
+import { contactRig } from './ik.js';
 import type { Actor, Point } from '../types.js';
 import type { performance } from '../performance.js';
 import type { BipedRig, Projection, GroundPoint, Furniture } from './types.js';
@@ -19,11 +14,7 @@ import { pressTravel } from './press.js';
 type Performer = ReturnType<typeof performance>;
 const sides = ['left', 'right'] as const;
 type Side = (typeof sides)[number];
-const vector = new Vector2();
-function descendants(bone: Bone, skeleton: Skeleton) {
-  bone.appliedPose.updateWorldTransform(skeleton);
-  for (const child of bone.children) descendants(child, skeleton);
-}
+const vector = new Vector3();
 /** Feet rest on tread centers. The root follows the slope while each foot lifts over risers. */
 function stairContact(travel: NonNullable<BlockingActor['travel']>, progress: number): GroundPoint {
   const count = travel.steps!,
@@ -44,9 +35,9 @@ export function body(
   space: Projection,
   height: number,
 ) {
-  const skeleton = perf.skeleton;
+  const object = perf.object;
   const bone = (name: string) => {
-    const b = skeleton.findBone(name);
+    const b = perf.bones.get(name);
     if (!b) throw new Error(`Missing biped bone: ${name}`);
     return b;
   };
@@ -64,6 +55,10 @@ export function body(
     Side,
     Bone
   >;
+  const stance = Object.fromEntries(sides.map((side) => [side, feet[side].position.x])) as Record<
+    Side,
+    number
+  >;
   const legs = Object.fromEntries(
     sides.map((side) => [
       side,
@@ -74,32 +69,22 @@ export function body(
     scale = 1,
     frame: BlockingActor;
   const contacts: { kind: string; side: Side; target: Point; actual: Point; error: number }[] = [];
-  const end = (side: Side) => {
-    const arm = arms[side].lower;
-    const p = arm.appliedPose.localToWorld(vector.set(arm.data.length, 0));
-    return { x: p.x, y: height - p.y };
-  };
-  const shoulder = (side: Side) => ({
-    x: arms[side].upper.appliedPose.worldX,
-    y: height - arms[side].upper.appliedPose.worldY,
-  });
+  const ik = contactRig(
+    perf,
+    {
+      'arm-left': arms.left,
+      'arm-right': arms.right,
+      'leg-left': legs.left,
+      'leg-right': legs.right,
+    },
+    height,
+  );
+  const footTargets = new Map<Side, Point>();
+  const end = (side: Side) => ik.point(`arm-${side}`);
+  const shoulder = (side: Side) => perf.point(arms[side].upper);
   function reach(side: Side, target: Point, weight: number, kind: string) {
     if (weight <= 0) return;
-    const arm = arms[side];
-    IkConstraint.apply(
-      skeleton,
-      arm.upper.appliedPose,
-      arm.lower.appliedPose,
-      target.x,
-      height - target.y,
-      // Press from below the control, keeping the forearm clear of its readout.
-      kind === 'press' ? 1 : -1,
-      false,
-      ScaleYMode.None,
-      0,
-      weight,
-    );
-    descendants(arm.upper, skeleton);
+    ik.solve(`arm-${side}`, target, weight, kind === 'press' ? 1 : -1);
     const actual = end(side);
     contacts.push({
       kind,
@@ -110,25 +95,24 @@ export function body(
     });
   }
   function foot(side: Side, target: Point) {
-    const b = feet[side];
-    const local = b.appliedPose.worldToParent(vector.set(target.x, height - target.y));
-    b.pose.x = local.x;
-    b.pose.y = local.y;
+    footTargets.set(side, target);
   }
   function look(state: BlockingActor) {
     if (!state.gaze || !head || state.facing === 'back') return;
     const target = project(space, state.gaze.at),
-      origin = face.appliedPose;
-    const dx = target.x - origin.worldX,
-      dy = height - target.y - origin.worldY;
+      origin = perf.point(face);
+    const dx = target.x - origin.x,
+      dy = origin.y - target.y;
     // Tilt the whole head while preserving the body's native or planned action.
     const tilt = (Math.atan2(dy, Math.max(40 * scale, Math.abs(dx))) * 180) / Math.PI;
-    head.pose.rotation +=
-      Math.max(-18, Math.min(18, tilt)) *
-      (dx < 0 ? -1 : 1) *
-      (actor.flip ? -1 : 1) *
-      state.gaze.weight;
-    skeleton.updateWorldTransform(Physics.reset);
+    head.rotation.z +=
+      (Math.max(-18, Math.min(18, tilt)) *
+        (dx < 0 ? -1 : 1) *
+        (actor.flip ? -1 : 1) *
+        state.gaze.weight *
+        Math.PI) /
+      180;
+    object.updateMatrixWorld(true);
   }
   return {
     perf,
@@ -148,7 +132,7 @@ export function body(
         : 'right';
     },
     radius(side: Side) {
-      return (arms[side].upper.data.length + arms[side].lower.data.length) * scale * 0.98;
+      return (boneLength(arms[side].upper) + boneLength(arms[side].lower)) * scale * 0.98;
     },
     sample(time: number, state: BlockingActor, reduced: boolean) {
       frame = state;
@@ -171,22 +155,17 @@ export function body(
         moodTime: state.moodTime,
         view: state.facing,
       });
-      if (rig.shadow) {
-        const slot = skeleton.findSlot(rig.shadow);
-        if (slot) {
-          slot.pose.color.a = 0;
-          slot.appliedPose.color.a = 0;
-        }
-      }
+      if (rig.shadow) perf.hideSlot(rig.shadow);
+      footTargets.clear();
       if (!constrained) {
         look(state);
         return action;
       }
       // Seat height belongs to the furniture, not to a hand-tuned actor pose.
-      const restingHips = hips.pose.y;
-      hips.pose.y +=
+      const restingHips = hips.position.y;
+      hips.position.y +=
         ((state.seatHeight * 100) / (actor.scale ?? 0.77) + 9 - restingHips) * state.seated;
-      for (const side of sides) legs[side].upper.pose.scaleX *= 1 - state.seated * 0.52;
+      for (const side of sides) legs[side].upper.scale.x *= 1 - state.seated * 0.52;
       const travel = state.travel;
       if (travel && travel.length > 0.001 && !reduced) {
         const depthStep = state.facing === 'front' || state.facing === 'back';
@@ -199,11 +178,13 @@ export function body(
           );
         const phase = travel.progress * count;
         const activity = ease(travel.progress / 0.07) * (1 - ease((travel.progress - 0.93) / 0.07));
-        hips.pose.y -= activity * (depthStep ? 1.5 : 7 + 4 * Math.sin(phase * Math.PI) ** 2);
-        torso.pose.rotation +=
-          (Math.sin(phase * Math.PI) * 1.3 +
+        hips.position.y -= activity * (depthStep ? 1.5 : 7 + 4 * Math.sin(phase * Math.PI) ** 2);
+        torso.rotation.z +=
+          ((Math.sin(phase * Math.PI) * 1.3 +
             (travel.running ? (state.facing === 'right' ? -8 : 8) : 0)) *
-          activity;
+            activity *
+            Math.PI) /
+          180;
         for (const [index, side] of sides.entries()) {
           const step = Math.floor(Math.max(0, phase - index) / 2) * 2 + index;
           const swing = ease((phase - step) / 0.72);
@@ -216,7 +197,7 @@ export function body(
           let point = travel.path
             ? alongPath(travel.path, progress)
             : interpolate(travel.from, travel.to, progress);
-          const base = feet[side].data.setupPose;
+          const base = { x: stance[side] };
           point.x += ((base.x * (actor.scale ?? 0.77)) / 100) * (actor.flip ? -1 : 1);
           if (travel.steps && phase >= index) {
             const start = stairContact(travel, from),
@@ -237,25 +218,15 @@ export function body(
           }
           const target = project(space, point);
           foot(side, target);
-          if (depthStep && state.seated < 0.01) {
-            // A knee bends into depth when walking away. Foreshorten the whole leg
-            // vertically instead of forcing that bend sideways in the drawing plane.
-            const leg = legs[side],
-              root = leg.upper.parent!;
-            const hipY = leg.upper.appliedPose.worldY + (hips.pose.y - restingHips) * scale;
-            const reach = hipY - (height - target.y);
-            const length = (leg.upper.data.length + leg.lower.data.length) * scale;
-            root.pose.scaleY *= Math.max(0.55, Math.min(1.12, (reach / length) * 1.006));
-          }
-          arms[side].upper.pose.rotation +=
-            Math.sin(phase * Math.PI + index * Math.PI) * 13 * activity;
+          arms[side].upper.rotation.z +=
+            (Math.sin(phase * Math.PI + index * Math.PI) * 13 * activity * Math.PI) / 180;
         }
       } else {
         for (const side of sides) {
-          const b = feet[side].data.setupPose;
+          const b = { x: stance[side] };
           const length =
-            ((legs[side].upper.data.length * (1 - state.seated * 0.52) +
-              legs[side].lower.data.length) *
+            ((boneLength(legs[side].upper) * (1 - state.seated * 0.52) +
+              boneLength(legs[side].lower)) *
               (actor.scale ?? 0.77)) /
             100;
           const lift = Math.max(0, state.seatHeight + 0.07 - length * 0.96) * state.seated;
@@ -269,16 +240,35 @@ export function body(
           );
         }
       }
-      skeleton.updateWorldTransform(Physics.reset);
-      look(state);
-      if (state.facing === 'back')
-        for (const name of rig.faceSlots) {
-          const slot = skeleton.findSlot(name);
-          if (slot) {
-            slot.pose.color.a = 0;
-            slot.appliedPose.color.a = 0;
-          }
+      object.updateMatrixWorld(true);
+      if (travel && state.seated < 0.01 && (state.facing === 'front' || state.facing === 'back')) {
+        // On stairs the pelvis yields to the planted lower foot. Moving only an
+        // invisible target would leave a visibly floating ankle.
+        let lower = 0;
+        for (const [side, target] of footTargets) {
+          const hip = perf.point(legs[side].upper);
+          const length = (boneLength(legs[side].upper) + boneLength(legs[side].lower)) * scale;
+          const vertical = Math.sqrt(Math.max(0, (length * 0.985) ** 2 - (target.x - hip.x) ** 2));
+          lower = Math.max(lower, target.y - hip.y - vertical);
         }
+        hips.position.y -= lower / scale;
+        object.updateMatrixWorld(true);
+        for (const [side, target] of footTargets) {
+          const leg = legs[side],
+            hip = perf.point(leg.upper);
+          const length = (boneLength(leg.upper) + boneLength(leg.lower)) * scale;
+          const factor = Math.max(
+            0.4,
+            Math.min(1, Math.hypot(target.x - hip.x, target.y - hip.y) / (length * 0.985)),
+          );
+          // Uniform depth foreshortening preserves the metric assumptions of CCD.
+          leg.upper.parent!.scale.multiplyScalar(factor);
+        }
+        object.updateMatrixWorld(true);
+      }
+      look(state);
+      for (const [side, target] of footTargets) ik.solve(`leg-${side}`, target, 1, 1);
+      if (state.facing === 'back') for (const name of rig.faceSlots) perf.hideSlot(name);
       for (const gesture of state.reaches ?? []) {
         const target = project(space, gesture.at);
         reach(
@@ -302,7 +292,7 @@ export function body(
     ): CarriedFrame {
       const side = frame.holdingHand ?? 'left',
         hand = shoulder(side);
-      const root = hips.appliedPose.localToWorld(vector.set(0, 27));
+      const root = hips.localToWorld(vector.set(0, 27, 0));
       const item: CarriedFrame = {
         id,
         portable: true,
@@ -336,7 +326,7 @@ export function body(
         resting: NonNullable<BookFrame['resting']>['faces'];
       },
     ): BookFrame {
-      const p = hips.appliedPose.localToWorld(vector.set(0, 27));
+      const p = hips.localToWorld(vector.set(0, 27, 0));
       const book: BookFrame = {
         id,
         x: p.x,
@@ -359,17 +349,13 @@ export function body(
       reach(right, hands.right, placement?.grip ?? frame.bookBlend ?? 1, 'book-support');
       return book;
     },
+    dispose: () => ik.dispose(),
     snapshot: () => ({
       at: frame.at,
       facing: frame.facing,
       seated: frame.seated,
       contacts: structuredClone(contacts),
-      feet: Object.fromEntries(
-        sides.map((s) => [
-          s,
-          { x: feet[s].appliedPose.worldX, y: height - feet[s].appliedPose.worldY },
-        ]),
-      ),
+      feet: Object.fromEntries(sides.map((s) => [s, ik.point(`leg-${s}`)])),
     }),
   };
 }

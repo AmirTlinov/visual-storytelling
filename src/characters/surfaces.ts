@@ -143,7 +143,7 @@ export function characterSurfaces(
           let alpha: number;
           if (layer === graphics.canvas) {
             const pixel = new Uint8Array(4),
-              gl = graphics.context.gl;
+              gl = graphics.renderer.renderer.getContext();
             gl.readPixels(x, layer.height - y - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
             alpha = pixel[3]!;
           } else alpha = layer.getContext('2d')!.getImageData(x, y, 1, 1).data[3]!;
@@ -238,8 +238,8 @@ export function characterSurfaces(
       const mapping = layout(entry, quad);
       if (!mapping) return; // Edge-on planes must not discard a world pass.
       if (!entry.presentation) entry.drawing.render(entry.frame!, entry.size);
-      const { canvas, renderer, context } = graphics;
-      renderer.end();
+      const { canvas, renderer } = graphics;
+      renderer.flush();
       let layer = strata[pass++];
       if (!layer) {
         layer = document.createElement('canvas');
@@ -262,8 +262,7 @@ export function characterSurfaces(
       }
       entry.quad = quad;
       order.push(layer, id);
-      context.gl.clear(context.gl.COLOR_BUFFER_BIT);
-      renderer.begin();
+      renderer.clear();
     },
     /** Lend DOM placement; the stage remains the sole owner of drawing state and time. */
     present(id: string, host: HTMLElement) {

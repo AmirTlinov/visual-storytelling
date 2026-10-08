@@ -35,7 +35,7 @@ A cast JSON is [{"id":"scientist","from":"mira","outfit":"lab-coat","palette":{"
 Use a cast for appearance variations; use new only when editing the SVG drawings.
 from is tesla, mira or an artwork directory relative to the cast file.
 Edit the SVG parts or character.json palette, then build once. Import the result as CharacterPack.
-The template's native skeleton, skin attachments, constraints and draw order stay in the library.`);
+The editable glTF owns the skeleton, weighted drawings, clips and contact anchors.`);
     return;
   }
   if (command === 'list') {
@@ -134,7 +134,7 @@ The template's native skeleton, skin attachments, constraints and draw order sta
       pack.credit + '\n\n' + (await readFile(join(template, 'LICENSE.txt'), 'utf8')),
     );
     console.log(
-      `Built ${pack.skins.join(', ')}: ${Object.keys(pack.actions).length} actions, ${Math.round(pack.gzip.length / 1024)} KiB\n${out}`,
+      `Built ${pack.skins.join(', ')}: ${Object.keys(pack.actions).length} actions, ${Math.round(pack.gltf.length / 1024)} KiB\n${out}`,
     );
   } else throw new Error(`Unknown characters command: ${command}`);
 }

@@ -58,23 +58,23 @@ export async function characterAtlas(sprites, { pageSize = 2048 } = {}) {
     rowHeight = Math.max(rowHeight, sprite.h);
   }
   finish();
-  const textures = {},
-    sections = [];
+  const textures = [],
+    regions = {};
   for (const [index, page] of pages.entries()) {
-    const name = `characters-${index}.webp`;
     const bytes = await sharp({
       create: { width, height: page.height, channels: 4, background: '#00000000' },
     })
       .composite(page.sprites.map((s) => ({ input: s.buffer, left: s.x, top: s.y })))
-      .webp({ quality: 88, alphaQuality: 100 })
+      .png({ compressionLevel: 9 })
       .toBuffer();
-    textures[name] = 'data:image/webp;base64,' + bytes.toString('base64');
-    sections.push(
-      `${name}\nsize: ${width},${page.height}\nfilter: Linear,Linear\nrepeat: none\n` +
-        page.sprites
-          .flatMap((s) => s.aliases.map((path) => `${path}\nbounds: ${s.x},${s.y},${s.w},${s.h}\n`))
-          .join(''),
-    );
+    textures.push('data:image/png;base64,' + bytes.toString('base64'));
+    for (const sprite of page.sprites)
+      for (const path of sprite.aliases)
+        regions[path] = {
+          texture: index,
+          offset: [sprite.x / width, sprite.y / page.height],
+          scale: [sprite.w / width, sprite.h / page.height],
+        };
   }
-  return { atlas: sections.join('\n'), textures };
+  return { regions, textures };
 }

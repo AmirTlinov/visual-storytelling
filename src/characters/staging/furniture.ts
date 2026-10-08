@@ -1,9 +1,5 @@
-import {
-  Color,
-  GLTexture,
-  type SceneRenderer,
-  type ManagedWebGLRenderingContext,
-} from '@esotericsoftware/spine-webgl';
+import type { Texture } from 'three';
+import { stageTexture, stageColor, type CharacterCompositor } from '../compositor.js';
 import { objectShape } from './objects.js';
 import type { Furniture, Projection } from './types.js';
 
@@ -307,28 +303,18 @@ export function furnitureParts(item: Furniture, space: Projection, open?: number
   return parts;
 }
 export async function loadFurniture(
-  context: ManagedWebGLRenderingContext,
   objects: Readonly<Record<string, Furniture>>,
   space: Projection,
 ) {
-  const parts: { id: string; depth: number; texture: GLTexture; bounds: Part['bounds'] }[] = [];
+  const parts: { id: string; depth: number; texture: Texture; bounds: Part['bounds'] }[] = [];
   try {
     for (const [id, object] of Object.entries(objects))
       for (const part of furnitureParts(object, space)) {
-        const b = part.bounds,
-          image = new Image();
-        image.src =
-          'data:image/svg+xml;charset=utf-8,' +
-          encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(b.width * 2)}" height="${Math.ceil(b.height * 2)}" viewBox="${b.x} ${b.y} ${b.width} ${b.height}">${part.svg}</svg>`,
-          );
-        await image.decode();
-        parts.push({
-          id,
-          depth: part.depth,
-          bounds: b,
-          texture: new GLTexture(context, image, false),
-        });
+        const b = part.bounds;
+        const texture = await stageTexture(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(b.width * 2)}" height="${Math.ceil(b.height * 2)}" viewBox="${b.x} ${b.y} ${b.width} ${b.height}">${part.svg}</svg>`,
+        );
+        parts.push({ id, depth: part.depth, bounds: b, texture });
       }
     return { parts, dispose: () => parts.forEach((p) => p.texture.dispose()) };
   } catch (error) {
@@ -336,33 +322,13 @@ export async function loadFurniture(
     throw error;
   }
 }
-export const color = (hex: string, alpha = 1) => {
-  const c = Color.fromString(hex);
-  c.a = alpha;
-  return c;
-};
-export function drawFurniture(renderer: SceneRenderer, part: Part, height: number) {
-  for (const polygon of part.polygons) {
-    const points = polygon.points,
-      fillColor = color(polygon.fill);
-    for (let i = 2; i < points.length; i++)
-      renderer.triangle(
-        true,
-        points[0]!.x,
-        height - points[0]!.y,
-        points[i - 1]!.x,
-        height - points[i - 1]!.y,
-        points[i]!.x,
-        height - points[i]!.y,
-        fillColor,
-        fillColor,
-        fillColor,
-      );
-    if (polygon.stroke)
-      for (let i = 0; i < points.length; i++) {
-        const a = points[i]!,
-          b = points[(i + 1) % points.length]!;
-        renderer.rectLine(true, a.x, height - a.y, b.x, height - b.y, polygon.stroke, color(ink));
-      }
-  }
+export const color = stageColor;
+export function drawFurniture(renderer: CharacterCompositor, part: Part, height: number) {
+  for (const polygon of part.polygons)
+    renderer.polygon(
+      polygon.points.map((p) => ({ x: p.x, y: height - p.y })),
+      color(polygon.fill),
+      polygon.stroke ? color(ink) : undefined,
+      polygon.stroke,
+    );
 }

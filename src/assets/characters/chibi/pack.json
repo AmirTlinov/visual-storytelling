@@ -1,6 +1,5 @@
 {
   "id": "chibi",
-  "baseSkin": "nate",
   "actions": {
     "idle": {
       "animation": "movement/idle-front",
@@ -124,7 +123,7 @@
       "y": 0
     }
   },
-  "credit": "Chibi Stickers rig: Esoteric Software, project file public domain. Original example images: Copyright (c) 2022 Esoteric Software LLC, redistribution with notice, no commercial use. Original SVG drawings: this project, 0BSD. SVG files embedding original sample images retain the sample image restrictions. Spine runtime: Spine Runtimes License; integration and SDK use require the applicable Spine Editor license. https://esotericsoftware.com/spine-runtimes-license",
+  "credit": "Chibi Stickers rig and motion data: Esoteric Software LLC, public domain project, converted to editable glTF 2.0. Character drawings: Visual Storytelling, 0BSD. Animation and rendering: Three.js, MIT. https://github.com/EsotericSoftware/spine-runtimes/tree/4.3/examples/chibi-stickers",
   "rig": {
     "hips": "hips",
     "torso": "body-up",

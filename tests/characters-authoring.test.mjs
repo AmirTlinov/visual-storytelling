@@ -20,9 +20,11 @@ import { drawBook, bookBounds } from '../dist/characters/staging/book.js';
 import { notebookParts } from '../dist/characters/staging/notebook.js';
 import { portableBounds } from '../dist/characters/staging/portable.js';
 import { characterDetails } from '../dist/characters/framing.js';
-import { performance, readSkeleton, unpackCharacter } from '../dist/characters/performance.js';
+import { performance } from '../dist/characters/performance.js';
+import { characterData } from './characters-fixture.mjs';
+import { stageColor } from '../dist/characters/compositor.js';
 
-const { data } = readSkeleton(await unpackCharacter(chibi));
+const data = await characterData(chibi);
 const actionTime = (plan, phase, progress = 0.5) => {
   const order = ['rise', 'approach', 'engage', 'act', 'release'];
   const elapsed =
@@ -194,10 +196,10 @@ test('an arranged reading routine reaches the book, opens and closes it, then re
     const vertices = (draw) => {
       const points = [];
       draw({
-        triangle(_filled, ax, ay, bx, by, cx, cy) {
-          points.push([ax, set.height - ay], [bx, set.height - by], [cx, set.height - cy]);
+        polygon(vertices) {
+          points.push(...vertices.map((p) => [p.x, set.height - p.y]));
         },
-        rectLine() {},
+        segment() {},
       });
       return [...new Set(points.map((p) => p.map((v) => v.toFixed(5)).join(',')))].sort();
     };
@@ -225,19 +227,18 @@ test('an arranged reading routine reaches the book, opens and closes it, then re
         const frame = subject.snapshot().items.hero;
         assert.ok(Object.values(bookBounds(frame)).every(Number.isFinite));
         if (i > 0 && i < 12) {
-          const cover = parseInt(frame.color.slice(1), 16),
+          const cover = stageColor(frame.color),
             winding = [];
           drawBook(
             {
-              triangle(_filled, ax, ay, bx, by, cx, cy, fill) {
-                if (
-                  Math.abs(fill.r - (cover >> 16) / 255) < 1e-8 &&
-                  Math.abs(fill.g - ((cover >> 8) & 255) / 255) < 1e-8 &&
-                  Math.abs(fill.b - (cover & 255) / 255) < 1e-8
-                )
-                  winding.push(Math.sign((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)));
+              polygon(points, fill) {
+                if (['r', 'g', 'b'].every((key) => Math.abs(fill[key] - cover[key]) < 1e-8))
+                  for (let i = 2; i < points.length; i++) {
+                    const [a, b, c] = [points[0], points[i - 1], points[i]];
+                    winding.push(Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)));
+                  }
               },
-              rectLine() {},
+              segment() {},
             },
             frame,
             set.height,
@@ -540,7 +541,9 @@ test('an automatic walk up and back down rests on the same treads as explicit cl
           const pose = subject.snapshot();
           records.push([time, pose]);
           for (const [side, foot] of Object.entries(pose.actors.hero.feet)) {
-            const native = data.findBone(chibi.rig.feet[side]).setupPose;
+            const native = {
+              x: data.object.getObjectByName(chibi.rig.feet[side]).position.x,
+            };
             const rests = Array.from({ length: shape.steps + 1 }, (_, n) => {
               const p =
                 n === 0
@@ -800,12 +803,10 @@ test('press plans reachable shoulders for different support heights, free hands 
                 contact.error < 0.01,
                 `press contact ${tableScale}/${scale}/${holdingHand}/${flip}: ${contact.error}`,
               );
-              const elbow = perf.skeleton.findBone(chibi.rig.arms[contact.side].lower).appliedPose;
-              const shoulder = perf.skeleton.findBone(
-                chibi.rig.arms[contact.side].upper,
-              ).appliedPose;
+              const elbow = perf.point(perf.bones.get(chibi.rig.arms[contact.side].lower));
+              const shoulder = perf.point(perf.bones.get(chibi.rig.arms[contact.side].upper));
               assert.ok(
-                set.height - elbow.worldY > (set.height - shoulder.worldY + contact.target.y) / 2,
+                elbow.y > (shoulder.y + contact.target.y) / 2,
                 'the forearm reaches from below without covering the readout',
               );
               expected.push([time, snapshot]);
@@ -1057,8 +1058,7 @@ test('walking combines independent hands, gaze and mood without changing its rou
     native = make(),
     gestureWorld = await world(gestureOptions, gestureScore.blocking, { hero: actual });
   const matrix = (perf, name) => {
-    const p = perf.skeleton.findBone(name).appliedPose;
-    return [p.a, p.b, p.c, p.d, p.worldX, p.worldY];
+    return perf.bones.get(name).matrixWorld.toArray();
   };
   try {
     gestureWorld.sample(0.9, false);
@@ -1238,7 +1238,7 @@ test('taking and placing a small prop on a high support keeps its grip and clear
             `${JSON.stringify(variant)} grip misses by ${contact.error}`,
           );
           if (hand) assert.equal(contact.side, hand);
-          const face = characterDetails(perf.skeleton, chibi.rig, set.height).face;
+          const face = characterDetails(perf, chibi.rig, set.height).face;
           const item = portableBounds(state.items.hero, set.staging.objects.specimen.art);
           const overlapX =
             Math.min(face.x + face.width, item.x + item.width) - Math.max(face.x, item.x);

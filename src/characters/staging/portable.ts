@@ -1,8 +1,5 @@
-import {
-  GLTexture,
-  type ManagedWebGLRenderingContext,
-  type SceneRenderer,
-} from '@esotericsoftware/spine-webgl';
+import type { Texture } from 'three';
+import { stageTexture, type CharacterCompositor } from '../compositor.js';
 import type { Furniture, GroundPoint } from './types.js';
 import type { Point } from '../types.js';
 export interface CarriedFrame extends Point {
@@ -67,11 +64,8 @@ export function portable(
       : {}),
   };
 }
-export async function portableArt(
-  context: ManagedWebGLRenderingContext,
-  objects: Readonly<Record<string, Furniture>>,
-) {
-  const textures = new Map<string, GLTexture>();
+export async function portableArt(objects: Readonly<Record<string, Furniture>>) {
+  const textures = new Map<string, Texture>();
   const dispose = () => {
     for (const texture of textures.values()) texture.dispose();
     textures.clear();
@@ -80,21 +74,17 @@ export async function portableArt(
     for (const [id, item] of Object.entries(objects))
       if (item.kind === 'prop' && !item.art!.paint) {
         const art = item.art!;
-        const image = new Image();
-        image.src =
-          'data:image/svg+xml;charset=utf-8,' +
-          encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="${art.width * 2}" height="${art.height * 2}" viewBox="${-art.width / 2} ${-art.height} ${art.width} ${art.height}">${art.svg}</svg>`,
-          );
-        await image.decode();
-        textures.set(id, new GLTexture(context, image, false));
+        const texture = await stageTexture(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="${art.width * 2}" height="${art.height * 2}" viewBox="${-art.width / 2} ${-art.height} ${art.width} ${art.height}">${art.svg}</svg>`,
+        );
+        textures.set(id, texture);
       }
     return {
-      draw(renderer: SceneRenderer, frame: CarriedFrame, height: number) {
+      draw(renderer: CharacterCompositor, frame: CarriedFrame, height: number) {
         const texture = textures.get(frame.id);
         if (!texture) return;
         const box = portableBounds(frame, objects[frame.id]!.art!);
-        renderer.drawTexture(texture, box.x, height - box.y - box.height, box.width, box.height);
+        renderer.image(texture, { ...box, y: height - box.y - box.height });
       },
       dispose,
     };
