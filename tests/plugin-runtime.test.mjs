@@ -107,6 +107,7 @@ async function fixture(t) {
       format: 'esm',
     }),
     writeFile(join(directory, 'app.html'), '<main>Runtime contract fixture</main>'),
+    cp(join(root, 'tools/uv.lock'), join(release, 'tools/uv.lock')),
     writeFile(
       join(release, 'tools/api.mjs'),
       'export const describeAPI = async () => ({ text: "Fixture API", missing: [] });\n',
