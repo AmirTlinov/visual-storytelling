@@ -5,7 +5,6 @@ import { release, homedir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { cueSheet } from '../../dist/story/cues.js';
 const execute = promisify(execFile);
 const binary = fileURLToPath(new URL('../../dist/voice/macos', import.meta.url));
 export const voiceDigest = (value) =>
@@ -269,6 +268,7 @@ export async function systemNarration(
     synthesis: { provider: 'macos', voice: voice.id, identity: voice.identity },
     alignment: { method: 'native-word-markers' },
   };
+  const { cueSheet } = await import('../../dist/story/cues.js');
   cueSheet(timeline);
   signal?.throwIfAborted();
   await writeFile(join(directory, 'audio.wav'), wav(pieces, sampleRate));

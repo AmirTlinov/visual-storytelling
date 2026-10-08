@@ -4,7 +4,6 @@ import { narrationSource } from './story-document.mjs';
 import { parse } from 'parse5';
 import { macosVoice, systemNarration, voiceDigest } from './voice/macos.mjs';
 import { higgsVoice } from './voice/higgs.mjs';
-import { cueSheet } from '../dist/story/cues.js';
 
 function editAudioTags(html, edit) {
   const edits = [];
@@ -246,6 +245,7 @@ export async function checkNarration(html, directory, { signal } = {}) {
               throw new Error(
                 `Narration action timing is stale for ${cue.id}. Prepare the current narration before building.`,
               );
+        const { cueSheet } = await import('../dist/story/cues.js');
         cueSheet(receipt);
         break;
       }
