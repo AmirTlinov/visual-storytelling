@@ -23,10 +23,21 @@ export interface StageColor {
   a: number;
 }
 export const stageColor = (hex: string, alpha = 1): StageColor => ({ ...new Color(hex), a: alpha });
-export async function stageTexture(svg: string) {
+export async function stageTexture(svg: string, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const image = new Image();
+  const abort = () => image.removeAttribute('src');
+  signal?.addEventListener('abort', abort, { once: true });
   image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-  await image.decode();
+  try {
+    await image.decode();
+    signal?.throwIfAborted();
+  } catch (error) {
+    signal?.throwIfAborted();
+    throw error;
+  } finally {
+    signal?.removeEventListener('abort', abort);
+  }
   const texture = new Texture(image);
   texture.needsUpdate = true;
   texture.colorSpace = 'srgb';

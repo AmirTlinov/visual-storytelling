@@ -64,7 +64,10 @@ export function portable(
       : {}),
   };
 }
-export async function portableArt(objects: Readonly<Record<string, Furniture>>) {
+export async function portableArt(
+  objects: Readonly<Record<string, Furniture>>,
+  signal?: AbortSignal,
+) {
   const textures = new Map<string, Texture>();
   const dispose = () => {
     for (const texture of textures.values()) texture.dispose();
@@ -76,6 +79,7 @@ export async function portableArt(objects: Readonly<Record<string, Furniture>>) 
         const art = item.art!;
         const texture = await stageTexture(
           `<svg xmlns="http://www.w3.org/2000/svg" width="${art.width * 2}" height="${art.height * 2}" viewBox="${-art.width / 2} ${-art.height} ${art.width} ${art.height}">${art.svg}</svg>`,
+          signal,
         );
         textures.set(id, texture);
       }

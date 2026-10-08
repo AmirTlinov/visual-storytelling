@@ -3,13 +3,14 @@ import { characterCompositor } from './compositor.js';
 import type { CharacterPack } from './types.js';
 
 /** One GPU context and shared glTF resources across chapter changes. */
-export async function characterRenderer(pack: CharacterPack) {
-  const data = await readCharacter(pack),
+export async function characterRenderer(pack: CharacterPack, signal?: AbortSignal) {
+  const data = await readCharacter(pack, { signal }),
     canvas = document.createElement('canvas');
   let renderer: ReturnType<typeof characterCompositor> | undefined;
   let active: HTMLElement | undefined,
     disposed = false;
   try {
+    signal?.throwIfAborted();
     renderer = characterCompositor(canvas);
     const maxTextureSize = renderer.renderer.capabilities.maxTextureSize;
     for (const page of data.pages) {

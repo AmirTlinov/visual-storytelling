@@ -305,6 +305,7 @@ export function furnitureParts(item: Furniture, space: Projection, open?: number
 export async function loadFurniture(
   objects: Readonly<Record<string, Furniture>>,
   space: Projection,
+  signal?: AbortSignal,
 ) {
   const parts: { id: string; depth: number; texture: Texture; bounds: Part['bounds'] }[] = [];
   try {
@@ -313,6 +314,7 @@ export async function loadFurniture(
         const b = part.bounds;
         const texture = await stageTexture(
           `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(b.width * 2)}" height="${Math.ceil(b.height * 2)}" viewBox="${b.x} ${b.y} ${b.width} ${b.height}">${part.svg}</svg>`,
+          signal,
         );
         parts.push({ id, depth: part.depth, bounds: b, texture });
       }

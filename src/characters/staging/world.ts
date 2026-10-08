@@ -20,24 +20,27 @@ export async function world(
   blocking: Blocking,
   actors: Record<string, Performer>,
   graphics?: CharacterCompositor,
+  signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted();
   const { staging } = blocking,
     { height } = options.set;
-  const bodies = Object.fromEntries(
-    Object.entries(actors).map(([id, perf]) => [
-      id,
-      body(perf, options.cast[id]!, options.pack.rig!, staging.projection, height),
-    ]),
-  );
+  const bodies: Record<string, ReturnType<typeof body>> = {};
   let frames = blockAt(blocking, 0);
   const furniture = await loadFurniture(
     options.background === false ? {} : staging.objects,
     staging.projection,
+    signal,
   );
   let props: Awaited<ReturnType<typeof portableArt>> | undefined;
   try {
-    if (graphics) props = await portableArt(staging.objects);
+    if (graphics) props = await portableArt(staging.objects, signal);
+    signal?.throwIfAborted();
+    for (const [id, perf] of Object.entries(actors))
+      bodies[id] = body(perf, options.cast[id]!, options.pack.rig!, staging.projection, height);
   } catch (error) {
+    for (const prepared of Object.values(bodies)) prepared.dispose();
+    props?.dispose();
     furniture.dispose();
     throw error;
   }

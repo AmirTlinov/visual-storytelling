@@ -22,8 +22,8 @@ export function characterChapter(
     script: score.script,
     controls: options.controls,
     valuesAt: options.valuesAt,
-    async mount(parent) {
-      const stage = await characterStage(parent, options, score);
+    async mount(parent, signal) {
+      const stage = await characterStage(parent, options, score, undefined, signal);
       return {
         render: (frame) => stage.render(frame.time, frame.reduced, frame),
         snapshot: stage.snapshot,

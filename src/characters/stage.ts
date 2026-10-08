@@ -28,12 +28,18 @@ export async function characterStage(
   options: CharacterStageOptions,
   score: CharacterScore,
   shared?: CharacterRenderer,
+  signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted();
   options = { ...options, surfaces: artworkSurfaces(options) };
   const { set, pack, cast } = options;
   const background = options.background !== false;
   const scope = `character-stage-${++nextStage}`;
-  const graphics = shared ?? (await characterRenderer(pack));
+  const graphics = shared ?? (await characterRenderer(pack, signal));
+  if (signal?.aborted) {
+    if (!shared) graphics.dispose();
+    signal.throwIfAborted();
+  }
   const { canvas, renderer, data, maxTextureSize } = graphics;
   const element = document.createElement('div');
   element.className = 've-character-stage';
@@ -130,7 +136,8 @@ export async function characterStage(
       ]),
     );
     performers = actors;
-    if (score.blocking) prepared = await world(options, score.blocking, actors, renderer);
+    if (score.blocking) prepared = await world(options, score.blocking, actors, renderer, signal);
+    signal?.throwIfAborted();
     if (Object.keys(options.surfaces ?? {}).length) {
       if (!prepared) throw new Error('Drawing surfaces need a prepared world');
       surfaces = characterSurfaces(aperture, options, graphics, snapshotSVG);
@@ -267,10 +274,12 @@ export async function characterStage(
     // The cast sampler avoids repainting SVG props or forcing layout while measuring poses.
     let yieldedAt = globalThis.performance.now();
     for (const [index, beat] of options.beats.entries()) {
+      signal?.throwIfAborted();
       if (index && sameShot(options.beats[index - 1]!.shot, beat.shot)) continue;
       framing.prepare(index, beat.shot?.focus);
       if (globalThis.performance.now() - yieldedAt > 12) {
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        signal?.throwIfAborted();
         yieldedAt = globalThis.performance.now();
       }
     }
