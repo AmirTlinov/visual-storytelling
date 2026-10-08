@@ -22,7 +22,7 @@ export function chapterNavigation(
     (index) => seek(named[Number(index)]!.start),
   );
   navigation.append(field.element);
-  heading.before(navigation);
+  heading.after(navigation);
   return {
     update(time: number) {
       const index = Math.max(

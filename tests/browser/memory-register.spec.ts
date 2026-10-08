@@ -20,7 +20,7 @@ test('chapter navigation stays compact while notebook disclosures retain keyboar
             root.getBoundingClientRect().left -
             parseFloat(getComputedStyle(root).paddingLeft),
         ) < 1,
-      above: rect.bottom < heading.getBoundingClientRect().top,
+      below: rect.top > heading.getBoundingClientRect().bottom,
       compact:
         rect.width <= 320 &&
         rect.height <= 44 &&
@@ -28,7 +28,7 @@ test('chapter navigation stays compact while notebook disclosures retain keyboar
       separate: !heading.contains(element),
     };
   });
-  expect(layout).toEqual({ left: true, above: true, compact: true, separate: true });
+  expect(layout).toEqual({ left: true, below: true, compact: true, separate: true });
   await chapter.focus();
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');
