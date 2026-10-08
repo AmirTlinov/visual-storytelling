@@ -49,6 +49,9 @@ npm run dev -- --port 0  # свободный порт; CLI печатает URL
 
 ## Один путь от времени к рисунку
 
+`SceneShell` по умолчанию покрывает единым листом заголовок, рисунок и управление.
+Сохраняй плеер внизу, субтитры — над ним; вложенный SVG получает `grid: false`.
+
 ```js
 import { SceneShell, surface, node, ViewportSVG } from '@visual-storytelling/core';
 import '@visual-storytelling/core/style.css';
@@ -59,16 +62,15 @@ window.galleryReady = (async () => {
   const root = document.querySelector('.ve-scene');
   const shell = SceneShell.mount(root, {
     title: 'Заголовок',
-    paper: false, // Единую сетку ниже рисует surface в координатах предмета.
     parameters: [{ key: 'x', label: 'Положение', min: 0, max: 100, value: 0 }],
   });
   const drawing = surface(shell.stage, {
     id: 'path',
     width: 360,
     height: 320,
-    grid: { step: 30 },
+    grid: false, // Сетка всего листа принадлежит SceneShell.
     title: 'Движение предмета',
-    description: 'Предмет перемещается вправо по измерительной сетке.',
+    description: 'Предмет перемещается вправо по листу.',
   });
   const mark = node(drawing, 'moving', 0, { shape: 'rect', width: 48, size: 20 });
   const camera = ViewportSVG.mount(drawing.element);
@@ -109,8 +111,11 @@ window.galleryReady = (async () => {
 Фабрики SVG возвращают объект с `element`; `object.at(x,y)` задаёт размещение,
 `move(dx,dy)` — относительное движение, `show(bool)` — общую видимость предмета и подписи.
 Высоту SVG в оболочке задаёт соотношение `surface.resize(width, height)`; она следует композиции при изменении ширины.
-В этой композиции `surface` владеет сеткой. Для HTML-композиции без собственной сетки
-сохрани стандартный `paper` оболочки; отдельную CSS-сетку поверх SVG добавлять не требуется.
+Если сетка служит измерению и должна двигаться вместе с камерой, передай её `surface`
+через `grid: { step: 30 }` и отключи дублирующую сетку оболочки через `paper: false`.
+Это выбор координат измерительного рисунка; порядок заголовка, пояснений и нижнего плеера сохраняется.
+Нажатие на сам предмет подключай через `svgButton`; для самостоятельной команды
+или переключателя используй видимый `inkButton`, как в `memory-register`.
 `pen` возвращает `reveal(p)` и `dispose()`, `lettering` — `text(value)` и `write(p)`.
 Передавай текущее состояние в каждом кадре: `surface.resize`, `reveal`, `text` и `write` сами пропускают неизменившиеся значения.
 Параметры расширений доступны тем же `api`: `SketchControls`, `pen`, `StoryOptions`.

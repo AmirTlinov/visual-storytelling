@@ -2,16 +2,15 @@ import { SceneShell, widgetState } from '@visual-storytelling/core';
 import '@visual-storytelling/core/style.css';
 import './subject.css';
 import timing from './timeline.json' with { type: 'json' };
-import { bits, binary, bit, act, storyState, explanation, initial } from './memory.js';
+import { binary, bit, act, storyState, explanation, initial } from './memory.js';
 import { registerDrawing, feedbackDrawing } from './drawing.js';
 
 window.galleryReady = (async () => {
   await SceneShell.ready();
   const root = document.querySelector('#ve-scene');
-  // The drawing surface owns the single grid; notes and shared controls sit beside it.
+  // One notebook sheet contains the heading, drawing, notes and bottom transport.
   const shell = SceneShell.mount(root, {
     title: 'Как 8 бит запоминают число',
-    paper: false,
     captions: true,
   });
   shell.stage.classList.add('memory-sheet');
@@ -38,13 +37,13 @@ window.galleryReady = (async () => {
     '<p>Это сердце запоминающего элемента. Управляемые входы D-триггера позволяют переключить его по фронту такта. Регистр удерживает данные, пока есть питание.</p></details>',
     '<details><summary>Последние переключения такта</summary><table class="memory-trace"><thead><tr><th>Такт</th><th>WE</th><th>Вход D</th><th>Память Q</th></tr></thead><tbody id="trace"></tbody></table></details>',
   ].join('');
-  root.insertBefore(notes, root.querySelector('[data-player]'));
   const $ = (id) => root.querySelector('#' + id);
   const drawing = registerDrawing(shell.stage, dispatch, (index) => {
     dispatch({ type: 'select', index });
     $('inside').open = true;
     $('inside').scrollIntoView({ block: 'nearest' });
   });
+  shell.stage.append(notes);
   const loop = feedbackDrawing($('feedback-drawing'));
   const presets = [...root.querySelectorAll('[data-value]')];
   const guesses = [...root.querySelectorAll('[data-guess]')];
@@ -140,8 +139,6 @@ window.galleryReady = (async () => {
   root.querySelector('.modes').hidden = false;
   root.querySelector('[data-mode="story"]').textContent = 'Объяснение · 1 мин';
   root.querySelector('[data-mode="explore"]').textContent = 'Свободный опыт';
-  root.insertBefore(root.querySelector('[data-player]'), shell.stage);
-  root.insertBefore(root.querySelector('[data-caption]'), shell.stage);
   function dispatch(action) {
     story.explore(act(story.values, action));
     persist();

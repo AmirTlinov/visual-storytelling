@@ -1,4 +1,5 @@
 @import url('./sketch-controls.css');
+@import url('./ink-button.css');
 .ve-scene .ve-stage{position:relative;width:100%;height:clamp(320px,55vw,450px);isolation:isolate}
 .ve-scene .ve-stage>canvas,.ve-scene .ve-stage>svg{display:block;width:100%;height:100%;background:transparent}
 .ve-scene .ve-stage:has(>svg.vs-canvas){height:auto}

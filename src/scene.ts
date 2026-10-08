@@ -161,9 +161,10 @@ function mount(
   );
   const composition = frame ? sceneFrame(stage, frame) : undefined;
   if (composition) cleanups.add(composition.dispose);
-  root.append(heading, modes, actions, fields, composition?.element ?? stage, controls, status);
+  root.append(heading, modes, actions, fields, composition?.element ?? stage);
   if (captions && composition) stage.append(caption);
   else root.append(caption);
+  root.append(controls, status);
   composition?.resize();
   let transition: ((mode: 'story' | 'explore') => void) | undefined;
   let mode: 'story' | 'explore' = 'explore';

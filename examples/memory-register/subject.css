@@ -78,7 +78,7 @@
   padding: 5px;
 }
 .ve-scene [data-player] {
-  margin-bottom: 12px;
+  margin-top: 16px;
 }
 .ve-scene .ve-captions:empty {
   display: none;

@@ -62,10 +62,20 @@ export function svgButton(
   element.setAttribute('fill', 'transparent');
   element.setAttribute('role', 'button');
   let disabled = false,
-    spaceDown = false;
+    spaceDown = false,
+    enterDown = false,
+    pointer: number | undefined,
+    pointerInside = false;
   const attribute = (name: string, value: string | number | boolean) => {
     const text = String(value);
     if (element.getAttribute(name) !== text) element.setAttribute(name, text);
+  };
+  const pressing = () =>
+    attribute('data-pressing', !disabled && (spaceDown || enterDown || pointerInside));
+  const cancel = () => {
+    spaceDown = enterDown = pointerInside = false;
+    pointer = undefined;
+    pressing();
   };
   const bounds = (value: SvgButtonBounds) => {
     if (abort.signal.aborted) return;
@@ -78,35 +88,75 @@ export function svgButton(
     if (value.disabled !== undefined) disabled = value.disabled;
     attribute('aria-disabled', disabled);
     attribute('tabindex', disabled ? '-1' : '0');
-    if (disabled) spaceDown = false;
+    if (disabled) cancel();
   };
   const press = () => {
     if (!disabled && !abort.signal.aborted) options.onPress();
   };
   element.addEventListener('click', press, { signal: abort.signal });
   element.addEventListener(
+    'pointerdown',
+    (event) => {
+      if (disabled || !event.isPrimary || event.button !== 0) return;
+      pointer = event.pointerId;
+      pointerInside = true;
+      pressing();
+    },
+    { signal: abort.signal },
+  );
+  for (const type of ['pointerenter', 'pointerleave'] as const)
+    element.addEventListener(
+      type,
+      (event) => {
+        if (event.pointerId !== pointer) return;
+        pointerInside = type === 'pointerenter';
+        pressing();
+      },
+      { signal: abort.signal },
+    );
+  for (const type of ['pointerup', 'pointercancel'] as const)
+    parent.ownerDocument.addEventListener(
+      type,
+      (event) => {
+        if (event.pointerId !== pointer) return;
+        pointer = undefined;
+        pointerInside = false;
+        pressing();
+      },
+      { capture: true, signal: abort.signal },
+    );
+  element.addEventListener(
     'keydown',
     (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
       if (event.repeat || disabled) return;
-      if (event.key === 'Enter') press();
-      else spaceDown = true;
+      if (event.key === 'Enter') {
+        enterDown = true;
+        pressing();
+        press();
+      } else {
+        spaceDown = true;
+        pressing();
+      }
     },
     { signal: abort.signal },
   );
   element.addEventListener(
     'keyup',
     (event) => {
-      if (event.key !== ' ') return;
+      if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
-      const activate = spaceDown;
-      spaceDown = false;
+      const activate = event.key === ' ' && spaceDown;
+      if (event.key === 'Enter') enterDown = false;
+      else spaceDown = false;
+      pressing();
       if (activate) press();
     },
     { signal: abort.signal },
   );
-  element.addEventListener('blur', () => (spaceDown = false), { signal: abort.signal });
+  element.addEventListener('blur', cancel, { signal: abort.signal });
+  parent.ownerDocument.defaultView?.addEventListener('blur', cancel, { signal: abort.signal });
   bounds(options);
   update(options);
   parent.append(element);
@@ -115,7 +165,7 @@ export function svgButton(
     update,
     bounds,
     dispose() {
-      spaceDown = false;
+      cancel();
       abort.abort();
       element.remove();
     },

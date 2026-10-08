@@ -1,4 +1,12 @@
-import { surface, node, object, lettering, vector, svgButton } from '@visual-storytelling/core';
+import {
+  surface,
+  node,
+  object,
+  lettering,
+  vector,
+  svgButton,
+  inkButton,
+} from '@visual-storytelling/core';
 import { bits, bit, binary } from './memory.js';
 
 /** The register owns its geometry; pen, labels and activation keep the shared notebook style. */
@@ -10,7 +18,7 @@ export function registerDrawing(host, dispatch, inspect) {
     title: 'Восемь бит памяти',
     description:
       'Входные биты соединены с восемью триггерами. Общий фронт такта записывает байт при WE = 1.',
-    grid: { step: 24 },
+    grid: false,
   });
   view.element.setAttribute('role', 'group');
   let width = 0,
@@ -31,8 +39,8 @@ export function registerDrawing(host, dispatch, inspect) {
   const savedValue = text('В памяти: 0', 25, 'purple');
   const sum = text('00000000₂ = 0', 18);
   const clockNote = text('один такт для всех восьми ячеек', 15);
-  const enableNote = text('Разрешение записи', 15);
-  const tickNote = text('Дать фронт ↑', 15);
+  const enableNote = text('WE = 0', 17);
+  const tickNote = text('CLK = 0', 17);
   const controls = [];
   const inputs = bits.map((i) => {
     const mark = node(view, 'input-' + i, 0, {
@@ -89,46 +97,32 @@ export function registerDrawing(host, dispatch, inspect) {
   const branches = bits.map((i) =>
     view.pen.line(timing.content, 'clock-wire-' + i, [0, 342], [0, 285], { width: 1.4 }),
   );
-  const enable = node(view, 'write-enable', 'WE = 0', {
-    shape: 'rect',
-    width: 122,
-    height: 44,
-    size: 23,
-    pigment: 'orange',
-  });
-  const tick = node(view, 'clock', 'CLK = 0', {
-    shape: 'rect',
-    width: 122,
-    height: 44,
-    size: 23,
-    pigment: 'orange',
-  });
-  const enableHit = svgButton(enable.content, {
+  const enable = inkButton(view, 'write-enable', 'Запись: выкл', {
     label: 'Разрешение записи',
     onPress: () => dispatch({ type: 'enable' }),
-    x: -61,
-    y: -22,
     width: 122,
     height: 44,
+    size: 20,
+    pigment: 'orange',
   });
-  const tickHit = svgButton(tick.content, {
+  const tick = inkButton(view, 'clock', 'Дать фронт ↑', {
     label: 'Дать фронт такта',
     onPress: () => dispatch({ type: 'clock' }),
-    x: -61,
-    y: -22,
     width: 122,
     height: 44,
+    size: 20,
+    pigment: 'orange',
   });
-  enableHit.element.id = 'enable';
-  tickHit.element.id = 'clock';
-  controls.push(enableHit, tickHit);
+  enable.control.id = 'enable';
+  tick.control.id = 'clock';
+  controls.push(enable, tick);
   function render(next) {
     state = next;
     const w = Math.max(320, host.clientWidth);
+    const step = (w - 32) / 8;
     if (w !== width) {
       width = w;
-      const step = (w - 32) / 8;
-      view.resize(w, 530, { step: 24 });
+      view.resize(w, 530, false);
       byte.at(w < 500 ? 95 : 115, 34);
       capacity.at(w - 68, 34);
       inputLabel.at(66, 81);
@@ -158,7 +152,6 @@ export function registerDrawing(host, dispatch, inspect) {
         branches[j].update('M' + x + ' 342L' + x + ' 298');
       });
       rail.update('M' + (16 + step / 2) + ' 342H' + (w - 16 - step / 2));
-      feed.update('M' + (w * 0.75 + 61) + ' 417H' + (w - 6) + 'V342H' + (w - 16 - step / 2));
     }
     inputs.forEach(({ mark, hit }, j) => {
       const value = bit(next.input, bits[j]);
@@ -180,15 +173,18 @@ export function registerDrawing(host, dispatch, inspect) {
     inputValue.label.text(next.input);
     savedValue.label.text('В памяти: ' + next.saved);
     sum.label.text(binary(next.saved) + '₂ = ' + next.saved);
-    enable.text('WE = ' + Number(next.we));
-    tick.text('CLK = ' + Number(next.clock));
-    enableHit.update({ pressed: next.we, disabled: Boolean(next.challenge) });
-    tickHit.update({
+    enable.text(next.we ? 'Запись: вкл' : 'Запись: выкл');
+    tick.text(next.clock ? 'Вернуть в 0 ↓' : 'Дать фронт ↑');
+    enable.update({ pressed: next.we, disabled: Boolean(next.challenge) });
+    tick.update({
       label: next.clock ? 'Вернуть такт в ноль' : 'Дать фронт такта',
-      pressed: next.clock,
       disabled: Boolean(next.challenge),
     });
-    tickNote.label.text(next.clock ? 'Вернуть такт в 0 ↓' : 'Дать фронт ↑');
+    enableNote.label.text('WE = ' + Number(next.we));
+    tickNote.label.text('CLK = ' + Number(next.clock));
+    feed.update(
+      'M' + (w * 0.75 + tick.width / 2) + ' 417H' + (w - 6) + 'V342H' + (w - 16 - step / 2),
+    );
     timing.pigment(next.event === 'write' ? 'purple' : 'orange');
   }
   const observer = new ResizeObserver(() => state && render(state));

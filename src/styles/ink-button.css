@@ -1,0 +1,9 @@
+.ve-ink-button{--ve-wash-strength:18%}
+.ve-ink-button-face,.ve-ink-button-edge,.ve-ink-button-focus{pointer-events:none}
+.ve-ink-button-focus{visibility:hidden}
+.ve-ink-button .ve-svg-button:focus-visible{outline:none}
+.ve-ink-button:has(.ve-svg-button[aria-disabled=false]:is(:hover,:focus-visible)){--ve-wash-strength:26%}
+.ve-ink-button:has(.ve-svg-button[aria-pressed=true]){--ve-wash-strength:34%}
+.ve-ink-button:has(.ve-svg-button[aria-disabled=false][data-pressing=true]) .ve-ink-button-face{translate:0 3px}
+.ve-ink-button:has(.ve-svg-button[aria-disabled=false]:focus-visible) .ve-ink-button-focus{visibility:visible}
+.ve-ink-button:has(.ve-svg-button[aria-disabled=true]){opacity:.42}
