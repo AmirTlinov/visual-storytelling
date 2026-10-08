@@ -30,6 +30,8 @@ export async function pluginHost({
   const { contents } = await client.readResource({
     uri: tools.find((t) => t.name === 'story_open')._meta.ui.resourceUri,
   });
+  const declaredCsp = contents[0]._meta?.ui?.csp ?? {};
+  const sources = (field) => (declaredCsp[field]?.length ? declaredCsp[field].join(' ') : "'none'");
   const code = await build({
     entryPoints: [fileURLToPath(new URL('host-client.mjs', import.meta.url))],
     bundle: true,
@@ -60,8 +62,7 @@ export async function pluginHost({
         res
           .writeHead(200, {
             'content-type': 'text/html',
-            'content-security-policy':
-              "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; frame-src blob:",
+            'content-security-policy': `default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' ${sources('resourceDomains')}; style-src 'unsafe-inline' ${sources('resourceDomains')}; connect-src ${sources('connectDomains')}; img-src ${sources('resourceDomains')}; font-src ${sources('resourceDomains')}; media-src ${sources('resourceDomains')}; frame-src ${sources('frameDomains')}`,
           })
           .end(contents[0].text);
       else if (req.url === '/')

@@ -86,7 +86,12 @@ export async function readCharacter(
   } catch (error) {
     dispose();
     signal?.throwIfAborted();
-    throw error;
+    const message = (error instanceof Error ? error.message : String(error))
+      .replace(/data:[^\s"'<>)]*/gi, '[embedded asset]')
+      .slice(0, 220);
+    throw new Error(`Character pack ${pack.id.slice(0, 80)} failed to load: ${message}`, {
+      cause: error,
+    });
   } finally {
     signal?.removeEventListener('abort', abort);
   }

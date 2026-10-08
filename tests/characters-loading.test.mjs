@@ -16,7 +16,7 @@ test(
     let capture, pendingRoute;
     try {
       const bundle = await build({
-      plugins: [assetURLs()],
+        plugins: [assetURLs()],
         stdin: {
           resolveDir: fileURLToPath(new URL('../', import.meta.url)),
           contents: `
@@ -61,6 +61,15 @@ test(
               const mounted = parent.childElementCount;
               stage.dispose();
               return {mounted,children:parent.childElementCount};
+            },
+            async invalidRig() {
+              const gltf = JSON.parse(chibi.gltf);
+              gltf.buffers[0].uri = 'data:application/octet-stream;base64,' + '!'.repeat(4096);
+              try {
+                await characterChapter({...options,pack:{...chibi,gltf:JSON.stringify(gltf)}}).mount(parent,new AbortController().signal);
+              } catch(error) {
+                return {message:error.message,cause:Boolean(error.cause),children:parent.childElementCount};
+              }
             }
           };`,
         },
@@ -70,7 +79,7 @@ test(
       });
       await writeFile(
         join(directory, 'index.html'),
-      '<!doctype html><body><div class="ve-scene" id="scene"></div><script src="index.js"></script>',
+        '<!doctype html><body><div class="ve-scene" id="scene"></div><script src="index.js"></script>',
       );
       await writeFile(join(directory, 'index.js'), bundle.outputFiles[0].text);
       capture = await renderer({ directory, width: 960, controls: true });
@@ -99,6 +108,12 @@ test(
         mounted: 1,
         children: 0,
       });
+      const failure = await capture.page.evaluate(() => window.lab.invalidRig());
+      assert.match(failure.message, /Character pack chibi failed to load/);
+      assert.ok(failure.message.length < 320);
+      assert.ok(!failure.message.includes('data:'));
+      assert.equal(failure.cause, true);
+      assert.equal(failure.children, 0);
     } finally {
       await pendingRoute?.abort().catch(() => {});
       await capture?.close();

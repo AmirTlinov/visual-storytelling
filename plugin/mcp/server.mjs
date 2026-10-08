@@ -53,7 +53,12 @@ registerAppResource(server, 'Визуальное объяснение', uri, {}
       _meta: {
         ui: {
           prefersBorder: false,
-          csp: { connectDomains: [], resourceDomains: ['data:', 'blob:'], frameDomains: ['blob:'] },
+          // Standard loaders read the packed scene's local buffers and timing through fetch.
+          csp: {
+            connectDomains: ['data:', 'blob:'],
+            resourceDomains: ['data:', 'blob:'],
+            frameDomains: ['blob:'],
+          },
         },
         'openai/ui': {
           availableDisplayModes: ['inline', 'fullscreen'],
