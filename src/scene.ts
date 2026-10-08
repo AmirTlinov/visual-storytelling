@@ -1,5 +1,11 @@
 import { mountScene } from './scene-handle.js';
-import { story, type Story, type StoryOptions } from './story/story.js';
+import {
+  story,
+  type Story,
+  type StoryOptions,
+  type StoryStatus,
+  type StoryMoment,
+} from './story/story.js';
 import { chapterHeading } from './story/chapters.js';
 import { captionTrack, type CaptionOptions } from './story/captions.js';
 import { sceneFrame, inspectPresentation, type SceneFrameOptions } from './scene-frame.js';
@@ -9,9 +15,14 @@ import { theme } from './ink/palette.js';
 import { SceneHistory } from './controls/history.js';
 import { player as statePlayer } from './controls/player.js';
 import type { SceneHandle } from './scene-handle.js';
-import type { SceneInspection } from './scene-access.js';
+import type { SceneInspection, SceneRendering } from './scene-access.js';
 import type { SceneCheckpoint, SceneView } from './scene-checkpoint.js';
-export type { SceneCheckpoint, SceneView, SceneRestoreNotice } from './scene-checkpoint.js';
+export type {
+  SceneCheckpoint,
+  SceneCaptureOptions,
+  SceneView,
+  SceneRestoreNotice,
+} from './scene-checkpoint.js';
 export { mountScene } from './scene-handle.js';
 export type { SceneHandle, SceneRuntime, SceneHost } from './scene-handle.js';
 export interface SceneOptions {
@@ -257,7 +268,7 @@ function mount(
     bar.append(undo, redo);
     actions.append(bar);
     history = SceneHistory.mount(root, {
-      read: handle.capture,
+      read: () => handle.capture({ basis: 'requested' }),
       restore: handle.restore,
       gestureRoot: fields,
       equal: (a, b) => a.mode === b.mode && JSON.stringify(a.values) === JSON.stringify(b.values),
@@ -362,9 +373,9 @@ function mount(
     assertLive();
     for (const { key } of parameters) {
       if (
-        !controller.values ||
-        typeof controller.values !== 'object' ||
-        !(key in controller.values)
+        !controller.requested.values ||
+        typeof controller.requested.values !== 'object' ||
+        !(key in controller.requested.values)
       )
         throw new Error(`Scene "${title}": parameter "${key}" is missing from stateAt()`);
     }
@@ -378,8 +389,8 @@ function mount(
     );
     player?.dispose();
     transition = (next) => {
-      if (exploration === 'model' && controller.mode !== next) {
-        if (next === 'explore') controller.explore(controller.values);
+      if (exploration === 'model' && controller.requested.mode !== next) {
+        if (next === 'explore') controller.explore(controller.requested.values);
         else controller.resume();
       }
     };
@@ -391,10 +402,7 @@ function mount(
       onPlay: preparePlayback,
     });
     inputStory = (next) => {
-      controller.explore({ ...controller.values, ...next });
-      // Accepted input belongs to the model immediately, even while its next
-      // presentation is loading. History and a following input must see it.
-      reflectState(controller.mode, controller.values);
+      controller.explore({ ...controller.requested.values, ...next });
     };
     playback = () => controller.player.state.playing;
     const chapters = chapterHeading(
@@ -402,9 +410,9 @@ function mount(
       controller.sheet.script.segments ?? [],
       controller.seek,
     );
+    let resetAfterSeek = false;
     const stopSeeking = controller.onSeek(() => {
-      view?.reset();
-      setMode('story');
+      resetAfterSeek = true;
     });
     // Layout can change the stage height. Render outside ResizeObserver delivery so
     // that surface.resize() cannot create a same-frame observation loop.
@@ -438,8 +446,20 @@ function mount(
     };
     storyButton.hidden = false;
     modes.hidden = !parameters.length && !view;
-    function reflectState(next: 'story' | 'explore', state: P) {
-      if (next === 'story') status.textContent = '';
+    function reflectState({ requested, phase, error }: StoryStatus<P, S>) {
+      const { mode: next, values: state } = requested;
+      if (next !== 'story') resetAfterSeek = false;
+      if (phase === 'ready' && resetAfterSeek) {
+        resetAfterSeek = false;
+        view?.reset();
+        if (exploration === 'view') setMode('story');
+      }
+      if (error)
+        status.textContent =
+          error.cause instanceof Error ? error.cause.message : String(error.cause);
+      else status.textContent = '';
+      if (phase === 'preparing') stage.setAttribute('aria-busy', 'true');
+      else stage.removeAttribute('aria-busy');
       for (const { key } of parameters) values[key] = (state as Record<string, ControlValue>)[key]!;
       if (exploration === 'model') setMode(next);
       refresh();
@@ -469,7 +489,35 @@ function mount(
       get currentTime() {
         return controller.currentTime;
       },
-      snapshot: () => controller.state,
+      snapshot: () => controller.presented?.state,
+      get rendering(): SceneRendering {
+        const moment = (value: StoryMoment<P, S>) => ({
+          time: value.time,
+          mode: exploration === 'view' ? mode : value.mode,
+          values: Object.fromEntries(
+            parameters.map(({ key }) => [
+              key,
+              (value.values as Record<string, ControlValue>)[key]!,
+            ]),
+          ),
+        });
+        const requested = moment(controller.requested);
+        return {
+          phase: controller.phase,
+          requested,
+          presented:
+            controller.presented === controller.requested
+              ? requested
+              : controller.presented && moment(controller.presented),
+          error: controller.error && {
+            stage: controller.error.stage,
+            message:
+              controller.error.cause instanceof Error
+                ? controller.error.cause.message
+                : String(controller.error.cause),
+          },
+        };
+      },
       setReduced: controller.setReduced,
     });
     return handle;

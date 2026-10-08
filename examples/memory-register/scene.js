@@ -140,7 +140,7 @@ window.galleryReady = (async () => {
   root.querySelector('[data-mode="story"]').textContent = 'Объяснение · 1 мин';
   root.querySelector('[data-mode="explore"]').textContent = 'Свободный опыт';
   function dispatch(action) {
-    story.explore(act(story.values, action));
+    story.explore(act(story.requested.values, action));
     persist();
   }
   presets.forEach(
@@ -171,7 +171,9 @@ window.galleryReady = (async () => {
   }
   const saved = widgetState('memory-eight-bits', restore);
   function persist() {
-    saved.save({ privateContent: { version: 1, time: story.currentTime, state: story.values } });
+    saved.save({
+      privateContent: { version: 1, time: story.currentTime, state: story.requested.values },
+    });
   }
   restore(saved.read());
   shell.onDispose(() => {
@@ -180,10 +182,11 @@ window.galleryReady = (async () => {
     loop.dispose();
   });
   root.scene.extend({
-    snapshot: () => ({
-      ...story.values,
-      inputBinary: binary(story.values.input),
-      savedBinary: binary(story.values.saved),
-    }),
+    snapshot: () =>
+      story.presented && {
+        ...story.presented.values,
+        inputBinary: binary(story.presented.values.input),
+        savedBinary: binary(story.presented.values.saved),
+      },
   });
 })();

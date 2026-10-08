@@ -53,7 +53,7 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
             ]},stateAt:()=>({x:0}),render:()=>renders++});
             events.length=0; renders=0;
             shell.setMode('explore');
-            const transition = {events:[...events],renders,mode:story.mode};
+            const transition = {events:[...events],renders,mode:story.requested.mode};
             shell.onDispose(()=>disposed++);
             window.lab={shell,story,view,detail,events,model,pigment,paper,chart,portion,disposeCount:()=>disposed};
             return {detailWidth,shortWidth,overflow,cleared,wideWidth:wide.label.width,
@@ -195,7 +195,7 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
     await page.locator('[data-mode="explore"]').click();
     assert.equal(await page.locator('h1').innerText(), 'Detail');
     await page.getByRole('slider', { name: 'X', exact: true }).fill('4');
-    assert.equal(await page.evaluate(() => lab.story.values.x), 4);
+    assert.equal(await page.evaluate(() => lab.story.requested.values.x), 4);
     assert.deepEqual(await page.evaluate(() => lab.events), ['explore', 'story', 'explore']);
     await page.evaluate(() => lab.story.seek(7));
     assert.equal(

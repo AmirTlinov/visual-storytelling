@@ -1,6 +1,10 @@
 import type { SceneHandle } from './scene-handle.js';
 import type { ControlValue } from './controls/fields.js';
 
+export interface SceneCaptureOptions {
+  /** Presented is the visible frame; requested records accepted conditions while loading. */
+  basis?: 'presented' | 'requested';
+}
 /** A portable position in a scene; playback remains owned by the mounted runtime. */
 export interface SceneCheckpoint {
   time: number;
@@ -57,30 +61,48 @@ function nearestChapter(review: ReturnType<SceneHandle['review']>, state: SceneC
   );
 }
 
-export function captureScene(handle: SceneHandle, view?: SceneView): SceneCheckpoint {
+export function captureScene(
+  handle: SceneHandle,
+  view?: SceneView,
+  { basis = 'presented' }: SceneCaptureOptions = {},
+): SceneCheckpoint {
+  if (basis !== 'presented' && basis !== 'requested')
+    throw new Error('Unknown scene capture basis');
   const state = handle.inspect({ presentation: false });
+  const moment = state.rendering?.[basis];
+  if (state.rendering && !moment)
+    throw Object.assign(
+      new Error('The scene has no completed frame to capture. Await scene.ready().'),
+      {
+        code: 'scene_not_presented',
+      },
+    );
+  const time = moment?.time ?? state.time;
+  const visible = !state.rendering || basis === 'presented' || state.rendering.phase === 'ready';
   const cue = state.review.cues
     .filter(
       (c) =>
-        c.start <= state.time &&
+        c.start <= time &&
         c.end > c.start &&
-        (state.time < c.end || (state.time === state.duration && c.end === state.duration)),
+        (time < c.end || (time === state.duration && c.end === state.duration)),
     )
     .sort((a, b) => a.end - a.start - (b.end - b.start))[0];
   return {
-    time: state.time,
+    time,
     cue: cue?.id,
-    chapter: chapterAt(state.review, state.time)?.id,
+    chapter: chapterAt(state.review, time)?.id,
     chapters: state.review.segments.map((chapter) => chapter.id),
-    progress: cue ? (state.time - cue.start) / (cue.end - cue.start) : 0,
-    mode: state.mode,
+    progress: cue ? (time - cue.start) / (cue.end - cue.start) : 0,
+    mode: moment?.mode ?? state.mode,
     muted: state.muted,
     rate: state.rate,
-    selected: state.selected,
+    selected: visible ? state.selected : undefined,
     values: Object.fromEntries(
-      state.parameters.filter((p) => !p.disabled).map((p) => [p.key, p.value]),
+      state.parameters
+        .filter((p) => !p.disabled)
+        .map((p) => [p.key, moment?.values[p.key] ?? p.value]),
     ),
-    view: view?.capture?.(),
+    view: visible ? view?.capture?.() : undefined,
   };
 }
 

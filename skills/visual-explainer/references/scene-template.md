@@ -87,7 +87,7 @@ window.galleryReady = (async () => {
     },
   });
   shell.onDispose(drawing.dispose);
-  // Дополнительное предметное действие использует controller.explore({...controller.values, x: 50}).
+  // Дополнительное предметное действие использует controller.explore({...controller.requested.values, x: 50}).
   // root.scene уже содержит play, seek, pause, review, snapshot, currentTime и dispose.
 })();
 ```
@@ -101,8 +101,8 @@ window.galleryReady = (async () => {
 для вызова `controller.update()` не требуется.
 Зависимые числа задавай в `derive(values, frame)`, например
 `derive: p => ({...p, z: p.x * p.weight + p.bias})`: он вызывается и при рассказе,
-и при вводе. `render` и `root.scene.snapshot()` получают этот вычисленный кадр;
-`controller.values` содержит только исходные параметры. Так ползунки автоматически
+и при вводе. `render` получает вычисленную модель, а `root.scene.snapshot()` — только завершённый кадр;
+`controller.requested.values` содержит только исходные параметры. Так ползунки автоматически
 пересчитывают связанные подписи и рисунок.
 
 Для нескольких допустимых значений вместо диапазона задай
@@ -126,8 +126,12 @@ window.galleryReady = (async () => {
 Пигменты `ink/blue/orange/purple/green/red/yellow` совпадают в рисующих API и CSS; цветные `*-wash` и `*-soft` доступны также в `view.ink`.
 `root.scene.snapshot` можно заменить предметным снимком для отчёта. `shell.dispose()`
 освобождает рассказ, камеру и callbacks `shell.onDispose`: добавляй туда наблюдатели,
-подписки и движение предмета. `controller.subscribe((mode, values) => …)` сразу сообщает
-состояние и возвращает функцию отписки; `controller.onSeek(time => …)` сообщает целевое время до рендера.
+подписки и движение предмета. `controller.subscribe(({requested, presented, phase, error}) => …)` сразу сообщает
+принятые условия и последний завершённый кадр и возвращает функцию отписки; `controller.onSeek(time => …)` сообщает целевое время до рендера.
+При асинхронной подготовке `phase === 'preparing'`, а `presented` сохраняет прошлый
+кадр. Ошибка подготовки сохраняет его; ошибка `render` сбрасывает `presented`.
+`scene.capture()` сохраняет завершённый кадр; при его отсутствии выдаёт `scene_not_presented`.
+`capture({basis:'requested'})` сохраняет принятые условия, без незавершённого вида.
 
 ## Превращение предметов
 

@@ -112,6 +112,7 @@ export function mount(parent: HTMLElement): Example {
     checkpoints: [1, 2, 4],
     setTheme: book.theme,
     svg: () => layout.current.view.element,
-    snapshot: () => ({ progress: controller.values.progress, pigment }),
+    snapshot: () =>
+      controller.presented && { progress: controller.presented.values.progress, pigment },
   });
 }

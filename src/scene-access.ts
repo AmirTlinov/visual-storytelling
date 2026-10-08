@@ -24,6 +24,18 @@ export type SceneCommand =
 export interface SceneControlOptions {
   signal?: AbortSignal;
 }
+export interface SceneRenderMoment {
+  time: number;
+  mode: 'story' | 'explore';
+  values: Record<string, ControlValue>;
+}
+/** Requested controls and the last completed drawing are reported by the same Story owner. */
+export interface SceneRendering {
+  phase: 'preparing' | 'ready' | 'failed';
+  requested: SceneRenderMoment;
+  presented: SceneRenderMoment | undefined;
+  error?: { stage: 'stateAt' | 'derive' | 'prepare' | 'render'; message: string };
+}
 export interface SceneInspection {
   restoreNotices?: readonly SceneRestoreNotice[];
   time: number;
@@ -35,6 +47,7 @@ export interface SceneInspection {
   objects?: ReturnType<NonNullable<SceneHandle['objects']>>;
   experimentHistory?: { undo: boolean; redo: boolean };
   viewTransition?: 'running' | 'idle';
+  rendering?: SceneRendering;
   mode: 'story' | 'explore';
   parameters: (Omit<ControlParameter, 'format'> & {
     key: string;
@@ -73,6 +86,7 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
       objects,
       experimentHistory: handle.experimentHistory,
       viewTransition: owner.view?.()?.transition,
+      rendering: handle.rendering,
       mode: owner.mode?.() ?? 'explore',
       parameters: (owner.parameters ?? []).map(({ format, ...p }) => {
         const value = owner.values?.()[p.key] ?? p.value;
@@ -357,7 +371,10 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
         } catch (cause) {
           const detail = cause instanceof Error ? cause.message : String(cause);
           throw Object.assign(
-            new Error(`${detail} The current command may have changed the scene. Inspect before continuing.`, { cause }),
+            new Error(
+              `${detail} The current command may have changed the scene. Inspect before continuing.`,
+              { cause },
+            ),
             {
               code: signal?.aborted ? 'scene_control_cancelled' : 'scene_control_failed',
               commandIndex: index,

@@ -3,7 +3,14 @@ export type { Cue, CueSpan, CueTiming, Chapter, Script, Frame, CueReview } from 
 export { transport } from './transport.js';
 export type { Transport, TransportOptions, Playback } from './transport.js';
 export { story } from './story.js';
-export type { Story, StoryOptions } from './story.js';
+export type {
+  Story,
+  StoryOptions,
+  StoryMoment,
+  StoryStatus,
+  StoryMode,
+  StoryError,
+} from './story.js';
 
 export type { MediaClock } from './clock.js';
 export * from './steps.js';

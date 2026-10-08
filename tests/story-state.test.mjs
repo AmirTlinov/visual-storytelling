@@ -131,39 +131,47 @@ test('story derives one current model for input, time, reverse seeking and reduc
     },
     render: (state, frame, mode) => rendered.push({ state, time: frame.time, mode }),
   });
-  controller.subscribe((mode, values) => published.push({ mode, values }));
-  assert.deepEqual(controller.state, { x: 2, weight: 3, bias: -7, z: -1, output: 0 });
+  controller.subscribe(({ requested: { mode, values } }) => published.push({ mode, values }));
+  assert.deepEqual(controller.requested.state, { x: 2, weight: 3, bias: -7, z: -1, output: 0 });
   assert.equal(rendered.length, 1);
 
-  assert.throws(() => controller.explore({ ...controller.values, x: -1 }), /nonnegative/);
-  assert.equal(controller.mode, 'story');
-  assert.equal(controller.values.x, 2);
-  assert.equal(controller.state.output, 0);
+  assert.throws(() => controller.explore({ ...controller.requested.values, x: -1 }), /nonnegative/);
+  assert.equal(controller.requested.mode, 'story');
+  assert.equal(controller.requested.values.x, 2);
+  assert.equal(controller.requested.state.output, 0);
   assert.equal(rendered.length, 1, 'an invalid model publishes no partial state');
   assert.throws(() => controller.seek(0.5), /nonnegative/);
   assert.equal(controller.currentTime, 0);
-  assert.equal(controller.values.x, 2);
+  assert.equal(controller.requested.values.x, 2);
   assert.equal(rendered.length, 1, 'an invalid seek does not move the clock');
 
   rendered.length = published.length = 0;
-  controller.explore({ ...controller.values, x: 4 });
-  assert.deepEqual(controller.state, { x: 4, weight: 3, bias: -7, z: 5, output: 5 });
-  assert.deepEqual(controller.values, { x: 4, weight: 3, bias: -7 });
+  controller.explore({ ...controller.requested.values, x: 4 });
+  assert.deepEqual(controller.requested.state, { x: 4, weight: 3, bias: -7, z: 5, output: 5 });
+  assert.deepEqual(controller.requested.values, { x: 4, weight: 3, bias: -7 });
   assert.equal(rendered.length, 1, 'media pause publishes a single fully derived frame');
   assert.equal(published.length, 1);
-  assert.equal(rendered[0].state, controller.state);
+  assert.equal(rendered[0].state, controller.requested.state);
   assert.equal(rendered[0].mode, 'explore');
 
   controller.setReduced(true);
-  assert.equal(controller.state.output, 5, 'motion preference preserves the explored model');
+  assert.equal(
+    controller.requested.state.output,
+    5,
+    'motion preference preserves the explored model',
+  );
   controller.seek(4);
-  assert.equal(controller.state.output, 11);
+  assert.equal(controller.requested.state.output, 11);
   controller.seek(0);
-  assert.equal(controller.state.output, 0);
-  controller.explore({ ...controller.values, bias: 2 });
-  assert.equal(controller.state.output, 8);
+  assert.equal(controller.requested.state.output, 0);
+  controller.explore({ ...controller.requested.values, bias: 2 });
+  assert.equal(controller.requested.state.output, 8);
   controller.resume();
-  assert.equal(controller.state.output, 0, 'returning to narration restores its input and output');
+  assert.equal(
+    controller.requested.state.output,
+    0,
+    'returning to narration restores its input and output',
+  );
 });
 
 test('preparation retains the media clock, pause intent and only the latest requested frame', async (t) => {
@@ -217,6 +225,11 @@ test('preparation retains the media clock, pause intent and only the latest requ
   await controller.player.play();
   controller.seek(2);
   const heldTime = controller.currentTime;
+  assert.equal(controller.requested.state, 2);
+  assert.equal(controller.presented.state, 0);
+  assert.equal(controller.phase, 'preparing');
+  assert.notEqual(controller.presented, controller.requested);
+  assert.equal('values' in controller || 'state' in controller || 'mode' in controller, false);
   assert.equal(controller.player.state.playing, true, 'buffering retains the user play intent');
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(
@@ -229,6 +242,8 @@ test('preparation retains the media clock, pause intent and only the latest requ
   gate(2).resolve();
   await controller.ready();
   assert.equal(rendered.at(-1), 2);
+  assert.equal(controller.presented, controller.requested);
+  assert.equal(controller.phase, 'ready');
   assert.equal(
     controller.player.state.playing,
     false,
@@ -240,6 +255,10 @@ test('preparation retains the media clock, pause intent and only the latest requ
   gate(3).reject(new Error('chapter failed'));
   await failed;
   assert.equal(rendered.at(-1), 2, 'failed resources are never drawn');
+  assert.equal(controller.requested.state, 3);
+  assert.equal(controller.presented.state, 2);
+  assert.equal(controller.phase, 'failed');
+  assert.equal(controller.error.stage, 'prepare');
   assert.match(controller.player.state.error, /chapter failed/);
 
   gates.delete(3);
@@ -264,6 +283,8 @@ test('preparation retains the media clock, pause intent and only the latest requ
   gate(5).resolve();
   await waiting;
   assert.equal(rendered.at(-1), 5);
+  assert.equal(controller.presented, controller.requested);
+  assert.equal(controller.presented.state, 5);
   assert.equal(controller.player.state.error, null);
 
   controller.seek(6);
@@ -286,6 +307,12 @@ test('preparation retains the media clock, pause intent and only the latest requ
       draws++;
     },
   });
+  assert.equal(
+    controller.presented,
+    undefined,
+    'initial asynchronous preparation has no completed frame',
+  );
+  assert.equal(controller.phase, 'preparing');
   await controller.ready();
   await Promise.resolve();
   assert.equal(
@@ -332,6 +359,15 @@ test('preparation retains the media clock, pause intent and only the latest requ
     assert.match(controller.player.state.error, /Synchronous presentation failed/);
     await assert.rejects(controller.ready(), /Synchronous presentation failed/);
     assert.equal(visible, 2, 'the last complete frame remains visible');
+    assert.equal(controller.phase, 'failed');
+    assert.equal(controller.error.stage, failure);
+    if (failure === 'render')
+      assert.equal(
+        controller.presented,
+        undefined,
+        'a partially changed frame is not claimed complete',
+      );
+    else assert.equal(controller.presented.state, 2);
     broken = false;
     await controller.player.play();
     await controller.ready();

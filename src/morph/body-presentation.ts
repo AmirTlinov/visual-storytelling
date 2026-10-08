@@ -5,6 +5,7 @@ import type { MathOperation, MathMorphPlan } from './types.js';
 import type { MorphCues, MorphTime } from './timing.js';
 import { Viewport3D } from '../viewport/three.js';
 import { MathMorph3D } from './three.js';
+import type { SceneView } from '../scene-checkpoint.js';
 
 let serial = 0;
 /** One public presentation owns projection, framing and disposal; callers supply math and time. */
@@ -52,14 +53,16 @@ export function mountBodies(
           { value: '2d', label: 'Плоскость' },
         ],
       },
-      (value) => {
-        projection = String(value) as '2d' | '3d';
-        flatStage.hidden = projection !== '2d';
-        volumeStage.hidden = projection !== '3d';
-        render(lastTime, lastCues);
-      },
+      (value) => setProjection(value as '2d' | '3d'),
     );
     controls.append(choice.element);
+    function setProjection(value: '2d' | '3d') {
+      projection = value;
+      flatStage.hidden = projection !== '2d';
+      volumeStage.hidden = projection !== '3d';
+      choice.setValue(projection);
+      render(lastTime, lastCues);
+    }
     function render(time: MorphTime, cues?: MorphCues) {
       if (disposed) return;
       const frame = volume.render(time, cues);
@@ -90,7 +93,38 @@ export function mountBodies(
     render(0);
     return {
       element: root,
-      view,
+      view: {
+        get transition() {
+          return projection === '3d' ? view.transition : 'idle';
+        },
+        get focus() {
+          return projection === '3d' ? view.focus : undefined;
+        },
+        get validateFocus() {
+          return projection === '3d' ? view.validateFocus : undefined;
+        },
+        reset(settings) {
+          const from = settings?.from as { kind?: string; camera?: unknown } | undefined;
+          view.reset({ ...settings, from: from?.kind === 'math-bodies' ? from.camera : undefined });
+        },
+        capture() {
+          return { kind: 'math-bodies', projection, camera: view.capture() };
+        },
+        restore(value) {
+          const saved = value as
+            | { kind?: string; projection?: string; camera?: unknown }
+            | undefined;
+          if (
+            saved?.kind !== 'math-bodies' ||
+            (saved.projection !== '2d' && saved.projection !== '3d')
+          )
+            return false;
+          if (!view.restore(saved.camera)) return false;
+          setProjection(saved.projection);
+          return true;
+        },
+        dispose,
+      } satisfies SceneView,
       render,
       get plan() {
         return volume.plan;

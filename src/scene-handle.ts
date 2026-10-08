@@ -5,11 +5,17 @@ import {
   type SceneAccessOwner,
   type SceneControlOptions,
   type SceneSearchResult,
+  type SceneRendering,
 } from './scene-access.js';
 import type { Theme } from './ink/palette.js';
 import type { CueReview } from './story/cues.js';
 import { inspectPresentation, type ScenePresentation } from './scene-frame.js';
-import { captureScene, restoreScene, type SceneCheckpoint } from './scene-checkpoint.js';
+import {
+  captureScene,
+  restoreScene,
+  type SceneCheckpoint,
+  type SceneCaptureOptions,
+} from './scene-checkpoint.js';
 import { sceneObjects } from './scene-objects.js';
 import { connectSceneHost, type SceneHost } from './host/adapter.js';
 import type { SceneRestoreNotice } from './scene-checkpoint.js';
@@ -27,6 +33,7 @@ declare global {
 
 /** Capabilities supplied by the actual subject, player and drawing owners. */
 export interface SceneRuntime {
+  readonly rendering?: SceneRendering;
   readonly duration?: number;
   readonly currentTime?: number;
   readonly playing?: boolean;
@@ -64,7 +71,7 @@ export interface SceneHandle extends SceneRuntime {
   extend<T extends object>(extension: T & Partial<SceneRuntime>): this & T;
   connectHost(host: SceneHost): () => void;
   readonly restoreNotices?: readonly SceneRestoreNotice[];
-  capture(): SceneCheckpoint;
+  capture(options?: SceneCaptureOptions): SceneCheckpoint;
   restore(state: SceneCheckpoint): Promise<SceneInspection>;
   inspect(options?: { presentation?: boolean }): SceneInspection;
   control(
@@ -138,6 +145,8 @@ export function mountScene<T extends SceneRuntime>(
             method = value;
             bound = (...args: unknown[]) => {
               assertLive();
+              if (key === 'snapshot' && handle.rendering && !handle.rendering.presented)
+                return undefined;
               return Reflect.apply(value, runtime, args);
             };
           }
@@ -181,7 +190,7 @@ export function mountScene<T extends SceneRuntime>(
   access.assertLive = assertLive;
   access.playing ??= () => runtime.playing ?? false;
   Object.assign(handle, sceneAccess(handle, access));
-  handle.capture = () => captureScene(handle, access.view?.());
+  handle.capture = (options) => captureScene(handle, access.view?.(), options);
   handle.restore = async (state) => {
     const restored = await restoreScene(handle, state, access.view?.());
     restoreNotices = restored.restoreNotices ?? [];

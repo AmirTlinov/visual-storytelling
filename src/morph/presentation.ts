@@ -4,6 +4,7 @@ import type { ConstructionPlan } from './construction/types.js';
 import type { MorphCues, MorphTime } from './timing.js';
 import { mountBodies } from './body-presentation.js';
 import { mountConstruction } from './construction/render.js';
+import type { SceneView } from '../scene-checkpoint.js';
 
 type Operation = MathOperation | MathMorphPlan | ConstructionPlan;
 const isConstruction = (value: Operation): value is ConstructionPlan =>
@@ -23,6 +24,7 @@ export async function mountMath(
   let construction: ReturnType<typeof mountConstruction> | undefined;
   let disposed = false;
   const current = () => (body ?? construction)!;
+  const currentView = (): SceneView => current().view;
   function setOperation(next: Operation) {
     if (disposed) throw new Error('Math presentation has been disposed');
     // Same-kind edits reuse the owner. A different presentation is mounted before retiring it.
@@ -81,12 +83,29 @@ export async function mountMath(
   return {
     element,
     view: {
-      reset() {
-        body?.view.reset();
-        construction?.view.reset();
+      get transition() {
+        return currentView().transition;
+      },
+      get focus() {
+        const view = currentView();
+        return view.focus?.bind(view);
+      },
+      get validateFocus() {
+        const view = currentView();
+        return view.validateFocus?.bind(view);
+      },
+      reset(settings) {
+        currentView().reset(settings);
+      },
+      capture() {
+        return currentView().capture?.();
+      },
+      restore(value) {
+        const view = currentView();
+        return view.restore ? view.restore(value) : false;
       },
       dispose,
-    },
+    } satisfies SceneView,
     render(time: MorphTime, cues?: MorphCues) {
       if (!disposed) return current().render(time, cues);
     },

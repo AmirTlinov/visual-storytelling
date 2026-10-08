@@ -127,7 +127,7 @@ test('one scene boundary preserves capabilities, live time and model ownership t
     const input = page.locator('main').getByRole('slider', { name: 'Value', exact: true });
     await input.fill('13');
     assert.equal(await input.inputValue(), '3', 'a rejected field must agree with the model');
-    assert.equal(await page.evaluate(() => lab.story.values.x), 3);
+    assert.equal(await page.evaluate(() => lab.story.requested.values.x), 3);
     await page.evaluate(() => lab.badNarration(true));
     await assert.rejects(
       page.evaluate(() => lab.root.scene.control([{ type: 'mode', value: 'story' }])),
@@ -154,7 +154,7 @@ test('one scene boundary preserves capabilities, live time and model ownership t
       page.evaluate(() => lab.root.scene.control([{ type: 'parameters', values: { x: 8 } }])),
       /Invalid scene parameter: x/,
     );
-    assert.equal(await page.evaluate(() => lab.story.values.x), 3);
+    assert.equal(await page.evaluate(() => lab.story.requested.values.x), 3);
     assert.equal(await page.getByRole('slider', { name: 'Locked value' }).inputValue(), '3');
     await assert.rejects(
       page.evaluate(() => lab.shell.syncParameters({ x: 8 })),

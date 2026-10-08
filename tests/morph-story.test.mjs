@@ -65,7 +65,21 @@ test(
             script:{duration:4,cues:{word:{start:0,end:4}}},
             chapters:[{id:'word',operation:p=>({sources:[p.word,'Тень'],targets:['Объём']})}],
           });
-          window.lab = {math, ink, prepared};
+          async function cleanupTrial(broken) {
+            const root=document.createElement('main'); root.className='ve-scene'; document.body.append(root);
+            const calls={presentation:0,view:0};
+            const view={identity:'custom',reset(){},capture(){return {identity:this.identity}},dispose(){calls.view++}};
+            const presenter={mount(){return {view,setOperation(){},render(){if(broken)throw new Error('Broken presenter')},dispose(){calls.presentation++;view.dispose()}}}};
+            let capture, failure;
+            try {
+              const trial=await MorphStory.mount(root,{title:'Cleanup',presenter,initial:{x:1},script:{duration:1,cues:{one:{start:0,end:1}}},chapters:[{id:'one',operation:p=>p.x}]});
+              capture=root.scene.capture().view;
+              trial.dispose();trial.dispose();
+            } catch(error) {failure=error.message}
+            root.remove();
+            return {calls,capture,failure};
+          }
+          window.lab = {math, ink, prepared, cleanup:[await cleanupTrial(false),await cleanupTrial(true)]};
         })();`,
         },
         bundle: true,
@@ -89,11 +103,16 @@ test(
         snapshot: document.querySelector('#math').scene.snapshot(),
       }));
       assert.deepEqual(initial.prepared, { first: 1, second: 0 });
+      assert.deepEqual(await page.evaluate(() => lab.cleanup), [
+        {
+          calls: { presentation: 1, view: 1 },
+          capture: { identity: 'custom' },
+          failure: undefined,
+        },
+        { calls: { presentation: 1, view: 1 }, capture: undefined, failure: 'Broken presenter' },
+      ]);
       assert.equal(
-        await page
-          .locator('#math')
-          .locator('input[aria-label="Количество"]')
-          .isDisabled(),
+        await page.locator('#math').locator('input[aria-label="Количество"]').isDisabled(),
         true,
       );
       const work = await page.evaluate(() => {
@@ -133,6 +152,47 @@ test(
         ),
         6,
       );
+      assert.equal(
+        await page.evaluate(() =>
+          document.querySelector('#math').scene.inspect().capabilities.includes('focus'),
+        ),
+        true,
+      );
+      await math.locator('canvas[tabindex="0"]').focus();
+      await page.keyboard.press('ArrowRight');
+      const saved = await page.evaluate(() => document.querySelector('#math').scene.capture());
+      assert.equal(saved.view.kind, 'math-bodies');
+      assert.equal(saved.view.projection, '3d');
+      assert.equal(saved.view.camera.following, false);
+      await page.evaluate(() =>
+        document.querySelector('#math').scene.control([{ type: 'focus', ids: ['math-morph'] }]),
+      );
+      await math.getByRole('radio', { name: 'Плоскость', exact: true }).check();
+      assert.equal(
+        await page.evaluate(() =>
+          document.querySelector('#math').scene.inspect().capabilities.includes('focus'),
+        ),
+        false,
+      );
+      assert.equal(
+        (await page.evaluate(() => document.querySelector('#math').scene.capture())).view
+          .projection,
+        '2d',
+      );
+      const restored = await page.evaluate(async (saved) => {
+        const scene = document.querySelector('#math').scene;
+        const { restoreNotices: notices } = await scene.restore(saved);
+        return {
+          notices,
+          view: scene.capture().view,
+          projection: lab.math.presentation.projection,
+          focus: scene.inspect().capabilities.includes('focus'),
+        };
+      }, saved);
+      assert.deepEqual(restored.notices, []);
+      assert.equal(restored.projection, '3d');
+      assert.equal(restored.focus, true);
+      assert.deepEqual(restored.view, saved.view);
       const ink = page.locator('#ink');
       await ink.getByRole('button', { name: 'Исследовать', exact: true }).click();
       await ink.getByRole('textbox', { name: 'Слово', exact: true }).fill('');
@@ -155,10 +215,7 @@ test(
         lab.math.story.seek(8);
         lab.ink.story.seek(4);
       });
-      assert.equal(
-        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
-        true,
-      );
+      await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth);
       await page.evaluate(() => {
         lab.math.dispose();
         lab.math.dispose();

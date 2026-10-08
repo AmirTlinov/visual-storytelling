@@ -1,4 +1,4 @@
-import { SceneShell, type SceneOptions } from '../scene.js';
+import { SceneShell, type SceneOptions, type SceneView } from '../scene.js';
 import type { ControlDescription, ControlParameter, ControlValue } from '../controls/fields.js';
 import { cueSheet, type Frame, type Script } from '../story/cues.js';
 import { morphTiming, type MorphCues, type MorphTime, type MorphProgress } from './timing.js';
@@ -6,7 +6,8 @@ import { morphTiming, type MorphCues, type MorphTime, type MorphProgress } from 
 export interface MorphPresentation<O, F = unknown> {
   setOperation(operation: O): void;
   render(time: MorphTime, cues?: MorphCues): F;
-  view?: { reset(): void; dispose(): void };
+  /** View capabilities are borrowed; the presentation owns all cleanup. */
+  view?: Omit<SceneView, 'dispose'>;
   dispose(): void;
 }
 
@@ -174,8 +175,31 @@ async function mount<P extends Record<string, unknown>, O, F>(
   let drawing: MorphPresentation<O, F> | undefined;
   try {
     drawing = await presenter.mount(shell.stage, firstOperation);
-    if (drawing.view) shell.attachView(drawing.view);
-    else shell.onDispose(drawing.dispose);
+    shell.onDispose(() => drawing!.dispose());
+    if (drawing.view) {
+      const view = drawing.view;
+      shell.attachView({
+        get transition() {
+          return view.transition;
+        },
+        get focus() {
+          return view.focus?.bind(view);
+        },
+        get validateFocus() {
+          return view.validateFocus?.bind(view);
+        },
+        reset(settings) {
+          view.reset(settings);
+        },
+        capture() {
+          return view.capture?.();
+        },
+        restore(value) {
+          return view.restore ? view.restore(value) : false;
+        },
+        dispose() {},
+      });
+    }
     const mounted = drawing;
     let current = firstOperation;
     let currentChapter: string | undefined;
@@ -224,16 +248,17 @@ async function mount<P extends Record<string, unknown>, O, F>(
       },
     });
     const handle = root.scene!;
-    handle.snapshot = () => ({
-      chapter: controller.state.chapter.id,
-      parameters: controller.state.inputs,
-      progress: controller.state.progress,
-      mode: controller.mode,
-      frame: rendered,
-    });
+    handle.snapshot = () =>
+      controller.presented && {
+        chapter: controller.presented.state.chapter.id,
+        parameters: controller.presented.state.inputs,
+        progress: controller.presented.state.progress,
+        mode: controller.presented.mode,
+        frame: rendered,
+      };
+    await controller.ready();
     return { shell, story: controller, presentation: mounted, dispose: shell.dispose };
   } catch (error) {
-    drawing?.dispose();
     shell.dispose();
     throw error;
   }

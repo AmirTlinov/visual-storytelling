@@ -247,7 +247,7 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
           mode,
           values,
           beat: activeCue(chapter.script, progress * chapter.seconds),
-          input: (changes) => story!.explore({ ...story!.values, ...changes }),
+          input: (changes) => story!.explore({ ...story!.requested.values, ...changes }),
         };
         presentation.drawing.render(latest);
         shell.showParameters([
@@ -268,18 +268,19 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
       },
     });
     const scene = parent.scene!;
-    scene.snapshot = () => ({
-      chapter: options.chapters[current]!.id,
-      frame: latest && {
-        time: latest.time,
-        progress: latest.progress,
-        reduced: latest.reduced,
-        mode: latest.mode,
-        values: latest.values,
-        beat: latest.beat,
-      },
-      content: presentations.active?.drawing.snapshot?.(),
-    });
+    scene.snapshot = () =>
+      story!.presented && {
+        chapter: options.chapters[current]!.id,
+        frame: latest && {
+          time: latest.time,
+          progress: latest.progress,
+          reduced: latest.reduced,
+          mode: latest.mode,
+          values: latest.values,
+          beat: latest.beat,
+        },
+        content: presentations.active?.drawing.snapshot?.(),
+      };
     scene.checkpoints = [
       ...new Set([
         0,

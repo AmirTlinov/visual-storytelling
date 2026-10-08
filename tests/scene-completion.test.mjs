@@ -30,6 +30,94 @@ async function fixture(contents, work) {
   }
 }
 
+test('failed preparation preserves the completed frame; failed rendering invalidates capture', async () => {
+  await fixture(
+    `
+    import {SceneShell} from './src/scene.ts';
+    const root=document.querySelector('main');
+    const shell=SceneShell.mount(root,{title:'Failures',parameters:[{key:'x',label:'X',value:1,min:0,max:10}]});
+    let reject;
+    const view={position:'manual',reset(){this.position='authored'},capture(){return {position:this.position}},dispose(){}};
+    shell.attachView(view);
+    const story=shell.attachStory({
+      script:{duration:10,cues:{}},stateAt:frame=>({x:frame.time+1}),
+      prepare(values){if(values.x===7)return new Promise((_,no)=>reject=no)},
+      render(values){root.dataset.drawn=values.x; if(values.x===9)throw new Error('Drawing interrupted')},
+    });
+    root.scene.extend({snapshot:()=>({x:Number(root.dataset.drawn)})});
+    window.lab={root,shell,story,view,reject:()=>reject(new Error('Resources unavailable'))};
+  `,
+    async (page) => {
+      await page.evaluate(() => {
+        window.change = lab.root.scene
+          .control([{ type: 'seek', time: 6 }])
+          .catch((error) => error.message);
+      });
+      const failedPreparation = await page.evaluate(async () => {
+        lab.reject();
+        await change;
+        return {
+          rendering: lab.root.scene.inspect({ presentation: false }).rendering,
+          snapshot: lab.root.scene.snapshot(),
+          capture: lab.root.scene.capture(),
+          drawn: lab.root.dataset.drawn,
+        };
+      });
+      assert.equal(failedPreparation.rendering.phase, 'failed');
+      assert.equal(failedPreparation.rendering.error.stage, 'prepare');
+      assert.equal(failedPreparation.rendering.requested.values.x, 7);
+      assert.equal(failedPreparation.rendering.presented.values.x, 1);
+      assert.deepEqual(failedPreparation.snapshot, { x: 1 });
+      assert.equal(failedPreparation.capture.values.x, 1);
+      assert.equal(failedPreparation.drawn, '1');
+      assert.equal(
+        failedPreparation.capture.view.position,
+        'manual',
+        'preparation failure preserves the previous camera',
+      );
+      const failedRender = await page.evaluate(async () => {
+        await lab.root.scene.control([{ type: 'parameters', values: { x: 9 } }]).catch(() => {});
+        let captureError;
+        try {
+          lab.root.scene.capture();
+        } catch (error) {
+          captureError = error.code;
+        }
+        return {
+          rendering: lab.root.scene.inspect({ presentation: false }).rendering,
+          snapshot: lab.root.scene.snapshot(),
+          captureError,
+          requested: lab.root.scene.capture({ basis: 'requested' }),
+        };
+      });
+      assert.equal(failedRender.rendering.phase, 'failed');
+      assert.equal(failedRender.rendering.error.stage, 'render');
+      assert.equal(failedRender.rendering.presented, undefined);
+      assert.equal(failedRender.snapshot, undefined);
+      assert.equal(failedRender.captureError, 'scene_not_presented');
+      assert.equal(failedRender.requested.values.x, 9);
+      const recovered = await page.evaluate(async () => {
+        await lab.root.scene.control([{ type: 'parameters', values: { x: 4 } }]);
+        return {
+          rendering: lab.root.scene.inspect({ presentation: false }).rendering,
+          snapshot: lab.root.scene.snapshot(),
+          capture: lab.root.scene.capture(),
+        };
+      });
+      assert.equal(recovered.rendering.phase, 'ready');
+      assert.deepEqual(recovered.rendering.requested, recovered.rendering.presented);
+      assert.deepEqual(recovered.snapshot, { x: 4 });
+      assert.equal(recovered.capture.values.x, 4);
+      await page.evaluate(() => lab.root.scene.control([{ type: 'seek', time: 3 }]));
+      assert.equal(
+        await page.evaluate(() => lab.view.position),
+        'authored',
+        'a completed seek resets to the new authored shot',
+      );
+    },
+  );
+});
+
 test('async input keeps one undo step and agent view commands match manual exploration', async () => {
   await fixture(
     `
@@ -57,10 +145,24 @@ test('async input keeps one undo step and agent view commands match manual explo
       });
       const pending = await page.evaluate(() => ({
         parameter: lab.root.scene.inspect({ presentation: false }).parameters[0].value,
-        model: lab.story.values.x,
+        model: lab.story.requested.values.x,
         drawn: lab.root.dataset.drawn,
+        rendering: lab.root.scene.inspect({ presentation: false }).rendering,
+        snapshot: lab.root.scene.snapshot(),
+        visible: lab.root.scene.capture().values.x,
+        requested: lab.root.scene.capture({ basis: 'requested' }),
       }));
-      assert.deepEqual(pending, { parameter: 7, model: 7, drawn: '1' });
+      assert.equal(pending.parameter, 7);
+      assert.equal(pending.model, 7);
+      assert.equal(pending.drawn, '1');
+      assert.deepEqual(pending.snapshot, { x: 1 });
+      assert.equal(pending.visible, 1);
+      assert.equal(pending.requested.values.x, 7);
+      assert.equal(pending.requested.view, undefined);
+      assert.equal(pending.requested.selected, undefined);
+      assert.equal(pending.rendering.phase, 'preparing');
+      assert.equal(pending.rendering.requested.values.x, 7);
+      assert.equal(pending.rendering.presented.values.x, 1);
       await page.evaluate(async () => {
         lab.finish();
         await change;
