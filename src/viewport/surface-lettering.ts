@@ -8,9 +8,11 @@ export interface SurfaceOptions {
   face?: Face | Face[];
   /** A physical inscription follows the anchor's full transform. */
   space?: 'world';
-  /** Height in world units for a free inscription; face lettering fits the face. */
+  /** Line height in world units for a free inscription; face lettering fits the face. */
   height?: number;
   maxWidth?: number;
+  /** Preserve line height by wrapping words within maxWidth. Nonbreaking spaces keep a phrase together. */
+  wrap?: boolean;
   tone?: string;
   visible?: () => boolean;
 }
@@ -96,7 +98,8 @@ export function surfaceLettering(
   let previous = '',
     opacity = 1,
     previousHeight = options.height,
-    previousWidth = options.maxWidth;
+    previousWidth = options.maxWidth,
+    lineCount = 1;
   const font = getComputedStyle(stage).fontFamily;
   function resize() {
     const aspect = canvas.width / canvas.height;
@@ -104,7 +107,7 @@ export function surfaceLettering(
       const face = faceSizes[index];
       const height = face
         ? Math.min(face[1] * 0.62, (face[0] * 0.92) / aspect)
-        : Math.min(options.height ?? 0.32, (options.maxWidth ?? Infinity) / aspect);
+        : Math.min((options.height ?? 0.32) * lineCount, (options.maxWidth ?? Infinity) / aspect);
       plane.scale.set(height * aspect, height, 1);
     });
     previousHeight = options.height;
@@ -112,12 +115,31 @@ export function surfaceLettering(
   }
   function draw(value: string) {
     context.font = `112px ${font}`;
-    const width = Math.max(32, Math.ceil(context.measureText(value).width + 16));
-    if (canvas.width !== width || canvas.height !== 160) {
+    const limit = ((options.maxWidth ?? Infinity) * 160) / (options.height ?? 0.32) - 16;
+    const lines = value.split('\n').flatMap((line) => {
+      if (!options.wrap || faces.length) return [line];
+      const result: string[] = [];
+      let current = '';
+      for (const word of line.split(/[ \t]+/)) {
+        const next = current ? `${current} ${word}` : word;
+        if (current && context.measureText(next).width > limit) {
+          result.push(current);
+          current = word;
+        } else current = next;
+      }
+      return [...result, current];
+    });
+    lineCount = lines.length;
+    const width = Math.max(
+      32,
+      Math.ceil(Math.max(...lines.map((line) => context.measureText(line).width)) + 16),
+    );
+    const height = 160 * lineCount;
+    if (canvas.width !== width || canvas.height !== height) {
       // GPU texture storage cannot resize: replace it along with the canvas bounds.
       texture.dispose();
       canvas.width = width;
-      canvas.height = 160;
+      canvas.height = height;
       material.map = texture = createTexture();
     }
     context.font = `112px ${font}`;
@@ -126,13 +148,16 @@ export function surfaceLettering(
     context.fillStyle = '#fff';
     context.textAlign = 'center';
     context.textBaseline = 'middle';
-    context.fillText(value, canvas.width / 2, canvas.height / 2);
+    lines.forEach((line, i) => context.fillText(line, canvas.width / 2, 80 + 160 * i));
     texture.needsUpdate = true;
   }
   function prepare() {
     if (typeof text === 'function') element.textContent = text();
     const value = element.textContent ?? '';
-    if (value !== previous) {
+    if (
+      value !== previous ||
+      (options.wrap && (options.height !== previousHeight || options.maxWidth !== previousWidth))
+    ) {
       previous = value;
       draw(value);
     } else if (options.height !== previousHeight || options.maxWidth !== previousWidth) resize();
@@ -154,6 +179,14 @@ export function surfaceLettering(
   return {
     element,
     object: group,
+    /** The local footprint is available before the next viewport frame. */
+    measure(): readonly [number, number] {
+      prepare();
+      return [
+        Math.max(...planes.map((plane) => plane.scale.x)),
+        Math.max(...planes.map((plane) => plane.scale.y)),
+      ];
+    },
     prepare,
     update,
     set(value: string) {

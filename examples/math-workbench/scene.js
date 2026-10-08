@@ -155,7 +155,7 @@ window.galleryReady = (async () => {
       source.object.position.set(narrow ? 0 : -3.2, narrow ? 8.3 : 5, 0);
       factors.object.position.set(narrow ? 0 : 3.2, narrow ? 1.4 : 3.4, 0);
       slice.object.position.set(narrow ? 0 : -3.2, narrow ? 4.5 : 1.6, 0.5);
-      calculation.object.position.set(0, narrow ? -3.7 : -1.5, 0);
+      calculation.object.position.set(0, narrow ? -5.5 : -2.6, 0);
       calculation.object.scale.setScalar(0.62);
       receiver.object.position.set(0, narrow ? -9.3 : -5.5, 0);
       // Delivery alone owns the receiving cell; its containing row may be omitted for vector results.

@@ -289,3 +289,74 @@ test('elementwise multiplication exposes the same pairs it animates after input 
   await expectNoHorizontalOverflow(page);
   expect(errors).toEqual([]);
 });
+
+test('a narrow physical equation remains readable and framed through input changes and reverse seek', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const errors = await openScene(page, 'math-workbench');
+  await control(page, [
+    { type: 'pause' },
+    { type: 'parameters', values: { kind: 'multiply', first: 10, time: 17 } },
+  ]);
+  const read = () =>
+    page.evaluate(() => {
+      const scene = (document.querySelector('main') as any).scene;
+      const calculation = scene.calculation,
+        camera = scene.view.camera,
+        stage = scene.view.renderer.domElement.getBoundingClientRect();
+      let formula: any;
+      calculation.object.traverse((object: any) => {
+        if (
+          object.name === 'surface-lettering' &&
+          object.userData.visualReview().text.includes('[')
+        )
+          formula = object;
+      });
+      const plane = formula.children[0],
+        image = plane.material.map.image;
+      const corners = [-0.5, 0.5].flatMap((x) =>
+        [-0.5, 0.5].map((y) => plane.position.clone().set(x, y, 0).applyMatrix4(plane.matrixWorld)),
+      );
+      const framed = corners.every((point: any) =>
+        calculation.bounds.containsPoint(calculation.object.worldToLocal(point.clone())),
+      );
+      const projected = corners.map((point: any) => point.clone().project(camera));
+      const top = Math.min(...projected.map((point: any) => ((1 - point.y) * stage.height) / 2)),
+        bottom = Math.max(...projected.map((point: any) => ((1 - point.y) * stage.height) / 2));
+      const weightBottom = Math.max(
+        ...[...document.querySelectorAll<HTMLElement>('[data-object^="weights:"]')]
+          .filter((element) => !element.hidden)
+          .map((element) => element.getBoundingClientRect().bottom - stage.top),
+      );
+      return {
+        text: formula.userData.visualReview().text.replaceAll('\u00a0', ' '),
+        fontPixels: ((bottom - top) * parseFloat(image.getContext('2d').font)) / image.height,
+        framed,
+        withinStage: projected.every(
+          (point: any) => Math.abs(point.x) < 1 && Math.abs(point.y) < 1,
+        ),
+        gap: top - weightBottom,
+        camera: camera.position.toArray(),
+        color: plane.material.color.getHexString(),
+        pigment: scene.view.palette.purple.getHexString(),
+      };
+    });
+  for (const theme of ['dark', 'light'] as const) {
+    await control(page, [{ type: 'theme', value: theme }]);
+    const sample = await read();
+    expect(sample.text).toContain('[2.5; 2; −0.75; 2.5]');
+    expect(sample.fontPixels).toBeGreaterThanOrEqual(18);
+    expect(sample.framed).toBe(true);
+    expect(sample.withinStage).toBe(true);
+    expect(sample.gap).toBeGreaterThan(8);
+    expect(sample.color).toBe(sample.pigment);
+  }
+  const completed = await read();
+  await control(page, [{ type: 'parameters', values: { first: -4, time: 11.5 } }]);
+  expect((await read()).fontPixels).toBeGreaterThanOrEqual(18);
+  await control(page, [{ type: 'parameters', values: { first: 10, time: 17 } }]);
+  expect(await read()).toEqual(completed);
+  await expectNoHorizontalOverflow(page);
+  expect(errors).toEqual([]);
+});

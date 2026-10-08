@@ -128,8 +128,9 @@ function mount(
       ? {
           tone: 'purple',
           space: 'world',
+          wrap: true,
           get height() {
-            return Math.min(0.72, annotationGap * 1.2);
+            return Math.min(1.1, annotationGap * 1.85);
           },
           get maxWidth() {
             return annotationWidth;
@@ -255,7 +256,12 @@ function mount(
     const deliveredBounds = delivery?.render(frame, plan.stages, travel, time.reduced);
     const annotationsVisible = !delivery || travel === 0;
     if (!embedded) formula.element.style.maxWidth = `${Math.max(160, widthAvailable - 64)}px`;
-    formula.set(frame.formula);
+    // An operand stays together when its equation wraps across physical lines.
+    formula.set(
+      embedded
+        ? frame.formula.replace(/\[[^\]]*\]|\([^)]*\)/g, (part) => part.replaceAll(' ', '\u00a0'))
+        : frame.formula,
+    );
     formula.show(annotationsVisible);
     lastTime = input;
     lastCues = cues;
@@ -271,7 +277,12 @@ function mount(
       gap = plan.encoding !== 'quantity' ? 0.6 : Math.max(0.7, extent * 0.12);
     annotationGap = gap;
     annotationWidth = Math.max(6, width + gap * 1.2);
-    formulaAnchor.position.set((min[0] + max[0]) / 2, max[1] + gap * 1.4, 0);
+    const formulaHeight = 'measure' in formula ? formula.measure()[1] : 0;
+    formulaAnchor.position.set(
+      (min[0] + max[0]) / 2,
+      max[1] + (embedded ? gap * 0.5 + formulaHeight / 2 : gap * 1.4),
+      0,
+    );
     const key = [...min, ...max].join(',');
     if (plan.encoding === 'quantity' && key !== rulerKey) {
       const ticks: number[] = [],
@@ -318,7 +329,7 @@ function mount(
       dimensionLabels[1]!.set(mathNumber(single.size[1]));
     }
     bounds.min.y -= gap * (plan.encoding !== 'quantity' ? 0.2 : coarse ? 1.8 : 1);
-    bounds.max.y += gap * 2.2;
+    bounds.max.y += Math.max(gap * 2.2, formulaHeight + gap * 0.8);
     bounds.min.x -= gap * 1.6;
     bounds.max.x += gap * 0.6;
     if (embedded) {
