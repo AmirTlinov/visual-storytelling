@@ -4,7 +4,7 @@ import { readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { release } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
-import { readJSON, writeJSON } from './runtime/storage.mjs';
+import { readJSON, writeJSON } from '../tools/storage.mjs';
 import { digest } from './project-files.mjs';
 import { contentDigest } from '../tools/build-info.mjs';
 import { failure } from './errors.mjs';
@@ -69,12 +69,9 @@ export class JobRunner {
                 'plugin.json',
                 'release.json',
                 'plugin/runtime/worker.mjs',
-                'plugin/runtime/storage.mjs',
                 'plugin/workflows.mjs',
                 'plugin/project-files.mjs',
                 'plugin/revision-input.mjs',
-                'plugin/environment.mjs',
-                'plugin/environment',
                 'runtime/npm/package.json',
                 'runtime/npm/bin',
                 'runtime/npm/lib',

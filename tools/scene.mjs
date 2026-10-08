@@ -212,17 +212,25 @@ Re-run the same command after changing a line; unchanged voice segments use the 
     });
   } else if (command === 'build') {
     const output = values.out ? resolve(values.out) : join(destination, 'dist');
-    await buildScene(destination, output, { cdn: values.cdn });
-    console.log(output);
+    await cancellableCommand('Build', async (signal) => {
+      await buildScene(destination, output, { cdn: values.cdn, signal });
+      console.log(output);
+    });
   } else if (command === 'dev') {
     const { develop } = await import('./dev.mjs');
-    const server = await develop(destination, Number(values.port));
-    console.log(server.url);
-    for (const signal of ['SIGINT', 'SIGTERM'])
-      process.once(signal, async () => {
-        await server.close();
-        process.exit(0);
-      });
+    await cancellableCommand('Development', async (signal) => {
+      let server;
+      try {
+        server = await develop(destination, Number(values.port), { signal });
+        console.log(server.url);
+        await new Promise((resolve) => {
+          if (signal.aborted) resolve();
+          else signal.addEventListener('abort', resolve, { once: true });
+        });
+      } finally {
+        await server?.close();
+      }
+    });
   } else if (command === 'preview') {
     const { previewReport } = await import('./motion/preview.mjs');
     const server = await previewReport(destination, Number(values.port));

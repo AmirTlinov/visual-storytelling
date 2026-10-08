@@ -66,7 +66,12 @@ test('ordered scene commands can enter a chapter before focusing its objects', a
       { type: 'parameters', values: { chapter: 'paper' } },
       { type: 'focus', ids: ['board.content'] },
     ]),
-    /unavailable in the current chapter/,
+    (error) => {
+      assert.match(error.message, /unavailable in the current chapter/);
+      assert.equal(error.completedCommands, 1);
+      assert.equal(error.commandIndex, 1);
+      return true;
+    },
   );
 });
 
@@ -155,7 +160,14 @@ test('a preview session pins shown content, controls semantics and restores a cu
       }),
       /Invalid scene parameter/,
     );
-    assert.equal((await requestSession(server.url)).result.time, 3);
+    assert.equal(
+      (await requestSession(server.url)).result.time,
+      0,
+      'a completed seek remains applied when the following command rejects its current conditions',
+    );
+    await requestSession(server.url, 'control', {
+      commands: [{ type: 'cue', id: 'move', progress: 0.5 }],
+    });
     await writeFile(join(source, 'scene.js'), code(9));
     await page.waitForFunction(
       (old) =>

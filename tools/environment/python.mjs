@@ -1,3 +1,4 @@
+import { withPreparationLock } from './lock.mjs';
 import { execFile } from 'node:child_process';
 import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -26,14 +27,20 @@ export async function managedPython(data, executable) {
 
 /** Install only Python. Inline generator dependencies stay with the generator. */
 export async function preparePythonEnvironment(data, uv, { signal, progress }) {
-  signal.throwIfAborted();
-  const env = { ...process.env, ...pythonEnvironment(data) };
-  const execute = promisify(execFile);
-  progress('Подготавливаю Python для SVG…');
-  await execute(uv, ['python', 'install', '--no-bin', pythonVersion], { env, signal });
-  const { stdout } = await execute(uv, ['python', 'find', '--managed-python', pythonVersion], {
-    env,
-    signal,
-  });
-  return managedPython(data, stdout.trim());
+  return withPreparationLock(
+    join(data, 'environment', `python-${pythonVersion}.lock`),
+    { signal, progress },
+    async () => {
+      signal.throwIfAborted();
+      const env = { ...process.env, ...pythonEnvironment(data) };
+      const execute = promisify(execFile);
+      progress('Подготавливаю Python…');
+      await execute(uv, ['python', 'install', '--no-bin', pythonVersion], { env, signal });
+      const { stdout } = await execute(uv, ['python', 'find', '--managed-python', pythonVersion], {
+        env,
+        signal,
+      });
+      return managedPython(data, stdout.trim());
+    },
+  );
 }

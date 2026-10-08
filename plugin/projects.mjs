@@ -12,7 +12,7 @@ import {
 import { constants } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { readJSON, writeJSON } from './runtime/storage.mjs';
+import { readJSON, writeJSON } from '../tools/storage.mjs';
 import { projectFiles, projectFile, readProjectFile, digest } from './project-files.mjs';
 import { failure } from './errors.mjs';
 import { sceneEntry } from '../tools/scene-entry.mjs';

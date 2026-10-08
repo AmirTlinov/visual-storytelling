@@ -1,6 +1,6 @@
 import { readdir, lstat, readlink, rm } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
-import { readJSON } from './runtime/storage.mjs';
+import { readJSON } from '../tools/storage.mjs';
 
 const entries = (path) =>
   readdir(path).catch((error) => {

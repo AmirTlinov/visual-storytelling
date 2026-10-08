@@ -22,7 +22,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { setTimeout as delay } from 'node:timers/promises';
+import { acquireDirectoryLock } from '../tools/file-lock.mjs';
 import { parseArgs } from 'node:util';
 
 const execute = promisify(execFile);
@@ -140,45 +140,15 @@ async function permissions(directory, immutable) {
 }
 
 async function installationLock(directory) {
-  const lock = join(directory, '.install-lock'),
-    token = randomUUID(),
-    until = Date.now() + 120000;
-  while (true) {
-    try {
-      await mkdir(lock, { mode: 0o700 });
-      await writeFile(join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, token }), {
-        flag: 'wx',
-        mode: 0o600,
-      });
-      return async () => {
-        const owner = await json(join(lock, 'owner.json')).catch(() => null);
-        if (owner?.token === token) await rm(lock, { recursive: true, force: true });
-      };
-    } catch (error) {
-      if (error.code !== 'EEXIST') throw error;
-      const owner = await json(join(lock, 'owner.json')).catch(() => null);
-      let stale = false;
-      if (Number.isSafeInteger(owner?.pid) && owner.pid > 0) {
-        try {
-          process.kill(owner.pid, 0);
-        } catch (failure) {
-          if (failure.code === 'ESRCH') stale = true;
-          else if (failure.code !== 'EPERM') throw failure;
-        }
-      } else {
-        const info = await lstat(lock).catch(() => null);
-        stale = info && Date.now() - info.mtimeMs > 120000;
-      }
-      if (stale) {
-        await rm(lock, { recursive: true, force: true });
-        continue;
-      }
-      if (Date.now() >= until)
-        throw new Error(
-          'Another Visual Storytelling installation is still running. Retry when it finishes.',
-        );
-      await delay(100);
-    }
+  const signal = AbortSignal.timeout(120000);
+  try {
+    return await acquireDirectoryLock(join(directory, '.install-lock'), { signal });
+  } catch (error) {
+    if (signal.aborted)
+      throw new Error(
+        'Another Visual Storytelling installation is still running. Retry when it finishes.',
+      );
+    throw error;
   }
 }
 

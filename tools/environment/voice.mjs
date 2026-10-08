@@ -1,10 +1,11 @@
+import { withPreparationLock } from './lock.mjs';
 import { readFile, mkdir, cp, access, statfs, rm } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readJSON, writeJSON } from '../runtime/storage.mjs';
+import { readJSON, writeJSON } from '../storage.mjs';
 import { pythonEnvironment, pythonVersion, managedPython } from './python.mjs';
 
 const tools = fileURLToPath(new URL('../../tools/', import.meta.url));
@@ -154,61 +155,65 @@ async function command(binary, args, { signal, progress, env, stage }) {
 
 export async function prepareVoiceEnvironment(data, uv, task) {
   const selected = await configureVoiceEnvironment(data);
-  await mkdir(selected.directory, { recursive: true });
-  await mkdir(selected.cache, { recursive: true });
-  const receipt = await readJSON(join(selected.directory, 'receipt.json'));
-  const env = {
-    ...process.env,
-    ...pythonEnvironment(data),
-    UV_PROJECT_ENVIRONMENT: join(selected.directory, 'venv'),
-    TOKENIZERS_PARALLELISM: 'false',
-  };
-  if (
-    receipt?.lock !== selected.lock ||
-    !receipt.managedPython ||
-    !(await exists(selected.python))
-  ) {
-    const disk = await statfs(selected.directory);
-    // Existing models need no second copy. Fresh setup reports its complete footprint before download.
-    const models = await exists(join(selected.cache, 'models/higgs-tts-3-bf16/model.safetensors'));
-    const needed = models ? 4_000_000_000 : voiceRequirements.requiredDiskBytes;
-    if (Number(disk.bavail) * Number(disk.bsize) < needed)
-      throw new Error(
-        `Для подготовки голоса нужно ${Math.ceil(needed / 1e9)} ГБ свободного места.`,
+  return withPreparationLock(selected.directory + '.lock', task, async () => {
+    await mkdir(selected.directory, { recursive: true });
+    await mkdir(selected.cache, { recursive: true });
+    const receipt = await readJSON(join(selected.directory, 'receipt.json'));
+    const env = {
+      ...process.env,
+      ...pythonEnvironment(data),
+      UV_PROJECT_ENVIRONMENT: join(selected.directory, 'venv'),
+      TOKENIZERS_PARALLELISM: 'false',
+    };
+    if (
+      receipt?.lock !== selected.lock ||
+      !receipt.managedPython ||
+      !(await exists(selected.python))
+    ) {
+      const disk = await statfs(selected.directory);
+      // Existing models need no second copy. Fresh setup reports its complete footprint before download.
+      const models = await exists(
+        join(selected.cache, 'models/higgs-tts-3-bf16/model.safetensors'),
       );
-    if (!receipt?.managedPython)
-      await rm(join(selected.directory, 'venv'), { recursive: true, force: true });
-    await cp(join(tools, 'pyproject.toml'), join(selected.directory, 'pyproject.toml'));
-    await cp(join(tools, 'uv.lock'), join(selected.directory, 'uv.lock'));
-    await command(
-      uv,
-      [
-        'sync',
-        '--locked',
-        '--no-dev',
-        '--managed-python',
-        '--python',
-        pythonVersion,
-        '--project',
-        selected.directory,
-      ],
-      {
-        ...task,
-        env,
-        stage: 'Подготавливаю Python и зависимости голоса',
-      },
-    );
-    await managedPython(data, selected.python);
-    await writeJSON(join(selected.directory, 'receipt.json'), {
-      lock: selected.lock,
-      python: pythonVersion,
-      managedPython: true,
+      const needed = models ? 4_000_000_000 : voiceRequirements.requiredDiskBytes;
+      if (Number(disk.bavail) * Number(disk.bsize) < needed)
+        throw new Error(
+          `Для подготовки голоса нужно ${Math.ceil(needed / 1e9)} ГБ свободного места.`,
+        );
+      if (!receipt?.managedPython)
+        await rm(join(selected.directory, 'venv'), { recursive: true, force: true });
+      await cp(join(tools, 'pyproject.toml'), join(selected.directory, 'pyproject.toml'));
+      await cp(join(tools, 'uv.lock'), join(selected.directory, 'uv.lock'));
+      await command(
+        uv,
+        [
+          'sync',
+          '--locked',
+          '--no-dev',
+          '--managed-python',
+          '--python',
+          pythonVersion,
+          '--project',
+          selected.directory,
+        ],
+        {
+          ...task,
+          env,
+          stage: 'Подготавливаю Python и зависимости голоса',
+        },
+      );
+      await managedPython(data, selected.python);
+      await writeJSON(join(selected.directory, 'receipt.json'), {
+        lock: selected.lock,
+        python: pythonVersion,
+        managedPython: true,
+      });
+    }
+    await command(selected.python, [join(tools, 'audio/cli.py'), 'setup', '--progress-json'], {
+      ...task,
+      env,
+      stage: 'Подготавливаю модели речи и разметки',
     });
-  }
-  await command(selected.python, [join(tools, 'audio/cli.py'), 'setup', '--progress-json'], {
-    ...task,
-    env,
-    stage: 'Подготавливаю модели речи и разметки',
+    return selected;
   });
-  return selected;
 }

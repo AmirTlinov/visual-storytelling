@@ -1,5 +1,5 @@
 import { isAbsolute, join } from 'node:path';
-import { readJSON, writeJSON } from './runtime/storage.mjs';
+import { readJSON, writeJSON } from '../tools/storage.mjs';
 
 /** User defaults. Project content and transient viewing state have their own owners. */
 export class Preferences {

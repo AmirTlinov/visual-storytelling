@@ -15,7 +15,9 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { once } from 'node:events';
 import { createInterface } from 'node:readline';
 import { installRelease, releaseDigest } from '../plugin/install.mjs';
 const shellQuote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
@@ -134,16 +136,51 @@ test('invalid or unregistered updates preserve the selected runtime and marketpl
   assert.equal(await realpath(join(f.directory, 'current')), first.release);
 });
 
-test('concurrent installations publish complete immutable releases without a split launcher', async (t) => {
+test('stale installation contenders preserve the new lock owner and publish complete releases', async (t) => {
   const f = await fixture(t),
     second = join(f.root, 'second');
   await cp(f.source, second, { recursive: true });
   await writeFile(join(second, 'plugin/dist/value.mjs'), `export const value='second';`);
+  const holder = spawn(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `
+    import {acquireDirectoryLock} from ${JSON.stringify(new URL('../tools/file-lock.mjs', import.meta.url).href)};
+    await acquireDirectoryLock(process.argv[1]);
+    process.send('ready');setInterval(()=>{},1000);
+  `,
+      join(f.directory, '.install-lock'),
+    ],
+    { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] },
+  );
+  t.after(() => {
+    if (holder.exitCode === null && holder.signalCode === null) holder.kill('SIGKILL');
+  });
+  await once(holder, 'message');
+  const stopped = once(holder, 'exit');
+  holder.kill('SIGKILL');
+  await stopped;
   const releases = await Promise.all(
-    [f.source, second].map((source) =>
-      installRelease(source, { directory: f.directory, register: false }),
+    [f.source, second].map(async (source) =>
+      JSON.parse(
+        (
+          await promisify(execFile)(process.execPath, [
+            '--input-type=module',
+            '-e',
+            `
+        import {installRelease} from ${JSON.stringify(new URL('../plugin/install.mjs', import.meta.url).href)};
+        console.log(JSON.stringify(await installRelease(process.argv[1],{directory:process.argv[2],register:false})));
+      `,
+            source,
+            f.directory,
+          ])
+        ).stdout,
+      ),
     ),
   );
+  assert.ok(!(await readdir(f.directory)).some((name) => name.startsWith('.install-lock')));
   const selected = await realpath(join(f.directory, 'current'));
   assert.ok(releases.some((release) => release.release === selected));
   for (const release of releases)

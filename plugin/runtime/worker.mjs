@@ -1,5 +1,5 @@
 import { workflows } from '../workflows.mjs';
-import { configureEnvironment } from '../environment.mjs';
+import { configureEnvironment } from '../../tools/environment.mjs';
 const abort = new AbortController();
 let running = false;
 process.on('message', async (message) => {

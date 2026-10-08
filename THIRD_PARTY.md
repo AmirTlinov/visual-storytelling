@@ -33,7 +33,7 @@
 
 Системная озвучка использует установленные на Mac голоса через AVSpeechSynthesizer; веса голосов в комплект не включаются. Бинарник адаптера собран из `tools/voice/macos.swift` (0BSD). Доступность языков определяется установленными голосами.
 
-Первое видео отдельно загружает Chrome Headless Shell 153.0.8010.12 из официального Chrome for Testing CDN и FFmpeg 8.0.3-build4 из [AtlasYang/ffmpeg-static-builds](https://github.com/AtlasYang/ffmpeg-static-builds/releases/tag/ffmpeg-8.0.3-build4). URL, SHA-256 и пути закреплены в `plugin/environment.mjs`; receipt сохраняет источник, версию и хеш бинарника. FFmpeg-сборка имеет LGPL-профиль без GPL/nonfree компонентов; исходники и сборочные инструкции доступны у поставщика. Видео кодируется системным VideoToolbox. Chromium сохраняет собственные notices в архиве. Эти загрузки не входят в установочный архив плагина.
+Первое видео отдельно загружает Chrome Headless Shell 153.0.8010.12 из официального Chrome for Testing CDN и FFmpeg 8.0.3-build4 из [AtlasYang/ffmpeg-static-builds](https://github.com/AtlasYang/ffmpeg-static-builds/releases/tag/ffmpeg-8.0.3-build4). URL, SHA-256 и пути закреплены в `tools/environment.mjs`; receipt сохраняет источник, версию и хеш бинарника. FFmpeg-сборка имеет LGPL-профиль без GPL/nonfree компонентов; исходники и сборочные инструкции доступны у поставщика. Видео кодируется системным VideoToolbox. Chromium сохраняет собственные notices в архиве. Эти загрузки не входят в установочный архив плагина.
 
 ## Персонажи
 
@@ -45,7 +45,7 @@ Visual Storytelling и имеют лицензию 0BSD; атласы строя
 
 ## Подготовка голоса
 
-`plugin/environment.mjs` закрепляет uv 0.11.3 и SHA-256 официального архива Astral.
+`tools/environment.mjs` закрепляет uv 0.11.3 и SHA-256 официального архива Astral.
 uv распространяется по MIT/Apache-2.0; уведомления поставляются в его архиве.
 Python 3.12.13 устанавливается управляемым uv-комплектом; зависимости и хеши
 закреплены в `tools/uv.lock`. Модели Higgs и русского выравнивания закреплены в

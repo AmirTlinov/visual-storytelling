@@ -4,6 +4,8 @@ import { promisify } from 'node:util';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolvePackage } from './build-info.mjs';
+import { prepareEnvironment } from './environment.mjs';
+import { dataDirectory } from './storage.mjs';
 
 /** One declaration drives preparation and execution. Node generators declare Python use. */
 export async function sceneGenerator(source) {
@@ -33,21 +35,43 @@ export async function sceneGenerator(source) {
 }
 
 /** A scene owns its generator; the builder owns its output and runtime dependencies. */
-export async function generateScene(source, output, { signal, sourceRoot = source } = {}) {
+export async function generateScene(
+  source,
+  output,
+  {
+    signal = new AbortController().signal,
+    sourceRoot = source,
+    data = dataDirectory(),
+    progress,
+  } = {},
+) {
   const generator = await sceneGenerator(source);
   if (!generator) return;
+  if (
+    generator.python &&
+    (!process.env.VISUAL_STORY_PYTHON ||
+      (generator.runner === 'uv' && !process.env.VISUAL_STORY_UV))
+  ) {
+    if (process.platform !== 'darwin' || process.arch !== 'arm64')
+      throw new Error(
+        'Automatic SVG generator preparation supports macOS Apple Silicon. Set VISUAL_STORY_PYTHON to a Python executable' +
+          (generator.runner === 'uv' ? ' and VISUAL_STORY_UV to a uv executable' : '') +
+          ' on this platform.',
+      );
+    await prepareEnvironment(data, { python: true, signal, progress });
+  }
   const { file } = generator;
   const runners = {
     node: process.execPath,
-    python3: process.env.VISUAL_STORY_PYTHON ?? 'python3',
-    uv: process.env.VISUAL_STORY_UV ?? 'uv',
+    python3: process.env.VISUAL_STORY_PYTHON,
+    uv: process.env.VISUAL_STORY_UV,
   };
   const runtime = await resolvePackage('@visual-storytelling/core', source);
   await mkdir(output, { recursive: true });
   await promisify(execFile)(
     runners[generator.runner],
     generator.runner === 'uv'
-      ? ['run', '--no-project', '--python', process.env.VISUAL_STORY_PYTHON ?? '3.12', file]
+      ? ['run', '--no-project', '--python', process.env.VISUAL_STORY_PYTHON, file]
       : [file],
     {
       cwd: source,

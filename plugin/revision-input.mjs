@@ -1,7 +1,7 @@
 import { basename, dirname, join, resolve } from 'node:path';
 import { rename, rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { readJSON, writeJSON } from './runtime/storage.mjs';
+import { readJSON, writeJSON } from '../tools/storage.mjs';
 import { projectFiles, snapshotProject } from './project-files.mjs';
 import { failure } from './errors.mjs';
 

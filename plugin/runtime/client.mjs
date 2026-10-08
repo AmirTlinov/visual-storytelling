@@ -1,17 +1,15 @@
 import { connect } from 'node:net';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, rm, lstat, writeFile, open, realpath, chmod } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { mkdir, rm, lstat, open, realpath, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { runtimeBuild } from './identity.mjs';
+import { dataDirectory } from '../../tools/storage.mjs';
+import { acquireDirectoryLock } from '../../tools/file-lock.mjs';
 
 const protocol = 1;
 const uid = process.getuid();
-export const dataDirectory = () =>
-  process.env.VISUAL_STORY_DATA_DIR ??
-  join(homedir(), 'Library/Application Support/Visual Storytelling');
 
 async function privateDirectory(path, resolveLinks = false) {
   await mkdir(path, { recursive: true, mode: 0o700 });
@@ -204,49 +202,17 @@ export async function connectRuntime(serverDirectory) {
     }
   }
   let client = await dial(),
-    lockToken;
+    unlock;
   try {
     while (!client && Date.now() < deadline) {
+      // Keep probing a runtime that became ready while another launcher still holds the lock.
+      const attempt = AbortSignal.timeout(Math.max(1, Math.min(100, deadline - Date.now())));
       try {
-        await mkdir(lock, { mode: 0o700 });
-        lockToken = randomUUID();
-        try {
-          await writeFile(
-            join(lock, 'owner.json'),
-            JSON.stringify({ pid: process.pid, token: lockToken }),
-            { mode: 0o600, flag: 'wx' },
-          );
-        } catch (error) {
-          await rm(lock, { recursive: true, force: true });
-          lockToken = undefined;
-          throw error;
-        }
+        unlock = await acquireDirectoryLock(lock, { signal: attempt });
       } catch (error) {
-        if (error.code !== 'EEXIST') throw error;
-        const info = await lstat(lock).catch((failure) => {
-          if (failure.code === 'ENOENT') return null;
-          throw failure;
-        });
-        if (info && (!info.isDirectory() || info.uid !== uid))
-          throw new Error('Runtime startup lock has an unexpected owner or type.');
-        let owner;
-        try {
-          owner = JSON.parse(await readFile(join(lock, 'owner.json'), 'utf8'));
-        } catch (failure) {
-          if (failure.code !== 'ENOENT' && !(failure instanceof SyntaxError)) throw failure;
-        }
-        let abandoned = !owner && info && Date.now() - info.mtimeMs > 12000;
-        if (Number.isSafeInteger(owner?.pid) && owner.pid > 0) {
-          try {
-            process.kill(owner.pid, 0);
-          } catch (failure) {
-            if (failure.code === 'ESRCH') abandoned = true;
-            else if (failure.code !== 'EPERM') throw failure;
-          }
-        }
-        if (abandoned) await rm(lock, { recursive: true, force: true });
+        if (!attempt.aborted) throw error;
       }
-      if (lockToken) {
+      if (unlock) {
         client = await dial();
         if (client) break;
         const info = await lstat(socketPath).catch((error) => {
@@ -292,12 +258,7 @@ export async function connectRuntime(serverDirectory) {
       client = await dial();
     }
   } finally {
-    if (lockToken) {
-      const owner = await readFile(join(lock, 'owner.json'), 'utf8')
-        .then(JSON.parse)
-        .catch(() => null);
-      if (owner?.token === lockToken) await rm(lock, { recursive: true, force: true });
-    }
+    await unlock?.();
   }
   if (!client)
     throw new Error(`The local runtime did not start. Diagnostics: ${join(data, 'runtime.log')}`);

@@ -1,6 +1,11 @@
 import { mkdir, readFile, open, rename, rm } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { homedir } from 'node:os';
+
+export const dataDirectory = () =>
+  process.env.VISUAL_STORY_DATA_DIR ??
+  join(homedir(), 'Library/Application Support/Visual Storytelling');
 
 export async function readJSON(file) {
   try {

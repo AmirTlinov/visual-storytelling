@@ -25,8 +25,16 @@ function attachClient(html, revision) {
 export async function develop(
   directory,
   port = 8793,
-  { build: builder = buildScene, watch: extraWatch = [], output, ...buildOptions } = {},
+  {
+    build: builder = buildScene,
+    watch: extraWatch = [],
+    output,
+    signal: outerSignal,
+    ...buildOptions
+  } = {},
 ) {
+  const lifetime = new AbortController();
+  const signal = outerSignal ? AbortSignal.any([outerSignal, lifetime.signal]) : lifetime.signal;
   const source = resolve(directory),
     destination = output ? resolve(output) : join(source, 'dist');
   const clients = new Set(),
@@ -49,8 +57,8 @@ export async function develop(
       while (dirty && !closed) {
         dirty = false;
         try {
-          await prepareNarration(source);
-          await builder(source, destination, buildOptions);
+          await prepareNarration(source, { signal });
+          await builder(source, destination, { ...buildOptions, signal });
           revision = await contentDigest(destination, ['.']);
           const receipt = { revision, builtAt: new Date().toISOString() };
           sessions.publish(receipt);
@@ -58,6 +66,7 @@ export async function develop(
           buildError = undefined;
           broadcast('built', receipt);
         } catch (error) {
+          if (signal.aborted) return;
           buildError = error.message;
           sessions.fail(buildError);
           broadcast('build-error', error.message);
@@ -74,6 +83,7 @@ export async function develop(
     sessions.publish({ revision });
   }
   await rebuild();
+  signal.throwIfAborted();
   const server = await serve(destination, port, {
     html: (html) => attachClient(html, revision),
     async handle(req, res) {
@@ -126,6 +136,7 @@ export async function develop(
     url: server.url,
     async close() {
       closed = true;
+      lifetime.abort(new Error('Development stopped'));
       clearTimeout(timer);
       for (const watcher of watchers) watcher.close();
       await running;

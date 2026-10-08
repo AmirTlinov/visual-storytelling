@@ -16,7 +16,7 @@
 | `plugin/projects.mjs`, `project-files.mjs` | Рабочие файлы, транзакции, ревизии, отмена и закреплённые архивы runtime |
 | `plugin/session-directory.mjs` | Принадлежность сессии, renderer generation, очередь и подтверждение команд |
 | `plugin/jobs.mjs`, `workflows.mjs`, `project-watch.mjs` | Неизменяемые входы подготовки, прогресс, отмена, повтор и объединение правок |
-| `plugin/environment.mjs`, `environment/voice.mjs` | Проверенная подготовка браузера, кодировщика, Python и моделей |
+| `tools/environment.mjs`, `tools/environment/voice.mjs` | Проверенная подготовка браузера, кодировщика, Python и моделей |
 | `tools/narration.mjs`, `tools/voice/`, `tools/audio/` | Синтез, акустическое выравнивание, общий audio/timeline и кэш реплик |
 | `plugin/runtime/`, `mcp/`, `ui/` | Один локальный runtime, протокол и карточка Codex |
 | `plugin/install.mjs`, `package.mjs` | Стабильный launcher, неизменяемые установленные версии и архив |

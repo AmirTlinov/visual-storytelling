@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import {
   mkdtemp,
   mkdir,
@@ -11,6 +13,7 @@ import {
   stat,
   cp,
   symlink,
+  realpath,
 } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -20,7 +23,7 @@ import { build } from 'esbuild';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { connectRuntime } from '../plugin/runtime/client.mjs';
-import { readJSON, writeJSON } from '../plugin/runtime/storage.mjs';
+import { readJSON, writeJSON } from '../tools/storage.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const checkpoint = (time) => ({ time, progress: 0, mode: 'explore', values: { x: 3 } });
@@ -158,15 +161,46 @@ const ack = (client, state, id, revision, time) =>
   });
 
 test(
-  'independent stdio clients share commands and one handoff owner, including after a persisted restart',
+  'independent stdio clients recover a stale startup lock and share one owner through a persisted restart',
   { timeout: 20000 },
   async (t) => {
     const f = await fixture(t);
+    const identity = createHash('sha256')
+      .update(`1\0${await realpath(f.data)}`)
+      .digest('hex')
+      .slice(0, 20);
+    const lock = join(`/tmp/visual-story-${process.getuid()}`, identity + '.sock.lock');
+    const holder = spawn(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `
+      import {acquireDirectoryLock} from ${JSON.stringify(new URL('../tools/file-lock.mjs', import.meta.url).href)};
+      await acquireDirectoryLock(process.argv[1]);process.send('ready');setInterval(()=>{},1000);
+    `,
+        lock,
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] },
+    );
+    t.after(() => {
+      if (holder.exitCode === null && holder.signalCode === null) holder.kill('SIGKILL');
+    });
+    await once(holder, 'message');
+    const stopped = once(holder, 'exit');
+    holder.kill('SIGKILL');
+    await stopped;
     let [a, b] = await Promise.all([f.stdio(), f.stdio()]);
+    const [opened, alsoOpened] = await Promise.all([tool(a, 'story_open'), tool(b, 'story_open')]);
+    assert.equal(
+      opened.serverInstance,
+      alsoOpened.serverInstance,
+      'stale contenders connect to one runtime',
+    );
+    await assert.rejects(readdir(lock), { code: 'ENOENT' });
     let runtime = await f.runtime();
     const hello = await runtime.call('hello');
     runtime.close();
-    const opened = await tool(a, 'story_open');
     assert.equal(
       (await tool(b, 'story_open', { sessionId: opened.sessionId })).serverInstance,
       opened.serverInstance,
