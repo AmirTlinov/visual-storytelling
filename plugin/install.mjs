@@ -185,7 +185,11 @@ async function installationLock(directory) {
 /** Installation owns version selection; the existing runtime socket owns processes and sessions. */
 export async function installRelease(
   source,
-  { directory = installationDirectory(), register = true, codex = 'codex' } = {},
+  {
+    directory = installationDirectory(),
+    register = true,
+    codex = process.env.CODEX_CLI_PATH || 'codex',
+  } = {},
 ) {
   source = await realpath(source);
   const manifest = await validateRelease(source),
