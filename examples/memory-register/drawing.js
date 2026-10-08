@@ -7,6 +7,7 @@ import {
   vector,
   svgButton,
   inkButton,
+  SketchInk,
 } from '@visual-storytelling/core';
 import { bits, bit, binary } from './memory.js';
 import { narrative } from './narrative.js';
@@ -28,31 +29,52 @@ export function registerDrawing(host, dispatch, inspect) {
     frame,
     mode;
   const ink = object(view.layer, 'register-ink', 'ink');
-  const text = (value, size = 18, pigment = 'ink') => {
+  const text = (value, size = 18, pigment = 'ink', handwriting = 'body') => {
     const mark = object(ink.content, 'note-' + notes.length, pigment);
-    const label = lettering(mark.content, value, { size });
+    const label = lettering(mark.content, value, { size, handwriting });
     notes.push(label);
     return { ...mark, label };
   };
   const notes = [];
-  const byte = text('8 бит = 1 байт', 23);
-  const capacity = text('числа 0–255', 17);
-  const inputLabel = text('Вход D', 23, 'blue');
-  const inputValue = text('0', 27, 'blue');
-  const savedValue = text('В памяти: 0', 25, 'purple');
-  const sum = text('00000000₂ = 0', 18);
+  const byte = text('8 бит = 1 байт', 27, 'blue', 'heading');
+  const capacity = text('числа 0–255', 17, 'ink', 'note');
+  const inputLabel = text('Вход D', 23, 'blue', 'note');
+  const inputValue = text('0', 32, 'blue', 'heading');
+  const savedLabel = text('В памяти', 23, 'blue', 'note');
+  const savedValue = text('0', 56, 'blue', 'heading');
+  const sum = text('0000 0000₂', 20, 'ink', 'note');
+  for (const mark of [capacity, sum]) mark.element.classList.add('memory-secondary');
+  const highlight = object(view.layer, 'memory-result-highlight');
+  highlight.content.innerHTML =
+    SketchInk.markerDefs('memory-result') +
+    SketchInk.markerMarkup({
+      x: -50,
+      y: -28,
+      width: 100,
+      height: 32,
+      seed: 23,
+      prefix: 'memory-result',
+      color: 'var(--ve-highlight)',
+    });
+  view.layer.insertBefore(highlight.element, ink.element);
+  const group = object(view.layer, 'byte-brace', 'blue');
+  const brace = view.pen.path(group.content, 'eight-cells', 'M0 0H1', { width: 1.9 });
   const enableNote = text('WE = 0', 17);
   const tickNote = text('CLK = 0', 17);
   const annotations = Object.fromEntries(
     [
       ['input', 'blue'],
-      ['memory', 'purple'],
-      ['enable', 'orange'],
-      ['clock', 'orange'],
+      ['memory', 'blue'],
+      ['enable', 'red'],
+      ['clock', 'red'],
     ].map(([name, pigment]) => {
       const mark = object(view.layer, 'narrative-' + name, pigment);
       mark.element.dataset.narrativeNote = name;
-      const label = paragraph(mark.content, { size: 18, lineHeight: 1.3 });
+      const label = paragraph(mark.content, {
+        size: name === 'input' || name === 'memory' ? 20 : 18,
+        lineHeight: 1.3,
+        handwriting: 'note',
+      });
       return [name, { mark, label }];
     }),
   );
@@ -77,7 +99,9 @@ export function registerDrawing(host, dispatch, inspect) {
     });
     hit.element.dataset.bit = i;
     controls.push(hit);
-    return { mark, hit, weight: text(2 ** i, 14) };
+    const weight = text(2 ** i, 14);
+    weight.element.classList.add('memory-secondary');
+    return { mark, hit, weight };
   });
   const cells = bits.map((i) => {
     const mark = node(view, 'saved-' + i, 0, {
@@ -87,7 +111,7 @@ export function registerDrawing(host, dispatch, inspect) {
       size: 26,
       minSize: 23,
       padding: 3,
-      pigment: 'purple',
+      pigment: 'blue',
     });
     const hit = svgButton(mark.content, {
       label: 'Рассмотреть бит ' + i,
@@ -103,14 +127,15 @@ export function registerDrawing(host, dispatch, inspect) {
       width: 1.4,
     });
     const name = text('Q' + i, 13);
+    name.element.classList.add('memory-secondary');
     return { mark, hit, terminal, name };
   });
   const arrows = bits.map((i) => vector(view, 'data-wire-' + i, 'blue', 1.5));
-  const transfer = object(view.layer, 'byte-transfer', 'purple');
+  const transfer = object(view.layer, 'byte-transfer', 'blue');
   const pulses = bits.map((i) =>
     view.pen.line(transfer.content, 'transfer-' + i, [0, 0], [0, 12], { width: 3 }),
   );
-  const timing = object(view.layer, 'common-clock', 'orange');
+  const timing = object(view.layer, 'common-clock', 'red');
   const rail = view.pen.line(timing.content, 'clock-rail', [24, 342], [776, 342], { width: 1.7 });
   const feed = view.pen.path(timing.content, 'clock-feed', 'M600 417H790V342', { width: 1.5 });
   const branches = bits.map((i) =>
@@ -122,7 +147,7 @@ export function registerDrawing(host, dispatch, inspect) {
     width: 122,
     height: 44,
     size: 20,
-    pigment: 'orange',
+    pigment: 'red',
   });
   const tick = inkButton(view, 'clock', 'Дать фронт ↑', {
     label: 'Дать фронт такта',
@@ -130,7 +155,7 @@ export function registerDrawing(host, dispatch, inspect) {
     width: 122,
     height: 44,
     size: 20,
-    pigment: 'orange',
+    pigment: 'red',
   });
   enable.control.id = 'enable';
   tick.control.id = 'clock';
@@ -141,24 +166,30 @@ export function registerDrawing(host, dispatch, inspect) {
     mode = nextMode;
     const story = narrative(next, frame, mode);
     const w = Math.max(320, host.clientWidth);
-    const step = (w - 32) / 8;
+    const wide = w >= 720;
+    const diagram = wide ? w * 0.65 : w;
+    const aside = diagram + (w - diagram) / 2;
+    const step = (diagram - 32) / 8;
+    const controlY = wide ? 490 : 510;
     if (w !== width) {
       width = w;
-      view.resize(w, 660, false);
-      byte.at(w < 500 ? 95 : 115, 28);
-      capacity.at(w - 68, 28);
+      view.resize(w, wide ? 615 : 715, false);
+      byte.at(w < 500 ? 110 : 130, 32);
+      capacity.at(diagram - 62, 32);
       inputLabel.at(66, 66);
-      inputValue.at(w - 42, 66);
-      savedValue.at(w / 2, 611);
-      sum.at(w / 2, 645);
-      enable.at(w * 0.25, 470);
-      tick.at(w * 0.75, 470);
-      enableNote.at(w * 0.25, 435);
-      tickNote.at(w * 0.75, 435);
+      inputValue.at(diagram - 42, 78);
+      savedLabel.at(wide ? aside : w * 0.28, wide ? 219 : 660);
+      savedValue.at(wide ? aside : w * 0.71, wide ? 290 : 675);
+      sum.at(wide ? aside : w / 2, wide ? 330 : 708);
+      highlight.at(wide ? aside : w * 0.71, wide ? 290 : 675, -1.2);
+      enable.at(diagram * 0.25, controlY);
+      tick.at(diagram * 0.75, controlY);
+      enableNote.at(diagram * 0.25, controlY - 35);
+      tickNote.at(diagram * 0.75, controlY - 35);
       inputs.forEach(({ mark, weight, hit }, j) => {
         const x = 16 + step * (j + 0.5);
-        mark.at(x, 177);
-        weight.at(x, 146);
+        mark.at(x, 195);
+        weight.at(x, 164);
         hit.bounds({
           x: -Math.min(step - 2, 50) / 2,
           y: -22,
@@ -167,27 +198,38 @@ export function registerDrawing(host, dispatch, inspect) {
         });
         cells[j].mark.at(x, 285);
         cells[j].name.at(x + 11, 246);
-        arrows[j].set([x, 203], [x, 249]);
+        arrows[j].set([x, 221], [x, 249]);
         branches[j].update('M' + x + ' 345L' + x + ' 316');
       });
-      rail.update('M' + (16 + step / 2) + ' 345H' + (w - 16 - step / 2));
+      const first = 16 + step / 2,
+        last = diagram - first,
+        middle = diagram / 2;
+      rail.update('M' + first + ' 345H' + last);
+      brace.update(
+        `M${first - 15} 358 Q${first - 15} 370 ${first} 370 H${middle - 17} Q${middle} 370 ${middle} 384 Q${middle} 370 ${middle + 17} 370 H${last} Q${last + 15} 370 ${last + 15} 358`,
+      );
     }
     inputs.forEach(({ mark, hit }, j) => {
       const value = bit(next.input, bits[j]);
       mark.value(value);
-      mark.pigment(value ? 'blue' : 'ink');
+      mark.pigment('blue');
+      mark.element.style.setProperty('--ve-wash-strength', value ? '12%' : '0%');
       hit.update({
         label: 'Входной бит ' + bits[j] + ': ' + value,
         pressed: Boolean(value),
         disabled: Boolean(next.challenge),
       });
       cells[j].mark.value(bit(next.saved, bits[j]));
-      cells[j].mark.pigment(bit(next.saved, bits[j]) ? 'purple' : 'ink');
+      cells[j].mark.pigment('blue');
+      cells[j].mark.element.style.setProperty(
+        '--ve-wash-strength',
+        bit(next.saved, bits[j]) ? '12%' : '0%',
+      );
       cells[j].hit.update({
         label: 'Рассмотреть бит ' + bits[j] + ': ' + bit(next.saved, bits[j]),
         pressed: bits[j] === next.selected,
       });
-      arrows[j].pigment(next.event === 'write' ? 'purple' : 'blue');
+      arrows[j].pigment('blue');
       const opacity = story.single && bits[j] !== 5 ? '.25' : '1';
       mark.element.style.opacity = opacity;
       cells[j].mark.element.style.opacity = opacity;
@@ -196,8 +238,10 @@ export function registerDrawing(host, dispatch, inspect) {
       arrows[j].element.style.opacity = story.single ? '.2' : story.focus === 'write' ? '1' : '.5';
     });
     inputValue.label.text(next.input);
-    savedValue.label.text('В памяти: ' + next.saved);
-    sum.label.text(binary(next.saved) + '₂ = ' + next.saved);
+    savedValue.label.text(next.saved);
+    const savedBits = binary(next.saved);
+    sum.label.text(savedBits.slice(0, 4) + ' ' + savedBits.slice(4) + '₂');
+    highlight.content.setAttribute('transform', `scale(${(savedValue.label.width + 25) / 100} 1)`);
     enable.text(next.we ? 'Запись: вкл' : 'Запись: выкл');
     tick.text(next.clock ? 'Вернуть в 0 ↓' : 'Дать фронт ↑');
     enable.update({ pressed: next.we, disabled: Boolean(next.challenge) });
@@ -208,18 +252,26 @@ export function registerDrawing(host, dispatch, inspect) {
     enableNote.label.text('WE = ' + Number(next.we));
     tickNote.label.text('CLK = ' + Number(next.clock));
     feed.update(
-      'M' + (w * 0.75 + tick.width / 2) + ' 470H' + (w - 6) + 'V345H' + (w - 16 - step / 2),
+      'M' +
+        (diagram * 0.75 + tick.width / 2) +
+        ' ' +
+        controlY +
+        'H' +
+        (diagram - 6) +
+        'V345H' +
+        (diagram - 16 - step / 2),
     );
-    timing.pigment(next.event === 'write' ? 'purple' : 'orange');
+    group.show(!story.single);
     const positions = {
-      input: [w / 2, 95, w - 36],
-      memory: [w / 2, 376, w - 36],
-      enable: [w * 0.25, 522, w / 2 - 24],
-      clock: [w * 0.75, 522, w / 2 - 24],
+      input: [diagram / 2, 110, diagram - 36],
+      memory: wide ? [aside, 385, w - diagram - 36] : [w / 2, 408, w - 36],
+      enable: [diagram * 0.25, controlY + 52, diagram / 2 - 24],
+      clock: [diagram * 0.75, controlY + 52, diagram / 2 - 24],
     };
     for (const [name, { mark, label }] of Object.entries(annotations)) {
       const fact = story[name];
       mark.show(Boolean(fact));
+      if (name === 'memory') mark.pigment(next.event === 'blocked' ? 'red' : 'blue');
       if (!fact) continue;
       const [x, y, available] = positions[name];
       label.render(fact.text, available, x, y);
@@ -244,7 +296,7 @@ export function registerDrawing(host, dispatch, inspect) {
     if (flowing)
       pulses.forEach((line, j) => {
         const x = 16 + step * (j + 0.5),
-          y = 204 + (31 * elapsed) / 0.7;
+          y = 222 + (14 * elapsed) / 0.7;
         line.update('M' + x + ' ' + y + 'v12');
       });
     view.element.dataset.focus = story.focus;

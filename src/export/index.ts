@@ -39,6 +39,11 @@ const paint = (value: string) =>
 export async function exportSVG(source: SVGSVGElement): Promise<string> {
   const fonts = [
     { name: 'SketchPencil', url: new URL('../assets/pencil.woff2', import.meta.url).href },
+    {
+      name: 'SketchPencilHeading',
+      url: new URL('../assets/pencil-heading.woff2', import.meta.url).href,
+    },
+    { name: 'SketchPencilNote', url: new URL('../assets/pencil-note.woff2', import.meta.url).href },
     { name: 'SketchShantell', url: new URL('../assets/shantell.woff2', import.meta.url).href },
   ];
   const clone = source.cloneNode(true) as SVGSVGElement;
@@ -89,6 +94,9 @@ export async function exportSVG(source: SVGSVGElement): Promise<string> {
   const paper = source.closest<HTMLElement>('.ve-frame-content, .ve-scene');
   if (paper) {
     const style = getComputedStyle(paper);
+    const background = svg('g', { 'aria-hidden': 'true' });
+    const area = { x: viewBox.x, y: viewBox.y, width: viewBox.width, height: viewBox.height };
+    background.append(svg('rect', { ...area, fill: paint(style.backgroundColor) }));
     if (style.backgroundImage !== 'none') {
       const bounds = source.getBoundingClientRect(),
         origin = paper.getBoundingClientRect();
@@ -96,33 +104,41 @@ export async function exportSVG(source: SVGSVGElement): Promise<string> {
         sy = viewBox.height / bounds.height;
       const paperScaleX = origin.width / (paper.offsetWidth || origin.width),
         paperScaleY = origin.height / (paper.offsetHeight || origin.height);
-      const size = style.backgroundSize.split(',')[0]!.trim().split(/\s+/).map(parseFloat);
+      const sizes = style.backgroundSize
+        .split(',')
+        .map((size) => size.trim().split(/\s+/).map(parseFloat));
+      const size = sizes[0]!,
+        minor = sizes[2]!;
       const position = style.backgroundPosition.split(',')[0]!.trim().split(/\s+/).map(parseFloat);
       const width = size[0]! * paperScaleX * sx,
         height = (size[1] ?? size[0])! * paperScaleY * sy;
       const x = viewBox.x + (origin.left - bounds.left + position[0]! * paperScaleX) * sx;
       const y =
         viewBox.y + (origin.top - bounds.top + (position[1] ?? position[0])! * paperScaleY) * sy;
-      const probe = svg('rect', { width: 0, height: 0, fill: 'var(--ve-grid-ink)' });
-      source.append(probe);
-      const ink = paint(getComputedStyle(probe).fill);
-      probe.remove();
+      const resolveInk = (variable: string) => {
+        const probe = svg('rect', { width: 0, height: 0, fill: `var(${variable})` });
+        source.append(probe);
+        const ink = paint(getComputedStyle(probe).fill);
+        probe.remove();
+        return ink;
+      };
+      const ink = resolveInk('--ve-grid-ink'),
+        majorInk = resolveInk('--ve-grid-major-ink');
       let id = 'export-paper';
       while (clone.querySelector(`#${id}`)) id += '-';
       const pattern = svg('pattern', { id, x, y, width, height, patternUnits: 'userSpaceOnUse' });
+      for (let column = 0; column < width - 0.01; column += minor[0]! * paperScaleX * sx)
+        pattern.append(svg('rect', { x: column, width: sx * paperScaleX, height, fill: ink }));
+      for (let row = 0; row < height - 0.01; row += minor[1]! * paperScaleY * sy)
+        pattern.append(svg('rect', { y: row, width, height: sy * paperScaleY, fill: ink }));
       pattern.append(
-        svg('rect', { width: sx * paperScaleX, height, fill: ink }),
-        svg('rect', { width, height: sy * paperScaleY, fill: ink }),
+        svg('rect', { width: sx * paperScaleX, height, fill: majorInk }),
+        svg('rect', { width, height: sy * paperScaleY, fill: majorInk }),
       );
       definitions.append(pattern);
-      const background = svg('g', { 'aria-hidden': 'true' });
-      const area = { x: viewBox.x, y: viewBox.y, width: viewBox.width, height: viewBox.height };
-      background.append(
-        svg('rect', { ...area, fill: paint(style.backgroundColor) }),
-        svg('rect', { ...area, fill: `url(#${id})` }),
-      );
-      definitions.after(background);
+      background.append(svg('rect', { ...area, fill: `url(#${id})` }));
     }
+    definitions.after(background);
   }
   clone.style.width = `${viewBox.width}px`;
   clone.style.height = `${viewBox.height}px`;

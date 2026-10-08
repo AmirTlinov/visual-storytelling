@@ -127,7 +127,7 @@ test('external time keeps one live SVG through notebook entry, resize, reverse s
         .locator('#scene')
         .screenshot({ path: join(artifacts, 'paper-' + width + '.png') });
       const state = await inspect();
-      assert.equal(state.ink, width === 375 ? 'rgb(238, 236, 231)' : 'rgb(41, 39, 36)');
+      assert.equal(state.ink, width === 375 ? 'rgb(215, 226, 242)' : 'rgb(38, 63, 131)');
       assert.ok(Math.abs(state.box.width / state.box.height - 1) < 0.001);
       assert.ok(state.box.x >= 0 && state.box.x + state.box.width <= width);
       assert.ok(state.box.y >= 0 && state.box.y + state.box.height <= 650);
@@ -149,7 +149,7 @@ test('external time keeps one live SVG through notebook entry, resize, reverse s
     );
     assert.equal(
       (await sample(7, 1)).ink,
-      'rgb(238, 236, 231)',
+      'rgb(215, 226, 242)',
       'an explicit host theme overrides the system preference',
     );
     await capture.page.evaluate(() => (document.querySelector('#scene').style.colorScheme = ''));

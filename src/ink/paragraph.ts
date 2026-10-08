@@ -1,11 +1,12 @@
 import { clamp, svg } from './dom.js';
 import { lettering } from './lettering.js';
 import { measureText } from './text-measure.js';
+import { handwritingFamily, type Handwriting } from './handwriting.js';
 
 /** Measured lines keep a readable pen size as the available width changes. */
 export function paragraph(
   parent: SVGElement,
-  options: { size?: number; lineHeight?: number } = {},
+  options: { size?: number; lineHeight?: number; handwriting?: Handwriting } = {},
 ) {
   const element = svg('g');
   parent.append(element);
@@ -17,7 +18,7 @@ export function paragraph(
   // Only the final rows become lettering; their actual ink is checked below.
   const measure = svg('text', {
     'font-size': size,
-    'font-family': 'SketchPencil,SketchShantell,sans-serif',
+    'font-family': handwritingFamily(options.handwriting ?? 'body'),
     'aria-hidden': 'true',
     opacity: 0,
   });
@@ -88,7 +89,7 @@ export function paragraph(
           lines.push(line);
         }
         for (let i = 0; i < lines.length; i++) {
-          rows[i] ??= lettering(element, '', { size });
+          rows[i] ??= lettering(element, '', { size, handwriting: options.handwriting });
           rows[i]!.text(lines[i]!);
           // Font advances and visible pencil overhang differ slightly. Repair the
           // rare overfull row using the rendered ink, never by shrinking the text.

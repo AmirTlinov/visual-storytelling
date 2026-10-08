@@ -222,7 +222,7 @@ for (const [name, values] of [
         { type: 'parameters', values: { chapter: 'experiment', sceneTime: 1, ...values } },
       ]);
       expect(paper.mode).toBe('explore');
-      const grid = page.locator('[data-chapter="experiment"] .vs-grid path');
+      const grid = page.locator('[data-chapter="experiment"] .vs-grid path').first();
       await expect(grid).toBeVisible();
       const gridLines = await grid.getAttribute('d');
       for (const theme of ['dark', 'light']) {

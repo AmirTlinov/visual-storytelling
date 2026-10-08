@@ -2,12 +2,15 @@ import { measureText } from './text-measure.js';
 import { svg } from './dom.js';
 import { SketchMotion } from './motion.js';
 import { glyphs } from './glyphs.js';
+import { handwritingFamily, type Handwriting } from './handwriting.js';
+export type { Handwriting } from './handwriting.js';
 export interface LetteringOptions {
   x?: number;
   y?: number;
   size?: number;
   anchor?: 'start' | 'middle' | 'end';
   tabular?: boolean;
+  handwriting?: Handwriting;
   /** Fit the complete value without crossing the minimum readable size. */
   maxWidth?: number;
   minSize?: number;
@@ -87,7 +90,8 @@ export function lettering(
   if (content !== element) element.append(content);
   const label = svg('text', {
     'font-size': options.size ?? 24,
-    'font-family': 'SketchPencil,SketchShantell,sans-serif',
+    'font-family': handwritingFamily(options.handwriting ?? 'body'),
+    'data-handwriting': options.handwriting ?? 'body',
     fill: 'currentColor',
   });
   label.style.whiteSpace = 'pre';
@@ -142,19 +146,28 @@ export function lettering(
     label.textContent = value;
     element.setAttribute('aria-label', value);
     label.setAttribute('font-size', String(nominalSize));
+    width = measureText(label, (text) => text.getComputedTextLength());
+    write(progress);
     if (!bounds && options.maxWidth !== undefined) {
-      const natural = measureText(label, (text) => text.getComputedTextLength());
+      measured = inkBounds(label, content);
       const size = Math.max(
         Math.min(nominalSize, minSize),
-        Math.min(nominalSize, (nominalSize * options.maxWidth) / (natural || 1)),
+        Math.min(nominalSize, (nominalSize * options.maxWidth) / (measured.width || 1)),
       );
-      label.setAttribute('font-size', String(size));
-      if (measureText(label, (text) => text.getComputedTextLength()) > options.maxWidth + 0.5)
+      if (size !== nominalSize) {
+        SketchMotion.resetText(label);
+        label.style.removeProperty('opacity');
+        label.style.removeProperty('display');
+        written = false;
+        label.setAttribute('font-size', String(size));
+        width = measureText(label, (text) => text.getComputedTextLength());
+        write(progress);
+        measured = inkBounds(label, content);
+      }
+      if (measured.width > options.maxWidth + 0.5)
         element.dataset.layoutError = `Label "${value}" needs more than ${options.maxWidth}px at ${size}px. Enlarge its cell or show fewer items.`;
       else delete element.dataset.layoutError;
     }
-    width = measureText(label, (text) => text.getComputedTextLength());
-    write(progress);
     if (bounds) {
       measured = inkBounds(label, content);
       const rx = measured.width / (bounds.width - padding * 2);

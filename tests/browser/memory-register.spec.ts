@@ -100,6 +100,19 @@ test('narrow notebook keeps drawn targets apart and keyboard activation changes 
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/memory-register/index.html');
   await page.evaluate(() => (window as any).galleryReady);
+  const paper = () =>
+    page.locator('#ve-scene').evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { paper: style.backgroundColor, ink: style.color };
+    });
+  const dark = await paper();
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect.poll(paper).not.toEqual(dark);
+  const light = await paper();
+  expect(light.paper).not.toBe(dark.paper);
+  expect(light.ink).not.toBe(dark.ink);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect.poll(paper).toEqual(dark);
   const bit = page.locator('[data-bit="7"]');
   await bit.focus();
   await page.keyboard.press('Space');

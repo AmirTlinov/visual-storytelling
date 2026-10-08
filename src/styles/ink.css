@@ -1,14 +1,10 @@
-@font-face{font-family:SketchPencil;src:url('../assets/pencil.woff2') format('woff2');font-display:swap}
-@font-face{font-family:SketchShantell;src:url('../assets/shantell.woff2') format('woff2');font-display:swap}
+@import './handwriting.css';
 .ve-scene{
-  --ve-ink:var(--foreground,light-dark(#292724,#eeece7));--ve-surface:var(--background,Canvas);
+  --ve-ink:light-dark(#263f83,#d7e2f2);--ve-surface:light-dark(#f1eee5,#17202b);
   --ve-font:SketchPencil,SketchShantell,'Chalkboard SE',sans-serif;
-  /* Thin handwriting needs opaque ink; UI-muted colors can have only half opacity. */
-  --ve-muted:color-mix(in srgb,var(--ve-ink) 78%,var(--ve-surface));
-  --ve-pencil:color-mix(in srgb,var(--ve-ink) 62%,var(--ve-surface));
-  --ve-blue:light-dark(#2367b0,#83b6ff);--ve-orange:light-dark(#b85516,#f6ad62);
-  --ve-purple:light-dark(#8050b5,#c2a0ff);--ve-green:light-dark(#26794e,#78cca4);
-  --ve-red:light-dark(#b33f58,#f294a7);--ve-yellow:light-dark(#927013,#dfc066);
+  --ve-muted:light-dark(#646365,#a6b2c3);
+  --ve-pencil:light-dark(#878681,#8192a8);
+  --ve-blue:light-dark(#28458e,#91b9ff);--ve-orange:light-dark(#ab512d,#eead81);--ve-purple:light-dark(#755080,#c9a6dc);--ve-green:light-dark(#356b51,#92c5a5);--ve-red:light-dark(#b83d32,#ef9a89);--ve-yellow:light-dark(#947515,#dfc066);--ve-highlight:light-dark(#f8dd46,#84742c);
   --ve-blue-wash:color-mix(in srgb,var(--ve-blue) 18%,transparent);--ve-blue-soft:color-mix(in srgb,var(--ve-blue) 34%,transparent);
   --ve-orange-wash:color-mix(in srgb,var(--ve-orange) 18%,transparent);--ve-orange-soft:color-mix(in srgb,var(--ve-orange) 34%,transparent);
   --ve-purple-wash:color-mix(in srgb,var(--ve-purple) 18%,transparent);--ve-purple-soft:color-mix(in srgb,var(--ve-purple) 34%,transparent);
@@ -19,14 +15,15 @@
   --ve-soft:color-mix(in srgb,var(--ve-accent) 34%,transparent);
   --ve-wash:color-mix(in srgb,var(--ve-accent) 18%,transparent);
   --ve-wash-alt:color-mix(in srgb,var(--ve-accent) 24%,transparent);
-  --ve-grid-ink:color-mix(in srgb,var(--ve-ink) 14%,transparent);
-  --ve-grid-step:30px;--ve-grid-x:0px;--ve-grid-y:0px;
-  --ve-grid:linear-gradient(var(--ve-grid-ink) 1px,transparent 1px),linear-gradient(90deg,var(--ve-grid-ink) 1px,transparent 1px);
+  --ve-grid-ink:light-dark(#537bad24,#8faad91c);--ve-grid-major-ink:light-dark(#537bad40,#8faad934);
+  --ve-grid-step:20px;--ve-grid-major-step:calc(var(--ve-grid-step) * 5);--ve-grid-x:0px;--ve-grid-y:0px;
+  --ve-grid:linear-gradient(var(--ve-grid-major-ink) 1px,transparent 1px),linear-gradient(90deg,var(--ve-grid-major-ink) 1px,transparent 1px),linear-gradient(var(--ve-grid-ink) 1px,transparent 1px),linear-gradient(90deg,var(--ve-grid-ink) 1px,transparent 1px);
+  --ve-grid-size:var(--ve-grid-major-step) var(--ve-grid-major-step),var(--ve-grid-major-step) var(--ve-grid-major-step),var(--ve-grid-step) var(--ve-grid-step),var(--ve-grid-step) var(--ve-grid-step);
   color:var(--ve-ink);font-family:var(--ve-font);font-weight:400;font-synthesis:none;line-height:1.45;
   -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
-  background-color:transparent;background-image:var(--ve-grid);background-size:var(--ve-grid-step) var(--ve-grid-step);background-position:var(--ve-grid-x) var(--ve-grid-y)
+  background-color:var(--ve-surface);background-image:var(--ve-grid);background-size:var(--ve-grid-size);background-position:var(--ve-grid-x) var(--ve-grid-y);
 }
-.ve-scene[data-paper=false]{background-image:none}
-.ve-scene:has(>.ve-frame),.ve-scene:has(.vs-grid>path){background-image:none}
-.ve-scene:not([data-paper=false])>.ve-frame>.ve-frame-content:not(:has(.vs-grid>path)){background-image:var(--ve-grid);background-size:var(--ve-grid-step) var(--ve-grid-step);background-position:var(--ve-grid-x) var(--ve-grid-y)}
-svg.ve-scene{color-scheme:light dark}
+.ve-scene[data-paper='false']{background-image:none;background-color:transparent;}
+.ve-scene:has(> .ve-frame),.ve-scene:has(.vs-grid > path){background-image:none;}
+.ve-scene:not([data-paper='false']) > .ve-frame > .ve-frame-content:not(:has(.vs-grid > path)){background-color:var(--ve-surface);background-image:var(--ve-grid);background-size:var(--ve-grid-size);background-position:var(--ve-grid-x) var(--ve-grid-y);}
+svg.ve-scene{color-scheme:light dark;}

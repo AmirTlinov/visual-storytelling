@@ -39,7 +39,7 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
     height = 0,
     viewportRatio: number | undefined,
     gridSignature = '';
-  let gridOptions: Grid | false = options.grid ?? { step: 30 };
+  let gridOptions: Grid | false = options.grid ?? { step: 20 };
   let bounds = { x: 0, y: 0, width: 0, height: 0 };
   const drawGrid = (grid: Grid | false = gridOptions) => {
     if (grid && (!(grid.step > 0) || !Number.isFinite(grid.step)))
@@ -54,7 +54,8 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
     gridSignature = signature;
     paper.replaceChildren();
     if (!grid) return;
-    const parts: string[] = [];
+    const minor: string[] = [],
+      major: string[] = [];
     const left = bounds.x,
       top = bounds.y,
       right = left + bounds.width,
@@ -62,19 +63,28 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
     const start = (edge: number, origin = 0) =>
       origin + Math.ceil((edge - origin) / grid.step) * grid.step;
     for (let x = start(left, grid.x); x <= right; x += grid.step) {
-      parts.push(`M${x} ${top}L${x} ${bottom}`);
+      const index = Math.round((x - (grid.x ?? 0)) / grid.step);
+      minor.push(`M${x} ${top}L${x} ${bottom}`);
+      if (index % 5 === 0) major.push(`M${x} ${top}L${x} ${bottom}`);
     }
     for (let y = start(top, grid.y); y <= bottom; y += grid.step) {
-      parts.push(`M${left} ${y}L${right} ${y}`);
+      const index = Math.round((y - (grid.y ?? 0)) / grid.step);
+      minor.push(`M${left} ${y}L${right} ${y}`);
+      if (index % 5 === 0) major.push(`M${left} ${y}L${right} ${y}`);
     }
-    paper.append(
-      svg('path', {
-        d: parts.join(' '),
-        fill: 'none',
-        stroke: 'currentColor',
-        'stroke-width': 1,
-      }),
-    );
+    for (const [parts, pigment] of [
+      [minor, '--ve-grid-ink'],
+      [major, '--ve-grid-major-ink'],
+    ] as const) {
+      paper.append(
+        svg('path', {
+          d: parts.join(' '),
+          fill: 'none',
+          stroke: `var(${pigment})`,
+          'stroke-width': 1,
+        }),
+      );
+    }
   };
   const setViewport = (next: typeof bounds) => {
     if (

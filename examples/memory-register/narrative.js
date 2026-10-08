@@ -4,14 +4,14 @@ export function narrative(state, frame, mode) {
   if (mode === 'explore') {
     const memory =
       state.challenge && !state.checked
-        ? `Сейчас здесь ${state.saved}. Что изменит следующий фронт?`
+        ? `Сейчас здесь ${state.saved}. Что изменит фронт?`
         : state.event === 'write'
-          ? `Все восемь бит записаны. Теперь здесь ${state.saved}.`
+          ? `Записали все 8 бит. Теперь здесь ${state.saved}.`
           : state.event === 'blocked'
-            ? `Здесь осталось ${state.saved}: WE = 0 запрещает запись.`
+            ? `Здесь ${state.saved}: WE = 0 запретил запись.`
             : state.event === 'fall'
-              ? `Здесь по-прежнему ${state.saved}. Спад такта не записывает.`
-              : `Здесь хранится ${state.saved}. Ждём фронт с разрешением записи.`;
+              ? `Осталось ${state.saved}. Спад такта не записывает.`
+              : `Здесь хранится ${state.saved}. Ждём разрешение и фронт.`;
     return {
       input: note(`На входе ${state.input}. Нажми на бит, чтобы изменить его.`),
       memory: note(memory),
@@ -30,14 +30,14 @@ export function narrative(state, frame, mode) {
   if (frame.has('eight_cells'))
     result.memory = note('Восемь ячеек вместе хранят один байт.', 'eight_cells');
   if (frame.has('byte_range'))
-    result.memory = note('Один байт: любое целое число от 0 до 255.', 'byte_range');
+    result.memory = note('Один байт хранит число от 0 до 255.', 'byte_range');
   if (frame.has('set_42')) {
     result.input = note('Выставляем 42. Пока оно только на входе.', 'set_42');
     result.memory = undefined;
     result.focus = 'input';
   }
   if (frame.has('input_hold')) {
-    result.memory = note('А в памяти по-прежнему 0. Вход ещё не записан.', 'input_hold');
+    result.memory = note('В памяти по-прежнему 0. Вход не записан.', 'input_hold');
     result.focus = 'memory';
   }
   if (frame.has('enable_write')) {
@@ -80,7 +80,7 @@ export function narrative(state, frame, mode) {
     result.focus = 'memory';
   }
   if (frame.has('both_conditions')) {
-    result.memory = note('Чтобы запомнить новый байт, нужны оба условия:', 'both_conditions');
+    result.memory = note('Для записи нужны оба условия:', 'both_conditions');
     result.enable = note('1. Разрешение записи.');
     result.clock = note('2. Новый фронт такта.');
     result.focus = 'conditions';

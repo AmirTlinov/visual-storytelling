@@ -98,7 +98,8 @@ html:has(>body.ve-standalone>.ve-scene[data-theme=dark]){color-scheme:dark}
 }
 
 .ve-scene .caption:not(.sr-only):not(:where(.ve-frame *)){min-height:1.5em;color:var(--ve-muted)}
-.ve-standalone{margin:0;background:transparent;padding:24px 16px}
+.ve-standalone{margin:0;background:light-dark(#f1eee5,#17202b);padding:24px 16px}
+.ve-standalone:has(>.ve-scene[data-appearance=interface]){background:Canvas}
 .ve-standalone .ve-scene{max-width:820px;margin:auto}
 .ve-scene label:not(:where(.ve-frame *)){font-size:16px}
 @media(max-width:480px){

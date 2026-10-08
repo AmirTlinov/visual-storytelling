@@ -1,5 +1,11 @@
 import { MotionPathPlugin } from 'gsap/MotionPathPlugin';
 import { glyphs } from '../glyphs.js';
+import {
+  handwritingFamily,
+  handwritingMetrics,
+  handwritingProfiles,
+  type Handwriting,
+} from '../handwriting.js';
 import { fusionShape, type FusionGlyph, type FusionShape, type FusionText } from './shape.js';
 import type { InkPoint, InkPath } from './transport.js';
 
@@ -9,6 +15,7 @@ export interface FusionTextOptions {
   lineHeight?: number;
   align?: 'left' | 'center';
   font?: string;
+  handwriting?: Handwriting;
 }
 
 // Glyph geometry is independent of the word or its position. Reuse it as counters change.
@@ -22,7 +29,8 @@ export function fusionText(value: string, options: FusionTextOptions = {}): Fusi
     maxWidth = 320,
     lineHeight = 1.35,
     align = 'center',
-    font = 'SketchPencil, SketchShantell, sans-serif',
+    handwriting = 'body',
+    font = handwritingFamily(handwriting),
   } = options;
   if (
     !(size > 0 && maxWidth > 0 && lineHeight > 0) ||
@@ -31,6 +39,9 @@ export function fusionText(value: string, options: FusionTextOptions = {}): Fusi
     throw new Error('Text dimensions must be positive and finite');
   const context = document.createElement('canvas').getContext('2d')!;
   context.font = `400 ${size}px ${font}`;
+  const family = font.split(',')[0]!.trim().replaceAll(/["']/g, ''),
+    profile = Object.values(handwritingProfiles).find((hand) => hand.family === family),
+    slant = Math.tan(((profile?.slant ?? 0) * Math.PI) / 180);
   const paths: InkPath[] = [],
     letters: FusionGlyph[] = [],
     words: FusionText['words'] = [];
@@ -73,14 +84,18 @@ export function fusionText(value: string, options: FusionTextOptions = {}): Fusi
         size,
         paths: [],
       };
-      const key = `${font}/${size}/${advance}/${char}`;
+      const key = `${font}/${profile?.stroke}/${profile?.slant}/${size}/${advance}/${char}`;
       let local = glyphInk.get(key);
       if (!local) {
         local = [];
-        const strokes = font.startsWith('SketchPencil') ? glyphs[char] : undefined;
-        if (strokes) {
-          const sx = advance / 6.7,
-            sy = size * 0.082;
+        const strokes = profile ? glyphs[char] : undefined;
+        if (strokes && profile) {
+          const sx = advance / handwritingMetrics.glyphWidth,
+            sy =
+              (size * handwritingMetrics.capHeight) /
+              handwritingMetrics.em /
+              handwritingMetrics.baseline,
+            shear = sy * slant;
           for (const d of strokes) {
             // Measure each path once. Repeated SVG point queries redo native curve
             // traversal and stall the first frame that needs a new character.
@@ -89,7 +104,7 @@ export function fusionText(value: string, options: FusionTextOptions = {}): Fusi
               120,
             ) as number[][] & { totalLength: number };
             const length = path.totalLength,
-              count = Math.max(2, Math.ceil((length * Math.max(sx, sy)) / 1.5));
+              count = Math.max(2, Math.ceil((length * (Math.max(sx, sy) + Math.abs(shear))) / 1.5));
             local.push(
               Array.from({ length: count }, (_, i): InkPoint => {
                 const at = (length * i) / (count - 1),
@@ -102,13 +117,16 @@ export function fusionText(value: string, options: FusionTextOptions = {}): Fusi
                     path,
                     Math.min(length, at + 0.01) / length,
                   );
-                const tx = (after.x - before.x) * sx,
+                const tx = (after.x - before.x) * sx - (after.y - before.y) * shear,
                   ty = (after.y - before.y) * sy,
-                  norm = Math.hypot(tx, ty) || 1;
+                  norm = Math.hypot(tx, ty) || 1,
+                  y = (point.y - handwritingMetrics.baseline) * sy;
                 return [
-                  advance * 0.055 + point.x * sx,
-                  (point.y - 10) * sy,
-                  0.325 * Math.hypot((sx * ty) / norm, (sy * tx) / norm),
+                  advance * handwritingMetrics.inset + point.x * sx - y * slant,
+                  y,
+                  // Support of the transformed round pen along the screen-space normal.
+                  (profile.stroke / 2) *
+                    Math.hypot((sx * ty) / norm, (sy * tx + shear * ty) / norm),
                 ];
               }),
             );
