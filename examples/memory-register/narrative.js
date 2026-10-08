@@ -13,8 +13,12 @@ export function narrative(state, frame, mode) {
               ? `Осталось ${state.saved}. Спад такта не записывает.`
               : `Здесь хранится ${state.saved}. Ждём разрешение и фронт.`;
     return {
-      input: note(`На входе ${state.input}. Нажми на бит, чтобы изменить его.`),
-      memory: note(memory),
+      input: note(
+        state.challenge
+          ? `На входе ${state.input}. Проверим запись этого байта.`
+          : `На входе ${state.input}. Нажми на бит, чтобы изменить его.`,
+      ),
+      memory: state.challenge ? undefined : note(memory),
       enable: note(state.we ? 'Запись разрешена.' : 'Запись запрещена.'),
       clock: note(state.clock ? 'Такт в 1.\nСначала верни в 0.' : 'Дадим фронт:\n0 → 1.'),
       focus: state.event === 'input' ? 'input' : state.event === 'enable' ? 'enable' : 'memory',

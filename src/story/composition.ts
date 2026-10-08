@@ -316,7 +316,7 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
           attributeFilter: ['class', 'style', 'data-theme'],
         });
       const resize = new ResizeObserver(refresh);
-      resize.observe(shell.stage.closest('.ve-frame') ?? shell.stage);
+      resize.observe(shell.stage.closest('[data-scene-frame]') ?? shell.stage);
       shell.onDispose(() => {
         observer.disconnect();
         resize.disconnect();

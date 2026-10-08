@@ -99,19 +99,38 @@ function selectControl(
   }
   function place() {
     const r = trigger.getBoundingClientRect(),
-      viewport = window.visualViewport;
-    const left = viewport?.offsetLeft || 0,
-      top = viewport?.offsetTop || 0,
-      w = viewport?.width || innerWidth,
-      h = viewport?.height || innerHeight;
-    const width = Math.min(r.width, w - 16),
-      below = top + h - r.bottom - 12,
-      above = r.top - top - 12;
-    const up = below < Math.min(180, rows.length * 44 + 20) && above > below;
-    menu.style.width = `${width}px`;
-    menu.style.maxHeight = `${Math.max(44, Math.min(320, up ? above : below))}px`;
-    menu.style.left = `${Math.max(left + 8, Math.min(r.left, left + w - width - 8))}px`;
-    menu.style.top = `${up ? Math.max(top + 8, r.top - menu.getBoundingClientRect().height - 6) : r.bottom + 6}px`;
+      viewport = window.visualViewport,
+      frame = trigger.closest<HTMLElement>('[data-scene-frame]'),
+      frameBounds = frame?.getBoundingClientRect(),
+      scale = Number(frame?.dataset.frameScale) || 1;
+    const left = Math.max(viewport?.offsetLeft || 0, frameBounds?.left ?? -Infinity),
+      top = Math.max(viewport?.offsetTop || 0, frameBounds?.top ?? -Infinity),
+      right = Math.min(
+        (viewport?.offsetLeft || 0) + (viewport?.width || innerWidth),
+        frameBounds?.right ?? Infinity,
+      ),
+      bottom = Math.min(
+        (viewport?.offsetTop || 0) + (viewport?.height || innerHeight),
+        frameBounds?.bottom ?? Infinity,
+      ),
+      margin = 8 * scale,
+      gap = 6 * scale;
+    const width = Math.max(
+        0,
+        Math.min(Math.max(r.width, frame ? 280 * scale : 0), right - left - margin * 2),
+      ),
+      below = Math.max(0, bottom - r.bottom - margin - gap),
+      above = Math.max(0, r.top - top - margin - gap);
+    const up = below < Math.min(180, rows.length * 44 + 20) * scale && above > below;
+    // A native popover leaves transformed ancestors for the top layer. Restore
+    // the frame's scale explicitly and place it in screen coordinates.
+    menu.style.transformOrigin = '0 0';
+    menu.style.transform = scale === 1 ? '' : `scale(${scale})`;
+    menu.style.width = `${width / scale}px`;
+    menu.style.maxHeight = `${Math.max(0, Math.min(320 * scale, up ? above : below)) / scale}px`;
+    menu.style.left = `${Math.max(left + margin, Math.min(r.left, right - width - margin))}px`;
+    const menuHeight = menu.getBoundingClientRect().height;
+    menu.style.top = `${Math.max(top + margin, Math.min(up ? r.top - menuHeight - gap : r.bottom + gap, bottom - menuHeight - margin))}px`;
   }
   const close = () => {
     if (isOpen()) menu.hidePopover();
@@ -221,6 +240,13 @@ function selectControl(
     listen,
   );
   window.addEventListener('blur', close, listen);
+  window.addEventListener(
+    'scene-frame-resize',
+    () => {
+      if (isOpen()) place();
+    },
+    listen,
+  );
   document.addEventListener(
     'scroll',
     (event) => {

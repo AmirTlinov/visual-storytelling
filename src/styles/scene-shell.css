@@ -38,6 +38,25 @@
 .ve-scene .ve-frame{position:relative;width:100%;margin-inline:auto;overflow:hidden;isolation:isolate}
 .ve-scene .ve-frame>.ve-frame-content{position:absolute;inset:0}
 .ve-standalone .ve-scene:has(>.ve-frame){max-width:none}
+.ve-scene:has(>.ve-scene-frame){padding:0;background-image:none;max-width:none}
+.ve-scene .ve-scene-frame{position:relative;margin-inline:auto;overflow:hidden;isolation:isolate}
+.ve-scene .ve-scene-content{position:absolute;inset:0;display:flex;flex-direction:column;padding:20px 32px 12px;overflow:hidden;box-sizing:border-box;background:transparent}
+.ve-scene:not([data-paper=false])>.ve-scene-frame>.ve-scene-content{background-image:var(--ve-grid);background-size:var(--ve-grid-size);background-position:var(--ve-grid-x) var(--ve-grid-y)}
+.ve-scene .ve-scene-content>.ve-heading{flex:0 0 auto;font-size:32px;line-height:1.2;margin:0 0 8px}
+.ve-scene .ve-scene-content>.ve-chapter-navigation{flex:0 0 44px;margin:0 0 4px}
+.ve-scene .ve-scene-content>.modes{flex:0 0 44px;margin:0 0 4px}
+.ve-scene .ve-scene-content>.ve-view-actions:empty{display:none}
+.ve-scene .ve-scene-content>.ve-view-actions:not(:empty){flex:0 0 44px;margin:0 0 4px;overflow:hidden}
+.ve-scene .ve-scene-content>.ve-parameters{flex:0 0 auto;margin:0 0 8px;grid-template-columns:repeat(var(--ve-parameter-columns),minmax(0,1fr))}
+.ve-scene .ve-scene-content>.ve-parameters[hidden]:not(:empty){display:grid!important;visibility:hidden;pointer-events:none}
+.ve-scene .ve-scene-frame .ve-scene-content>.ve-stage{flex:1 1 0;min-height:0;height:auto;overflow:hidden}
+.ve-scene .ve-scene-content>.ve-captions{flex:0 0 56px;height:56px;max-width:none;width:100%;margin:0;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:20px;line-height:1.4}
+.ve-scene .ve-scene-content>[data-player]{flex:0 0 58px;height:58px;min-height:58px;margin:0;display:flex;align-items:center}
+.ve-scene .ve-scene-content>[data-player]>.ve-player{margin-top:0}
+.ve-scene .ve-scene-content .ve-player .time{font-size:13px}
+.ve-scene .ve-scene-content>:is([data-player],.ve-captions)[hidden]{display:flex!important;visibility:hidden;pointer-events:none}
+.ve-scene .ve-scene-content>.ve-status{position:absolute;inset-inline:32px;bottom:70px;max-height:3em;margin:0;font-size:14px;line-height:1.4;overflow:auto;background:var(--ve-surface);z-index:30}
+.ve-scene .ve-scene-content .vs-grid{display:none}
 .ve-scene .ve-captions{font-size:20px;line-height:1.4;text-align:center;margin:12px auto;max-width:64ch;white-space:pre-line}
 .ve-scene .ve-frame-content>.ve-captions{position:absolute;bottom:24px;left:8%;width:84%;max-width:none;margin:0;padding:8px 16px;background:var(--ve-surface);color:var(--ve-ink);z-index:10;pointer-events:none}
 .ve-scene .ve-captions:empty{visibility:hidden}
@@ -49,6 +68,6 @@
 /* Keep the active input beside a long, stacked mathematical explanation. */
 @media(max-width:480px){
   .ve-scene .ve-captions{white-space:normal;text-wrap:balance}
-  .ve-scene:has([data-content-layout="fit"]:not([hidden],[hidden] *)):not(:has(>.ve-frame)) .ve-parameters{position:sticky;top:0;z-index:20;background:var(--ve-surface);grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(240px,85%);gap:16px;overflow-x:auto;scroll-snap-type:x proximity;padding:8px 4px;scroll-padding:4px}
-  .ve-scene:has([data-content-layout="fit"]:not([hidden],[hidden] *)):not(:has(>.ve-frame)) .ve-parameters>.ve-control{scroll-snap-align:start;min-width:0}
+  .ve-scene:has([data-content-layout="fit"]:not([hidden],[hidden] *)):not(:has(>[data-scene-frame])) .ve-parameters{position:sticky;top:0;z-index:20;background:var(--ve-surface);grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(240px,85%);gap:16px;overflow-x:auto;scroll-snap-type:x proximity;padding:8px 4px;scroll-padding:4px}
+  .ve-scene:has([data-content-layout="fit"]:not([hidden],[hidden] *)):not(:has(>[data-scene-frame])) .ve-parameters>.ve-control{scroll-snap-align:start;min-width:0}
 }

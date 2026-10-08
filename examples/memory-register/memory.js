@@ -7,6 +7,7 @@ export const initial = () => ({
   we: false,
   clock: false,
   selected: 5,
+  panel: '',
   event: 'reset',
   challenge: '',
   guess: null,
@@ -35,6 +36,7 @@ export const memoryCheckpoint = {
         state.event,
       ) ||
       !['', 'hold', 'write'].includes(state.challenge) ||
+      !['', 'inside', 'trace-panel'].includes(state.panel) ||
       !(state.guess === null || byte(state.guess)) ||
       !Array.isArray(state.trace) ||
       state.trace.length > 5 ||
@@ -66,6 +68,13 @@ export function act(state, action) {
     next.event = 'input';
   }
   if (action.type === 'select') next.selected = action.index;
+  if (action.type === 'panel') {
+    if (!['', 'inside', 'trace-panel'].includes(action.value))
+      throw new Error('Неизвестная деталь регистра.');
+    next.panel = action.value;
+    if (Number.isInteger(action.index) && action.index >= 0 && action.index <= 7)
+      next.selected = action.index;
+  }
   if (action.type === 'enable') {
     next.we = !state.we;
     next.event = 'enable';

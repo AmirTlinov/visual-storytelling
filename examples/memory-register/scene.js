@@ -12,31 +12,48 @@ window.galleryReady = (async () => {
   // One notebook sheet contains the heading, drawing, notes and bottom transport.
   const shell = SceneShell.mount(root, {
     title: 'Как 8 бит запоминают число',
+    frame: { width: 1280, height: 720, scope: 'scene' },
   });
   shell.stage.classList.add('memory-sheet');
+  const drawingHost = document.createElement('div');
+  drawingHost.className = 'memory-drawing';
+  shell.stage.append(drawingHost);
   const notes = document.createElement('div');
   notes.className = 'memory-notes';
   notes.innerHTML = [
     '<p class="sr-only">Вход <output id="input-value">0</output>. Память <output id="saved-value">0</output>.</p>',
-    '<div class="memory-presets"><span>Выставить вход:</span>',
+    '<div class="memory-toolbar"><div class="memory-presets"><span>Вход:</span>',
     ...[42, 165, 255, 0].map(
       (v) => '<button type="button" data-value="' + v + '">' + v + '</button>',
     ),
     '</div>',
     '<p class="sr-only" id="event" role="status" aria-live="polite"></p>',
-    '<div class="memory-actions"><button type="button" id="challenge-start">Предскажи результат</button><button type="button" id="reset">Очистить пример</button></div>',
+    '<div class="memory-actions"><button type="button" id="challenge-start">Предскажи результат</button><button type="button" id="reset">Сбросить</button><button type="button" data-panel="inside">Как хранится бит?</button><button type="button" data-panel="trace-panel">История тактов</button></div></div>',
     '<section id="challenge" class="memory-challenge" hidden><div id="prediction"></div><div class="memory-actions">',
-    '<button id="next-challenge" type="button" hidden>Теперь разрешим запись</button><button id="free" type="button">Свободный опыт</button>',
+    '<button id="next-challenge" type="button" hidden>Разрешим запись</button><button id="free" type="button">К опыту</button>',
     '</div></section>',
-    '<details class="memory-detail" id="inside"><summary>Почему один бит удерживает значение?</summary><p id="detail-bit"></p><div id="feedback-drawing"></div><p id="loop-explanation"></p>',
-    '<p>Это сердце запоминающего элемента. Управляемые входы D-триггера позволяют переключить его по фронту такта. Регистр удерживает данные, пока есть питание.</p></details>',
-    '<details><summary>Последние переключения такта</summary><table class="memory-trace"><thead><tr><th>Такт</th><th>WE</th><th>Вход D</th><th>Память Q</th></tr></thead><tbody id="trace"></tbody></table></details>',
+    '<section class="memory-panel memory-detail" id="inside" hidden tabindex="-1" aria-labelledby="inside-title"><div class="memory-panel-heading"><h2 id="inside-title">Почему один бит удерживает значение?</h2><button type="button" data-close-panel>К схеме</button></div><p id="detail-bit"></p><div id="feedback-drawing"></div><p id="loop-explanation"></p>',
+    '<p>Это сердце запоминающего элемента. Управляемые входы D-триггера позволяют переключить его по фронту такта. Регистр удерживает данные, пока есть питание.</p></section>',
+    '<section class="memory-panel" id="trace-panel" hidden tabindex="-1" aria-labelledby="trace-title"><div class="memory-panel-heading"><h2 id="trace-title">Последние переключения такта</h2><button type="button" data-close-panel>К схеме</button></div><table class="memory-trace"><thead><tr><th>Такт</th><th>WE</th><th>Вход D</th><th>Память Q</th></tr></thead><tbody id="trace"></tbody></table></section>',
   ].join('');
   const $ = (id) => root.querySelector('#' + id);
-  const drawing = registerDrawing(shell.stage, dispatch, (index) => {
-    dispatch({ type: 'select', index });
-    $('inside').open = true;
-    $('inside').scrollIntoView({ block: 'nearest' });
+  let renderedPanel = null,
+    panelOpener = null;
+  function renderPanel(id, focus) {
+    if (id === renderedPanel) return;
+    if (id && !renderedPanel) panelOpener = document.activeElement;
+    renderedPanel = id;
+    drawingHost.style.visibility = id ? 'hidden' : '';
+    drawingHost.inert = Boolean(id);
+    shell.stage.dataset.panel = id ?? 'register';
+    for (const panel of notes.querySelectorAll('.memory-panel')) panel.hidden = panel.id !== id;
+    if (focus) {
+      if (id) $(id).focus({ preventScroll: true });
+      else panelOpener?.focus({ preventScroll: true });
+    }
+  }
+  const drawing = registerDrawing(drawingHost, dispatch, (index) => {
+    dispatch({ type: 'panel', value: 'inside', index });
   });
   shell.stage.append(notes);
   const loop = feedbackDrawing($('feedback-drawing'));
@@ -55,6 +72,7 @@ window.galleryReady = (async () => {
     stateAt: storyState,
     checkpoint: memoryCheckpoint,
     render(s, frame, mode) {
+      renderPanel(s.panel || null, mode === 'explore');
       drawing.render(s, frame, mode);
       notes.hidden = mode === 'story' && !frame.has('your_turn');
       const quiz = Boolean(s.challenge);
@@ -68,11 +86,10 @@ window.galleryReady = (async () => {
         $('event').textContent = message;
         lastNotice = message;
       }
-      $('challenge').hidden = !quiz;
+      $('challenge').hidden = !quiz || Boolean(s.panel);
       $('next-challenge').hidden = !s.checked || s.challenge === 'write';
       prediction.render({
-        question:
-          'Вход: 165. Память: 42. WE = ' + Number(s.we) + '. Что будет в памяти после фронта ↑?',
+        question: 'После фронта ↑ в памяти будет…',
         guess: s.guess,
         checked: s.checked,
         feedback:
@@ -80,9 +97,7 @@ window.galleryReady = (async () => {
           'Получилось ' +
           s.saved +
           '. ' +
-          (s.we
-            ? 'WE = 1 и фронт ↑ перенесли входной байт в память.'
-            : 'WE = 0 запретил запись: прежний байт сохранился.'),
+          (s.we ? 'WE = 1 и фронт ↑ записали байт.' : 'WE = 0 сохранил прежний байт.'),
       });
       const q = bit(s.saved, s.selected);
       $('detail-bit').textContent =
@@ -147,6 +162,18 @@ window.galleryReady = (async () => {
   $('challenge-start').onclick = () => dispatch({ type: 'challenge', value: 'hold' });
   $('next-challenge').onclick = () => dispatch({ type: 'challenge', value: 'write' });
   $('free').onclick = () => dispatch({ type: 'free' });
+  for (const button of notes.querySelectorAll('[data-panel]'))
+    button.onclick = () => dispatch({ type: 'panel', value: button.dataset.panel });
+  for (const button of notes.querySelectorAll('[data-close-panel]'))
+    button.onclick = () => dispatch({ type: 'panel', value: '' });
+  const closePanel = (event) => {
+    if (event.key === 'Escape' && story.requested.values.panel) {
+      event.preventDefault();
+      dispatch({ type: 'panel', value: '' });
+    }
+  };
+  root.addEventListener('keydown', closePanel);
+  shell.onDispose(() => root.removeEventListener('keydown', closePanel));
   async function restore(snapshot) {
     const checkpoint = snapshot?.privateContent;
     if (checkpoint?.subject?.kind !== 'memory-register') return;
