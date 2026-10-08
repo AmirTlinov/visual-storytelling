@@ -76,6 +76,7 @@ export function narrative(state, frame, mode) {
     result.focus = 'enable';
   }
   if (frame.has('blocked_clock')) {
+    result.memory = undefined;
     result.clock = note('Фронт есть.\nЗапись запрещена.', 'blocked_clock');
     result.focus = 'clock';
   }

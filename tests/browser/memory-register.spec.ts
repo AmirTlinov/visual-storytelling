@@ -355,6 +355,25 @@ test('narration writes local causes beside changing objects and survives seeking
   const held = await note('memory').innerHTML();
   await expect(note('input')).toHaveAttribute('aria-label', /здесь 165/);
   await expect(page.locator('#saved-value')).toHaveText('42');
+  await seek(40.4);
+  await expect(note('memory')).toHaveAttribute('aria-label', /нового фронта не было/);
+  await seek(41);
+  const blocked = await page.evaluate(() =>
+    (document.querySelector('#ve-scene') as any).scene.snapshot(),
+  );
+  expect({ saved: blocked.saved, we: blocked.we, clock: blocked.clock }).toEqual({
+    saved: 42,
+    we: false,
+    clock: true,
+  });
+  await expect(note('clock')).toHaveAttribute('aria-label', /Фронт есть/);
+  await expect(note('memory')).not.toBeVisible();
+  await seek(44);
+  await expect(note('memory')).toHaveAttribute('aria-label', /запись запрещена/);
+  await seek(40.4);
+  await expect(note('memory')).toHaveAttribute('aria-label', /нового фронта не было/);
+  await seek(41);
+  await expect(note('memory')).not.toBeVisible();
   await seek(58);
   await seek(34);
   expect(await note('memory').innerHTML()).toBe(held);
