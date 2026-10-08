@@ -88,7 +88,7 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
   const parameters: NonNullable<SceneOptions['parameters']> = [
     {
       key: 'chapter',
-      label: 'Пример',
+      label: 'Глава',
       type: 'select',
       value: options.chapters[0]!.id,
       options: options.chapters.map((c) => ({ value: c.id, label: c.title })),
