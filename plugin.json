@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "visual-storytelling",
-  "version": "0.5.7",
+  "version": "0.6.0",
   "description": "Создавайте, исследуйте и обсуждайте живые визуальные объяснения вместе с Codex.",
   "author": {
     "name": "Amir Tlinov"
@@ -15,7 +15,9 @@
         "longDescription": "Откройте интерактив прямо в разговоре, исследуйте его руками, найдите нужный момент и обсудите увиденное с Codex. Вся работа выполняется на вашем компьютере.",
         "developerName": "Amir Tlinov",
         "category": "Education",
-        "capabilities": ["Interactive"],
+        "capabilities": [
+          "Interactive"
+        ],
         "defaultPrompt": "Открой Visual Storytelling. Помоги мне исследовать пример и понять его механизм."
       },
       "onboardingSkill": "./skills/setup/SKILL.md"
