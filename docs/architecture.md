@@ -17,6 +17,10 @@
 самостоятельной модели; ввод рассказа принадлежит `story.explore`.
 
 `Story` вычисляет `stateAt → derive → render`; `transport` использует один media clock.
+`requested` хранит принятый ввод, `presented` — завершённый кадр. `scene-checkpoint.ts`
+сохраняет параметры, место и камеру; вложенные условия приходят от `runtime.subject`.
+Для Story его предоставляет `checkpoint.encode/decode`. Тот же снимок передаётся
+в widgetState, восстановление и экспорт; схема и проверка остаются у модели.
 `StepPlayer` переключает дискретные состояния, `SmilPlayer` управляет временем SVG,
 `SimulationPlayer` ведёт живую модель. Их команды регистрируются в том же handle;
 статическая модель не получает фиктивные секунды или play/seek.
@@ -42,7 +46,7 @@
 | Вложенный SVG                | `explorer/`: Surface, Camera, Highlight, Gestures, ScenePath                                     |
 | Параметры и история          | `SketchControls`, `SceneHistory`; предметные ограничения — в модели                              |
 | Физика                       | `physics/`: Rapier; `PhysicsReplay` ведёт перемотку, `PhysicsPlayer` использует SimulationPlayer |
-| Состояние хоста              | `widgetState`; схема сохраняемого снимка принадлежит сцене                                       |
+| Состояние хоста              | `widgetState` переносит общий `SceneCheckpoint`; модель владеет схемой `subject`                 |
 
 `SceneStory` соединяет главы через Story. `composition-plan.ts` разрешает метки
 и время; `composition-presentations.ts` ограничивает живые главы и освобождает
