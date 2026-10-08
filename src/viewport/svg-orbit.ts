@@ -153,6 +153,48 @@ function mount(
   resize();
   return {
     reset,
+    capture() {
+      return { kind: 'svg-orbit', ...pose, pan: [...pose.pan] };
+    },
+    restore(saved: unknown) {
+      const value = saved as Partial<SvgOrbitPose> & { kind?: string };
+      if (
+        !value ||
+        value.kind !== 'svg-orbit' ||
+        !Number.isFinite(value.yaw) ||
+        !Number.isFinite(value.pitch) ||
+        !Number.isFinite(value.zoom) ||
+        value.pitch! < (options.pitchLimits?.[0] ?? -1.4) ||
+        value.pitch! > (options.pitchLimits?.[1] ?? 1.4) ||
+        value.zoom! < controls.minZoom ||
+        value.zoom! > controls.maxZoom ||
+        !Array.isArray(value.pan) ||
+        value.pan.length !== 2 ||
+        value.pan.some((part) => !Number.isFinite(part))
+      )
+        return false;
+      const yaw = value.yaw!,
+        pitch = value.pitch!,
+        zoom = value.zoom!;
+      camera.position.set(
+        -10 * Math.cos(pitch) * Math.sin(yaw),
+        -10 * Math.sin(pitch),
+        10 * Math.cos(pitch) * Math.cos(yaw),
+      );
+      camera.zoom = zoom;
+      controls.target.set(0, 0, 0);
+      camera.lookAt(controls.target);
+      camera.updateMatrixWorld(true);
+      const right = new Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+      const up = new Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+      controls.target
+        .copy(right.multiplyScalar(-value.pan[0]! / zoom))
+        .addScaledVector(up, value.pan[1]! / zoom);
+      camera.position.add(controls.target);
+      camera.updateProjectionMatrix();
+      if (!controls.update()) changed();
+      return true;
+    },
     get pose() {
       return pose;
     },

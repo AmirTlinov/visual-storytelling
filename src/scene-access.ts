@@ -67,7 +67,7 @@ export interface SceneAccessOwner {
   parameters?: readonly (ControlParameter & { key: string })[];
   visible?(key: string): boolean;
   setMode?(value: 'story' | 'explore'): void;
-  setValues?(values: Record<string, ControlValue>): void;
+  setValues?(values: Record<string, ControlValue>): void | Promise<void>;
   assertLive(): void;
 }
 export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
@@ -353,7 +353,7 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
               owner.setMode!(c.value);
               break;
             case 'parameters':
-              owner.setValues!({ ...owner.values?.(), ...c.values });
+              await wait(owner.setValues!({ ...owner.values?.(), ...c.values }));
               break;
             case 'focus':
               if (!handle.focus) throw new Error('Focus is unavailable in the current chapter');

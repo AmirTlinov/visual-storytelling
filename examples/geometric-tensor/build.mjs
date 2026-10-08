@@ -98,12 +98,11 @@ const script=String.raw`
   const viewport=byID('viewport'),slider=byID('tensor-control-input');
   root.addEventListener('pointerdown',()=>root.classList.add('pointer-input'),{...listen,capture:true});
   root.addEventListener('keydown',()=>root.classList.remove('pointer-input'),{...listen,capture:true});
-  let t=1,yaw=.58,pitch=.34,pending=0;
+  let t=1,yaw=.58,pitch=.34;
   const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
   const format=x=>x.toFixed(2);
   const nodes=new Map(Array.from(byID('geometry').querySelectorAll('[id]'),node=>[node.id,node]));
   function draw(){
-    pending=0;
     const scene=tensorScene(t,yaw,pitch);
     for(const part of scene.parts) {
       const node=nodes.get(part.id);
@@ -132,13 +131,24 @@ const script=String.raw`
     fitSvgControls(root);
   }
   addEventListener('resize',layout,listen);layout();
-  function invalidate(){if(!pending)pending=requestAnimationFrame(draw);}
-  function setT(value){t=clamp(value,0,1);invalidate();}
+  function setT(value){
+    if(!Number.isFinite(value))throw new Error('Tensor transformation must be finite');
+    t=clamp(value,0,1);draw();
+  }
   slider.addEventListener('input',()=>setT(slider.valueAsNumber),listen);
   const orbit=SvgOrbit.mount(root,viewport,byID('orbit-world'),{
-    yaw,pitch,pitchLimits:[-.75,.75],changed(pose){yaw=pose.yaw;pitch=pose.pitch;invalidate();}
+    yaw,pitch,pitchLimits:[-.75,.75],changed(pose){yaw=pose.yaw;pitch=pose.pitch;draw();}
   });
-  mountScene(root,{snapshot:()=>({t,view:orbit.pose}),dispose(){lifetime.abort();orbit.dispose();cancelAnimationFrame(pending);}});
+  mountScene(root,{
+    camera:orbit,
+    svg:()=>root,
+    snapshot:()=>({t,view:orbit.pose}),
+    dispose(){lifetime.abort();orbit.dispose();}
+  },{
+    parameters:[{key:'t',label:'Преобразование',type:'range',value:1,min:0,max:1,step:.02}],
+    values:()=>({t}),
+    setValues:values=>setT(values.t)
+  });
 })();`;
 
 const svg=`<?xml version="1.0" encoding="UTF-8"?>
@@ -173,9 +183,10 @@ const svg=`<?xml version="1.0" encoding="UTF-8"?>
   <g id="orbit-world"><g id="geometry">${geometry}</g>
   <g id="mapping" fill="none" stroke="var(--ve-pencil)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M470 353 H558 l-8 -6 m8 6 -8 6"/></g>
   <text id="mapping-label" x="514" y="328" text-anchor="middle" font-size="26" font-family="inherit" font-style="italic">T</text>
+</g>
 <text id="sphere-label" x="250" y="570" class="label">Единичная сфера</text>
 <text id="tensor-label" x="775" y="570" class="label">Образ сферы</text>
-</g></g>
+</g>
 <text id="control-label" x="550" y="637" font-size="21" text-anchor="middle">Преобразование</text>
 ${svgRange({id:'tensor-control', x:373, y:652, width:354, value:1, label:'Преобразование от единичного тензора до T'})}
 

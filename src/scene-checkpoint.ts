@@ -57,11 +57,19 @@ export interface SceneRestoreNotice {
 function copySubject(value: unknown, parents = new Set<object>()): unknown {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const prototype = value && typeof value === 'object' ? Object.getPrototypeOf(value) : null;
+  const constructor = prototype && Object.getOwnPropertyDescriptor(prototype, 'constructor')?.value;
+  // An embedded SVG owns another realm's Object.prototype. Accept its plain JSON objects.
+  const plain =
+    prototype === null ||
+    (Object.getPrototypeOf(prototype) === null &&
+      typeof constructor === 'function' &&
+      Function.prototype.toString.call(constructor) === Function.prototype.toString.call(Object));
   if (
     typeof value !== 'object' ||
     !value ||
     parents.has(value) ||
-    (!Array.isArray(value) && ![Object.prototype, null].includes(Object.getPrototypeOf(value)))
+    (!Array.isArray(value) && !plain)
   )
     throw new Error('A scene subject checkpoint must contain finite JSON values.');
   parents.add(value);

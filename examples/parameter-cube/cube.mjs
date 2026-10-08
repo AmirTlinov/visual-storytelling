@@ -4,7 +4,13 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { svgRange } from '@visual-storytelling/core/controls';
 import { SketchInk } from '@visual-storytelling/core/ink';
-import { projectionBreakdown, decimal, weightColor, escapeXML } from './model.mjs';
+import {
+  projectionBreakdown,
+  validateProjection,
+  decimal,
+  weightColor,
+  escapeXML,
+} from './model.mjs';
 import { cubeScene } from './geometry.mjs';
 import { mountCube } from './runtime.mjs';
 
@@ -134,8 +140,8 @@ ${rows}
 </g></g>
 <script><![CDATA[
 ${sharedRuntime}
-${[projectionBreakdown, decimal, weightColor, escapeXML, cubeScene, mountCube].map((fn) => fn.toString()).join('\n')}
-mountCube(${JSON.stringify(initial).replace(/</g, '\\u003c')},${JSON.stringify(start)},VisualStory,{projectionBreakdown,decimal,weightColor,escapeXML},cubeScene);
+${[projectionBreakdown, validateProjection, decimal, weightColor, escapeXML, cubeScene, mountCube].map((fn) => fn.toString()).join('\n')}
+mountCube(${JSON.stringify(initial).replace(/</g, '\\u003c')},${JSON.stringify(start)},VisualStory,{projectionBreakdown,validateProjection,decimal,weightColor,escapeXML},cubeScene);
 ]]></script>
 </svg>`;
 const output = resolve(

@@ -1,7 +1,7 @@
 /** Selection, responsive composition and narrative time for the BERT parameter view. */
 export function mountCube(initial, start, api, model, cubeScene) {
   const { SvgOrbit, SketchInk, fitSvgControls, transport, mountScene } = api;
-  const { projectionBreakdown, decimal, weightColor, escapeXML } = model;
+  const { projectionBreakdown, validateProjection, decimal, weightColor, escapeXML } = model;
   const { inkShape, inkBox } = SketchInk;
   const root = document.querySelector('svg.ve-scene'),
     byID = (id) => document.getElementById(id);
@@ -11,8 +11,7 @@ export function mountCube(initial, start, api, model, cubeScene) {
     duration = 7.2;
   let data = initial,
     { selected, token, spread, yaw, pitch } = start;
-  let pending = 0,
-    width = 1100;
+  let width = 1100;
   const stage = byID('stage'),
     notation = byID('notation'),
     tokens = byID('tokens');
@@ -32,7 +31,6 @@ export function mountCube(initial, start, api, model, cubeScene) {
     ]),
   );
   function drawCube() {
-    pending = 0;
     let cursor = byID('cells').firstElementChild;
     for (const cell of cubeScene(parameters, spread, yaw, pitch, selected, inkShape, weightColor)) {
       const cached = cells.get(cell.key);
@@ -42,9 +40,6 @@ export function mountCube(initial, start, api, model, cubeScene) {
       if (cached.node !== cursor) byID('cells').insertBefore(cached.node, cursor);
       cursor = cached.node.nextElementSibling;
     }
-  }
-  function invalidate() {
-    if (!pending) pending = requestAnimationFrame(drawCube);
   }
   function drawCalculation() {
     const values = projectionBreakdown(data, selected, token),
@@ -137,13 +132,32 @@ export function mountCube(initial, start, api, model, cubeScene) {
       clock.seek(0);
     }
     drawCalculation();
-    invalidate();
+    drawCube();
   }
   function selectCell(key) {
-    const before = selected.split('-');
-    selected = key;
-    const next = selected.split('-');
-    updateSelection(before[1] !== next[1] || before[2] !== next[2]);
+    setConditions({ ...conditions(), selected: key });
+  }
+  const conditions = () => ({ selected, token, spread });
+  function validateConditions(next, projection = data) {
+    if (
+      !next ||
+      !cells.has(next.selected) ||
+      !Number.isInteger(next.token) ||
+      next.token < 0 ||
+      next.token >= projection.tokens.length ||
+      !Number.isFinite(next.spread) ||
+      next.spread < 0 ||
+      next.spread > 1
+    )
+      throw new Error('Choose an existing coefficient, token and spread in [0,1]');
+    return next;
+  }
+  function setConditions(next, restart) {
+    validateConditions(next);
+    const calculationChanged = token !== next.token || selected.slice(2) !== next.selected.slice(2);
+    ({ selected, token, spread } = next);
+    byID('layers-input').value = spread;
+    updateSelection(restart ?? calculationChanged);
   }
   function drawTokens() {
     tokens.innerHTML = data.tokens
@@ -234,7 +248,7 @@ export function mountCube(initial, start, api, model, cubeScene) {
     changed(pose) {
       yaw = pose.yaw;
       pitch = pose.pitch;
-      invalidate();
+      drawCube();
     },
     select(target) {
       const cell = target.closest('[data-cell]');
@@ -244,8 +258,7 @@ export function mountCube(initial, start, api, model, cubeScene) {
   byID('layers-input').addEventListener(
     'input',
     (event) => {
-      spread = event.target.valueAsNumber;
-      invalidate();
+      setConditions({ ...conditions(), spread: event.target.valueAsNumber });
     },
     listen,
   );
@@ -302,9 +315,8 @@ export function mountCube(initial, start, api, model, cubeScene) {
     (event) => {
       const node = event.target.closest('[data-token]');
       if (node) {
-        token = Number(node.dataset.token);
+        setConditions({ ...conditions(), token: Number(node.dataset.token) }, true);
         tokens.focus({ preventScroll: true });
-        updateSelection(true);
       }
     },
     listen,
@@ -312,13 +324,14 @@ export function mountCube(initial, start, api, model, cubeScene) {
   tokens.addEventListener(
     'keydown',
     (event) => {
-      if (event.key === 'ArrowLeft') token = Math.max(0, token - 1);
-      else if (event.key === 'ArrowRight') token = Math.min(data.tokens.length - 1, token + 1);
-      else if (event.key === 'Home') token = 0;
-      else if (event.key === 'End') token = data.tokens.length - 1;
+      let next;
+      if (event.key === 'ArrowLeft') next = Math.max(0, token - 1);
+      else if (event.key === 'ArrowRight') next = Math.min(data.tokens.length - 1, token + 1);
+      else if (event.key === 'Home') next = 0;
+      else if (event.key === 'End') next = data.tokens.length - 1;
       else return;
       event.preventDefault();
-      updateSelection(true);
+      setConditions({ ...conditions(), token: next }, true);
     },
     listen,
   );
@@ -349,15 +362,18 @@ export function mountCube(initial, start, api, model, cubeScene) {
     byID('activation-region').classList.toggle('pending', value);
     if (value) clock.pause();
   };
-  window.setProjection = (next) => {
-    if (next.parameters.sha256 !== parameters.sha256)
-      throw Error('Параметры модели изменились. Перезагрузите пример.');
+  function replaceProjection(next, inputs, time) {
+    validateProjection(next, initial);
+    validateConditions(inputs, next);
+    clock.pause();
     data = next;
-    token = Math.min(token, data.tokens.length - 1);
+    ({ selected, token, spread } = inputs);
+    byID('layers-input').value = spread;
     window.setPending(false);
     drawTokens();
     layout();
-    updateSelection(true);
+    updateSelection();
+    clock.seek(time);
     text(
       'provenance',
       JSON.stringify({
@@ -368,45 +384,101 @@ export function mountCube(initial, start, api, model, cubeScene) {
         parameter_sha256: parameters.sha256,
       }),
     );
-  };
+  }
+  window.setProjection = (next) =>
+    replaceProjection(
+      next,
+      {
+        ...conditions(),
+        token: Math.min(token, (next?.tokens?.length ?? 0) - 1),
+      },
+      0,
+    );
   const unsubscribe = clock.subscribe(drawCalculation);
-  mountScene(root, {
-    transport: clock,
-    svg: () => root,
-    get playing() {
-      return clock.state.playing;
+  mountScene(
+    root,
+    {
+      camera: orbit,
+      subject: {
+        capture: () => ({ projection: data, ...conditions() }),
+        restore(value, { time }) {
+          replaceProjection(value?.projection, value, time);
+        },
+      },
+      transport: clock,
+      svg: () => root,
+      get playing() {
+        return clock.state.playing;
+      },
+      duration,
+      checkpoints: [0, 1, 2.65, 3.7, 5, 6.3, duration],
+      play: clock.play,
+      pause: clock.pause,
+      seek(time) {
+        clock.pause();
+        clock.seek(time);
+      },
+      get currentTime() {
+        return clock.state.time;
+      },
+      snapshot: () => ({
+        selected,
+        token,
+        spread,
+        view: orbit.pose,
+        time: clock.state.time,
+        ...projectionBreakdown(data, selected, token),
+      }),
+      dispose() {
+        if (lifetime.signal.aborted) return;
+        lifetime.abort();
+        unsubscribe();
+        clock.dispose();
+        orbit.dispose();
+        delete window.getProjection;
+        delete window.setPending;
+        delete window.setProjection;
+      },
     },
-    duration,
-    checkpoints: [0, 1, 2.65, 3.7, 5, 6.3, duration],
-    play: clock.play,
-    pause: clock.pause,
-    seek(time) {
-      clock.pause();
-      clock.seek(time);
+    {
+      get parameters() {
+        return [
+          {
+            key: 'selected',
+            label: 'Коэффициент',
+            value: selected,
+            type: 'choice',
+            options: [...cells.keys()].map((key) => ({
+              value: key,
+              label: `W_Q[${key
+                .split('-')
+                .map(Number)
+                .map((i) => i + 1)
+                .join(',')}]`,
+            })),
+          },
+          {
+            key: 'token',
+            label: 'Токен',
+            value: token,
+            type: 'choice',
+            options: data.tokens.map((label, value) => ({ value, label })),
+          },
+          {
+            key: 'spread',
+            label: 'Раздвинуть головы',
+            value: spread,
+            type: 'range',
+            min: 0,
+            max: 1,
+            step: 0.02,
+          },
+        ];
+      },
+      values: conditions,
+      setValues: setConditions,
     },
-    get currentTime() {
-      return clock.state.time;
-    },
-    snapshot: () => ({
-      selected,
-      token,
-      spread,
-      view: orbit.pose,
-      time: clock.state.time,
-      ...projectionBreakdown(data, selected, token),
-    }),
-    dispose() {
-      if (lifetime.signal.aborted) return;
-      lifetime.abort();
-      unsubscribe();
-      clock.dispose();
-      orbit.dispose();
-      cancelAnimationFrame(pending);
-      delete window.getProjection;
-      delete window.setPending;
-      delete window.setProjection;
-    },
-  });
+  );
   drawTokens();
   layout();
   updateSelection();
