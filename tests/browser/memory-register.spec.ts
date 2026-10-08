@@ -1,5 +1,84 @@
 import { test, expect } from '@playwright/test';
 
+test('the whole lesson remains one bounded 16:9 frame through narration and exploration', async ({
+  page,
+}) => {
+  await page.goto('/memory-register/index.html');
+  await page.evaluate(() => (window as any).galleryReady);
+  const frame = page.locator('[data-scene-frame]');
+  const geometry = () =>
+    page.evaluate(() =>
+      ['[data-scene-frame]', 'h1', '.ve-stage', '.memory-drawing', '[data-player]'].map(
+        (selector) => {
+          const { x, y, width, height } = document.querySelector(selector)!.getBoundingClientRect();
+          return [x, y, width, height].map((value) => Math.round(value * 100) / 100);
+        },
+      ),
+    );
+  for (const viewport of [
+    { width: 375, height: 800 },
+    { width: 960, height: 900 },
+    { width: 1440, height: 900 },
+    { width: 980, height: 400 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    await expect
+      .poll(() =>
+        frame.evaluate((element) => {
+          const r = element.getBoundingClientRect();
+          return (
+            Math.abs(r.width / r.height - 16 / 9) < 0.001 &&
+            r.left >= 0 &&
+            r.top >= 0 &&
+            r.right <= innerWidth + 0.1 &&
+            r.bottom <= innerHeight + 0.1
+          );
+        }),
+      )
+      .toBe(true);
+    const baseline = await geometry();
+    for (const time of [0, 22.6, 34, 58, 8]) {
+      await page.evaluate((t) => (document.querySelector('#ve-scene') as any).scene.seek(t), time);
+      expect(await geometry()).toEqual(baseline);
+    }
+    await page.locator('[data-mode="explore"]').click();
+    expect(await geometry()).toEqual(baseline);
+    for (const id of ['inside', 'trace-panel']) {
+      await page.locator(`[data-panel="${id}"]`).click();
+      await expect(page.locator('#' + id)).toBeVisible();
+      expect(await geometry()).toEqual(baseline);
+      await page.keyboard.press('Escape');
+    }
+    await page.locator('#challenge-start').click();
+    await page.locator('[data-panel="inside"]').click();
+    await expect(page.locator('#challenge')).toBeHidden();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#challenge')).toBeVisible();
+    await page.locator('[data-guess="42"]').click();
+    await page.locator('#verify').click();
+    expect(await geometry()).toEqual(baseline);
+    const chapter = page.getByRole('combobox', { name: 'Глава', exact: true });
+    await chapter.click();
+    const menu = page.getByRole('listbox', { name: 'Глава', exact: true });
+    await expect(menu).toBeVisible();
+    const bounds = (await frame.boundingBox())!;
+    const popup = (await menu.boundingBox())!;
+    expect(popup.x).toBeGreaterThanOrEqual(bounds.x);
+    expect(popup.y).toBeGreaterThanOrEqual(bounds.y);
+    expect(popup.x + popup.width).toBeLessThanOrEqual(bounds.x + bounds.width + 0.1);
+    expect(popup.y + popup.height).toBeLessThanOrEqual(bounds.y + bounds.height + 0.1);
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+    expect(await geometry()).toEqual(baseline);
+  }
+});
+
 test('chapter navigation stays compact while notebook disclosures retain keyboard behavior', async ({
   page,
 }) => {
@@ -14,12 +93,7 @@ test('chapter navigation stays compact while notebook disclosures retain keyboar
     const heading = root.querySelector('h1')!;
     const rect = element.getBoundingClientRect();
     return {
-      left:
-        Math.abs(
-          rect.left -
-            root.getBoundingClientRect().left -
-            parseFloat(getComputedStyle(root).paddingLeft),
-        ) < 1,
+      left: Math.abs(rect.left - heading.getBoundingClientRect().left) < 1,
       below: rect.top > heading.getBoundingClientRect().bottom,
       compact:
         rect.width <= 320 &&
@@ -43,13 +117,20 @@ test('chapter navigation stays compact while notebook disclosures retain keyboar
   await expect(chapter).toBeVisible();
   expect(await stageTop()).toBe(before);
   const detail = page.locator('#inside');
-  await detail.locator('summary').focus();
+  const opener = page.locator('[data-panel="inside"]');
+  await opener.focus();
   await page.keyboard.press('Enter');
-  await expect(detail).toHaveAttribute('open', '');
-  await page.keyboard.press('Space');
-  await expect(detail).not.toHaveAttribute('open', '');
-  for (let i = 0; i < 4; i++) await detail.locator('summary').click();
-  await expect(detail).not.toHaveAttribute('open', '');
+  await expect(detail).toBeVisible();
+  await expect(detail).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(detail).toBeHidden();
+  await expect(opener).toBeFocused();
+  for (let i = 0; i < 2; i++) {
+    await opener.click();
+    await detail.locator('[data-close-panel]').click();
+  }
+  await expect(detail).toBeHidden();
+  expect(await stageTop()).toBe(before);
 });
 
 test('drawn register writes only at an enabled edge and keeps prediction before reveal', async ({
@@ -133,7 +214,7 @@ test('narrow notebook keeps drawn targets apart and keyboard activation changes 
   });
   expect(layout).toEqual({ separated: true, fits: true, focusable: '0', grid: 0 });
   await page.locator('[data-select="7"]').click();
-  await expect(page.locator('#inside')).toHaveAttribute('open', '');
+  await expect(page.locator('#inside')).toBeVisible();
   await expect(page.locator('#detail-bit')).toContainText('Бит 7');
   await page.locator('[data-mode="story"]').click();
   await page.locator('[data-seek]').fill('8');
@@ -147,7 +228,9 @@ test('narrow notebook keeps drawn targets apart and keyboard activation changes 
       const player = root.querySelector('[data-player]')!;
       const bounds = root.getBoundingClientRect();
       return {
-        grid: getComputedStyle(root).backgroundImage.includes('linear-gradient'),
+        grid: getComputedStyle(root.querySelector('.ve-scene-content')!).backgroundImage.includes(
+          'linear-gradient',
+        ),
         inside: [root.querySelector('h1')!, stage, player].every((element) => {
           const rect = element.getBoundingClientRect();
           return (

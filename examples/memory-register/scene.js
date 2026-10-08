@@ -11,36 +11,55 @@ window.galleryReady = (async () => {
   // One notebook sheet contains the heading, drawing, notes and bottom transport.
   const shell = SceneShell.mount(root, {
     title: 'Как 8 бит запоминают число',
+    frame: { width: 1280, height: 720, scope: 'scene' },
   });
   shell.stage.classList.add('memory-sheet');
+  const drawingHost = document.createElement('div');
+  drawingHost.className = 'memory-drawing';
+  shell.stage.append(drawingHost);
   const notes = document.createElement('div');
   notes.className = 'memory-notes';
   notes.innerHTML = [
     '<p class="sr-only">Вход <output id="input-value">0</output>. Память <output id="saved-value">0</output>.</p>',
-    '<div class="memory-presets"><span>Выставить вход:</span>',
+    '<div class="memory-toolbar"><div class="memory-presets"><span>Вход:</span>',
     ...[42, 165, 255, 0].map(
       (v) => '<button type="button" data-value="' + v + '">' + v + '</button>',
     ),
     '</div>',
     '<p class="sr-only" id="event" role="status" aria-live="polite"></p>',
-    '<div class="memory-actions"><button type="button" id="challenge-start">Предскажи результат</button><button type="button" id="reset">Очистить пример</button></div>',
+    '<div class="memory-actions"><button type="button" id="challenge-start">Предскажи результат</button><button type="button" id="reset">Сбросить</button><button type="button" data-panel="inside">Как хранится бит?</button><button type="button" data-panel="trace-panel">История тактов</button></div></div>',
     '<section id="challenge" class="memory-challenge" hidden aria-label="Опыт с прогнозом"><p id="question"></p>',
     '<div class="guesses" role="group" aria-label="Ваш прогноз">',
     ...[42, 165, 0].map(
       (v) => '<button type="button" data-guess="' + v + '" aria-pressed="false">' + v + '</button>',
     ),
     '</div><p id="feedback" aria-live="polite"></p><div class="memory-actions">',
-    '<button id="verify" type="button">Проверить фронтом ↑</button><button id="next-challenge" type="button" hidden>Теперь разрешим запись</button><button id="free" type="button">Свободный опыт</button>',
+    '<button id="verify" type="button">Проверить фронтом ↑</button><button id="next-challenge" type="button" hidden>Разрешим запись</button><button id="free" type="button">К опыту</button>',
     '</div></section>',
-    '<details class="memory-detail" id="inside"><summary>Почему один бит удерживает значение?</summary><p id="detail-bit"></p><div id="feedback-drawing"></div><p id="loop-explanation"></p>',
-    '<p>Это сердце запоминающего элемента. Управляемые входы D-триггера позволяют переключить его по фронту такта. Регистр удерживает данные, пока есть питание.</p></details>',
-    '<details><summary>Последние переключения такта</summary><table class="memory-trace"><thead><tr><th>Такт</th><th>WE</th><th>Вход D</th><th>Память Q</th></tr></thead><tbody id="trace"></tbody></table></details>',
+    '<section class="memory-panel memory-detail" id="inside" hidden tabindex="-1" aria-labelledby="inside-title"><div class="memory-panel-heading"><h2 id="inside-title">Почему один бит удерживает значение?</h2><button type="button" data-close-panel>К схеме</button></div><p id="detail-bit"></p><div id="feedback-drawing"></div><p id="loop-explanation"></p>',
+    '<p>Это сердце запоминающего элемента. Управляемые входы D-триггера позволяют переключить его по фронту такта. Регистр удерживает данные, пока есть питание.</p></section>',
+    '<section class="memory-panel" id="trace-panel" hidden tabindex="-1" aria-labelledby="trace-title"><div class="memory-panel-heading"><h2 id="trace-title">Последние переключения такта</h2><button type="button" data-close-panel>К схеме</button></div><table class="memory-trace"><thead><tr><th>Такт</th><th>WE</th><th>Вход D</th><th>Память Q</th></tr></thead><tbody id="trace"></tbody></table></section>',
   ].join('');
   const $ = (id) => root.querySelector('#' + id);
-  const drawing = registerDrawing(shell.stage, dispatch, (index) => {
+  let activePanel = null,
+    panelOpener = null;
+  function showPanel(id = null, focus = true) {
+    if (id === activePanel) return;
+    if (id && !activePanel) panelOpener = document.activeElement;
+    activePanel = id;
+    drawingHost.style.visibility = id ? 'hidden' : '';
+    drawingHost.inert = Boolean(id);
+    shell.stage.dataset.panel = id ?? 'register';
+    for (const panel of notes.querySelectorAll('.memory-panel')) panel.hidden = panel.id !== id;
+    $('challenge').hidden = Boolean(id) || !story.values.challenge;
+    if (focus) {
+      if (id) $(id).focus({ preventScroll: true });
+      else panelOpener?.focus({ preventScroll: true });
+    }
+  }
+  const drawing = registerDrawing(drawingHost, dispatch, (index) => {
     dispatch({ type: 'select', index });
-    $('inside').open = true;
-    $('inside').scrollIntoView({ block: 'nearest' });
+    showPanel('inside');
   });
   shell.stage.append(notes);
   const loop = feedbackDrawing($('feedback-drawing'));
@@ -53,6 +72,7 @@ window.galleryReady = (async () => {
     script: timing,
     stateAt: storyState,
     render(s, frame, mode) {
+      if (mode === 'story') showPanel(null, false);
       drawing.render(s, frame, mode);
       notes.hidden = mode === 'story' && !frame.has('your_turn');
       const quiz = Boolean(s.challenge);
@@ -66,9 +86,8 @@ window.galleryReady = (async () => {
         $('event').textContent = message;
         lastNotice = message;
       }
-      $('challenge').hidden = !quiz;
-      $('question').textContent =
-        'Вход: 165. Память: 42. WE = ' + Number(s.we) + '. Что будет в памяти после фронта ↑?';
+      $('challenge').hidden = !quiz || Boolean(activePanel);
+      $('question').textContent = 'После фронта ↑ в памяти будет…';
       guesses.forEach((button) => {
         button.setAttribute('aria-pressed', String(Number(button.dataset.guess) === s.guess));
         button.disabled = s.checked;
@@ -77,16 +96,11 @@ window.galleryReady = (async () => {
       $('verify').hidden = s.checked;
       $('next-challenge').hidden = !s.checked || s.challenge === 'write';
       $('feedback').textContent = s.checked
-        ? (s.guess === s.saved ? 'Верно. ' : 'Твой прогноз: ' + s.guess + '. ') +
-          'Получилось ' +
-          s.saved +
-          '. ' +
-          (s.we
-            ? 'WE = 1 и фронт ↑ перенесли входной байт в память.'
-            : 'WE = 0 запретил запись: прежний байт сохранился.')
+        ? (s.guess === s.saved ? 'Верно. ' : 'Получилось ' + s.saved + '. ') +
+          (s.we ? 'WE = 1 и фронт ↑ записали байт.' : 'WE = 0 сохранил прежний байт.')
         : s.guess === null
           ? 'Сначала выбери свой прогноз.'
-          : 'Прогноз записан: ' + s.guess + '. Теперь проверь его тактом.';
+          : 'Прогноз ' + s.guess + ' записан. Проверь его тактом.';
       const q = bit(s.saved, s.selected);
       $('detail-bit').textContent =
         'Бит ' +
@@ -151,10 +165,28 @@ window.galleryReady = (async () => {
       (button.onclick = () => dispatch({ type: 'guess', value: Number(button.dataset.guess) })),
   );
   $('reset').onclick = () => dispatch({ type: 'reset' });
-  $('challenge-start').onclick = () => dispatch({ type: 'challenge', value: 'hold' });
+  $('challenge-start').onclick = () => {
+    showPanel(null, false);
+    dispatch({ type: 'challenge', value: 'hold' });
+  };
   $('verify').onclick = () => dispatch({ type: 'clock' });
   $('next-challenge').onclick = () => dispatch({ type: 'challenge', value: 'write' });
   $('free').onclick = () => dispatch({ type: 'free' });
+  for (const button of notes.querySelectorAll('[data-panel]'))
+    button.onclick = () => {
+      story.explore(story.values);
+      showPanel(button.dataset.panel);
+    };
+  for (const button of notes.querySelectorAll('[data-close-panel]'))
+    button.onclick = () => showPanel();
+  const closePanel = (event) => {
+    if (event.key === 'Escape' && activePanel) {
+      event.preventDefault();
+      showPanel();
+    }
+  };
+  root.addEventListener('keydown', closePanel);
+  shell.onDispose(() => root.removeEventListener('keydown', closePanel));
   function restore(snapshot) {
     const s = snapshot?.privateContent;
     if (

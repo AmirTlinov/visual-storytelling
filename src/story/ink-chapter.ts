@@ -49,7 +49,9 @@ export function inkChapter(
       let latest: ChapterFrame | undefined;
       const render = (frame: ChapterFrame) => {
         latest = frame;
-        const box = parent.getBoundingClientRect();
+        const box = parent.closest('[data-frame-scope="scene"]')
+          ? { width: parent.clientWidth, height: parent.clientHeight }
+          : parent.getBoundingClientRect();
         const size = options.size ?? { width: box.width || 960, height: box.height || 640 };
         if (options.size) view.fitViewport(box.width || 960, box.height || 640);
         else view.resize(size.width, size.height);
@@ -58,7 +60,7 @@ export function inkChapter(
       const observer = new ResizeObserver(() => {
         if (latest && parent.checkVisibility()) render(latest);
       });
-      observer.observe(parent.closest('.ve-frame') ?? parent);
+      observer.observe(parent.closest('[data-scene-frame]') ?? parent);
       return {
         render,
         snapshot: () => drawing.snapshot?.(),

@@ -19,7 +19,7 @@ export interface SceneOptions {
   /** Shared controls can follow a product interface while the subject owns its brand. */
   appearance?: 'sketch' | 'interface';
   paper?: boolean;
-  /** Logical composition dimensions for a fixed video frame. Controls remain outside. */
+  /** Logical composition dimensions; scope:scene includes the complete shell and controls. */
   frame?: SceneFrameOptions;
   /** Hide the shell heading when the subject supplies its own title. */
   heading?: boolean;
@@ -159,12 +159,21 @@ function mount(
     },
     options,
   );
-  const composition = frame ? sceneFrame(stage, frame) : undefined;
+  const completeFrame = frame?.scope === 'scene';
+  const sheet = completeFrame ? node('div') : root;
+  const composition = frame ? sceneFrame(completeFrame ? sheet : stage, frame) : undefined;
   if (composition) cleanups.add(composition.dispose);
-  root.append(heading, modes, actions, fields, composition?.element ?? stage);
-  if (captions && composition) stage.append(caption);
-  else root.append(caption);
-  root.append(controls, status);
+  sheet.append(
+    heading,
+    modes,
+    actions,
+    fields,
+    completeFrame ? stage : (composition?.element ?? stage),
+  );
+  if (captions && composition && !completeFrame) stage.append(caption);
+  else sheet.append(caption);
+  sheet.append(controls, status);
+  if (completeFrame) root.append(composition!.element);
   composition?.resize();
   let transition: ((mode: 'story' | 'explore') => void) | undefined;
   let mode: 'story' | 'explore' = 'explore';

@@ -1,6 +1,8 @@
 export interface SceneFrameOptions {
   width: number;
   height: number;
+  /** Frame the subject only, or the complete lesson including its controls. */
+  scope?: 'stage' | 'scene';
 }
 
 /** Keep the complete logical composition inside the available aperture. */
@@ -15,20 +17,24 @@ export function fitFrame(
 }
 
 /** A logical film canvas; the browser scales the complete composition as one unit. */
-export function sceneFrame(stage: HTMLElement, { width, height }: SceneFrameOptions) {
+export function sceneFrame(
+  content: HTMLElement,
+  { width, height, scope = 'stage' }: SceneFrameOptions,
+) {
   if (![width, height].every((n) => Number.isFinite(n) && n > 0))
     throw new Error('Scene frame dimensions must be positive');
   const element = document.createElement('div');
-  element.className = 've-frame';
+  element.className = scope === 'scene' ? 've-scene-frame' : 've-frame';
   element.dataset.sceneFrame = '';
+  element.dataset.frameScope = scope;
   element.style.aspectRatio = `${width} / ${height}`;
-  stage.classList.add('ve-frame-content');
-  Object.assign(stage.style, {
+  content.classList.add(scope === 'scene' ? 've-scene-content' : 've-frame-content');
+  Object.assign(content.style, {
     width: `${width}px`,
     height: `${height}px`,
     transformOrigin: '0 0',
   });
-  element.append(stage);
+  element.append(content);
   let root: HTMLElement | null = null;
   const resize = () => {
     if (!element.parentElement) return;
@@ -43,18 +49,23 @@ export function sceneFrame(stage: HTMLElement, { width, height }: SceneFrameOpti
     if (!availableWidth) return;
     let availableHeight = Infinity;
     if (root.closest('.ve-standalone')) {
-      const box = root.getBoundingClientRect(),
-        frame = element.getBoundingClientRect();
-      const chrome = box.height - frame.height;
+      const box = root.getBoundingClientRect();
+      const chrome =
+        scope === 'scene'
+          ? (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0)
+          : box.height - element.getBoundingClientRect().height;
       const top = Math.max(0, box.top + scrollY);
       const body = getComputedStyle(document.body);
       const bottom = (parseFloat(body.marginBottom) || 0) + (parseFloat(body.paddingBottom) || 0);
       availableHeight = Math.max(1, innerHeight - top - chrome - bottom);
     }
     const fit = fitFrame(width, height, availableWidth, availableHeight);
+    const changed = element.dataset.frameScale !== String(fit.scale);
     element.style.width = `${fit.width}px`;
     element.style.height = `${fit.height}px`;
-    stage.style.transform = `scale(${fit.scale})`;
+    content.style.transform = `scale(${fit.scale})`;
+    element.dataset.frameScale = String(fit.scale);
+    if (changed) element.dispatchEvent(new CustomEvent('scene-frame-resize', { bubbles: true }));
   };
   let pending = 0;
   const schedule = () => {
@@ -175,7 +186,9 @@ export function inspectPresentation(stage: HTMLElement | SVGSVGElement): ScenePr
     width: box.width,
     height: box.height,
   });
-  const frame = rectangle((stage.closest('.ve-frame') ?? stage).getBoundingClientRect());
+  const framed = stage.closest<HTMLElement>('[data-scene-frame]');
+  const subject = framed?.dataset.frameScope === 'scene' ? framed : stage;
+  const frame = rectangle((framed ?? stage).getBoundingClientRect());
   const result: ScenePresentation = {
     viewport: { width: innerWidth, height: innerHeight },
     frame,
@@ -208,7 +221,7 @@ export function inspectPresentation(stage: HTMLElement | SVGSVGElement): ScenePr
     let clip = { ...frame };
     for (
       let ancestor: Element | null = canvas ? node : node.parentElement;
-      ancestor && ancestor !== stage.parentElement;
+      ancestor && ancestor !== subject.parentElement;
       ancestor = ancestor.parentElement
     ) {
       const style = styleOf(ancestor),
@@ -229,8 +242,11 @@ export function inspectPresentation(stage: HTMLElement | SVGSVGElement): ScenePr
     if (outside(object, clip))
       result.clipped.push({ id: object.id, bounds: rectangle(object), clip });
   };
-  const nodes = stage.querySelectorAll<HTMLElement | SVGElement>(
-    '[data-review-id], [data-camera-world], svg text, [data-lettering-size], canvas',
+  const nodes = subject.querySelectorAll<HTMLElement | SVGElement>(
+    '[data-review-id], [data-camera-world], svg text, [data-lettering-size], canvas' +
+      (subject === framed
+        ? ', .ve-heading, .ve-chapter-navigation, .modes, .ve-parameters, [data-player], .ve-captions, .ve-select-list:popover-open'
+        : ''),
   );
   for (const [index, node] of [...nodes].entries()) {
     if (!visible(node) || node.closest('[data-review-framing="background"]')) continue;

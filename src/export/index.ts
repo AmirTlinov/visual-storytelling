@@ -91,7 +91,7 @@ export async function exportSVG(source: SVGSVGElement): Promise<string> {
   clone.setAttribute('height', String(viewBox.height));
   // Notebook paper may belong to the surrounding HTML shell. Preserve its scale
   // and origin when that shell is removed from the exported SVG.
-  const paper = source.closest<HTMLElement>('.ve-frame-content, .ve-scene');
+  const paper = source.closest<HTMLElement>('.ve-frame-content, .ve-scene-content, .ve-scene');
   if (paper) {
     const style = getComputedStyle(paper);
     const background = svg('g', { 'aria-hidden': 'true' });
