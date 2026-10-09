@@ -238,6 +238,63 @@ test('transpose, matrix products, reductions and partitions preserve exact struc
   );
 });
 
+test('matrix denominators retain all call inputs while scalar and elementwise division stay exact', () => {
+  const A = [
+      [1, 2],
+      [3, 4],
+    ],
+    operation = MathMorph.formula('2 / A', { A }, { measure: 'value' }),
+    expression = compileExpression(operation),
+    inverse = expression.steps.at(-1);
+  assert.deepEqual(expression.result, [
+    [-4, 2],
+    [3, -1],
+  ]);
+  for (const output of inverse.outputs) {
+    assert.equal(output.originPrecision, 'conservative');
+    assert.deepEqual(
+      output.inputIds,
+      expression.initial.map((input) => input.id),
+    );
+    assert.deepEqual(
+      output.origins.map((origin) => origin.index),
+      [0, 1, 2, 3],
+    );
+  }
+  const changed = compile('2 / A', {
+    A: [
+      [1, 2.5],
+      [3, 4],
+    ],
+  });
+  assert.notEqual(changed.result[0][0], expression.result[0][0]);
+  assert.ok(
+    inverse.outputs[0].origins.some((origin) => origin.index === 1),
+    'the first result must retain the off-diagonal input that changes it',
+  );
+  const plan = MathMorph.plan(operation),
+    frame = plan.sample(0.3);
+  assert.equal(new Set(frame.sources.map((part) => part.material)).size, 1);
+  assert.equal(new Set(frame.targets.map((part) => part.material)).size, 1);
+  assert.equal(frame.sources.length, 4);
+  assert.equal(frame.targets.length, 4);
+  plan.sample(1);
+  plan.sample(0);
+  assert.deepEqual(plan.sample(0.3), frame);
+
+  for (const formula of ['A / x', 'x ./ A']) {
+    const divided = compile(formula, { A, x: 2 });
+    for (const [index, output] of divided.steps.at(-1).outputs.entries()) {
+      assert.equal(output.originPrecision, 'exact');
+      assert.deepEqual(output.origins.map(({ operand, index }) => [operand, index]).sort(), [
+        [0, index],
+        [1, 0],
+      ]);
+    }
+  }
+  assert.equal(compile('x / 2', { x: 4 }).steps.at(-1).outputs[0].originPrecision, 'exact');
+});
+
 test('opaque functions label call inputs conservatively and keep one whole material group', () => {
   let calls = 0;
   const functions = {
@@ -282,6 +339,50 @@ test('calculus keeps coefficients and lexical integration variables with exact n
   assert.deepEqual(integral.steps[0].calculus, { expression: 'a * t ^ 2', variable: 't' });
   close(compile('diff(2*x, x)').result, 2);
   close(compile('diff(sin(x), x)', { x: 0 }).result, 1);
+});
+
+test('opaque integrands retain conservative precision through subsequent arithmetic and seeking', () => {
+  let calls = 0;
+  const operation = MathMorph.formula(
+    'integral(f(a,t),t,0,x) + y',
+    { a: [2, 100], x: 3, y: 4 },
+    {
+      measure: 'value',
+      functions: {
+        f: (a, t) => {
+          calls++;
+          return a[0] * t;
+        },
+      },
+    },
+  );
+  const expression = compileExpression(operation),
+    integral = expression.steps[0];
+  close(expression.result, 13);
+  assert.equal(integral.operator, 'integral');
+  assert.equal(
+    integral.custom,
+    undefined,
+    'an opaque integrand does not replace integral notation',
+  );
+  assert.deepEqual(
+    integral.outputs[0].origins.map(({ operand, index }) => [operand, index]),
+    [
+      [1, 0],
+      [0, 0],
+      [0, 1],
+    ],
+  );
+  for (const step of expression.steps)
+    assert.ok(step.outputs.every((part) => part.originPrecision === 'conservative'));
+  const plan = MathMorph.plan(operation),
+    preparedCalls = calls,
+    saved = plan.sample(0.7);
+  assert.match(plan.sample(0).formula, /^∫/);
+  for (const progress of [1, 0, 0.9, 0.2, 0.7]) plan.sample(progress);
+  assert.equal(calls, preparedCalls, 'seeking does not reevaluate the integrand');
+  assert.deepEqual(plan.sample(0.7), saved);
+  assert.ok(plan.sample(1).targets.every((part) => part.originPrecision === 'conservative'));
 });
 
 test('custom function names cannot change operators or silently acquire a false derivative', () => {

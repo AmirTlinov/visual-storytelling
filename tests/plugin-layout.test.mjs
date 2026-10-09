@@ -59,6 +59,24 @@ test(
       const narrowHeight = await fits();
       assert.ok(narrowHeight < wideHeight, 'content measurement also permits the iframe to shrink');
       await page.screenshot({ path: 'artifacts/plugin/viewer-layout-narrow.png', fullPage: true });
+      await app
+        .frameLocator('#scene')
+        .getByRole('button', { name: 'Читать крупнее', exact: true })
+        .click();
+      await panel.waitForFunction(() => document.documentElement.dataset.mode === 'fullscreen');
+      await fits();
+      assert.deepEqual(
+        await scene.evaluate(
+          () => document.querySelector('.ve-scene').scene.presentation().unreadableText,
+        ),
+        [],
+      );
+      await app
+        .frameLocator('#scene')
+        .getByRole('region', { name: 'Увеличенный рисунок. Прокрутка к деталям.' })
+        .press('Escape');
+      await panel.waitForFunction(() => document.documentElement.dataset.mode === 'inline');
+      assert.equal(await fits(), narrowHeight);
       await page.evaluate(() =>
         pluginTest.openResult({
           isError: true,

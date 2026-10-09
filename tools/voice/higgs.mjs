@@ -24,7 +24,7 @@ async function installation() {
     join(cache, 'venv/bin/python');
   if (!(await available(command, constants.X_OK)))
     throw new Error(
-      'Голос ещё не подготовлен. Выберите Higgs в озвучке: плагин подготовит Python и модели с прогрессом и отменой.',
+      'Голос ещё не подготовлен. Попросите добавить озвучку в чате: плагин подготовит Higgs, Python и модели с прогрессом и отменой.',
     );
   return {
     command,

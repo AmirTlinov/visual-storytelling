@@ -248,6 +248,30 @@
   overflow: hidden;
   isolation: isolate;
 }
+.ve-scene .ve-scene-frame[data-frame-view='reading'] {
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--ve-pencil) transparent;
+}
+.ve-scene .ve-scene-frame[data-frame-view='reading']:focus-visible {
+  outline: 1px dashed var(--ve-pencil);
+  outline-offset: 3px;
+}
+.ve-scene .ve-frame-reading-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin: 4px 0 0;
+}
+.ve-scene .ve-frame-reading-controls[hidden] {
+  display: none;
+}
+.ve-scene .ve-frame-reading-controls button {
+  min-height: 44px;
+  font-size: 17px;
+}
+.ve-scene .ve-scene-frame[data-frame-view='reading'] button {
+  min-height: 44px;
+}
 .ve-scene .ve-scene-content {
   position: absolute;
   inset: 0;

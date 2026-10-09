@@ -291,6 +291,67 @@ test(
         },
       );
       await t.test(
+        'subject-only structured input supersedes pending restore without applying its camera',
+        async () => {
+          const result = await page.evaluate(async () => {
+            lab.scene.dispose();
+            const root = document.querySelector('main');
+            const shell = API.SceneShell.mount(root, {
+              title: 'Structured condition',
+              parameters: [{ key: 'x', label: 'X', value: 1, min: 0, max: 10 }],
+            });
+            let delayed = false;
+            const views = [];
+            shell.attachView({
+              capture: () => ({ id: 'saved' }),
+              restore(value) { views.push(value.id); },
+              reset() {},
+              dispose() {},
+            });
+            const controller = shell.attachStory({
+              script: { duration: 10, cues: {} },
+              stateAt: () => ({ x: 1, tensor: [[0]] }),
+              checkpoint: {
+                encode: (values) => structuredClone(values),
+                decode: (value) => structuredClone(value),
+              },
+              prepare(values) {
+                if (delayed && values.tensor[0][0] === 1) return new Promise(() => {});
+              },
+              render() {},
+            });
+            controller.input({ tensor: [[1]] });
+            const saved = root.scene.capture();
+            controller.input({ tensor: [[0]] });
+            delayed = true;
+            const restoring = root.scene.restore(saved).then(
+              () => 'succeeded',
+              (error) => error.code,
+            );
+            const condition = root.scene.condition;
+            const unchanged = condition === root.scene.condition;
+            await Promise.resolve();
+            controller.input({ tensor: [[9]] });
+            const result = {
+              code: await restoring,
+              values: root.scene.snapshot(),
+              views,
+              identityStable: unchanged,
+              identityChanged: condition !== root.scene.condition,
+            };
+            root.scene.dispose();
+            return result;
+          });
+          assert.deepEqual(result, {
+            code: 'scene_restore_superseded',
+            values: { x: 1, tensor: [[9]] },
+            views: [],
+            identityStable: true,
+            identityChanged: true,
+          });
+        },
+      );
+      await t.test(
         'fallback seek accepts its condition before waiting for preparation',
         async () => {
           const result = await page.evaluate(async () => {

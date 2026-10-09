@@ -179,7 +179,8 @@ export function compileExpression(operation: FormulaOperation) {
     let args: ExpressionValue[],
       value: MathValue,
       parameters: ExpressionBody[] = [],
-      calculus: ExpressionStep['calculus'];
+      calculus: ExpressionStep['calculus'],
+      opaqueCalculus = false;
     const name =
       node.type === 'ArrayNode'
         ? 'array'
@@ -208,13 +209,15 @@ export function compileExpression(operation: FormulaOperation) {
         );
       const symbol = (variable as SymbolNode).name;
       calculus = { expression: syntax[0]!.toString({ parenthesis: 'auto' }), variable: symbol };
+      syntax[0]!.traverse((part) => {
+        if (part.type === 'FunctionNode' && Object.hasOwn(custom, (part as FunctionNode).fn.name))
+          opaqueCalculus = true;
+      });
       if (name === 'diff') {
-        syntax[0]!.traverse((part) => {
-          if (part.type === 'FunctionNode' && Object.hasOwn(custom, (part as FunctionNode).fn.name))
-            throw new Error(
-              'diff needs a known symbolic derivative; custom functions have no derivative rule',
-            );
-        });
+        if (opaqueCalculus)
+          throw new Error(
+            'diff needs a known symbolic derivative; custom functions have no derivative rule',
+          );
         args = scope.has(symbol) ? [visit(variable)] : [];
         if (args.some((arg) => typeof arg.value !== 'number'))
           throw new Error('The derivative evaluation point must be scalar');
@@ -266,7 +269,13 @@ export function compileExpression(operation: FormulaOperation) {
     if (!inputs.length) return { value, cells: valuesOf(value).map(() => undefined) };
     const id = `step:${steps.length}`;
     const customCall = node.type === 'FunctionNode' && Object.hasOwn(custom, name);
-    const dependency = expressionDependencies(name, args, value, customCall, parameters);
+    const dependency = expressionDependencies(
+      name,
+      args,
+      value,
+      customCall || opaqueCalculus,
+      parameters,
+    );
     const values = valuesOf(value);
     const outputs = values.map((value, index): ExpressionBody => {
       const sources = dependency.cells[index]!;

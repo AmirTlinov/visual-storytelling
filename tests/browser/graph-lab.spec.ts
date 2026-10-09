@@ -106,6 +106,14 @@ test('a single 16:9 graph preserves keyboard input, themes and rapid changes', a
       expect(inspection.clipped).toEqual([]);
       expect(inspection.frame.width / inspection.frame.height).toBeCloseTo(16 / 9, 5);
       if (width >= 1040) expect(inspection.unreadableText).toEqual([]);
+      else {
+        await page.getByRole('button', { name: 'Читать крупнее', exact: true }).click();
+        const reading = await page.evaluate(() =>
+          (document.querySelector('.ve-scene') as any).scene.presentation(),
+        );
+        expect(reading.unreadableText).toEqual([]);
+        await page.getByRole('button', { name: 'Весь кадр', exact: true }).click();
+      }
       await expect(page.locator('svg#distance')).toHaveAttribute('viewBox', geometry!);
       await expect(page.locator('details,.ve-explanation-notes,.ve-captions')).toHaveCount(0);
     }

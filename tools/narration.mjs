@@ -60,6 +60,25 @@ export function setNarrationMode(html, silent) {
   return prepared;
 }
 
+/** Deliver quiet media hooks without their recording, preserving the authored source. */
+export function playbackHTML(html, { silent = false } = {}) {
+  if (silent) html = setNarrationMode(html, true);
+  return editAudioTags(html, (location, edits, node) => {
+    if (!node.attrs.some(({ name, value }) => name === 'data-silent' && value === 'true')) return;
+    for (const name of ['src', 'data-src', 'data-story-timeline']) {
+      const span = location?.attrs?.[name];
+      if (span) edits.push({ start: span.startOffset, end: span.endOffset, text: '' });
+    }
+    for (const child of node.childNodes ?? [])
+      if (child.tagName === 'source' && child.sourceCodeLocation)
+        edits.push({
+          start: child.sourceCodeLocation.startOffset,
+          end: child.sourceCodeLocation.endOffset,
+          text: '',
+        });
+  });
+}
+
 /** The viewer needs semantic timing, not a synthesis receipt or local voice paths. */
 export function playbackTimeline(timeline) {
   const fields = (value, keys) =>

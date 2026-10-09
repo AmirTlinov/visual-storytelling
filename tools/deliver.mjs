@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { buildOutput } from './build-output.mjs';
 import { buildScene } from './build-pages.mjs';
-import { prepareNarration } from './narration.mjs';
+import { prepareNarration, playbackHTML } from './narration.mjs';
 import { packDirectory, withCheckpoint } from './standalone.mjs';
 import { renderer } from './render.mjs';
 import { exportVideo } from './video-export.mjs';
@@ -141,7 +141,9 @@ export async function deliver(
         await writeFile(
           join(staging, 'story.html'),
           withCheckpoint(
-            prepared?.html ?? (await packDirectory(built, 'index.html', { signal })),
+            playbackHTML(prepared?.html ?? (await packDirectory(built, 'index.html', { signal })), {
+              silent,
+            }),
             checkpoint,
           ),
         );

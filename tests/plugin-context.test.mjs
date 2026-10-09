@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { frameContext } from '../plugin/ui/frame-context.mjs';
+import { presentSession } from '../plugin/mcp/presentation.mjs';
 
 const session = { sessionId: 'shown', buildRevision: 'build-1' };
 const report = {
   stateRevision: 2,
   state: { time: 1, mode: 'explore', cue: { id: 'move', action: 'Move the object' } },
-  checkpoint: { values: { x: 3 } },
+  checkpoint: { time: 1, cue: 'move', mode: 'explore', values: { x: 3 } },
 };
 
 test('closing a replaced view clears its one context attachment, including an in-flight update', async (t) => {
@@ -70,6 +71,9 @@ test('the complete context payload stays within 1500 characters while retaining 
       selected: ['object' + 'o'.repeat(20)],
     },
     checkpoint: {
+      time: 8.4,
+      cue: 'cue',
+      mode: 'explore',
       values: Object.fromEntries(
         Array.from({ length: 8 }, (_, i) => ['parameter' + i, 'x'.repeat(100)]),
       ),
@@ -88,5 +92,36 @@ test('the complete context payload stays within 1500 characters while retaining 
   t.mock.timers.tick(120);
   await Promise.resolve();
   assert.equal(updates.length, 1, 'the same frame does not produce another attachment update');
+  await context.close();
+});
+
+test('context keeps the retained picture, time, condition and cue together after failed preparation', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const updates = [];
+  const context = frameContext({ updateModelContext: async (value) => updates.push(value) }, {});
+  const checkpoint = { time: 0, cue: 'first', mode: 'story', values: { x: 1 } };
+  const retained = presentSession({
+    checkpoint,
+    state: {
+      time: 6,
+      duration: 10,
+      mode: 'story',
+      review: {
+        cues: [
+          { id: 'first', start: 0, end: 5, action: 'First drawing' },
+          { id: 'second', start: 5, end: 10, action: 'Second drawing' },
+        ],
+      },
+      rendering: { phase: 'failed', requested: { time: 6 }, presented: { time: 0 } },
+    },
+  });
+  context.update(session, { ...retained, stateRevision: 3, renderStatus: 'failed' });
+  t.mock.timers.tick(120);
+  await Promise.resolve();
+  const observation = updates[0].structuredContent.visualStory;
+  assert.equal(observation.time, 0);
+  assert.equal(observation.mode, 'story');
+  assert.deepEqual(observation.parameters, { x: 1 });
+  assert.deepEqual(observation.cue, { id: 'first', label: 'First drawing' });
   await context.close();
 });

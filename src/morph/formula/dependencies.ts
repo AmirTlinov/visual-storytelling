@@ -130,8 +130,9 @@ export function expressionDependencies(
   }
   const scalarArguments = args.every((arg) => typeof arg.value === 'number');
   const scaled =
-    (operator === 'multiply' || operator === 'divide') &&
-    args.some((arg) => typeof arg.value === 'number');
+    (operator === 'multiply' && args.some((arg) => typeof arg.value === 'number')) ||
+    // A matrix denominator is inverted by mathjs; its cells are not independent divisors.
+    (operator === 'divide' && typeof args[1]?.value === 'number');
   if ((scalarArguments && !dimensions.length) || elementwise.has(operator) || scaled) {
     if (
       args.every((arg) => typeof arg.value === 'number' || sameShape(shape(arg.value), dimensions))

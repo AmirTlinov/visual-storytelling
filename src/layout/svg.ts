@@ -160,14 +160,17 @@ function segments(route: Route) {
   const points = route.points ?? [route.start, route.end];
   return points.slice(1).map((end, i) => ({ start: points[i]!, end }));
 }
-/** Visible SVG paper in the caller's coordinates, including rotation and skew. */
-function viewport(space: SVGGraphicsElement, inset = 0) {
+/** Visible SVG paper or clipped region in the caller's coordinates, including rotation and skew. */
+function viewport(space: SVGGraphicsElement, inset = 0, region?: SVGGraphicsElement) {
   const svg = space instanceof SVGSVGElement ? space : space.ownerSVGElement!;
-  const view = svg.viewBox.baseVal;
-  const width = Math.max(0, (view.width || svg.clientWidth) - 2 * inset),
-    height = Math.max(0, (view.height || svg.clientHeight) - 2 * inset);
+  const view = region?.getBBox() ?? svg.viewBox.baseVal;
+  const width = Math.max(0, (view.width || (!region && svg.clientWidth) || 0) - 2 * inset),
+    height = Math.max(0, (view.height || (!region && svg.clientHeight) || 0) - 2 * inset);
   if (width <= 0 || height <= 0) return { area: { x: view.x, y: view.y, width: 0, height: 0 } };
-  const matrix = space.getCTM()!.inverse().multiply(svg.getCTM()!);
+  const matrix = space
+    .getCTM()!
+    .inverse()
+    .multiply((region ?? svg).getCTM()!);
   const boundary = [
     [view.x + inset, view.y + inset],
     [view.x + inset + width, view.y + inset],
@@ -199,12 +202,15 @@ function along(
     avoid = [],
     gap = 4,
     space = label.parentElement as unknown as SVGGraphicsElement,
+    region,
   }: {
     at?: number;
     offset?: number;
     avoid?: readonly (SVGGraphicsElement | Route)[];
     gap?: number;
     space?: SVGGraphicsElement;
+    /** A cropped SVG aperture; labels stay within its true transformed boundary. */
+    region?: SVGGraphicsElement;
   } = {},
 ) {
   const parts = segments(route).map((p) => ({
@@ -254,7 +260,7 @@ function along(
   const normalRadius = (Math.abs(normal.dy) * width + Math.abs(normal.dx) * height) / 2;
   const distance =
     offset === 0 ? 0 : Math.sign(offset) * Math.max(Math.abs(offset), normalRadius + gap);
-  const visible = viewport(space);
+  const visible = viewport(space, 0, region);
   const [placement] = placeLabels(
     [
       {

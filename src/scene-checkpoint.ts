@@ -188,7 +188,8 @@ export async function restoreScene(
   )
     throw new Error('Invalid scene checkpoint');
   const capabilities = handle.inspect({ presentation: false }).capabilities;
-  const condition = () => JSON.stringify(handle.rendering?.requested);
+  // Story's immutable request includes opaque subject inputs that flat controls cannot expose.
+  const condition = () => handle.condition ?? JSON.stringify(handle.rendering?.requested);
   let acceptedCondition = condition();
   const assertCurrent = () => {
     owner?.assertLive();

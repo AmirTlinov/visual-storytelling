@@ -301,6 +301,10 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
     get requested() {
       return requested.moment;
     },
+    /** Stable identity of the full accepted condition, including subject-only inputs. */
+    get condition(): object {
+      return requested.moment;
+    },
     get presented() {
       return presented;
     },

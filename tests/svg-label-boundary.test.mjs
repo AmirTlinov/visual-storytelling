@@ -95,9 +95,40 @@ test('plot and route labels share the actual SVG boundary after placement, motio
         if (result.status !== 'placed') throw new Error('A short route label should fit');
         return within(caption);
       });
+      const aperture = SvgLayout.element('rect', {
+        x: 110,
+        y: 90,
+        width: 340,
+        height: 210,
+        transform: 'rotate(12 280 195)',
+        visibility: 'hidden',
+      });
+      sheet.layer.append(aperture);
+      const cropped = poses.map(({ at, move }) => {
+        group.setAttribute(
+          'transform',
+          `translate(${at[0]} ${at[1]}) rotate(${at[2]}) translate(${move[0]} ${move[1]}) rotate(${move[2]})`,
+        );
+        const placed = SvgLayout.along(caption, route, {
+          at: 0.95,
+          offset: 24,
+          space: group,
+          region: aperture,
+        });
+        if (placed.status !== 'placed') throw new Error('A short label should fit the crop');
+        const ink = SvgLayout.box(caption, aperture);
+        if (
+          ink.x < 109.999 ||
+          ink.y < 89.999 ||
+          ink.x + ink.width > 450.001 ||
+          ink.y + ink.height > 300.001
+        )
+          throw new Error(`Placed ink leaves the true cropped boundary: ${JSON.stringify(ink)}`);
+        return ink;
+      });
       chart.dispose();
       sheet.dispose();
-      return { labels, routes };
+      return { labels, routes, cropped };
     });
     assert.deepEqual(
       result.labels.at(-1),
@@ -108,6 +139,11 @@ test('plot and route labels share the actual SVG boundary after placement, motio
       result.routes.at(-1),
       result.routes[0],
       'route rewind retains the same layout',
+    );
+    assert.deepEqual(
+      result.cropped.at(-1),
+      result.cropped[0],
+      'cropped route rewind retains the same layout',
     );
     assert.deepEqual(errors, []);
   } finally {

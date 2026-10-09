@@ -45,11 +45,20 @@ export function formulaNotation(step: ExpressionStep, resolved: boolean) {
     mod: 'mod',
   };
   let expression: string;
-  if (binary[step.operator])
+  if (binary[step.operator]) {
+    const vectorProduct =
+      step.operator === 'multiply' &&
+      args.length === 2 &&
+      args.every((arg) => Array.isArray(arg) && arg.every((cell) => typeof cell === 'number'));
     expression = values
-      .join(` ${binary[step.operator]} `)
+      .join(` ${vectorProduct ? '·' : binary[step.operator]} `)
       .replace(/ \^ (2|3)\b/g, (_, n) => (n === '2' ? '²' : '³'));
-  else if (step.operator === 'unaryMinus') expression = `−${values[0]}`;
+    if (
+      ['dotMultiply', 'dotDivide', 'dotPow'].includes(step.operator) &&
+      args.some((arg) => Array.isArray(arg))
+    )
+      expression = `Поэлементно: ${expression}`;
+  } else if (step.operator === 'unaryMinus') expression = `−${values[0]}`;
   else if (step.operator === 'unaryPlus') expression = `+${values[0]}`;
   else if (step.operator === 'sqrt') expression = `√(${values[0]})`;
   else if (step.operator === 'sum')

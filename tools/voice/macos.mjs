@@ -55,7 +55,7 @@ export const macosVoice = {
           .sort((a, b) => b.quality - a.quality)[0]);
     if (!voice)
       throw new Error(
-        'Выбранный голос отсутствует. Выберите доступный голос в настройках озвучки.',
+        'Выбранный голос отсутствует. Выберите другой доступный голос в чате.',
       );
     return { ...voice, identity: status.identity, rate: settings.rate ?? 0.5 };
   },

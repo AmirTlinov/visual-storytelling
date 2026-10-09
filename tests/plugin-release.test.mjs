@@ -224,6 +224,28 @@ test(
         await app.locator('html').evaluate((element) => element.scrollWidth <= innerWidth),
         true,
       );
+      await app
+        .frameLocator('#scene')
+        .getByRole('button', { name: 'Читать крупнее', exact: true })
+        .click();
+      await app.locator('html[data-mode="fullscreen"]').waitFor();
+      await app.locator('#update').click();
+      await app
+        .frameLocator('#scene')
+        .getByText('Latest working revision', { exact: true })
+        .waitFor();
+      await app.locator('html[data-mode="inline"]').waitFor();
+      assert.equal(
+        await app
+          .frameLocator('#scene')
+          .locator('[data-scene-frame]')
+          .getAttribute('data-frame-view'),
+        'overview',
+      );
+      assert.deepEqual(await page.evaluate(() => window.pluginTest.displayRequests), [
+        'fullscreen',
+        'inline',
+      ]);
       assert.deepEqual(errors, []);
     } finally {
       await browser.close();

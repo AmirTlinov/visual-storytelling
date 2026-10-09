@@ -45,3 +45,28 @@ test('projection remains stable across renderer and tool boundaries without losi
     assert.deepEqual(wire(presentSession(wire(once), detail)), wire(once));
   }
 });
+
+test('failed preparation retains a separately confirmed cue across projection boundaries', () => {
+  const cues = [
+    { id: 'first', start: 0, end: 5, action: 'First drawing' },
+    { id: 'second', start: 5, end: 10, action: 'Second drawing' },
+  ];
+  const checkpoint = { time: 0, cue: 'first', mode: 'story', values: { x: 1 } };
+  const report = presentSession({
+    checkpoint,
+    state: {
+      time: 6,
+      duration: 10,
+      mode: 'story',
+      review: { cues, segments: [] },
+      rendering: { phase: 'failed', requested: { time: 6 }, presented: { time: 0 } },
+    },
+  });
+  assert.equal(report.state.cue.id, 'second', 'inspection retains accepted input detail');
+  assert.deepEqual(report.state.presentedCue, cues[0], 'observation describes the retained picture');
+  assert.deepEqual(wire(presentSession(wire(report))), wire(report));
+  const brokenRender = presentSession({
+    state: { time: 6, duration: 10, review: { cues }, rendering: { phase: 'failed' } },
+  });
+  assert.equal(brokenRender.state.presentedCue, undefined, 'an unconfirmed frame has no presented cue');
+});

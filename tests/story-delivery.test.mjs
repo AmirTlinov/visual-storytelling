@@ -9,6 +9,46 @@ import { runExport } from '../tools/export.mjs';
 import { deliver } from '../tools/deliver.mjs';
 import { reviewMotion } from '../tools/motion/review.mjs';
 import { orderedInsights } from '../tools/motion/focus.mjs';
+import { contentDigest } from '../tools/build-info.mjs';
+
+test('a silent prepared HTML keeps its media clock without exporting recordings or changing the selected build', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'story-quiet-delivery-'));
+  const source = join(root, 'scene'),
+    built = join(source, 'dist');
+  const html =
+    '<!doctype html><html><body><main class="ve-scene">Selected frame</main><audio data-story-audio src="data:audio/wav;base64,UklGRg==" data-story-timeline="timeline.json"><source src="unused.wav"></audio></body></html>';
+  try {
+    await mkdir(built, { recursive: true });
+    await writeFile(join(source, 'index.html'), html);
+    await writeFile(join(built, 'index.html'), html);
+    const prepared = {
+      directory: built,
+      html,
+      revision: 'shown',
+      sourceRevision: 'authored',
+      outputDigest: await contentDigest(built, ['.']),
+    };
+    const output = await deliver(source, {
+      out: join(root, 'quiet'),
+      formats: ['html'],
+      silent: true,
+      prepared,
+    });
+    const quiet = await readFile(join(output.directory, 'story.html'), 'utf8');
+    assert.match(quiet, /<audio[^>]*data-story-audio[^>]*data-silent="true"/);
+    assert.doesNotMatch(quiet, /data:audio|unused\.wav|<source|data-story-timeline/);
+    assert.equal(await readFile(join(built, 'index.html'), 'utf8'), html);
+    assert.equal(output.buildRevision, 'shown');
+    const audible = await deliver(source, {
+      out: join(root, 'audible'),
+      formats: ['html'],
+      prepared,
+    });
+    assert.equal(await readFile(join(audible.directory, 'story.html'), 'utf8'), html);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test('the mounted story supplies aliased captions and presentation evidence to export, delivery and model review', async () => {
   const root = await mkdtemp(join(tmpdir(), 'story-delivery-'));

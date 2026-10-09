@@ -93,6 +93,38 @@ test('formulas show arithmetic with the visible values and do not present partit
   assert.equal(plan.sample(0.32).formula, '6 = 2 + 2 + 2');
   assert.equal(plan.sample(1).formula, '4 + 4 + 4 = 12');
 });
+test('written formulas distinguish vector, matrix and elementwise operations before resolution', () => {
+  const plan = (expression, inputs) =>
+    MathMorph.plan(MathMorph.formula(expression, inputs, { measure: 'value' }));
+  const vectors = { a: [1, 2], b: [3, 4] },
+    dot = plan('a * b', vectors),
+    paired = plan('a .* b', vectors);
+  assert.equal(dot.sample(0).formula, '[1; 2] · [3; 4]');
+  assert.equal(paired.sample(0).formula, 'Поэлементно: [1; 2] × [3; 4]');
+  assert.equal(dot.result, 11);
+  assert.deepEqual(paired.result, [3, 8]);
+  assert.match(paired.sample(1).formula, /^Поэлементно:/);
+
+  const matrix = {
+    A: [
+      [1, 2],
+      [3, 4],
+    ],
+    n: 2,
+  };
+  for (const [ordinary, elementwise] of [
+    ['A / n', 'A ./ n'],
+    ['A ^ n', 'A .^ n'],
+  ]) {
+    assert.doesNotMatch(plan(ordinary, matrix).sample(0).formula, /Поэлементно/);
+    assert.match(plan(elementwise, matrix).sample(0).formula, /^Поэлементно:/);
+  }
+  const product = plan('A * A', matrix);
+  assert.match(product.sample(0).formula, / × /);
+  assert.doesNotMatch(product.sample(0).formula, /Поэлементно/);
+  for (const operator of ['.*', './', '.^'])
+    assert.doesNotMatch(plan(`a ${operator} b`, { a: 2, b: 3 }).sample(0).formula, /Поэлементно/);
+});
 test('responsive envelopes contain every moving material, including row reflow and contact', () => {
   const operations = [
     MathMorph.formula(

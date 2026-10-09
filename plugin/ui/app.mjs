@@ -24,10 +24,32 @@ let session,
   loadTimer;
 let pollingDone = Promise.resolve();
 let updates = Promise.resolve();
+let displayUpdates = Promise.resolve(),
+  readingDisplayMode;
 let connectionState = 'opening',
   recovery,
   recoveryEpoch = 0,
   recoveryAck;
+function readingDisplay(enabled, owner = session) {
+  displayUpdates = displayUpdates
+    .catch(() => {})
+    .then(async () => {
+      if (closed || session !== owner) return;
+      const context = app.getHostContext() ?? {};
+      const current = document.documentElement.dataset.mode ?? context.displayMode ?? 'inline';
+      const mode = enabled ? 'fullscreen' : readingDisplayMode;
+      if (enabled) readingDisplayMode ??= current;
+      else readingDisplayMode = undefined;
+      if (!mode || mode === current || !context.availableDisplayModes?.includes(mode)) return;
+      const result = await app.requestDisplayMode({ mode });
+      // A candidate may be promoted while the host negotiates. Its actual mode still belongs to this app.
+      if (!closed) host({ displayMode: result.mode });
+    })
+    .catch((e) => {
+      if (!closed && session === owner) error(e.message);
+    });
+  return displayUpdates;
+}
 function sync(acknowledgement) {
   const current = report,
     owner = session;
@@ -372,6 +394,7 @@ async function applyUpdate() {
     );
     candidate = null;
     old.remove();
+    void readingDisplay(false);
     $('update').hidden = true;
     error('');
   } catch (e) {
@@ -513,6 +536,7 @@ addEventListener('message', (event) => {
         (e) => send({ type: 'host-response', id: data.id, error: e.message }),
       );
     }
+    if (data.action === 'reading') void readingDisplay(data.enabled);
     return;
   }
   if (data.type === 'ready') {
@@ -597,6 +621,7 @@ async function open(result) {
   $('back').hidden = true;
   error('');
   await mount(result);
+  void readingDisplay(false);
 }
 const preferences = preferencesUI(app, error);
 fileEntrypoint(app, extensions, { open, error });

@@ -70,7 +70,12 @@ export function authoringTools(server, runtime, uri, safely) {
             height: z.number().int().min(240).max(3840).optional(),
             fps: z.number().int().min(1).max(60).optional(),
             theme: z.enum(['light', 'dark']).optional(),
-            silent: z.boolean().optional(),
+            silent: z
+              .boolean()
+              .describe(
+                'Omit narration from HTML and video without changing the selected source or build.',
+              )
+              .optional(),
             conditions: z.enum(['authored', 'current']).default('authored'),
             sessionId: z.string().uuid().optional(),
             video: z

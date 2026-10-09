@@ -35,6 +35,8 @@ declare global {
 
 /** Capabilities supplied by the actual subject, player and drawing owners. */
 export interface SceneRuntime {
+  /** Opaque owner identity of the full accepted condition; never a visible parameter projection. */
+  readonly condition?: object;
   readonly subject?: SceneSubject;
   readonly camera?: SceneView;
   readonly rendering?: SceneRendering;

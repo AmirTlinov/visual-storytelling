@@ -687,7 +687,7 @@
     "title": "Геометрия тензора",
     "time": 0,
     "group": "explanations",
-    "summary": "Оси, срезы и компоненты помогают прочитать многомерный массив.",
+    "summary": "Понять линейное преобразование: матрица переводит единичную сферу в эллипсоид.",
     "tags": [
       "тензор",
       "массив",
@@ -696,13 +696,25 @@
     ],
     "source": "build.mjs",
     "guides": [
-      "skills/visual-explainer/references/interactive-tensors.md"
+      "docs/connections.md",
+      "docs/explanations.md"
     ],
-    "useFor": "Оси, срезы и компоненты помогают прочитать многомерный массив.",
-    "visibleAction": "Геометрия тензора",
+    "useFor": "Понять линейное преобразование: матрица переводит единичную сферу в эллипсоид.",
+    "visibleAction": "Повернуть рисунок и изменить преобразование; сравнить исходный вектор с его образом.",
     "capabilities": [
       "html",
-      "png"
+      "png",
+      "svg",
+      "parameters",
+      "camera",
+      "keyboard"
+    ],
+    "form": "experience",
+    "editing": [
+      {
+        "file": "build.mjs",
+        "purpose": "Исходный вектор, главные масштабы, предметный рисунок и подписи; их размещением владеет SvgLayout."
+      }
     ]
   },
   "parameter-cube": {

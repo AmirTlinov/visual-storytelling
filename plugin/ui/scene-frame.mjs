@@ -43,6 +43,10 @@ function beforePlay({ signal }) {
     else send({ type: 'host-request', action: 'focus', id, report: report('play-intent') });
   });
 }
+addEventListener('scene-frame-reading', (event) => {
+  if (disposed || config.preview || suspended) return;
+  send({ type: 'host-request', action: 'reading', enabled: Boolean(event.detail?.reading) });
+});
 const completed = (pending, signal) => {
   signal?.throwIfAborted();
   if (!signal) return pending;
@@ -127,7 +131,7 @@ const report = (reason, detail = 'state') => {
   }
   return {
     state: presentSession(
-      { state: scene.inspect({ presentation: detail === 'presentation' }) },
+      { state: scene.inspect({ presentation: detail === 'presentation' }), checkpoint },
       detail,
     ).state,
     checkpoint,

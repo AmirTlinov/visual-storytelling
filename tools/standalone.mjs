@@ -8,6 +8,7 @@ import { parse } from 'parse5';
 import { inlineResources } from './inline-resources.mjs';
 import { readCatalog } from './catalog.mjs';
 import { standaloneAssetURLs } from './asset-urls.mjs';
+import { playbackHTML } from './narration.mjs';
 
 const execute = promisify(execFile);
 const attribute = (node, name) => node.attrs?.find((attr) => attr.name === name)?.value;
@@ -79,20 +80,7 @@ export async function packDirectory(
   const base = dirname(resolve(root, page));
   const local = (url) => resources.local(url, base);
   const data = (url) => resources.data(url, base);
-  let html = await readFile(join(root, page), 'utf8');
-  // A silent draft keeps its media hook, without shipping the sample's unused recording.
-  const silentEdits = [];
-  for (const node of audioElements(html))
-    if (attribute(node, 'data-silent') === 'true') {
-      for (const name of ['src', 'data-src', 'data-story-timeline']) {
-        const span = node.sourceCodeLocation?.attrs?.[name];
-        if (span) silentEdits.push([span, '']);
-      }
-      for (const child of node.childNodes ?? [])
-        if (child.tagName === 'source' && child.sourceCodeLocation)
-          silentEdits.push([child.sourceCodeLocation, '']);
-    }
-  html = replaceSpans(html, silentEdits);
+  let html = playbackHTML(await readFile(join(root, page), 'utf8'));
   if (page.endsWith('.svg'))
     html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}body>svg{display:block;width:100%;height:auto}</style></head><body>${html.replace(/<\?xml[^>]*>/, '')}</body></html>`;
   html = await resources.markup(html, base);

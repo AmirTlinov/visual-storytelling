@@ -41,7 +41,12 @@ export function frameContext(app, extensions) {
   return {
     update(session, report) {
       if (removed || closed) return;
-      const cue = report.state.cue;
+      const observedCue = report.state.presentedCue ?? report.state.cue;
+      const cue = report.checkpoint
+        ? observedCue?.id === report.checkpoint.cue
+          ? observedCue
+          : report.checkpoint.cue && { id: report.checkpoint.cue }
+        : report.state.cue;
       const entries = Object.entries(report.checkpoint?.values ?? {});
       latest = {
         sessionId: session.sessionId,

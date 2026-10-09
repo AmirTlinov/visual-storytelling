@@ -523,6 +523,9 @@ function mount(
         return controller.currentTime;
       },
       snapshot: () => controller.presented?.state,
+      get condition() {
+        return controller.condition;
+      },
       subject: controller.subject,
       get rendering(): SceneRendering {
         const moment = (value: StoryMoment<P, S>) => ({
