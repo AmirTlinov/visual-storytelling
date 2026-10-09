@@ -5,7 +5,6 @@ export * from './recipes/index.js';
 export * from './export/index.js';
 export { notebook } from './notebook.js';
 export { composition } from './composition.js';
-export { explanationLayout } from './layout/explanation.js';
 export { placeLabels, type LabelBox, type LabelLimits } from './layout/labels.js';
 export * from './layout/svg.js';
 export * from './scene.js';

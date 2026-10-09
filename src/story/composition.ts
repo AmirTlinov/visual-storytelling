@@ -115,9 +115,8 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
   const colors = theme(parent, options.theme ?? 'auto');
   const shell = SceneShell.mount(parent, {
     title: options.title,
-    paper: false,
     parameters,
-    frame: options.frame ?? { width: 960, height: 640 },
+    frame: options.frame,
     captions: options.captions,
   });
   shell.onDispose(colors.dispose);

@@ -7,6 +7,7 @@ import {
   widgetState,
   theme,
   ExplorerSurface,
+  SceneShell,
 } from '@visual-storytelling/core';
 import { CpuCycle } from './cpu/model.js';
 import { DisplayModel } from './display/model.js';
@@ -23,6 +24,13 @@ import { esc } from './drawing/symbols.js';
 export async function mountComputer(root) {
   const abort = new AbortController(),
     appearance = theme(root);
+  const frame = SceneShell.frame(root.querySelector('.explorer-app'), {
+    width: 1280,
+    height: 720,
+    scope: 'scene',
+  });
+  root.append(frame.element);
+  frame.resize();
   const surface = ExplorerSurface.mount(root.querySelector('.explorer-stage'), {
     label: 'Внутри компьютера',
     description: 'Учебная плата: открывай компоненты до отдельных сигналов и ячеек памяти.',
@@ -547,6 +555,7 @@ export async function mountComputer(root) {
       nandControls.dispose();
       appearance.dispose();
       surface.dispose();
+      frame.dispose();
       root.replaceChildren();
     },
   });

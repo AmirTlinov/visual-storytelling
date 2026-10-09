@@ -25,17 +25,13 @@ window.galleryReady = (async () => {
   const question = document.createElement('p');
   const equation = document.createElement('p');
   const conclusion = document.createElement('p');
-  heading.className = 'operation-heading';
-  question.className = 'operation-question';
+  heading.className = 'sr-only';
+  question.className = 'sr-only';
   equation.className = 'operation-equation';
-  conclusion.className = 'operation-conclusion';
+  conclusion.className = 'sr-only';
   conclusion.setAttribute('role', 'status');
-  const hint = document.createElement('p');
-  hint.className = 'operation-hint';
-  hint.textContent = 'Выберите действие и нажмите ▶. Ползунок позволяет рассмотреть любой момент.';
   shell.stage.before(choose.element, heading, question, equation);
   shell.stage.after(conclusion);
-  root.append(hint);
   const drawing = surface(shell.stage, {
     id: 'arithmetic-drawing',
     width: 720,
@@ -43,7 +39,7 @@ window.galleryReady = (async () => {
     grid: false,
     title: 'Предметы показывают арифметическое действие',
     description:
-      'Шарики собираются вместе, монеты передаются получателю, клетки повторяются, пироги делятся поровну.',
+      'Шарики собираются вместе, монеты передаются получателю, клетки повторяются, пироги делятся поровну. Выберите действие и нажмите воспроизведение. Ползунок позволяет рассмотреть любой момент.',
   });
   const diagrams = {
     add: addition(drawing),

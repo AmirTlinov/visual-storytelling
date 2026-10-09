@@ -1,6 +1,6 @@
-import { explanationLayout } from '@visual-storytelling/core';
+import { lettering, object } from '@visual-storytelling/core';
 import { IllustratedStory, inkChapter } from '@visual-storytelling/core/story';
-import { predictionPrompt, disclosure } from '@visual-storytelling/core/controls';
+import { inkButton } from '@visual-storytelling/core/controls';
 import { areaDiagram } from '@visual-storytelling/core/recipes';
 import document from './story.json';
 import '@visual-storytelling/core/style.css';
@@ -11,173 +11,221 @@ window.galleryReady = (async () => {
   const drawing = (chapter) =>
     inkChapter({
       ...chapter,
-      controls: chapter.id === 'experiment' ? ['width', 'height'] : [],
-      valuesAt: () => ({
-        width: chapter.id === 'unit' ? 1 : 3,
-        height: chapter.id === 'unit' ? 1 : 2,
-        guess: -1,
-        checked: false,
-        detail: false,
-      }),
-      create: (view) =>
-        areaDiagram(view, {
+      controls: [],
+      grid: false,
+      valuesAt: (frame) => {
+        const doubled = chapter.id === 'prediction' && frame.beat?.id === 'result';
+        const bothSides = chapter.id === 'experiment' && frame.beat?.id === 'compare';
+        return {
+          width: chapter.id === 'unit' ? 1 : doubled || bothSides ? 6 : 3,
+          height: chapter.id === 'unit' ? 1 : bothSides ? 4 : 2,
+          guess: -1,
+          checked: doubled,
+        };
+      },
+      create(view) {
+        const trial = chapter.id === 'prediction',
+          experiment = chapter.id === 'experiment';
+        const diagram = areaDiagram(view, {
           maxColumns: chapter.id === 'unit' ? 1 : chapter.id === 'rows' ? 3 : 6,
-          maxRows: chapter.id === 'unit' ? 1 : chapter.id === 'experiment' ? 5 : 2,
-          compareColumns: chapter.id === 'prediction' ? 3 : undefined,
-          visibleUnits: (frame) => {
+          maxRows: chapter.id === 'unit' ? 1 : experiment ? 5 : 2,
+          compareColumns: trial ? 3 : undefined,
+          visibleUnits(frame) {
             const count = Number(frame.values.width) * Number(frame.values.height);
             if (chapter.id !== 'rows' || frame.mode === 'explore') return count;
             if (frame.beat?.id === 'repeat')
               return 3 + Math.min(3, Math.floor(frame.beat.progress * 4));
             return frame.beat?.id === 'rule' ? count : 3;
           },
-          showRows: (frame) => chapter.id === 'rows' || Boolean(frame.values.detail),
+          showRows: () => chapter.id === 'rows',
           revealResult: (frame) =>
-            chapter.id === 'prediction'
+            trial
               ? Boolean(frame.values.checked)
               : chapter.id !== 'rows' || frame.mode === 'explore' || frame.beat?.id === 'rule',
-        }),
+        });
+        const overlay = object(view.layer, 'area-actions');
+        let latest,
+          focusResult = false;
+        const change = (values) => latest?.input?.(values);
+        const buttons = [];
+        const button = (id, text, options) => {
+          const control = inkButton(view, id, text, options);
+          overlay.content.append(control.element);
+          buttons.push(control);
+          return control;
+        };
+        const forecast = lettering(overlay.content, '', { size: 30 });
+        forecast.element.dataset.areaForecast = '';
+        forecast.element.style.display = trial ? '' : 'none';
+        const outcome = lettering(overlay.content, '', { size: 26 });
+        outcome.element.dataset.areaOutcome = '';
+        outcome.element.style.display = 'none';
+        outcome.element.setAttribute('role', 'status');
+        outcome.element.setAttribute('aria-live', 'polite');
+        outcome.element.setAttribute('tabindex', '-1');
+        const choices = trial
+          ? [6, 12, 24].map((value) =>
+              button(`guess-${value}`, `${value} см²`, {
+                label: `${value} см²`,
+                width: 96,
+                height: 52,
+                size: 27,
+                pigment: 'orange',
+                onPress: () => change({ width: 3, height: 2, guess: value, checked: false }),
+              }),
+            )
+          : [];
+        const run = trial
+          ? button('double-width', 'Ширина × 2', {
+              label: 'Удвоить ширину и проверить',
+              width: 232,
+              height: 52,
+              size: 28,
+              pigment: 'orange',
+              onPress() {
+                if (Number(latest.values.guess) >= 0 && !latest.values.checked) {
+                  focusResult = true;
+                  change({ width: 6, height: 2, checked: true });
+                }
+              },
+            })
+          : undefined;
+        const next = experiment
+          ? undefined
+          : button(
+              'area-next',
+              chapter.id === 'unit'
+                ? 'Собрать два ряда →'
+                : chapter.id === 'rows'
+                  ? 'Удвоить ширину →'
+                  : 'Свои стороны →',
+              {
+                label:
+                  chapter.id === 'unit'
+                    ? 'Сложить квадраты в ряды'
+                    : chapter.id === 'rows'
+                      ? 'Проверить удвоение ширины'
+                      : 'Попробовать свои стороны',
+                width: 292,
+                height: 52,
+                size: 27,
+                onPress() {
+                  change({
+                    chapter:
+                      chapter.id === 'unit'
+                        ? 'rows'
+                        : chapter.id === 'rows'
+                          ? 'prediction'
+                          : 'experiment',
+                    sceneTime: 1,
+                    ...(trial ? { width: 6, height: 2 } : { width: 3, height: 2 }),
+                    guess: -1,
+                    checked: false,
+                  });
+                },
+              },
+            );
+        const dimensions = experiment
+          ? ['width', 'height'].flatMap((key) =>
+              [-1, 1].map((delta) => ({
+                key,
+                delta,
+                control: button(`${key}-${delta}`, delta < 0 ? '−' : '+', {
+                  label: `${delta < 0 ? 'Уменьшить' : 'Увеличить'} ${key === 'width' ? 'ширину' : 'высоту'}`,
+                  width: 50,
+                  height: 48,
+                  size: 31,
+                  onPress: () => change({ [key]: Number(latest.values[key]) + delta }),
+                }),
+              })),
+            )
+          : [];
+        return {
+          render(frame, viewport) {
+            latest = frame;
+            diagram.render(frame, { ...viewport, height: viewport.height - 76 });
+            const model = diagram.snapshot(),
+              { x, y, width, height } = model.bounds,
+              unit = model.pixelsPerCm,
+              checked = Boolean(frame.values.checked);
+            // Measurements, predicted area and the action occupy the same drawing coordinates.
+            if (trial) {
+              const futureX = x + 4.5 * unit;
+              forecast.text(checked ? '' : 'Вся площадь?');
+              forecast.element.style.display = checked ? 'none' : '';
+              outcome.element.style.display =
+                checked && Number(frame.values.guess) >= 0 ? '' : 'none';
+              forecast.at(futureX, y + height / 2 - 40);
+              choices.forEach((choice, index) => {
+                choice.at(futureX + (index - 1) * 110, y + height / 2 + 18);
+                choice.update({
+                  pressed: Number(frame.values.guess) === [6, 12, 24][index],
+                  disabled: checked,
+                });
+                choice.element.style.display = checked ? 'none' : '';
+              });
+              run.at(futureX, viewport.height - 42);
+              run.update({ disabled: Number(frame.values.guess) < 0 || checked });
+              run.element.style.display = checked ? 'none' : '';
+              outcome.text(
+                checked
+                  ? `Прогноз: ${frame.values.guess} см² ${Number(frame.values.guess) === model.area ? '✓' : '→ 12 см²'}`
+                  : '',
+              );
+              outcome.at(x + 1.5 * unit, viewport.height - 22);
+              outcome.element.setAttribute(
+                'aria-label',
+                checked
+                  ? `Ваш прогноз: ${frame.values.guess} см². Получилось ${model.area} см²: ${3 * model.rows} + ${3 * model.rows}.`
+                  : 'Прогноз ещё не проверен',
+              );
+            }
+            if (next) {
+              next.at(trial ? x + 4.5 * unit : viewport.width / 2, viewport.height - 42);
+              next.element.style.display = trial && !checked ? 'none' : '';
+            }
+            dimensions.forEach(({ key, delta, control }) => {
+              const value = Number(frame.values[key]);
+              control.update({
+                disabled: delta < 0 ? value <= 1 : value >= (key === 'width' ? 6 : 5),
+              });
+              control.at(
+                key === 'width' ? x + width / 2 + delta * 98 : x - 66,
+                key === 'width' ? y + height + 39 : y + height / 2 + delta * 59,
+              );
+            });
+            if (focusResult && checked) {
+              focusResult = false;
+              outcome.element.focus();
+            }
+            // Retain every control node so repeated actions preserve keyboard focus.
+          },
+          snapshot: () => diagram.snapshot(),
+          dispose() {
+            diagram.dispose();
+            buttons.forEach((control) => control.dispose());
+            forecast.dispose();
+            outcome.dispose();
+            overlay.dispose();
+          },
+        };
+      },
     });
   const lesson = await IllustratedStory.mount(root, {
     document,
     audio,
-    frame: { width: 600, height: 420 },
     parameters: [
       { key: 'width', label: 'Ширина, см', value: 3, min: 1, max: 6, step: 1 },
       { key: 'height', label: 'Высота, см', value: 2, min: 1, max: 5, step: 1 },
       { key: 'guess', label: 'Прогноз, см²', value: -1, min: -1, max: 30, step: 1 },
       { key: 'checked', label: 'Опыт выполнен', type: 'toggle', value: false },
-      { key: 'detail', label: 'Разобрать ряды', type: 'toggle', value: false },
     ],
     chapters: Object.fromEntries(document.chapters.map((chapter) => [chapter.id, drawing])),
   });
-  const frame = lesson.shell.stage.closest('.ve-frame');
-  const layout = explanationLayout(root);
-  frame.before(layout.element);
-  layout.figure.append(frame);
-  layout.controls.append(lesson.shell.fields);
-  layout.footer.append(lesson.shell.actions);
-  layout.notes.setAttribute('aria-label', 'От квадрата к площади');
-  layout.notes.innerHTML = `
-    <p class="ve-eyebrow" data-area-step></p>
-    <p class="ve-reading" data-area-reading></p>
-    <p data-area-cause></p>`;
-  const step = layout.notes.querySelector('[data-area-step]');
-  const reading = layout.notes.querySelector('[data-area-reading]');
-  const cause = layout.notes.querySelector('[data-area-cause]');
-  const change = (values) => lesson.shell.input(values);
-  const prompt = predictionPrompt(layout.notes, {
-    choices: [6, 12, 24].map((value) => ({ value, label: `${value} см²` })),
-    runLabel: 'Удвоить ширину и проверить',
-    onChoose: (guess) => change({ width: 3, height: 2, guess, checked: false }),
-    onRun() {
-      const values = lesson.story.requested.values;
-      if (Number(values.guess) < 0 || values.checked) return;
-      change({ width: 6, height: 2, checked: true });
-    },
-  });
-  const details = disclosure(layout.notes, {
-    label: 'Почему здесь работает умножение?',
-    onChange: (detail) => change({ detail }),
-  });
-  details.body.innerHTML = `
-    <p>Справа у каждого ряда записано число квадратов. Складываем одинаковые ряды:</p>
-    <p class="ve-equation" data-area-addition></p>
-    <p class="ve-note">Ширина задаёт число квадратов в ряду, высота — число рядов. Обе стороны измеряем в сантиметрах.</p>`;
-  const addition = details.body.querySelector('[data-area-addition]');
-  const next = globalThis.document.createElement('button');
-  next.type = 'button';
-  next.dataset.areaNext = '';
-  next.onclick = () => {
-    const { chapter, width, height } = lesson.story.requested.values;
-    if (chapter === 'unit')
-      change({ chapter: 'rows', sceneTime: 1, width: 3, height: 2, detail: false });
-    else if (chapter === 'rows')
-      change({
-        chapter: 'prediction',
-        sceneTime: 1,
-        width: 3,
-        height: 2,
-        guess: -1,
-        checked: false,
-        detail: false,
-      });
-    else change({ chapter: 'experiment', sceneTime: 1, width, height, detail: false });
-  };
-  layout.notes.append(next);
-  let currentThought;
-  const update = () => {
-    const values = lesson.story.presented?.values,
-      model = lesson.scene.snapshot()?.content;
-    if (!values || !model) return;
-    const { columns, rows, area } = model,
-      trial = values.chapter === 'prediction',
-      checked = Boolean(values.checked),
-      unit = values.chapter === 'unit';
-    const thoughts = {
-      unit: [
-        '01 · Сначала выбираем меру',
-        'Один квадрат — <mark>один см²</mark>.',
-        'Его стороны — по одному сантиметру. Четыре маленькие клетки вместе образуют нашу единицу площади.',
-      ],
-      rows: [
-        '02 · Собираем одинаковые ряды',
-        model.visibleUnits < area
-          ? `В первом ряду — <mark>${columns} квадрата</mark>.`
-          : `<mark>${rows} ряда</mark> по ${columns} квадрата.`,
-        model.visibleUnits < area
-          ? 'Добавим такой же ряд. Каждый квадрат по-прежнему занимает один см².'
-          : `Сложение ${model.rowUnits.join(' + ')} даёт ${area}. Умножение записывает тот же счёт короче.`,
-      ],
-      prediction: [
-        '03 · Записываем прогноз',
-        checked
-          ? 'Добавили <mark>ещё такую же часть</mark>.'
-          : 'Меняем <mark>только ширину</mark>.',
-        checked
-          ? 'Синяя часть сохранилась. Оранжевая добавила столько же квадратов.'
-          : 'Начинаем с прямоугольника 3 × 2 см. Высота останется прежней.',
-      ],
-      experiment: [
-        '04 · Проверяем свои условия',
-        `${columns} × ${rows} — это <mark>${area} см²</mark>.`,
-        `${rows} ${rows === 1 ? 'ряд' : rows < 5 ? 'ряда' : 'рядов'} по ${columns} ${columns === 1 ? 'квадрату' : columns < 5 ? 'квадрата' : 'квадратов'}. Меняйте стороны и следите, как меняется число единичных квадратов.`,
-      ],
-    };
-    const [eyebrow, thought, explanation] = thoughts[values.chapter];
-    if (step.textContent !== eyebrow) step.textContent = eyebrow;
-    if (currentThought !== thought) {
-      reading.innerHTML = thought;
-      currentThought = thought;
-    }
-    if (cause.textContent !== explanation) cause.textContent = explanation;
-    lesson.shell.showParameters(values.chapter === 'experiment' ? ['width', 'height'] : []);
-    layout.controls.hidden = values.chapter !== 'experiment';
-    prompt.element.hidden = !trial;
-    details.element.hidden = unit || (trial && !checked);
-    details.set(Boolean(values.detail));
-    const equation = `${model.rowUnits.join(' + ')} = ${columns} × ${rows} = ${area} см²`;
-    if (addition.textContent !== equation) addition.textContent = equation;
-    next.hidden = values.chapter === 'experiment' || (trial && !checked);
-    next.textContent = unit
-      ? 'Сложить квадраты в ряды'
-      : values.chapter === 'rows'
-        ? 'Проверить удвоение ширины'
-        : 'Попробовать свои стороны';
-    prompt.render({
-      question: checked ? 'Сравним прогноз с результатом.' : 'Удвоим ширину. Какой станет площадь?',
-      guess: Number(values.guess) < 0 ? null : values.guess,
-      checked,
-      feedback: `${Number(values.guess) === area ? 'Верно.' : `Ваш прогноз: ${values.guess} см².`} Получилось ${area} см²: два ряда по шесть квадратов. Ширина и площадь выросли вдвое.`,
-    });
-  };
+  // The chapter selector and player own navigation; dimensions are drawn beside the rectangle.
+  const update = () => lesson.shell.showParameters([]);
   const unsubscribe = lesson.story.subscribe(update);
   update();
-  lesson.shell.onDispose(() => {
-    unsubscribe();
-    prompt.dispose();
-    details.dispose();
-    layout.dispose();
-  });
+  lesson.shell.onDispose(unsubscribe);
   return lesson;
 })();

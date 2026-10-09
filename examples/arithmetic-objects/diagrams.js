@@ -12,6 +12,7 @@ export function addition(view) {
   );
   const left = label(root.content, 'our-balloons', 'У нас: 2', 23, 'blue');
   const right = label(root.content, 'new-balloons', 'Принесли: 2', 23, 'orange');
+  const collected = label(root.content, 'collected-balloons', 'Вместе: 4', 25, 'blue');
   return {
     root,
     height: () => 270,
@@ -28,6 +29,8 @@ export function addition(view) {
       right.at(width * 0.75, 36);
       left.show(progress < 1);
       right.show(progress < 1);
+      collected.at(width / 2, 90);
+      collected.show(progress === 1);
       return { visibleObjects: 4, total: 4, collected: progress === 1 ? 4 : undefined };
     },
   };
@@ -62,6 +65,8 @@ export function subtraction(view) {
       pocket.at(giveX, giveY);
       kept.at(keepX - 60 * progress, originY - 62);
       given.at(giveX, giveY + 77);
+      kept.text(progress === 1 ? 'Осталось: 2' : 'У нас: 4');
+      given.text(progress === 1 ? 'Передано: 2' : 'Получатель');
       move(items, starts, ends, progress);
       return {
         visibleObjects: 4,
@@ -78,8 +83,8 @@ export function multiplication(view) {
   const items = Array.from({ length: 4 }, (_, i) =>
     cell(view, root.content, `cell-${i}`, i < 2 ? 'blue' : 'orange'),
   );
-  const first = label(root.content, 'first-copy', '1-я группа', 22, 'blue');
-  const second = label(root.content, 'second-copy', '2-я группа', 22, 'orange');
+  const first = label(root.content, 'first-copy', '1-я группа · 2', 22, 'blue');
+  const second = label(root.content, 'second-copy', '2-я группа · 2', 22, 'orange');
   const route = group(view, 'repeat-route', 'purple');
   root.content.append(route.element);
   const arrow = view.pen.path(route.content, 'repeat-arrow', 'M0 0 C36 0 36 106 0 106', {

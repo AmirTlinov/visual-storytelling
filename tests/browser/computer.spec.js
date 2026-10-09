@@ -342,3 +342,67 @@ test('computer inline delivery preserves SVG titles in markup and source strings
   expect((await state(page)).cpuCycle.time).toBeGreaterThan(0);
   expect(errors).toEqual([]);
 });
+
+test('computer: a 16:9 frame preserves logical zoom anchors and drag distances at both scales', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const views = [];
+  for (const width of [1312, 375])
+    for (const colorScheme of ['light', 'dark']) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ colorScheme });
+      await ready(page);
+      await page.evaluate(() => document.querySelector('.ve-scene').scene.home());
+      const frame = await page.locator('[data-scene-frame]').boundingBox();
+      expect(frame.width / frame.height).toBeCloseTo(16 / 9, 4);
+      const initial = (await state(page)).view;
+      const viewport = await page.locator('.explorer-viewport').boundingBox();
+      const cursor = {
+        x: Math.round(viewport.x + viewport.width * 0.73),
+        y: Math.round(viewport.y + viewport.height * 0.42),
+      };
+      const anchor = {
+        x: ((cursor.x - viewport.x) * initial.w) / viewport.width,
+        y: ((cursor.y - viewport.y) * initial.h) / viewport.height,
+      };
+      await page.mouse.move(cursor.x, cursor.y);
+      await page.mouse.wheel(0, -60);
+      await expect.poll(async () => (await state(page)).view.s).toBeGreaterThan(initial.s);
+      const zoomed = (await state(page)).view;
+      const ratio = zoomed.s / initial.s;
+      expect(zoomed.x).toBeCloseTo(anchor.x - (anchor.x - initial.x) * ratio, 2);
+      expect(zoomed.y).toBeCloseTo(anchor.y - (anchor.y - initial.y) * ratio, 2);
+      const start = {
+        x: Math.round(viewport.x + viewport.width * 0.04),
+        y: Math.round(viewport.y + viewport.height * 0.75),
+      };
+      await page.mouse.move(start.x, start.y);
+      await page.mouse.down({ button: 'middle' });
+      const delta = {
+        x: Math.round((48 * viewport.width) / initial.w),
+        y: Math.round((24 * viewport.height) / initial.h),
+      };
+      await page.mouse.move(start.x + delta.x, start.y + delta.y, { steps: 4 });
+      await page.mouse.up({ button: 'middle' });
+      const moved = (await state(page)).view;
+      expect(moved.x - zoomed.x).toBeCloseTo((delta.x * initial.w) / viewport.width, 2);
+      expect(moved.y - zoomed.y).toBeCloseTo((delta.y * initial.h) / viewport.height, 2);
+      views.push(moved);
+      await page.locator('[data-camera-reset]').press('0');
+      await idle(page);
+      await go(page, 'cpu');
+      await go(page, 'die');
+      await go(page, 'core-0');
+      await page.locator('[data-clock-step]').press('Enter');
+      expect((await state(page)).cpuCycle.time).toBeGreaterThan(0);
+      await page.keyboard.press('Escape');
+      await idle(page);
+      await expect(page.locator('[data-hit-key="core-0"]')).toBeFocused();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        width,
+      );
+    }
+  for (const view of views.slice(1))
+    for (const key of ['s', 'w', 'h']) expect(view[key]).toBeCloseTo(views[0][key], 2);
+});

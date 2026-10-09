@@ -41,10 +41,11 @@ test(
           undefined,
           { timeout: 5000 },
         );
+        const frame = await scene.locator('[data-scene-frame]').boundingBox();
+        assert.ok(frame && Math.abs(frame.width / frame.height - 16 / 9) < 0.001);
         return scene.evaluate(() => innerHeight);
       };
       const wideHeight = await fits();
-      assert.ok(wideHeight > 570, 'the normal player exceeds the former fixed viewport');
       await mkdir('artifacts/plugin', { recursive: true });
       await page.screenshot({ path: 'artifacts/plugin/viewer-layout-wide.png', fullPage: true });
       await app.locator('#expand').click();

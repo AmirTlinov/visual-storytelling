@@ -63,16 +63,34 @@ test('the signed neuron keeps its result through orbit, projection changes and r
   await page.locator('[data-seek]').fill('21');
   await expect(flat.locator('.vs-lettering[aria-label="(−1) + (−3) + 0 = −4"]')).toBeVisible();
   await page.setViewportSize({ width: 375, height: 720 });
+  await expect
+    .poll(() =>
+      page
+        .locator('[data-scene-frame]')
+        .evaluate((frame) => frame.getBoundingClientRect().right <= innerWidth),
+    )
+    .toBe(true);
   let stageHeight: number | undefined;
   for (const time of ['0', '14', '21']) {
     await page.locator('[data-seek]').fill(time);
-    const stage = (await page.locator('.ve-stage').boundingBox())!;
-    const player = (await page.locator('.ve-player').boundingBox())!;
+    // Read one presented frame: separate protocol calls can straddle a resize.
+    const { stage, player, frame } = await page.locator('#neuron-scene').evaluate((root) => {
+      const box = (selector: string) => {
+        const { x, y, width, height } = root.querySelector(selector)!.getBoundingClientRect();
+        return { x, y, width, height };
+      };
+      return {
+        stage: box('.ve-stage'),
+        player: box('.ve-player'),
+        frame: box('[data-scene-frame]'),
+      };
+    });
     stageHeight ??= stage.height;
-    // Readable rows keep their space across operations. Story headings can wrap;
-    // the player follows the composition and remains reachable by scrolling.
+    // Drawing and transport keep their places inside the complete 16:9 frame.
     expect(stage.height).toBeCloseTo(stageHeight, 1);
     expect(player.y).toBeGreaterThanOrEqual(stage.y + stage.height);
+    expect(player.y + player.height).toBeLessThanOrEqual(frame.y + frame.height);
+    expect(frame.width / frame.height).toBeCloseTo(16 / 9, 5);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
       375,
     );

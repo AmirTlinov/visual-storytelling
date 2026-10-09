@@ -9,11 +9,9 @@ import { registerDrawing, feedbackDrawing } from './drawing.js';
 window.galleryReady = (async () => {
   await SceneShell.ready();
   const root = document.querySelector('#ve-scene');
-  // One notebook sheet contains the heading, drawing, notes and bottom transport.
+  // The complete lesson shares one 16:9 composition in every mode.
   const shell = SceneShell.mount(root, {
     title: 'Как 8 бит запоминают число',
-    // Below 904px, scaling the 17px toolbar would make its text smaller than 12px.
-    frame: { width: 1280, height: 720, scope: 'scene', responsiveBelow: 904 },
   });
   shell.stage.classList.add('memory-sheet');
   const drawingHost = document.createElement('div');
@@ -33,8 +31,8 @@ window.galleryReady = (async () => {
     '<section id="challenge" class="memory-challenge" hidden><div id="prediction"></div><div class="memory-actions">',
     '<button id="next-challenge" type="button" hidden>Разрешим запись</button><button id="free" type="button">К опыту</button>',
     '</div></section>',
-    '<section class="memory-panel memory-detail" id="inside" hidden tabindex="-1" aria-labelledby="inside-title"><div class="memory-panel-heading"><h2 id="inside-title">Почему один бит удерживает значение?</h2><button type="button" data-close-panel>К схеме</button></div><p id="detail-bit"></p><div id="feedback-drawing"></div><p id="loop-explanation"></p>',
-    '<p>Это сердце запоминающего элемента. Управляемые входы D-триггера позволяют переключить его по фронту такта. Регистр удерживает данные, пока есть питание.</p></section>',
+    '<section class="memory-panel memory-detail" id="inside" hidden tabindex="-1" aria-labelledby="inside-title" aria-describedby="detail-bit loop-explanation"><div class="memory-panel-heading"><h2 id="inside-title">Бит 5 · вес 32</h2><button type="button" data-close-panel>К схеме</button></div><p class="sr-only" id="detail-bit"></p><div id="feedback-drawing"></div><p class="sr-only" id="loop-explanation"></p>',
+    '<p class="sr-only">Это сердце запоминающего элемента. Управляемые входы D-триггера позволяют переключить его по фронту такта. Регистр удерживает данные, пока есть питание.</p></section>',
     '<section class="memory-panel" id="trace-panel" hidden tabindex="-1" aria-labelledby="trace-title"><div class="memory-panel-heading"><h2 id="trace-title">Последние переключения такта</h2><button type="button" data-close-panel>К схеме</button></div><table class="memory-trace"><thead><tr><th>Такт</th><th>WE</th><th>Вход D</th><th>Память Q</th></tr></thead><tbody id="trace"></tbody></table></section>',
   ].join('');
   const $ = (id) => root.querySelector('#' + id);
@@ -111,6 +109,7 @@ window.galleryReady = (async () => {
           (s.we ? 'WE = 1 и фронт ↑ записали байт.' : 'WE = 0 сохранил прежний байт.'),
       });
       const q = bit(s.saved, s.selected);
+      $('inside-title').textContent = 'Бит ' + s.selected + ' · вес ' + 2 ** s.selected;
       $('detail-bit').textContent =
         'Бит ' +
         s.selected +
@@ -121,7 +120,7 @@ window.galleryReady = (async () => {
         ', хранится Q = ' +
         q +
         '.';
-      loop.render(q);
+      loop.render(q, s.selected);
       $('loop-explanation').textContent =
         'Первое НЕ превращает ' +
         q +

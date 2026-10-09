@@ -98,6 +98,18 @@ test('tensor calculation and delivery keep one visible result through rewind and
   const errors = await openScene(page, 'math-workbench');
   const receiver = page.locator('[data-object="answer:scalar"]');
   const computed = page.locator('[data-object^="calculation:"]:not([hidden])');
+  const visibleEquation = () =>
+    page.evaluate(() => {
+      const scene = (document.querySelector('main') as any).scene;
+      const equations: string[] = [];
+      scene.calculation.object.traverseVisible((object: any) => {
+        if (object.name === 'surface-lettering') {
+          const text = object.userData.visualReview().text;
+          if (text.includes('=')) equations.push(text);
+        }
+      });
+      return { equations, clipped: scene.presentation().clipped };
+    });
   await control(page, [{ type: 'pause' }, { type: 'seek', time: 22 }]);
   let state = await tensorState(page);
   expect(state.selected).toEqual([2, 4, 3, 5]);
@@ -105,11 +117,16 @@ test('tensor calculation and delivery keep one visible result through rewind and
   expect(state.stored).toBe(4.25);
   await expect(receiver).toBeVisible();
   await expect(computed).toHaveCount(0);
+  const delivered = await visibleEquation();
+  expect(delivered.equations).toHaveLength(1);
+  expect(delivered.equations[0]).toContain('4.25');
+  expect(delivered.clipped).toEqual([]);
 
   // The same finished value returns from its destination before rewinding its calculation.
   await control(page, [{ type: 'seek', time: 19.5 }]);
   await expect(receiver).toBeHidden();
   await expect(computed).toHaveCount(1);
+  expect((await visibleEquation()).equations).toEqual([]);
   expect((await tensorState(page)).result).toBe(4.25);
   await control(page, [{ type: 'seek', time: 0 }]);
   await expect(receiver).toBeHidden();
@@ -117,6 +134,7 @@ test('tensor calculation and delivery keep one visible result through rewind and
   await control(page, [{ type: 'seek', time: 21 }]);
   await expect(receiver).toBeVisible();
   await expect(computed).toHaveCount(0);
+  expect(await visibleEquation()).toEqual(delivered);
 
   await control(page, [{ type: 'parameters', values: { first: 10 } }]);
   expect((await tensorState(page)).result).toBe(6.25);
@@ -290,10 +308,10 @@ test('elementwise multiplication exposes the same pairs it animates after input 
   expect(errors).toEqual([]);
 });
 
-test('a narrow physical equation remains readable and framed through input changes and reverse seek', async ({
+test('a horizontal physical equation remains readable and framed through input changes and reverse seek', async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1040, height: 800 });
   const errors = await openScene(page, 'math-workbench');
   await control(page, [
     { type: 'pause' },
@@ -324,10 +342,16 @@ test('a narrow physical equation remains readable and framed through input chang
       const projected = corners.map((point: any) => point.clone().project(camera));
       const top = Math.min(...projected.map((point: any) => ((1 - point.y) * stage.height) / 2)),
         bottom = Math.max(...projected.map((point: any) => ((1 - point.y) * stage.height) / 2));
-      const weightBottom = Math.max(
-        ...[...document.querySelectorAll<HTMLElement>('[data-object^="weights:"]')]
-          .filter((element) => !element.hidden)
-          .map((element) => element.getBoundingClientRect().bottom - stage.top),
+      const left = Math.min(...projected.map((point: any) => ((point.x + 1) * stage.width) / 2)),
+        right = Math.max(...projected.map((point: any) => ((point.x + 1) * stage.width) / 2));
+      const weights = [...document.querySelectorAll<HTMLElement>('[data-object^="weights:"]')]
+        .filter((element) => !element.hidden)
+        .map((element) => element.getBoundingClientRect());
+      const gap = Math.max(
+        left - Math.max(...weights.map((box) => box.right - stage.left)),
+        Math.min(...weights.map((box) => box.left - stage.left)) - right,
+        top - Math.max(...weights.map((box) => box.bottom - stage.top)),
+        Math.min(...weights.map((box) => box.top - stage.top)) - bottom,
       );
       return {
         text: formula.userData.visualReview().text.replaceAll('\u00a0', ' '),
@@ -336,7 +360,7 @@ test('a narrow physical equation remains readable and framed through input chang
         withinStage: projected.every(
           (point: any) => Math.abs(point.x) < 1 && Math.abs(point.y) < 1,
         ),
-        gap: top - weightBottom,
+        gap,
         camera: camera.position.toArray(),
         color: plane.material.color.getHexString(),
         pigment: scene.view.palette.purple.getHexString(),

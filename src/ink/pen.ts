@@ -398,15 +398,14 @@ export function pen(canvas: SVGSVGElement) {
       );
     },
     arrow(parent: SVGElement, id: string, from: Point, to: Point, style: PenStyle = {}) {
-      const angle = Math.atan2(to[1] - from[1], to[0] - from[0]);
-      const wing = (delta: number) =>
-        `${to[0] - 9 * Math.cos(angle + delta)} ${to[1] - 9 * Math.sin(angle + delta)}`;
-      return draw(
-        parent,
-        id,
-        `M${from.join(' ')} L${to.join(' ')} M${wing(0.48)} Q${to.join(' ')} ${wing(-0.48)}`,
-        style,
-      );
+      const path = (from: Point, to: Point) => {
+        const angle = Math.atan2(to[1] - from[1], to[0] - from[0]);
+        const wing = (delta: number) =>
+          `${to[0] - 9 * Math.cos(angle + delta)} ${to[1] - 9 * Math.sin(angle + delta)}`;
+        return `M${from.join(' ')} L${to.join(' ')} M${wing(0.48)} Q${to.join(' ')} ${wing(-0.48)}`;
+      };
+      const mark = draw(parent, id, path(from, to), style);
+      return { ...mark, between: (from: Point, to: Point) => mark.update(path(from, to)) };
     },
   };
 }

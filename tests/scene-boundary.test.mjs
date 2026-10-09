@@ -158,7 +158,7 @@ test('one scene boundary preserves capabilities, live time and model ownership t
     assert.equal(await page.getByRole('slider', { name: 'Locked value' }).inputValue(), '3');
     await assert.rejects(
       page.evaluate(() => lab.shell.syncParameters({ x: 8 })),
-      /story.explore/,
+      /story.input/,
     );
     const failures = await page.evaluate(async () => {
       const result = [];
@@ -167,6 +167,8 @@ test('one scene boundary preserves capabilities, live time and model ownership t
         host.innerHTML = '<object></object><div data-player></div>';
         document.body.append(host);
         const player = lab.SmilPlayer.mount(host, { duration: 4 });
+        if (host.scene !== player.scene || host.querySelectorAll('[data-scene-frame]').length !== 1)
+          throw new Error('SVG playback and its complete frame must have one scene owner');
         const ready = player.ready.then(
           () => null,
           (error) => error.message,
@@ -175,6 +177,8 @@ test('one scene boundary preserves capabilities, live time and model ownership t
         else host.querySelector('object').dispatchEvent(new Event(event));
         result.push(await ready);
         player.dispose();
+        if (host.scene || host.querySelector('[data-scene-frame]'))
+          throw new Error('SVG disposal must release its scene and frame');
         host.remove();
       }
       return result;

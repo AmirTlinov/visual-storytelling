@@ -56,7 +56,7 @@ export function comparisonDiagram(view: Surface, options: ComparisonOptions): In
           const label = lettering(
             ruler.content,
             `${Number(((options.maximum * i) / 4).toFixed(2))}`,
-            { x, y: bottom + 30, size: 17 },
+            { x, y: bottom + 30, size: 24 },
           );
           clear.push(line.dispose, label.dispose);
         }

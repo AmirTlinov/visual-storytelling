@@ -6,7 +6,6 @@ window.galleryReady = MorphStory.mount(document.getElementById('morph-story'), {
   presenter: MathMorph,
   initial: { amount: 6 },
   parameters: [{ key: 'amount', label: 'Количество в целом', min: 3, max: 12, step: 1 }],
-  captions: true,
   script: {
     duration: 15,
     segments: [

@@ -42,7 +42,9 @@ export async function mountMath(
       const prepared = mathPlan(next);
       if (body) return body.setOperation(prepared);
       replace((target) => {
-        const mounted = mountBodies(target, prepared, options);
+        const layout = parent.closest('[data-scene-frame]') ? 'scene' : 'content';
+        target.dataset.mathLayout = layout;
+        const mounted = mountBodies(target, prepared, { ...options, layout });
         return () => {
           body = mounted;
           construction = undefined;

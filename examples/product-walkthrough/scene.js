@@ -10,9 +10,8 @@ window.galleryReady = (async () => {
   const shell = SceneShell.mount(root, {
     title: 'Ортоматика · перед оплатой заказа',
     appearance: 'interface',
-    frame: { width: 1600, height: 900 },
+    frame: { width: 1600, height: 900, scope: 'scene' },
     heading: false,
-    captions: true,
   });
   const film = document.createElement('div');
   film.className = 'product-film';
@@ -37,7 +36,10 @@ window.galleryReady = (async () => {
     </section>
     <section id="gateway" class="gateway"><span class="secure-mark">✓</span><span class="section-label">ПЛАТЁЖНАЯ СТРАНИЦА</span><h1>Завершите оплату</h1><p>Выберите доступный способ<br>и следуйте подсказкам на странице.</p><div id="payment-options" class="payment-options"><span>₽</span> Способ оплаты <span>→</span></div><div id="return" class="return-note"><span>↩</span><div><strong>После завершения оплаты</strong><p>Вернитесь в кабинет → Мои заказы</p></div></div></section>
     <footer>Ortomatica.ru <span>Учебный показ интерфейса</span></footer>`;
-  shell.stage.prepend(film);
+  const artwork = SceneShell.frame(film, { width: 1600, height: 900 });
+  shell.stage.append(artwork.element);
+  artwork.resize();
+  shell.onDispose(artwork.dispose);
   const get = (id) => film.querySelector(`#${id}`);
   const actions = storyActions(
     [

@@ -6,6 +6,7 @@ export function chapterNavigation(
   heading: HTMLHeadingElement,
   chapters: readonly Chapter[],
   seek: (time: number) => void,
+  toolbar?: HTMLElement,
 ) {
   const named = chapters.filter((chapter) => chapter.title).sort((a, b) => a.start - b.start);
   if (!named.length || heading.hidden) return { update(_id: string | undefined) {}, dispose() {} };
@@ -22,7 +23,8 @@ export function chapterNavigation(
     (index) => seek(named[Number(index)]!.start),
   );
   navigation.append(field.element);
-  heading.after(navigation);
+  if (toolbar) toolbar.prepend(navigation);
+  else heading.after(navigation);
   return {
     update(id: string | undefined) {
       const index = Math.max(

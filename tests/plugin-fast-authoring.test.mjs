@@ -36,14 +36,14 @@ test(
       const help = await call('story_help', {
         projectId: created.project.id,
         query: 'graph-lab',
-        queries: ['SceneHandle', 'SceneShell.mount', 'explanationLayout', 'disclosure'],
+        queries: ['SceneHandle', 'SceneShell.mount', 'plot.interval', 'svgButton'],
       });
       assert.deepEqual(help.missing, []);
       assert.match(help.text, /interface SceneHandle/);
       assert.match(help.text, /mount/);
       assert.equal(help.examples[0].id, 'graph-lab');
       assert.ok(help.examples[0].editing.some(({ file }) => file === 'model.js'));
-      assert.match(help.text, /explanationLayout/);
+      assert.match(help.text, /PlotIntervalOptions/);
       const first = await call('story_edit', {
         projectId: created.project.id,
         sourceRevision: created.project.sourceRevision,

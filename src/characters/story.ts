@@ -34,7 +34,6 @@ async function mount(root: HTMLElement, options: CharacterStoryOptions) {
     const shell = SceneShell.mount(root, {
       title: options.title,
       paper: false,
-      frame: options.camera === 'responsive' ? undefined : options.set,
       parameters,
     });
     cleanup = shell.dispose;

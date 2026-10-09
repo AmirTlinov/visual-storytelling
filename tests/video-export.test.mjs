@@ -82,6 +82,7 @@ test('MP4 keeps a circle circular when a chapter changes the HTML frame height',
           'circle must preserve its aspect ratio',
         );
         if (height) assert.equal(image.height, height);
+        else assert(Math.abs(image.width / image.height - 16 / 9) < 0.01, 'default video is 16:9');
         frames.push([image.width, image.height]);
       }
       assert.deepEqual(frames[0], frames[1]);

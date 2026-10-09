@@ -31,7 +31,7 @@ export interface SceneOptions {
   /** Shared controls can follow a product interface while the subject owns its brand. */
   appearance?: 'sketch' | 'interface';
   paper?: boolean;
-  /** Logical composition dimensions; scope:scene includes the complete shell and controls. */
+  /** Complete 1280×720 composition by default. An explicit stage frame preserves a subject's own canvas. */
   frame?: SceneFrameOptions;
   /** Hide the shell heading when the subject supplies its own title. */
   heading?: boolean;
@@ -100,7 +100,7 @@ function mount(
     onInput = () => {},
     onMode = () => {},
     exploration = 'model',
-    frame,
+    frame = { width: 1280, height: 720, scope: 'scene' },
     heading: showHeading = true,
     captions,
     history: retainHistory = true,
@@ -157,7 +157,8 @@ function mount(
     fields.append(control.element);
     inputs.set(p.key, control);
   }
-  const actions = node('div', { class: 've-view-actions' }),
+  const toolbar = node('div', { class: 've-scene-toolbar' }),
+    actions = node('div', { class: 've-view-actions' }),
     controls = node('div', { 'data-player': '', hidden: '' });
   heading.hidden = !showHeading;
   const caption = node('p', {
@@ -183,28 +184,23 @@ function mount(
     },
     options,
   );
-  const completeFrame = frame?.scope === 'scene';
+  const completeFrame = frame.scope === 'scene';
   const sheet = completeFrame ? node('div') : root;
-  const composition = frame ? sceneFrame(completeFrame ? sheet : stage, frame) : undefined;
-  if (composition) cleanups.add(composition.dispose);
+  const composition = sceneFrame(completeFrame ? sheet : stage, frame);
+  cleanups.add(composition.dispose);
+  if (completeFrame) toolbar.append(modes, actions);
   sheet.append(
     heading,
-    modes,
-    actions,
+    ...(completeFrame ? [toolbar] : [modes, actions]),
     fields,
-    completeFrame ? stage : (composition?.element ?? stage),
+    completeFrame ? stage : composition.element,
   );
-  if (
-    captions &&
-    composition &&
-    !completeFrame &&
-    (captions === true || captions.placement !== 'below')
-  )
+  if (captions && !completeFrame && (captions === true || captions.placement !== 'below'))
     stage.append(caption);
   else sheet.append(caption);
   sheet.append(controls, status);
-  if (completeFrame) root.append(composition!.element);
-  composition?.resize();
+  if (completeFrame) root.append(composition.element);
+  composition.resize();
   let transition: ((mode: 'story' | 'explore') => void) | undefined;
   let mode: 'story' | 'explore' = 'explore';
   let player: { dispose(): void } | undefined;
@@ -275,8 +271,7 @@ function mount(
     root,
     {
       snapshot: () => ({ ...values }),
-      presentation: () =>
-        inspectPresentation(stage.closest<HTMLElement>('.ve-explanation') ?? stage),
+      presentation: () => inspectPresentation(stage),
       setTheme: sceneTheme.set,
       dispose,
     },
@@ -446,6 +441,7 @@ function mount(
       heading,
       controller.sheet.script.segments ?? [],
       controller.seek,
+      completeFrame ? toolbar : undefined,
     );
     let resetAfterSeek = false;
     const stopSeeking = controller.onSeek(() => {
@@ -580,4 +576,4 @@ function mount(
     Reflect.deleteProperty(root, 'scene');
   }
 }
-export const SceneShell = { mount, ready: loadFonts };
+export const SceneShell = { mount, ready: loadFonts, frame: sceneFrame };

@@ -3,4 +3,4 @@
 @font-face{font-family:SketchPencilNote;src:url('../assets/pencil-note.woff2') format('woff2');font-display:swap}
 @font-face{font-family:SketchShantell;src:url('../assets/shantell.woff2') format('woff2');font-display:swap}
 .ve-scene:not([data-appearance=interface]) :is(h1,h2,h3,[data-handwriting=heading]):not(:where(.ve-frame *)){font-family:SketchPencilHeading,SketchShantell,sans-serif;font-weight:400;font-style:normal}
-.ve-scene:not([data-appearance=interface]) :is(.vs-subtitle,.ve-note,[data-handwriting=note]):not(:where(.ve-frame *)){font-family:SketchPencilNote,SketchShantell,sans-serif;font-weight:400;font-style:normal}
+.ve-scene:not([data-appearance=interface]) :is(.ve-note,[data-handwriting=note]):not(:where(.ve-frame *)){font-family:SketchPencilNote,SketchShantell,sans-serif;font-weight:400;font-style:normal}

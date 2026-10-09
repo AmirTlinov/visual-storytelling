@@ -1,6 +1,7 @@
 import { PlayerControls } from '../controls/player-view.js';
 import { mountScene } from '../scene-handle.js';
 import { sceneHost } from '../host/adapter.js';
+import { sceneFrame } from '../scene-frame.js';
 /* SVG's native animation time remains the sole clock. */
 
 function mount(root: HTMLElement, { duration }: { duration: number }) {
@@ -10,6 +11,12 @@ function mount(root: HTMLElement, { duration }: { duration: number }) {
   );
   const controlsHost = root.querySelector<HTMLElement>('[data-player]');
   if (!object || !controlsHost) throw new Error('SVG player needs an object and player controls');
+  const content = document.createElement('div');
+  content.className = 've-smil-content';
+  content.append(...root.childNodes);
+  const presentation = sceneFrame(content, { width: 1280, height: 720, scope: 'scene' });
+  root.append(presentation.element);
+  presentation.resize();
   const controls = PlayerControls.mount(controlsHost, {
     max: duration,
     label: 'Фаза колебаний в секундах',
@@ -61,6 +68,7 @@ function mount(root: HTMLElement, { duration }: { duration: number }) {
     update();
   }
   const scene = mountScene(root, {
+    ready: () => readyPromise,
     duration,
     get currentTime() {
       const elapsed = svg?.getCurrentTime() ?? 0;
@@ -85,6 +93,8 @@ function mount(root: HTMLElement, { duration }: { duration: number }) {
       cancelAnimationFrame(frame);
       svg?.pauseAnimations();
       controls.dispose();
+      presentation.dispose();
+      presentation.element.remove();
     },
   });
   controls.play.disabled = true;

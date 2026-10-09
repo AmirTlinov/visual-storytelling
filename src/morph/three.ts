@@ -254,7 +254,9 @@ function mount(
     }
     const frame = mathMotionFrame(plan, time, arrangement?.columns);
     const deliveredBounds = delivery?.render(frame, plan.stages, travel, time.reduced);
-    const annotationsVisible = !delivery || travel === 0;
+    // Keep the settled calculation readable beside its receiving address. Only
+    // the travelling body suspends annotations fixed to the calculation's place.
+    const annotationsVisible = !delivery || travel === 0 || travel === 1;
     if (!embedded) formula.element.style.maxWidth = `${Math.max(160, widthAvailable - 64)}px`;
     // An operand stays together when its equation wraps across physical lines.
     formula.set(

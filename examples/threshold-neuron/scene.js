@@ -1,10 +1,27 @@
-import { mountScene } from '@visual-storytelling/core';
+import { SceneShell, mountScene } from '@visual-storytelling/core';
 import { SvgLayout, SketchInk, rough, gsap, widgetState } from '@visual-storytelling/core';
 // Subject model: a threshold neuron. Changing this file changes the explanation.
 window.galleryReady = (async () => {
+  await SceneShell.ready();
   const root = document.getElementById('ve-scene'),
     svg = root.querySelector('svg.canvas');
-  const { element: el, place, connect, along, observe } = SvgLayout;
+  const composition = document.createElement('div'),
+    stage = document.createElement('div');
+  stage.className = 've-stage';
+  svg.replaceWith(stage);
+  stage.append(svg);
+  root.querySelector('h1').classList.add('ve-heading');
+  const toolbar = document.createElement('div');
+  toolbar.className = 've-scene-toolbar';
+  const modes = root.querySelector('.modes');
+  modes.replaceWith(toolbar);
+  toolbar.append(modes);
+  composition.append(...root.childNodes);
+  const sceneFrame = SceneShell.frame(composition, { width: 1280, height: 720, scope: 'scene' });
+  root.append(sceneFrame.element);
+  sceneFrame.resize();
+
+  const { element: el, place, connect, along } = SvgLayout;
   const select = (key) => root.querySelector(`[data-${key}]`);
   const weights = [3, 4],
     threshold = 9;
@@ -97,9 +114,9 @@ window.galleryReady = (async () => {
       );
   });
   sumLabel.style.color = 'var(--ve-purple)';
-  let routes = [],
-    width = 0,
-    geometry;
+  let routes = [];
+  const width = 840;
+  svg.setAttribute('viewBox', `0 0 ${width} 326`);
   const reduced = matchMedia('(prefers-reduced-motion: reduce)'),
     pulse = { position: 1 };
   let outputRoute,
@@ -154,21 +171,12 @@ window.galleryReady = (async () => {
     });
   }
   function arrange() {
-    if (!width) return 312;
-    const vertical = width < 640;
-    const positions = vertical
-      ? [
-          [width * 0.25, 110],
-          [width * 0.75, 110],
-          [width / 2, 274],
-          [width / 2, 424],
-        ]
-      : [
-          [width * 0.25, 83],
-          [width * 0.25, 241],
-          [width * 0.55, 162],
-          [width * 0.77, 162],
-        ];
+    const positions = [
+      [width * 0.25, 83],
+      [width * 0.25, 241],
+      [width * 0.55, 162],
+      [width * 0.77, 162],
+    ];
     nodes.forEach(({ g }, i) =>
       g.setAttribute('transform', `translate(${positions[i].join(' ')})`),
     );
@@ -181,7 +189,7 @@ window.galleryReady = (async () => {
     );
     routes.forEach((route, i) => {
       wires[i].setAttribute('d', route.d);
-      along(products[i], route, { offset: vertical ? (i ? -28 : 28) : i ? 22 : -22 });
+      along(products[i], route, { offset: i ? 22 : -22 });
     });
     outputRoute = connect(nodes[2].circle, nodes[3].circle, {
       fromShape: 'ellipse',
@@ -200,43 +208,26 @@ window.galleryReady = (async () => {
     place(gateLabel, gx, gy);
     inputs.forEach((node, i) => {
       const [x, y] = positions[i];
-      place(node, vertical ? x : 33, vertical ? 47 : y);
-      wires[3 + i].setAttribute('d', vertical ? `M${x} 68V${y - 29}` : `M60 ${y}H${x - 29}`);
+      place(node, 33, y);
+      wires[3 + i].setAttribute('d', `M60 ${y}H${x - 29}`);
     });
-    const ex = vertical ? gx : width - 20,
-      ey = vertical ? 525 : gy;
-    wires[5].setAttribute('d', vertical ? `M${gx} ${gy + 26}V${ey}` : `M${gx + 26} ${gy}H${ex}`);
-    arrow.setAttribute(
-      'd',
-      vertical ? `M${ex - 8} ${ey - 10}l8 10 8-10` : `M${ex - 10} ${ey - 8}l10 8-10 8`,
-    );
-    signal.setAttribute('cx', vertical ? gx : ex - 28);
-    signal.setAttribute('cy', vertical ? ey - 29 : gy);
-    place(
-      outputLabel,
-      vertical ? gx + (state.mode === 'formulas' ? 65 : 36) : ex - 28,
-      vertical ? ey - 29 : gy - 28,
-    );
-    const headingPositions = vertical
-      ? [
-          [width / 2, 13],
-          [width / 2, 110],
-          [sx, sy - 39],
-          [gx + 66, gy],
-          [gx, 551],
-        ]
-      : [
-          [42, 26],
-          [positions[0][0], 26],
-          [sx, 26],
-          [gx, 26],
-          [ex - 24, 26],
-        ];
+    const ex = width - 20;
+    wires[5].setAttribute('d', `M${gx + 26} ${gy}H${ex}`);
+    arrow.setAttribute('d', `M${ex - 10} ${gy - 8}l10 8-10 8`);
+    signal.setAttribute('cx', ex - 28);
+    signal.setAttribute('cy', gy);
+    place(outputLabel, ex - 28, gy - 28);
+    const headingPositions = [
+      [42, 26],
+      [positions[0][0], 26],
+      [sx, 26],
+      [gx, 26],
+      [ex - 24, 26],
+    ];
     headings.forEach((node, i) => place(node, ...headingPositions[i]));
-    operationY = vertical ? 590 : 298;
+    operationY = 298;
     place(operation, width / 2, operationY);
     paintPulse();
-    return vertical ? 618 : 326;
   }
   function render() {
     const { terms, sum, output } = compute(),
@@ -278,7 +269,7 @@ window.galleryReady = (async () => {
       .forEach((button) => button.setAttribute('aria-pressed', button.dataset.mode === state.mode));
     select('algebra').hidden = !symbolic;
     paintPulse();
-    geometry?.update();
+    arrange();
   }
   function save() {
     storage.save({
@@ -338,10 +329,6 @@ window.galleryReady = (async () => {
     listen,
   );
   render();
-  geometry = await observe(svg, (value) => {
-    width = value;
-    return arrange();
-  });
   const scene = mountScene(root, {
     subject: {
       capture: () => ({ example: 'neuron', ...state, progress: pulse.position }),
@@ -372,7 +359,7 @@ window.galleryReady = (async () => {
       if (abort.signal.aborted) return;
       abort.abort();
       storage.dispose();
-      geometry.dispose();
+      sceneFrame.dispose();
       gsap.killTweensOf(pulse);
       root.replaceChildren();
     },

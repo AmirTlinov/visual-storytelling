@@ -13,17 +13,6 @@
   margin: 0 0 4px;
   color: var(--ve-blue);
 }
-.ve-scene .ve-scene-content > .ve-chapter-navigation {
-  flex: 0 0 44px;
-  margin: 0;
-}
-.ve-scene .modes {
-  position: absolute;
-  top: 68px;
-  right: 28px;
-  margin: 0;
-  gap: 20px;
-}
 .ve-scene .modes button {
   font-size: 18px;
   padding-inline: 12px;
@@ -126,14 +115,20 @@
 .ve-scene .memory-panel p {
   margin: 12px 0;
 }
+.ve-scene .memory-detail:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .memory-detail #feedback-drawing {
-  width: 540px;
-  margin-inline: auto;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
 }
 .memory-detail svg {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
 }
 .ve-scene .memory-trace {
   width: 100%;
@@ -155,83 +150,4 @@
 }
 .memory-challenge .ve-prediction > * + * {
   margin-top: 8px;
-}
-
-.ve-scene [data-frame-layout='responsive'] > .ve-scene-content {
-  padding: 16px 10px;
-}
-.ve-scene [data-frame-layout='responsive'] h1.ve-heading {
-  font-size: 30px;
-  margin-bottom: 12px;
-}
-.ve-scene [data-frame-layout='responsive'] .modes {
-  position: static;
-  justify-content: flex-start;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin: 8px 0 16px;
-}
-.ve-scene [data-frame-layout='responsive'] .modes button {
-  font-size: 16px;
-  padding-inline: 6px;
-}
-[data-frame-layout='responsive'] .memory-drawing {
-  position: static;
-}
-[data-frame-layout='responsive'] .memory-drawing > svg {
-  height: auto;
-}
-[data-frame-layout='responsive']
-  .memory-sheet:is([data-panel='inside'], [data-panel='trace-panel'])
-  .memory-drawing {
-  display: none;
-}
-.ve-scene [data-frame-layout='responsive'] .memory-notes {
-  position: static;
-  display: flex;
-  flex-direction: column;
-  pointer-events: auto;
-}
-.ve-scene [data-frame-layout='responsive'] .memory-toolbar {
-  position: static;
-  height: auto;
-  align-items: flex-start;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 16px;
-}
-.ve-scene [data-frame-layout='responsive'] :is(.memory-presets, .memory-actions) {
-  flex-wrap: wrap;
-}
-.ve-scene [data-frame-layout='responsive'] .memory-toolbar button {
-  font-size: 16px;
-  min-height: 36px;
-}
-.ve-scene [data-frame-layout='responsive'] .memory-challenge {
-  position: static;
-  width: auto;
-  overflow: visible;
-  order: -1;
-  margin-top: 12px;
-}
-.ve-scene [data-frame-layout='responsive'] .memory-panel {
-  position: static;
-  padding: 8px 0;
-  overflow: visible;
-  font-size: 18px;
-  order: -2;
-}
-[data-frame-layout='responsive'] .memory-panel-heading {
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-[data-frame-layout='responsive'] .memory-panel-heading h2 {
-  font-size: 25px;
-}
-[data-frame-layout='responsive'] .memory-detail #feedback-drawing {
-  width: min(100%, 540px);
-}
-.ve-scene [data-frame-layout='responsive'] .memory-trace {
-  font-size: 18px;
 }

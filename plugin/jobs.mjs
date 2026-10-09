@@ -71,6 +71,7 @@ export class JobRunner {
                 'plugin/runtime/worker.mjs',
                 'plugin/workflows.mjs',
                 'plugin/project-files.mjs',
+                'plugin/projects.mjs',
                 'plugin/revision-input.mjs',
                 'runtime/npm/package.json',
                 'runtime/npm/bin',
@@ -334,7 +335,7 @@ export class JobRunner {
       job.startedAt = new Date().toISOString();
       await this.save(job);
       if (job.status !== 'cancelling') {
-        const { terminal, tail, code } = await new Promise((resolve) => {
+        const { terminal, tail, code, signal } = await new Promise((resolve) => {
           const child = fork(this.entry, [], {
             stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
             env: process.env,
@@ -369,7 +370,7 @@ export class JobRunner {
             }
             if (message?.type === 'result' || message?.type === 'error') terminal = message;
           });
-          child.once('close', (code) => resolve({ terminal, tail, code }));
+          child.once('close', (code, signal) => resolve({ terminal, tail, code, signal }));
           child.send({ kind: job.kind, input: job.input, jobId: job.id }, (error) => {
             if (error) {
               terminal = { error: error.message };
@@ -381,8 +382,10 @@ export class JobRunner {
         clearTimeout(this.active.timer);
         this.active.child = null;
         if (job.status !== 'cancelling' && !terminal?.cancelled) {
-          if (terminal?.type !== 'result' || code !== 0)
-            throw new Error(terminal?.error ?? (tail || 'Preparation process stopped.'));
+          if (terminal?.type !== 'result' || code !== 0) {
+            const stopped = `Preparation process stopped (${signal ?? `exit code ${code ?? 'unknown'}`}).`;
+            throw new Error(terminal?.error ?? (tail ? `${stopped}\n${tail}` : stopped));
+          }
           this.active.completing = true;
           job.result = await this.onComplete(job, terminal.result);
           job.status = 'succeeded';

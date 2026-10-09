@@ -14,7 +14,6 @@ import type { SceneHandle as Example } from '@visual-storytelling/core';
 export function mount(parent: HTMLElement): Example {
   const book = notebook(parent, {
     title: 'Инструменты одного почерка',
-    subtitle: 'Ручка, маркер и аккуратная штриховка.',
     parameters: [
       {
         key: 'progress',

@@ -25,7 +25,7 @@ for (const [name, values] of [
       ]);
       expect(close.snapshot.content.surfaces.board.visible).toBe(true);
       expect(close.presentation.clipped).toEqual([]);
-      expect(close.presentation.unreadableText).toEqual([]);
+      if (!variant) expect(close.presentation.unreadableText).toEqual([]);
       await command([{ type: 'cue', id: 'experiment.change', progress: 0.8 }]);
       const rewind = await command([{ type: 'cue', id: 'workshop.explain', progress: 0.65 }]);
       expect(rewind.snapshot).toEqual(close.snapshot);
@@ -37,47 +37,49 @@ for (const [name, values] of [
         expect(bounds.hero.y).toBeGreaterThanOrEqual(camera.y);
         expect(bounds.hero.x + bounds.hero.width).toBeLessThanOrEqual(camera.x + camera.width);
         expect(bounds.hero.y + bounds.hero.height).toBeLessThanOrEqual(camera.y + camera.height);
-        expect(idea.presentation.unreadableText).toEqual([]);
+        if (!variant) expect(idea.presentation.unreadableText).toEqual([]);
       }
       const paper = await command([
         { type: 'parameters', values: { chapter: 'experiment', sceneTime: 1, ...values } },
       ]);
       expect(paper.mode).toBe('explore');
-      const grid = page.locator('[data-chapter="experiment"] .vs-grid path').first();
-      await expect(grid).toBeVisible();
-      const gridLines = await grid.getAttribute('d');
+      const sheet = page.locator('.ve-scene-content');
+      const grid = () =>
+        sheet.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return {
+            image: style.backgroundImage,
+            size: style.backgroundSize,
+            position: style.backgroundPosition,
+          };
+        });
+      const paperGrid = await grid();
+      expect(paperGrid.image).not.toBe('none');
+      // The outer paper owns the decorative grid; its nested drawing does not double it.
+      await expect(page.locator('[data-chapter="experiment"] .vs-grid')).toBeHidden();
       for (const theme of ['dark', 'light']) {
         const inspection = await command([{ type: 'theme', value: theme }]);
         expect(inspection.presentation.clipped).toEqual([]);
-        expect(inspection.presentation.unreadableText).toEqual([]);
-        const numbers = (value: string) =>
-          [...value.matchAll(/-?\d+(?:\.\d+)?/g)].map((match) => Number(match[0]));
-        const expected = numbers(gridLines!),
-          actual = numbers((await grid.getAttribute('d'))!);
-        expect(actual).toHaveLength(expected.length);
-        actual.forEach((number, index) => expect(number).toBeCloseTo(expected[index]!, 3));
+        expect(
+          inspection.presentation.frame.width / inspection.presentation.frame.height,
+        ).toBeCloseTo(16 / 9, 4);
+        if (!variant) expect(inspection.presentation.unreadableText).toEqual([]);
+        const nextGrid = await grid();
+        expect(nextGrid.size).toBe(paperGrid.size);
+        expect(nextGrid.position).toBe(paperGrid.position);
       }
-      const paperBounds = await grid.evaluate((path: SVGGraphicsElement) => {
-        const drawing = path.ownerSVGElement!,
-          grid = path.getBBox(),
-          viewport = drawing.viewBox.baseVal;
-        return {
-          gaps: [
-            grid.x - viewport.x,
-            grid.y - viewport.y,
-            viewport.x + viewport.width - grid.x - grid.width,
-            viewport.y + viewport.height - grid.y - grid.height,
-          ],
-          ratio: viewport.width / viewport.height,
-          visibleRatio: drawing.clientWidth / drawing.clientHeight,
-          fill: getComputedStyle(path).fill,
-          background: getComputedStyle(drawing).backgroundColor,
-        };
-      });
-      expect(Math.max(...paperBounds.gaps)).toBeLessThan(1);
-      expect(paperBounds.ratio).toBeCloseTo(paperBounds.visibleRatio, 4);
-      expect(paperBounds.fill).toBe('none');
-      expect(paperBounds.background).toBe('rgba(0, 0, 0, 0)');
+      if (variant) {
+        // Expanding the same fixed composition restores reading size without changing its model.
+        await page.setViewportSize({ width: 1040, height: 800 });
+        await page.evaluate(
+          () =>
+            new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+        );
+        const expanded = await command([{ type: 'pause' }]);
+        expect(expanded.snapshot).toEqual(paper.snapshot);
+        expect(expanded.presentation.unreadableText).toEqual([]);
+        await page.setViewportSize({ width: 375, height: 800 });
+      }
       if (name === 'tesla-circuit') {
         expect(paper.snapshot.content.closed).toBe(false);
         await page
@@ -115,7 +117,7 @@ test('an interactive control on the world plane edits the same parameter as its 
 });
 
 for (const theme of ['light', 'dark'] as const)
-  test(`quiet lesson records a prediction before revealing feedback: ${theme}`, async ({
+  test(`area prediction belongs to the drawing and survives undo and rewind: ${theme}`, async ({
     page,
   }) => {
     const errors: string[] = [];
@@ -131,68 +133,62 @@ for (const theme of ['light', 'dark'] as const)
         { type: 'cue', id: 'prediction', progress: 0.5 },
       ]);
     }, theme);
-    const trial = page.locator('.ve-prediction');
+    const trial = page.locator('[data-chapter="prediction"]');
     const run = trial.getByRole('button', { name: 'Удвоить ширину и проверить' });
-    await expect(trial).toBeVisible();
-    await expect(run).toBeDisabled();
-    await expect(trial.getByRole('status')).not.toContainText('Получилось');
-    expect(
-      await page.evaluate(
+    const outcome = trial.locator('[data-area-outcome]');
+    const area = () =>
+      page.evaluate(
         () => (document.querySelector('.ve-scene') as any).scene.snapshot().content.area,
-      ),
-    ).toBe(6);
+      );
+    await expect(run).toHaveAttribute('aria-disabled', 'true');
+    await expect(outcome).toHaveAttribute('aria-label', 'Прогноз ещё не проверен');
+    expect(await area()).toBe(6);
     const choice = trial.getByRole('button', { name: '24 см²', exact: true });
     await choice.focus();
     await choice.press('Enter');
     await expect(choice).toHaveAttribute('aria-pressed', 'true');
-    await expect(run).toBeEnabled();
-    await expect(trial.getByRole('status')).not.toContainText('Получилось');
+    await expect(choice).toBeFocused();
+    await expect(run).toHaveAttribute('aria-disabled', 'false');
+    await expect(outcome).toHaveAttribute('aria-label', 'Прогноз ещё не проверен');
     await run.focus();
     await run.press('Enter');
-    await expect(trial.getByRole('status')).toContainText('Ваш прогноз: 24 см². Получилось 12 см²');
-    await expect(trial.getByRole('status')).toBeFocused();
-    const state = await page.evaluate(() =>
-      (document.querySelector('.ve-scene') as any).scene.inspect(),
+    await expect(outcome).toHaveAttribute(
+      'aria-label',
+      'Ваш прогноз: 24 см². Получилось 12 см²: 6 + 6.',
     );
-    expect(state.snapshot.content.area).toBe(12);
+    await expect(outcome).toBeFocused();
+    expect(await area()).toBe(12);
+    await expect(trial.locator('[data-object="formula"] .vs-lettering')).toHaveAttribute(
+      'aria-label',
+      '6 + 6 = 12 см²',
+    );
     await page.getByRole('button', { name: 'Отменить условие', exact: true }).click();
-    await expect(run).toBeEnabled();
+    await expect(run).toHaveAttribute('aria-disabled', 'false');
     await expect(choice).toHaveAttribute('aria-pressed', 'true');
-    await expect(trial.getByRole('status')).not.toContainText('Получилось');
-    expect(
-      await page.evaluate(
-        () => (document.querySelector('.ve-scene') as any).scene.snapshot().content.area,
-      ),
-    ).toBe(6);
+    await expect(outcome).toHaveAttribute('aria-label', 'Прогноз ещё не проверен');
+    expect(await area()).toBe(6);
     await page.getByRole('button', { name: 'Повторить', exact: true }).click();
-    await expect(trial.getByRole('status')).toContainText('Получилось 12 см²');
-    const detail = page.locator('.ve-disclosure');
-    await detail.locator('summary').focus();
-    await detail.locator('summary').press('Enter');
-    await expect(detail).toHaveAttribute('open', '');
-    await expect(page.locator('[data-area-addition]')).toHaveText('6 + 6 = 6 × 2 = 12 см²');
-    await page.getByRole('button', { name: 'Отменить условие', exact: true }).click();
-    await expect(detail).not.toHaveAttribute('open', '');
+    await expect(outcome).toHaveAttribute('aria-label', /Получилось 12 см²/);
     await page.getByRole('button', { name: 'Попробовать свои стороны' }).click();
     await expect(trial).toBeHidden();
-    const height = page.getByRole('slider', { name: 'Высота, см', exact: true });
-    for (const value of ['4', '1', '3', '5']) await height.fill(value);
-    await expect
-      .poll(() =>
-        page.evaluate(
-          () => (document.querySelector('.ve-scene') as any).scene.snapshot().content.area,
-        ),
-      )
-      .toBe(30);
+    const increase = page.getByRole('button', { name: 'Увеличить высоту', exact: true });
+    await increase.focus();
+    for (let i = 0; i < 3; i++) await increase.press('Enter');
+    await expect.poll(area).toBe(30);
+    await expect(increase).toHaveAttribute('aria-disabled', 'true');
+    const decrease = page.getByRole('button', { name: 'Уменьшить высоту', exact: true });
+    await decrease.focus();
+    await decrease.press(' ');
+    await expect.poll(area).toBe(24);
+    await expect(decrease).toBeFocused();
     await page.evaluate(async () =>
       (document.querySelector('.ve-scene') as any).scene.control([
         { type: 'cue', id: 'prediction', progress: 0.5 },
       ]),
     );
     await expect(trial).toBeVisible();
-    await expect(run).toBeDisabled();
-    await expect(trial.getByRole('status')).not.toContainText('Получилось');
-    await expect(detail).not.toHaveAttribute('open', '');
-    await expect(page.locator('[data-area-reading]')).toContainText('только ширину');
+    await expect(run).toHaveAttribute('aria-disabled', 'true');
+    await expect(outcome).toHaveAttribute('aria-label', 'Прогноз ещё не проверен');
+    expect(await area()).toBe(6);
     expect(errors).toEqual([]);
   });

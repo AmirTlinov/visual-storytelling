@@ -2,10 +2,10 @@
   max-width: 1080px;
   margin: auto;
 }
-#neuron-scene .neuron-question {
-  font: 22px/1.4 var(--ve-font);
-  text-align: center;
-  margin: 8px 12px 14px;
+#neuron-scene :is(.neuron-flat, .neuron-volume) {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
 }
 .neuron-views .ve-control {
   display: flex;
@@ -20,29 +20,8 @@
   height: 1px;
   overflow: hidden;
 }
-#neuron-scene .neuron-hint {
-  font: 17px/1.4 var(--ve-font);
-  color: var(--ve-muted);
-  text-align: center;
-  margin: 8px 14px 12px;
-  min-height: 1lh;
-}
-#neuron-scene .ve-control-range {
-  grid-column: 1 / -1;
-}
 @media (max-width: 480px) {
   #neuron-scene .ve-chapter-heading .ve-select-trigger {
     min-height: calc(2lh + 8px);
-  }
-  #neuron-scene .neuron-question {
-    font-size: 20px;
-    min-height: 2lh;
-  }
-  #neuron-scene .neuron-hint {
-    min-height: 3lh;
-  }
-  #neuron-scene .ve-parameters {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
   }
 }

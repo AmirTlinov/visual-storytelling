@@ -109,10 +109,9 @@ export async function exportVideo({
     )
       throw new Error('Invalid video interval');
     await first.seek(from);
-    const png = await first.png();
     const even = (value) => Math.round(value / 2) * 2;
     const w = even(view.width ?? 960),
-      h = even(height ?? (w * png.readUInt32BE(20)) / png.readUInt32BE(16));
+      h = even(height ?? (w * 9) / 16);
     output = resolve(output);
     await mkdir(dirname(output), { recursive: true });
     temporary = await mkdtemp(join(dirname(output), '.visual-story-video-'));

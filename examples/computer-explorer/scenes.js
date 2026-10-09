@@ -31,7 +31,7 @@ function makeScene(node, viewport, values, cycle, display, architecture = 'discr
   const unified = architecture === 'unified';
   const box =
     node.type === 'board'
-      ? rectBox(0, 0, viewport.w < 520 ? 500 : 900, viewport.w < 520 ? 1050 : 795)
+      ? rectBox(0, 0, 900, 610)
       : node.type.startsWith('image-')
         ? rectBox(0, 0, 600, 400)
         : unified && node.type === 'cpu-die'
@@ -39,7 +39,7 @@ function makeScene(node, viewport, values, cycle, display, architecture = 'discr
           : sceneBoxes[node.type] || rectBox(0, 0, 600, 360);
   const fit = Math.min((viewport.w - 32) / box.w, (viewport.h - 60) / box.h);
   const T = (x, y, label, size = 14, cls = '', anchor = 'middle') =>
-    `<text x="${x}" y="${y}" font-size="${Math.max(size, 11 / fit)}" class="${cls}" text-anchor="${anchor}" dominant-baseline="middle">${esc(label)}</text>`;
+    `<text x="${x}" y="${y}" font-size="${Math.max(size, (node.type === 'board' ? 14 : 11) / fit)}" class="${cls}" text-anchor="${anchor}" dominant-baseline="middle">${esc(label)}</text>`;
   const scene = { box, body: '', hits: [], caption: '', control: null };
   const control = (key, on, off) => ({ key, label: values[key] ? on : off });
   const imageRef =
@@ -256,7 +256,7 @@ function makeScene(node, viewport, values, cycle, display, architecture = 'discr
   }
   scene.body = b;
   if (!b) {
-    if (node.type === 'board') return boardScene(viewport, art);
+    if (node.type === 'board') return boardScene(art);
     if (gpuSceneTypes.has(node.type)) return gpuScene(node, art);
     if (romSceneTypes.has(node.type)) return romScene(node, values, art);
     if (ioSceneTypes.has(node.type)) return ioScene(node, values, art);

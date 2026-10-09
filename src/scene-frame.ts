@@ -3,8 +3,6 @@ export interface SceneFrameOptions {
   height: number;
   /** Frame the subject only, or the complete lesson including its controls. */
   scope?: 'stage' | 'scene';
-  /** Use responsive document layout below this available width; interactive frames scroll vertically as needed. Fixed exports retain the authored frame. */
-  responsiveBelow?: number;
 }
 
 /** Keep the complete logical composition inside the available aperture. */
@@ -18,18 +16,13 @@ export function fitFrame(
   return { width: width * scale, height: height * scale, scale };
 }
 
-/** A logical film canvas; the browser scales the complete composition as one unit. */
+/** Fit an authored canvas as one unit. Append element, call resize(), and release it with its owning scene. */
 export function sceneFrame(
   content: HTMLElement,
-  { width, height, scope = 'stage', responsiveBelow }: SceneFrameOptions,
+  { width, height, scope = 'stage' }: SceneFrameOptions,
 ) {
   if (![width, height].every((n) => Number.isFinite(n) && n > 0))
     throw new Error('Scene frame dimensions must be positive');
-  if (
-    responsiveBelow !== undefined &&
-    (scope !== 'scene' || !Number.isFinite(responsiveBelow) || responsiveBelow <= 0)
-  )
-    throw new Error('responsiveBelow requires a positive width and scope:scene');
   const element = document.createElement('div');
   element.className = scope === 'scene' ? 've-scene-frame' : 've-frame';
   element.dataset.sceneFrame = '';
@@ -47,24 +40,18 @@ export function sceneFrame(
     if (!element.parentElement) return;
     if (root !== element.parentElement) {
       if (root) observer.unobserve(root);
-      exportMode.disconnect();
       root = element.parentElement;
       observer.observe(root);
-      exportMode.observe(root, { attributes: true, attributeFilter: ['data-scene-export'] });
     }
     const style = getComputedStyle(root);
     const availableWidth =
       root.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
     if (!availableWidth) return;
-    const responsive =
-      responsiveBelow !== undefined &&
-      availableWidth < responsiveBelow &&
-      !root.hasAttribute('data-scene-export');
     let availableHeight = Infinity;
-    if (
-      root.closest('.ve-standalone') &&
-      (responsiveBelow === undefined || root.hasAttribute('data-scene-export'))
-    ) {
+    if (root.closest('[data-scene-frame]')) {
+      availableHeight =
+        root.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+    } else if (root.closest('.ve-standalone')) {
       const box = root.getBoundingClientRect();
       const chrome =
         scope === 'scene'
@@ -73,24 +60,15 @@ export function sceneFrame(
       const top = Math.max(0, box.top + scrollY);
       const body = getComputedStyle(document.body);
       const bottom = (parseFloat(body.marginBottom) || 0) + (parseFloat(body.paddingBottom) || 0);
-      // A lesson may have more controls and notes than one screen can hold. Keep
-      // its drawing readable and let the document scroll instead of collapsing it.
-      const minimumHeight = Math.min(320, (availableWidth * height) / width);
-      availableHeight = Math.max(minimumHeight, innerHeight - top - chrome - bottom);
+      availableHeight = Math.max(1, innerHeight - top - chrome - bottom);
     }
     const fit = fitFrame(width, height, availableWidth, availableHeight);
-    const layout = responsive ? 'responsive' : 'fixed',
-      scale = responsive ? 1 : fit.scale;
-    const changed =
-      element.dataset.frameLayout !== layout || element.dataset.frameScale !== String(scale);
-    element.dataset.frameLayout = layout;
-    element.style.aspectRatio = responsive ? 'auto' : `${width} / ${height}`;
-    element.style.width = `${responsive ? availableWidth : fit.width}px`;
-    element.style.height = responsive ? 'auto' : `${fit.height}px`;
-    content.style.width = responsive ? '100%' : `${width}px`;
-    content.style.height = responsive ? 'auto' : `${height}px`;
-    content.style.transform = responsive ? '' : `scale(${fit.scale})`;
-    element.dataset.frameScale = String(scale);
+    const changed = element.dataset.frameScale !== String(fit.scale);
+    element.dataset.frameLayout = 'fixed';
+    element.style.width = `${fit.width}px`;
+    element.style.height = `${fit.height}px`;
+    content.style.transform = `scale(${fit.scale})`;
+    element.dataset.frameScale = String(fit.scale);
     if (changed) element.dispatchEvent(new CustomEvent('scene-frame-resize', { bubbles: true }));
   };
   let pending = 0;
@@ -102,7 +80,6 @@ export function sceneFrame(
       });
   };
   const observer = new ResizeObserver(schedule);
-  const exportMode = new MutationObserver(resize);
   observer.observe(element);
   window.addEventListener('resize', resize);
   return {
@@ -110,7 +87,6 @@ export function sceneFrame(
     resize,
     dispose() {
       observer.disconnect();
-      exportMode.disconnect();
       cancelAnimationFrame(pending);
       window.removeEventListener('resize', resize);
     },

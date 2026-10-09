@@ -1,9 +1,30 @@
-import { mountScene } from '@visual-storytelling/core';
+import { SceneShell, mountScene } from '@visual-storytelling/core';
 import { SvgLayout, rough, gsap, widgetState } from '@visual-storytelling/core';
 window.galleryReady = (async () => {
+  await SceneShell.ready();
   const root = document.getElementById('ve-scene'),
-    svg = root.querySelector('.canvas');
-  const { element: el, place, observe } = SvgLayout,
+    svg = root.querySelector('svg.canvas');
+  const composition = document.createElement('div'),
+    stage = document.createElement('div');
+  stage.className = 've-stage';
+  svg.replaceWith(stage);
+  stage.append(svg);
+  root.querySelector('h1').classList.add('ve-heading');
+  const toolbar = document.createElement('div');
+  toolbar.className = 've-scene-toolbar';
+  const modes = root.querySelector('.modes');
+  modes.replaceWith(toolbar);
+  toolbar.append(modes);
+  const controls = document.createElement('div');
+  controls.className = 'fraction-controls';
+  root.querySelector('.partition').before(controls);
+  controls.append(root.querySelector('.partition'), root.querySelector('.inputs'));
+  composition.append(...root.childNodes);
+  const sceneFrame = SceneShell.frame(composition, { width: 1280, height: 720, scope: 'scene' });
+  root.append(sceneFrame.element);
+  sceneFrame.resize();
+
+  const { element: el, place } = SvgLayout,
     rc = rough.svg(svg);
   const find = (key) => root.querySelector(`[data-${key}]`),
     total = 12;
@@ -11,10 +32,9 @@ window.galleryReady = (async () => {
     listen = { signal: abort.signal };
   const state = { parts: 3, taken: 2, mode: 'numbers' };
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-  let layout,
-    width = 0,
-    first = true,
-    animateNext = false;
+  const width = 840;
+  let first = true;
+  svg.setAttribute('viewBox', `0 0 ${width} 420`);
   const movement = { progress: 1 };
   let movementFrom = [],
     restoredMovement;
@@ -43,7 +63,6 @@ window.galleryReady = (async () => {
     return node;
   }
   function draw(animate = !settled) {
-    if (!width) return 350;
     gsap.killTweensOf(movement);
     const restored = restoredMovement;
     restoredMovement = undefined;
@@ -59,14 +78,14 @@ window.galleryReady = (async () => {
     const rows = Math.ceil(state.parts / columns),
       slot = Math.min(190, (width - 16) / columns);
     const left = (width - slot * columns) / 2,
-      top = 68,
+      top = 68 + (2 - rows) * 68.5,
       groupHeight = 137;
     find('guides').replaceChildren();
     find('labels').replaceChildren();
-    const instruction = text('', width / 2, 23, 'note');
+    const instruction = text('', width / 2, top - 45, 'note');
     instruction.removeAttribute('data-arrival');
     find('guides').append(
-      el('path', { class: 'ink-line', d: `M${left + 6} 47v-8H${width - left - 6}v8` }),
+      el('path', { class: 'ink-line', d: `M${left + 6} ${top - 21}v-8H${width - left - 6}v8` }),
     );
     for (let part = 0; part < state.parts; part++) {
       const x = left + (part % columns) * slot + 5,
@@ -134,7 +153,7 @@ window.galleryReady = (async () => {
       published = settled;
       root.dataset.phase = settled ? 'complete' : 'arranging';
       instruction.textContent = settled ? 'Всего 12 фишек' : 'Раскладываем 12 фишек поровну';
-      place(instruction, width / 2, 23);
+      place(instruction, width / 2, top - 45);
       find('labels')
         .querySelectorAll('[data-arrival]')
         .forEach((node) => {
@@ -175,7 +194,6 @@ window.galleryReady = (async () => {
         onComplete: save,
       });
     first = false;
-    return baseline + (state.mode === 'formulas' ? 67 : 32);
   }
   function save() {
     storage.save({
@@ -206,8 +224,7 @@ window.galleryReady = (async () => {
         if (parts === state.parts) return;
         state.parts = parts;
         state.taken = Math.min(state.parts, state.taken);
-        animateNext = true;
-        layout?.update();
+        draw(true);
         save();
       },
       listen,
@@ -227,19 +244,14 @@ window.galleryReady = (async () => {
       'click',
       () => {
         state.mode = b.dataset.mode;
-        layout?.update();
+        draw();
         save();
       },
       listen,
     ),
   );
   reduced.addEventListener('change', () => draw(), listen);
-  layout = await observe(svg, (w) => {
-    width = w;
-    const height = draw(animateNext || !settled);
-    animateNext = false;
-    return height;
-  });
+  draw(false);
   const scene = mountScene(root, {
     subject: {
       capture: () => ({
@@ -268,8 +280,7 @@ window.galleryReady = (async () => {
           throw new Error('Сохранённые условия долей несовместимы с этой сценой.');
         Object.assign(state, { parts: value.parts, taken: value.taken, mode: value.mode });
         restoredMovement = structuredClone(motion);
-        animateNext = false;
-        layout.update();
+        draw(false);
       },
     },
     snapshot: () => ({
@@ -283,7 +294,7 @@ window.galleryReady = (async () => {
       if (abort.signal.aborted) return;
       abort.abort();
       storage.dispose();
-      layout.dispose();
+      sceneFrame.dispose();
       gsap.killTweensOf(movement);
       root.replaceChildren();
     },

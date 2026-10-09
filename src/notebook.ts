@@ -8,7 +8,6 @@ export function notebook(
   parent: HTMLElement,
   options: {
     title: string;
-    subtitle?: string;
     theme?: Theme;
     parameters?: SceneOptions['parameters'];
   },
@@ -22,8 +21,6 @@ export function notebook(
       parameters: options.parameters,
     });
   shell.fields.hidden = false;
-  if (options.subtitle)
-    element.querySelector('h1')!.after(html('p', 'vs-subtitle', options.subtitle));
   shell.onDispose(appearance.dispose);
   shell.onDispose(() => element.remove());
   return {

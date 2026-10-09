@@ -10,8 +10,46 @@
   box-sizing: border-box;
 }
 #computer-explorer .explorer-app {
-  position: relative;
+  display: grid;
+  grid-template-rows: 48px minmax(0, 1fr) 100px;
+  gap: 8px;
+  padding: 12px 24px;
   background: transparent;
+}
+#computer-explorer .explorer-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+#computer-explorer .explorer-stage,
+#computer-explorer .explorer-viewport {
+  min-height: 0;
+  height: 100%;
+}
+#computer-explorer .explorer-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  min-width: 0;
+}
+#computer-explorer .explorer-architecture {
+  flex: 0 0 auto;
+}
+#computer-explorer .explorer-caption,
+#computer-explorer [data-job-status],
+#computer-explorer [data-clock-status],
+#computer-explorer [data-display-status],
+#computer-explorer [data-nand-status] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 #computer-explorer .explorer-architecture {
@@ -27,9 +65,6 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-#computer-explorer[data-scene='board'] .explorer-viewport {
-  height: 650px;
-}
 #computer-explorer .nand-controls {
   padding: 0 8px 8px;
 }
@@ -188,7 +223,17 @@
   stroke-width: 0.75;
 }
 #computer-explorer .image-job {
-  padding: 0 8px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  min-width: 0;
+}
+#computer-explorer .explorer-toolbar .viz-row {
+  flex-wrap: nowrap;
+}
+#computer-explorer .image-job-flow .btn {
+  padding-inline: 8px;
 }
 #computer-explorer .image-job-actions,
 #computer-explorer .image-job-flow {
@@ -212,7 +257,20 @@
   filter: drop-shadow(0 0 3px var(--p-accent));
 }
 #computer-explorer .display-controls {
-  padding: 0 8px 8px;
+  display: grid;
+  grid-template-columns: minmax(380px, 460px) auto;
+  align-items: center;
+  column-gap: 32px;
+}
+#computer-explorer .display-controls:not(:has([data-display-editor]:not([hidden]))) {
+  grid-template-columns: auto;
+}
+#computer-explorer [data-display-editor] {
+  grid-row: span 2;
+}
+#computer-explorer .display-controls [data-display-status] {
+  max-width: 620px;
+  margin-bottom: 0;
 }
 #computer-explorer .display-controls p {
   text-align: center;
@@ -229,46 +287,6 @@
   max-width: 500px;
   margin: 0 auto 8px;
 }
-@media (max-width: 520px) {
-  #computer-explorer .explorer-navigation {
-    padding: 0;
-  }
-  #computer-explorer .explorer-path button {
-    padding: 5px 6px;
-    font-size: 11px;
-  }
-  #computer-explorer .explorer-viewport {
-    height: 460px;
-  }
-  #computer-explorer[data-scene='board'] .explorer-viewport {
-    height: 680px;
-  }
-  #computer-explorer[data-scene^='nand-'] .explorer-viewport,
-  #computer-explorer[data-scene^='hdd'] .explorer-viewport,
-  #computer-explorer[data-scene^='ssd-'] .explorer-viewport,
-  #computer-explorer[data-scene='sata-ssd'] .explorer-viewport,
-  #computer-explorer[data-scene='storage-interface'] .explorer-viewport {
-    height: 320px;
-  }
-  #computer-explorer[data-scene^='image-'] .explorer-viewport {
-    height: 320px;
-  }
-  #computer-explorer[data-scene='nvme-ssd'] .explorer-viewport {
-    height: 220px;
-  }
-  #computer-explorer[data-scene='soc'] .explorer-viewport,
-  #computer-explorer[data-scene='system-fabric'] .explorer-viewport,
-  #computer-explorer[data-scene='unified-memory'] .explorer-viewport {
-    height: 300px;
-  }
-  #computer-explorer[data-clock='true'] .explorer-viewport {
-    height: 300px;
-  }
-  #computer-explorer[data-clock='true'][data-scene='gate'] .explorer-viewport {
-    height: 350px;
-  }
-}
-
 /* Engineering illustrations retain their accepted silhouette and material palette. */
 #computer-explorer.ve-scene {
   background: none;

@@ -25,6 +25,7 @@ import { buildNarration } from '../tools/narration.mjs';
 import { updateSceneRuntime } from '../tools/runtime-package.mjs';
 import { contentDigest } from '../tools/build-info.mjs';
 import { captureWorkingInput } from './revision-input.mjs';
+import { prepareProjectChanges, writeProjectChange } from './projects.mjs';
 const execute = promisify(execFile);
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -239,10 +240,27 @@ async function prepareBuild(input, task) {
 export const workflows = {
   async migrate(input, task) {
     const snapshot = join(input.data, 'snapshots', task.jobId);
+    const changes = input.changes ?? [];
+    if (
+      new Set(['package.json', 'package-lock.json', ...changes.map((change) => change.path)]).size >
+      64
+    )
+      throw new Error(
+        'Runtime migration supports 62 source files plus package.json and package-lock.json.',
+      );
+    // Validate against working paths first: snapshots deliberately flatten internal links.
+    const edits = changes.length ? await prepareProjectChanges(input.projectPath, changes) : [];
     await snapshotProject(input.projectPath, snapshot, input.sourceRevision);
+    if (edits.length) {
+      task.progress('Применяю исходники к новой библиотеке…');
+      for (const edit of edits) {
+        task.signal.throwIfAborted();
+        await writeProjectChange(snapshot, edit);
+      }
+    }
     task.progress('Подготавливаю новую библиотеку…');
     const updated = await updateSceneRuntime(snapshot, { root, build: false, signal: task.signal });
-    if (!updated.changed) return { upToDate: true };
+    if (!updated.changed && !changes.length) return { upToDate: true };
     const preparedRevision = (await projectFiles(snapshot)).revision;
     await buildScene(snapshot, join(snapshot, 'dist'), {
       data: input.data,
@@ -250,16 +268,24 @@ export const workflows = {
       signal: task.signal,
     });
     await unchangedInputs(snapshot, preparedRevision);
+    task.signal.throwIfAborted();
     const path = updated.dependency.replace(/^file:(?:\.\/)?/, '');
     const bytes = await readFile(join(snapshot, path));
     return {
       migration: {
-        changes: await Promise.all(
-          ['package.json', 'package-lock.json'].map(async (name) => ({
-            path: name,
-            content: await readFile(join(snapshot, name), 'utf8'),
-          })),
-        ),
+        changes: [
+          ...new Map(
+            [
+              ...changes,
+              ...(await Promise.all(
+                ['package.json', 'package-lock.json'].map(async (name) => ({
+                  path: name,
+                  content: await readFile(join(snapshot, name), 'utf8'),
+                })),
+              )),
+            ].map((change) => [change.path, change]),
+          ).values(),
+        ],
         assets: [{ path, source: join(snapshot, path), hash: digest(bytes) }],
       },
     };

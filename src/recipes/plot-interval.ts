@@ -1,5 +1,6 @@
 import { object } from '../ink/object.js';
 import { lettering } from '../ink/lettering.js';
+import { svg } from '../ink/dom.js';
 import type { Surface } from '../ink/surface.js';
 import type { Point } from '../ink/pen.js';
 import type { Pigment } from '../ink/palette.js';
@@ -8,6 +9,7 @@ export interface PlotIntervalOptions {
   from: Point;
   to: Point;
   pigment?: Pigment;
+  size?: number;
   formatX(value: number): string;
   formatY(value: number): string;
 }
@@ -35,8 +37,20 @@ export function plotInterval(
       width: 1.2,
     },
   );
-  const horizontal = lettering(mark.content, '', { size: 20 });
-  const vertical = lettering(mark.content, '', { size: 20, anchor: 'start' });
+  const size = options.size ?? 20;
+  const horizontal = lettering(mark.content, '', { size });
+  const vertical = lettering(mark.content, '', { size, anchor: 'start' });
+  // Reserve paper under each measurement so another trace cannot strike through its ink.
+  const inscriptions = [horizontal, vertical].map((label) => {
+    const paper = svg('rect', {
+      fill: 'var(--ve-surface)',
+      rx: 3,
+      'aria-hidden': 'true',
+      'pointer-events': 'none',
+    });
+    mark.content.insertBefore(paper, label.element);
+    return { label, paper };
+  });
   let delta: Point;
   const at = (from: Point, to: Point) => {
     const a = point(...from),
@@ -44,14 +58,14 @@ export function plotInterval(
     delta = [to[0] - from[0], to[1] - from[1]];
     area.update([a, [b[0], a[1]], b]);
     horizontal.text(options.formatX(delta[0]));
-    horizontal.at((a[0] + b[0]) / 2, Math.min(bounds.y + bounds.height - 10, a[1] + 27));
+    horizontal.at((a[0] + b[0]) / 2, Math.min(bounds.y + bounds.height - 10, a[1] + size + 7));
     vertical.text(options.formatY(delta[1]));
     vertical.at(0, 0);
     const ink = vertical.bounds,
       paper = view.element.viewBox.baseVal,
       dx = b[0] - a[0],
       dy = b[1] - a[1],
-      gap = 8;
+      gap = Math.max(8, size * 0.4);
     const length = Math.hypot(dx, dy);
     const distances = (box: { x: number; y: number; width: number; height: number }) =>
       [box.x, box.x + box.width].flatMap((x) =>
@@ -79,7 +93,15 @@ export function plotInterval(
       (runClearance.every((d) => d >= gap) || runClearance.every((d) => d <= -gap))
         ? ''
         : 'hidden';
-    vertical.element.style.visibility = fits && Math.abs(dy) >= ink.height + 20 ? '' : 'hidden';
+    vertical.element.style.visibility = fits && Math.abs(dy) >= ink.height + 12 ? '' : 'hidden';
+    for (const { label, paper } of inscriptions) {
+      const box = label.bounds;
+      paper.setAttribute('x', String(box.x - 4));
+      paper.setAttribute('y', String(box.y - 3));
+      paper.setAttribute('width', String(box.width + 8));
+      paper.setAttribute('height', String(box.height + 6));
+      paper.style.visibility = label.element.style.visibility;
+    }
   };
   at(options.from, options.to);
   return {

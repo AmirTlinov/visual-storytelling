@@ -16,25 +16,32 @@ import { areaDiagram } from '@visual-storytelling/core/recipes';
 await IllustratedStory.mount(root, {
   document: {
     title: 'Площадь прямоугольника',
-    chapters: [{ id: 'area', title: 'Считаем единичные квадраты', beats: [
-      { id: 'count', text: 'Три квадрата в каждом из двух рядов дают шесть.', seconds: 5 },
-    ] }],
+    chapters: [
+      {
+        id: 'area',
+        title: 'Считаем единичные квадраты',
+        beats: [
+          { id: 'count', text: 'Три квадрата в каждом из двух рядов дают шесть.', seconds: 5 },
+        ],
+      },
+    ],
   },
   chapters: {
-    area: chapter => inkChapter({
-      ...chapter,
-      valuesAt: () => ({ width: 3, height: 2 }),
-      create: view => areaDiagram(view),
-    }),
+    area: (chapter) =>
+      inkChapter({
+        ...chapter,
+        valuesAt: () => ({ width: 3, height: 2 }),
+        create: (view) => areaDiagram(view),
+      }),
   },
 });
 ```
 
 [Площадь](../examples/area-lesson/scene.js) — готовый урок с прогнозом и опытом.
-`predictionPrompt` из `/controls` отображает выбор, действие и обратную связь.
-Предположение, проверка и ответ принадлежат модели сцены. Ответ открывается после
-действия; возврат к метке восстанавливает исходное задание. `details` рядом с
-рисунком раскрывает объяснение без потери общего контекста.
+Варианты и действие находятся в самом рисунке (`inkButton`, `svgButton`).
+Предположение и проверка принадлежат модели сцены и проходят через `shell.input`.
+Расширение прямоугольника и счёт его частей показывают результат; возврат к метке
+восстанавливает исходное задание. Все главы используют общий кадр 16:9.
 
 ## Представления глав
 

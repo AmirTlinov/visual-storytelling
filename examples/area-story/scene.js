@@ -1,4 +1,4 @@
-import { mountScene } from '@visual-storytelling/core';
+import { mountScene, SceneShell } from '@visual-storytelling/core';
 import {
   SketchMotion,
   captionTrack,
@@ -10,6 +10,21 @@ import {
 import narrationTiming from './timeline.json' with { type: 'json' };
 window.galleryReady = (async () => {
   const root = document.getElementById('ve-scene');
+  const composition = document.createElement('div'),
+    toolbar = document.createElement('div'),
+    paper = root.querySelector('.paper');
+  toolbar.className = 've-scene-toolbar';
+  toolbar.append(root.querySelector('.modes'));
+  paper.classList.add('ve-stage');
+  composition.append(
+    toolbar,
+    paper,
+    root.querySelector('[data-player]'),
+    root.querySelector('[data-caption]'),
+  );
+  const frame = SceneShell.frame(composition, { width: 1280, height: 720, scope: 'scene' });
+  root.append(frame.element);
+  frame.resize();
   const svg = root.querySelector('svg.canvas'),
     layer = root.querySelector('[data-drawing]');
   const audio = root.querySelector('audio'),
@@ -310,11 +325,12 @@ window.galleryReady = (async () => {
     const cell = paperStep * cellsPerCm;
     const left = (width - cell * model.columns) / 2,
       top = 126;
-    const paperBox = root.getBoundingClientRect(),
-      svgBox = svg.getBoundingClientRect();
+    const paperBox = composition.getBoundingClientRect(),
+      svgBox = svg.getBoundingClientRect(),
+      scale = svgBox.width / width;
     root.style.setProperty('--ve-grid-step', `${paperStep}px`);
-    root.style.setProperty('--ve-grid-x', `${svgBox.left - paperBox.left + left}px`);
-    root.style.setProperty('--ve-grid-y', `${svgBox.top - paperBox.top + top}px`);
+    root.style.setProperty('--ve-grid-x', `${(svgBox.left - paperBox.left) / scale + left}px`);
+    root.style.setProperty('--ve-grid-y', `${(svgBox.top - paperBox.top) / scale + top}px`);
     root.dataset.cmPixels = cell;
     root.dataset.paperCellMm = model.paperCellMm;
     const bottom = top + cell * model.rows;
@@ -456,6 +472,7 @@ window.galleryReady = (async () => {
       ui.dispose();
       player.dispose();
       measured.dispose();
+      frame.dispose();
       root.replaceChildren();
     },
   });

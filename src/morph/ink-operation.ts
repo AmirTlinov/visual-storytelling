@@ -31,13 +31,18 @@ function plan(operation: InkOperation) {
 async function mount(
   parent: HTMLElement,
   operation: InkOperation,
-  options: { color?: string } = {},
+  options: {
+    color?: string;
+    /** A scene owns its bounded aperture; content owns its natural text height. */
+    layout?: 'scene' | 'content';
+  } = {},
 ) {
   let current = plan(operation),
     progress = 0,
     disposed = false,
     tension = 36,
-    width = 0;
+    width = 0,
+    height = 0;
   let poses: { sources: FusionPose[]; targets: FusionPose[] } = { sources: [], targets: [] };
   let duration = 4;
   const authoredDuration = duration;
@@ -59,7 +64,7 @@ async function mount(
       };
     },
   });
-  const viewport = contentViewport(parent);
+  const viewport = options.layout === 'scene' ? undefined : contentViewport(parent);
   let lastTime: MorphTime = 0,
     lastCues: MorphCues | undefined;
   function render(input: MorphTime, cues?: MorphCues) {
@@ -80,13 +85,24 @@ async function mount(
     view.render(motionProgress(time, 0.9) * duration);
   }
   function rebuild(candidate = current, reset = false) {
-    const nextWidth = Math.max(1, parent.getBoundingClientRect().width || width || 240);
+    const nextWidth = Math.max(1, parent.clientWidth || width || 240);
     const layout = inkLayout(candidate, nextWidth);
     const sources = layout.sources.shapes,
       targets = layout.targets.shapes,
-      height = layout.height;
+      nextHeight =
+        options.layout === 'scene'
+          ? Math.max(1, parent.clientHeight || layout.height)
+          : layout.height;
+    const fit = Math.min(1, nextHeight / layout.height);
+    const fitted = (group: FusionPose[]) =>
+      group.map((pose) => ({
+        ...pose,
+        x: pose.x * fit,
+        y: pose.y * fit,
+        scale: (pose.scale ?? 1) * fit,
+      }));
     const oldPoses = poses;
-    poses = { sources: layout.sources.poses, targets: layout.targets.poses };
+    poses = { sources: fitted(layout.sources.poses), targets: fitted(layout.targets.poses) };
     try {
       view.setShapes(sources, targets);
     } catch (error) {
@@ -95,7 +111,8 @@ async function mount(
     }
     current = candidate;
     width = nextWidth;
-    viewport.resize(height);
+    height = nextHeight;
+    viewport?.resize(height);
     view.setSize(width, height);
     view.canvas.setAttribute(
       'aria-label',
@@ -115,7 +132,8 @@ async function mount(
     if (
       !disposed &&
       parent.getClientRects().length &&
-      Math.abs(parent.getBoundingClientRect().width - width) > 1
+      (Math.abs(parent.clientWidth - width) > 1 ||
+        (options.layout === 'scene' && Math.abs(parent.clientHeight - height) > 1))
     )
       rebuild();
   });
@@ -127,7 +145,7 @@ async function mount(
     observer.disconnect();
     unwatchMotion();
     view.dispose();
-    viewport.dispose();
+    viewport?.dispose();
     throw error;
   }
   return {
@@ -151,7 +169,7 @@ async function mount(
       observer.disconnect();
       unwatchMotion();
       view.dispose();
-      viewport.dispose();
+      viewport?.dispose();
     },
   };
 }

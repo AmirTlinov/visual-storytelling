@@ -167,37 +167,30 @@ export function registerDrawing(host, dispatch, inspect) {
     mode = nextMode;
     const story = narrative(next, frame, mode);
     const w = Math.max(320, host.clientWidth);
-    const wide = host.closest('[data-frame-layout]')?.dataset.frameLayout !== 'responsive';
-    const h = wide ? Math.max(420, host.clientHeight) : height || 715;
-    const diagram = wide ? w * 0.68 : w;
+    const h = Math.max(420, host.clientHeight);
+    const diagram = w * 0.68;
     const aside = diagram + (w - diagram) / 2;
     const step = (diagram - 32) / 8;
-    let controlY = wide ? h - 100 : 510;
-    if (!wide && story.memory) {
-      const label = annotations.memory.label;
-      label.render(story.memory.text, w - 36, w / 2, 408);
-      controlY = Math.max(controlY, 408 + label.bounds.y + label.bounds.height + 70);
-    }
-    const inputY = wide ? 150 : 195,
-      savedY = wide ? 230 : 285,
-      railY = wide ? 284 : 345;
+    const controlY = h - 100;
+    const inputY = 150,
+      savedY = 230,
+      railY = 284;
     if (w !== width || h !== height) {
       width = w;
       height = h;
       view.resize(w, h, false);
-      byte.at(wide ? 130 : 94, 28);
-      byte.content.setAttribute('transform', `scale(${wide ? 1 : 0.8})`);
-      capacity.at(diagram - (wide ? 100 : 69), 28);
-      inputLabel.at(wide ? 76 : 66, 62);
-      inputValue.at(diagram - (wide ? 50 : 42), 76);
-      savedLabel.at(wide ? aside : w * 0.28, wide ? 120 : 660);
-      savedValue.at(wide ? aside : w * 0.71, wide ? 190 : 675);
-      sum.at(wide ? aside : w / 2, wide ? 224 : 708);
-      highlight.at(wide ? aside : w * 0.71, wide ? 190 : 675, -1.2);
+      byte.at(130, 28);
+      capacity.at(diagram - 100, 28);
+      inputLabel.at(76, 62);
+      inputValue.at(diagram - 50, 76);
+      savedLabel.at(aside, 120);
+      savedValue.at(aside, 190);
+      sum.at(aside, 224);
+      highlight.at(aside, 190, -1.2);
       inputs.forEach(({ mark, weight, hit }, j) => {
         const x = 16 + step * (j + 0.5);
         mark.at(x, inputY);
-        weight.at(x, wide ? 124 : 164);
+        weight.at(x, 124);
         hit.bounds({
           x: -Math.min(step - 2, 50) / 2,
           y: -22,
@@ -205,7 +198,7 @@ export function registerDrawing(host, dispatch, inspect) {
           height: 44,
         });
         cells[j].mark.at(x, savedY);
-        cells[j].name.at(x + 19, wide ? 194 : 246);
+        cells[j].name.at(x + 19, 194);
         arrows[j].set([x, inputY + 25], [x, savedY - 31]);
         branches[j].update(`M${x} ${railY}L${x} ${savedY + 31}`);
       });
@@ -277,8 +270,8 @@ export function registerDrawing(host, dispatch, inspect) {
     );
     group.show(!story.single);
     const positions = {
-      input: [diagram / 2, wide ? 90 : 110, diagram - 36],
-      memory: wide ? [aside, 268, w - diagram - 36] : [w / 2, 408, w - 36],
+      input: [diagram / 2, 90, diagram - 36],
+      memory: [aside, 268, w - diagram - 36],
       enable: [diagram * 0.25, controlY + 48, diagram / 2 - 24],
       clock: [diagram * 0.75, controlY + 48, diagram / 2 - 24],
     };
@@ -301,29 +294,6 @@ export function registerDrawing(host, dispatch, inspect) {
               ? bits.map((i) => 'saved-' + i)
               : [name === 'enable' ? 'write-enable' : 'clock'];
         targets.forEach((id) => frame.target(fact.cue, id));
-      }
-    }
-    if (!wide) {
-      const notesBottom = Math.max(
-        controlY + 22,
-        ...['enable', 'clock'].map((name) =>
-          story[name]
-            ? controlY +
-              48 +
-              annotations[name].label.bounds.y +
-              annotations[name].label.bounds.height
-            : 0,
-        ),
-      );
-      const resultY = Math.max(675, notesBottom + 80),
-        nextHeight = resultY + 48;
-      savedLabel.at(w * 0.28, resultY - 15);
-      savedValue.at(w * 0.71, resultY);
-      sum.at(w / 2, resultY + 33);
-      highlight.at(w * 0.71, resultY, -1.2);
-      if (height !== nextHeight) {
-        height = nextHeight;
-        view.resize(w, height, false);
       }
     }
     // The same short emphasis crosses all eight connections together. State is atomic.
@@ -355,31 +325,44 @@ export function registerDrawing(host, dispatch, inspect) {
 export function feedbackDrawing(host) {
   const view = surface(host, {
     id: 'bit-feedback',
-    width: 480,
-    height: 180,
+    width: 1100,
+    height: 340,
     grid: false,
     title: 'Два инвертора удерживают бит',
     description:
       'Первое НЕ меняет бит, второе возвращает исходное значение. Обратная связь замыкает путь.',
   });
-  const loop = object(view.layer, 'feedback', 'purple');
-  view.pen.path(loop.content, 'return', 'M62 58H132M190 58H276M334 58H421V145H62V58', {
-    width: 1.7,
+  const stored = object(view.layer, 'feedback-value', 'blue');
+  const inverted = object(view.layer, 'feedback-inverted', 'purple');
+  view.pen.path(stored.content, 'stored-wire', 'M150 308V135H300M764 135H950V308', {
+    width: 2,
   });
-  for (const [i, x] of [132, 276].entries()) {
-    view.pen.path(view.layer, 'inverter-' + i, 'M' + x + ' 30L' + (x + 44) + ' 58L' + x + ' 86Z', {
-      width: 1.7,
+  view.pen.path(inverted.content, 'inverted-wire', 'M414 135H650', { width: 2 });
+  vector(view, 'feedback-return', 'blue', 2).set([950, 308], [150, 308]);
+  const transitions = [];
+  for (const [i, x] of [300, 650].entries()) {
+    view.pen.path(view.layer, 'inverter-' + i, 'M' + x + ' 83L' + (x + 95) + ' 135L' + x + ' 187Z', {
+      width: 2,
     });
-    view.pen.ellipse(view.layer, 'inversion-' + i, x + 51, 58, 6, 6, { width: 1.6 });
-    lettering(view.layer, 'НЕ', { x: x + 16, y: 64, size: 20 });
+    view.pen.ellipse(view.layer, 'inversion-' + i, x + 105, 135, 9, 9, { width: 2 });
+    lettering(view.layer, 'НЕ', { x: x + 33, y: 144, size: 30 });
+    transitions.push(lettering(view.layer, '', { x: x + 45, y: 238, size: 30 }));
   }
-  const labels = [62, 232, 421].map((x) => lettering(loop.content, 0, { x, y: 38, size: 27 }));
-  lettering(loop.content, 'обратная связь', { x: 242, y: 134, size: 20 });
+  const names = [150, 950].map((x) => lettering(stored.content, '', { x, y: 48, size: 28 }));
+  const labels = [
+    lettering(stored.content, 0, { x: 150, y: 111, size: 48, handwriting: 'heading' }),
+    lettering(inverted.content, 1, { x: 525, y: 111, size: 48, handwriting: 'heading' }),
+    lettering(stored.content, 0, { x: 950, y: 111, size: 48, handwriting: 'heading' }),
+  ];
+  lettering(stored.content, 'обратная связь', { x: 550, y: 286, size: 27 });
   return {
-    render(q) {
+    render(q, selected) {
+      names.forEach((name) => name.text('Q' + '₀₁₂₃₄₅₆₇'[selected]));
       labels[0].text(q);
       labels[1].text(1 - q);
       labels[2].text(q);
+      transitions[0].text(q + ' → ' + (1 - q));
+      transitions[1].text(1 - q + ' → ' + q);
     },
     dispose() {
       view.dispose();

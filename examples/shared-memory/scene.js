@@ -1,7 +1,19 @@
-import { mountScene, StepPlayer, widgetState } from '@visual-storytelling/core';
+import { SceneShell, mountScene, StepPlayer, widgetState } from '@visual-storytelling/core';
 window.galleryReady = (async () => {
+  await SceneShell.ready();
   const root = document.getElementById('ve-scene');
   const svg = root.querySelector('.ms-figure');
+  const composition = document.createElement('div'),
+    stage = document.createElement('div');
+  stage.className = 've-stage';
+  svg.replaceWith(stage);
+  stage.append(svg);
+  root.querySelector('h1').classList.add('ve-heading');
+  composition.append(...root.childNodes);
+  const sceneFrame = SceneShell.frame(composition, { width: 1280, height: 720, scope: 'scene' });
+  root.append(sceneFrame.element);
+  sceneFrame.resize();
+
   const detail = root.querySelector('[data-detail]');
   const stepLabel = root.querySelector('[data-step]');
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
@@ -87,7 +99,6 @@ window.galleryReady = (async () => {
   ];
   let index = 0;
   let frame = null;
-  let drawnWidth = 0;
   let geometry;
   let controller;
   let mounted = false,
@@ -148,8 +159,7 @@ window.galleryReady = (async () => {
     if (frame !== null) cancelAnimationFrame(frame);
     frame = null;
     const s = phases[index];
-    const w = Math.max(1, svg.getBoundingClientRect().width);
-    drawnWidth = w;
+    const w = 840;
     const margin = Math.max(8, (w - 680) / 2);
     const bodyWidth = Math.min(232, (w - 48) / 2);
     const cpuX = margin;
@@ -276,10 +286,6 @@ window.galleryReady = (async () => {
   }
   const storage = widgetState('shared-memory', restore);
   reduced.addEventListener('change', () => render(), { signal: abort.signal });
-  const observer = new ResizeObserver(() => {
-    if (Math.abs(svg.getBoundingClientRect().width - drawnWidth) > 0.5) render();
-  });
-  observer.observe(svg);
   controller = StepPlayer.mount(root, {
     count: phases.length,
     initial: index,
@@ -298,9 +304,9 @@ window.galleryReady = (async () => {
       dispose() {
         mounted = false;
         controller.dispose();
-        observer.disconnect();
         abort.abort();
         storage.dispose();
+        sceneFrame.dispose();
         if (frame !== null) cancelAnimationFrame(frame);
         root.replaceChildren();
       },

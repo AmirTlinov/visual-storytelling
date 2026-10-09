@@ -24,7 +24,15 @@ import {
 function mount(
   parent: HTMLElement,
   operation: MathOperation | MathMorphPlan,
-  options: { id: string; pigment?: string; width?: number; height?: number; columns?: number },
+  options: {
+    id: string;
+    pigment?: string;
+    width?: number;
+    height?: number;
+    columns?: number;
+    /** A scene owns its bounded aperture; content owns its natural row height. */
+    layout?: 'scene' | 'content';
+  },
 ) {
   validateCellColumns(options.columns);
   const prepared = mathPlan(operation);
@@ -39,7 +47,7 @@ function mount(
     grid: false,
   });
   const body = morphBody2D(sheet, options);
-  const viewport = contentViewport(parent);
+  const viewport = options.layout === 'scene' ? undefined : contentViewport(parent);
   const formula = paragraph(sheet.layer, { size: 26 });
   formula.element.style.color = 'var(--ve-purple)';
   const stepLabel = lettering(sheet.layer, '', { size: 17, x: width / 2, y: height - 14 });
@@ -103,7 +111,7 @@ function mount(
     if (disposed) return;
     const time = morphTiming(input, cues, plan.stages),
       progress = time.progress;
-    const available = Math.round(parent.getBoundingClientRect().width);
+    const available = parent.clientWidth;
     if (plan.encoding !== 'quantity') {
       width = Math.max(180, available || width);
       if (!arrangement || `${width}` !== layoutKey) {
@@ -118,7 +126,7 @@ function mount(
       }
     } else {
       arrangement = undefined;
-      width = options.width ?? 840;
+      width = options.layout === 'scene' ? available || width : (options.width ?? 840);
       height = options.height ?? 360;
     }
     const frame = mathMotionFrame(plan, time, arrangement?.columns);
@@ -140,16 +148,25 @@ function mount(
     if (!parent.getClientRects().length) return frame;
     formula.render(frame.formula, width - 32, width / 2, 34);
     const headingHeight = arrangement ? headingSpace : 36;
-    if (arrangement) {
+    if (options.layout === 'scene') {
+      height = parent.clientHeight || height;
+    } else if (arrangement) {
       height = arrangement.height + Math.max(0, headingHeight - 36);
     }
     sheet.resize(width, height);
-    viewport.resize(arrangement ? height : undefined);
+    viewport?.resize(arrangement ? height : undefined);
     const [min, max] = arrangement?.bounds ?? quantityBounds(plan, frame);
     const center = arrangement?.center ?? [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2];
-    scale =
-      arrangement?.scale ??
-      Math.min((width - 72) / (max[0] - min[0]), (height - 150) / (max[1] - min[1]));
+    const fittedScale = Math.min(
+      (width - 72) / (max[0] - min[0]),
+      (options.layout === 'scene' ? Math.max(1, height - headingHeight - 88) : height - 150) /
+        (max[1] - min[1]),
+    );
+    scale = arrangement
+      ? options.layout === 'scene'
+        ? Math.min(arrangement.scale, fittedScale)
+        : arrangement.scale
+      : fittedScale;
     const cy = height / 2 + headingHeight / 2;
     semanticRoot.setAttribute('width', String(width));
     semanticRoot.setAttribute('height', String(height));
@@ -231,7 +248,7 @@ function mount(
     if (disposed) return;
     disposed = true;
     observer.disconnect();
-    viewport.dispose();
+    viewport?.dispose();
     unwatchMotion();
     formula.dispose();
     stepLabel.dispose();

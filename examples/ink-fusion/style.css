@@ -1,10 +1,45 @@
-#ink-fusion-scene .fusion-equation{padding-right:80px;font-size:21px;min-height:32px;overflow-wrap:anywhere}
-#ink-fusion-scene .fusion-stage{min-height:215px;position:relative}
-#ink-fusion-scene .fusion-cases{margin:18px 0 12px}
-#ink-fusion-scene .fusion-cases .ve-control{flex-direction:row;align-items:baseline;gap:18px;flex-wrap:wrap}
-#ink-fusion-scene details{margin-top:6px}
-#ink-fusion-scene summary{cursor:pointer;width:fit-content;min-height:44px;padding:9px 0}
-#ink-fusion-scene .fusion-inputs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin:10px 0 22px}
-#ink-fusion-scene .fusion-tension{max-width:360px}
-#ink-fusion-scene .fusion-error:empty{display:none}
-@media(max-width:480px){#ink-fusion-scene .fusion-inputs{grid-template-columns:1fr;gap:12px}#ink-fusion-scene .fusion-cases .ve-control{gap:8px}#ink-fusion-scene .fusion-equation{font-size:19px}}
+#ink-fusion-scene .fusion-stage {
+  min-height: 0;
+  position: relative;
+}
+#ink-fusion-scene .fusion-cases {
+  flex: 0 0 52px;
+}
+#ink-fusion-scene .fusion-cases .ve-control {
+  flex-direction: row;
+  align-items: center;
+  gap: 18px;
+}
+#ink-fusion-scene details {
+  flex: 0 0 auto;
+  margin: 0;
+}
+#ink-fusion-scene summary {
+  cursor: pointer;
+  width: fit-content;
+  min-height: 44px;
+  padding: 9px 0;
+}
+#ink-fusion-scene .fusion-inputs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  margin: 0 0 8px;
+}
+#ink-fusion-scene .fusion-inputs textarea {
+  height: 90px;
+  max-height: 90px;
+  resize: none;
+}
+#ink-fusion-scene .fusion-tension {
+  max-width: 360px;
+  margin: 0 0 8px;
+}
+#ink-fusion-scene .fusion-error {
+  position: absolute;
+  bottom: 12px;
+  margin: 0;
+}
+#ink-fusion-scene .fusion-error:empty {
+  display: none;
+}

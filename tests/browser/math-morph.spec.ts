@@ -15,15 +15,48 @@ test('a hidden 2D view starts safely and shows the latest sought operation when 
   await expect(flat).toBeVisible();
   await expect(flat.locator('.vs-lettering[aria-label="6 ÷ 3 = 2"]')).toBeVisible();
   await expect(flat.locator('svg > desc')).toHaveText('2, 2, 2');
-  // The visible inscription now belongs to the clipped GPU material.
-  const { data, info } = await sharp(await flat.locator('[data-morph-ink] canvas').screenshot())
+  // Inspect each material's center: the formula and body outlines cannot stand in for its digit.
+  const canvas = flat.locator('[data-morph-ink] canvas');
+  const paint = await canvas.evaluate((element) => ({
+    color: getComputedStyle(element)
+      .color.match(/[\d.]+/g)!
+      .slice(0, 3)
+      .map(Number),
+    canvas: element.getBoundingClientRect().toJSON(),
+    bodies: [...element.closest('svg')!.querySelectorAll('[data-stroke^="morph-body-"]')].map(
+      (body) => body.getBoundingClientRect().toJSON(),
+    ),
+  }));
+  const { data, info } = await sharp(await canvas.screenshot())
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
-  let ink = 0;
-  for (let i = 0; i < data.length; i += info.channels)
-    if (data[i]! < 100 && data[i + 1]! < 100 && data[i + 2]! < 100 && data[i + 3]! > 160) ink++;
-  expect(ink).toBeGreaterThan(80);
+  expect(paint.bodies).toHaveLength(3);
+  for (const body of paint.bodies) {
+    const x0 = Math.ceil(
+      ((body.x + body.width * 0.25 - paint.canvas.x) / paint.canvas.width) * info.width,
+    );
+    const x1 = Math.floor(
+      ((body.x + body.width * 0.75 - paint.canvas.x) / paint.canvas.width) * info.width,
+    );
+    const y0 = Math.ceil(
+      ((body.y + body.height * 0.2 - paint.canvas.y) / paint.canvas.height) * info.height,
+    );
+    const y1 = Math.floor(
+      ((body.y + body.height * 0.8 - paint.canvas.y) / paint.canvas.height) * info.height,
+    );
+    let ink = 0;
+    for (let y = y0; y < y1; y++)
+      for (let x = x0; x < x1; x++) {
+        const i = (y * info.width + x) * info.channels;
+        if (
+          paint.color.every((channel, c) => Math.abs(data[i + c]! - channel) < 60) &&
+          data[i + 3]! > 160
+        )
+          ink++;
+      }
+    expect(ink).toBeGreaterThan(80);
+  }
   expect(errors).toEqual([]);
 });
 

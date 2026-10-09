@@ -5,6 +5,15 @@ import { presentSession, toolResult } from './presentation.mjs';
 
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/);
 const projectId = z.string().uuid();
+const fileChanges = z
+  .array(
+    z.object({
+      path: z.string().min(1).max(500),
+      content: z.string().max(1_000_000).nullable(),
+    }),
+  )
+  .min(1)
+  .max(64);
 export function authoringTools(server, runtime, uri, safely) {
   const result = (value, text) => ({ content: [{ type: 'text', text }], structuredContent: value });
   registerAppTool(
@@ -35,16 +44,7 @@ export function authoringTools(server, runtime, uri, safely) {
         sourceRevision: z.string(),
         requestId,
         undo: z.boolean().optional(),
-        changes: z
-          .array(
-            z.object({
-              path: z.string().min(1).max(500),
-              content: z.string().max(1_000_000).nullable(),
-            }),
-          )
-          .min(1)
-          .max(64)
-          .optional(),
+        changes: fileChanges.optional(),
       },
       annotations: changeView,
     },
@@ -179,8 +179,13 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_migrate',
     {
       description:
-        'Explicitly upgrade a project to this plugin’s core. Prepares and builds a separate candidate first, then applies package and lockfile as one undoable authoring edit. The previous runtime archive is retained for story_edit undo. Existing views remain visible during preparation.',
-      inputSchema: { projectId, sourceRevision: z.string(), requestId },
+        'Explicitly upgrade a project to this plugin’s core. Optional changes use the same UTF-8 replacement/deletion contract as story_edit, so removed APIs can be migrated in the same operation. Applies changes to a separate candidate before building; only a successful candidate publishes sources, package and lockfile as one undoable edit. Supply at most 62 source files plus package.json and package-lock.json. A changed sourceRevision prevents publication. Runtime archives remain available for story_edit undo. Existing views remain visible during preparation.',
+      inputSchema: {
+        projectId,
+        sourceRevision: z.string(),
+        requestId,
+        changes: fileChanges.optional(),
+      },
       annotations: changeView,
     },
     safely(async (args) =>

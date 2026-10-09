@@ -9,7 +9,6 @@ window.galleryReady = MorphStory.mount(document.getElementById('ink-story'), {
     { key: 'light', label: 'Первая мысль', type: 'text' },
     { key: 'shadow', label: 'Вторая мысль', type: 'text' },
   ],
-  captions: true,
   script: {
     duration: 7,
     segments: [

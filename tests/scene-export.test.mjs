@@ -52,55 +52,67 @@ async function buildExample(name, directory) {
   );
 }
 
-test('mixed explanations export a complete PNG and decline a partial SVG', async (t) => {
+test('interactive lessons and PNG share the complete 16:9 frame and its current model', async (t) => {
   const temporary = await mkdtemp(join(tmpdir(), 'story-frame-export-'));
   t.after(() => rm(temporary, { recursive: true, force: true }));
-  for (const name of ['graph-lab', 'area-lesson']) {
+  for (const name of ['graph-lab', 'area-lesson', 'long-calculation', 'chibi-tesla']) {
     const directory = join(temporary, name);
     await buildExample(name, directory);
     for (const width of [1000, 390]) {
-      const render = await renderer({ directory, width, height: 760, theme: 'light' });
+      const render = await renderer({
+        directory,
+        width,
+        height: 760,
+        theme: 'light',
+        controls: true,
+      });
       try {
-        await assert.rejects(render.svg(), completeFrameError, name);
-        const bounds = await render.page.evaluate(() => {
-          const scene = document.querySelector('.ve-scene').getBoundingClientRect(),
-            notes = document.querySelector('.ve-explanation-notes').getBoundingClientRect();
-          return {
-            width: scene.width,
-            height: scene.height,
-            notesRight: notes.right - scene.left,
-            notesBottom: notes.bottom - scene.top,
-          };
-        });
+        const geometry = () =>
+          render.page.locator('[data-scene-frame]').evaluate((element) => {
+            const frame = element.getBoundingClientRect(),
+              stage = element.querySelector('.ve-stage').getBoundingClientRect();
+            return {
+              width: frame.width,
+              height: frame.height,
+              stage: { x: stage.x, y: stage.y, width: stage.width, height: stage.height },
+            };
+          });
+        const bounds = await geometry();
+        assert.ok(Math.abs(bounds.width / bounds.height - 16 / 9) < 0.001, name);
+        assert.deepEqual(
+          (await render.capture.evaluate((scene) => scene.presentation())).clipped,
+          [],
+          `${name}: the drawing fits inside its complete frame`,
+        );
+        await render.control([{ type: 'mode', value: 'explore' }]);
+        assert.deepEqual(await geometry(), bounds, `${name}: mode keeps drawing geometry`);
+        if (name === 'long-calculation') {
+          await render.control([
+            { type: 'parameters', values: { count: 64, __morphProgress: 0.55 } },
+          ]);
+          await render.page.getByRole('radio', { name: 'Плоскость', exact: true }).check();
+          await render.page.evaluate(
+            () =>
+              new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+          );
+          assert.deepEqual(await geometry(), bounds, '2D retains the 3D drawing aperture');
+          assert.deepEqual(
+            (await render.capture.evaluate((scene) => scene.presentation())).clipped,
+            [],
+            '64 contributions fit inside the same drawing aperture',
+          );
+        }
         const before = await render.capture.evaluate((scene) => scene.snapshot());
         const png = PNG.sync.read(await render.png());
         assert.ok(Math.abs(png.width - bounds.width) <= 1, `${name}: complete width`);
         assert.ok(Math.abs(png.height - bounds.height) <= 1, `${name}: complete height`);
-        assert.ok(png.width >= bounds.notesRight - 1, `${name}: notes fit horizontally`);
-        assert.ok(png.height >= bounds.notesBottom - 1, `${name}: notes fit vertically`);
         assert.deepEqual(
           await render.capture.evaluate((scene) => scene.snapshot()),
           before,
-          `${name}: PNG capture retains the model and viewport`,
+          `${name}: PNG capture retains the current model`,
         );
-        // A surface accessor still cannot preserve the HTML beside it.
-        await render.page.evaluate(() =>
-          document.querySelector('.ve-scene').scene.extend({
-            svg: () => document.querySelector('svg.vs-canvas'),
-          }),
-        );
-        await assert.rejects(render.svg(), completeFrameError, `${name}: surface accessor`);
-        // A complete exporter remains the authoritative owner, including mixed frames.
-        const explicit =
-          '<svg xmlns="http://www.w3.org/2000/svg"><text>Complete explanation</text></svg>';
-        await render.page.evaluate(
-          (value) =>
-            document.querySelector('.ve-scene').scene.extend({
-              exportSVG: async () => value,
-            }),
-          explicit,
-        );
-        assert.equal(await render.svg(), explicit);
+        await render.control([{ type: 'mode', value: 'story' }]);
+        assert.deepEqual(await geometry(), bounds, `${name}: return preserves drawing geometry`);
       } finally {
         await render.close();
       }
@@ -139,6 +151,12 @@ test('a pure SVG frame retains its geometry and text through fallback export', a
       document.querySelector('.ve-stage').append('A note can also be a direct text node.');
     });
     await assert.rejects(render.svg(), completeFrameError);
+    const explicit =
+      '<svg xmlns="http://www.w3.org/2000/svg"><text>Complete composition</text></svg>';
+    await render.page.evaluate((value) => {
+      document.querySelector('.ve-scene').scene = { exportSVG: () => value };
+    }, explicit);
+    assert.equal(await render.svg(), explicit);
   } finally {
     await render.close();
   }

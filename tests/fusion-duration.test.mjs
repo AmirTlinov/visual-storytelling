@@ -32,7 +32,8 @@ test('InkMorph retimes Rapier from speech while preserving correspondence and se
             export function fusionSurface(host) {
               let motion;
               return {
-                canvas: {setAttribute() {}}, setSize() {},
+                canvas: {setAttribute() {}},
+                setSize(width, height) { host.aperture = [width, height]; },
                 setShapes(sources, targets) {
                   host.compilations++;
                   return motion = compileInkMotion(sources, targets);
@@ -77,6 +78,8 @@ test('InkMorph retimes Rapier from speech while preserving correspondence and se
       removeProperty: (key) => properties.delete(key),
     },
     compilations: 0,
+    clientWidth: 480,
+    clientHeight: 100,
     getBoundingClientRect: () => ({ width: 480 }),
     getClientRects: () => [{}],
   };
@@ -148,4 +151,34 @@ test('InkMorph retimes Rapier from speech while preserving correspondence and se
   ink.dispose();
   assert.equal(host.removed, true);
   assert.equal(host.style.height, '100px');
+
+  await t.test(
+    'a bounded frame keeps its ink through screen scaling and reverse seek',
+    async () => {
+      const desktop = { ...host, compilations: 0 },
+        narrow = { ...host, compilations: 0, getBoundingClientRect: () => ({ width: 144 }) };
+      const operation = { sources: [shape, shape], targets: [shape] };
+      const views = await Promise.all(
+        [desktop, narrow].map((parent) => InkMorph.mount(parent, operation, { layout: 'scene' })),
+      );
+      try {
+        const endpoints = new Map();
+        for (const progress of [0, 0.35, 1, 0.35, 0]) {
+          views.forEach((view) => view.render(progress));
+          assert.deepEqual(desktop.aperture, [480, 100]);
+          assert.deepEqual(narrow.aperture, desktop.aperture);
+          assert.deepEqual(narrow.vertices, desktop.vertices, 'screen scale cannot change the ink');
+          if (endpoints.has(progress)) assert.deepEqual(desktop.vertices, endpoints.get(progress));
+          else endpoints.set(progress, desktop.vertices.slice());
+          for (let i = 0; i < desktop.vertices.length; i += 6) {
+            for (const j of [0, 2]) assert.ok(Math.abs(desktop.vertices[i + j]) <= 240);
+            for (const j of [1, 3]) assert.ok(Math.abs(desktop.vertices[i + j]) <= 50);
+          }
+        }
+        assert.equal(attributes.has('data-content-layout'), false, 'the frame owns its height');
+      } finally {
+        views.forEach((view) => view.dispose());
+      }
+    },
+  );
 });

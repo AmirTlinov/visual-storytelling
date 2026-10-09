@@ -610,13 +610,13 @@ const operations = {
   },
   produce: (args) => queueRevision('produce', args),
   review: (args) => queueRevision('review', args),
-  async migrate({ projectId, sourceRevision, requestId }) {
+  async migrate({ projectId, sourceRevision, requestId, changes }) {
     const project = await projects.inspect(projectId);
     if (sourceRevision !== project.sourceRevision)
       throw new Error('Project changed. Inspect its source before migrating.');
     return jobs.enqueue(
       'migrate',
-      { data, projectId, projectPath: project.path, sourceRevision },
+      { data, projectId, projectPath: project.path, sourceRevision, changes },
       requestId,
     );
   },

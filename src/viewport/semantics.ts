@@ -137,7 +137,9 @@ export function semanticObjects3D(
   function render() {
     if (!records.size) return;
     const rect = canvas.getBoundingClientRect(),
-      stageRect = stage.getBoundingClientRect();
+      stageRect = stage.getBoundingClientRect(),
+      scaleX = stageRect.width / stage.clientWidth || 1,
+      scaleY = stageRect.height / stage.clientHeight || 1;
     for (const record of records.values()) {
       const button = record.element;
       if (button.getAttribute('aria-label') !== record.meaning.label) {
@@ -169,10 +171,12 @@ export function semanticObjects3D(
         bottom = Math.max(-1, Math.min(...points.map((p) => p.y)));
       button.hidden = right <= left || top <= bottom;
       if (button.hidden) continue;
-      button.style.left = `${rect.x - stageRect.x + ((left + 1) * rect.width) / 2}px`;
-      button.style.top = `${rect.y - stageRect.y + ((1 - top) * rect.height) / 2}px`;
-      button.style.width = `${((right - left) * rect.width) / 2}px`;
-      button.style.height = `${((top - bottom) * rect.height) / 2}px`;
+      // Projection is measured on screen; the overlay shares the stage's logical
+      // coordinates and inherits its complete-scene scale exactly once.
+      button.style.left = `${(rect.x - stageRect.x + ((left + 1) * rect.width) / 2) / scaleX}px`;
+      button.style.top = `${(rect.y - stageRect.y + ((1 - top) * rect.height) / 2) / scaleY}px`;
+      button.style.width = `${((right - left) * rect.width) / (2 * scaleX)}px`;
+      button.style.height = `${((top - bottom) * rect.height) / (2 * scaleY)}px`;
     }
   }
   return {

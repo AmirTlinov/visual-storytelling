@@ -1,6 +1,5 @@
 import { SceneShell, MathMorph } from '@visual-storytelling/core';
 import '@visual-storytelling/core/style.css';
-import './style.css';
 import timing from './timeline.json' with { type: 'json' };
 
 const operations = [
@@ -45,16 +44,10 @@ window.galleryReady = (async () => {
       },
     ],
   });
-  const question = document.createElement('p');
-  question.className = 'math-question';
-  shell.stage.before(question);
+  shell.fields.style.setProperty('--ve-parameter-columns', '4');
+  shell.stage.setAttribute('role', 'group');
   const math = await MathMorph.mount(shell.stage, MathMorph.add(2, 4));
   shell.attachView(math.view);
-  const hint = document.createElement('p');
-  hint.className = 'math-hint';
-  hint.textContent =
-    'Поворачивай фигуру во время рассказа; свои числа можно проверить в «Исследовать».';
-  shell.stage.after(hint);
   let key = 'add/2/4',
     current;
   const story = shell.attachStory({
@@ -69,16 +62,16 @@ window.galleryReady = (async () => {
       }
       const time = mode === 'story' ? frame : state.progress;
       const measured = math.render(time, `${state.operation}_move`);
-      question.textContent = explanation(state);
+      shell.stage.setAttribute(
+        'aria-label',
+        explanation(state) +
+          ' Поворачивай фигуру во время рассказа; свои числа можно проверить в «Исследовать».',
+      );
       current = { ...state, ...measured, mode };
     },
   });
   const snapshot = root.scene.snapshot;
   root.scene.extend({ story, snapshot: () => ({ ...snapshot(), ...current }) });
-  shell.onDispose(() => {
-    question.remove();
-    hint.remove();
-  });
 })().catch((error) => {
   const alert = document.createElement('p');
   alert.setAttribute('role', 'alert');

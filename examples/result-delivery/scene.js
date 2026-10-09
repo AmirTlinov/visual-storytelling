@@ -114,9 +114,14 @@ window.galleryReady = (async () => {
     row.add(cell.object);
     return cell;
   });
-  const destinationLabel = document.createElement('p');
-  destinationLabel.style.cssText = 'margin:0;text-align:center';
-  shell.stage.after(destinationLabel);
+  const destinationLabel = view.label(
+    'Память',
+    {
+      object: row,
+      position: new T.Vector3(0, 1.4, 0.35),
+    },
+    { size: 24, tone: 'blue' },
+  );
   const initial = { example: 'memory', input: 2 };
   const calculation = MathMorph3D.mount(view, operationFor(initial), {
     id: 'calculation',
@@ -140,10 +145,7 @@ window.galleryReady = (async () => {
         operationKey = key;
       }
       neighbours.forEach((cell) => (cell.object.visible = state.example === 'vector'));
-      destinationLabel.textContent =
-        state.example === 'memory'
-          ? 'Записываем сумму в ячейку памяти.'
-          : 'Скалярное произведение занимает второй элемент вектора.';
+      destinationLabel.set(state.example === 'memory' ? 'Память' : 'Вектор [1]');
       row.rotation.z = (state.angle * Math.PI) / 180;
       // Manual exploration samples the same cues; there are no private timing fractions.
       calculation.render(

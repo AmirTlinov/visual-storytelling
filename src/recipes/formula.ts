@@ -54,5 +54,9 @@ export function formula<K extends string>(
         Math.max(0, entries.length - 1) * size * 0.32
       );
     },
+    dispose() {
+      for (const entry of entries) entry.label.dispose();
+      mark.dispose();
+    },
   };
 }

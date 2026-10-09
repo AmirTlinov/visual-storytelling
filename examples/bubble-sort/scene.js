@@ -1,7 +1,19 @@
-import { mountScene, StepPlayer, widgetState } from '@visual-storytelling/core';
+import { SceneShell, mountScene, StepPlayer, widgetState } from '@visual-storytelling/core';
 window.galleryReady = (async () => {
+  await SceneShell.ready();
   const root = document.getElementById('ve-scene');
   const svg = root.querySelector('.bs-figure');
+  const composition = document.createElement('div'),
+    stage = document.createElement('div');
+  stage.className = 've-stage';
+  svg.replaceWith(stage);
+  stage.append(svg);
+  root.querySelector('h1').classList.add('ve-heading');
+  composition.append(...root.childNodes);
+  const sceneFrame = SceneShell.frame(composition, { width: 1280, height: 720, scope: 'scene' });
+  root.append(sceneFrame.element);
+  sceneFrame.resize();
+
   const detail = root.querySelector('[data-detail]');
   const passLabel = root.querySelector('[data-pass]');
   const counts = root.querySelector('[data-counts]');
@@ -46,7 +58,7 @@ window.galleryReady = (async () => {
   const steps = buildSteps(initial);
   let index = 0;
   let frame = null;
-  let width = 0;
+  const width = 840;
   let centers = [];
   let tokens = [];
   let controller;
@@ -103,7 +115,6 @@ window.galleryReady = (async () => {
     if (frame !== null) cancelAnimationFrame(frame);
     frame = null;
     const state = steps[index];
-    width = Math.max(1, svg.getBoundingClientRect().width);
     const pitch = Math.min(105, (width - 16) / initial.length);
     const cellWidth = pitch - 5;
     const start = (width - initial.length * pitch) / 2 + 2.5;
@@ -194,10 +205,6 @@ window.galleryReady = (async () => {
 
   const storage = widgetState('bubble-sort', restore);
   motion.addEventListener('change', () => render(), { signal: abort.signal });
-  const observer = new ResizeObserver(() => {
-    if (Math.abs(svg.getBoundingClientRect().width - width) > 0.5) render();
-  });
-  observer.observe(svg);
   controller = StepPlayer.mount(root, {
     count: steps.length,
     initial: index,
@@ -216,9 +223,9 @@ window.galleryReady = (async () => {
       dispose() {
         mounted = false;
         controller.dispose();
-        observer.disconnect();
         abort.abort();
         storage.dispose();
+        sceneFrame.dispose();
         if (frame !== null) cancelAnimationFrame(frame);
         root.replaceChildren();
       },

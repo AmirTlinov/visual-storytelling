@@ -1,0 +1,59 @@
+.ve-scene .projection-composition {
+  padding: 8px 16px 6px;
+}
+.projection-composition > object {
+  display: block;
+  width: 100%;
+  flex: 1 1 0;
+  min-height: 0;
+  height: 0;
+}
+.projection-composition > header {
+  position: relative;
+  flex: 0 0 44px;
+  padding: 0 20px;
+}
+.projection-composition .meta {
+  position: absolute;
+  clip-path: inset(50%);
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+.projection-composition form {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.projection-composition input {
+  min-width: 0;
+  width: 100%;
+  padding: 4px 0;
+  font: 24px var(--ve-font);
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--ve-pencil);
+}
+.projection-composition input:focus-visible {
+  outline: 2px solid var(--ve-blue);
+}
+.projection-composition input[aria-invalid='true'] {
+  border-color: var(--ve-orange);
+}
+.projection-composition form button {
+  flex-shrink: 0;
+}
+.projection-composition #status {
+  position: absolute;
+  top: 44px;
+  right: 20px;
+  max-width: 650px;
+  z-index: 2;
+  color: var(--ve-orange);
+  background: var(--ve-surface);
+  font-size: 20px;
+}
+.projection-composition #status:empty {
+  display: none;
+}

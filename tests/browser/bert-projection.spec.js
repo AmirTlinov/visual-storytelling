@@ -70,6 +70,8 @@ for (const theme of ['light', 'dark']) {
     await page.setViewportSize({ width: 375, height: 900 });
     await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
     const { frame, errors } = await open(page);
+    const composition = await page.locator('[data-scene-frame]').boundingBox();
+    expect(composition.width / composition.height).toBeCloseTo(16 / 9, 6);
     await seek(page, 0.8);
     await expect(frame.locator('#calculation-flow-0')).toBeHidden();
     await expect(frame.locator('#product-0')).toBeHidden();
@@ -160,7 +162,7 @@ test('BERT: autonomous HTML preserves the embedded drawing and its native player
   const frame = page.frames().find((item) => item !== page.mainFrame());
   await page.getByRole('slider', { name: 'Позиция рассказа' }).fill('7.2');
   await expect(frame.locator('#output-value')).toHaveText('q₁,₃ ≈ 0.648');
-  await expect(frame.locator('svg')).toHaveAttribute('viewBox', /^0 0 550 /);
+  await expect(frame.locator('svg')).toHaveAttribute('viewBox', '0 0 1280 640');
   await frame.getByRole('button', { name: 'Голова 2', exact: true }).click();
   expect(await state(page)).toMatchObject({ h: 1, time: 0 });
   await expect(frame.locator('#final')).toBeHidden();

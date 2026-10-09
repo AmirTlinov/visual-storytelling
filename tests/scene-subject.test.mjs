@@ -337,7 +337,7 @@ test(
       }
       await page.setViewportSize({ width: 375, height: 1000 });
       await page.waitForFunction(
-        () => document.querySelector('[data-scene-frame]').dataset.frameLayout === 'responsive',
+        () => document.querySelector('[data-scene-frame]').dataset.frameLayout === 'fixed',
       );
       const checkpoint = await page.evaluate(() =>
         document.querySelector('.ve-scene').scene.capture(),
@@ -345,8 +345,8 @@ test(
       current = await renderer({ scene: 'memory-register', width: 375, height: 1000, checkpoint });
       assert.equal(
         await current.page.locator('[data-scene-frame]').getAttribute('data-frame-layout'),
-        'responsive',
-        'current PNG retains the captured narrow layout',
+        'fixed',
+        'current PNG retains the same authored frame at narrow width',
       );
       assert.deepEqual(
         await current.page.evaluate(
@@ -363,7 +363,11 @@ test(
         const bounds = element.getBoundingClientRect();
         return { layout: element.dataset.frameLayout, ratio: bounds.width / bounds.height };
       });
-      assert.equal(frame.layout, 'fixed', 'authored export opts back into the original film frame');
+      assert.equal(
+        frame.layout,
+        'fixed',
+        'authored export uses the same frame as the interactive scene',
+      );
       assert.ok(Math.abs(frame.ratio - 16 / 9) < 0.001);
       assert.deepEqual([...(await fixed.png()).subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
       assert.deepEqual(errors, []);

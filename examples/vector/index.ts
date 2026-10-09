@@ -6,7 +6,6 @@ import type { SceneHandle as Example } from '@visual-storytelling/core';
 export function mount(parent: HTMLElement): Example {
   const book = notebook(parent, {
     title: 'Матрица меняет вектор',
-    subtitle: 'Два коэффициента — два независимых масштаба.',
     parameters: [
       { key: 'a', label: 'Масштаб x' },
       { key: 'b', label: 'Масштаб y' },
@@ -21,9 +20,10 @@ export function mount(parent: HTMLElement): Example {
       format: (value) => Number(value).toFixed(2),
     })),
   });
+  book.parameters.style.setProperty('--ve-parameter-columns', '4');
   const layout = composition(
     book.stage,
-    (width) => drawing(book.stage, width),
+    () => drawing(book.stage),
     () => controller.update(),
   );
   const script = {

@@ -88,7 +88,6 @@ export async function renderer({
     // change the available height before restoring the saved camera.
     if (!controls && !checkpoint)
       await page.evaluate(() => {
-        document.querySelector('.ve-scene')?.setAttribute('data-scene-export', '');
         const drawing = document.querySelector('svg.canvas,svg.vs-canvas');
         const paper = drawing?.closest('.ve-scene');
         const before = drawing?.getBoundingClientRect();
@@ -141,20 +140,16 @@ export async function renderer({
       seek,
       control: (commands) => controlScene(capture, commands),
       async png() {
-        const frame = page.locator('[data-scene-frame]:not(.ve-explanation *)').first();
-        const explanation = page.locator('.ve-explanation').first();
+        const frame = page.locator('[data-scene-frame]').first();
         const stage = page.locator('.ve-stage').first();
         const main = page.locator('.ve-scene').first();
-        const target =
-          !controls && (await frame.count())
-            ? frame
-            : (await explanation.count())
+        const target = (await frame.count())
+          ? frame
+          : checkpoint && (await stage.count())
+            ? stage
+            : (await main.count())
               ? main
-              : checkpoint && (await stage.count())
-                ? stage
-                : (await main.count())
-                  ? main
-                  : undefined;
+              : undefined;
         if (!target) return page.screenshot({ fullPage: true });
         const area = await target.evaluate((element) => {
           const { x, y, width, height } = element.getBoundingClientRect();

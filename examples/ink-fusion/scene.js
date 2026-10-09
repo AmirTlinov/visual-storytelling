@@ -1,4 +1,4 @@
-import { mountScene } from '@visual-storytelling/core';
+import { SceneShell, mountScene } from '@visual-storytelling/core';
 import {
   InkFusion,
   InkMorph,
@@ -11,9 +11,13 @@ import '@visual-storytelling/core/style.css';
 import './style.css';
 
 window.galleryReady = (async () => {
-  await document.fonts.load('100px SketchPencil');
-  await document.fonts.ready;
+  await SceneShell.ready();
   const root = document.getElementById('ink-fusion-scene');
+  const composition = document.createElement('div');
+  composition.append(...root.childNodes);
+  const sceneFrame = SceneShell.frame(composition, { width: 1280, height: 720, scope: 'scene' });
+  root.append(sceneFrame.element);
+  sceneFrame.resize();
   const stage = root.querySelector('.fusion-stage');
   const equation = root.querySelector('.fusion-equation');
   const abort = new AbortController();
@@ -22,7 +26,7 @@ window.galleryReady = (async () => {
   const view = await InkMorph.mount(
     stage,
     { sources: ['свет', 'тень'], targets: ['объём'] },
-    { color: 'var(--ve-blue)' },
+    { color: 'var(--ve-blue)', layout: 'scene' },
   );
   const presets = {
     words: ['свет', 'тень', 'объём'],
@@ -278,6 +282,7 @@ window.galleryReady = (async () => {
       cases.dispose();
       persistence.dispose();
       view.dispose();
+      sceneFrame.dispose();
     },
   });
   ready = true;

@@ -407,11 +407,3 @@
   font-size: 13px;
   color: #8a9ab2;
 }
-#ve-scene .ve-frame-content > .ve-captions {
-  bottom: 61px;
-  padding: 0 40px;
-  background: transparent;
-  color: #334966;
-  font-family: Orto, Arial, sans-serif;
-  font-size: 24px;
-}

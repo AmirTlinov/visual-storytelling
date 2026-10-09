@@ -362,11 +362,29 @@ export function fusionSurface(parent: HTMLElement, options: FusionOptions = {}) 
   }
   setup();
   theme();
-  const observer = new ResizeObserver(() => {
-    bounds = parent.getBoundingClientRect();
+  const resizeSurface = () => {
+    const next = parent.getBoundingClientRect();
+    if (next.width === bounds.width && next.height === bounds.height) return;
+    bounds = next;
+    frameKey = '';
     redraw();
-  });
+  };
+  const observer = new ResizeObserver(resizeSurface);
   observer.observe(parent);
+  for (
+    let frame = parent.closest('[data-scene-frame]');
+    frame;
+    frame = frame.parentElement?.closest('[data-scene-frame]') ?? null
+  ) {
+    const owner = frame;
+    owner.addEventListener(
+      'scene-frame-resize',
+      (event) => {
+        if (event.target === owner) resizeSurface();
+      },
+      { signal: abort.signal },
+    );
+  }
   const appearance = new MutationObserver(theme);
   for (const node of [document.documentElement, parent.closest('.ve-scene')])
     if (node)

@@ -41,6 +41,7 @@ Still image: --time SECONDS or --cue ID [--progress 0..1], --width 960 [--height
              --height sets the browser viewport; PNG captures the complete scene.
              --theme light|dark
 Video:       --from SECONDS --to SECONDS --fps 30 --width 960 [--height PIXELS] [--jobs 2]
+             Default frame is 16:9; --height explicitly selects another output format.
 Captions:    --format srt|vtt reads the mounted story (Chromium), or an audio-only timeline
 HTML:        --theme auto|light|dark; embeds code, fonts and audio for offline use
 

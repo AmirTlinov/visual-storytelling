@@ -7,21 +7,40 @@ const settle = (page: Page) =>
     await new Promise(requestAnimationFrame);
     await new Promise(requestAnimationFrame);
   });
+const focusBounds = (page: Page) =>
+  page.evaluate(() => {
+    const canvas = document.querySelector('canvas') as any;
+    const objects = canvas.__visualReview().objects;
+    return [...document.querySelectorAll<HTMLButtonElement>('button[data-object]')].map(
+      (button) => {
+        const object = objects.find((item: any) => item.id === button.dataset.object);
+        const bounds = button.getBoundingClientRect();
+        return Math.max(
+          ...(['x', 'y', 'width', 'height'] as const).map((key) =>
+            Math.abs(bounds[key] - object[key]),
+          ),
+        );
+      },
+    );
+  });
 
-test('recurrent chain keeps its drawing through details, rearrangement and reverse seek', async ({
+test('the recurrent chain reveals its state in the drawing and reverses without moving the frame', async ({
   page,
 }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.setViewportSize({ width: 1120, height: 900 });
+  await page.setViewportSize({ width: 1312, height: 800 });
   await page.goto('/connected-diagram/index.html');
   await page.evaluate(() => window.galleryReady);
   await settle(page);
   const initial = await snapshot(page);
   expect(initial.layout).toBe('row');
+  expect(initial.state).toBe('h0');
   expect(initial.routes).toHaveLength(4);
   expect(initial.routes.every((route: unknown[]) => route.length >= 2)).toBe(true);
-  await expect(page.locator('[data-sequence-reading]')).toHaveText('Читаем «кот».');
+  expect(Math.max(...(await focusBounds(page)))).toBeLessThan(1);
+  await expect(page.locator('.ve-explanation, .ve-disclosure')).toHaveCount(0);
+  await expect(page.locator('.ve-captions:visible')).toHaveCount(0);
   await page.getByRole('button', { name: 'Исследовать', exact: true }).click();
   const time = page.getByRole('slider', { name: 'Момент', exact: true });
   await time.fill('10.5');
@@ -29,27 +48,21 @@ test('recurrent chain keeps its drawing through details, rearrangement and rever
   const playing = await snapshot(page);
   expect(playing.signal.visible).toBe(true);
   expect(playing.output).toEqual(['the', 'cat']);
-  const canvas = page.locator('.ve-explanation-figure canvas');
+  const canvas = page.locator('.ve-stage canvas');
   const before = await canvas.boundingBox();
-  const summary = page.locator('.ve-disclosure summary');
-  await summary.focus();
-  await summary.press('Enter');
-  await expect(page.locator('.ve-disclosure')).toHaveAttribute('open', '');
+  const state = page.locator('button[data-object="recurrent-state"]');
+  await state.focus();
+  await state.press('Enter');
   await settle(page);
+  expect((await snapshot(page)).details).toBe(true);
+  expect(Math.max(...(await focusBounds(page)))).toBeLessThan(1);
   expect(await canvas.boundingBox()).toEqual(before);
   const expanded = await snapshot(page);
   expect(expanded.routes).toEqual(playing.routes);
   expect(expanded.camera).toEqual(playing.camera);
-  await summary.press('Enter');
-  await expect(page.locator('.ve-disclosure')).not.toHaveAttribute('open', '');
-  const column = page.getByRole('switch', { name: 'Расположить в столбик', exact: true });
-  await expect(column).toBeEnabled();
-  await column.check();
+  await state.press('Enter');
   await settle(page);
-  expect((await snapshot(page)).layout).toBe('column');
-  await column.uncheck();
-  await settle(page);
-  expect((await snapshot(page)).routes).toEqual(playing.routes);
+  expect((await snapshot(page)).details).toBe(false);
   const timings = await page.evaluate(async () => {
     const control = document.querySelector('input[aria-label="Момент"]') as HTMLInputElement;
     const times: number[] = [];
@@ -81,7 +94,7 @@ test('recurrent chain keeps its drawing through details, rearrangement and rever
   expect(errors).toEqual([]);
 });
 
-test('recurrent diagram stays readable on a narrow sheet in both themes', async ({
+test('the recurrent diagram keeps a 16:9 frame, object actions and both themes at narrow width', async ({
   page,
 }, testInfo) => {
   const errors: string[] = [];
@@ -90,20 +103,26 @@ test('recurrent diagram stays readable on a narrow sheet in both themes', async 
   await page.goto('/connected-diagram/index.html');
   await page.evaluate(() => window.galleryReady);
   await page.getByRole('button', { name: 'Исследовать', exact: true }).click();
+  expect((await snapshot(page)).layout).toBe('row');
   await expect(
     page.getByRole('switch', { name: 'Расположить в столбик', exact: true }),
-  ).toBeDisabled();
-  expect((await snapshot(page)).layout).toBe('column');
+  ).toHaveCount(0);
   const time = page.getByRole('slider', { name: 'Момент', exact: true });
   await time.focus();
   await time.press('End');
-  await expect(page.locator('[data-sequence-reading]')).toHaveText('the cat is on the roof');
+  await expect(page.locator('[data-sequence-output]')).toHaveText('the cat is on the roof');
   await time.press('Home');
-  await expect(page.locator('[data-sequence-reading]')).toHaveText('Читаем «кот».');
+  await expect(page.locator('[data-sequence-state]')).toHaveText('h₀');
+  const word = page.locator('button[data-object="input-word-1"]');
+  await word.focus();
+  await word.press('Enter');
+  await settle(page);
+  expect((await snapshot(page)).active).toBe(1);
   const state = page.locator('button[data-object="recurrent-state"]');
   await state.focus();
   await state.press('Enter');
-  await expect(page.locator('.ve-disclosure')).toHaveAttribute('open', '');
+  await settle(page);
+  expect((await snapshot(page)).details).toBe(true);
   for (const theme of ['light', 'dark']) {
     const presentation = await page.evaluate(async (theme) => {
       const scene = (document.querySelector('.ve-scene') as any).scene;
@@ -115,9 +134,10 @@ test('recurrent diagram stays readable on a narrow sheet in both themes', async 
         overflow: document.documentElement.scrollWidth > innerWidth,
       };
     }, theme);
+    expect(presentation.frame.width / presentation.frame.height).toBeCloseTo(16 / 9, 2);
     expect(presentation.clipped).toEqual([]);
-    expect(presentation.unreadableText).toEqual([]);
     expect(presentation.overflow).toBe(false);
+    expect(Math.max(...(await focusBounds(page)))).toBeLessThan(1);
     await testInfo.attach(`narrow-${theme}`, {
       body: await page.screenshot({ fullPage: true }),
       contentType: 'image/png',

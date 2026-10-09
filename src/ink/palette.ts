@@ -1,6 +1,7 @@
 /** Pigment values and contrast belong to styles/ink.css. */
 export const pigments = {
   ink: 'ink',
+  muted: 'muted',
   blue: 'blue',
   orange: 'orange',
   purple: 'purple',

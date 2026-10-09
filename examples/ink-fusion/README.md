@@ -12,7 +12,7 @@ const ink = await InkMorph.mount(
     sources: ['Свет', 'Тень'],
     targets: ['Объём'],
   },
-  { color: 'var(--ve-blue)' },
+  { color: 'var(--ve-blue)', layout: 'scene' },
 );
 ink.render(frame.progress('meaning')); // 0…1, в любую сторону
 // Новая глава: ink.setOperation({ sources, targets }).
@@ -20,6 +20,8 @@ ink.render(frame.progress('meaning')); // 0…1, в любую сторону
 ```
 
 Предложения и абзацы передавай целиком: компонент учитывает переносы, ширину контейнера и высоту блока. Вместо строки можно передать маску `InkFusion.shape`. [Пример с телами и текстом](../written-morph/scene.js) использует этот же API.
+
+В кадре `layout: 'scene'` вписывает рисунок в заданную ширину и высоту контейнера, сохраняя пропорции. Для свободного потока текста `layout: 'content'` вычисляет высоту по содержимому.
 
 ## Устройство и собственные траектории
 

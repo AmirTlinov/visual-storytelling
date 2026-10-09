@@ -9,94 +9,92 @@ import {
 } from '@visual-storytelling/core';
 import type { VectorState } from './model';
 
-export function drawing(parent: HTMLElement, width: number) {
-  const small = width < 480,
-    unit = Math.min(42, (width - 72) / 8);
-  const chartY = 30,
-    chartHeight = 8 * unit,
-    matrixY = chartY + chartHeight + 67;
+export function drawing(parent: HTMLElement) {
   const view = surface(parent, {
     id: 'vector',
-    width,
-    height: matrixY + 149,
+    width: 1200,
+    height: 420,
     title: 'Матрица меняет вектор',
     description:
-      'Два коэффициента диагональной матрицы умножают соответствующие компоненты входного вектора. На координатной сетке показаны исходные и новые компоненты.',
-    grid: { step: unit, x: width / 2, y: chartY + 4 * unit },
+      'Слева входной вектор, в центре два независимых масштаба, справа результат. Каждая строка вычисления умножает свою компоненту на соответствующий коэффициент.',
+    grid: false,
   });
-  const axes = plot(view, 'coordinates', {
-    x: width / 2 - 4 * unit,
-    y: chartY,
-    width: 8 * unit,
-    height: chartHeight,
-    xDomain: [-4, 4],
-    yDomain: [-4, 4],
-    xLabel: 'x',
-    yLabel: 'y',
-    yTicks: [-3, -2, -1, 1, 2, 3].map((value) => ({ value, label: String(value) })),
-  });
-  for (const x of [-3, -2, -1, 1, 2, 3]) {
-    const p = axes.point(x, 0);
-    lettering(view.layer, x, { x: p[0], y: p[1] + 20, size: 14 });
-  }
-  const input = vector(view, 'input', 'blue', 2.1),
-    output = vector(view, 'output', 'purple', 2.3);
-  const inputParts = [vector(view, 'input-x', 'blue', 0.8), vector(view, 'input-y', 'blue', 0.8)];
+  const heading = (text: string, x: number, pigment: 'blue' | 'orange' | 'purple') => {
+    const mark = object(view.layer, 'heading-' + pigment, pigment);
+    lettering(mark.content, text, { x, y: 34, size: 34, handwriting: 'heading' });
+  };
+  heading('Вход x', 190, 'blue');
+  heading('Масштабы A', 600, 'orange');
+  heading('Выход Ax', 1010, 'purple');
+  const coordinates = (id: string, x: number) => {
+    const axes = plot(view, id, {
+      x,
+      y: 80,
+      width: 320,
+      height: 320,
+      xDomain: [-4, 4],
+      yDomain: [-4, 4],
+      xTicks: [-2, 2].map((value) => ({ value, label: String(value) })),
+      yTicks: [-2, 2].map((value) => ({ value, label: String(value) })),
+      tickSize: 27,
+    });
+    lettering(axes.content, 'x', { x: x + 337, y: 248, size: 27 });
+    lettering(axes.content, 'y', { x: x + 176, y: 69, size: 27 });
+    return axes;
+  };
+  const before = coordinates('input-coordinates', 30),
+    after = coordinates('output-coordinates', 850);
+  const input = vector(view, 'input', 'blue', 2.8),
+    output = vector(view, 'output', 'purple', 2.8);
+  const inputParts = [vector(view, 'input-x', 'blue', 1.1), vector(view, 'input-y', 'blue', 1.1)];
   const outputParts = [
-    vector(view, 'output-x', 'purple', 0.8),
-    vector(view, 'output-y', 'purple', 0.8),
+    vector(view, 'output-x', 'purple', 1.1),
+    vector(view, 'output-y', 'purple', 1.1),
   ];
   [...inputParts, ...outputParts].forEach((part) => {
-    part.element.style.opacity = '.35';
+    part.element.style.opacity = '.45';
   });
-  const inputLabel = object(view.layer, 'input-label', 'blue'),
-    outputLabel = object(view.layer, 'output-label', 'purple');
-  lettering(inputLabel.content, 'x', { size: 22 });
-  lettering(outputLabel.content, 'Ax', { size: 22 });
+  vector(view, 'input-to-transform', 'blue', 1.7).set([358, 128], [399, 128]);
+  vector(view, 'transform-to-output', 'purple', 1.7).set([801, 128], [842, 128]);
   const a = matrix(view, 'matrix-A', {
     rows: 2,
     columns: 2,
-    cellWidth: small ? 44 : 53,
-    cellHeight: 31,
-    size: 21,
+    cellWidth: 70,
+    cellHeight: 43,
+    size: 28,
+    minSize: 26,
     pigment: 'orange',
   });
   const x = matrix(view, 'vector-x', {
     rows: 2,
     columns: 1,
-    cellWidth: small ? 50 : 58,
-    cellHeight: 31,
-    size: 21,
+    cellWidth: 88,
+    cellHeight: 43,
+    size: 28,
+    minSize: 26,
     pigment: 'blue',
   });
   const result = matrix(view, 'vector-result', {
     rows: 2,
     columns: 1,
-    cellWidth: small ? 61 : 68,
-    cellHeight: 31,
-    size: 21,
+    cellWidth: 88,
+    cellHeight: 43,
+    size: 28,
+    minSize: 26,
     pigment: 'purple',
   });
-  const start = width / 2 - (a.width + x.width + result.width + 72) / 2;
-  a.at(start + a.width / 2, matrixY);
-  x.at(start + a.width + 36 + x.width / 2, matrixY);
-  result.at(start + a.width + x.width + 72 + result.width / 2, matrixY);
-  lettering(view.layer, '×', { x: start + a.width + 18, y: matrixY + 6, size: 23 });
+  const start = 600 - (a.width + x.width + result.width + 72) / 2;
+  a.at(start + a.width / 2, 128);
+  x.at(start + a.width + 36 + x.width / 2, 128);
+  result.at(start + a.width + x.width + 72 + result.width / 2, 128);
+  lettering(view.layer, '×', { x: start + a.width + 18, y: 136, size: 28 });
   const matrixRelation = lettering(view.layer, '=', {
     x: start + a.width + 36 + x.width + 18,
-    y: matrixY + 6,
-    size: 23,
+    y: 136,
+    size: 28,
   });
-  const labels = [
-    ['A', a, start + a.width / 2, 'orange'],
-    ['x', x, start + a.width + 36 + x.width / 2, 'blue'],
-    ['Ax', result, start + a.width + x.width + 72 + result.width / 2, 'purple'],
-  ] as const;
-  for (const [name, , cx, pigment] of labels) {
-    const label = object(view.layer, `label:${name}`, pigment);
-    lettering(label.content, name, { x: cx, y: matrixY - 49, size: 21 });
-  }
-  const component = (id: string, y: number) => {
+  const component = (id: string, label: string, y: number) => {
+    lettering(view.layer, label, { x: 600, y: y - 39, size: 27 });
     const eq = formula(
       view.layer,
       id,
@@ -107,13 +105,13 @@ export function drawing(parent: HTMLElement, width: number) {
         { id: 'eq', text: '=' },
         { id: 'output', text: '1', pigment: 'purple' },
       ] as const,
-      small ? 21 : 25,
+      32,
     );
-    eq.at(width / 2, y);
+    eq.at(600, y);
     return eq;
   };
-  const horizontal = component('horizontal', matrixY + 86),
-    vertical = component('vertical', matrixY + 126);
+  const horizontal = component('horizontal', 'по оси x', 277),
+    vertical = component('vertical', 'по оси y', 376);
   const clean = (n: number) => Number(n.toFixed(2)).toString();
   // Equality describes the visible rounded operands, as well as the underlying model.
   const exact = (c: number, v: number, n: number) =>
@@ -122,21 +120,16 @@ export function drawing(parent: HTMLElement, width: number) {
     view,
     dispose: view.dispose,
     render(state: VectorState & { output: { x: number; y: number } }) {
-      const out = state.output,
-        origin = axes.point(0, 0);
-      input.set(origin, axes.point(state.x, state.y));
-      output.set(origin, axes.point(out.x, out.y));
-      for (const [parts, v] of [
-        [inputParts, state],
-        [outputParts, out],
+      const out = state.output;
+      input.set(before.point(0, 0), before.point(state.x, state.y));
+      output.set(after.point(0, 0), after.point(out.x, out.y));
+      for (const [parts, v, axes] of [
+        [inputParts, state, before],
+        [outputParts, out, after],
       ] as const) {
-        parts[0]!.set(origin, axes.point(v.x, 0));
+        parts[0]!.set(axes.point(0, 0), axes.point(v.x, 0));
         parts[1]!.set(axes.point(v.x, 0), axes.point(v.x, v.y));
       }
-      const pi = axes.point(state.x, state.y),
-        po = axes.point(out.x, out.y);
-      inputLabel.at(pi[0] - 14, pi[1] + 26);
-      outputLabel.at(po[0] + 17, po[1] - 14);
       a.set([
         [clean(state.a), '0'],
         ['0', clean(state.b)],

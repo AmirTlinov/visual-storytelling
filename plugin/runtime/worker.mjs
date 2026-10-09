@@ -9,6 +9,7 @@ process.on('message', async (message) => {
   }
   if (running) return;
   running = true;
+  let terminal;
   try {
     if (!Object.hasOwn(workflows, message.kind)) throw new Error('Unsupported preparation.');
     await configureEnvironment(message.input.data);
@@ -19,10 +20,19 @@ process.on('message', async (message) => {
       authored: (project) => process.send?.({ type: 'authored', project }),
     });
     abort.signal.throwIfAborted();
-    process.send?.({ type: 'result', result });
+    terminal = { type: 'result', result };
   } catch (error) {
-    process.send?.({ type: 'error', error: error.message, cancelled: abort.signal.aborted });
+    terminal = { type: 'error', error: error.message, cancelled: abort.signal.aborted };
+  }
+  try {
+    // Large results span several IPC writes. Keep the channel open until all bytes are sent.
+    await new Promise((resolve, reject) => {
+      process.send(terminal, (error) => (error ? reject(error) : resolve()));
+    });
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
   } finally {
-    process.disconnect?.();
+    if (process.connected) process.disconnect();
   }
 });

@@ -1,8 +1,20 @@
-import { mountScene } from '@visual-storytelling/core';
+import { SceneShell, mountScene } from '@visual-storytelling/core';
 import { gsap, widgetState } from '@visual-storytelling/core';
-(() => {
+window.galleryReady = (async () => {
+  await SceneShell.ready();
   const root = document.getElementById('ve-scene');
   const svg = root.querySelector('.figure');
+  const composition = document.createElement('div'),
+    stage = document.createElement('div');
+  stage.className = 've-stage';
+  svg.replaceWith(stage);
+  stage.append(svg);
+  root.querySelector('h1').classList.add('ve-heading');
+  composition.append(...root.childNodes);
+  const sceneFrame = SceneShell.frame(composition, { width: 1280, height: 720, scope: 'scene' });
+  root.append(sceneFrame.element);
+  sceneFrame.resize();
+
   const ns = 'http://www.w3.org/2000/svg';
   const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const abort = new AbortController(),
@@ -12,8 +24,7 @@ import { gsap, widgetState } from '@visual-storytelling/core';
   const poses = new Map();
   let targets = [],
     instruction = [],
-    activeRoute = '',
-    drawingWidth = 0;
+    activeRoute = '';
   const states = [
     {
       equation: '3x + 2 = 8',
@@ -90,9 +101,7 @@ import { gsap, widgetState } from '@visual-storytelling/core';
     }
   }
   function draw(route = movement.progress < 1 ? activeRoute : '') {
-    const width = Math.round(svg.getBoundingClientRect().width);
-    if (!width) return;
-    drawingWidth = width;
+    const width = 840;
     gsap.killTweensOf(movement);
     activeRoute = route;
     targets = [];
@@ -101,11 +110,10 @@ import { gsap, widgetState } from '@visual-storytelling/core';
       right = width * 0.75,
       center = width / 2;
     const halfPan = Math.min(126, width * 0.25 - 18);
-    const compact = width < 480;
-    const bagScale = compact ? 0.64 : 1;
-    const unitScale = compact ? 0.64 : 0.85;
+    const bagScale = 1;
+    const unitScale = 0.85;
     const bagGap = Math.min(46, halfPan * 0.47);
-    const unitGap = compact ? 17 : 23;
+    const unitGap = 23;
     const groupGap = Math.min(55, halfPan * 0.52);
     svg.setAttribute('viewBox', `0 0 ${width} 338`);
     root.querySelector('[data-scale]').innerHTML =
@@ -154,7 +162,7 @@ import { gsap, widgetState } from '@visual-storytelling/core';
       else if (step === 2)
         place(
           g,
-          right + (Math.floor(i / 2) - 1) * groupGap + ((i % 2) - 0.5) * (compact ? 14 : 19),
+          right + (Math.floor(i / 2) - 1) * groupGap + ((i % 2) - 0.5) * 19,
           212,
           false,
           i >= 2,
@@ -196,16 +204,9 @@ import { gsap, widgetState } from '@visual-storytelling/core';
               .join('')
           : `<text class="note" x="${left}" y="264" text-anchor="middle">мешочек: x</text><text class="note" x="${right}" y="264" text-anchor="middle">гирька: 1</text>`);
     const action = root.querySelector('[data-action]');
-    const lines = compact ? instruction : [instruction.join(' ')];
-    action.replaceChildren(
-      ...lines.map((line, i) => {
-        const span = document.createElementNS(ns, 'tspan');
-        span.setAttribute('x', center);
-        span.setAttribute('y', compact ? 23 + i * 25 : 34);
-        span.textContent = line;
-        return span;
-      }),
-    );
+    action.setAttribute('x', center);
+    action.setAttribute('y', 34);
+    action.textContent = instruction.join(' ');
     paint();
     if (movement.progress < 1)
       gsap.to(movement, {
@@ -254,15 +255,6 @@ import { gsap, widgetState } from '@visual-storytelling/core';
   root
     .querySelector('[data-back]')
     .addEventListener('click', () => change(Math.max(0, step - 1)), listen);
-  const observer = new ResizeObserver(() => {
-    if (Math.round(svg.getBoundingClientRect().width) !== drawingWidth) draw();
-  });
-  observer.observe(svg);
-  window.galleryReady = document.fonts.ready.then(async () => {
-    if (abort.signal.aborted) return;
-    draw();
-    await restore(storage.read());
-  });
   motion.addEventListener('change', () => draw(''), listen);
   const scene = mountScene(root, {
     subject: {
@@ -320,10 +312,11 @@ import { gsap, widgetState } from '@visual-storytelling/core';
       if (abort.signal.aborted) return;
       abort.abort();
       storage.dispose();
-      observer.disconnect();
+      sceneFrame.dispose();
       gsap.killTweensOf(movement);
       root.replaceChildren();
     },
   });
   draw();
+  await restore(storage.read());
 })();

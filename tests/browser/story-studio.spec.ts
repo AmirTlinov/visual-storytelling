@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('the area lesson keeps its measure and nearby reasoning through chapters, theme and resize', async ({
+test('the area lesson keeps its measure and composition in the same 16:9 frame', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 375, height: 760 });
@@ -19,58 +19,60 @@ test('the area lesson keeps its measure and nearby reasoning through chapters, t
   expect(unit.content.area).toBe(1);
   expect(unit.content.visibleUnits).toBe(1);
   expect(unit.content.pixelsPerCm).toBeGreaterThan(100);
-  await expect(page.locator('[data-area-reading]')).toContainText('один см²');
+  await expect(page.locator('[data-object="unit-area"] .vs-lettering')).toHaveAttribute(
+    'aria-label',
+    '1 см²',
+  );
   const firstRow = await sample('rows.row');
   expect(firstRow.content.rowUnits).toEqual([3, 3]);
   expect(firstRow.content.visibleUnits).toBe(3);
-  const repeated = await sample('rows.repeat', 0.9);
-  expect(repeated.content.visibleUnits).toBe(6);
+  expect((await sample('rows.repeat', 0.9)).content.visibleUnits).toBe(6);
   await sample('rows.rule');
-  await expect(page.locator('[data-area-reading]')).toContainText('2 ряда');
+  await expect(
+    page.locator('[data-chapter="rows"] [data-object="formula"] .vs-lettering'),
+  ).toHaveAttribute('aria-label', '3 × 2 = 6 см²');
   await page.evaluate(async () =>
     (document.querySelector('.ve-scene') as any).scene.control([
       { type: 'cue', id: 'experiment', progress: 1 },
-      { type: 'mode', value: 'explore' },
+      { type: 'parameters', values: { width: 6, height: 5 } },
     ]),
   );
-  const active = page.locator('[data-chapter]:not([hidden])');
-  await page.getByRole('slider', { name: 'Ширина, см', exact: true }).fill('6');
-  await page.getByRole('slider', { name: 'Высота, см', exact: true }).fill('5');
-  const grid = active.locator('.vs-grid path').first();
-  const lines = await grid.getAttribute('d');
-  for (const theme of ['dark', 'light', 'dark']) {
-    const state = await page.evaluate(async (theme) => {
-      const scene = (document.querySelector('.ve-scene') as any).scene;
-      await scene.setTheme(theme);
-      return { snapshot: scene.snapshot(), presentation: scene.presentation() };
-    }, theme);
-    expect(state.snapshot.content.area).toBe(30);
-    expect(state.snapshot.content.gridStep * 2).toBe(state.snapshot.content.pixelsPerCm);
-    expect(state.presentation.unreadableText).toEqual([]);
-    expect(state.presentation.clipped).toEqual([]);
-    await expect(grid).toHaveAttribute('d', lines!);
-  }
-  await page.setViewportSize({ width: 1000, height: 850 });
-  await expect.poll(async () => (await grid.getAttribute('d')) !== lines).toBe(true);
-  const wide = await page.evaluate(() =>
-    (document.querySelector('.ve-scene') as any).scene.presentation(),
+  const condition = await page.evaluate(
+    () => (document.querySelector('.ve-scene') as any).scene.snapshot().content,
   );
-  expect(wide.unreadableText).toEqual([]);
-  expect(wide.clipped).toEqual([]);
-  const layout = await page.locator('.ve-explanation').evaluate((element) => {
-    const figure = element.querySelector('.ve-explanation-figure')!.getBoundingClientRect(),
-      notes = element.querySelector('.ve-explanation-notes')!.getBoundingClientRect();
-    return {
-      figureRight: figure.right,
-      notesLeft: notes.left,
-      overflow: document.documentElement.scrollWidth > innerWidth,
-    };
-  });
-  expect(layout.notesLeft).toBeGreaterThan(layout.figureRight);
-  expect(layout.overflow).toBe(false);
+  expect(condition.area).toBe(30);
+  expect(condition.bounds.width / condition.columns).toBe(condition.pixelsPerCm);
+  expect(condition.bounds.height / condition.rows).toBe(condition.pixelsPerCm);
+  for (const width of [375, 1040]) {
+    await page.setViewportSize({ width, height: 850 });
+    await expect
+      .poll(async () => (await page.locator('[data-scene-frame]').boundingBox())!.width)
+      .toBeGreaterThan(width * 0.9);
+    for (const theme of ['dark', 'light']) {
+      const state = await page.evaluate(async (theme) => {
+        const scene = (document.querySelector('.ve-scene') as any).scene;
+        await scene.setTheme(theme);
+        return { snapshot: scene.snapshot(), presentation: scene.presentation() };
+      }, theme);
+      expect(state.snapshot.content).toEqual(condition);
+      // Read the fixed frame at working size; its narrow presentation is a thumbnail.
+      if (width >= 1040) expect(state.presentation.unreadableText).toEqual([]);
+      expect(state.presentation.clipped).toEqual([]);
+      const { width: frameWidth, height: frameHeight } = state.presentation.frame;
+      expect(frameWidth / frameHeight).toBeCloseTo(16 / 9, 3);
+    }
+  }
+  const result = await sample('prediction.result');
+  expect(result.content.area).toBe(12);
+  const both = await sample('experiment.compare');
+  expect(both.content.area).toBe(24);
+  expect((await sample('prediction.try')).content.area).toBe(6);
+  expect((await sample('prediction.result')).content).toEqual(result.content);
+  await expect(
+    page.locator('.ve-explanation,.ve-disclosure,.ve-prediction,.ve-captions'),
+  ).toHaveCount(0);
   const returned = await sample('unit', 0);
-  expect(returned.content.area).toBe(unit.content.area);
-  expect(returned.content.visibleUnits).toBe(unit.content.visibleUnits);
+  expect(returned.content).toEqual(unit.content);
 });
 
 for (const variant of ['', '?variant=mira'])

@@ -4,104 +4,6 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>BERT-mini — параметры и активации</title>
-    <style>
-      * {
-        box-sizing: border-box;
-      }
-      html {
-        color-scheme: light dark;
-      }
-      body.ve-standalone {
-        margin: 0;
-        padding: 0;
-        background: transparent;
-      }
-      #app {
-        width: min(100%, 1320px);
-        max-width: none;
-        padding: 0;
-        margin: auto;
-      }
-      header {
-        padding: 32px 5.82% 8px;
-      }
-      .meta {
-        display: flex;
-        gap: 20px;
-        align-items: center;
-        justify-content: space-between;
-        font-size: 16px;
-        color: var(--ve-muted);
-        margin-bottom: 18px;
-      }
-      .meta a {
-        color: inherit;
-        text-underline-offset: 4px;
-      }
-      form {
-        display: flex;
-        gap: 14px;
-        align-items: center;
-      }
-      form button {
-        flex-shrink: 0;
-      }
-      input {
-        width: 100%;
-        min-width: 0;
-        font: inherit;
-        font-size: 27px;
-        border: 0;
-        border-bottom: 1px solid var(--ve-pencil);
-        border-radius: 0;
-        padding: 10px 0;
-        background: transparent;
-        color: inherit;
-        outline: none;
-      }
-      input:focus {
-        border-color: var(--ve-pencil);
-      }
-      input[aria-invalid='true'] {
-        border-color: var(--ve-orange);
-      }
-
-      #status {
-        font-size: 17px;
-        min-height: 23px;
-        margin-top: 9px;
-        color: var(--ve-orange);
-      }
-      #status:empty {
-        visibility: hidden;
-      }
-      object {
-        display: block;
-        width: 100%;
-        height: auto;
-        aspect-ratio: 1100/1433;
-      }
-      @media (max-width: 650px) {
-        object {
-          aspect-ratio: 550/1918;
-        }
-      }
-      @media (max-width: 700px) {
-        header {
-          padding-top: 20px;
-        }
-        .meta {
-          font-size: 13px;
-          gap: 8px;
-        }
-        form button {
-          flex-shrink: 0;
-        }
-        input {
-          font-size: 22px;
-        }
-      }
-    </style>
   </head>
   <body class="ve-standalone">
     <main id="app" class="ve-scene" data-paper="false">
@@ -134,7 +36,7 @@
         data="tensor-cube.svg"
         aria-label="Постоянные параметры W_Q и вычисленные векторы"
       ></object>
-      <div data-player style="padding: 12px 5.82% 24px"></div>
+      <div data-player></div>
     </main>
     <script type="module">
       import { attachProjection } from './controls.mjs';

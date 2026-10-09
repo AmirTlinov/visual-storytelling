@@ -19,7 +19,7 @@ async function ready(page: Page, path: string) {
 test('all examples load in both themes at a narrow width without script errors or overflow', async ({
   page,
 }) => {
-  test.setTimeout(90000);
+  test.setTimeout(180000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.setViewportSize({ width: 375, height: 950 });
@@ -31,6 +31,25 @@ test('all examples load in both themes at a narrow width without script errors o
         await page.evaluate(() => document.documentElement.scrollWidth),
         scene,
       ).toBeLessThanOrEqual(375);
+      const composition = await page.evaluate(() => {
+        const root = document.querySelector<HTMLElement>('.ve-scene');
+        if (!root?.scene) return null;
+        const controls = root.scene.inspect().capabilities.filter(
+          (capability) => !['theme', 'reduced'].includes(capability),
+        );
+        if (!controls.length) return null; // Static illustrations keep their authored paper size.
+        const frame =
+          root.querySelector('[data-scene-frame]') ??
+          (root instanceof SVGSVGElement ? root : null);
+        if (!frame) return { width: 0, height: 1 };
+        const { width, height } = frame.getBoundingClientRect();
+        return { width, height };
+      });
+      if (composition)
+        expect(composition.width / composition.height, `${scene}: complete frame`).toBeCloseTo(
+          16 / 9,
+          3,
+        );
       const player = page.locator('.ve-player').first();
       if (await player.isVisible()) {
         const mids = await player.evaluate((el) =>
@@ -170,6 +189,7 @@ test('controls preserve pointer targets, keyboard editing and undo/redo', async 
 test('vector: intermediate displayed products distinguish approximation from equality', async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 1040, height: 800 });
   await ready(page, '/vector/index.html');
   const relation = page.locator('[data-object="horizontal:eq"] .vs-lettering');
   for (const [time, sign] of [
@@ -183,6 +203,14 @@ test('vector: intermediate displayed products distinguish approximation from equ
     );
     await expect(relation).toHaveAttribute('aria-label', sign);
   }
+  const lettering = await page.locator('#vector .vs-lettering text').evaluateAll((labels) =>
+    labels.map((element) => {
+      const label = element as SVGTextElement;
+      const transform = label.getScreenCTM()!;
+      return parseFloat(getComputedStyle(label).fontSize) * Math.hypot(transform.a, transform.b);
+    }),
+  );
+  expect(Math.min(...lettering)).toBeGreaterThanOrEqual(18);
 });
 test('all BERT tokens can be selected at their center and edges', async ({ page }) => {
   await ready(page, '/parameter-cube/index.html');

@@ -170,9 +170,11 @@ test('film authoring: input, response, selection and captions rewind; logical co
       import './dist/style.css';
       window.mountTest = () => {
         const root = document.querySelector('main');
-        const shell = SceneShell.mount(root, { title: 'Guide', heading: false, frame: {width:1280,height:720}, captions: true });
+        const shell = SceneShell.mount(root, { title: 'Guide', heading: false, frame: {width:1280,height:720,scope:'scene'}, captions: true });
         shell.stage.insertAdjacentHTML('afterbegin', '<section class="demo"><h1>Свой заголовок</h1><p>Своя подпись</p><div class="controls">Внутреннее управление</div><input id="value" value="AB"><button id="send">Отправить</button><label><input id="choice" type="checkbox">Выбор</label><input type="radio" name="version" id="one" checked><input type="radio" name="version" id="two"><select id="options"><option>Первый</option><option>Второй</option></select><span id="result">Готово</span><span id="reveal" style="display:inline-block;opacity:.6;transform:rotate(5deg);translate:20px 3px">Ответ</span><span id="text"><b>До</b></span></section>');
         const find=id=>shell.stage.querySelector(id);
+        const artwork=SceneShell.frame(find('.demo'),{width:1280,height:720});
+        shell.stage.append(artwork.element);artwork.resize();shell.onDispose(artwork.dispose);
         const originalChild=find('#text').firstChild;
         const actions = storyActions([
           {cue:'type', type:'type', target:find('#value'),text:'A👨‍👩‍👧‍👦Z'},
@@ -317,21 +319,35 @@ test('film authoring: input, response, selection and captions rewind; logical co
       await page.evaluate(
         () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
       );
-      const geometry = await page.locator('[data-scene-frame]').evaluate((e) => {
-        const outer = e.getBoundingClientRect(),
-          inner = e.firstElementChild.getBoundingClientRect(),
-          controls = document.querySelector('[data-player]').getBoundingClientRect();
-        return {
-          outer: outer.width / outer.height,
-          inner: inner.width / inner.height,
-          aligned: Math.abs(outer.width - inner.width),
-          outside: controls.top >= outer.bottom,
-        };
-      });
+      const geometry = await page
+        .locator('[data-scene-frame]')
+        .first()
+        .evaluate((e) => {
+          const outer = e.getBoundingClientRect(),
+            inner = e.firstElementChild.getBoundingClientRect(),
+            controls = document.querySelector('[data-player]').getBoundingClientRect(),
+            stage = document.querySelector('.ve-stage').getBoundingClientRect(),
+            artwork = document.querySelector('.demo').getBoundingClientRect();
+          return {
+            outer: outer.width / outer.height,
+            inner: inner.width / inner.height,
+            aligned: Math.abs(outer.width - inner.width),
+            artworkRatio: artwork.width / artwork.height,
+            artworkInside:
+              artwork.left >= stage.left - 0.1 &&
+              artwork.top >= stage.top - 0.1 &&
+              artwork.right <= stage.right + 0.1 &&
+              artwork.bottom <= stage.bottom + 0.1,
+            transportInside:
+              controls.top >= stage.bottom - 0.1 && controls.bottom <= outer.bottom + 0.1,
+          };
+        });
       assert(Math.abs(geometry.outer - 16 / 9) < 0.005);
       assert(Math.abs(geometry.inner - 16 / 9) < 0.005);
       assert(geometry.aligned < 1);
-      assert(geometry.outside);
+      assert(Math.abs(geometry.artworkRatio - 16 / 9) < 0.005);
+      assert(geometry.artworkInside);
+      assert(geometry.transportInside);
     }
     assert(
       await page.evaluate(() =>

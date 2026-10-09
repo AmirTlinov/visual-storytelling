@@ -1,4 +1,4 @@
-import { mountScene } from '@visual-storytelling/core';
+import { mountScene, SceneShell } from '@visual-storytelling/core';
 import {
   SketchMotion,
   captionTrack,
@@ -13,6 +13,17 @@ import narrationTiming from './timeline.json' with { type: 'json' };
 window.galleryReady = (async () => {
   const root = document.getElementById('ve-scene'),
     svg = root.querySelector('svg.canvas');
+  const composition = document.createElement('div'),
+    paper = root.querySelector('.paper');
+  paper.classList.add('ve-stage');
+  composition.append(
+    paper,
+    root.querySelector('[data-player]'),
+    root.querySelector('[data-caption]'),
+  );
+  const frame = SceneShell.frame(composition, { width: 1280, height: 720, scope: 'scene' });
+  root.append(frame.element);
+  frame.resize();
   const layer = root.querySelector('[data-drawing]'),
     audio = root.querySelector('audio');
   const timing = narrationTiming;
@@ -281,6 +292,7 @@ window.galleryReady = (async () => {
       player.dispose();
       measured.dispose();
       animation?.kill();
+      frame.dispose();
       root.replaceChildren();
     },
   });

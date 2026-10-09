@@ -79,7 +79,7 @@ test('the whole lesson remains one bounded 16:9 frame through narration and expl
   }
 });
 
-test('the narrow lesson reflows without replacing its scene or the saved experiment', async ({
+test('the narrow lesson retains its 16:9 composition, owner and saved experiment', async ({
   page,
 }) => {
   await page.goto('/memory-register/index.html');
@@ -89,6 +89,9 @@ test('the narrow lesson reflows without replacing its scene or the saved experim
   await page.locator('#enable').click();
   await page.locator('#clock').click();
   await page.locator('[data-select="7"]').click();
+  await expect(page.locator('#inside-title')).toHaveText('Бит 7 · вес 128');
+  await expect(page.locator('#feedback-drawing [aria-label="0 → 1"]')).toBeVisible();
+  await expect(page.locator('#feedback-drawing [aria-label="1 → 0"]')).toBeVisible();
   const before = await page.evaluate(() => {
     const scene = (document.querySelector('.ve-scene') as any).scene;
     (window as any).originalScene = scene;
@@ -96,31 +99,32 @@ test('the narrow lesson reflows without replacing its scene or the saved experim
   });
   for (const width of [375, 960, 820, 960]) {
     await page.setViewportSize({ width, height: 1000 });
-    await expect(page.locator('[data-scene-frame]')).toHaveAttribute(
-      'data-frame-layout',
-      width < 936 ? 'responsive' : 'fixed',
-    );
+    await expect(page.locator('[data-scene-frame]')).toHaveAttribute('data-frame-layout', 'fixed');
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      .toBe(true);
     await expect(page.locator('#inside')).toBeVisible();
     const current = await page.evaluate(() => {
       const scene = (document.querySelector('.ve-scene') as any).scene;
       const frame = document.querySelector<HTMLElement>('[data-scene-frame]')!;
-      const paragraph = document.querySelector('#detail-bit')!;
+      const label = document.querySelector('#feedback-drawing [aria-label="обратная связь"] text')!;
       return {
         sameOwner: scene === (window as any).originalScene,
         state: scene.snapshot(),
-        textPixels:
-          parseFloat(getComputedStyle(paragraph).fontSize) * Number(frame.dataset.frameScale),
+        logicalText: parseFloat(getComputedStyle(label).fontSize),
+        ratio: frame.clientWidth / frame.clientHeight,
         fits: document.documentElement.scrollWidth <= innerWidth,
       };
     });
     expect(current.sameOwner).toBe(true);
     expect(current.state).toEqual(before);
-    expect(current.textPixels).toBeGreaterThanOrEqual(width < 936 ? 18 : 14);
+    expect(current.logicalText).toBeGreaterThanOrEqual(26);
+    expect(Math.abs(current.ratio - 16 / 9)).toBeLessThan(0.005);
     expect(current.fits).toBe(true);
   }
 });
 
-test('chapter navigation stays compact while notebook disclosures retain keyboard behavior', async ({
+test('chapter navigation stays compact while the bit detail retains keyboard behavior', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 375, height: 1000 });

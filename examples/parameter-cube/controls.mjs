@@ -1,8 +1,15 @@
 import '@visual-storytelling/core/style.css';
-import { player, mountScene } from '@visual-storytelling/core';
+import './frame.css';
+import { player, mountScene, SceneShell } from '@visual-storytelling/core';
 
 /** HTML controls delegate to the current SVG owner, including after the object reloads. */
 export function attachProjection(root, object, options = {}) {
+  const content = document.createElement('div');
+  content.className = 'projection-composition';
+  content.append(...root.children);
+  const frame = SceneShell.frame(content, { width: 1280, height: 720, scope: 'scene' });
+  root.append(frame.element);
+  frame.resize();
   const lifetime = new AbortController();
   let controls, scene, resolveReady, rejectReady;
   const ready = new Promise((resolve, reject) => {
@@ -40,6 +47,7 @@ export function attachProjection(root, object, options = {}) {
       dispose() {
         rejectReady(new Error('Projection was disposed before it became ready'));
         lifetime.abort();
+        frame.dispose();
         options.dispose?.();
         controls?.dispose();
         scene?.dispose();

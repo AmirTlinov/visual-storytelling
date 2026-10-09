@@ -6,7 +6,7 @@ import {writeFile} from 'node:fs/promises';
 // One geometry implementation creates both the saved SVG and its live updates.
 import { pathToFileURL } from 'node:url';
 const { svgRuntime } = await import(pathToFileURL(`${process.env.VISUAL_STORY_TOOLS ?? new URL('../../tools',import.meta.url).pathname}/svg-runtime.mjs`));
-const sharedRuntime = await svgRuntime({'':['mountScene'],'/three':['SvgOrbit'], '/controls':['fitSvgControls']});
+const sharedRuntime = await svgRuntime({'':['mountScene'],'/three':['SvgOrbit']});
 
 function tensorScene(t,yaw,pitch) {
   const c=Math.cos(yaw),s=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);
@@ -118,21 +118,6 @@ const script=String.raw`
     slider.value=t;
     slider.setAttribute('aria-valuetext',scene.axes.map(format).join(', '));
   }
-  function layout(){
-    const narrow=innerWidth<600;
-    const width=narrow?550:1100,height=narrow?1240:760;
-    root.setAttribute('width',width);root.setAttribute('height',height);
-    root.setAttribute('viewBox','0 0 '+width+' '+height);
-    const transforms={'heading':narrow?'translate(211 -32)':'','tensor-matrix':narrow?'translate(-565 62)':'','sphere-geometry':narrow?'translate(25 0)':'','tensor-geometry':narrow?'translate(-500 472)':'','sphere-label':narrow?'translate(25 -25)':'','tensor-label':narrow?'translate(-500 472)':'','tensor-control':narrow?'translate(-275 430)':'','control-label':narrow?'translate(-275 440)':'','mapping-label':narrow?'translate(-204 286)':''};
-    for(const [id,transform] of Object.entries(transforms))byID(id).setAttribute('transform',transform);
-    byID('heading').setAttribute('text-anchor',narrow?'middle':'start');
-    byID('viewport').querySelector('rect').setAttribute('height',narrow?900:427);
-    byID('viewport').querySelector('rect').setAttribute('width',narrow?500:1030);
-    byID('mapping').querySelector('path').setAttribute('d',narrow?'M275 578V636l-6 -8m6 8 6-8':'M470 353H558l-8 -6m8 6-8 6');
-    byID('viewport-focus').setAttribute('d',narrow?'M250 1056Q275 1058 300 1056':'M525 596Q550 598 575 596');
-    fitSvgControls(root);
-  }
-  addEventListener('resize',layout,listen);layout();
   function setT(value){
     if(!Number.isFinite(value))throw new Error('Tensor transformation must be finite');
     t=clamp(value,0,1);draw();
@@ -154,7 +139,7 @@ const script=String.raw`
 })();`;
 
 const svg=`<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="760" viewBox="0 0 1100 760" role="group" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="group" aria-labelledby="title desc">
 <title id="title">Геометрия тензора</title>
 <desc id="desc">Геометрический пример симметричного положительно определённого тензора второго порядка в его главном ортонормированном базисе. Единичная сфера v преобразуется в множество T v. T = diag(1 + 0.85 t, 1, 1 - 0.48 t), 0 ≤ t ≤ 1. Полуоси эллипсоида равны собственным значениям T. Это образ сферы при линейном преобразовании, не поверхность уровня vᵀ T v = 1. Два вида используют один масштаб и камеру. Перетаскивание вращает оба объекта; стрелки клавиатуры также вращают выбранную сцену. Ползунок меняет тензор; Home и End выбирают границы. Рисунок остаётся видимым без JavaScript.</desc>
 <metadata>Original vector illustration. Tensor ellipsoid reference: https://vtk.org/doc/nightly/html/classvtkTensorGlyph.html . No external dependencies.</metadata>
@@ -173,6 +158,7 @@ const svg=`<?xml version="1.0" encoding="UTF-8"?>
 </style>
 
 
+<g transform="translate(90 0)">
 <text id="heading" x="64" y="80" class="heading">Геометрия тензора</text>
 <g id="tensor-matrix" aria-label="Матрица тензора в главном базисе">
   <text x="694" y="85" font-family="inherit" font-style="italic" font-size="28">T =</text>
@@ -191,10 +177,11 @@ const svg=`<?xml version="1.0" encoding="UTF-8"?>
 </g>
 <text id="control-label" x="550" y="637" font-size="21" text-anchor="middle">Преобразование</text>
 ${svgRange({id:'tensor-control', x:373, y:652, width:354, value:1, label:'Преобразование от единичного тензора до T'})}
+</g>
 
 <script><![CDATA[
 ${sharedRuntime}
-const {SvgOrbit,fitSvgControls,mountScene}=VisualStory;
+const {SvgOrbit,mountScene}=VisualStory;
 ${tensorScene.toString()}
 ${script}
 ]]></script>

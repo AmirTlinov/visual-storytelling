@@ -1,7 +1,6 @@
 import { Morph, SceneShell } from '@visual-storytelling/core';
-import { Viewport3D, Morph3D } from '@visual-storytelling/core/three';
+import { Viewport3D, Morph3D, ThreeKit } from '@visual-storytelling/core/three';
 import '@visual-storytelling/core/style.css';
-import './style.css';
 import { cases, script, stateAt } from './model.js';
 
 window.galleryReady = (async () => {
@@ -22,7 +21,7 @@ window.galleryReady = (async () => {
     ],
   });
   const view = Viewport3D.mount(shell.stage, {
-    label: 'Кубик, шар и слияние объёмных форм',
+    label: 'Кубик, шар и слияние объёмных форм. Поверни предмет, чтобы рассмотреть поверхность.',
   });
   shell.attachView(view);
   const cube = (text) => Morph.box([1.15, 1.15, 0.97], text);
@@ -33,14 +32,19 @@ window.galleryReady = (async () => {
   ];
   const morph = Morph3D.mount(view, operations[0], { pigment: 'blue' });
   view.setObject(morph.object, { fitView: false });
-  const caption = document.createElement('div');
-  caption.className = 'volume-caption';
-  const title = document.createElement('span'),
-    hint = document.createElement('small');
-  hint.textContent = 'Поверни предмет, чтобы рассмотреть поверхность';
-  caption.append(title, hint);
-  shell.stage.after(caption);
   let active = 0;
+  const title = view.label(
+    () => cases[active].title,
+    {
+      object: morph.object,
+      position: () => {
+        const point = morph.bounds.getCenter(new ThreeKit.Vector3());
+        point.y = morph.bounds.max.y;
+        return point;
+      },
+    },
+    { size: 26, tone: 'blue', offset: [0, -28] },
+  );
   const story = shell.attachStory({
     audio: root.querySelector('[data-audio]'),
     script,
@@ -51,10 +55,9 @@ window.galleryReady = (async () => {
         morph.setOperation(operations[active]);
       }
       morph.render(mode === 'story' ? frame : state.progress, `${cases[active].id}_change`);
-      title.textContent = cases[active].title;
       const result = mode === 'story' ? frame.progress(`${cases[active].id}_result`) : 0;
       view.shot({
-        target: morph.bounds,
+        target: morph.object,
         direction: [-4.5 - result * 1.2, 2.8, 9],
         padding: 35,
         reduced: frame.reduced,
@@ -62,7 +65,7 @@ window.galleryReady = (async () => {
     },
   });
   root.scene.extend({ view, story, morph });
-  shell.onDispose(() => caption.remove());
+  shell.onDispose(() => title.remove());
 })().catch((error) => {
   const alert = document.createElement('p');
   alert.setAttribute('role', 'alert');

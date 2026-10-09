@@ -1,6 +1,6 @@
 /** Selection, responsive composition and narrative time for the BERT parameter view. */
 export function mountCube(initial, start, api, model, cubeScene) {
-  const { SvgOrbit, SketchInk, fitSvgControls, transport, mountScene } = api;
+  const { SvgOrbit, SketchInk, transport, mountScene } = api;
   const { projectionBreakdown, validateProjection, decimal, weightColor, escapeXML } = model;
   const { inkShape, inkBox } = SketchInk;
   const root = document.querySelector('svg.ve-scene'),
@@ -11,7 +11,6 @@ export function mountCube(initial, start, api, model, cubeScene) {
     duration = 7.2;
   let data = initial,
     { selected, token, spread, yaw, pitch } = start;
-  let width = 1100;
   const stage = byID('stage'),
     notation = byID('notation'),
     tokens = byID('tokens');
@@ -46,18 +45,7 @@ export function mountCube(initial, start, api, model, cubeScene) {
       t = clock.state.time;
     const { i, j, h, inputs, weights, terms, partial, rest, output } = values;
     const ends = [1, 1.55, 2.1, 2.65];
-    const phase =
-      t < 2.65
-        ? 'Умножаем входы на веса'
-        : t < 3.7
-          ? 'Складываем четыре вклада'
-          : t < 5
-            ? 'Учитываем 252 входа и b'
-            : t < 6.3
-              ? 'Собираем полный результат'
-              : 'Компонента запроса готова';
-    text('operation', phase);
-    text('calculation-title', `2. Соберём q${'₁₂₃₄'[h]},${'₁₂₃₄'[j]} для токена`);
+    text('calculation-title', `Компонента q${'₁₂₃₄'[h]},${'₁₂₃₄'[j]}`);
     text('weight-heading', `Вес → q${'₁₂₃₄'[j]}`);
     for (let row = 0; row < 4; row++) {
       text(`input-${row}`, decimal(inputs[row]));
@@ -85,10 +73,6 @@ export function mountCube(initial, start, api, model, cubeScene) {
     text('partial-value', decimal(partial));
     text('rest-value', decimal(rest));
     text('output-value', `q${'₁₂₃₄'[h]},${'₁₂₃₄'[j]} ≈ ${decimal(output)}`);
-    text(
-      'reading',
-      t >= 6.3 ? 'Все 256 компонент и смещение b учтены.' : 'Проследи путь от входов к одному q.',
-    );
     attr(
       root,
       'data-calculation-phase',
@@ -127,6 +111,7 @@ export function mountCube(initial, start, api, model, cubeScene) {
       .querySelectorAll('[data-token]')
       .forEach((node) => attr(node, 'aria-selected', Number(node.dataset.token) === token));
     attr(tokens, 'aria-activedescendant', `token-${token}`);
+    layoutTokens();
     if (reset) {
       clock.pause();
       clock.seek(0);
@@ -163,46 +148,33 @@ export function mountCube(initial, start, api, model, cubeScene) {
     tokens.innerHTML = data.tokens
       .map(
         (value, index) =>
-          `<g id="token-${index}" data-token="${index}" role="option" aria-selected="${index === token}" aria-label="Токен ${index + 1}: ${escapeXML(value)}"><path class="token-outline"/><text text-anchor="middle">${escapeXML(value)}</text></g>`,
+          `<g id="token-${index}" data-token="${index}" role="option" aria-selected="${index === token}" aria-label="Токен ${index + 1}: ${escapeXML(value)}"><title>${escapeXML(value)}</title><path class="token-outline"/><text text-anchor="middle">${escapeXML(value)}</text></g>`,
       )
       .join('');
   }
-  function layout() {
-    const small = root.getBoundingClientRect().width < 650;
-    width = small ? 550 : 1100;
-    const activationTop = small ? 1150 : 665;
-    attr(byID('heading'), 'x', small ? 28 : 64);
-    attr(byID('heading'), 'font-size', small ? 30 : 36);
-    attr(byID('subtitle'), 'x', small ? 28 : 64);
-    text(
-      'subtitle',
-      small
-        ? 'BERT-mini · слой 4 · 64 видимых веса'
-        : 'BERT-mini · слой 4 · показываем 64 коэффициента из 65 536',
-    );
-    attr(byID('matrix-section'), 'transform', small ? 'translate(35 670)' : 'translate(550 158)');
-    attr(byID('activation-region'), 'transform', `translate(0 ${activationTop})`);
-    const longest = Math.max(...data.tokens.map((value) => value.length));
-    const columns = Math.min(
-      data.tokens.length,
-      Math.max(1, Math.floor((width - 72) / Math.max(116, longest * 14 + 24))),
-    );
-    const rows = Math.ceil(data.tokens.length / columns),
-      slot = (width - 72) / columns;
+  function layoutTokens() {
+    const count = Math.min(6, data.tokens.length);
+    const first = Math.max(0, Math.min(token - Math.floor(count / 2), data.tokens.length - count));
+    const slot = 1152 / count;
+    show('token-paging', data.tokens.length > count);
+    attr(byID('token-prev'), 'aria-disabled', token === 0);
+    attr(byID('token-next'), 'aria-disabled', token === data.tokens.length - 1);
     [...tokens.children].forEach((node, index) => {
-      attr(
-        node,
-        'transform',
-        `translate(${36 + ((index % columns) + 0.5) * slot} ${80 + Math.floor(index / columns) * 58})`,
-      );
-      attr(node.querySelector('path'), 'd', inkBox(-slot / 2 + 5, -30, slot - 10, 44, index));
+      node.style.display = index >= first && index < first + count ? '' : 'none';
+      attr(node, 'transform', `translate(${64 + (index - first + 0.5) * slot} 93)`);
+      attr(node.querySelector('path'), 'd', inkBox(-slot / 2 + 8, -30, slot - 16, 44, index));
+      const label = node.querySelector('text');
+      label.textContent = data.tokens[index];
+      // Keep a fixed token strip; its accessible name retains the complete token.
+      while (label.getComputedTextLength() > slot - 32 && label.textContent.length > 2)
+        label.textContent = label.textContent.replace(/…$/, '').slice(0, -1) + '…';
     });
-    const calculationY = 102 + (rows - 1) * 58;
-    attr(byID('calculation'), 'transform', `translate(0 ${calculationY})`);
-    const xs = small ? [38, 136, 215, 298, 377, 469] : [90, 250, 375, 515, 640, 815];
+  }
+  function layout() {
+    layoutTokens();
+    const xs = [10, 76, 160, 244, 332, 437];
     for (let row = 0; row < 4; row++) {
-      const y = 108 + row * 56;
-      attr(byID(`calc-row-${row}`), 'transform', `translate(0 ${y})`);
+      attr(byID(`calc-row-${row}`), 'transform', `translate(0 ${90 + row * 48})`);
       ['index', 'input', 'multiply', 'weight', 'equal', 'term'].forEach((key, col) =>
         attr(byID(`${key}-${row}`), 'x', xs[col]),
       );
@@ -212,33 +184,20 @@ export function mountCube(initial, start, api, model, cubeScene) {
       attr(
         byID(`calculation-flow-${row}`),
         'd',
-        `M${xs[1]} 23Q${(xs[1] + xs[5]) / 2} 28 ${xs[5]} 23`,
+        `M${xs[1]} 18Q${(xs[1] + xs[5]) / 2} 22 ${xs[5]} 18`,
       );
     }
-    ['input-heading', 'weight-heading', 'term-heading'].forEach((key, col) =>
-      attr(byID(key), 'x', xs[1 + col * 2]),
-    );
-    attr(byID('operation'), 'x', width / 2);
-    attr(byID('operation'), 'font-size', small ? 21 : 25);
-    const edge = xs[5] + 59,
-      rail = edge + 10;
-    attr(byID('gather-bracket'), 'd', `M${edge} 79H${rail}Q${rail + 0.6} 184 ${rail} 289H${edge}`);
-    attr(byID('gather-shaft'), 'd', `M${xs[5]} 298Q${xs[5] + 0.3} 315 ${xs[5]} 331`);
-    attr(byID('gather-head'), 'd', `M${xs[5] - 4.5} 325L${xs[5]} 331L${xs[5] + 4.5} 325`);
-    ['partial', 'rest'].forEach((key, index) => {
-      const y = 371 + index * 104;
-      attr(byID(`${key}-box`), 'd', inkBox(38, y - 35, width - 76, 64, 50 + index));
-      attr(byID(`${key}-label`), 'x', 60);
-      attr(byID(`${key}-value`), 'x', width - 62);
+    ['input-heading', 'weight-heading', 'term-heading'].forEach((key, col) => {
+      attr(byID(key), 'x', xs[1 + col * 2]);
+      attr(byID(key), 'y', 46);
     });
-    ['plus', 'output-value', 'reading', 'rounding'].forEach((id) => attr(byID(id), 'x', width / 2));
-    attr(byID('final-box'), 'd', inkBox(width / 2 - 186, 524, 372, 70, 62));
-    const height = activationTop + calculationY + 708;
-    attr(root, 'viewBox', `0 0 ${width} ${height}`);
-    attr(root, 'height', height);
-    root.style.aspectRatio = `${width} / ${height}`;
-    if (window.frameElement) window.frameElement.style.aspectRatio = `${width} / ${height}`;
-    fitSvgControls(root);
+    attr(byID('gather-bracket'), 'd', 'M495 61H505V248H495');
+    attr(byID('gather-shaft'), 'd', 'M437 249V282');
+    attr(byID('gather-head'), 'd', 'M432 276L437 282L442 276');
+    ['partial', 'rest'].forEach((key, index) => {
+      attr(byID(`${key}-box`), 'd', inkBox(0, 282 + index * 70, 532, 54, 50 + index));
+    });
+    attr(byID('final-box'), 'd', inkBox(70, 420, 392, 68, 62));
     drawCalculation();
   }
   const orbit = SvgOrbit.mount(root, stage, byID('orbit-world'), {
@@ -310,6 +269,30 @@ export function mountCube(initial, start, api, model, cubeScene) {
     },
     listen,
   );
+  for (const [id, direction] of [
+    ['token-prev', -1],
+    ['token-next', 1],
+  ]) {
+    const change = () =>
+      setConditions(
+        {
+          ...conditions(),
+          token: Math.max(0, Math.min(data.tokens.length - 1, token + direction)),
+        },
+        true,
+      );
+    byID(id).addEventListener('click', change, listen);
+    byID(id).addEventListener(
+      'keydown',
+      (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          change();
+        }
+      },
+      listen,
+    );
+  }
   tokens.addEventListener(
     'click',
     (event) => {

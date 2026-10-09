@@ -1,5 +1,7 @@
 import { Box3, Vector3, type Camera, type Object3D, type Mesh } from 'three';
 import { subjectOf } from './semantics.js';
+import { geometryFrameAnchors } from './framing.js';
+import { drawsGeometry } from './visibility.js';
 
 type InspectableCanvas = HTMLCanvasElement & { __visualReview?: () => unknown };
 
@@ -31,7 +33,11 @@ export function attachInspection(
         (!(node as Mesh).isMesh && !node.userData.visualReview && subjectOf(node)?.object !== node)
       )
         return;
-      const box = new Box3().setFromObject(node);
+      // A group's hidden children can retain geometry for rewind. Inspection
+      // measures the representation that is actually drawing in this frame.
+      const box = new Box3();
+      for (const anchor of geometryFrameAnchors([node], drawsGeometry))
+        box.expandByPoint(anchor.position);
       if (box.isEmpty()) return;
       const points = [];
       for (const x of [box.min.x, box.max.x])

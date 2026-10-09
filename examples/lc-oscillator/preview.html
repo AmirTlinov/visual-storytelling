@@ -4,16 +4,6 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Колебательный LC-контур</title>
-    <style>
-      object {
-        display: block;
-        width: 100%;
-        aspect-ratio: 720/1038;
-      }
-      #ve-scene {
-        max-width: 720px;
-      }
-    </style>
     <script type="module">
       import '@visual-storytelling/core/style.css';
     </script>
@@ -29,9 +19,8 @@
     </main>
     <script type="module">
       import { SmilPlayer } from '@visual-storytelling/core';
-      window.galleryReady = SmilPlayer.mount(document.getElementById('ve-scene'), {
-        duration: 8,
-      }).ready;
+      const root = document.getElementById('ve-scene');
+      window.galleryReady = SmilPlayer.mount(root, { duration: 8 }).ready;
     </script>
   </body>
 </html>

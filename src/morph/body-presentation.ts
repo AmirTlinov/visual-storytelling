@@ -16,6 +16,7 @@ export function mountBodies(
     projection?: '2d' | '3d';
     pigment?: string;
     columns?: number;
+    layout?: 'scene' | 'content';
   } = {},
 ) {
   const plan = mathPlan(operation);

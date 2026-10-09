@@ -2,13 +2,13 @@ import { SceneShell, MathMorph } from '@visual-storytelling/core';
 import { Viewport3D, ThreeKit as T, MathMorph3D } from '@visual-storytelling/core/three';
 import { Physics3D, PhysicsPlayer, PhysicsReplay } from '@visual-storytelling/core/physics/3d';
 import '@visual-storytelling/core/style.css';
-import './style.css';
 window.galleryReady = (async () => {
   await SceneShell.ready();
   const root = document.getElementById('morph-contact-scene');
   const shell = SceneShell.mount(root, { title: 'Форма становится опорой' });
   const view = Viewport3D.mount(shell.stage, {
-    label: 'Шар опирается на целую полосу и падает при разрезании',
+    label:
+      'Шар опирается на целую полосу. Разрез открывает щель: шар теряет опору и падает. Его можно подхватить мышью',
   });
   shell.attachView(view);
   const model = MathMorph3D.mount(view, MathMorph.divide(6, 2), { pigment: 'orange' });
@@ -50,26 +50,19 @@ window.galleryReady = (async () => {
       offRender();
     },
   });
-  const text = document.createElement('p');
-  text.className = 'contact-hint';
-  text.textContent =
-    'Разрез открывает щель. Шар теряет опору и падает сам. Его можно подхватить мышью.';
-  shell.stage.after(text);
-  const controls = document.createElement('div');
-  root.append(controls);
+  const controls = root.querySelector('[data-player]');
+  controls.hidden = false;
   const player = PhysicsPlayer.mount(controls, world);
   const replay = PhysicsReplay.create(world, {
     duration: 8,
     beforeSeek: () => player.pause(false),
-    afterSeek: player.update,
+    afterSeek: () => player.pause(false),
   });
   shell.onDispose(() => {
     player.dispose();
     world.dispose();
     model.dispose();
     stop();
-    text.remove();
-    controls.remove();
   });
   root.scene.extend({
     view,

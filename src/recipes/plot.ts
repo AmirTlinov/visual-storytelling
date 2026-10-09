@@ -17,6 +17,8 @@ export interface PlotOptions {
   yTicks?: readonly { value: number; label: string }[];
   xLabel?: string;
   yLabel?: string;
+  /** Logical lettering size; the enclosing scene owns the screen scale. */
+  tickSize?: number;
 }
 
 /** Data coordinates own the geometry. Time clips by x, never by stroke length. */
@@ -48,14 +50,23 @@ export function plot(view: Surface, id: string, options: PlotOptions) {
     view.pen.line(axes.content, `${id}:xtick:${tick.value}`, [x, zero[1] - 3], [x, zero[1] + 3], {
       width: 1,
     });
-    lettering(axes.content, tick.label, { x, y: zero[1] + 25, size: 18 });
+    lettering(axes.content, tick.label, {
+      x,
+      y: zero[1] + (o.tickSize ?? 18) + 7,
+      size: o.tickSize ?? 18,
+    });
   }
   for (const tick of o.yTicks ?? []) {
     const [, y] = point(0, tick.value);
     view.pen.line(axes.content, `${id}:ytick:${tick.value}`, [zero[0] - 3, y], [zero[0] + 3, y], {
       width: 1,
     });
-    lettering(axes.content, tick.label, { x: zero[0] - 9, y: y + 5, anchor: 'end', size: 18 });
+    lettering(axes.content, tick.label, {
+      x: zero[0] - 9,
+      y: y + 5,
+      anchor: 'end',
+      size: o.tickSize ?? 18,
+    });
   }
   return {
     ...chart,
@@ -85,6 +96,10 @@ export function plot(view: Surface, id: string, options: PlotOptions) {
       return {
         element: mark.element,
         show: mark.show,
+        /** Hide the future trace while the learner records a prediction. */
+        showAhead(visible: boolean) {
+          context.style.display = visible ? '' : 'none';
+        },
         dispose: mark.dispose,
         at(x: number, y: number) {
           const pixel = point(x, y);

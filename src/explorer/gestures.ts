@@ -102,7 +102,10 @@ export class SvgGestures {
   }
   local(event: MouseEvent) {
     const box = this.viewport.getBoundingClientRect();
-    return { x: event.clientX - box.left, y: event.clientY - box.top };
+    return {
+      x: (event.clientX - box.left) * (box.width ? this.viewport.clientWidth / box.width : 1),
+      y: (event.clientY - box.top) * (box.height ? this.viewport.clientHeight / box.height : 1),
+    };
   }
   nearby(point: ExplorerPoint, target: Element) {
     const direct = target.closest<HTMLElement>('[data-hit-key]');

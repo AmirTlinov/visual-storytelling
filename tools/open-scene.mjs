@@ -123,12 +123,12 @@ export async function openScene(page, url) {
         // The composition owns the export boundary. A surface accessor alone cannot
         // promise to preserve neighbouring HTML or another drawing in that frame.
         const frame =
-          svg.closest('.ve-explanation') ??
+          svg.closest('[data-frame-scope="scene"]') ??
           svg.closest('.ve-stage') ??
           svg.closest('.ve-scene') ??
           svg;
         const chrome =
-          '.ve-heading,.ve-chapter-navigation,.modes,.ve-parameters,.ve-view-actions,[data-player],.ve-status,.sr-only,.vs-sr';
+          '.ve-heading,.ve-scene-toolbar,.ve-chapter-navigation,.modes,.ve-parameters,.ve-view-actions,[data-player],.ve-status,.sr-only,.vs-sr';
         const extra = [frame, ...frame.querySelectorAll('*')].some(
           (element) =>
             !svg.contains(element) &&

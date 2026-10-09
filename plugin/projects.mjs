@@ -29,6 +29,70 @@ const conflict = (name) =>
 const validRequest = (id) => typeof id === 'string' && /^[a-zA-Z0-9_-]{8,100}$/.test(id);
 const validCursor = (id) => id === null || validRequest(id);
 
+/** Validate the same bounded UTF-8 authoring changes for a working edit or migration candidate. */
+export async function prepareProjectChanges(root, changes) {
+  if (
+    !changes?.length ||
+    changes.length > 64 ||
+    new Set(changes.map((c) => c.path)).size !== changes.length
+  )
+    throw new Error('Supply 1–64 distinct authored files.');
+  const edits = [];
+  for (const change of changes) {
+    const file = await projectFile(root, change.path, { writable: true });
+    const bytes = await readOptional(file);
+    if (
+      bytes &&
+      (bytes.length > 1_000_000 ||
+        bytes.includes(0) ||
+        !Buffer.from(bytes.toString('utf8')).equals(bytes))
+    )
+      throw new Error(`Use ordinary file tools for binary or large source files: ${change.path}`);
+    const before = bytes?.toString('utf8') ?? null;
+    if (typeof change.content !== 'string' && change.content !== null)
+      throw new Error('File content must be text or null for deletion.');
+    if (
+      change.content !== null &&
+      (Buffer.byteLength(change.content) > 1_000_000 || change.content.includes('\0'))
+    )
+      throw new Error('Use ordinary file tools for binary content or changes over 1 MB.');
+    if (before !== change.content) edits.push({ path: change.path, before, after: change.content });
+  }
+  return edits;
+}
+
+/** Apply a verified file transition without replacing a concurrent edit. */
+export async function writeProjectChange(root, entry) {
+  const file = await projectFile(root, entry.path, { writable: true });
+  const check = async () => {
+    await projectFile(root, entry.path, { writable: true });
+    const current = await readOptional(file);
+    if (matches(current, entry.after)) return false;
+    if (!matches(current, entry.before)) throw conflict(entry.path);
+    return true;
+  };
+  if (!(await check())) return;
+  if (entry.after === null) {
+    await rm(file, { force: true });
+    return;
+  }
+  await mkdir(dirname(file), { recursive: true });
+  const mode = await stat(file).then(
+    (info) => info.mode,
+    (error) => {
+      if (error.code === 'ENOENT') return 0o644;
+      throw error;
+    },
+  );
+  const temporary = join(dirname(file), '.vstory-edit-' + randomUUID());
+  try {
+    await writeFile(temporary, entry.after, { flag: 'wx', mode });
+    if (await check()) await rename(temporary, file);
+  } finally {
+    await rm(temporary, { force: true });
+  }
+}
+
 /** Working documents and undo journals; the renderer owns neither files nor authoring history. */
 export class ProjectStore {
   constructor(data) {
@@ -189,35 +253,8 @@ export class ProjectStore {
     await writeJSON(join(directory, 'history.json'), { cursor: journal.history.after });
     await rm(file);
   }
-  async write(root, entry) {
-    const file = await projectFile(root, entry.path, { writable: true });
-    const check = async () => {
-      await projectFile(root, entry.path, { writable: true });
-      const current = await readOptional(file);
-      if (matches(current, entry.after)) return false;
-      if (!matches(current, entry.before)) throw conflict(entry.path);
-      return true;
-    };
-    if (!(await check())) return;
-    if (entry.after === null) {
-      await rm(file, { force: true });
-      return;
-    }
-    await mkdir(dirname(file), { recursive: true });
-    const mode = await stat(file).then(
-      (info) => info.mode,
-      (error) => {
-        if (error.code === 'ENOENT') return 0o644;
-        throw error;
-      },
-    );
-    const temporary = join(dirname(file), '.vstory-edit-' + randomUUID());
-    try {
-      await writeFile(temporary, entry.after, { flag: 'wx', mode });
-      if (await check()) await rename(temporary, file);
-    } finally {
-      await rm(temporary, { force: true });
-    }
+  write(root, entry) {
+    return writeProjectChange(root, entry);
   }
   edit({ projectId, sourceRevision, requestId, changes, undo, assets = [] }) {
     if (!validRequest(requestId))
@@ -299,36 +336,7 @@ export class ProjectStore {
             );
         }
       }
-      if (
-        !changes?.length ||
-        changes.length > 64 ||
-        new Set(changes.map((c) => c.path)).size !== changes.length
-      )
-        throw new Error('Supply 1–64 distinct authored files.');
-      const edits = [];
-      for (const change of changes) {
-        const file = await projectFile(p.path, change.path, { writable: true });
-        const bytes = await readOptional(file);
-        if (
-          bytes &&
-          (bytes.length > 1_000_000 ||
-            bytes.includes(0) ||
-            !Buffer.from(bytes.toString('utf8')).equals(bytes))
-        )
-          throw new Error(
-            `Use ordinary file tools for binary or large source files: ${change.path}`,
-          );
-        const before = bytes?.toString('utf8') ?? null;
-        if (typeof change.content !== 'string' && change.content !== null)
-          throw new Error('File content must be text or null for deletion.');
-        if (
-          change.content !== null &&
-          (Buffer.byteLength(change.content) > 1_000_000 || change.content.includes('\0'))
-        )
-          throw new Error('Use ordinary file tools for binary content or changes over 1 MB.');
-        if (before !== change.content)
-          edits.push({ path: change.path, before, after: change.content });
-      }
+      const edits = await prepareProjectChanges(p.path, changes);
       if ((await projectFiles(p.path)).revision !== state.sourceRevision)
         throw new Error('Source changed while preparing this edit. Inspect before retrying.');
       const journal = {

@@ -6,10 +6,9 @@ window.galleryReady = (async () => {
   const root = document.getElementById('ve-scene');
   const shell = SceneShell.mount(root, {
     title: 'Как промокод меняет заказ',
-    frame: { width: 1280, height: 720 },
+    frame: { width: 1280, height: 720, scope: 'scene' },
     heading: false,
     paper: false,
-    captions: true,
   });
   const subject = document.createElement('section');
   subject.className = 'checkout-lesson';
@@ -31,7 +30,10 @@ window.galleryReady = (async () => {
       </section>
     </div>
     <p id="confirmation" class="confirmation">✓ Заказ подтверждён · <strong>800 ₽</strong></p>`;
-  shell.stage.prepend(subject);
+  const artwork = SceneShell.frame(subject, { width: 1280, height: 720 });
+  shell.stage.append(artwork.element);
+  artwork.resize();
+  shell.onDispose(artwork.dispose);
   const get = (id) => subject.querySelector(`#${id}`);
   const actions = storyActions(
     [

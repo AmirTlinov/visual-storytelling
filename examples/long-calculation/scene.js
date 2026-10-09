@@ -16,7 +16,6 @@ window.galleryReady = MorphStory.mount(document.querySelector('main'), {
       options: [16, 32, 64].map((value) => ({ value, label: String(value) })),
     },
   ],
-  captions: true,
   script: {
     duration: 62,
     segments: [

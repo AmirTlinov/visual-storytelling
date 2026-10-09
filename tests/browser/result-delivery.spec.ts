@@ -44,7 +44,7 @@ test('computed results arrive once and rewind through the same path, including e
   const arrived = await seek(11);
   await expect(receiver).toBeVisible();
   await expect(computed).toHaveCount(0);
-  expect(arrived).toMatchObject({ source: false, target: true, result: 5, formula: false });
+  expect(arrived).toMatchObject({ source: false, target: true, result: 5, formula: true });
   expect(arrived.camera).toEqual(travelling.camera);
   const address = (await receiver.boundingBox())!;
   await page.mouse.click(address.x + address.width / 2, address.y + address.height / 2);

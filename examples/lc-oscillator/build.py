@@ -25,7 +25,7 @@ from svg_style import themed
 from magnetic_field import SolenoidField
 
 PERIOD, DURATION, SAMPLES = 4.0, 8.0, 481
-WIDTH, HEIGHT = 720, 1038
+WIDTH, HEIGHT = 1280, 640
 TIMES = np.linspace(0, DURATION, SAMPLES)
 PHASE = TIMES * 2 * pi / PERIOD
 V, I = np.cos(PHASE), np.sin(PHASE)
@@ -97,8 +97,9 @@ def arrowhead(parent, x, y, dx, dy, color, size=5.5):
 def plot_paths():
     """Sampled values own the curves; the pen treatment never changes the data."""
     with plt.style.context(["science", "no-latex"]), matplotlib.rc_context({"path.simplify": False}):
-        fig = plt.figure(figsize=(WIDTH / 72, HEIGHT / 72), dpi=72)
-        ax = fig.add_axes((0, 0, 1, 1), xlim=(0, WIDTH), ylim=(HEIGHT, 0))
+        plot_height = PLOT_Y + 100
+        fig = plt.figure(figsize=(WIDTH / 72, plot_height / 72), dpi=72)
+        ax = fig.add_axes((0, 0, 1, 1), xlim=(0, WIDTH), ylim=(plot_height, 0))
         ax.set_axis_off()
         for name, values in (("voltage", V), ("current", I)):
             ax.plot(PLOT_X, PLOT_Y - AMPLITUDE * values, gid=name)
@@ -123,7 +124,7 @@ el(svg, "desc", id="description").text = (
     "Знаки на пластинах показывают суммарный заряд, синие носители со знаком минус распределены по длине проводника; их общий дрейф связан с интегралом тока и направлен против него. "
     "Силовые линии неподвижны; их яркость и направление меняются вместе с полем. "
     "Фрагмент поля показан в продольном сечении в одном масштабе с катушкой; часть линий продолжается за границами рисунка. "
-    "График ниже показывает нормированные напряжение и ток; один период длится четыре секунды."
+    "График справа показывает нормированные напряжение и ток; один период длится четыре секунды. Дрейф электронов увеличен для наглядности."
 )
 el(svg, "metadata").text = (
     "Original animation reference: https://x.com/Rainmaker1973/status/2100874136008413433, @eeanimation. "
@@ -145,15 +146,14 @@ el(svg, "style").text = """
   .note { fill: var(--ve-muted); }
 """
 defs = el(svg, "defs")
-text(svg, "Колебательный LC-контур", x=360, y=48, text_anchor="middle", font_size=33)
-text(svg, "Энергия переходит между двумя полями", x=360, y=84,
-     text_anchor="middle", font_size=20, **{"class": "note"})
-text(svg, "Конденсатор C", x=CX, y=132, text_anchor="middle", font_size=22)
-text(svg, "Катушка L", x=LX, y=132, text_anchor="middle", font_size=22)
+text(svg, "Колебательный LC-контур", x=640, y=44, text_anchor="middle", font_size=36)
+mechanism = el(svg, "g", id="mechanism", transform="translate(-28 -42)")
+text(mechanism, "Конденсатор C", x=CX, y=132, text_anchor="middle", font_size=28)
+text(mechanism, "Катушка L", x=LX, y=132, text_anchor="middle", font_size=28)
 
 # One unwarped axial section: dense axial lines open out beyond the ends.
 # The window crops distant returns instead of squeezing them into false loops.
-field = el(svg, "g", id="magnetic-field", fill="none", stroke_linecap="round")
+field = el(mechanism, "g", id="magnetic-field", fill="none", stroke_linecap="round")
 field_lines = faded(field, "magnetic-field-lines", .64 * np.abs(I))
 directions = {sign: faded(field, f"magnetic-field-{'forward' if sign > 0 else 'reverse'}",
                          .9 * np.maximum(sign * I, 0)) for sign in (1, -1)}
@@ -183,14 +183,14 @@ for number, seed in enumerate((.24, .46, .64)):
             for sign, group in directions.items():
                 arrowhead(group, *point, *(sign*tangent), PURPLE, 5.5)
 text(field_lines, "B", x=LX, y=339, text_anchor="middle", font_size=21, style=f"fill:{PURPLE}")
-poles = el(svg, "g", id="magnetic-poles", text_anchor="middle", font_size=17)
+poles = el(mechanism, "g", id="magnetic-poles", text_anchor="middle", font_size=17)
 for sign, top, bottom in ((1, "S", "N"), (-1, "N", "S")):
     group = faded(poles, f"poles-{'forward' if sign > 0 else 'reverse'}", np.minimum(1, np.maximum(sign*I, 0)*5))
     for end, symbol, y in (("top", top, COIL_TOP-20), ("bottom", bottom, COIL_BOTTOM+50)):
         text(group, symbol, id=f"pole-{end}-{'forward' if sign > 0 else 'reverse'}",
              x=LX, y=y, style=f"fill:{PURPLE}")
 
-circuit = el(svg, "g", id="circuit")
+circuit = el(mechanism, "g", id="circuit")
 # Fixed pen deviations; the conductor and carrier lane use the same points.
 upper_wire = np.array([(CX, PLATE_TOP), (CX-.5, (PLATE_TOP+TOP)/2), (CX, TOP+4), (CX+4, TOP),
                        (WIRE_MID, TOP+.7), (LX-28, TOP), (LX-24, TOP+4), (LX-24, COIL_TOP-14), (LX, COIL_TOP)])
@@ -214,7 +214,7 @@ for front in (False, True):
             continue
         el(group, "path", d="M" + " L".join(f"{x:.3f} {y:.3f}" for x, y in coil_points[first:last+1]))
 # The z=0 field section lies in front of the rear turns and behind the front turns.
-svg.remove(field)
+mechanism.remove(field)
 coil.insert(1, field)
 
 capacitor = el(circuit, "g", id="capacitor")
@@ -238,7 +238,7 @@ for sign in (1, -1):
             text(pair, "+" if polarity > 0 else "−", x=0, y=y, font_size=13,
                  style=f"fill:{COPPER if polarity > 0 else BLUE}", data_plate=plate)
 
-electric = el(svg, "g", id="electric-field", fill="none", stroke=COPPER, stroke_width=1.35)
+electric = el(mechanism, "g", id="electric-field", fill="none", stroke=COPPER, stroke_width=1.35)
 for sign in (1, -1):
     group = faded(electric, f"electric-field-{'forward' if sign > 0 else 'reverse'}", np.maximum(sign*V, 0))
     for x in (CX-44, CX, CX+44):
@@ -246,9 +246,9 @@ for sign in (1, -1):
         el(group, "path", d=f"M{x} {y1}Q{x+.35} 326 {x} {y2}", stroke_linecap="round")
         arrowhead(group, x, y2, 0, sign, COPPER, 4.5)
     text(group, "E", x=CX-PLATE_HALF-20, y=334, font_size=22, style=f"fill:{COPPER}", stroke="none")
-neutral_charge = faded(svg, "neutral-charge", np.maximum(0, 1-np.abs(V)*8))
+neutral_charge = faded(mechanism, "neutral-charge", np.maximum(0, 1-np.abs(V)*8))
 text(neutral_charge, "Q = 0", x=CX, y=333, text_anchor="middle", font_size=18, **{"class": "note"})
-neutral_field = faded(svg, "neutral-field", np.maximum(0, 1-np.abs(I)*8))
+neutral_field = faded(mechanism, "neutral-field", np.maximum(0, 1-np.abs(I)*8))
 text(neutral_field, "B = 0", x=LX+68, y=COIL_TOP-18, text_anchor="middle", font_size=18, **{"class": "note"})
 
 # Equal spacing and displacement use true conductor arclength, before projection.
@@ -276,7 +276,7 @@ electrons = el(defs, "g", id="negative-carriers", data_sample_count=carrier_coun
 back_carriers = el(coil, "g", id="carriers-back")
 coil.remove(back_carriers)
 coil.insert(1, back_carriers)
-front_carriers = el(svg, "g", id="carriers-front")
+front_carriers = el(mechanism, "g", id="carriers-front")
 for number, site in enumerate(carrier_sites):
     distances = site + DRIFT*V
     assert distances.min() > 0 and distances.max() < wire_lengths[-1]
@@ -289,12 +289,12 @@ for number, site in enumerate(carrier_sites):
     for layer, visibility in ((back_carriers, .68*(1-front)), (front_carriers, front)):
         paint = el(layer, "use", href=f"#electron-{number}", opacity=f"{visibility[0]:.4f}")
         anim(paint, "opacity", visibility)
-el(svg, "use", href="#electron-symbol", transform="translate(253 484)")
-text(svg, "электроны", x=266, y=490, font_size=16, style=f"fill:{BLUE}")
+el(mechanism, "use", href="#electron-symbol", transform="translate(253 484)")
+text(mechanism, "электроны", x=266, y=490, font_size=24, style=f"fill:{BLUE}")
 
 # Current and electron motion are compared along the same upper wire.
 for name, direction, y in (("current", 1, TOP-18), ("electron", -1, TOP+23)):
-    arrow_group = faded(svg, f"{name}-direction", np.minimum(1, np.abs(I)*8))
+    arrow_group = faded(mechanism, f"{name}-direction", np.minimum(1, np.abs(I)*8))
     arrow = el(arrow_group, "line", id=f"{name}-vector", x1=CURRENT_X, x2=CURRENT_X, y1=y, y2=y,
                stroke=BLUE, stroke_width=1.7, stroke_linecap="round")
     anim(arrow, "x1", CURRENT_X-29*direction*I)
@@ -310,7 +310,7 @@ for name, direction, y in (("current", 1, TOP-18), ("electron", -1, TOP+23)):
     if name == "electron":
         el(label, "tspan", baseline_shift="super", font_size="65%").text = "−"
 
-energy = el(svg, "g", id="field-energy")
+energy = el(svg, "g", id="field-energy", transform="translate(674 -60) scale(.85)")
 for cx, key, sub, label, share, color in (
     (CX, "capacitor", "C", "электрическое поле", V*V, COPPER),
     (LX, "inductor", "L", "магнитное поле", I*I, PURPLE),
@@ -324,7 +324,7 @@ for cx, key, sub, label, share, color in (
     d = f"M{x+2} {y}Q{cx} {y-.7} {x+side-2} {y}Q{x+side} {y} {x+side} {y+2}Q{x+side+.7} {y+26} {x+side} {y+side-2}Q{x+side} {y+side} {x+side-2} {y+side}Q{cx} {y+side+.7} {x+2} {y+side}Q{x} {y+side} {x} {y+side-2}Q{x-.7} {y+26} {x} {y+2}Q{x} {y} {x+2} {y}Z"
     el(energy, "path", d=d, fill=color, fill_opacity=.34, clip_path=f"url(#energy-{key}-clip)")
     el(energy, "path", d=d, fill="none", stroke=color, stroke_width=1.4, stroke_linejoin="round")
-    text(energy, label, x=cx, y=614, text_anchor="middle", font_size=19, style=f"fill:{color}")
+    text(energy, label, x=cx, y=614, text_anchor="middle", font_size=28, style=f"fill:{color}")
 el(energy, "path", d=f"M{CX+45} 561Q{WIRE_MID} 557 {LX-45} 561", fill="none", stroke=PENCIL, stroke_width=1.3)
 arrowhead(energy, CX+45, 561, -1, 0, PENCIL, 7)
 arrowhead(energy, LX-45, 561, 1, 0, PENCIL, 7)
@@ -334,32 +334,33 @@ el(sum_label, "tspan", baseline_shift="sub", font_size="65%").text = "L"
 el(sum_label, "tspan", baseline_shift="baseline").text = " = const"
 
 # Faint complete curves give context; the growing stroke and points show the phase.
+phase = el(svg, "g", id="phase-plot", transform="translate(640 -486) scale(.9)")
 clip = el(defs, "clipPath", id="trace-window", clipPathUnits="userSpaceOnUse")
 window = el(clip, "rect", x=66, y=PLOT_Y-55, width=PLOT_X[0]-66, height=112)
 anim(window, "width", PLOT_X-66)
-axes = el(svg, "g", id="plot-axes", fill="none", stroke=PENCIL, stroke_width=1)
+axes = el(phase, "g", id="plot-axes", fill="none", stroke=PENCIL, stroke_width=1)
 el(axes, "path", d=f"M68 {PLOT_Y+58}V{PLOT_Y-54} M68 {PLOT_Y}H660", stroke_linecap="round")
 arrowhead(axes, 660, PLOT_Y, 1, 0, PENCIL, 5)
-text(svg, "t", x=669, y=PLOT_Y+7, font_size=18)
+text(phase, "t", x=669, y=PLOT_Y+7, font_size=18)
 for seconds, value in ((0, "0"), (4, "T"), (8, "2T")):
     x = 68 + 580*seconds/DURATION
     el(axes, "path", d=f"M{x} {PLOT_Y+57}v5")
-    text(svg, value, x=x, y=PLOT_Y+81, font_size=17, text_anchor="middle", **{"class": "note"})
-legend = el(svg, "g", id="plot-legend")
-waveforms = el(svg, "g", id="waveforms", fill="none", stroke_linecap="round", stroke_linejoin="round")
-for name, sub, data, d, color, x in zip(("voltage", "current"), ("C", "L"), (V, I), plot_paths(), (COPPER, BLUE), (76, 236)):
+    text(phase, value, x=x, y=PLOT_Y+81, font_size=26, text_anchor="middle", **{"class": "note"})
+legend = el(phase, "g", id="plot-legend")
+waveforms = el(phase, "g", id="waveforms", fill="none", stroke_linecap="round", stroke_linejoin="round")
+for name, sub, data, d, color, x in zip(("voltage", "current"), ("C", "L"), (V, I), plot_paths(), (COPPER, BLUE), (76, 390)):
     variable(legend, "v" if name == "voltage" else "i", sub, x=x, y=PLOT_Y-70, font_size=23, style=f"fill:{color}")
-    text(legend, "напряжение" if name == "voltage" else "ток", x=x+31, y=PLOT_Y-70, font_size=17, style=f"fill:{color}")
+    text(legend, "напряжение" if name == "voltage" else "ток", x=x+31, y=PLOT_Y-70, font_size=26, style=f"fill:{color}")
     el(waveforms, "path", d=d, stroke=color, stroke_width=1.3, stroke_opacity=.18)
     el(waveforms, "path", id=f"{name}-trace", d=d, stroke=color, stroke_width=2.2, clip_path="url(#trace-window)")
     point = el(waveforms, "circle", id=f"{name}-point", cx=PLOT_X[0], cy=PLOT_Y-AMPLITUDE*data[0], r=3.1, fill=color)
     anim(point, "cx", PLOT_X)
     anim(point, "cy", PLOT_Y-AMPLITUDE*data)
-cursor = el(svg, "path", d=f"M360 {PLOT_Y-48}V{PLOT_Y+50}", id="phase-cursor", stroke=PENCIL, stroke_width=.8, stroke_opacity=.5)
+cursor = el(phase, "path", d=f"M360 {PLOT_Y-48}V{PLOT_Y+50}", id="phase-cursor", stroke=PENCIL, stroke_width=.8, stroke_opacity=.5)
 translate_anim(cursor, zip(PLOT_X-360, np.zeros(SAMPLES)))
 
 # The equation follows the graph on its own line, with a clear reading gap.
-equation = el(svg, "g", id="equation", transform="translate(270 909)", font_size=20, aria_label="Вторая производная напряжения плюс напряжение, делённое на LC, равна нулю")
+equation = el(svg, "g", id="equation", transform="translate(872 542) scale(1.2)", font_size=20, aria_label="Вторая производная напряжения плюс напряжение, делённое на LC, равна нулю")
 variable(equation, "d²v", "C", x=0, y=0)
 text(equation, "dt²", x=11, y=52)
 text(equation, "+", x=62, y=30)
@@ -368,10 +369,7 @@ text(equation, "LC", x=104, y=52, text_anchor="middle")
 text(equation, "= 0", x=133, y=30)
 el(equation, "path", id="fraction-bars", d="M-3 22Q22 21.4 47 22 M85 22Q104 22.6 123 22",
    fill="none", stroke=INK, stroke_width=1.1, stroke_linecap="round")
-text(svg, "Знаки ± — заряд пластин · синие носители − — электроны", id="model-note",
-     x=360, y=1001, text_anchor="middle", font_size=14, **{"class": "note"})
-text(svg, "Фрагмент поля в продольном сечении · дрейф увеличен",
-     x=360, y=1024, text_anchor="middle", font_size=14, **{"class": "note"})
+
 
 ET.indent(svg, space="  ")
 target = Path(os.environ.get("VISUAL_STORY_OUTPUT", HERE)) / "LC-oscillator.svg"

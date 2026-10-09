@@ -188,12 +188,15 @@ test('parallel video export has continuous frame indices and audio, and failed o
     const video = probe.streams.find((stream) => stream.codec_type === 'video');
     assert.equal(Number(video.nb_read_frames), 16);
     assert.equal(video.width, 440, 'output width does not shrink to the captured subject width');
-    assert.equal(video.height, 264, 'automatic height retains the subject aspect ratio');
+    assert.equal(video.height, 248, 'default video fits the subject into a 16:9 output');
     const audio = probe.streams.find((stream) => stream.codec_type === 'audio');
     assert(Math.abs(Number(audio.duration) - 2) < 0.03);
     const frames = await videoFrames(output, 0, undefined, undefined, join(directory, 'decoded'));
     assert.equal(frames.length, 16);
     for (let i = 0; i < frames.length; i++) assert(Math.abs(frames[i].time - i / 8) < 0.00001);
+    const scale = Math.min(video.width / 400, video.height / 240);
+    const inset = (video.width - 400 * scale) / 2;
+    let initialPosition;
     for (let i = 0; i < frames.length; i++) {
       const { data, info } = await sharp(frames[i].file)
         .removeAlpha()
@@ -201,7 +204,7 @@ test('parallel video export has continuous frame indices and audio, and failed o
         .toBuffer({ resolveWithObject: true });
       let xsum = 0,
         pixels = 0;
-      for (let y = 209; y < 242; y++)
+      for (let y = 0; y < info.height; y++)
         for (let x = 0; x < info.width; x++) {
           const at = (y * info.width + x) * info.channels;
           if (data[at] > 170 && data[at + 1] < 70 && data[at + 2] < 70) {
@@ -210,8 +213,14 @@ test('parallel video export has continuous frame indices and audio, and failed o
           }
         }
       assert(pixels > 0);
+      const position = xsum / pixels;
+      if (i === 0) {
+        initialPosition = position;
+        // YUV420 padding is aligned to two-pixel chroma blocks.
+        assert(Math.abs(position - (inset + 44.5 * scale)) < 2);
+      }
       assert(
-        Math.abs(xsum / pixels - ((i + 4) * 10 + 4.5) * 1.1) < 1.5,
+        Math.abs(position - initialPosition - i * 10 * scale) < 1.5,
         `frame ${i} preserves its scene time across chunks`,
       );
     }

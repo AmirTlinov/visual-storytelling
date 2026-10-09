@@ -52,6 +52,17 @@ window.galleryReady = (async () => {
   const shell = SceneShell.mount(root, {
     title: 'Откуда взялся результат?',
     parameters: [
+      { key: 'first', label: 'Первое число', min: -4, max: 10, step: 1, value: 2 },
+      {
+        key: 'channel',
+        type: 'choice',
+        label: 'Канал',
+        value: 0,
+        options: [
+          { value: 0, label: 'Первый' },
+          { value: 1, label: 'Второй' },
+        ],
+      },
       {
         key: 'kind',
         type: 'choice',
@@ -64,17 +75,6 @@ window.galleryReady = (async () => {
         ],
       },
       {
-        key: 'channel',
-        type: 'choice',
-        label: 'Канал',
-        value: 0,
-        options: [
-          { value: 0, label: 'Первый' },
-          { value: 1, label: 'Второй' },
-        ],
-      },
-      { key: 'first', label: 'Первое число', min: -4, max: 10, step: 1, value: 2 },
-      {
         key: 'time',
         label: 'Момент',
         min: 0,
@@ -85,20 +85,21 @@ window.galleryReady = (async () => {
       },
     ],
   });
+  shell.fields.style.setProperty('--ve-parameter-columns', '4');
   const view = Viewport3D.mount(shell.stage, {
     label: 'Тензор, выбранные измерения, вычисление и адрес результата',
   });
   shell.attachView(view);
   const source = Tensor3D.mount(view, dataFor(2), {
     id: 'samples',
-    title: '2 кадра × 2 строки × 2 канала',
+    title: 'Измерения',
     pigment: 'blue',
   });
   const factors = Tensor3D.mount(view, weights, {
     id: 'weights',
     title: 'Веса',
     pigment: 'purple',
-    columns: 2,
+    columns: 4,
   });
   const slice = TensorSlice3D.mount(view, source, {
     id: 'channel',
@@ -109,9 +110,7 @@ window.galleryReady = (async () => {
   const calculation = MathMorph3D.mount(view, operationFor(slice.result.data, 'dot'), {
     id: 'calculation',
     layout: 'scene',
-    get columns() {
-      return shell.stage.clientWidth < 620 ? 2 : 4;
-    },
+    columns: 4,
     pigment: 'orange',
   });
   const receiver = Tensor3D.mount(
@@ -126,6 +125,12 @@ window.galleryReady = (async () => {
   );
   calculation.setDelivery({ to: receiver.cell().box });
   group.add(source.object, factors.object, slice.object, calculation.object, receiver.object);
+  source.object.position.set(-13.5, 0.45, 0);
+  factors.object.position.set(-8.2, 1.7, 0);
+  slice.object.position.set(-8.2, -2.2, 0.5);
+  calculation.object.position.set(1.8, 0, 0);
+  calculation.object.scale.setScalar(0.9);
+  receiver.object.position.set(11, 0, 0);
   view.setObject(group, { fitView: false });
   let key = '2/0/dot',
     scalar = true;
@@ -150,25 +155,32 @@ window.galleryReady = (async () => {
         if (scalar) calculation.setDelivery({ to: receiver.cell().box });
         key = next;
       }
-      const narrow = shell.stage.clientWidth < 620;
-      shell.stage.style.height = narrow ? '1000px' : '680px';
-      source.object.position.set(narrow ? 0 : -3.2, narrow ? 8.3 : 5, 0);
-      factors.object.position.set(narrow ? 0 : 3.2, narrow ? 1.4 : 3.4, 0);
-      slice.object.position.set(narrow ? 0 : -3.2, narrow ? 4.5 : 1.6, 0.5);
-      calculation.object.position.set(0, narrow ? -5.5 : -2.6, 0);
-      calculation.object.scale.setScalar(0.62);
-      receiver.object.position.set(0, narrow ? -9.3 : -5.5, 0);
+      group.updateMatrixWorld(true);
       // Delivery alone owns the receiving cell; its containing row may be omitted for vector results.
       const f = mode === 'story' ? frame : sheet.at(state.time, frame.reduced);
       calculation.object.visible = f.time >= script.cues.calculate.start;
       receiver.object.visible = scalar && f.time >= script.cues.place.start;
       slice.render(f.progress('select'), f.reduced);
       calculation.render(f, 'calculate', scalar ? 'place' : undefined);
-      const bounds = source.bounds.clone().union(factors.bounds).union(slice.bounds);
+      const inputBounds = source.bounds.clone().union(factors.bounds).union(slice.bounds);
+      const bounds = inputBounds.clone();
       const mathBounds = calculation.bounds.clone().applyMatrix4(calculation.object.matrixWorld);
       bounds.union(mathBounds);
       if (scalar) bounds.union(receiver.bounds);
-      view.shot({ target: group, bounds, direction: [0.08, 0.03, 1], padding: 32 });
+      view.shot({
+        target: group,
+        bounds,
+        direction: [0.08, 0.03, 1],
+        padding: 24,
+        from: {
+          target: [source.object, factors.object, slice.object],
+          bounds: inputBounds,
+          direction: [0.08, 0.03, 1],
+          padding: 24,
+        },
+        progress: Math.max(0, Math.min(1, f.time - script.cues.select.end)),
+        reduced: f.reduced,
+      });
     },
   });
   root.scene.extend({
