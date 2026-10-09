@@ -1,5 +1,69 @@
 import { test, expect } from '@playwright/test';
 
+test('interval inscriptions stay clear of the line at the edge and after reverse changes', async ({
+  page,
+}) => {
+  await page.goto('/graph-lab/index.html');
+  await page.evaluate(() => window.galleryReady);
+  for (const width of [736, 390, 1040]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const frames = await page.evaluate(async () => {
+      const scene = (document.querySelector('.ve-scene') as any).scene;
+      await scene.control([{ type: 'mode', value: 'explore' }]);
+      const frames = [];
+      for (const speed of [2, 1, 4, 2])
+        for (const time of [10, 3, 0.1, 10]) {
+          await scene.control([{ type: 'parameters', values: { speed, time, detail: true } }]);
+          const labels = [
+            ...document.querySelectorAll<SVGGraphicsElement>(
+              '[data-object="distance-plot:slope"] .vs-lettering',
+            ),
+          ].filter((node) => node.checkVisibility({ visibilityProperty: true }));
+          const curve = document.querySelector<SVGPathElement>(
+            '[data-object="distance-plot:speed"] [data-stroke] path',
+          )!;
+          const matrix = curve.getScreenCTM()!;
+          const length = curve.getTotalLength();
+          const collisions = labels
+            .filter((label) => {
+              const box = label.getBoundingClientRect();
+              for (let i = 0; i <= 300; i++) {
+                const p = curve.getPointAtLength((length * i) / 300).matrixTransform(matrix);
+                if (
+                  p.x >= box.left - 4 &&
+                  p.x <= box.right + 4 &&
+                  p.y >= box.top - 4 &&
+                  p.y <= box.bottom + 4
+                )
+                  return true;
+              }
+              return false;
+            })
+            .map((node) => node.getAttribute('aria-label'));
+          frames.push({
+            speed,
+            time,
+            collisions,
+            labels: labels.map((node) => ({
+              text: node.getAttribute('aria-label'),
+              box: node.getBoundingClientRect().toJSON(),
+            })),
+          });
+        }
+      return frames;
+    });
+    for (const frame of frames) {
+      expect(frame.collisions, `${width}px: ${frame.speed}m/s at ${frame.time}s`).toEqual([]);
+      for (const { box } of frame.labels) {
+        expect(box.left).toBeGreaterThanOrEqual(0);
+        expect(box.right).toBeLessThanOrEqual(width);
+      }
+    }
+    if (width > 390) expect(frames[0]!.labels.map((label) => label.text)).toContain('6 м');
+    expect(frames.at(-1)).toEqual(frames[0]);
+  }
+});
+
 test('graph keeps coordinates, keyboard input and rapid updates readable', async ({
   page,
 }, testInfo) => {

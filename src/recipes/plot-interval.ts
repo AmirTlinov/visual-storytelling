@@ -46,17 +46,40 @@ export function plotInterval(
     horizontal.text(options.formatX(delta[0]));
     horizontal.at((a[0] + b[0]) / 2, Math.min(bounds.y + bounds.height - 10, a[1] + 27));
     vertical.text(options.formatY(delta[1]));
-    const right = b[0] + 12;
-    vertical.at(
-      right + vertical.width > bounds.x + bounds.width ? b[0] - vertical.width - 12 : right,
-      (a[1] + b[1]) / 2 + 6,
-    );
+    vertical.at(0, 0);
+    const ink = vertical.bounds,
+      paper = view.element.viewBox.baseVal,
+      dx = b[0] - a[0],
+      dy = b[1] - a[1],
+      gap = 8;
+    const length = Math.hypot(dx, dy);
+    const distances = (box: { x: number; y: number; width: number; height: number }) =>
+      [box.x, box.x + box.width].flatMap((x) =>
+        [box.y, box.y + box.height].map((y) => (dx * (y - a[1]) - dy * (x - a[0])) / (length || 1)),
+      );
+    // An annotation may use the paper margin outside the data rectangle, like
+    // an axis label. Measure the actual pen, not the font's advance width.
+    let x = dx >= 0 ? b[0] + gap : b[0] - gap - ink.width,
+      y = (a[1] + b[1] - ink.height) / 2;
+    let fits = x >= paper.x + 4 && x + ink.width <= paper.x + paper.width - 4;
+    if (!fits) {
+      // The right-angle corner is the widest available part of the triangle.
+      // Moving a label inside requires clearance from the diagonal as well.
+      x = dx >= 0 ? b[0] - gap - ink.width : b[0] + gap;
+      y = dy <= 0 ? a[1] - gap - ink.height : a[1] + gap;
+      const side = Math.sign(-dx * dy);
+      fits = length > 0 && distances({ ...ink, x, y }).every((d) => side * d >= gap);
+    }
+    vertical.at(x - ink.x, y - ink.y);
     // Tiny intervals keep their true geometry. Their numbers remain in the surrounding
     // explanation instead of colliding with the point and coordinate ticks.
+    const runClearance = distances(horizontal.bounds);
     horizontal.element.style.visibility =
-      Math.abs(b[0] - a[0]) >= horizontal.bounds.width + 18 ? '' : 'hidden';
-    vertical.element.style.visibility =
-      Math.abs(b[1] - a[1]) >= vertical.bounds.height + 20 ? '' : 'hidden';
+      Math.abs(dx) >= horizontal.bounds.width + 18 &&
+      (runClearance.every((d) => d >= gap) || runClearance.every((d) => d <= -gap))
+        ? ''
+        : 'hidden';
+    vertical.element.style.visibility = fits && Math.abs(dy) >= ink.height + 20 ? '' : 'hidden';
   };
   at(options.from, options.to);
   return {
