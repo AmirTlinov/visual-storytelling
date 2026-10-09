@@ -66,7 +66,7 @@ window.galleryReady = (async () => {
       segments: [
         {
           id: 'read',
-          title: 'Каждую секунду — ещё три метра',
+          title: 'Как растёт пройденный путь',
           start: 0,
           end: 10,
           text: 'Точка показывает время и пройденный путь. За каждую секунду путь увеличивается на три метра.',
@@ -115,7 +115,10 @@ window.galleryReady = (async () => {
   });
   root.scene.extend({ snapshot: () => motion(story.presented.values) });
   const selection = () => {
-    if (root.scene.selected.includes('distance-value') && !story.requested.values.detail)
+    if (
+      root.scene.selected.includes('distance-plot:distance-value') &&
+      !story.requested.values.detail
+    )
       change({ detail: true });
   };
   root.addEventListener('scene-selection', selection);

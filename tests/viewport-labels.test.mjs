@@ -125,7 +125,7 @@ test('transparent packed annotations neither displace visible labels nor enlarge
       const view = Viewport3D.mount(document.querySelector('main'));
       const cube = new T.Mesh(new T.BoxGeometry(), new T.MeshBasicMaterial());
       view.setObject(cube);
-      const current = view.label('Текущий шаг', cube, { avoidOverlap: true, order: 1, size: 20 });
+      const current = view.label('Текущий шаг', cube, { order: 1, size: 20 });
       const sample = async (reduced = false) => {
         view.shot({ target: cube, direction: [0, 0, 1], reduced });
         await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
@@ -140,12 +140,12 @@ test('transparent packed annotations neither displace visible labels nor enlarge
     });
     const transparent = await page.evaluate(async () => {
       const { view, cube, T, sample } = lab;
-      const next = view.label('Следующий шаг', cube, { avoidOverlap: true, order: 0, size: 20 });
+      const next = view.label('Следующий шаг', cube, { order: 0, size: 20 });
       next.opacity(0);
       const far = new T.Object3D();
       far.position.y = 100;
       cube.add(far);
-      const future = view.label('Далёкий будущий шаг', far, { avoidOverlap: true, size: 20 });
+      const future = view.label('Далёкий будущий шаг', far, { size: 20 });
       future.opacity(0);
       Object.assign(lab, { next, future });
       const shot = await sample();
@@ -166,7 +166,12 @@ test('transparent packed annotations neither displace visible labels nor enlarge
           shot,
           hidden: lab.next.element.hidden,
           alpha: style.display === 'none' ? 0 : Number(style.opacity),
-          clearance: lower.top - upper.bottom,
+          clearance: Math.max(
+            lower.top - upper.bottom,
+            upper.top - lower.bottom,
+            lower.left - upper.right,
+            upper.left - lower.right,
+          ),
         };
       }, alpha);
       assert.equal(frame.hidden, alpha === 0);
@@ -176,18 +181,11 @@ test('transparent packed annotations neither displace visible labels nor enlarge
       if (frames.has(alpha)) assert.deepEqual(frame, frames.get(alpha), 'rewind is history-free');
       frames.set(alpha, frame);
     }
-    assert.ok(
-      Math.abs(frames.get(0.000001).shot.top - initial.top) < 0.1,
-      'an imperceptible neighbour cannot abruptly move the visible label',
-    );
-    let displacement = 0;
-    for (const alpha of [0.01, 0.25, 0.5, 1]) {
-      const next = frames.get(alpha).shot.top - initial.top;
-      assert.ok(next > displacement, 'clearance grows continuously with visible opacity');
-      displacement = next;
-    }
-    assert.ok(frames.get(0.01).shot.top - initial.top < 0.5);
-    assert.ok(frames.get(1).clearance >= 7.9, 'opaque annotations retain the full readable gap');
+    for (const alpha of [0.000001, 0.01, 0.25, 0.5, 1])
+      assert.ok(
+        frames.get(alpha).clearance >= 7.9,
+        'every visible annotation retains the readable gap',
+      );
     const refitted = await page.evaluate(async () => {
       lab.future.opacity(1);
       const visible = await lab.sample();
@@ -246,7 +244,7 @@ test('a fixed shot envelope reserves hidden titles without exposing them or foll
             return new T.Vector3(0, 0.5, 0);
           },
         },
-        { size: 20, avoidOverlap: true, offset },
+        { size: 20, offset },
       );
       view.setObject(root, { fitView: false });
       const bounds = new T.Box3(new T.Vector3(-3, -3, -1), new T.Vector3(3, 3.5, 1));
@@ -361,7 +359,9 @@ test('computed local labels share framing, semantics and lifetime with their rep
     await page.evaluate(async () => {
       const { Viewport3D, T } = lib;
       const stage = document.querySelector('main'),
-        view = Viewport3D.mount(stage);
+        view = Viewport3D.mount(stage, {
+          labelInsets: () => ({ top: 24, right: 24, bottom: 24, left: 24 }),
+        });
       const root = new T.Group(),
         left = new T.Group(),
         right = new T.Group();
@@ -398,12 +398,18 @@ test('computed local labels share framing, semantics and lifetime with their rep
         const p = world.clone().project(view.camera);
         const box = label.element.parentElement.getBoundingClientRect(),
           frame = stage.getBoundingClientRect();
+        const leader = stage.querySelector(`[data-annotation="${label.element.parentElement.id}"]`),
+          path =
+            leader && getComputedStyle(leader).display !== 'none' && leader.querySelector('path');
+        const origin = path
+          ? path.getPointAtLength(0).matrixTransform(path.getScreenCTM())
+          : { x: box.x + box.width / 2, y: box.y + box.height / 2 };
         return {
           hidden: [label.element.hidden, ink.element.hidden],
           subject: label.element.dataset.object,
           drift: Math.hypot(
-            box.x + box.width / 2 - frame.x - ((p.x + 1) * frame.width) / 2,
-            box.y + box.height / 2 - frame.y - ((1 - p.y) * frame.height) / 2,
+            origin.x - frame.x - ((p.x + 1) * frame.width) / 2,
+            origin.y - frame.y - ((1 - p.y) * frame.height) / 2,
           ),
           inkDrift: ink.object.getWorldPosition(new T.Vector3()).distanceTo(world),
           inkLocal: ink.object.position.toArray(),
@@ -626,7 +632,9 @@ test('3D annotations stay readable, attached and non-intercepting during orbit a
         );
         const framing = await page.evaluate(() => {
           const frame = lab.formula.element.parentElement.getBoundingClientRect();
-          const stage = lab.formula.element.closest('.ve-stage').getBoundingClientRect();
+          const host = lab.formula.element.closest('.ve-stage'),
+            stage = host.getBoundingClientRect(),
+            scale = stage.width / host.clientWidth;
           return {
             visible: !lab.formula.element.hidden,
             gaps: [
@@ -634,7 +642,7 @@ test('3D annotations stay readable, attached and non-intercepting during orbit a
               stage.right - frame.right,
               frame.top - stage.top,
               stage.bottom - frame.bottom,
-            ],
+            ].map((gap) => gap / scale),
           };
         });
         assert(framing.visible && framing.gaps.every((gap) => gap >= 23), JSON.stringify(framing));
@@ -729,12 +737,22 @@ test('3D annotations stay readable, attached and non-intercepting during orbit a
           const point = lab.anchor.getWorldPosition(new lab.T.Vector3()).project(lab.view.camera),
             stage = lab.formula.element.closest('.ve-stage').getBoundingClientRect(),
             frame = lab.formula.element.parentElement.getBoundingClientRect();
+          const x = stage.x + ((point.x + 1) * stage.width) / 2,
+            y = stage.y + ((1 - point.y) * stage.height) / 2,
+            leader = document.querySelector(
+              `[data-annotation="${lab.formula.element.parentElement.id}"]`,
+            ),
+            path =
+              leader && getComputedStyle(leader).display !== 'none' && leader.querySelector('path'),
+            origin = path
+              ? path.getPointAtLength(0).matrixTransform(path.getScreenCTM())
+              : {
+                  x: Math.max(frame.left, Math.min(frame.right, x)),
+                  y: Math.max(frame.top, Math.min(frame.bottom, y)),
+                };
           return {
             hidden: lab.formula.element.hidden,
-            pixels: Math.hypot(
-              frame.x + frame.width / 2 - stage.x - ((point.x + 1) * stage.width) / 2,
-              frame.y + frame.height / 2 - stage.y - ((1 - point.y) * stage.height) / 2,
-            ),
+            pixels: Math.hypot(origin.x - x, origin.y - y),
           };
         });
         assert.equal(drift.hidden, false);

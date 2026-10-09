@@ -5,10 +5,39 @@
 @import './styles/morph.css';
 @import './styles/characters.css';
 @import './styles/prediction.css';
-.vs-notebook{max-width:900px;margin:auto}
-.vs-canvas{width:100%;height:auto;display:block;overflow:visible;color:var(--ve-ink);font-family:var(--ve-font)}
-.vs-canvas path{stroke-linecap:round;stroke-linejoin:round}
-.vs-grid{pointer-events:none}
-.vs-hatch{opacity:.68}
-.vs-notebook .ve-parameters:empty{display:none}
-.vs-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.vs-notebook {
+  max-width: 900px;
+  margin: auto;
+}
+.vs-canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+  color: var(--ve-ink);
+  font-family: var(--ve-font);
+}
+.vs-canvas path {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.vs-grid {
+  pointer-events: none;
+}
+.vs-hatch {
+  opacity: 0.68;
+}
+.vs-notebook .ve-parameters:empty {
+  display: none;
+}
+.vs-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+svg [data-layout-status='overflow'] {
+  display: none !important;
+}

@@ -310,7 +310,7 @@ function mount(view: Viewport3DHandle, initial: TensorData, options: TensorOptio
             return new T.Vector3(0, restBounds.max.y, restBounds.max.z);
           },
         },
-        { size: 20, tone: options.pigment ?? 'blue', avoidOverlap: true, offset },
+        { size: 20, tone: options.pigment ?? 'blue', offset },
       );
     }
     populate();

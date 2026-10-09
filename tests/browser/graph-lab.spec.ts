@@ -198,11 +198,11 @@ test('prediction is placed on the plot and remains one undoable condition throug
     await page.getByRole('button', { name: 'Пройти ещё 2 секунды', exact: true }).click();
     const overlaps = await page.evaluate((guess) => {
       const prediction = document
-        .querySelector(`[data-object="prediction-${guess}"] .vs-lettering`)!
+        .querySelector(`[data-object="distance-plot:prediction-${guess}"] .vs-lettering`)!
         .getBoundingClientRect();
       return [
         ...document.querySelectorAll<SVGGraphicsElement>(
-          '[data-object="distance-plot:slope"] .vs-lettering,[data-object="distance-value"] .vs-lettering',
+          '[data-object="distance-plot:slope"] .vs-lettering,[data-object="distance-plot:distance-value"] .vs-lettering',
         ),
       ]
         .filter((node) => node.checkVisibility({ visibilityProperty: true }))

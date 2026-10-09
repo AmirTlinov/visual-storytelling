@@ -203,7 +203,13 @@ function panelRenderer(sheet: Surface, id: string) {
         ys = inkPoints.map((p) => p[1]);
       const x = Math.min(...xs),
         y = Math.min(...ys);
-      inkBounds.set(patch.id, { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y });
+      inkBounds.set(patch.id, {
+        x,
+        y,
+        width: Math.max(...xs) - x,
+        height: Math.max(...ys) - y,
+        opacity: patch.opacity,
+      });
     }
     draw(
       {
@@ -304,7 +310,7 @@ function panelRenderer(sheet: Surface, id: string) {
           (p) => p,
         );
       }
-      // Keep the prepared ordering, including hidden labels. Fade-in cannot rearrange its neighbours.
+      // Preserve the prepared ordering; transparent labels do not occupy the drawing.
       const visible = [...(panel.labels ?? [])].sort(
         (a, b) => margins.order.indexOf(a.id) - margins.order.indexOf(b.id),
       );
@@ -374,6 +380,7 @@ function panelRenderer(sheet: Surface, id: string) {
         const limits: LabelLimits = { top: plotTop - 12, bottom: height - 3 };
         cx = Math.max(box.width / 2 + 6, Math.min(width - box.width / 2 - 6, cx));
         for (const [id, obstacle] of inkBounds) {
+          if ((obstacle.opacity ?? 1) <= 0) continue;
           // The relation is prepared across the operation. A moving label never swaps sides.
           const direction = margins.inkSides.get(`${item.id}/${id}`);
           if (!direction) continue;
@@ -402,12 +409,16 @@ function panelRenderer(sheet: Surface, id: string) {
           y: cy - box.height / 2 - 2,
           width: box.width + 6,
           height: box.height + 4,
+          opacity: item.opacity,
         });
         protectedSpace.push(limits);
         return { entry, box, item, anchor: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] as DiagramPoint };
       });
-      const labelHeight = preferred.reduce((sum, box) => sum + box.height + 8, -8);
-      // This upper bound makes every prepared pair constraint feasible, including stacked labels.
+      const labelHeight = preferred.reduce(
+        (sum, box) => ((box.opacity ?? 1) > 0 ? sum + box.height + 8 : sum),
+        -8,
+      );
+      // Reserve the visible stack before solving its protected regions and material obstacles.
       if (labelHeight > height - plotTop + 9) return plotTop - 9 + labelHeight;
       const placed = placeLabels(
         preferred,
@@ -417,10 +428,15 @@ function panelRenderer(sheet: Surface, id: string) {
           width: width - 6,
           height: height - plotTop + 9,
         },
-        protectedSpace,
+        { limits: protectedSpace, obstacles: [...inkBounds.values()] },
+      );
+      root.dataset.labelOverflowCount = String(
+        placed.filter((p) => (p.opacity ?? 1) > 0 && p.status === 'overflow').length,
       );
       entries.forEach(({ entry, box, item, anchor }, i) => {
         const p = placed[i]!;
+        entry.wrapper.dataset.layoutStatus = p.status;
+        if (p.status === 'overflow') return;
         entry.wrapper.setAttribute('transform', `translate(${p.x + 3 - box.x} ${p.y + 2 - box.y})`);
         const edge: DiagramPoint = [
           Math.max(p.x, Math.min(p.x + p.width, anchor[0])),
@@ -477,7 +493,11 @@ function panelRenderer(sheet: Surface, id: string) {
 }
 
 /** Shared geometry, pen, layout, measured labels and narrative motion for mathematical constructions. */
-export function mountConstruction(parent: HTMLElement, operation: ConstructionPlan) {
+export function mountConstruction(
+  parent: HTMLElement,
+  operation: ConstructionPlan,
+  { layout = 'content' }: { layout?: 'scene' | 'content' } = {},
+) {
   let plan = operation,
     disposed = false,
     lastTime: MorphTime = 0,
@@ -493,7 +513,8 @@ export function mountConstruction(parent: HTMLElement, operation: ConstructionPl
     grid: false,
   });
   sheet.element.classList.add('ve-construction');
-  const viewport = contentViewport(parent);
+  sheet.element.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  const viewport = layout === 'scene' ? undefined : contentViewport(parent);
   const equation = paragraph(sheet.layer, { size: 26 }),
     explanation = paragraph(sheet.layer, { size: 20 });
   equation.element.style.color = color('purple');
@@ -569,7 +590,9 @@ export function mountConstruction(parent: HTMLElement, operation: ConstructionPl
       descriptionY + Math.max(descriptionHeight, width < 480 ? 140 : 70) + 14,
     );
     sheet.resize(width, height, false);
-    viewport.resize(height);
+    if (layout === 'scene')
+      sheet.fitViewport(Math.max(1, parent.clientWidth), Math.max(1, parent.clientHeight));
+    viewport?.resize(height);
     for (const [id, entry] of panels)
       if (!frame.panels.some((p) => p.id === id)) {
         entry.renderer.dispose();
@@ -592,7 +615,7 @@ export function mountConstruction(parent: HTMLElement, operation: ConstructionPl
     panels.forEach((p) => p.renderer.dispose());
     equation.dispose();
     explanation.dispose();
-    viewport.dispose();
+    viewport?.dispose();
     sheet.dispose();
   }
   try {

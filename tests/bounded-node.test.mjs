@@ -19,7 +19,7 @@ test('bounded nodes retain complete centered ink, readable size and body-owned c
           import { loadFonts } from './src/ink/fonts.ts';
           import { node } from './src/recipes/node.ts';
           import { SvgLayout } from './src/layout/svg.ts';
-          import './dist/style.css';
+          import './src/style.css';
           window.ready = loadFonts().then(() => {
             const drawing = surface(document.querySelector('main'), { id:'nodes', width:600, height:400, title:'Nodes', description:'Bounded labels', grid:false });
             const first = node(drawing, 'first', 0.858, { format:v=>String(v).replace('.', ',') });
@@ -223,6 +223,26 @@ test('bounded nodes retain complete centered ink, readable size and body-owned c
       const hiddenObstacleIgnored = SvgLayout.connect(a, b, routeOptions).points.length === 2;
       blocker.style.opacity = '1';
       const routeRestored = SvgLayout.connect(a, b, routeOptions).d === routed.d;
+      const cover = SvgLayout.element('rect', { x: 0, y: 0, width: 600, height: 400 });
+      drawing.layer.append(cover);
+      const options = { space: drawing.layer, avoid: [cover], offset: 18 };
+      const failedPlacement = SvgLayout.along(caption, routed, options);
+      const overflowHidden =
+        failedPlacement.status === 'overflow' &&
+        caption.dataset.layoutStatus === 'overflow' &&
+        getComputedStyle(caption).display === 'none';
+      cover.style.opacity = '0';
+      const recovered = SvgLayout.along(caption, routed, options);
+      const recoveredBounds = SvgLayout.box(caption, drawing.layer);
+      const recovery =
+        recovered.status === 'placed' &&
+        getComputedStyle(caption).display !== 'none' &&
+        recoveredBounds.width > 0 &&
+        recoveredBounds.x >= 0 &&
+        recoveredBounds.x + recoveredBounds.width <= 600;
+      caption.style.visibility = 'hidden';
+      SvgLayout.along(caption, routed, options);
+      const authorVisibility = getComputedStyle(caption).visibility === 'hidden';
       drawing.dispose();
       first.dispose();
       return {
@@ -249,6 +269,9 @@ test('bounded nodes retain complete centered ink, readable size and body-owned c
         routedClear,
         hiddenObstacleIgnored,
         routeRestored,
+        overflowHidden,
+        recovery,
+        authorVisibility,
         disposed: !first.element.isConnected && !second.element.isConnected,
       };
     });
@@ -277,6 +300,9 @@ test('bounded nodes retain complete centered ink, readable size and body-owned c
       'routedClear',
       'hiddenObstacleIgnored',
       'routeRestored',
+      'overflowHidden',
+      'recovery',
+      'authorVisibility',
     ])
       assert.equal(result[key], true, key);
   } finally {

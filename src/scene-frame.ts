@@ -115,6 +115,8 @@ export interface ScenePresentation {
   clipped: { id: string; bounds: Rectangle; clip: Rectangle }[];
   uninspectedCanvases: number;
   unreadableText: { id: string; pixels: number; minimum: number }[];
+  /** Full labels exposed by the surface's overflow action instead of overlapping the drawing. */
+  layoutOverflow: { id: string; text: string }[];
 }
 
 /** Shared by visual review and semantic inspection, including Chromium's hidden SVG case. */
@@ -200,6 +202,7 @@ export function inspectPresentation(stage: HTMLElement | SVGSVGElement): ScenePr
     clipped: [],
     uninspectedCanvases: 0,
     unreadableText: [],
+    layoutOverflow: [],
   };
   const outside = (a: Rectangle, b: Rectangle) =>
     a.x < b.x - 1 ||
@@ -207,6 +210,26 @@ export function inspectPresentation(stage: HTMLElement | SVGSVGElement): ScenePr
     a.x + a.width > b.x + b.width + 1 ||
     a.y + a.height > b.y + b.height + 1;
   if (!visible(stage)) return result;
+  for (const [index, node] of [
+    ...subject.querySelectorAll('[data-layout-status="overflow"]'),
+  ].entries()) {
+    let active = Number(styleOf(node).opacity) > 0;
+    for (
+      let parent = node.parentElement;
+      active && parent && parent !== subject.parentElement;
+      parent = parent.parentElement
+    ) {
+      const style = styleOf(parent);
+      active =
+        style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0;
+    }
+    if (active)
+      result.layoutOverflow.push({
+        id:
+          node.closest('[data-object]')?.getAttribute('data-object') || node.id || `label:${index}`,
+        text: node.getAttribute('aria-label') || node.textContent || '',
+      });
+  }
   result.outsideViewport = outside(frame, { x: 0, y: 0, width: innerWidth, height: innerHeight });
   const inspect = (node: Element, object: InspectedObject, canvas = false) => {
     if (

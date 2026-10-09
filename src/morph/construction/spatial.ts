@@ -341,7 +341,6 @@ export function spatialPanelRenderer(sheet: Surface, id: string, up?: DiagramCam
             item.text,
             { object: scene, position: point },
             {
-              avoidOverlap: true,
               order,
               tone: item.pigment ?? 'ink',
               size: 18,

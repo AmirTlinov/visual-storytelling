@@ -18,6 +18,7 @@ export async function mountMath(
 ) {
   const element = document.createElement('div');
   element.className = 've-math-presentation';
+  const layout = parent.closest('[data-scene-frame]') ? 'scene' : 'content';
   parent.append(element);
   let host: HTMLDivElement | undefined;
   let body: ReturnType<typeof mountBodies> | undefined;
@@ -32,7 +33,7 @@ export async function mountMath(
       const prepared = next;
       if (construction) return construction.setOperation(prepared);
       replace((target) => {
-        const mounted = mountConstruction(target, prepared);
+        const mounted = mountConstruction(target, prepared, { layout });
         return () => {
           construction = mounted;
           body = undefined;
@@ -42,8 +43,6 @@ export async function mountMath(
       const prepared = mathPlan(next);
       if (body) return body.setOperation(prepared);
       replace((target) => {
-        const layout = parent.closest('[data-scene-frame]') ? 'scene' : 'content';
-        target.dataset.mathLayout = layout;
         const mounted = mountBodies(target, prepared, { ...options, layout });
         return () => {
           body = mounted;
@@ -54,6 +53,7 @@ export async function mountMath(
   }
   function replace(mount: (target: HTMLDivElement) => () => void) {
     const target = document.createElement('div');
+    target.dataset.mathLayout = layout;
     target.style.visibility = 'hidden';
     element.append(target);
     try {

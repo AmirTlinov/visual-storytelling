@@ -4,7 +4,7 @@ export type { Term } from './formula.js';
 export { token, regroup, swap } from './tokens.js';
 export { transfer } from './transfer.js';
 export { plot } from './plot.js';
-export type { PlotOptions } from './plot.js';
+export type { PlotOptions, PlotLabelOptions } from './plot.js';
 export type { PlotIntervalOptions } from './plot-interval.js';
 export { portion } from './portion.js';
 export { symbol } from './symbol.js';

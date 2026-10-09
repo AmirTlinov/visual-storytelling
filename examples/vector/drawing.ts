@@ -37,9 +37,10 @@ export function drawing(parent: HTMLElement) {
       xTicks: [-2, 2].map((value) => ({ value, label: String(value) })),
       yTicks: [-2, 2].map((value) => ({ value, label: String(value) })),
       tickSize: 27,
+      labelSize: 27,
+      xLabel: 'x',
+      yLabel: 'y',
     });
-    lettering(axes.content, 'x', { x: x + 337, y: 248, size: 27 });
-    lettering(axes.content, 'y', { x: x + 176, y: 69, size: 27 });
     return axes;
   };
   const before = coordinates('input-coordinates', 30),

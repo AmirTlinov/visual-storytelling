@@ -16,6 +16,9 @@
   height: 100%;
   min-height: 0;
 }
+.ve-math-presentation > [data-math-layout='scene'] > .ve-construction {
+  height: 100%;
+}
 [data-math-layout='scene'] > .ve-math-view {
   display: flex;
   flex-direction: column;

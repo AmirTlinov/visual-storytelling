@@ -1,7 +1,6 @@
 import { object, lettering } from '@visual-storytelling/core/ink';
 import { plot, formula } from '@visual-storytelling/core/recipes';
 import { inkButton, svgButton } from '@visual-storytelling/core/controls';
-import { placeLabels } from '@visual-storytelling/core';
 import { format, trial } from './model.js';
 
 /** The point, measured interval and prediction all live in the plot's coordinates. */
@@ -24,22 +23,11 @@ export function distanceDrawing(view, width, height, speed, actions) {
     xDomain: [0, 10],
     yDomain: [0, 40],
     tickSize: 24,
+    labelSize: 28,
+    xLabel: 'Время, с',
+    yLabel: 'Путь, м',
     xTicks: [0, 2, 4, 6, 8, 10].map((value) => ({ value, label: String(value) })),
     yTicks: [10, 20, 30, 40].map((value) => ({ value, label: String(value) })),
-  });
-  write(drawing.content, 'Путь, м', {
-    x: 12,
-    y: 34,
-    size: 28,
-    anchor: 'start',
-    handwriting: 'note',
-  });
-  write(drawing.content, 'Время, с', {
-    x: width - 14,
-    y: height - 25,
-    size: 28,
-    anchor: 'end',
-    handwriting: 'note',
   });
   const samples = [
     [0, 0],
@@ -65,10 +53,14 @@ export function distanceDrawing(view, width, height, speed, actions) {
   );
   for (const path of guides.element.querySelectorAll('path'))
     path.setAttribute('stroke-dasharray', '4 6');
-  const value = object(drawing.content, 'distance-value', 'blue');
-  const label = write(value.content, '', { size: 32, anchor: 'start', handwriting: 'heading' });
-  const half = object(drawing.content, 'comparison-value', 'red');
-  const halfLabel = write(half.content, '', { size: 28, anchor: 'start' });
+  const value = chart.label('distance-value', '', {
+    at: [0, 0],
+    size: 32,
+    handwriting: 'heading',
+    pigment: 'blue',
+    priority: 90,
+  });
+  const half = chart.label('comparison-value', '', { at: [0, 0], size: 28, pigment: 'red' });
   const ratio = formula(
     drawing.content,
     'speed-ratio',
@@ -120,13 +112,16 @@ export function distanceDrawing(view, width, height, speed, actions) {
     handwriting: 'note',
   });
   const candidates = trial.choices.map((guess) => {
-    const mark = object(prediction.content, `prediction-${guess}`, 'muted');
-    mark.at(...chart.point(trial.start + trial.seconds, guess));
-    view.pen.ellipse(mark.content, `choice-${guess}`, 0, 0, 10, 10, { width: 1.8, fill: 'marker' });
-    const label = write(mark.content, `${guess} м`, { x: 20, y: 9, size: 28, anchor: 'start' });
+    const mark = chart.label(`prediction-${guess}`, `${guess} м`, {
+      at: [trial.start + trial.seconds, guess],
+      size: 28,
+      pigment: 'muted',
+    });
+    const [x, y] = chart.point(trial.start + trial.seconds, guess);
+    view.pen.ellipse(mark.content, `choice-${guess}`, x, y, 10, 10, { width: 1.8, fill: 'marker' });
     const button = svgButton(mark.content, {
-      x: -20,
-      y: -21,
+      x: x - 20,
+      y: y - 21,
       width: 116,
       height: 42,
       label: `Прогноз: ${guess} м`,
@@ -134,7 +129,7 @@ export function distanceDrawing(view, width, height, speed, actions) {
       onPress: () => actions.choose(guess),
     });
     controls.push(button);
-    return { guess, mark, button, label };
+    return { guess, mark, button, point: [x, y] };
   });
   const run = inkButton(local, 'advance-motion', `Пройти +${trial.seconds} с`, {
     label: `Пройти ещё ${trial.seconds} секунды`,
@@ -167,6 +162,8 @@ export function distanceDrawing(view, width, height, speed, actions) {
   assessment.element.setAttribute('aria-live', 'polite');
   assessment.element.setAttribute('tabindex', '-1');
   assessment.element.style.outline = 'none';
+  for (const element of [ratio.element, run.element, practice.element, futureLabel.element])
+    chart.avoid(element);
   let current;
   value.describe({
     label: 'Пройденный путь: измерить наклон',
@@ -186,30 +183,11 @@ export function distanceDrawing(view, width, height, speed, actions) {
       const p = chart.point(model.time, model.distance),
         origin = chart.point(0, 0);
       guides.update([[origin[0], p[1]], p, [p[0], origin[1]]]);
-      label.text(`${format(model.distance)} м`);
-      const q = chart.point(model.time, model.comparison ?? 0);
+      value.text(`${format(model.distance)} м`);
+      value.at(model.time, model.distance);
       half.show(model.comparison !== null);
-      halfLabel.text(`${format(model.comparison ?? 0)} м`);
-      const values = model.comparison === null ? [label] : [label, halfLabel];
-      values.forEach((label) => label.at(0, 0));
-      const metrics = values.map((label) => label.bounds);
-      const positions = placeLabels(
-        metrics.map((box, i) => ({
-          ...box,
-          x: (i ? q : p)[0] + 18,
-          y: (i ? q[1] + 38 : p[1] - 20) + box.y,
-        })),
-        { x: 84, y: 28, width: width - 100, height: height - 152 },
-      );
-      values.forEach((label, i) =>
-        label.at(positions[i].x - metrics[i].x, positions[i].y - metrics[i].y),
-      );
-      detail.bounds({
-        x: label.bounds.x - 8,
-        y: label.bounds.y - 8,
-        width: label.bounds.width + 16,
-        height: label.bounds.height + 16,
-      });
+      half.text(`${format(model.comparison ?? 0)} м`);
+      half.at(model.time, model.comparison ?? 0);
       detail.update({ pressed: model.detail, disabled: model.practice && !model.checked });
       rise.at(
         [model.interval.start, model.interval.start * model.speed],
@@ -236,11 +214,10 @@ export function distanceDrawing(view, width, height, speed, actions) {
       for (const choice of candidates) {
         const selected = choice.guess === model.guess;
         choice.mark.pigment(selected ? 'red' : 'muted');
-        choice.mark.show(!model.checked || selected);
-        choice.label.element.style.display =
-          model.checked && model.guess === model.distance ? 'none' : '';
-        // Keep a missed prediction clear of the measured rise at the same time coordinate.
-        choice.label.at(20, model.checked ? (choice.guess < model.distance ? 44 : -22) : 9);
+        choice.mark.show(model.practice && (!model.checked || selected));
+        choice.mark.text(
+          model.checked && model.guess === model.distance ? '' : `${choice.guess} м`,
+        );
         choice.button.update({ pressed: selected, disabled: model.checked });
       }
       run.element.style.display = model.practice && !model.checked ? '' : 'none';
@@ -251,11 +228,34 @@ export function distanceDrawing(view, width, height, speed, actions) {
         pressed: model.practice,
       });
       assessment.show(model.practice && model.checked);
+      chart.layout();
+      detail.bounds({
+        x: value.bounds.x - 8,
+        y: value.bounds.y - 8,
+        width: value.bounds.width + 16,
+        height: value.bounds.height + 16,
+      });
+      for (const choice of candidates) {
+        const box = choice.mark.bounds,
+          [x, y] = choice.point;
+        if (!box.width || !box.height) {
+          choice.button.bounds({ x: x - 20, y: y - 21, width: 40, height: 42 });
+          continue;
+        }
+        const left = Math.min(x - 20, box.x - 8),
+          top = Math.min(y - 21, box.y - 8);
+        choice.button.bounds({
+          x: left,
+          y: top,
+          width: Math.max(x + 20, box.x + box.width + 8) - left,
+          height: Math.max(y + 21, box.y + box.height + 8) - top,
+        });
+      }
       if (model.practice && model.checked) {
         assessmentText.text(model.guess === model.distance ? '✓' : '');
         assessmentText.at(
-          Math.min(width - 38, label.bounds.x + label.bounds.width + 12),
-          label.bounds.y + label.bounds.height,
+          Math.min(width - 38, value.bounds.x + value.bounds.width + 12),
+          value.bounds.y + value.bounds.height,
         );
         assessment.element.setAttribute(
           'aria-label',
@@ -268,7 +268,6 @@ export function distanceDrawing(view, width, height, speed, actions) {
       controls.forEach((control) => control.dispose());
       labels.forEach((label) => label.dispose());
       ratio.dispose();
-      rise.dispose();
       chart.dispose();
       drawing.dispose();
     },

@@ -73,6 +73,12 @@ node tools/scene.mjs update /absolute/output/my-story
 [термостат](examples/thermostat-story/scene.js) проверяют тот же путь на других темах.
 [График](examples/graph-lab/scene.js) связывает путь, наклон и прогноз через [общую композицию](docs/explanations.md); [регистр](examples/memory-register/scene.js) предлагает сначала записать предположение. В dev после правки речи пересобираются только изменённые дубли.
 
+Размещение подписей в графиках, SVG-связях и 3D использует общий `placeLabels`.
+Он учитывает реальные размеры письма, препятствия и линии; одинаковое состояние
+даёт одинаковый кадр. `plot.label` и `Viewport3D.label` сохраняют связь с предметом
+при переносе. Для нехватки места предусмотрено явное раскрытие; список доступен
+в `SceneHandle.presentation().layoutOverflow`. [Рабочий пример и API](docs/explanations.md).
+
 ```sh
 npx visual-story session http://127.0.0.1:8793 status
 npx visual-story session http://127.0.0.1:8793 find --query "лампа"

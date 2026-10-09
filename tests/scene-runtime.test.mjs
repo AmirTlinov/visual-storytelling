@@ -39,7 +39,8 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
             try { view.ink(new T.MeshBasicMaterial(),'unknown'); } catch(error) { invalidColor=error.message; }
             const paper = surface(shell.actions,{id:'cells',width:500,height:250,title:'Cells',description:'Fitting and axes'});
             const cell = token(paper,'number','42'); cell.at(80,80);
-            const shortWidth = cell.label.width;
+            const shortInk = cell.label.bounds;
+            const shortError = cell.label.element.dataset.layoutError;
             cell.label.text('123456');
             const overflow = cell.label.element.dataset.layoutError;
             cell.label.text('7');
@@ -57,7 +58,7 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
             const transition = {events:[...events],renders,mode:story.requested.mode};
             shell.onDispose(()=>disposed++);
             window.lab={shell,story,view,detail,events,model,pigment,paper,chart,portion,disposeCount:()=>disposed};
-            return {detailWidth,shortWidth,overflow,cleared,wideWidth:wide.label.width,
+            return {detailWidth,shortInk,shortError,overflow,cleared,wideInk:wide.label.bounds,
               wideError:wide.label.element.dataset.layoutError,invalidColor,transition,
               axisY:chart.point(0,0)[1],tickY:tick.y+tick.height/2};
           })();
@@ -100,10 +101,15 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
     await page.goto(server.url);
     const result = await page.evaluate(() => window.galleryReady);
     assert(result.detailWidth > 200, `detail was only ${result.detailWidth}px wide`);
-    assert(result.shortWidth <= 32.5);
+    // Cell fitting constrains the drawn ink, not the font's character advances.
+    assert(result.shortInk.width > 0 && result.shortInk.width <= 32.5 && !result.shortError);
     assert.match(result.overflow, /Enlarge its cell/);
     assert(result.cleared);
-    assert(result.wideWidth <= 128.5 && !result.wideError);
+    assert(result.wideInk.width > 0 && result.wideInk.width <= 128.5 && !result.wideError);
+    for (const [ink, width] of [[result.shortInk, 44], [result.wideInk, 140]]) {
+      assert(ink.x >= -width / 2 && ink.x + ink.width <= width / 2);
+      assert(ink.y >= -22 && ink.y + ink.height <= 22);
+    }
     assert.match(result.invalidColor, /Unknown 3D pigment: unknown/);
     assert(Math.abs(result.tickY - result.axisY) < 1);
     const plotLifecycle = await page.evaluate(() => {

@@ -1,5 +1,6 @@
 import { svg as element } from '../ink/dom.js';
-import { connectionRoute, crossesBounds, type ConnectionSide } from './connection.js';
+import { connectionRoute, type ConnectionSide } from './connection.js';
+import { placeLabels, type LabelSegment } from './labels.js';
 
 interface Point {
   x: number;
@@ -9,6 +10,7 @@ interface Route {
   start: Point;
   end: Point;
   points?: readonly Point[];
+  width?: number;
 }
 interface Bounds extends Point {
   width: number;
@@ -158,8 +160,35 @@ function segments(route: Route) {
   const points = route.points ?? [route.start, route.end];
   return points.slice(1).map((end, i) => ({ start: points[i]!, end }));
 }
-const crosses = (route: Route, bounds: Bounds) =>
-  segments(route).some(({ start, end }) => crossesBounds(start, end, bounds));
+/** Visible SVG paper in the caller's coordinates, including rotation and skew. */
+function viewport(space: SVGGraphicsElement, inset = 0) {
+  const svg = space instanceof SVGSVGElement ? space : space.ownerSVGElement!;
+  const view = svg.viewBox.baseVal;
+  const width = Math.max(0, (view.width || svg.clientWidth) - 2 * inset),
+    height = Math.max(0, (view.height || svg.clientHeight) - 2 * inset);
+  if (width <= 0 || height <= 0) return { area: { x: view.x, y: view.y, width: 0, height: 0 } };
+  const matrix = space.getCTM()!.inverse().multiply(svg.getCTM()!);
+  const boundary = [
+    [view.x + inset, view.y + inset],
+    [view.x + inset + width, view.y + inset],
+    [view.x + inset + width, view.y + inset + height],
+    [view.x + inset, view.y + inset + height],
+  ].map(([x, y]) => {
+    const p = new DOMPoint(x!, y!).matrixTransform(matrix);
+    return { x: p.x, y: p.y };
+  });
+  const x = Math.min(...boundary.map((p) => p.x)),
+    y = Math.min(...boundary.map((p) => p.y));
+  return {
+    area: {
+      x,
+      y,
+      width: Math.max(...boundary.map((p) => p.x)) - x,
+      height: Math.max(...boundary.map((p) => p.y)) - y,
+    },
+    boundary,
+  };
+}
 
 function along(
   label: SVGGraphicsElement,
@@ -195,6 +224,8 @@ function along(
       dy = (segment.end.y - segment.start.y) / (segment.length || 1);
     return { x: segment.start.x + dx * remaining, y: segment.start.y + dy * remaining, dx, dy };
   };
+  // A previous overflow is owned by layout; author visibility remains untouched.
+  label.removeAttribute('data-layout-status');
   const ink = label.getBBox();
   const parentToSpace = space
     .getCTM()!
@@ -204,60 +235,47 @@ function along(
   const width = Math.abs(parentToSpace.a) * ink.width + Math.abs(parentToSpace.c) * ink.height;
   const height = Math.abs(parentToSpace.b) * ink.width + Math.abs(parentToSpace.d) * ink.height;
   const obstacles = avoid
-    .filter((node) => 'start' in node || shown(node))
-    .map((node) => ('start' in node ? node : box(node, space)));
+    .filter(
+      (node): node is SVGGraphicsElement => !('start' in node) && node !== label && shown(node),
+    )
+    .map((node) => box(node, space));
+  const routes = [
+    ...(offset === 0 ? [] : [route]),
+    ...avoid.filter((node): node is Route => 'start' in node),
+  ];
+  const strokes: LabelSegment[] = routes.flatMap((r) =>
+    segments(r).map(({ start, end }) => ({
+      from: [start.x, start.y],
+      to: [end.x, end.y],
+      width: r.width,
+    })),
+  );
   const normal = location(at);
   const normalRadius = (Math.abs(normal.dy) * width + Math.abs(normal.dx) * height) / 2;
-  const preferred =
+  const distance =
     offset === 0 ? 0 : Math.sign(offset) * Math.max(Math.abs(offset), normalRadius + gap);
-  const step = Math.max(8, Math.min(width, height) / 2 + gap);
-  const candidates: { at: number; distance: number; cost: number }[] = [];
-  // Try nearby positions on the link before pushing a label far from its owner.
-  for (let i = 0; i < 64; i++) {
-    const distance = preferred + (i % 2 ? -1 : 1) * Math.ceil(i / 2) * step;
-    if (offset !== 0 && Math.abs(distance) < normalRadius + gap) continue;
-    for (const shift of [0, -0.12, 0.12, -0.24, 0.24, -0.36, 0.36]) {
-      const position = Math.max(0, Math.min(1, at + shift));
-      candidates.push({
-        at: position,
-        distance,
-        cost: (distance - preferred) ** 2 + ((position - at) * length) ** 2,
-      });
-    }
+  const visible = viewport(space);
+  const [placement] = placeLabels(
+    [
+      {
+        x: normal.x - normal.dy * distance - width / 2,
+        y: normal.y + normal.dx * distance - height / 2,
+        width,
+        height,
+      },
+    ],
+    visible.area,
+    { obstacles, segments: strokes, boundary: visible.boundary, gap },
+  );
+  label.dataset.layoutStatus = placement!.status;
+  if (placement!.status === 'placed') {
+    const center = new DOMPoint(
+      placement!.x + width / 2,
+      placement!.y + height / 2,
+    ).matrixTransform(spaceToParent);
+    place(label, center.x, center.y);
   }
-  candidates.sort((a, b) => a.cost - b.cost);
-  let chosen = { at, distance: preferred };
-  for (const candidate of candidates) {
-    const p = location(candidate.at);
-    const x = p.x - p.dy * candidate.distance;
-    const y = p.y + p.dx * candidate.distance;
-    const rect = {
-      x: x - width / 2 - gap,
-      y: y - height / 2 - gap,
-      width: width + 2 * gap,
-      height: height + 2 * gap,
-    };
-    if (
-      (offset === 0 || !crosses(route, rect)) &&
-      obstacles.every((b) =>
-        'start' in b
-          ? !crosses(b, rect)
-          : rect.x + rect.width <= b.x ||
-            rect.x >= b.x + b.width ||
-            rect.y + rect.height <= b.y ||
-            rect.y >= b.y + b.height,
-      )
-    ) {
-      chosen = candidate;
-      break;
-    }
-  }
-  const p = location(chosen.at);
-  const center = new DOMPoint(
-    p.x - p.dy * chosen.distance,
-    p.y + p.dx * chosen.distance,
-  ).matrixTransform(spaceToParent);
-  place(label, center.x, center.y);
+  return placement!;
 }
 
 // Reflow only when width changes. The callback returns the content height.
@@ -293,4 +311,15 @@ async function observe(svg: SVGSVGElement, layout: (width: number) => number | v
   };
 }
 
-export const SvgLayout = { element, box, place, row, beside, edge, connect, along, observe };
+export const SvgLayout = {
+  element,
+  box,
+  place,
+  row,
+  beside,
+  edge,
+  connect,
+  along,
+  viewport,
+  observe,
+};

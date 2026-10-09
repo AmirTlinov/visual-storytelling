@@ -162,7 +162,7 @@ test('public presentation preserves material paint, narrow layout, focused input
           map: ([x, y], p) => [x, y + p * x * x],
         }),
       ];
-      let minScale = Infinity;
+      let minLogicalText = Infinity;
       for (const operation of ops) {
         drawing.setOperation(operation);
         drawing.render(0.57);
@@ -174,12 +174,33 @@ test('public presentation preserves material paint, narrow layout, focused input
         const svg = drawing.element.querySelector('svg'),
           r = svg.getBoundingClientRect(),
           host = shell.stage.getBoundingClientRect();
-        minScale = Math.min(minScale, r.width / svg.viewBox.baseVal.width);
+        const aperture = shell.stage.closest('[data-scene-frame]');
+        const frameBox = aperture.getBoundingClientRect();
+        const frameScale = Number(aperture.dataset.frameScale);
+        if (Math.abs(frameBox.width / frameBox.height - 16 / 9) > 1e-6)
+          throw new Error('Construction changed the complete 16:9 frame');
+        for (const lettering of svg.querySelectorAll('.vs-lettering')) {
+          if (!lettering.getAttribute('aria-label') || !lettering.checkVisibility()) continue;
+          const reference = lettering.querySelector('text'),
+            matrix = lettering.getScreenCTM();
+          if (reference && matrix)
+            minLogicalText = Math.min(
+              minLogicalText,
+              (Number(reference.getAttribute('font-size')) * Math.hypot(matrix.c, matrix.d)) /
+                frameScale,
+            );
+        }
         if (host.height + 1 < r.height) throw new Error('The drawing overflows its stage');
         for (const mark of svg.querySelectorAll('[role="img"]')) {
           const b = mark.getBoundingClientRect();
-          if (b.width && (b.left < r.left - 2 || b.right > r.right + 2))
-            throw new Error('A label overflows horizontally');
+          if (
+            b.width &&
+            (b.left < r.left - 2 ||
+              b.right > r.right + 2 ||
+              b.top < r.top - 2 ||
+              b.bottom > r.bottom + 2)
+          )
+            throw new Error('A label overflows its fitted paper');
         }
       }
       const before = state();
@@ -274,11 +295,32 @@ test('public presentation preserves material paint, narrow layout, focused input
       await new Promise(requestAnimationFrame);
       await new Promise(requestAnimationFrame);
       drawing.dispose();
-      return { atomic, minScale, empty: shell.stage.children.length === 0 };
+      const flowHost = document.createElement('div');
+      flowHost.style.width = '355px';
+      document.body.append(flowHost);
+      const flowing = await M.mount(flowHost, M.distribute(3, 2, 3));
+      flowing.render(0.57);
+      const paper = flowing.element.querySelector('svg'),
+        flowBox = paper.getBoundingClientRect();
+      const documentFlow =
+        Math.abs(flowBox.width / paper.viewBox.baseVal.width - 1) < 0.001 &&
+        flowHost.getBoundingClientRect().height + 1 >= flowBox.height &&
+        flowBox.height > 400;
+      flowing.dispose();
+      flowHost.remove();
+      return { atomic, minLogicalText, documentFlow, empty: shell.stage.children.length === 0 };
     });
     assert.equal(result.atomic, true);
     assert.equal(result.empty, true);
-    assert.ok(result.minScale >= 0.99, 'narrow layouts retain the authored pen size in CSS pixels');
+    assert.ok(
+      result.minLogicalText >= 14 - 0.01,
+      `fitted logical lettering stays readable: ${result.minLogicalText}`,
+    );
+    assert.equal(
+      result.documentFlow,
+      true,
+      'outside a fixed frame, the document keeps its natural height',
+    );
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();

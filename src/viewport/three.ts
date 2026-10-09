@@ -23,11 +23,14 @@ function mount(
     onInteract = () => {},
     label = 'Объёмная сцена',
     labelInsets = () => ({}),
+    labelObstacles = () => [],
     up = [0, 1, 0],
   }: {
     onInteract?: () => void;
     label?: string;
     labelInsets?: () => LabelInsets;
+    /** Projected geometry that screen annotations must leave readable. Surface lettering is automatic. */
+    labelObstacles?: () => readonly (ThreeKit.Object3D | ThreeKit.Box3)[];
     up?: readonly [number, number, number];
   } = {},
 ) {
@@ -63,7 +66,16 @@ function mount(
   const { controls } = orbit;
   const abort = new AbortController(),
     listen = { signal: abort.signal };
-  const labels = projectedLabels(stage, camera, scene, ink, release, invalidate, labelInsets);
+  const labels = projectedLabels(
+    stage,
+    camera,
+    scene,
+    ink,
+    release,
+    invalidate,
+    labelInsets,
+    labelObstacles,
+  );
   const subjects = semanticObjects3D(stage, canvas, scene, camera, invalidate);
   const materials = new Map<ColorMaterial, MaterialInk>(),
     palette: Palette = {};

@@ -10,6 +10,7 @@ export interface SurfaceOptions {
   space?: 'world';
   /** Line height in world units for a free inscription; face lettering fits the face. */
   height?: number;
+  /** CSS pixels for a screen annotation; world units for a physical inscription. */
   maxWidth?: number;
   /** Preserve line height by wrapping words within maxWidth. Nonbreaking spaces keep a phrase together. */
   wrap?: boolean;
