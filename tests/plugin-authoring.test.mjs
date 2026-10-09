@@ -139,12 +139,8 @@ test(
         (voice) => voice.provider === 'macos' && voice.language.startsWith('ru'),
       );
       assert.ok(selectedVoice?.ready);
-      await app.locator('#voice').click();
-      await app.locator('#voice-options').waitFor({ state: 'visible' });
-      assert.equal(await app.locator('#voice-choice').inputValue(), '');
-      assert.match(await app.locator('#voice-choice').textContent(), /Higgs TTS 3 · нейросетевой/);
-      assert.match(await app.locator('#voice-choice').textContent(), /системный macOS/);
-      await app.locator('#voice-close').click();
+      assert.equal(await app.locator('#voice, #voice-options').count(), 0);
+      assert.equal(Boolean(voiceList.settings?.enabled), false);
       const voiceDisabled = await call('story_voice', {
         projectId: project.id,
         sourceRevision: undone.structuredContent.project.sourceRevision,

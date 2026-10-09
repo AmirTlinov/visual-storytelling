@@ -196,7 +196,7 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_voice',
     {
       description:
-        'Inspect local neural Higgs, its download/disk/memory requirements, and explicitly selectable macOS voices. enabled=true saves one undoable edit then prepares needed Python, models and synchronized narration through the cancellable JobRunner. New narration defaults to Higgs; choose provider="macos" only for an explicitly requested system voice. Toggling preserves the provider and voice; playback muting is separate.',
+        'Inspect local neural Higgs, its download/disk/memory requirements, and explicitly selectable macOS voices. Enable narration only when the user wants it; discuss missing language, voice, delivery and pace preferences in chat before synthesis. enabled=true saves one undoable edit then prepares needed Python, models and synchronized narration through the cancellable JobRunner. New narration defaults to Higgs; choose provider="macos" only for an explicitly requested system voice. Toggling preserves the provider and voice; playback muting is separate.',
       inputSchema: {
         projectId: projectId.optional(),
         sourceRevision: z.string().optional(),

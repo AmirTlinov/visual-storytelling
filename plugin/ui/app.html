@@ -6,22 +6,6 @@
     <title>Visual Storytelling</title>
   </head>
   <body>
-    <header>
-      <button id="browse" aria-controls="library" title="Проекты и примеры">
-        <span id="title">Visual Storytelling</span> ▾
-      </button>
-      <div>
-        <button id="back" hidden>Вернуться к уроку</button>
-        <button id="voice" hidden>Голос</button>
-        <button id="update" hidden>Показать правку</button
-        ><button id="release" hidden>Выпустить</button
-        ><button id="expand" hidden>Развернуть</button>
-      </div>
-    </header>
-    <section id="library" hidden aria-label="Проекты и примеры">
-      <button id="library-close">Закрыть библиотеку</button>
-      <div id="library-content"></div>
-    </section>
     <section id="preferences" hidden aria-label="Настройки">
       <button id="preferences-close">Закрыть настройки</button>
       <form>
@@ -35,34 +19,6 @@
         <button type="submit">Сохранить</button>
       </form>
     </section>
-    <div id="release-options" hidden role="group" aria-label="Формат выпуска">
-      <label
-        >Редакция
-        <select id="release-version">
-          <option value="build">Показанная версия</option>
-          <option value="working">Последние правки</option>
-        </select></label
-      >
-      <label
-        ><input id="release-current" type="checkbox" /> Текущие условия · HTML и изображения</label
-      >
-      <button data-format="html">Интерактив · HTML</button
-      ><button data-format="png">Изображение · PNG</button
-      ><button data-format="svg">Векторный рисунок · SVG</button
-      ><button data-format="mp4">Рассказ · MP4</button
-      ><button data-format="source">Редактируемый проект</button>
-    </div>
-    <section id="voice-options" hidden aria-label="Озвучка">
-      <form id="voice-form">
-        <label
-          >Голос рассказа
-          <select id="voice-choice"></select
-        ></label>
-        <p id="voice-status"></p>
-        <button id="voice-apply" type="submit">Применить</button>
-        <button id="voice-close" type="button">Закрыть</button>
-      </form>
-    </section>
     <aside id="job" hidden>
       <span id="job-text" role="status"></span><button id="cancel">Отменить</button>
     </aside>
@@ -74,6 +30,10 @@
         allow="autoplay"
       ></iframe>
     </main>
+    <div id="scene-actions">
+      <button id="back" hidden>Вернуться к уроку</button>
+      <button id="update" hidden>Показать правку</button>
+    </div>
     <p id="notice" role="status" hidden></p>
     <p id="error" role="alert" hidden></p>
     <button id="reconnect" hidden>Восстановить связь</button>

@@ -17,8 +17,7 @@ let bridge,
 const resources = new Map();
 let focusDelay = 0,
   focusRequests = 0;
-let displayRequests = [],
-  displayResponseOnly = false;
+let displayRequests = [];
 let hostContext = {
   theme: 'light',
   displayMode: 'inline',
@@ -74,7 +73,7 @@ async function mount(sessionId, result) {
     if (!hostContext.availableDisplayModes.includes(mode)) return { mode: hostContext.displayMode };
     iframe.style.height = mode === 'fullscreen' ? '900px' : `${inlineHeight}px`;
     hostContext = { ...hostContext, displayMode: mode };
-    if (!displayResponseOnly) bridge.setHostContext(hostContext);
+    bridge.setHostContext(hostContext);
     return { mode };
   };
   bridge.addEventListener('initialized', async () => {
@@ -95,8 +94,8 @@ window.pluginTest = {
   get displayRequests() {
     return displayRequests;
   },
-  display(mode, availableDisplayModes, responseOnly = false) {
-    displayResponseOnly = responseOnly;
+  display(mode, availableDisplayModes) {
+    iframe.style.height = mode === 'fullscreen' ? '900px' : `${inlineHeight}px`;
     bridge.setHostContext(
       (hostContext = { ...hostContext, displayMode: mode, availableDisplayModes }),
     );

@@ -92,12 +92,19 @@ test(
       await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
       assert.equal((await inspect()).generation, before.generation);
       assert.ok(page.frames().includes(frame));
-      await app.locator('#browse').click();
-      const destination = app.locator('.library-item').filter({ hasNotText: before.title }).first();
-      const title = await destination.locator('strong').textContent();
-      await destination.click();
-      await app.locator('#title').filter({ hasText: title }).waitFor();
+      const navigation = await original({
+        name: 'story_navigate',
+        arguments: { sessionId, target: { example: 'graph-lab' } },
+      });
+      assert.equal(navigation.isError, undefined, JSON.stringify(navigation));
+      await app.frameLocator('#scene').getByText('Скорость — это наклон', { exact: true }).waitFor();
       await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('#back').click();
+      await app
+        .frameLocator('#scene')
+        .getByText('Одна клетка — один шаг', { exact: true })
+        .waitFor();
+      await app.locator('#back').waitFor({ state: 'hidden' });
       assert.equal(await app.locator('#error').isVisible(), false);
       assert.deepEqual(errors, []);
     } finally {

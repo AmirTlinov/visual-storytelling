@@ -48,10 +48,10 @@ test(
       const wideHeight = await fits();
       await mkdir('artifacts/plugin', { recursive: true });
       await page.screenshot({ path: 'artifacts/plugin/viewer-layout-wide.png', fullPage: true });
-      await app.locator('#expand').click();
+      await page.evaluate(() => window.pluginTest.display('fullscreen', ['inline', 'fullscreen']));
       await panel.waitForFunction(() => document.documentElement.dataset.mode === 'fullscreen');
       await fits();
-      await app.locator('#expand').click();
+      await page.evaluate(() => window.pluginTest.display('inline', ['inline', 'fullscreen']));
       await panel.waitForFunction(() => document.documentElement.dataset.mode === 'inline');
       assert.equal(await fits(), wideHeight, 'fullscreen must not inflate the inline card');
       await page.setViewportSize({ width: 390, height: 844 });

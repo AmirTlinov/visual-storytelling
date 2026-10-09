@@ -25,42 +25,6 @@ main {
   padding: 8px 12px;
   overflow-wrap: anywhere;
   font-size: 12px;
-}
-#library {
-  padding: 12px;
-}
-#library h2 {
-  font-size: 14px;
-  margin: 20px 0 8px;
-}
-.library-item {
-  display: flex;
-  flex-direction: column;
-  text-align: left;
-  gap: 5px;
-  width: 100%;
-  margin: 6px 0;
-}
-.library-item span {
-  font-size: 12px;
-  opacity: 0.65;
-  overflow-wrap: anywhere;
-}
-#browse {
-  border: 0;
-  padding-left: 0;
-  text-align: left;
-  font-size: 12px;
-  max-width: 48%;
-  line-height: 1.4;
-}
-#release-options {
-  padding: 8px 12px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-#artifacts {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -72,26 +36,14 @@ main {
 body {
   margin: 0;
 }
-header {
-  min-height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 12px;
-  border-bottom: 1px solid light-dark(#29272418, #eeece720);
-}
-header > div {
+#scene-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  justify-content: flex-end;
-  min-width: 0;
+  padding: 8px 12px;
 }
-.brand {
-  font-size: 12px;
-  letter-spacing: 0.03em;
-  opacity: 0.7;
+#scene-actions:not(:has(button:not([hidden]))) {
+  display: none;
 }
 button {
   font: inherit;
@@ -151,17 +103,6 @@ footer {
 #preferences {
   padding: 12px;
 }
-#voice-options {
-  padding: 12px;
-}
-#voice-options select {
-  font: inherit;
-  color: inherit;
-  background: transparent;
-  padding: 8px;
-  border: 1px solid #8888;
-  border-radius: 6px;
-}
 #preferences form,
 #preferences label {
   display: grid;
@@ -197,16 +138,6 @@ footer {
   display: none !important;
 }
 @media (max-width: 430px) {
-  header {
-    flex-wrap: wrap;
-  }
-  .brand {
-    display: none;
-  }
-  header > div {
-    width: 100%;
-    justify-content: space-between;
-  }
   button {
     min-height: 40px;
   }

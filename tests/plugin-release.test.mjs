@@ -42,13 +42,6 @@ test(
       }
       throw new Error('Release job deadline');
     };
-    const original = host.client.callTool.bind(host.client);
-    let release;
-    host.client.callTool = async (request, ...options) => {
-      const result = await original(request, ...options);
-      if (request.name === 'story_produce') release = { request: request.arguments, result };
-      return result;
-    };
     try {
       await page.goto(host.url);
       const app = page.frameLocator('iframe[title="MCP App"]');
@@ -63,17 +56,13 @@ test(
       await finish(created.structuredContent.job.id);
       await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
       const { project, sessionId } = created.structuredContent;
-      await app.locator('#voice').click();
-      await app.locator('#voice-choice').selectOption('higgs:higgs');
-      assert.equal(
-        await app.locator('#voice-choice option[value="higgs:higgs"]').isDisabled(),
-        false,
-      );
-      assert.match(
-        await app.locator('#voice-status').innerText(),
-        /12 ГБ загрузки.*18 ГБ на диске/,
-      );
-      await app.locator('#voice-close').click();
+      assert.equal(await app.locator('#voice, #release').count(), 0);
+      const voice = (await call('story_voice', { projectId: project.id })).structuredContent;
+      assert.equal(voice.provider, 'higgs');
+      assert.ok(voice.voices.some((choice) => choice.provider === 'higgs'));
+      assert.equal(Boolean(voice.settings?.enabled), false);
+      assert.ok(voice.requirements.downloadBytes > 0);
+      assert.ok(voice.requirements.requiredDiskBytes >= voice.requirements.downloadBytes);
       const inspect = async () => (await call('story_inspect', { sessionId })).structuredContent;
       const before = await inspect();
       await call('story_control', {
@@ -92,7 +81,7 @@ test(
         width: innerWidth,
         height: innerHeight,
       }));
-      const area = await scene.locator('.ve-stage').boundingBox();
+      const area = await scene.locator('[data-scene-frame]').boundingBox();
       const screenshots = await page.context().newCDPSession(page);
       const displayed = Buffer.from(
         (
@@ -106,17 +95,25 @@ test(
         ).data,
         'base64',
       );
-      const produce = async () => {
-        release = undefined;
-        await app.locator('[data-format="html"]').click();
-        await app.locator('#release-options').waitFor({ state: 'hidden' });
-        assert.equal(release.result.isError, undefined, JSON.stringify(release));
-        return finish(release.result.structuredContent.id);
+      const produce = async (target, conditions = 'authored') => {
+        const result = await call('story_produce', {
+          target,
+          requestId: randomUUID(),
+          options: {
+            formats: ['html'],
+            conditions,
+            ...(conditions === 'current' ? { sessionId } : {}),
+          },
+        });
+        return finish(result.structuredContent.id);
       };
-      await app.locator('#release').click();
-      await app.locator('#release-current').check();
-      const captured = await produce();
-      assert.equal(release.request.target.buildRevision, before.buildRevision);
+      const shownTarget = {
+        kind: 'build',
+        projectId: project.id,
+        buildRevision: before.buildRevision,
+      };
+      const captured = await produce(shownTarget, 'current');
+      assert.equal(captured.buildRevision, before.buildRevision);
       const receipt = JSON.parse(await readFile(join(captured.directory, 'delivery.json'), 'utf8'));
       assert.deepEqual(receipt.checkpoint, JSON.parse(JSON.stringify(selected.checkpoint)));
       const standalone = await browser.newPage({
@@ -188,9 +185,7 @@ test(
       await finish(edited.structuredContent.job.id);
       await app.locator('#update').waitFor();
       assert.equal((await inspect()).buildRevision, before.buildRevision);
-      await app.locator('#release').click();
-      await app.locator('#release-current').uncheck();
-      const shown = await produce();
+      const shown = await produce(shownTarget);
       assert.equal(shown.sourceRevision, before.sourceRevision);
       assert.equal(
         (await readFile(shown.files[0], 'utf8')).includes('Latest working revision'),
@@ -209,19 +204,22 @@ test(
       ]);
       assert.equal(archived.sourceRevision, before.sourceRevision);
       assert.equal(archivedScene.includes('Latest working revision'), false);
-      await app.locator('#release').click();
-      await app.locator('#release-version').selectOption('working');
-      assert.equal(await app.locator('#release-current').isDisabled(), true);
-      const working = await produce();
+      const working = await produce({
+        kind: 'working',
+        projectId: project.id,
+        sourceRevision: edited.structuredContent.project.sourceRevision,
+      });
       assert.equal(working.sourceRevision, edited.structuredContent.project.sourceRevision);
       assert.equal(
         (await readFile(working.files[0], 'utf8')).includes('Latest working revision'),
         true,
       );
       await page.setViewportSize({ width: 360, height: 780 });
-      await app.locator('#release').click();
-      await app.locator('#release-version').focus();
-      await app.locator('#release-version').press('ArrowUp');
+      await app.locator('#update').focus();
+      assert.equal(
+        await app.locator('#update').evaluate((button) => document.activeElement === button),
+        true,
+      );
       assert.equal(
         await app.locator('html').evaluate((element) => element.scrollWidth <= innerWidth),
         true,

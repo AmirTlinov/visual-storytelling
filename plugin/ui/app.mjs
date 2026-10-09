@@ -3,10 +3,8 @@ import { OpenAIExtensions } from '@openai/mcp-extensions/app';
 import manifest from '../../plugin.json' with { type: 'json' };
 import { sceneDocument } from './scene-document.mjs';
 import { frameContext } from './frame-context.mjs';
-import { libraryUI } from './library.mjs';
 import { preferencesUI } from './preferences.mjs';
 import { fileEntrypoint } from './file-entrypoint.mjs';
-import { voiceUI } from './voice.mjs';
 
 const app = new App({ name: 'Visual Storytelling', version: manifest.version });
 const extensions = new OpenAIExtensions(app);
@@ -134,7 +132,6 @@ function recoverView(cause) {
         connectionState = 'connected';
         $('connection').textContent = 'Готово';
         error('');
-        library.update(session);
         publishContext();
         return true;
       } catch (e) {
@@ -232,10 +229,8 @@ async function mount(result) {
   $('connection').textContent = 'Открываю сцену…';
   const attached = await call('attach');
   session = attached.structuredContent;
-  library.update(session);
-  voice.update();
   $('back').hidden = !session.returnAvailable;
-  $('title').textContent = session.title;
+  document.title = session.title;
   updateJobs(session.jobs ?? []);
   const config = {
     theme: app.getHostContext()?.theme,
@@ -358,7 +353,6 @@ async function applyUpdate() {
     if (closed || session !== owner || candidate !== next) return;
     session = result.structuredContent;
     const old = frame;
-    library.update(session);
     frame = next.frame;
     old.id = '';
     frame.id = 'scene';
@@ -393,6 +387,30 @@ async function applyUpdate() {
     replacing = false;
     $('update').disabled = false;
     void poll();
+  }
+}
+let artifactsKey;
+function showArtifacts(files) {
+  const key = JSON.stringify(files);
+  if (artifactsKey === key) return;
+  artifactsKey = key;
+  const output = $('artifacts');
+  output.replaceChildren();
+  output.hidden = false;
+  const label = document.createElement('span');
+  label.textContent = 'Готово: ';
+  output.append(label);
+  for (const file of files) {
+    if (extensions.files) {
+      const button = document.createElement('button');
+      button.textContent = file.split('/').at(-1);
+      button.onclick = () => void extensions.files.open(file).catch((e) => error(e.message));
+      output.append(button);
+    } else {
+      const path = document.createElement('span');
+      path.textContent = file;
+      output.append(path);
+    }
   }
 }
 function updateJobs(jobs) {
@@ -433,7 +451,7 @@ function updateJobs(jobs) {
   };
   if (last?.status === 'failed') error(last.error);
   if (last?.status === 'succeeded' && last.result?.files) {
-    library.artifacts(last.result.files);
+    showArtifacts(last.result.files);
   }
 }
 $('update').onclick = () => void applyUpdate();
@@ -532,19 +550,6 @@ addEventListener('message', (event) => {
   )
     void applyUpdate();
 });
-$('expand').onclick = async () => {
-  const mode = document.documentElement.dataset.mode === 'fullscreen' ? 'inline' : 'fullscreen';
-  if ($('expand').disabled || !app.getHostContext()?.availableDisplayModes?.includes(mode)) return;
-  $('expand').disabled = true;
-  try {
-    const result = await app.requestDisplayMode({ mode });
-    host({ displayMode: result.mode });
-  } catch (e) {
-    error(e.message);
-  } finally {
-    $('expand').disabled = false;
-  }
-};
 function host(context) {
   if (context.theme) {
     applyDocumentTheme(context.theme);
@@ -552,15 +557,11 @@ function host(context) {
   }
   if (context.styles?.variables) applyHostStyleVariables(context.styles.variables);
   modelContext.host(context);
-  // Both host notifications and request responses carry the actual negotiated mode.
   const mode =
     context.displayMode ??
     document.documentElement.dataset.mode ??
     app.getHostContext()?.displayMode;
   document.documentElement.dataset.mode = mode ?? 'inline';
-  $('expand').textContent = mode === 'fullscreen' ? 'Свернуть' : 'Развернуть';
-  const modes = context.availableDisplayModes ?? app.getHostContext()?.availableDisplayModes ?? [];
-  $('expand').hidden = !modes.includes(mode === 'fullscreen' ? 'inline' : 'fullscreen');
 }
 async function dispose() {
   closed = true;
@@ -590,18 +591,13 @@ async function open(result) {
   candidate = undefined;
   failedRevision = undefined;
   modelContext = frameContext(app, extensions);
+  artifactsKey = undefined;
   $('artifacts').hidden = true;
+  $('update').hidden = true;
+  $('back').hidden = true;
   error('');
   await mount(result);
 }
-const library = libraryUI(app, extensions, {
-  session: () => session,
-  report: () => report,
-  error,
-  open,
-  ensureConnected,
-});
-const voice = voiceUI(app, { session: () => session, error });
 const preferences = preferencesUI(app, error);
 fileEntrypoint(app, extensions, { open, error });
 $('back').onclick = async () => {
