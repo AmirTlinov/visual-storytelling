@@ -120,7 +120,9 @@ const script=String.raw`
   }
   function layout(){
     const narrow=innerWidth<600;
-    root.setAttribute('viewBox',narrow?'0 0 550 1240':'0 0 1100 760');
+    const width=narrow?550:1100,height=narrow?1240:760;
+    root.setAttribute('width',width);root.setAttribute('height',height);
+    root.setAttribute('viewBox','0 0 '+width+' '+height);
     const transforms={'heading':narrow?'translate(211 -32)':'','tensor-matrix':narrow?'translate(-565 62)':'','sphere-geometry':narrow?'translate(25 0)':'','tensor-geometry':narrow?'translate(-500 472)':'','sphere-label':narrow?'translate(25 -25)':'','tensor-label':narrow?'translate(-500 472)':'','tensor-control':narrow?'translate(-275 430)':'','control-label':narrow?'translate(-275 440)':'','mapping-label':narrow?'translate(-204 286)':''};
     for(const [id,transform] of Object.entries(transforms))byID(id).setAttribute('transform',transform);
     byID('heading').setAttribute('text-anchor',narrow?'middle':'start');
@@ -147,7 +149,7 @@ const script=String.raw`
   },{
     parameters:[{key:'t',label:'Преобразование',type:'range',value:1,min:0,max:1,step:.02}],
     values:()=>({t}),
-    setValues:values=>setT(values.t)
+    setValues:values=>{if(values.t!==undefined)setT(values.t)}
   });
 })();`;
 

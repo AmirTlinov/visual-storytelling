@@ -78,6 +78,44 @@ test('diagrams reveal dependencies before results and preserve causal state on r
       }
     }
     flow.dispose();
+    const route = flowDiagram(view, {
+      nodes: [
+        { id: 'entry', label: 'Ввод' },
+        { id: 'check', label: 'Проверка' },
+        { id: 'save', label: 'Сохранить' },
+        { id: 'send', label: 'Доставка' },
+      ],
+      edges: [
+        { from: 'entry', to: 'check' },
+        { from: 'check', to: 'save' },
+        { from: 'save', to: 'send' },
+      ],
+      values: () => ({ entry: 'без адреса', check: 'нет адреса' }),
+    });
+    const labels = [640, 360, 640].map((width) => {
+      view.resize(width, 480, false);
+      route.render(frame(1, 'explore'), { width, height: 480 });
+      const boxes = ['entry', 'check'].map((id) => {
+        const value = [...view.element.querySelectorAll(`[data-object="${id}"] .vs-lettering`)].at(
+          -1,
+        ) as SVGGElement;
+        return {
+          bounds: value.getBoundingClientRect().toJSON(),
+          text: value.getAttribute('aria-label'),
+          size: Number(value.querySelector('text')!.getAttribute('font-size')),
+        };
+      });
+      return {
+        width,
+        boxes,
+        surface: view.element.getBoundingClientRect().toJSON(),
+        errors: [...view.element.querySelectorAll('[data-layout-error]')].map((e: Element) =>
+          e.getAttribute('data-layout-error'),
+        ),
+      };
+    });
+    route.dispose();
+    view.resize(360, 480, false);
     const comparison = comparisonDiagram(view, {
       items: [
         { id: 'a', label: 'Температура' },
@@ -96,7 +134,7 @@ test('diagrams reveal dependencies before results and preserve causal state on r
     comparison.dispose();
     view.dispose();
     colors.dispose();
-    return { samples, bars, explored };
+    return { samples, labels, bars, explored };
   });
   for (const s of result.samples) {
     expect(s.revealed.sort()).toEqual(
@@ -109,6 +147,19 @@ test('diagrams reveal dependencies before results and preserve causal state on r
     expect(s.signals).toBe(s.progress < 0.5 ? 2 : s.progress < 1 ? 1 : 0);
     expect(s.description.includes('включён')).toBe(s.progress === 1);
   }
+  for (const sample of result.labels) {
+    expect(sample.errors).toEqual([]);
+    expect(sample.boxes.map((box) => box.text)).toEqual(['без адреса', 'нет адреса']);
+    for (const box of sample.boxes) {
+      expect(box.size).toBeGreaterThanOrEqual(20);
+      expect(box.bounds.left).toBeGreaterThanOrEqual(sample.surface.left);
+      expect(box.bounds.right).toBeLessThanOrEqual(sample.surface.right);
+    }
+    if (sample.width === 640)
+      expect(sample.boxes[0]!.bounds.right + 12).toBeLessThan(sample.boxes[1]!.bounds.left);
+    else expect(sample.boxes[0]!.bounds.bottom).toBeLessThan(sample.boxes[1]!.bounds.top);
+  }
+  expect(result.labels[2]).toEqual(result.labels[0]);
   expect(result.bars[0].conclusion).toBe('');
   expect(result.bars[1].conclusion).toBe('Нагрев включён');
   expect(result.bars[2]).toEqual(result.bars[0]);

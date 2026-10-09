@@ -15,7 +15,7 @@
   --ve-soft:color-mix(in srgb,var(--ve-accent) 34%,transparent);
   --ve-wash:color-mix(in srgb,var(--ve-accent) 18%,transparent);
   --ve-wash-alt:color-mix(in srgb,var(--ve-accent) 24%,transparent);
-  --ve-grid-ink:light-dark(#537bad24,#8faad91c);--ve-grid-major-ink:light-dark(#537bad40,#8faad934);
+  --ve-grid-ink:light-dark(#537bad18,#8faad918);--ve-grid-major-ink:light-dark(#537bad24,#8faad928);
   --ve-grid-step:20px;--ve-grid-major-step:calc(var(--ve-grid-step) * 5);--ve-grid-x:0px;--ve-grid-y:0px;
   --ve-grid:linear-gradient(var(--ve-grid-major-ink) 1px,transparent 1px),linear-gradient(90deg,var(--ve-grid-major-ink) 1px,transparent 1px),linear-gradient(var(--ve-grid-ink) 1px,transparent 1px),linear-gradient(90deg,var(--ve-grid-ink) 1px,transparent 1px);
   --ve-grid-size:var(--ve-grid-major-step) var(--ve-grid-major-step),var(--ve-grid-major-step) var(--ve-grid-major-step),var(--ve-grid-step) var(--ve-grid-step),var(--ve-grid-step) var(--ve-grid-step);

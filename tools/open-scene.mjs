@@ -108,13 +108,41 @@ export async function openScene(page, url) {
       async exportSVG() {
         const handle = owner();
         if (handle?.exportSVG) return handle.exportSVG();
+        const rendered = (element) => {
+          if (!element.checkVisibility({ opacityProperty: true, visibilityProperty: true }))
+            return false;
+          const { width, height } = element.getBoundingClientRect();
+          return width > 0 && height > 0;
+        };
         const svg =
           handle?.svg?.() ??
           documents()
-            .map((doc) => doc.querySelector('svg.canvas,svg.vs-canvas,svg.ve-scene'))
-            .find(Boolean);
-        if (!svg || document.querySelector('canvas'))
-          throw new Error('No SVG surface; use PNG, HTML or MP4 for Canvas');
+            .flatMap((doc) => [...doc.querySelectorAll('svg.canvas,svg.vs-canvas,svg.ve-scene')])
+            .find(rendered);
+        if (!svg) throw new Error('No SVG surface; use PNG, HTML or MP4 for Canvas');
+        // The composition owns the export boundary. A surface accessor alone cannot
+        // promise to preserve neighbouring HTML or another drawing in that frame.
+        const frame =
+          svg.closest('.ve-explanation') ??
+          svg.closest('.ve-stage') ??
+          svg.closest('.ve-scene') ??
+          svg;
+        const chrome =
+          '.ve-heading,.ve-chapter-navigation,.modes,.ve-parameters,.ve-view-actions,[data-player],.ve-status,.sr-only,.vs-sr';
+        const extra = [frame, ...frame.querySelectorAll('*')].some(
+          (element) =>
+            !svg.contains(element) &&
+            (!element.contains(svg) ||
+              [...element.childNodes].some(
+                (node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim(),
+              )) &&
+            !element.closest(chrome) &&
+            rendered(element),
+        );
+        if (extra)
+          throw new Error(
+            'The complete frame contains content outside its SVG surface. Use PNG or HTML, or provide SceneHandle.exportSVG() for the complete composition.',
+          );
         return window.VisualExport.exportSVG(svg);
       },
     };

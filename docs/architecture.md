@@ -14,13 +14,16 @@
 `SceneShell` владеет полями, режимами, доступностью и жизнью представлений.
 Статическая модель доступна агенту сразу после mount; подключение Story обогащает
 тот же handle. UI и команды используют один ввод. `syncParameters` отражает правки
-самостоятельной модели; ввод рассказа принадлежит `story.explore`.
+самостоятельной модели; `shell.input` ведёт пользовательскую правку через историю
+и `Story.input`. `SceneStory` разрешает переход главы и её исходные условия.
 
 `Story` вычисляет `stateAt → derive → render`; `transport` использует один media clock.
 `requested` хранит принятый ввод, `presented` — завершённый кадр. `scene-checkpoint.ts`
 сохраняет параметры, место и камеру; вложенные условия приходят от `runtime.subject`.
 Для Story его предоставляет `checkpoint.encode/decode`. Тот же снимок передаётся
 в widgetState, восстановление и экспорт; схема и проверка остаются у модели.
+Восстановление отменяет предыдущую подготовку: Story принимает совместимые условия
+и позицию вместе; при смене главы сначала получает её описания параметров.
 `StepPlayer` переключает дискретные состояния, `SmilPlayer` управляет временем SVG,
 `SimulationPlayer` ведёт живую модель. Их команды регистрируются в том же handle;
 статическая модель не получает фиктивные секунды или play/seek.
@@ -33,20 +36,21 @@
 `MathMorph` вычисляет результат и сохраняет адреса в `MathOrigin.source`.
 Подписи, камера, доставка и семантика используют существующих владельцев.
 
-| Область                      | Владелец                                                                                         |
-| ---------------------------- | ------------------------------------------------------------------------------------------------ |
-| Палитра, почерк, сетка, поля | `styles/`, `ink/`, `assets/`                                                                     |
-| SVG и письмо                 | `SketchInk`, `SketchMotion`; измеряемые границы — `pen.contour`                                  |
-| Слияние чернил               | `ink/fusion/`: штрихи, маски, сопоставление, контактные перемычки                                |
-| Морфинг                      | `morph/objects.ts`, `material.ts`, `timing.ts`; `MathMorph` / `InkMorph` ведут представление     |
-| Морфологический рассказ      | `MorphStory` связывает операции, подготовку, главы и поля с Story                                |
-| Размер текста                | `layout/content.ts`, `morph/ink-layout.ts`                                                       |
-| Объёмные тела                | `viewport/morph/`: поле материала, геометрия и согласованный отклик                              |
-| 3D и камера                  | `Viewport3D`, `viewport/shots.ts`; SVG-камера — `ViewportSVG`, `SvgOrbit`                        |
-| Вложенный SVG                | `explorer/`: Surface, Camera, Highlight, Gestures, ScenePath                                     |
-| Параметры и история          | `SketchControls`, `SceneHistory`; предметные ограничения — в модели                              |
-| Физика                       | `physics/`: Rapier; `PhysicsReplay` ведёт перемотку, `PhysicsPlayer` использует SimulationPlayer |
-| Состояние хоста              | `widgetState` переносит общий `SceneCheckpoint`; модель владеет схемой `subject`                 |
+| Область                      | Владелец                                                                                                          |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Палитра, почерк, сетка, поля | `styles/`, `ink/`, `assets/`                                                                                      |
+| SVG и письмо                 | `SketchInk`, `SketchMotion`; измеряемые границы — `pen.contour`                                                   |
+| Слияние чернил               | `ink/fusion/`: штрихи, маски, сопоставление, контактные перемычки                                                 |
+| Морфинг                      | `morph/objects.ts`, `material.ts`, `timing.ts`; `MathMorph` / `InkMorph` ведут представление                      |
+| Морфологический рассказ      | `MorphStory` связывает операции, подготовку, главы и поля с Story                                                 |
+| Композиция объяснения        | `layout/explanation.ts`: рисунок, связанные поля и местный разбор; `controls/disclosure.ts` — доступное раскрытие |
+| Размер текста                | `layout/content.ts`, `morph/ink-layout.ts`                                                                        |
+| Объёмные тела                | `viewport/morph/`: поле материала, геометрия и согласованный отклик                                               |
+| 3D и камера                  | `Viewport3D`, `viewport/shots.ts`; SVG-камера — `ViewportSVG`, `SvgOrbit`                                         |
+| Вложенный SVG                | `explorer/`: Surface, Camera, Highlight, Gestures, ScenePath                                                      |
+| Параметры и история          | `SketchControls`, `SceneHistory`; предметные ограничения — в модели                                               |
+| Физика                       | `physics/`: Rapier; `PhysicsReplay` ведёт перемотку, `PhysicsPlayer` использует SimulationPlayer                  |
+| Состояние хоста              | `widgetState` переносит общий `SceneCheckpoint`; модель владеет схемой `subject`                                  |
 
 `SceneStory` соединяет главы через Story. `composition-plan.ts` разрешает метки
 и время; `composition-presentations.ts` ограничивает живые главы и освобождает

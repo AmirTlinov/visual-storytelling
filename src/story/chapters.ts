@@ -8,7 +8,7 @@ export function chapterNavigation(
   seek: (time: number) => void,
 ) {
   const named = chapters.filter((chapter) => chapter.title).sort((a, b) => a.start - b.start);
-  if (!named.length || heading.hidden) return { update(_time: number) {}, dispose() {} };
+  if (!named.length || heading.hidden) return { update(_id: string | undefined) {}, dispose() {} };
   const navigation = document.createElement('nav');
   navigation.className = 've-chapter-navigation';
   navigation.setAttribute('aria-label', 'Главы рассказа');
@@ -24,10 +24,10 @@ export function chapterNavigation(
   navigation.append(field.element);
   heading.after(navigation);
   return {
-    update(time: number) {
+    update(id: string | undefined) {
       const index = Math.max(
         0,
-        named.findLastIndex((chapter) => chapter.start <= time),
+        named.findIndex((chapter) => chapter.id === id),
       );
       if (field.value !== index) field.setValue(index);
     },

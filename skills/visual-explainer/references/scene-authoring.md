@@ -3,7 +3,7 @@
 Из каталога навыка:
 
 ```sh
-node ../../tools/scene.mjs new /absolute/output/my-story --example explorer-svg
+node ../../tools/scene.mjs new /absolute/output/my-story --example graph-lab
 cd /absolute/output/my-story
 npm install
 npx visual-story api SceneShell.mount SceneOptions  # точный контракт установленного пакета
@@ -11,7 +11,7 @@ npm run build
 npm run dev
 ```
 
-Каталог должен быть пустым. Подбери основу через [каталог и CLI](authoring-guide.md#выбрать-пример); карточка CLI содержит кадр, исходник и команду создания.
+Каталог должен быть пустым. Подбери основу через [каталог и CLI](authoring-guide.md#выбрать-пример); карточка CLI содержит кадр, исходник, точки правки и команду создания. Выше показана основа для графика. [Композиция объяснения](../../../docs/explanations.md) описывает общие средства графика, схемы и урока.
 
 `api NAME.member` показывает отдельный метод и его аргументы; `--full` раскрывает связанные объявления. `info` показывает фактический пакет и идентификатор сборки. Справка строится из установленных типов.
 

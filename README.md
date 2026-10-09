@@ -40,7 +40,7 @@ npm run preview         # http://127.0.0.1:8793
 
 ```sh
 node tools/scene.mjs examples --recommended    # выбрать форму по задаче
-node tools/scene.mjs new /absolute/output/my-story --example explorer-svg
+node tools/scene.mjs new /absolute/output/my-story --example graph-lab  # пример зависимости величин
 cd /absolute/output/my-story
 npm install
 npx visual-story api SceneShell.mount SceneOptions  # точный контракт пакета
@@ -61,7 +61,7 @@ node tools/scene.mjs update /absolute/output/my-story
 сохраняются. Повторный вызов не переустанавливает тот же пакет; npm lifecycle-скрипты
 при обновлении не запускаются.
 
-`examples нейрон` ищет по теме и API; `examples explorer-svg` показывает кадр, исходник и команду создания. `new` копирует предметный исходник и точную упакованную зависимость библиотеки. Уроки доступны в тихом режиме. `--no-audio` откладывает озвучку до `npm run audio`, `--silent` создаёт сцену без речевых файлов. Встроенный мужской образец, модели и акустическое выравнивание принадлежат `tools/audio/`.
+`examples нейрон` ищет по теме и API; `examples graph-lab` показывает кадр, исходники, точки правки и команду создания. `new` копирует предметный исходник и точную упакованную зависимость библиотеки. Уроки доступны в тихом режиме. `--no-audio` откладывает озвучку до `npm run audio`, `--silent` создаёт сцену без речевых файлов. Встроенный мужской образец, модели и акустическое выравнивание принадлежат `tools/audio/`.
 
 Пакет содержит библиотеку, CLI, каталог, исходники и кадры примеров, инструкции навыка и документацию одной версии. `new` и `examples` работают и из установленного пакета. Готовые WAV из галереи в пакет не входят: такие шаблоны начинают с отложенной озвучкой; `npm run audio` собирает голос по сохранённому сценарию. `--audio` создаёт его сразу.
 
@@ -71,7 +71,7 @@ node tools/scene.mjs update /absolute/output/my-story
 речь и действия, `scene.js` выбирает модель, cast и set. [IllustratedStory](docs/lessons.md)
 соединяет их автоматически. [Площадь](examples/area-lesson/scene.js) и
 [термостат](examples/thermostat-story/scene.js) проверяют тот же путь на других темах.
-[График](examples/graph-lab/scene.js) показывает зависимость пути от скорости; [регистр](examples/memory-register/scene.js) предлагает сначала записать предположение. В dev после правки речи пересобираются только изменённые дубли.
+[График](examples/graph-lab/scene.js) связывает путь, наклон и прогноз через [общую композицию](docs/explanations.md); [регистр](examples/memory-register/scene.js) предлагает сначала записать предположение. В dev после правки речи пересобираются только изменённые дубли.
 
 ```sh
 npx visual-story session http://127.0.0.1:8793 status

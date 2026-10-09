@@ -128,7 +128,7 @@ for (const theme of ['light', 'dark'] as const)
       const scene = (document.querySelector('.ve-scene') as any).scene;
       await scene.control([
         { type: 'theme', value: theme },
-        { type: 'parameters', values: { chapter: 'prediction', sceneTime: 1 } },
+        { type: 'cue', id: 'prediction', progress: 0.5 },
       ]);
     }, theme);
     const trial = page.locator('.ve-prediction');
@@ -136,6 +136,11 @@ for (const theme of ['light', 'dark'] as const)
     await expect(trial).toBeVisible();
     await expect(run).toBeDisabled();
     await expect(trial.getByRole('status')).not.toContainText('Получилось');
+    expect(
+      await page.evaluate(
+        () => (document.querySelector('.ve-scene') as any).scene.snapshot().content.area,
+      ),
+    ).toBe(6);
     const choice = trial.getByRole('button', { name: '24 см²', exact: true });
     await choice.focus();
     await choice.press('Enter');
@@ -150,9 +155,28 @@ for (const theme of ['light', 'dark'] as const)
       (document.querySelector('.ve-scene') as any).scene.inspect(),
     );
     expect(state.snapshot.content.area).toBe(12);
+    await page.getByRole('button', { name: 'Отменить условие', exact: true }).click();
+    await expect(run).toBeEnabled();
+    await expect(choice).toHaveAttribute('aria-pressed', 'true');
+    await expect(trial.getByRole('status')).not.toContainText('Получилось');
+    expect(
+      await page.evaluate(
+        () => (document.querySelector('.ve-scene') as any).scene.snapshot().content.area,
+      ),
+    ).toBe(6);
+    await page.getByRole('button', { name: 'Повторить', exact: true }).click();
+    await expect(trial.getByRole('status')).toContainText('Получилось 12 см²');
+    const detail = page.locator('.ve-disclosure');
+    await detail.locator('summary').focus();
+    await detail.locator('summary').press('Enter');
+    await expect(detail).toHaveAttribute('open', '');
+    await expect(page.locator('[data-area-addition]')).toHaveText('6 + 6 = 6 × 2 = 12 см²');
+    await page.getByRole('button', { name: 'Отменить условие', exact: true }).click();
+    await expect(detail).not.toHaveAttribute('open', '');
     await page.getByRole('button', { name: 'Попробовать свои стороны' }).click();
     await expect(trial).toBeHidden();
-    await page.getByRole('slider', { name: 'Высота, см', exact: true }).fill('5');
+    const height = page.getByRole('slider', { name: 'Высота, см', exact: true });
+    for (const value of ['4', '1', '3', '5']) await height.fill(value);
     await expect
       .poll(() =>
         page.evaluate(
@@ -168,5 +192,7 @@ for (const theme of ['light', 'dark'] as const)
     await expect(trial).toBeVisible();
     await expect(run).toBeDisabled();
     await expect(trial.getByRole('status')).not.toContainText('Получилось');
+    await expect(detail).not.toHaveAttribute('open', '');
+    await expect(page.locator('[data-area-reading]')).toContainText('только ширину');
     expect(errors).toEqual([]);
   });

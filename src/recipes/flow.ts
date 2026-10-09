@@ -104,10 +104,16 @@ export function flowDiagram(view: Surface, options: FlowOptions): InkDrawing {
           box.at(p.x, p.y);
           box.element.dataset.reviewId = n.id;
           box.label.element.style.color = 'var(--ve-ink)';
+          const valueX = inlineValue ? width * 0.44 : 0;
+          const valueWidth = inlineValue
+            ? 2 * Math.min(valueX - box.width / 2 - 12, width - 12 - p.x - valueX)
+            : width / (compact ? peers.length : layers) - 24;
           const value = lettering(box.content, '', {
-            x: inlineValue ? width * 0.44 : 0,
+            x: valueX,
             y: inlineValue ? 7 : compact ? 42 : 62,
             size: compact ? 23 : 30,
+            maxWidth: Math.max(1, valueWidth),
+            minSize: 20,
             tabular: true,
           });
           value.element.style.color = 'var(--ve-ink)';

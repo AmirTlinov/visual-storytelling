@@ -228,7 +228,9 @@ window.galleryReady = (async () => {
         { key: 'step', label: 'Шаг объяснения', value: 0, min: 0, max: steps.length - 1, step: 1 },
       ],
       values: () => ({ step: index }),
-      setValues: ({ step }) => controller.go(Number(step)),
+      setValues: ({ step }) => {
+        if (step !== undefined) controller.go(Number(step));
+      },
     },
   );
   await restore(storage.read());

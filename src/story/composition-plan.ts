@@ -44,6 +44,9 @@ function interpolate(
 }
 export const chapterTime = (span: ChapterSpan, globalTime: number) =>
   interpolate(span.clock, globalTime, 'global');
+/** Map an explored local pose back to the same narration clock, after any held pause. */
+export const chapterPosition = (span: ChapterSpan, localTime: number) =>
+  interpolate(span.clock, localTime, 'local');
 
 /** Resolve chapter timing once. Narrated cue boundaries retime the existing local animation. */
 export function composeChapters(

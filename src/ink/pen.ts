@@ -15,7 +15,39 @@ export interface PenStyle {
 }
 type Bounds = { x: number; y: number; width: number; height: number };
 
-/** Measured boundaries keep one quiet hand, independent of tessellation or traversal order. */
+function strokeVertices(points: readonly Point[], closed: boolean) {
+  const distinct = points.filter(
+    (p, i) => !i || p[0] !== points[i - 1]![0] || p[1] !== points[i - 1]![1],
+  );
+  if (
+    closed &&
+    distinct.length > 1 &&
+    distinct[0]![0] === distinct.at(-1)![0] &&
+    distinct[0]![1] === distinct.at(-1)![1]
+  )
+    distinct.pop();
+  return distinct;
+}
+
+/** A slight bend carries the hand through; a deliberate corner starts another movement. */
+function strokeTravel(lengths: number[], carry: number[], closed: boolean, reverse: boolean) {
+  const result = new Array<number>(carry.length),
+    cycle = closed ? carry.reduce((product, weight) => product * weight, 1) : 0;
+  let travel = 0;
+  for (let pass = 0; pass < (closed ? 2 : 1); pass++) {
+    for (let step = 0; step < carry.length; step++) {
+      const i = reverse ? carry.length - 1 - step : step,
+        edge = reverse ? i : (i + carry.length - 1) % carry.length;
+      travel = (travel + lengths[edge]!) * carry[i]!;
+      result[i] = travel;
+    }
+    // Solve the closed traversal once, so its starting vertex does not set the phase.
+    if (closed && pass === 0) travel = cycle < 1 ? travel / (1 - cycle) : 0;
+  }
+  return result;
+}
+
+/** Measured boundaries keep one quiet hand in the local direction and distance of travel. */
 export function contourGeometry(points: readonly Point[], id: string, width = 1.65, closed = true) {
   if (
     points.length < (closed ? 3 : 2) ||
@@ -35,36 +67,83 @@ export function contourGeometry(points: readonly Point[], id: string, width = 1.
   const bounds = { x: left, y: top, width: right - left, height: bottom - top };
   if (!Number.isFinite(bounds.width) || !Number.isFinite(bounds.height))
     throw new Error('Contour bounds must be finite');
-  const samplingScale = Math.max(1, Math.max(bounds.width, bounds.height) / 4096);
+  const vertices = strokeVertices(points, closed);
   const phase = ((seed(id) % 65536) / 65536) * Math.PI * 2;
-  const amplitude = width * 0.18;
-  const ink: string[] = [];
-  for (let i = 0; i < points.length - (closed ? 0 : 1); i++) {
-    const a = points[i]!,
-      b = points[(i + 1) % points.length]!;
-    const steps = Math.max(
-      1,
-      Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (8 * samplingScale)),
+  const amplitude = width * 0.18,
+    primary = 0.7 * Math.cos(phase),
+    secondary = 0.3 * Math.sin(phase);
+  const lengths = vertices.map((a, i) => {
+    if (!closed && i === vertices.length - 1) return 0;
+    const b = vertices[(i + 1) % vertices.length]!;
+    return Math.hypot(b[0] - a[0], b[1] - a[1]);
+  });
+  if (lengths.some((length) => !Number.isFinite(length)))
+    throw new Error('Contour spans must be finite');
+  const normals = vertices.map((a, i): Point => {
+    const b = vertices[(i + 1) % vertices.length]!,
+      length = lengths[i]!;
+    return length ? [-(b[1] - a[1]) / length, (b[0] - a[0]) / length] : [0, 0];
+  });
+  const carry = normals.map((b, i) => {
+    if (!closed && (i === 0 || i === vertices.length - 1)) return 0;
+    const a = normals[(i + vertices.length - 1) % vertices.length]!,
+      turn = Math.atan2(Math.abs(a[0] * b[1] - a[1] * b[0]), a[0] * b[0] + a[1] * b[1]);
+    // A 45° corner finishes the movement; shallower bends carry it through continuously.
+    return 1 - Math.sin(Math.min(Math.PI / 2, turn * 2));
+  });
+  const before = strokeTravel(lengths, carry, closed, false),
+    after = strokeTravel(lengths, carry, closed, true);
+  const sway = (from: number, to: number) => {
+    if (!from || !to) return 0;
+    const span = from + to,
+      travel = (from - to) / (2 * Math.max(1, span / 4096));
+    // Reversed travel and normal cancel. The phase belongs to this movement of the hand.
+    return (
+      amplitude *
+      Math.sin((Math.PI * from) / span) *
+      (primary * Math.sin(travel * 0.043) + secondary * Math.sin(travel * 0.091))
     );
-    for (let j = 0; j < steps; j++) {
-      const x = a[0] + (b[0] - a[0]) * (j / steps);
-      const y = a[1] + (b[1] - a[1]) * (j / steps);
-      const u = (x - left) / samplingScale,
-        v = (y - top) / samplingScale;
-      const px =
-        x +
-        amplitude *
-          (0.65 * Math.sin(v * 0.045 + phase) +
-            0.35 * Math.sin(u * 0.03 + v * 0.025 + phase * 1.71));
-      const py =
-        y +
-        amplitude *
-          (0.65 * Math.sin(u * 0.043 + phase * 1.37) +
-            0.35 * Math.sin(v * 0.032 - u * 0.02 + phase * 0.79));
+  };
+  const ink: string[] = [];
+  for (let i = 0; i < vertices.length - (closed ? 0 : 1); i++) {
+    const a = vertices[i]!,
+      b = vertices[(i + 1) % vertices.length]!,
+      dx = b[0] - a[0],
+      dy = b[1] - a[1],
+      length = lengths[i]!,
+      next = (i + 1) % vertices.length,
+      previous = (i + vertices.length - 1) % vertices.length;
+    if (!length) continue;
+    // A tiny change in length must not redistribute samples along the whole side.
+    const spacing = 8 * Math.max(1, (before[i]! + length + after[next]!) / 4096),
+      sampleOrigin = (before[i]! - length - after[next]!) / 2,
+      firstSample = spacing - (((sampleOrigin % spacing) + spacing) % spacing);
+    const hasPrevious = closed || i > 0,
+      vertexSway = hasPrevious
+        ? (sway(before[previous]! + lengths[previous]!, after[i]!) +
+            sway(before[i]!, length + after[next]!)) /
+          2
+        : 0;
+    const normal = normals[i]!,
+      nx = normal[0] + (hasPrevious ? normals[previous]![0] : 0),
+      ny = normal[1] + (hasPrevious ? normals[previous]![1] : 0),
+      normalLength = Math.hypot(nx, ny) || 1;
+    for (
+      let travelled = 0;
+      travelled < length;
+      travelled = travelled ? travelled + spacing : firstSample
+    ) {
+      const t = travelled / length,
+        offset = travelled
+          ? sway(before[i]! + travelled, length - travelled + after[next]!)
+          : vertexSway;
+      const px = a[0] + dx * t + (travelled ? normal[0] : nx / normalLength) * offset,
+        py = a[1] + dy * t + (travelled ? normal[1] : ny / normalLength) * offset;
       ink.push(`${ink.length ? 'L' : 'M'}${px} ${py}`);
     }
   }
-  if (!closed) ink.push(`L${points.at(-1)![0]} ${points.at(-1)![1]}`);
+  if (!closed || !ink.length)
+    ink.push(`${ink.length ? 'L' : 'M'}${points.at(-1)![0]} ${points.at(-1)![1]}`);
   return {
     path: points.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join('') + (closed ? 'Z' : ''),
     outline: ink.join('') + (closed ? 'Z' : ''),

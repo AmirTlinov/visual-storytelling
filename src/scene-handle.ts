@@ -196,8 +196,22 @@ export function mountScene<T extends SceneRuntime>(
   access.view ??= () => handle.camera;
   Object.assign(handle, sceneAccess(handle, access));
   handle.capture = (options) => captureScene(handle, access.view?.(), options);
+  let restoration = 0;
   handle.restore = async (state) => {
-    const restored = await restoreScene(handle, state, access.view?.());
+    const request = ++restoration;
+    const restoring = Object.defineProperties(
+      {},
+      Object.getOwnPropertyDescriptors(access),
+    ) as SceneAccessOwner;
+    restoring.assertLive = () => {
+      assertLive();
+      if (request !== restoration)
+        throw Object.assign(new Error('Scene restoration was superseded by a newer restore.'), {
+          code: 'scene_restore_superseded',
+        });
+    };
+    const restored = await restoreScene(handle, state, access.view?.(), restoring);
+    restoring.assertLive();
     restoreNotices = restored.restoreNotices ?? [];
     if (restoreNotices.length)
       root.dispatchEvent(

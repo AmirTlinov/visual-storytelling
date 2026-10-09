@@ -135,7 +135,7 @@ test('story derives one current model for input, time, reverse seeking and reduc
   assert.deepEqual(controller.requested.state, { x: 2, weight: 3, bias: -7, z: -1, output: 0 });
   assert.equal(rendered.length, 1);
 
-  assert.throws(() => controller.explore({ ...controller.requested.values, x: -1 }), /nonnegative/);
+  assert.throws(() => controller.input({ x: -1 }), /nonnegative/);
   assert.equal(controller.requested.mode, 'story');
   assert.equal(controller.requested.values.x, 2);
   assert.equal(controller.requested.state.output, 0);
@@ -146,7 +146,7 @@ test('story derives one current model for input, time, reverse seeking and reduc
   assert.equal(rendered.length, 1, 'an invalid seek does not move the clock');
 
   rendered.length = published.length = 0;
-  controller.explore({ ...controller.requested.values, x: 4 });
+  controller.input({ x: 4 });
   assert.deepEqual(controller.requested.state, { x: 4, weight: 3, bias: -7, z: 5, output: 5 });
   assert.deepEqual(controller.requested.values, { x: 4, weight: 3, bias: -7 });
   assert.equal(rendered.length, 1, 'media pause publishes a single fully derived frame');

@@ -79,7 +79,12 @@ registerAppTool(
     inputSchema: {
       sessionId: sessionId.optional(),
       projectId: z.string().uuid().optional(),
-      path: z.string().optional(),
+      path: z
+        .string()
+        .describe(
+          'Absolute project directory or story.vstory file. Open a standalone HTML export in a browser; editing requires its source project.',
+        )
+        .optional(),
       example: z.string().optional(),
       file: OpenAIFileEntrypointInputSchema.shape.file.optional(),
     },

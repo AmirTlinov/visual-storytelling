@@ -98,8 +98,11 @@ test('shipped discovery resolves private factories, aliases and recursive argume
       join(root, 'dist/index.d.ts'),
       `
       import { create } from './factory.js';
+      import { makePlot } from './factory.js';
       import { externalFn } from '../external.js';
       export declare const Widget: { create: typeof create };
+      export { makePlot as plot } from './factory.js';
+      export declare const createPlot: typeof makePlot;
       export type { Input as WidgetInput } from './types.js';
       export { First as Choice } from './shared.js';
       interface Box<T> { value: T }
@@ -113,6 +116,12 @@ test('shipped discovery resolves private factories, aliases and recursive argume
       `
       import type { Input as Options } from './types.js';
       export declare function create(options: Options): { dispose(): void };
+      export declare function makePlot(options: Options): {
+        readonly version: 'instance';
+        interval(name: string, options: Options): { at(from: number, to: number): void };
+        dispose(): void;
+      };
+      export declare namespace makePlot { const version: 'factory' }
       export declare function obsoleteHelper(): void;
     `,
     );
@@ -156,6 +165,22 @@ test('shipped discovery resolves private factories, aliases and recursive argume
     assert.match(member.text, /create\(options: Options\)/);
     assert.match(member.text, /interface Input/);
     assert.doesNotMatch(member.text, /const Widget|obsoleteHelper|Unrelated/);
+    for (const factory of ['plot', 'createPlot']) {
+      const interval = await describeAPI(root, `${factory}.interval`);
+      assert.deepEqual(interval.missing, []);
+      assert.match(interval.text, new RegExp(`import \\{ ${factory} \\}`));
+      assert.match(interval.text, /interval\(name: string, options: Options\)/);
+      assert.match(interval.text, /at\(from: number, to: number\): void/);
+      assert.match(interval.text, /interface Input/);
+      assert.doesNotMatch(
+        interval.text,
+        /declare function (?:create|makePlot)|obsoleteHelper|Unrelated/,
+      );
+    }
+    const factoryProperty = await describeAPI(root, 'plot.version');
+    assert.deepEqual(factoryProperty.missing, []);
+    assert.match(factoryProperty.text, /version: 'factory'/);
+    assert.doesNotMatch(factoryProperty.text, /version: 'instance'/);
     // Both properties share Box.value's declaration; only its callable instantiation
     // belongs in unqualified method discovery. Explicit data-property lookup still works.
     const callable = await describeAPI(root, 'value');

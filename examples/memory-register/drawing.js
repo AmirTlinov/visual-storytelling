@@ -100,7 +100,7 @@ export function registerDrawing(host, dispatch, inspect) {
     });
     hit.element.dataset.bit = i;
     controls.push(hit);
-    const weight = text(2 ** i, 18);
+    const weight = text(2 ** i, 20);
     weight.element.classList.add('memory-secondary');
     return { mark, hit, weight };
   });
@@ -127,7 +127,7 @@ export function registerDrawing(host, dispatch, inspect) {
     const terminal = view.pen.path(mark.content, 'clock-port-' + i, 'M-5 31L0 24L5 31', {
       width: 1.4,
     });
-    const name = text('Q' + i, 15);
+    const name = text('Q' + i, 20);
     name.element.classList.add('memory-secondary');
     return { mark, hit, terminal, name };
   });
@@ -145,7 +145,7 @@ export function registerDrawing(host, dispatch, inspect) {
   const enable = inkButton(view, 'write-enable', 'Запись: выкл', {
     label: 'Разрешение записи',
     onPress: () => dispatch({ type: 'enable' }),
-    width: 122,
+    width: 154,
     height: 44,
     size: 20,
     pigment: 'red',
@@ -153,7 +153,7 @@ export function registerDrawing(host, dispatch, inspect) {
   const tick = inkButton(view, 'clock', 'Дать фронт ↑', {
     label: 'Дать фронт такта',
     onPress: () => dispatch({ type: 'clock' }),
-    width: 122,
+    width: 154,
     height: 44,
     size: 20,
     pigment: 'red',
@@ -205,7 +205,7 @@ export function registerDrawing(host, dispatch, inspect) {
           height: 44,
         });
         cells[j].mark.at(x, savedY);
-        cells[j].name.at(x + 11, wide ? 194 : 246);
+        cells[j].name.at(x + 19, wide ? 194 : 246);
         arrows[j].set([x, inputY + 25], [x, savedY - 31]);
         branches[j].update(`M${x} ${railY}L${x} ${savedY + 31}`);
       });

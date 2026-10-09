@@ -1,34 +1,68 @@
-import { SceneShell } from '@visual-storytelling/core';
-import { cueSheet } from '@visual-storytelling/core/story';
-import {
-  Viewport3D,
-  InkStroke3D,
-  InkConnection3D,
-  ThreeKit as T,
-} from '@visual-storytelling/core/three';
+import { SceneShell, explanationLayout } from '@visual-storytelling/core';
+import { disclosure } from '@visual-storytelling/core/controls';
+import { Viewport3D } from '@visual-storytelling/core/three';
+import { recurrentDiagram } from './drawing.js';
 import '@visual-storytelling/core/style.css';
 
+const words = ['кот', 'на', 'крыше'],
+  answer = ['the', 'cat', 'is', 'on', 'the', 'roof'];
 const script = {
   duration: 14,
-  cues: {
-    read: { start: 0, end: 5, action: 'Кодировщик читает слова по очереди.' },
-    memory: { start: 5, end: 8, action: 'Состояние памяти передаётся декодировщику.' },
-    answer: {
+  segments: [
+    {
+      id: 'read',
+      title: 'Прочитать по одному слову',
+      start: 0,
+      end: 5,
+      text: 'В этой упрощённой рекуррентной схеме кодировщик читает слова по очереди. Каждое слово обновляет состояние.',
+    },
+    {
+      id: 'transfer',
+      title: 'Передать последнее состояние',
+      start: 5,
+      end: 8,
+      text: 'После трёх слов кодировщик передаёт последнее состояние декодировщику.',
+    },
+    {
+      id: 'answer',
+      title: 'Построить выходную фразу',
       start: 8,
       end: 14,
-      action: 'Декодировщик обновляет своё состояние и выбирает следующее слово.',
+      text: 'Декодировщик использует состояние и предыдущее выходное слово, чтобы выбрать следующее. Петля показывает повтор этого шага.',
     },
+  ],
+  cues: {
+    read: { start: 0, end: 5, action: 'Слово обновляет состояние кодировщика.' },
+    memory: { start: 5, end: 8, action: 'Последнее состояние переходит к декодировщику.' },
+    answer: { start: 8, end: 14, action: 'Повторяем шаг декодировщика для следующего слова.' },
   },
 };
-const sheet = cueSheet(script);
+function sequence(time, reduced) {
+  const reading = Math.min(3, (time / 5) * 3),
+    decoding = Math.max(0, Math.min(6, time - 8)),
+    phase = time < 5 ? 'read' : time < 8 ? 'transfer' : 'answer';
+  return {
+    time,
+    reduced,
+    phase,
+    active: Math.min(2, Math.floor(reading)),
+    completed: Math.floor(reading),
+    output: answer.slice(0, Math.floor(decoding)),
+    progress: phase === 'read' ? reading % 1 : phase === 'transfer' ? (time - 5) / 3 : decoding % 1,
+  };
+}
+const text = (element, value) => {
+  if (element.textContent !== value) element.textContent = value;
+};
+
 window.galleryReady = (async () => {
   await SceneShell.ready();
   const root = document.getElementById('diagram');
   const shell = SceneShell.mount(root, {
-    title: 'Как из слов получается ответ?',
+    title: 'Как состояние связывает вход и ответ',
     parameters: [
-      { key: 'column', type: 'toggle', label: 'В столбик', value: false },
-      { key: 'details', type: 'toggle', label: 'Подробная подпись', value: false },
+      { key: 'column', type: 'toggle', label: 'Расположить в столбик', value: false },
+      { key: 'details', type: 'toggle', label: 'Что хранится в состоянии?', value: false },
       {
         key: 'time',
         label: 'Момент',
@@ -40,111 +74,96 @@ window.galleryReady = (async () => {
       },
     ],
   });
-  const view = Viewport3D.mount(shell.stage, { label: 'Слова, кодировщик, память и декодировщик' });
-  shell.attachView(view);
-  const group = new T.Group();
-  function card(text, x, y, color, width = 2.6) {
-    const body = new T.Mesh(
-      new T.PlaneGeometry(width, 1),
-      view.ink(new T.MeshBasicMaterial({ side: T.DoubleSide }), `${color}-wash`),
-    );
-    body.position.set(x, y, 0);
-    group.add(body);
-    const contour = InkStroke3D.create(
-      view,
-      [
-        [-width / 2, -0.5],
-        [width / 2, -0.5],
-        [width / 2, 0.5],
-        [-width / 2, 0.5],
-        [-width / 2, -0.5],
-      ],
-      { color, width: 1.5 },
-    );
-    body.add(contour.root);
-    const label = view.label(text, body, { face: ['front', 'back'] });
-    label.update(view.camera);
-    return body;
-  }
-  const words = ['кот', 'на', 'крыше'].map((word, i) =>
-    card(word, (i - 1) * 3.2, 3.2, 'blue', 2.2),
-  );
-  const encoder = card('кодировщик', -4, 0, 'blue'),
-    memory = card('память', 0, 0, 'purple'),
-    decoder = card('декодировщик', 4, 0, 'orange');
-  const noteAnchor = new T.Group();
-  noteAnchor.position.set(0, 1.6, 0);
-  group.add(noteAnchor);
-  const note = view.label('h и c', noteAnchor, {
-    space: 'world',
-    height: 0.36,
-    maxWidth: 5.2,
-    tone: 'purple',
+  shell.showParameters(['time', 'column']);
+  const layout = explanationLayout(shell.stage);
+  layout.figure.classList.add('ve-stage');
+  layout.figure.setAttribute('aria-label', 'Рекуррентная схема');
+  layout.controls.append(shell.fields);
+  shell.fields.style.gridTemplateColumns = 'minmax(0, 1fr)';
+  layout.footer.append(shell.actions);
+  const arrangement = document.createElement('p');
+  arrangement.className = 've-note';
+  arrangement.textContent = 'На этой ширине схема уже расположена в столбик.';
+  layout.controls.append(arrangement);
+  layout.notes.setAttribute('aria-label', 'Что происходит с состоянием');
+  layout.notes.innerHTML = `
+    <p class="ve-eyebrow">Упрощённая рекуррентная схема</p>
+    <p class="ve-reading" data-sequence-reading aria-live="polite" aria-atomic="true"></p>
+    <p data-sequence-cause></p>
+    <p class="ve-note">Пример перевода: «кот на крыше» → «the cat is on the roof».</p>`;
+  const details = disclosure(layout.notes, {
+    label: 'Что хранится в состоянии?',
+    onChange: (details) => shell.input({ details }),
   });
-  const all = [...words, encoder, memory, decoder, note];
-  const createLink = (from, to, color, extra = {}) =>
-    InkConnection3D.create(view, from, to, {
-      space: group,
-      avoid: all,
-      color,
-      opacity: 0.75,
-      width: 1.7,
-      clearance: 0.24,
-      ...extra,
-    });
-  const read = createLink(words[0], encoder, 'blue', { toSide: 'top' }),
-    remember = createLink(encoder, memory, 'purple'),
-    send = createLink(memory, decoder, 'purple'),
-    feedback = createLink(decoder, decoder, 'orange', {
-      fromSide: 'bottom',
-      toSide: 'right',
-      clearance: 0.5,
-    });
-  const links = [read, remember, send, feedback];
-  const signal = new T.Mesh(
-    new T.SphereGeometry(0.085, 16, 10),
-    view.ink(new T.MeshBasicMaterial(), 'orange'),
-  );
-  group.add(signal);
-  view.setObject(group, { fitView: false });
+  details.body.innerHTML = `
+    <p><strong>Состояние</strong> — набор чисел, который кодировщик обновляет после каждого слова.</p>
+    <p class="ve-equation">h₀ → h₁ → h₂ → h₃</p>
+    <p>Последнее состояние h₃ переходит к декодировщику. Дальше его собственное состояние меняется с каждым выходным словом.</p>
+    <p class="ve-note">Выходные слова заданы как пример. Стрелки показывают порядок передачи данных.</p>`;
+  const reading = layout.notes.querySelector('[data-sequence-reading]'),
+    cause = layout.notes.querySelector('[data-sequence-cause]');
+  const view = Viewport3D.mount(layout.figure, {
+    label: 'Слова, кодировщик, состояние и декодировщик',
+  });
+  shell.attachView(view);
+  const drawing = recurrentDiagram(view, words);
+  let current;
   const story = shell.attachStory({
     script,
     stateAt: (frame) => ({ column: false, details: false, time: frame.time }),
     render(state, frame, mode) {
-      const f = mode === 'story' ? frame : sheet.at(state.time, frame.reduced);
-      const column = state.column || shell.stage.clientWidth < 620;
-      shell.stage.style.height = column ? 'clamp(520px, 72vh, 760px)' : 'clamp(320px, 55vw, 450px)';
-      words.forEach((word, i) =>
-        word.position.set(
-          column ? (i === 2 ? 0 : (i - 0.5) * 3.2) : (i - 1) * 3.2,
-          column ? (i === 2 ? 3.2 : 4.7) : 3.2,
-          0,
-        ),
-      );
-      encoder.position.set(column ? 0 : -4, column ? 1.25 : 0, 0);
-      memory.position.set(0, column ? -1 : 0, 0);
-      decoder.position.set(column ? 0 : 4, column ? -3.25 : 0, 0);
-      noteAnchor.position.set(column ? 1.8 : 0, column ? 2.05 : 1.6, 0);
-      note.set(state.details ? 'общее состояние: h и c' : 'h и c');
-      // Placement changes only the figures. Every link measures the same objects and inscriptions.
-      const reading = Math.min(2.999999, f.reveal('read') * 3),
-        active = Math.floor(reading);
-      read.update({ from: words[active] });
-      for (const link of links.slice(1)) link.update();
-      const phases = [
-        f.time >= 5 ? 1 : reading % 1,
-        f.reveal('memory'),
-        f.reveal('memory'),
-        f.reveal('answer'),
-      ];
-      links.forEach((link, i) => link.draw(phases[i]));
-      const route = f.time < 5 ? read : f.time < 8 ? send : feedback,
-        progress = f.time < 5 ? reading % 1 : f.time < 8 ? phases[2] : phases[3];
-      signal.visible = !f.reduced && progress > 0 && progress < 1;
-      signal.position.fromArray(route.pointAt(progress));
-      // Framing includes each complete route, so writing a line cannot move the camera.
-      view.shot({ target: group, direction: [0, 0, 10], padding: 30 });
+      current = sequence(mode === 'story' ? frame.time : Number(state.time), frame.reduced);
+      const automaticColumn = layout.figure.clientWidth < 560,
+        column = Boolean(state.column) || automaticColumn;
+      layout.figure.style.height = column ? '500px' : '360px';
+      layout.figure.dataset.sequenceLayout = column ? 'column' : 'row';
+      shell.describeParameter('column', { disabled: automaticColumn });
+      arrangement.hidden = !automaticColumn || mode === 'story';
+      drawing.render(current, column);
+      details.set(Boolean(state.details));
+      if (current.phase === 'read') {
+        text(reading, `Читаем «${words[current.active]}».`);
+        text(
+          cause,
+          `Прочитано ${current.completed} из 3 слов. Каждое новое слово обновляет прежнее состояние.`,
+        );
+      } else if (current.phase === 'transfer') {
+        text(reading, 'Три слова — последнее состояние h₃.');
+        text(cause, 'Кодировщик закончил чтение. Сигнал переносит его состояние в декодировщик.');
+      } else {
+        text(
+          reading,
+          current.output.length ? current.output.join(' ') : 'Декодировщик начинает фразу.',
+        );
+        text(
+          cause,
+          current.output.length === answer.length
+            ? 'Фраза готова. Каждый проход по петле добавил одно выходное слово.'
+            : 'Каждый проход по петле использует прежнее состояние и выходное слово, чтобы выбрать следующее.',
+        );
+      }
     },
   });
-  root.scene.extend({ view, story });
+  root.scene.extend({ view, story, snapshot: () => ({ ...current, ...drawing.snapshot() }) });
+  const selected = () => {
+    if (root.scene.selected.includes('recurrent-state') && !story.requested.values.details)
+      shell.input({ details: true });
+  };
+  root.addEventListener('scene-selection', selected);
+  let width = layout.figure.clientWidth;
+  const resize = new ResizeObserver(() => {
+    const next = layout.figure.clientWidth;
+    if (width !== next) {
+      width = next;
+      story.update();
+    }
+  });
+  resize.observe(layout.figure);
+  shell.onDispose(() => {
+    resize.disconnect();
+    root.removeEventListener('scene-selection', selected);
+    details.dispose();
+    layout.dispose();
+  });
+  return { shell, story };
 })();

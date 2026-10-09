@@ -1,52 +1,81 @@
-import { SceneShell } from '@visual-storytelling/core';
+import { SceneShell, explanationLayout } from '@visual-storytelling/core';
 import { surface } from '@visual-storytelling/core/ink';
-import { plot } from '@visual-storytelling/core/recipes';
+import { predictionPrompt, disclosure } from '@visual-storytelling/core/controls';
+import { motion, format } from './model.js';
+import { distanceDrawing } from './drawing.js';
 import '@visual-storytelling/core/style.css';
 
 window.galleryReady = (async () => {
   await SceneShell.ready();
   const root = document.getElementById('graph-lab');
   const shell = SceneShell.mount(root, {
-    title: 'Скорость — наклон графика',
+    title: 'Скорость — это наклон',
     parameters: [
       { key: 'speed', label: 'Скорость, м/с', value: 3, min: 1, max: 4, step: 0.5 },
-      { key: 'time', label: 'Время, с', value: 0, min: 0, max: 10, step: 0.1 },
+      { key: 'time', label: 'Время, с', value: 4, min: 0, max: 10, step: 0.1 },
       { key: 'compare', type: 'toggle', label: 'Сравнить с половиной скорости', value: false },
+      { key: 'detail', type: 'toggle', label: 'Разобрать наклон', value: false },
+      { key: 'practice', type: 'toggle', label: 'Проверить предположение', value: false },
+      { key: 'guess', label: 'Прогноз, м', value: -1, min: -1, max: 40, step: 1 },
+      { key: 'checked', type: 'toggle', label: 'Прогноз проверен', value: false },
     ],
   });
-  const view = surface(shell.stage, {
+  shell.showParameters(['speed', 'time', 'compare']);
+  const layout = explanationLayout(shell.stage);
+  layout.controls.append(shell.fields);
+  layout.footer.append(shell.actions);
+  layout.notes.setAttribute('aria-label', 'Как читать график');
+  layout.notes.innerHTML = `
+    <p class="ve-eyebrow">Читаем одну точку</p>
+    <p class="ve-reading" data-graph-reading aria-live="polite" aria-atomic="true"></p>
+    <p data-graph-cause></p>`;
+  const change = (next) => shell.input(next);
+  const details = disclosure(layout.notes, {
+    label: 'Откуда берётся наклон?',
+    onChange: (detail) => change({ detail }),
+  });
+  details.body.innerHTML = `
+    <p data-graph-interval></p>
+    <p class="ve-equation" data-graph-ratio></p>
+    <p class="ve-note">Горизонтальный шаг измеряет время, вертикальный — добавленный путь. При изменении скорости меняется высота этого треугольника.</p>`;
+  const practice = disclosure(layout.notes, {
+    label: 'Предскажите следующую точку',
+    onChange: (open) =>
+      change(
+        open
+          ? { practice: true, speed: 3, time: 4, compare: false, guess: -1, checked: false }
+          : { practice: false },
+      ),
+  });
+  const view = surface(layout.figure, {
     id: 'distance',
     title: 'Путь по времени',
     description: 'По горизонтали время в секундах, по вертикали путь в метрах.',
-    width: 800,
-    height: 340,
+    width: 700,
+    height: 400,
     grid: false,
   });
-  const note = document.createElement('p');
-  note.setAttribute('aria-live', 'polite');
-  note.setAttribute('data-graph-reading', '');
-  const details = document.createElement('details');
-  details.innerHTML =
-    '<summary>Что означает наклон?</summary><p>За каждую секунду путь увеличивается на величину скорости. Поэтому отношение прироста пути к приросту времени одинаково в любой точке прямой: v = Δs / Δt. Более крутая линия означает большую скорость. Эта модель описывает равномерное движение от нулевого положения.</p>';
-  shell.stage.after(note, details);
-  let chart,
-    trace,
-    comparison,
-    signature = '';
+  const readout = layout.notes.querySelector('[data-graph-reading]');
+  const cause = layout.notes.querySelector('[data-graph-cause]');
+  const ratio = details.body.querySelector('[data-graph-ratio]');
+  const interval = details.body.querySelector('[data-graph-interval]');
+  let drawing,
+    signature = '',
+    prompt;
   const story = shell.attachStory({
     script: {
       duration: 16,
       segments: [
         {
           id: 'read',
-          title: 'Из времени получаем путь',
+          title: 'Каждую секунду — ещё три метра',
           start: 0,
           end: 10,
-          text: 'Точка проходит график слева направо. За каждую секунду путь увеличивается на три метра.',
+          text: 'Точка показывает время и пройденный путь. За каждую секунду путь увеличивается на три метра.',
         },
         {
           id: 'compare',
-          title: 'Сравним скорости',
+          title: 'За то же время — разный путь',
           start: 10,
           end: 16,
           text: 'При той же длительности половина скорости даёт половину пути. Наклон линии показывает эту связь.',
@@ -59,69 +88,95 @@ window.galleryReady = (async () => {
     },
     stateAt: (frame) => ({
       speed: 3,
-      time: frame.time < 10 ? frame.time : 10,
+      time: Math.min(10, 4 + Math.max(0, frame.time - 2)),
       compare: frame.time >= 10,
+      detail: false,
+      practice: false,
+      guess: -1,
+      checked: false,
     }),
     render(values) {
-      const width = Math.max(280, shell.stage.clientWidth),
-        speed = Number(values.speed),
-        time = Number(values.time);
-      const key = [width, speed].join(':');
+      const model = motion(values);
+      const width = Math.max(280, Math.round(view.element.parentElement.clientWidth));
+      const key = `${width}/${model.speed}`;
       if (key !== signature) {
-        chart?.dispose();
+        drawing?.dispose();
+        drawing = distanceDrawing(view, width, model.speed);
         signature = key;
-        view.resize(width, 340);
-        chart = plot(view, 'distance', {
-          x: 44,
-          y: 32,
-          width: width - 80,
-          height: 255,
-          xDomain: [0, 10],
-          yDomain: [0, 40],
-          xLabel: 'с',
-          yLabel: 'м',
-          xTicks: [0, 2, 4, 6, 8, 10].map((value) => ({ value, label: String(value) })),
-          yTicks: [10, 20, 30, 40].map((value) => ({ value, label: String(value) })),
-        });
-        const samples = Array.from({ length: 41 }, (_, i) => [i / 4, (i / 4) * speed]);
-        trace = chart.trace('speed', samples, 'blue');
-        comparison = chart.trace(
-          'half-speed',
-          samples.map(([x, y]) => [x, y / 2]),
-          'orange',
-        );
-        trace.element.setAttribute('aria-label', 'Исходная скорость');
-        comparison.element.setAttribute('aria-label', 'Половина скорости');
       }
-      trace.at(time, speed * time);
-      comparison.at(time, (speed * time) / 2);
-      comparison.element.style.display = values.compare ? '' : 'none';
-      const format = (value) => Number(value.toFixed(2)).toLocaleString('ru');
-      const sentence = `${format(time)} с × ${format(speed)} м/с = ${format(speed * time)} м${values.compare ? `; при ${format(speed / 2)} м/с — ${format((speed * time) / 2)} м` : ''}.`;
-      if (note.textContent !== sentence) note.textContent = sentence;
+      drawing.render(model);
+      const sentence = `${format(model.time)} с × ${format(model.speed)} м/с = ${format(model.distance)} м${model.comparison !== null ? `; при ${format(model.speed / 2)} м/с — ${format(model.comparison)} м` : ''}.`;
+      if (readout.textContent !== sentence) {
+        const result = document.createElement('mark');
+        result.textContent = `${format(model.distance)} м`;
+        readout.replaceChildren(
+          `${format(model.time)} с × ${format(model.speed)} м/с = `,
+          result,
+          model.comparison !== null
+            ? `; при ${format(model.speed / 2)} м/с — ${format(model.comparison)} м.`
+            : '.',
+        );
+      }
+      cause.textContent =
+        model.comparison !== null
+          ? 'Время одинаковое. Синяя линия выше: за каждую секунду прибавляется вдвое больше пути.'
+          : `Каждую секунду добавляется ${format(model.speed)}\u00a0м. Чем больше этот прирост, тем круче линия.`;
+      interval.textContent =
+        model.time > 0
+          ? `От ${format(model.interval.start)} до ${format(model.time)}\u00a0с прошло ${format(model.interval.seconds)}\u00a0с. За это время путь вырос на ${format(model.interval.distance)}\u00a0м.`
+          : 'В начальной точке путь равен нулю. Выберите время больше нуля, чтобы измерить наклон.';
+      ratio.textContent =
+        model.time > 0
+          ? `${format(model.interval.distance)} м / ${format(model.interval.seconds)} с = ${format(model.speed)} м/с`
+          : '';
+      details.set(Boolean(values.detail));
+      practice.set(Boolean(values.practice));
+      const predicting = Boolean(values.practice);
+      for (const key of ['speed', 'time', 'compare'])
+        shell.describeParameter(key, { disabled: predicting });
+      prompt?.render({
+        question: 'За 4 с пройдено 12 м. Скорость остаётся 3 м/с. Какой путь будет к моменту 6 с?',
+        guess: Number(values.guess) < 0 ? null : values.guess,
+        checked: Boolean(values.checked),
+        feedback: `${Number(values.guess) === model.distance ? 'Верно.' : `Ваш прогноз: ${values.guess} м.`} Получилось ${format(model.distance)} м: ещё две секунды добавили два раза по три метра. На графике это та же прямая.`,
+      });
       view.element.querySelector('desc').textContent =
-        `Время по горизонтали от 0 до 10 с; путь по вертикали от 0 до 40 м. ${sentence}`;
+        `Равномерное движение от нулевого положения. ${sentence}`;
     },
   });
+  prompt = predictionPrompt(practice.body, {
+    choices: [12, 18, 24].map((value) => ({ value, label: `${value} м` })),
+    runLabel: 'Пройти ещё две секунды',
+    onChoose: (guess) => change({ guess }),
+    onRun: () => {
+      if (Number(story.requested.values.guess) >= 0) change({ time: 6, checked: true });
+    },
+  });
+  story.update();
   root.scene.extend({
-    snapshot: () => {
-      const values = story.presented.values;
-      return {
-        speed: values.speed,
-        time: values.time,
-        distance: Number(values.speed) * Number(values.time),
-        comparison: values.compare ? (Number(values.speed) * Number(values.time)) / 2 : null,
-      };
-    },
+    snapshot: () => ({
+      ...motion(story.presented.values),
+      practice: story.presented.values.practice,
+      guess: story.presented.values.guess,
+      checked: story.presented.values.checked,
+    }),
   });
+  const selection = () => {
+    if (root.scene.selected.includes('distance-value') && !story.requested.values.detail)
+      change({ detail: true });
+  };
+  root.addEventListener('scene-selection', selection);
   const resize = new ResizeObserver(() => story.update());
-  resize.observe(shell.stage);
+  resize.observe(view.element.parentElement);
   shell.onDispose(() => {
+    root.removeEventListener('scene-selection', selection);
     resize.disconnect();
-    chart?.dispose();
+    prompt.dispose();
+    drawing?.dispose();
     view.dispose();
-    note.remove();
-    details.remove();
+    details.dispose();
+    practice.dispose();
+    layout.dispose();
   });
   return { shell, story };
 })();

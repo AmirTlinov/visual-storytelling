@@ -476,7 +476,7 @@ export function mountCube(initial, start, api, model, cubeScene) {
         ];
       },
       values: conditions,
-      setValues: setConditions,
+      setValues: (patch) => setConditions({ ...conditions(), ...patch }),
     },
   );
   drawTokens();

@@ -47,8 +47,8 @@ test('ordered scene commands can enter a chapter before focusing its objects', a
     assertLive() {},
     setMode() {},
     setValues(next) {
-      values = next;
-      if (next.chapter === 'cast')
+      values = { ...values, ...next };
+      if (values.chapter === 'cast')
         handle.focus = (ids) => {
           focused = ids;
         };

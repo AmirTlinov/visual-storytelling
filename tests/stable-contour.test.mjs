@@ -107,4 +107,67 @@ test('measured ink translates with its body and survives different contour tesse
   }
   for (const p of original)
     assert.ok(distance(p, square) < 0.5, 'The pen stays inside its own stroke width');
+  const curved = Array.from({ length: 72 }, (_, i) => {
+    const a = (i / 72) * Math.PI * 2;
+    return [80 * Math.cos(a), 50 * Math.sin(a)];
+  });
+  const curve = outline(curved);
+  for (const ring of [[...curved].reverse(), [...curved.slice(17), ...curved.slice(0, 17)]])
+    for (const p of outline(ring))
+      assert.ok(distance(p, curve) < 0.01, 'A smooth closed stroke has no privileged first sample');
+});
+
+test('a measured side keeps its hand when neighbouring geometry changes the bounds', () => {
+  const first = [
+      [0, 0],
+      [160, 0],
+    ],
+    ring = [...first, [160, 60], [0, 60]],
+    changed = [...first, [7000, 10000], [-5000, 10000]];
+  const firstSide = (shape) => points(contourGeometry(shape, 'local-hand').outline).slice(0, 20);
+  assert.deepEqual(firstSide(changed), firstSide(ring));
+  const before = contourGeometry(ring, 'local-hand');
+  for (const shape of [changed, ring, changed, ring]) contourGeometry(shape, 'local-hand');
+  assert.deepEqual(contourGeometry(ring, 'local-hand'), before, 'Seeking does not age the ink');
+});
+
+test('the hand follows the trace through rotation, resampling and a newly forming bend', () => {
+  const line = [
+      [0, 0],
+      [64, 0],
+      [160, 0],
+    ],
+    outline = (trace) => points(contourGeometry(trace, 'local-hand', 1.65, false).outline),
+    original = outline(line),
+    angle = 1.7,
+    rotate = ([x, y]) => [
+      x * Math.cos(angle) - y * Math.sin(angle),
+      x * Math.sin(angle) + y * Math.cos(angle),
+    ],
+    turned = outline(line.map(rotate));
+  const expected = original.map(rotate);
+  for (const p of turned) assert.ok(distance(p, expected) < 1e-10);
+  for (const p of expected) assert.ok(distance(p, turned) < 1e-10);
+  const unsegmented = outline([line[0], line.at(-1)]),
+    reversed = outline([...line].reverse());
+  for (const p of [...original, ...reversed])
+    assert.ok(distance(p, unsegmented) < 0.01, 'Extra samples do not start another hand movement');
+  const bending = outline([
+    [0, 0],
+    [64, 0.00001],
+    [160, 0],
+  ]);
+  for (const p of bending)
+    assert.ok(
+      distance(p, original) < 0.0001,
+      'A new bend carries the existing ink without a phase jump',
+    );
+  assert.deepEqual(
+    outline([
+      [12, 4],
+      [12, 4],
+    ]),
+    [[12, 4]],
+    'A collapsed trace remains a point',
+  );
 });

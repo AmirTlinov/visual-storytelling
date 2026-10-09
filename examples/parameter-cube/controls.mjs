@@ -54,8 +54,8 @@ export function attachProjection(root, object, options = {}) {
         Object.fromEntries(
           (scene?.inspect({ presentation: false }).parameters ?? []).map((p) => [p.key, p.value]),
         ),
-      setValues: async (values) => {
-        await scene.control([{ type: 'parameters', values }]);
+      setValues: async (patch) => {
+        await scene.control([{ type: 'parameters', values: patch }]);
       },
     },
   );

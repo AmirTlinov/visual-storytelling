@@ -1534,7 +1534,7 @@
     ]
   },
   "connected-diagram": {
-    "title": "Как из слов получается ответ?",
+    "title": "Как состояние связывает вход и ответ",
     "source": "scene.js",
     "time": 10.5,
     "checkpoints": [
@@ -1547,7 +1547,7 @@
       14
     ],
     "group": "techniques",
-    "summary": "Карточки меняют расположение, связи обходят фигуры и подписи. Линия, стрелка и сигнал следуют одному маршруту, включая обратную связь.",
+    "summary": "Слова изменяют состояние упрощённого рекуррентного кодировщика. Связи показывают порядок обработки, а местный разбор раскрывает роль памяти.",
     "tags": [
       "InkConnection3D",
       "SvgLayout",
@@ -1558,6 +1558,7 @@
       "3d"
     ],
     "guides": [
+      "docs/explanations.md",
       "docs/connections.md"
     ],
     "form": "diagram",
@@ -1569,7 +1570,17 @@
       "interactive",
       "connections"
     ],
-    "recommended": true
+    "recommended": true,
+    "editing": [
+      {
+        "file": "scene.js",
+        "purpose": "шаги обработки и пояснение состояния"
+      },
+      {
+        "file": "drawing.js",
+        "purpose": "предметы, порты и маршруты связей"
+      }
+    ]
   },
   "tensor-slices": {
     "title": "Какие числа принадлежат одному дню?",
@@ -1677,7 +1688,6 @@
     "useFor": "Причина и результат в логической схеме",
     "visibleAction": "Прогноз и фронт такта изменяют память",
     "capabilities": [
-      "svg",
       "png",
       "html",
       "interactive",
@@ -1748,6 +1758,7 @@
       "SVG"
     ],
     "guides": [
+      "docs/explanations.md",
       "docs/lessons.md"
     ],
     "recommended": true,
@@ -1755,20 +1766,30 @@
     "useFor": "Подробное обучение с проверкой предположения",
     "visibleAction": "Единицы складываются в правило, прогноз проверяется опытом",
     "capabilities": [
-      "svg",
       "png",
       "html",
       "chapters",
       "interactive",
       "prediction",
       "voice"
+    ],
+    "reference": true,
+    "editing": [
+      {
+        "file": "story.json",
+        "purpose": "главы, речь, смысловые действия и тихие интервалы"
+      },
+      {
+        "file": "scene.js",
+        "purpose": "модель площади, условия опыта и локальные пояснения"
+      }
     ]
   },
   "graph-lab": {
-    "title": "Скорость — наклон графика",
-    "summary": "График пути: измените скорость и время, сравните два движения и прочитайте координаты одной точки.",
+    "title": "Скорость — это наклон",
+    "summary": "Измеренный путь, треугольник наклона и прогноз следующей точки. Пояснения и управление остаются рядом с графиком.",
     "source": "scene.js",
-    "time": 12,
+    "time": 0,
     "checkpoints": [
       0,
       3,
@@ -1786,6 +1807,7 @@
       "сравнение"
     ],
     "guides": [
+      "docs/explanations.md",
       "skills/visual-explainer/references/data-plots.md"
     ],
     "recommended": true,
@@ -1793,11 +1815,35 @@
     "useFor": "Изменение величины и сравнение зависимостей",
     "visibleAction": "Ползунок скорости меняет наклон и измеренное расстояние",
     "capabilities": [
-      "svg",
       "png",
       "html",
       "interactive",
-      "data"
+      "data",
+      "prediction",
+      "provenance"
+    ],
+    "reference": true,
+    "commands": [
+      {
+        "type": "parameters",
+        "values": {
+          "detail": true
+        }
+      }
+    ],
+    "editing": [
+      {
+        "file": "model.js",
+        "purpose": "величины, единицы и зависимость пути от времени"
+      },
+      {
+        "file": "drawing.js",
+        "purpose": "оси, сравнение и местоположение подписей"
+      },
+      {
+        "file": "scene.js",
+        "purpose": "вопрос, рассказ, параметры и проверка прогноза"
+      }
     ]
   }
 }

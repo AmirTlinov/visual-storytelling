@@ -28,6 +28,7 @@ export interface SceneRenderMoment {
   time: number;
   mode: 'story' | 'explore';
   values: Record<string, ControlValue>;
+  chapter?: string;
 }
 /** Requested controls and the last completed drawing are reported by the same Story owner. */
 export interface SceneRendering {
@@ -67,7 +68,13 @@ export interface SceneAccessOwner {
   parameters?: readonly (ControlParameter & { key: string })[];
   visible?(key: string): boolean;
   setMode?(value: 'story' | 'explore'): void;
+  /** Apply an explicit patch; the subject owns retained values and parameter transitions. */
   setValues?(values: Record<string, ControlValue>): void | Promise<void>;
+  /** The existing story owner accepts restored inputs and time before preparing their frame. */
+  restoreValues?(
+    values: Record<string, ControlValue>,
+    position: { time: number; mode: 'story' | 'explore' },
+  ): void | Promise<void>;
   assertLive(): void;
 }
 export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
@@ -353,7 +360,7 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
               owner.setMode!(c.value);
               break;
             case 'parameters':
-              await wait(owner.setValues!({ ...owner.values?.(), ...c.values }));
+              await wait(owner.setValues!({ ...c.values }));
               break;
             case 'focus':
               if (!handle.focus) throw new Error('Focus is unavailable in the current chapter');

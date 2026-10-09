@@ -16,7 +16,6 @@ window.galleryReady = (async () => {
     text: 'Источник, цепь и лампа.',
     controls: ['closed'],
     valuesAt: (frame) => ({ closed: frame.beat?.id !== 'explain' }),
-    size: { width: 640, height: 250 },
     create: circuitDiagram,
   };
   const parameters = [{ key: 'closed', label: 'Цепь замкнута', type: 'toggle', value: true }];
@@ -51,7 +50,7 @@ window.galleryReady = (async () => {
         characterChapter({
           ...world,
           ...chapter,
-          surfaces: { board: drawing },
+          surfaces: { board: { ...drawing, size: { width: 640, height: 250 } } },
           controls: drawing.controls,
           valuesAt: drawing.valuesAt,
         }),

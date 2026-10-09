@@ -37,7 +37,12 @@ export async function sceneEntry(directory) {
 export function svgPage(svg) {
   return `<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>body{margin:0}body>svg{display:block;width:100%;height:auto}</style></head>
+<style>
+:root{color-scheme:light dark}
+:root:has(>body>svg[data-theme=light]){color-scheme:light}
+:root:has(>body>svg[data-theme=dark]){color-scheme:dark}
+body{margin:0;background:Canvas}body>svg{display:block;width:100%;height:auto}
+</style></head>
 <body>${svg.replace(/<\?xml[^>]*>/, '')}
 <script type="module">
 import { mountScene as mountSVGEntryScene } from '@visual-storytelling/core';

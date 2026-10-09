@@ -4,6 +4,7 @@ import { svg, clamp } from '../ink/dom.js';
 import type { Surface } from '../ink/surface.js';
 import type { Point } from '../ink/pen.js';
 import type { Pigment } from '../ink/palette.js';
+import { plotInterval, type PlotIntervalOptions } from './plot-interval.js';
 
 export interface PlotOptions {
   x: number;
@@ -34,9 +35,11 @@ export function plot(view: Surface, id: string, options: PlotOptions) {
     Math.max(o.yDomain[0], Math.min(o.yDomain[1], 0)),
   );
   view.pen.arrow(axes.content, `${id}:x`, [o.x, zero[1]], [o.x + o.width + 7, zero[1]], {
-    width: 1,
+    width: 1.5,
   });
-  view.pen.line(axes.content, `${id}:y`, [zero[0], o.y + o.height], [zero[0], o.y], { width: 1 });
+  view.pen.arrow(axes.content, `${id}:y`, [zero[0], o.y + o.height], [zero[0], o.y - 7], {
+    width: 1.5,
+  });
   if (o.xLabel)
     lettering(axes.content, o.xLabel, { x: o.x + o.width + 18, y: zero[1] + 5, size: 17 });
   if (o.yLabel) lettering(axes.content, o.yLabel, { x: zero[0] + 14, y: o.y - 9, size: 17 });
@@ -45,22 +48,25 @@ export function plot(view: Surface, id: string, options: PlotOptions) {
     view.pen.line(axes.content, `${id}:xtick:${tick.value}`, [x, zero[1] - 3], [x, zero[1] + 3], {
       width: 1,
     });
-    lettering(axes.content, tick.label, { x, y: zero[1] + 25, size: 17 });
+    lettering(axes.content, tick.label, { x, y: zero[1] + 25, size: 18 });
   }
   for (const tick of o.yTicks ?? []) {
     const [, y] = point(0, tick.value);
     view.pen.line(axes.content, `${id}:ytick:${tick.value}`, [zero[0] - 3, y], [zero[0] + 3, y], {
       width: 1,
     });
-    lettering(axes.content, tick.label, { x: zero[0] - 9, y: y + 5, anchor: 'end', size: 15 });
+    lettering(axes.content, tick.label, { x: zero[0] - 9, y: y + 5, anchor: 'end', size: 18 });
   }
   return {
     ...chart,
     point,
+    interval(name: string, options: PlotIntervalOptions) {
+      return plotInterval(view, chart.content, `${id}:${name}`, point, o, options);
+    },
     trace(name: string, samples: readonly Point[], pigment: Pigment) {
       const mark = object(chart.content, `${id}:${name}`, pigment);
       const d = samples.map(([x, y], i) => `${i ? 'L' : 'M'}${point(x, y).join(' ')}`).join(' ');
-      const shape = view.pen.path(mark.content, `${id}:${name}:curve`, d, { width: 1.8 });
+      const shape = view.pen.path(mark.content, `${id}:${name}:curve`, d, { width: 2.8 });
       const context = shape.element.cloneNode(true) as SVGGElement;
       context.removeAttribute('data-stroke');
       context.removeAttribute('id');
@@ -74,7 +80,7 @@ export function plot(view: Surface, id: string, options: PlotOptions) {
       defs.append(clip);
       mark.content.append(defs);
       shape.element.setAttribute('clip-path', `url(#${clipId})`);
-      const cursor = svg('circle', { r: 3.2, fill: 'currentColor', 'data-plot-point': name });
+      const cursor = svg('circle', { r: 4.5, fill: 'currentColor', 'data-plot-point': name });
       mark.content.append(cursor);
       return {
         element: mark.element,

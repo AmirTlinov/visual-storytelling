@@ -17,6 +17,7 @@ let instance = 0;
 export function inkChapter(
   options: ChapterTiming &
     Pick<SceneChapter, 'controls' | 'valuesAt'> & {
+      /** Fixed drawing coordinates, useful for a projected board. Omit to lay out in available CSS pixels. */
       size?: InkViewport;
       grid?: Grid | false;
       /** Pass signal to resource requests and release partial resources if preparation fails. */

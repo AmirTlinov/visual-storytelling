@@ -26,7 +26,13 @@ test('one live scene owns disposal, semantic visibility, keyboard history and cu
     mount();
     const parameters = [{ key: 'chapter', label: 'Chapter', value: 0 }, { key: 'x', label: 'X', value: 1, min: 0, max: 10 }];
     let values = { chapter: 0, x: 1 };
-    window.dynamic = mountScene(document.querySelector('aside'), { dispose() {} }, { parameters, values: () => values, setValues(next) { values = next; parameters[1].max = next.chapter === 1 ? 2 : 10; } });
+    window.dynamic = mountScene(document.querySelector('aside'), { dispose() {} }, { parameters, values: () => values, setValues(patch) { Object.assign(values, patch); parameters[1].max = values.chapter === 1 ? 2 : 10; } });
+    window.locked = SceneShell.mount(document.querySelector('section'), {
+      title:'Fixed conditions',
+      parameters:[{key:'lock',label:'Keep X fixed',type:'toggle',value:true},{key:'x',label:'Fixed X',value:1,min:0,max:10}],
+      onInput(values){ locked.describeParameter('x',{disabled:values.lock}); },
+    });
+    locked.describeParameter('x',{disabled:true});
   `,
     },
     bundle: true,
@@ -38,7 +44,9 @@ test('one live scene owns disposal, semantic visibility, keyboard history and cu
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
-    await page.setContent('<main class="ve-scene" style="width:500px"></main><aside></aside>');
+    await page.setContent(
+      '<main class="ve-scene" style="width:500px"></main><aside></aside><section></section>',
+    );
     await page.addScriptTag({ content: bundled.outputFiles[0].text });
     const old = await page.evaluate(() => {
       window.first = scene;
@@ -148,6 +156,39 @@ test('one live scene owns disposal, semantic visibility, keyboard history and cu
       ordered.values,
       [1, 1],
       'a preceding command cannot make a later value bypass live bounds',
+    );
+    const history = await page.evaluate(async () => {
+      const handle = document.querySelector('section').scene;
+      locked.input({ x: 6 });
+      const complete = handle.capture();
+      await handle.undoExperiment();
+      const undone = handle.capture();
+      await handle.redoExperiment();
+      const redone = handle.capture();
+      let inputError;
+      try {
+        await handle.control([{ type: 'parameters', values: { x: 8 } }]);
+      } catch (error) {
+        inputError = error.message;
+      }
+      await handle.restore({ ...complete, values: { lock: true, x: 20 } });
+      return {
+        complete,
+        undone,
+        redone,
+        inputError,
+        invalid: handle.capture(),
+        notices: handle.restoreNotices,
+      };
+    });
+    assert.deepEqual(history.complete.values, { lock: true, x: 6 });
+    assert.deepEqual(history.undone.values, { lock: true, x: 1 });
+    assert.deepEqual(history.redone.values, history.complete.values);
+    assert.match(history.inputError, /Invalid scene parameter: x/);
+    assert.deepEqual(history.invalid.values, history.complete.values);
+    assert.deepEqual(
+      history.notices.map(({ code, ids }) => ({ code, ids })),
+      [{ code: 'parameters-changed', ids: ['x'] }],
     );
   } finally {
     await browser.close();

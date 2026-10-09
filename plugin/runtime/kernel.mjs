@@ -19,6 +19,7 @@ import { errorData } from '../errors.mjs';
 import { runtimeBuild } from './identity.mjs';
 import { revisionInput } from '../revision-input.mjs';
 import { selectExamples } from '../../tools/catalog-query.mjs';
+import { exampleDetails } from '../../tools/catalog.mjs';
 import { readPinnedRuntime } from '../../tools/runtime-package.mjs';
 
 const [socketPath, data] = process.argv.slice(2),
@@ -572,18 +573,28 @@ const operations = {
     const api = pinned
       ? describeAPIData(pinned.api, root, ...requested)
       : await describeAPI(root, ...requested);
-    if (!api.missing.length) return api;
+    if (queries && !query) return api;
+    if (!queries && !api.missing.length) return api;
     const catalog = pinned?.catalog ?? (await readJSON(join(directory, 'catalog.json'))) ?? {};
     const matches = selectExamples(catalog, {
-      query: query ?? queries.join(' '),
+      query,
       group,
       recommended,
     });
-    if (matches.length)
+    if (matches.length || queries)
       return {
+        ...(queries ? api : {}),
         examples: matches
           .slice(0, 12)
-          .map(({ id, ...e }) => ({ id, ...e, source: join(root, 'examples', id, e.source) })),
+          .map((entry) =>
+            pinned?.archive
+              ? {
+                  ...entry,
+                  runtimeArchive: pinned.archive,
+                  source: `package/examples/${entry.id}/${entry.source}`,
+                }
+              : exampleDetails(entry, root),
+          ),
       };
     return api;
   },

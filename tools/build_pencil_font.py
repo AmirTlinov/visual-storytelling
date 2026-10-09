@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["fonttools[woff]", "skia-pathops"]
+# dependencies = ["fonttools[woff]==4.61.1", "skia-pathops==0.9.1"]
 # ///
 """Build static lettering from the same pen strokes used by narrated writing.
 
@@ -9,7 +9,6 @@ Run after editing src/ink/glyphs.ts. Shantell supplies spacing and fallback;
 the generated outlines are the skill's own strokes, without browser-side copies.
 """
 import json
-import math
 from pathlib import Path
 import subprocess
 
@@ -24,11 +23,24 @@ from fontTools.ttLib import TTFont
 ASSETS = Path(__file__).resolve().parent.parent / "src" / "assets"
 source = TTFont(ASSETS / "shantell.woff2")
 cmap = source.getBestCmap()
+reference_advances = {chr(code): source["hmtx"][name][0] for code, name in cmap.items()}
 spec = json.loads(subprocess.check_output([
     "node", "--input-type=module", "-e",
-    "const {glyphs}=await import(process.argv[1]);const {handwritingProfiles,handwritingMetrics}=await import(process.argv[2]);process.stdout.write(JSON.stringify({glyphs,profiles:handwritingProfiles,metrics:handwritingMetrics}))",
-    (ASSETS.parent / "ink" / "glyphs.ts").as_uri(),
-    (ASSETS.parent / "ink" / "handwriting.ts").as_uri()], text=True))
+    """const {build}=await import('esbuild');
+const source=await build({stdin:{contents:`export {glyphs} from ${JSON.stringify(process.argv[1])};
+export {handwritingProfiles,handwritingMetrics,handwritingTransform} from ${JSON.stringify(process.argv[2])};`,
+resolveDir:process.cwd()},bundle:true,write:false,format:'esm',platform:'node'});
+const {glyphs,handwritingProfiles,handwritingMetrics,handwritingTransform}=await import(
+  'data:text/javascript;base64,'+Buffer.from(source.outputFiles[0].text).toString('base64'));
+const reference=JSON.parse(process.argv[3]);
+const advances=Object.fromEntries([' ',...Object.keys(glyphs)].map(c=>[c,/^[0-9]$/.test(c)?680:reference[c]??620]));
+const transforms=Object.fromEntries(Object.entries(handwritingProfiles).map(([name,profile])=>[
+  name,Object.fromEntries(Object.keys(glyphs).map(c=>[c,handwritingTransform(c,advances[c],handwritingMetrics.em,profile)]))
+]));
+process.stdout.write(JSON.stringify({glyphs,profiles:handwritingProfiles,metrics:handwritingMetrics,advances,transforms}));""",
+    str(ASSETS.parent / "ink" / "glyphs.ts"),
+    str(ASSETS.parent / "ink" / "handwriting.ts"),
+    json.dumps(reference_advances)], text=True, cwd=ASSETS.parent.parent))
 strokes = spec["glyphs"]
 geometry = spec["metrics"]
 
@@ -37,10 +49,8 @@ names[32] = "space"
 for profile, hand in spec["profiles"].items():
     glyphs = {}
     metrics = {}
-    vertical = geometry["capHeight"] / geometry["baseline"]
-    slant = math.tan(math.radians(hand["slant"]))
     for codepoint, name in {0: ".notdef", **names}.items():
-        advance = source["hmtx"][cmap[codepoint]][0] if codepoint in cmap else 620
+        advance = spec["advances"].get(chr(codepoint), 620)
         pen = TTGlyphPen(None)
         if chr(codepoint) in strokes:
             shape = pathops.Path()
@@ -49,11 +59,9 @@ for profile, hand in spec["profiles"].items():
             shape.stroke(hand["stroke"], pathops.LineCap.ROUND_CAP, pathops.LineJoin.ROUND_JOIN, 4)
             shape.convertConicsToQuads(.01)
             shape.simplify()
-            # The runtime uses the same baseline shear after scaling its centerlines.
-            shape.draw(TransformPen(Cu2QuPen(pen, 1), (
-                advance / geometry["glyphWidth"], 0, -vertical * slant, -vertical,
-                advance * geometry["inset"] + geometry["capHeight"] * slant,
-                geometry["capHeight"])))
+            # Fonts use an upward Y axis; the shared matrix describes SVG ink.
+            a, b, c, d, x, y = spec["transforms"][profile][chr(codepoint)]
+            shape.draw(TransformPen(Cu2QuPen(pen, 1), (a, -b, c, -d, x, -y)))
         glyph = pen.glyph()
         if glyph.numberOfContours:
             glyph.recalcBounds(None)
@@ -67,8 +75,11 @@ for profile, hand in spec["profiles"].items():
     font.setupHorizontalMetrics(metrics)
     font.setupHorizontalHeader(ascent=1100, descent=-400)
     font.setupOS2(sTypoAscender=1100, sTypoDescender=-400, usWinAscent=1100, usWinDescent=400)
-    font.setupNameTable({"familyName": hand["family"], "styleName": "Regular", "uniqueFontIdentifier": f"{hand['family']}-Regular-1", "fullName": f"{hand['family']} Regular", "psName": f"{hand['family']}-Regular", "version": "Version 1.0"})
+    font.setupNameTable({"familyName": hand["family"], "styleName": "Regular", "uniqueFontIdentifier": f"{hand['family']}-Regular-2", "fullName": f"{hand['family']} Regular", "psName": f"{hand['family']}-Regular", "version": "Version 2.0"})
     font.setupPost(italicAngle=-hand["slant"])
+    font.font["head"].created = source["head"].created
+    font.font["head"].modified = source["head"].modified
+    font.font.recalcTimestamp = False
     font.font.flavor = "woff2"
     target = ASSETS / ("pencil.woff2" if profile == "body" else f"pencil-{profile}.woff2")
     font.save(target)

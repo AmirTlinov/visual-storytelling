@@ -141,17 +141,20 @@ export async function renderer({
       seek,
       control: (commands) => controlScene(capture, commands),
       async png() {
-        const frame = page.locator('[data-scene-frame]').first();
+        const frame = page.locator('[data-scene-frame]:not(.ve-explanation *)').first();
+        const explanation = page.locator('.ve-explanation').first();
         const stage = page.locator('.ve-stage').first();
         const main = page.locator('.ve-scene').first();
         const target =
           !controls && (await frame.count())
             ? frame
-            : checkpoint && (await stage.count())
-              ? stage
-              : (await main.count())
-                ? main
-                : undefined;
+            : (await explanation.count())
+              ? main
+              : checkpoint && (await stage.count())
+                ? stage
+                : (await main.count())
+                  ? main
+                  : undefined;
         if (!target) return page.screenshot({ fullPage: true });
         const area = await target.evaluate((element) => {
           const { x, y, width, height } = element.getBoundingClientRect();

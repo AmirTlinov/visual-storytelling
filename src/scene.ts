@@ -58,8 +58,10 @@ export interface SceneMount {
   parameters: Record<string, ControlValue>;
   readonly mode: 'story' | 'explore';
   setMode(mode: 'story' | 'explore'): void;
-  /** Reflect subject-owned edits in an editable shell; story inputs use story.explore(). */
+  /** Reflect subject-owned edits in an editable shell; story edits use story.input(). */
   syncParameters(values: Record<string, ControlValue>): void;
+  /** Commit a subject-owned user action through the existing controls and undo history. */
+  input(values: Record<string, ControlValue>): void;
   showParameters(keys?: readonly string[]): void;
   describeParameter(key: string, description: ControlDescription): void;
   attachStory<P, K extends string, S = P>(options: StoryOptions<P, K, S>): Story<P, K, S>;
@@ -114,7 +116,12 @@ function mount(
   const sceneTheme = theme(root);
   cleanups.add(sceneTheme.dispose);
   const values = Object.fromEntries(parameters.map((p) => [p.key, p.value]));
-  let inputStory: ((next: Record<string, ControlValue>) => void) | undefined;
+  let inputStory:
+    | ((
+        next: Record<string, ControlValue>,
+        position?: { time: number; mode: 'story' | 'explore' },
+      ) => void)
+    | undefined;
   let playback: (() => boolean) | undefined;
   let view: SceneView | undefined;
   let history: ReturnType<typeof SceneHistory.mount<SceneCheckpoint, SceneInspection>> | undefined;
@@ -209,11 +216,14 @@ function mount(
     if (history) history.change(() => applyValues(next));
     else applyValues(next);
   }
-  function applyValues(next: Record<string, ControlValue>) {
+  function applyValues(
+    next: Record<string, ControlValue>,
+    position?: { time: number; mode: 'story' | 'explore' },
+  ) {
     assertLive();
     if (inputStory) {
       try {
-        inputStory(next);
+        inputStory(next, position);
       } finally {
         refresh();
       }
@@ -265,7 +275,8 @@ function mount(
     root,
     {
       snapshot: () => ({ ...values }),
-      presentation: () => inspectPresentation(stage),
+      presentation: () =>
+        inspectPresentation(stage.closest<HTMLElement>('.ve-explanation') ?? stage),
       setTheme: sceneTheme.set,
       dispose,
     },
@@ -279,6 +290,9 @@ function mount(
         return player ? selectMode : undefined;
       },
       setValues: changeValues,
+      get restoreValues() {
+        return inputStory ? applyValues : undefined;
+      },
       view: () => view,
     },
   );
@@ -333,9 +347,10 @@ function mount(
       return mode;
     },
     setMode,
+    input: changeValues,
     syncParameters(next: Record<string, ControlValue>) {
       assertLive();
-      if (inputStory) throw new Error('Story parameters belong to story.explore()');
+      if (inputStory) throw new Error('Story parameters belong to story.input()');
       if (Object.entries(next).some(([key, value]) => values[key] !== value)) {
         Object.assign(values, next);
         refresh();
@@ -422,8 +437,9 @@ function mount(
       onSeek: controller.seek,
       onPlay: preparePlayback,
     });
-    inputStory = (next) => {
-      controller.explore({ ...controller.requested.values, ...next });
+    inputStory = (next, position) => {
+      if (position) controller.restoreInputs(next as Partial<P>, position);
+      else controller.input(next as Partial<P>);
     };
     playback = () => controller.player.state.playing;
     const chapters = chapterNavigation(
@@ -484,7 +500,7 @@ function mount(
       for (const { key } of parameters) values[key] = (state as Record<string, ControlValue>)[key]!;
       if (exploration === 'model') setMode(next);
       refresh();
-      chapters.update(controller.currentTime);
+      chapters.update(controller.currentChapter);
     }
     unsubscribe = controller.subscribe(reflectState);
     setMode('story');
@@ -515,6 +531,7 @@ function mount(
       get rendering(): SceneRendering {
         const moment = (value: StoryMoment<P, S>) => ({
           time: value.time,
+          chapter: value.chapter,
           mode: exploration === 'view' ? mode : value.mode,
           values: Object.fromEntries(
             parameters.map(({ key }) => [

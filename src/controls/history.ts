@@ -29,7 +29,8 @@ function mount<T, R>(
     copy = (value: T) => structuredClone(value);
   let current = copy(read()),
     pending = false,
-    applying = false;
+    applying = 0,
+    disposed = false;
   let field: HTMLElement | null = null;
   function record() {
     if (pending || applying) return;
@@ -53,17 +54,32 @@ function mount<T, R>(
     record();
   }
   async function restoreState(value: T) {
-    const previous = applying;
-    applying = true;
+    applying++;
     try {
       return await restore(copy(value));
     } finally {
-      applying = previous;
+      applying--;
       current = copy(read());
     }
   }
-  async function travel(back: boolean) {
-    if (applying) return;
+  let travelQueue: Promise<void> | undefined;
+  function travel(back: boolean) {
+    const next = travelQueue
+      ? travelQueue.then(
+          () => travelOnce(back),
+          () => travelOnce(back),
+        )
+      : travelOnce(back);
+    travelQueue = next;
+    void next
+      .finally(() => {
+        if (travelQueue === next) travelQueue = undefined;
+      })
+      .catch(() => {});
+    return next;
+  }
+  async function travelOnce(back: boolean) {
+    if (disposed || applying) return;
     beforeTravel();
     end();
     const from = back ? past : future,
@@ -215,6 +231,7 @@ function mount<T, R>(
     undo: () => travel(true),
     redo: () => travel(false),
     dispose() {
+      disposed = true;
       abort.abort();
     },
   };

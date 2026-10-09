@@ -97,12 +97,12 @@ window.galleryReady = (async () => {
     },
   });
   shell.onDispose(drawing.dispose);
-  // Дополнительное предметное действие использует controller.explore({...controller.requested.values, x: 50}).
+  // Дополнительное предметное действие использует shell.input({x: 50}).
   // root.scene уже содержит play, seek, pause, review, snapshot, currentTime и dispose.
 })();
 ```
 
-Поля автоматически читают одноимённые ключи `stateAt` и меняют их через `story.explore`.
+Поля автоматически читают одноимённые ключи `stateAt` и меняют их через `Story.input`; `shell.input` сохраняет ту же историю.
 Ключ параметра должен существовать в состоянии. Голос останавливается при изменении
 модели; «Рассказ» восстанавливает пример текущего времени. Тот же `render(state, frame, mode)`
 обслуживает оба режима. `frame.progress(id)` — действие, `reveal(id)` — декоративное письмо,

@@ -1,5 +1,6 @@
 import type { SceneHandle } from './scene-handle.js';
-import type { ControlValue } from './controls/fields.js';
+import type { ControlParameter, ControlValue } from './controls/fields.js';
+import type { SceneAccessOwner } from './scene-access.js';
 
 export interface SceneCaptureOptions {
   /** Presented is the visible frame; requested records accepted conditions while loading. */
@@ -88,6 +89,17 @@ function chapterAt(review: ReturnType<SceneHandle['review']>, time: number) {
   return [...review.segments].sort((a, b) => a.start - b.start).findLast((c) => c.start <= time);
 }
 
+function compatible(parameter: ControlParameter, value: ControlValue | undefined) {
+  return (
+    typeof parameter.value === typeof value &&
+    (typeof value !== 'number' ||
+      (Number.isFinite(value) &&
+        value >= (parameter.min ?? -Infinity) &&
+        value <= (parameter.max ?? Infinity))) &&
+    (!parameter.options || parameter.options.some((option) => option.value === value))
+  );
+}
+
 function nearestChapter(review: ReturnType<SceneHandle['review']>, state: SceneCheckpoint) {
   const order = state.chapters ?? [];
   const origin = order.indexOf(state.chapter ?? '');
@@ -126,18 +138,24 @@ export function captureScene(
   const time = moment?.time ?? state.time;
   const mode = moment?.mode ?? state.mode;
   const visible = !state.rendering || basis === 'presented' || state.rendering.phase === 'ready';
+  const chapter =
+    state.review.segments.find((chapter) => chapter.id === moment?.chapter) ??
+    chapterAt(state.review, time);
+  const atOwnedEnd = moment?.chapter !== undefined && chapter?.end === time;
   const cue = state.review.cues
     .filter(
       (c) =>
         c.start <= time &&
         c.end > c.start &&
-        (time < c.end || (time === state.duration && c.end === state.duration)),
+        (atOwnedEnd
+          ? c.start < time && time <= c.end
+          : time < c.end || (time === state.duration && c.end === state.duration)),
     )
     .sort((a, b) => a.end - a.start - (b.end - b.start))[0];
   return {
     time,
     cue: cue?.id,
-    chapter: chapterAt(state.review, time)?.id,
+    chapter: chapter?.id,
     chapters: state.review.segments.map((chapter) => chapter.id),
     progress: cue ? (time - cue.start) / (cue.end - cue.start) : 0,
     mode,
@@ -145,9 +163,7 @@ export function captureScene(
     rate: state.rate,
     selected: visible ? state.selected : undefined,
     values: Object.fromEntries(
-      state.parameters
-        .filter((p) => !p.disabled)
-        .map((p) => [p.key, moment?.values[p.key] ?? p.value]),
+      state.parameters.map((p) => [p.key, moment?.values[p.key] ?? p.value]),
     ),
     subject:
       mode === 'explore' && handle.subject
@@ -157,8 +173,13 @@ export function captureScene(
   };
 }
 
-/** Restore through the same validated controls as human and agent input. */
-export async function restoreScene(handle: SceneHandle, state: SceneCheckpoint, view?: SceneView) {
+/** Restore compatible inputs through their owner; temporary UI locks do not erase a condition. */
+export async function restoreScene(
+  handle: SceneHandle,
+  state: SceneCheckpoint,
+  view?: SceneView,
+  owner?: SceneAccessOwner,
+) {
   if (
     !state ||
     !Number.isFinite(state.time) ||
@@ -167,6 +188,28 @@ export async function restoreScene(handle: SceneHandle, state: SceneCheckpoint, 
   )
     throw new Error('Invalid scene checkpoint');
   const capabilities = handle.inspect({ presentation: false }).capabilities;
+  const condition = () => JSON.stringify(handle.rendering?.requested);
+  let acceptedCondition = condition();
+  const assertCurrent = () => {
+    owner?.assertLive();
+    if (acceptedCondition !== condition())
+      throw Object.assign(new Error('Scene restoration was superseded by a newer condition.'), {
+        code: 'scene_restore_superseded',
+      });
+  };
+  const complete = async (work?: void | Promise<unknown>, acceptsOnCompletion = false) => {
+    // Only a subject codec can accept its condition after asynchronous work.
+    // Ordinary commands retain their already accepted condition while awaiting readiness.
+    const accepted = acceptsOnCompletion && work ? undefined : condition();
+    await work;
+    owner?.assertLive();
+    acceptedCondition = accepted ?? condition();
+    try {
+      await handle.ready?.();
+    } finally {
+      assertCurrent();
+    }
+  };
   const notices: SceneRestoreNotice[] = [];
   const review = handle.review();
   const subject =
@@ -177,28 +220,27 @@ export async function restoreScene(handle: SceneHandle, state: SceneCheckpoint, 
       message: 'Предметные условия изменились. Сохранены условия новой сцены.',
     });
   async function restorePlayback() {
+    assertCurrent();
     if (state.muted !== undefined && state.muted !== handle.muted && capabilities.includes('mute'))
-      await handle.control([{ type: 'mute', value: state.muted }]);
+      await complete(handle.control([{ type: 'mute', value: state.muted }]));
     if (state.rate !== undefined && state.rate !== handle.rate && capabilities.includes('rate'))
-      await handle.control([{ type: 'rate', value: state.rate }]);
-    if (capabilities.includes('pause')) await handle.control([{ type: 'pause' }]);
+      await complete(handle.control([{ type: 'rate', value: state.rate }]));
+    if (capabilities.includes('pause')) handle.pause!();
   }
-  // The subject must be able to supersede pending or failed preparation before ready() is awaited.
-  if (!subject) await restorePlayback();
+  // Stop playback without waiting for the preparation this restoration will replace.
+  if (!subject && !owner?.restoreValues && capabilities.includes('pause')) handle.pause!();
   async function restorePosition(time: number) {
+    assertCurrent();
     if (subject) {
-      await subject.restore(copySubject(state.subject), { time, mode: state.mode });
-      await handle.ready?.();
-    } else if (capabilities.includes('seek')) await handle.control([{ type: 'seek', time }]);
+      await complete(subject.restore(copySubject(state.subject), { time, mode: state.mode }), true);
+    } else if (capabilities.includes('seek'))
+      await complete(handle.control([{ type: 'seek', time }]));
   }
   const cue =
     state.cue && capabilities.includes('cue') && review.cues.find((c) => c.id === state.cue);
-  if (cue)
-    await restorePosition(
-      cue.start + (cue.end - cue.start) * Math.min(1, Math.max(0, state.progress)),
-    );
+  let time = Math.min(handle.duration ?? 0, Math.max(0, state.time));
+  if (cue) time = cue.start + (cue.end - cue.start) * Math.min(1, Math.max(0, state.progress));
   else if (subject || capabilities.includes('seek')) {
-    let time = Math.min(handle.duration ?? 0, Math.max(0, state.time));
     if (state.cue) {
       const chapter = nearestChapter(review, state);
       time = chapter?.start ?? 0;
@@ -211,38 +253,68 @@ export async function restoreScene(handle: SceneHandle, state: SceneCheckpoint, 
           : 'Момент изменился. Рассказ открыт с начала.',
       });
     }
-    await restorePosition(time);
   }
-  if (subject) await restorePlayback();
   async function restoreConditions() {
+    assertCurrent();
     // A subject codec owns its whole model. Flat controls are only its visible projection.
     if (subject) return [];
-    if (capabilities.includes('mode')) await handle.control([{ type: 'mode', value: state.mode }]);
+    if (capabilities.includes('mode'))
+      await complete(handle.control([{ type: 'mode', value: state.mode }]));
     if (state.mode !== 'explore' || !capabilities.includes('parameters')) return [];
     const pending = new Map(Object.entries(state.values ?? {}));
     // A chapter selector can change the bounds and availability of the next field.
     while (pending.size) {
       const parameter = handle.inspect().parameters.find((p) => {
         const value = pending.get(p.key);
-        return (
-          pending.has(p.key) &&
-          !p.disabled &&
-          typeof p.value === typeof value &&
-          (typeof value !== 'number' ||
-            (Number.isFinite(value) &&
-              value >= (p.min ?? -Infinity) &&
-              value <= (p.max ?? Infinity))) &&
-          (!p.options || p.options.some((o) => o.value === value))
-        );
+        return pending.has(p.key) && (!p.disabled || owner?.setValues) && compatible(p, value);
       });
       if (!parameter) break;
       const value = pending.get(parameter.key)!;
       pending.delete(parameter.key);
-      await handle.control([{ type: 'parameters', values: { [parameter.key]: value } }]);
+      const values = { [parameter.key]: value };
+      if (owner?.setValues) await complete(owner.setValues(values));
+      else await complete(handle.control([{ type: 'parameters', values }]));
     }
     return [...pending.keys()];
   }
-  let changedParameters = await restoreConditions();
+  async function restoreStoryInputs() {
+    assertCurrent();
+    const position = { time, mode: state.mode };
+    if (state.mode !== 'explore') {
+      await complete(owner!.restoreValues!({}, position));
+      return [];
+    }
+    const chapter =
+      review.segments.find((chapter) => chapter.id === state.chapter) ?? chapterAt(review, time);
+    // Only the target presentation owns its dynamic descriptions. Enter it before
+    // checking saved fields against its bounds, including an owned chapter end.
+    if (chapter && chapter.id !== handle.rendering?.presented?.chapter)
+      await complete(owner!.restoreValues!({}, { time: chapter.start, mode: 'story' }));
+    const pending = new Map(Object.entries(state.values ?? {}));
+    let first = true;
+    while (first || pending.size) {
+      const values: Record<string, ControlValue> = {};
+      for (const p of handle.inspect({ presentation: false }).parameters) {
+        const value = pending.get(p.key);
+        if (pending.has(p.key) && compatible(p, value)) {
+          values[p.key] = value!;
+          pending.delete(p.key);
+        }
+      }
+      if (!first && !Object.keys(values).length) break;
+      assertCurrent();
+      await complete(first ? owner!.restoreValues!(values, position) : owner!.setValues!(values));
+      first = false;
+    }
+    return [...pending.keys()];
+  }
+  let changedParameters: string[];
+  if (!subject && owner?.restoreValues) changedParameters = await restoreStoryInputs();
+  else {
+    if (subject || capabilities.includes('seek')) await restorePosition(time);
+    changedParameters = await restoreConditions();
+  }
+  await restorePlayback();
   // A subject may appear only after its chapter and experimental conditions are restored.
   const known = new Set(handle.objects?.().map((o) => o.id));
   const missing = state.selected?.filter((id) => !known.has(id)) ?? [];
@@ -262,6 +334,7 @@ export async function restoreScene(handle: SceneHandle, state: SceneCheckpoint, 
       ids: changedParameters,
       message: 'Часть условий изменилась. Для них сохранены значения новой сцены.',
     });
+  assertCurrent();
   if (state.view !== undefined && (!view?.restore || view.restore(state.view) === false)) {
     view?.reset();
     notices.push({
@@ -281,11 +354,14 @@ export async function restoreScene(handle: SceneHandle, state: SceneCheckpoint, 
           : 'Выбранные объекты изменились. Недоступные выделения сняты.',
     });
   if (state.selected && handle.inspect({ presentation: false }).capabilities.includes('select'))
-    await handle.control([
-      {
-        type: 'select',
-        ids: state.selected.filter((id) => handle.objects?.().some((o) => o.id === id)),
-      },
-    ]);
+    await complete(
+      handle.control([
+        {
+          type: 'select',
+          ids: state.selected.filter((id) => handle.objects?.().some((o) => o.id === id)),
+        },
+      ]),
+    );
+  assertCurrent();
   return { ...handle.inspect(), restoreNotices: notices };
 }

@@ -34,6 +34,7 @@ function card(entry) {
       <div class="example-setup">
         <p>${escape(entry.useFor ?? entry.summary)}</p>
         <p>${escape(entry.visibleAction ?? entry.title)}</p>
+        ${entry.editing?.length ? `<ul>${entry.editing.map(({ file, purpose }) => `<li><code>${escape(file)}</code> — ${escape(purpose)}</li>`).join('')}</ul>` : ''}
         <p>Выполните в терминале. Новая сцена появится в папке <code>my-story</code>.</p>
         <textarea readonly spellcheck="false" aria-label="Команды создания: ${escape(entry.title)}" rows="6">${escape(command)}</textarea>
         <div class="example-actions">

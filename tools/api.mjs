@@ -129,18 +129,28 @@ export async function buildAPI(root, output) {
         ? checker.getDeclaredTypeOfSymbol(symbol)
         : checker.getTypeOfSymbolAtLocation(symbol, declaration);
     const properties = {};
-    for (const property of checker.getPropertiesOfType(type)) {
-      const node = property.declarations?.find((node) => localFile(node) !== undefined);
-      if (!node) continue;
-      const callable = checker
-        .getSignaturesOfType(
-          checker.getTypeOfSymbolAtLocation(property, node),
-          ts.SignatureKind.Call,
-        )[0]
-        ?.getDeclaration();
-      const id = collect(callable && localFile(callable) !== undefined ? callable : node, true);
-      properties[property.name] = { id, callable: !!callable };
-    }
+    // Factories expose their returned handle as NAME.member, without requiring
+    // consumers to discover a private return type. Real static members take precedence.
+    const memberTypes = [
+      type,
+      ...checker
+        .getSignaturesOfType(type, ts.SignatureKind.Call)
+        .map((signature) => checker.getReturnTypeOfSignature(signature)),
+    ];
+    for (const memberType of memberTypes)
+      for (const property of checker.getPropertiesOfType(memberType)) {
+        if (Object.hasOwn(properties, property.name)) continue;
+        const node = property.declarations?.find((node) => localFile(node) !== undefined);
+        if (!node) continue;
+        const callable = checker
+          .getSignaturesOfType(
+            checker.getTypeOfSymbolAtLocation(property, node),
+            ts.SignatureKind.Call,
+          )[0]
+          ?.getDeclaration();
+        const id = collect(callable && localFile(callable) !== undefined ? callable : node, true);
+        properties[property.name] = { id, callable: !!callable };
+      }
     if (Object.keys(properties).length) (members[entry] ??= {})[name] = properties;
   }
   await writeFile(

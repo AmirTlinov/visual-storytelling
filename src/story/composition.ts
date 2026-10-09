@@ -5,6 +5,7 @@ import { activeCue, type Frame, type Script } from './cues.js';
 import {
   composeChapters,
   chapterTime,
+  chapterPosition,
   type ChapterTiming,
   type ChapterIntroduction,
 } from './composition-plan.js';
@@ -34,6 +35,7 @@ export interface ChapterPresentation {
 }
 export interface SceneChapter extends ChapterTiming {
   controls?: readonly string[];
+  /** Authored inputs, also used when entering this chapter through a user edit. */
   valuesAt?(frame: ChapterFrame): Record<string, ControlValue>;
   /** Cancel resource work when the selected chapter changes; release partial resources on failure. */
   mount(
@@ -143,6 +145,17 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
     }
     transition = options.transition?.mount(shell.stage, previews!.images);
     if (transition) shell.onDispose(transition.dispose);
+    const localFrame = (index: number, progress: number, reduced: boolean): ChapterFrame => {
+      const chapter = options.chapters[index]!;
+      return {
+        time: progress * chapter.seconds,
+        progress,
+        reduced,
+        mode: 'story',
+        values: defaults,
+        beat: activeCue(chapter.script, progress * chapter.seconds),
+      };
+    };
     const at = (time: number, reduced: boolean) => {
       const index = Math.max(
           0,
@@ -153,14 +166,7 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
       return {
         index,
         timing,
-        frame: {
-          time: progress * timing.seconds,
-          progress,
-          reduced,
-          mode: 'story' as const,
-          values: defaults,
-          beat: activeCue(options.chapters[index]!.script, progress * timing.seconds),
-        },
+        frame: localFrame(index, progress, reduced),
       };
     };
     const selection = (
@@ -212,6 +218,41 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
           sceneTime: state.frame.progress,
         };
       },
+      resolveInput(patch, current, frame) {
+        const id = patch.chapter ?? current.values.chapter;
+        const index = options.chapters.findIndex((chapter) => chapter.id === id);
+        if (index < 0) throw new Error(`Unknown chapter: ${id}`);
+        const chapter = options.chapters[index]!,
+          changed = id !== current.values.chapter,
+          progress = Number(patch.sceneTime ?? (changed ? 0 : current.values.sceneTime));
+        if (!Number.isFinite(progress) || progress < 0 || progress > 1)
+          throw new Error('Chapter progress must be between zero and one');
+        const authored = changed
+          ? { ...defaults, ...chapter.valuesAt?.(localFrame(index, progress, frame.reduced)) }
+          : current.values;
+        return {
+          values: { ...authored, ...patch, chapter: chapter.id, sceneTime: progress },
+          time:
+            changed || patch.sceneTime !== undefined
+              ? chapterPosition(plan.timings[index]!, progress * chapter.seconds)
+              : current.time,
+        };
+      },
+      chapterAt(moment) {
+        if (moment.mode !== 'explore') return;
+        const timing = plan.timings.find((chapter) => chapter.id === moment.values.chapter);
+        if (!timing) return;
+        // At a shared end/start boundary the selected drawing owns its last paragraph.
+        const segments = plan.script.segments
+          ?.filter(
+            (segment) =>
+              segment.title && segment.start >= timing.start && segment.start < timing.end,
+          )
+          .toSorted((a, b) => a.start - b.start);
+        return (
+          segments?.findLast((segment) => segment.start <= moment.time)?.id ?? segments?.[0]?.id
+        );
+      },
       prepare(values, frame, mode, signal) {
         const selected = selection(values, frame, mode);
         const boundary = Boolean(
@@ -251,7 +292,7 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
           mode,
           values,
           beat: activeCue(chapter.script, progress * chapter.seconds),
-          input: (changes) => story!.explore({ ...story!.requested.values, ...changes }),
+          input: shell.input,
         };
         presentation.drawing.render(latest);
         shell.showParameters([

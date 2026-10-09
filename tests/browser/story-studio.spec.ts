@@ -1,14 +1,36 @@
 import { test, expect } from '@playwright/test';
 
-test('the measured Ink chapter keeps its grid and readable labels through input, theme and resize', async ({
+test('the area lesson keeps its measure and nearby reasoning through chapters, theme and resize', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 375, height: 760 });
   await page.goto('/area-lesson/index.html');
   await page.evaluate(() => window.galleryReady);
+  const sample = (id: string, progress = 0.6) =>
+    page.evaluate(
+      async ({ id, progress }) => {
+        const scene = (document.querySelector('.ve-scene') as any).scene;
+        await scene.control([{ type: 'cue', id, progress }]);
+        return scene.snapshot();
+      },
+      { id, progress },
+    );
+  const unit = await sample('unit', 0);
+  expect(unit.content.area).toBe(1);
+  expect(unit.content.visibleUnits).toBe(1);
+  expect(unit.content.pixelsPerCm).toBeGreaterThan(100);
+  await expect(page.locator('[data-area-reading]')).toContainText('один см²');
+  const firstRow = await sample('rows.row');
+  expect(firstRow.content.rowUnits).toEqual([3, 3]);
+  expect(firstRow.content.visibleUnits).toBe(3);
+  const repeated = await sample('rows.repeat', 0.9);
+  expect(repeated.content.visibleUnits).toBe(6);
+  await sample('rows.rule');
+  await expect(page.locator('[data-area-reading]')).toContainText('2 ряда');
   await page.evaluate(async () =>
     (document.querySelector('.ve-scene') as any).scene.control([
-      { type: 'parameters', values: { chapter: 'experiment', sceneTime: 1 } },
+      { type: 'cue', id: 'experiment', progress: 1 },
+      { type: 'mode', value: 'explore' },
     ]),
   );
   const active = page.locator('[data-chapter]:not([hidden])');
@@ -35,6 +57,20 @@ test('the measured Ink chapter keeps its grid and readable labels through input,
   );
   expect(wide.unreadableText).toEqual([]);
   expect(wide.clipped).toEqual([]);
+  const layout = await page.locator('.ve-explanation').evaluate((element) => {
+    const figure = element.querySelector('.ve-explanation-figure')!.getBoundingClientRect(),
+      notes = element.querySelector('.ve-explanation-notes')!.getBoundingClientRect();
+    return {
+      figureRight: figure.right,
+      notesLeft: notes.left,
+      overflow: document.documentElement.scrollWidth > innerWidth,
+    };
+  });
+  expect(layout.notesLeft).toBeGreaterThan(layout.figureRight);
+  expect(layout.overflow).toBe(false);
+  const returned = await sample('unit', 0);
+  expect(returned.content.area).toBe(unit.content.area);
+  expect(returned.content.visibleUnits).toBe(unit.content.visibleUnits);
 });
 
 for (const variant of ['', '?variant=mira'])

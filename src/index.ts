@@ -5,6 +5,8 @@ export * from './recipes/index.js';
 export * from './export/index.js';
 export { notebook } from './notebook.js';
 export { composition } from './composition.js';
+export { explanationLayout } from './layout/explanation.js';
+export { placeLabels, type LabelBox, type LabelLimits } from './layout/labels.js';
 export * from './layout/svg.js';
 export * from './scene.js';
 export { describeObject } from './scene-objects.js';
@@ -76,4 +78,10 @@ export type {
 
 export type { DeformationOptions } from './morph/construction/deformation.js';
 
-export type { SceneCommand, SceneInspection, SceneSearchResult, SceneRendering, SceneRenderMoment } from './scene-access.js';
+export type {
+  SceneCommand,
+  SceneInspection,
+  SceneSearchResult,
+  SceneRendering,
+  SceneRenderMoment,
+} from './scene-access.js';

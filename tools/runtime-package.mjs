@@ -164,10 +164,18 @@ export async function readPinnedRuntime(directory) {
     throw new Error(`Scene must declare ${name} in exactly one dependency field.`);
   const spec = declarations[0];
   if (typeof spec === 'string' && managed.test(spec)) {
-    if (!(await archivedBuild(spec, directory)))
+    const declaredBuild = await archivedBuild(spec, directory);
+    if (!declaredBuild)
       throw new Error(
         'The declared runtime archive is missing or changed. Restore it or explicitly migrate the project.',
       );
+    const installed = await installedRuntime(directory);
+    if (valid(installed) && installed.build === declaredBuild)
+      return {
+        root: installed.root,
+        api: JSON.parse(await readFile(join(installed.root, 'dist/api.json'), 'utf8')),
+        catalog: JSON.parse(await readFile(join(installed.root, 'examples/catalog.json'), 'utf8')),
+      };
     const archive = localFile(spec, directory);
     const read = async (file) =>
       JSON.parse((await execute('tar', ['-xOf', archive, 'package/' + file], command())).stdout);
@@ -175,7 +183,7 @@ export async function readPinnedRuntime(directory) {
       read('dist/api.json'),
       read('examples/catalog.json'),
     ]);
-    return { root: archive + '/package', api, catalog };
+    return { root: archive + '/package', archive, api, catalog };
   }
   const installed = await installedRuntime(directory);
   if (!valid(installed))

@@ -5,3 +5,4 @@ export * from './history.js';
 export * from './svg.js';
 export * from './ink-button.js';
 export * from './prediction.js';
+export * from './disclosure.js';

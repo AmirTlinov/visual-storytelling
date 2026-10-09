@@ -16,6 +16,7 @@ export interface StoryMoment<P, S = P> {
   readonly mode: StoryMode;
   readonly values: P;
   readonly state: S;
+  readonly chapter?: string;
 }
 export interface StoryError {
   readonly stage: 'stateAt' | 'derive' | 'prepare' | 'render';
@@ -31,6 +32,14 @@ export type StoryOptions<P, K extends string, S = P> = {
   script: Script<K>;
   audio?: HTMLAudioElement | null;
   stateAt(frame: Frame<K>): P;
+  /** Resolve an explicit user edit before accepting its complete condition and time. */
+  resolveInput?(
+    patch: Readonly<Partial<P>>,
+    current: StoryMoment<P, NoInfer<S>>,
+    frame: Frame<K>,
+  ): { values: P; time?: number };
+  /** Resolve a selected chapter at a shared time boundary from the accepted condition. */
+  chapterAt?(moment: StoryMoment<P, NoInfer<S>>): string | undefined;
   checkpoint?: StoryCheckpoint<P>;
   /** Prepare resources without changing the visible frame. Honour cancellation before effects. */
   prepare?(
@@ -50,6 +59,9 @@ export type StoryOptions<P, K extends string, S = P> = {
 );
 export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>) {
   const sheet = cueSheet(options.script);
+  const chapters = sheet.script.segments
+    ?.filter((chapter) => chapter.title)
+    .toSorted((a, b) => a.start - b.start);
   const media = matchMedia('(prefers-reduced-motion: reduce)');
   let disposed = false;
   const assertLive = () => {
@@ -108,7 +120,11 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
   }
   function compute(values: P, frame: Frame<K>, mode: StoryMode): Request {
     const state = options.derive ? options.derive(values, frame) : (values as unknown as S);
-    return { moment: Object.freeze({ values, state, time: frame.time, mode }), frame };
+    const moment: StoryMoment<P, S> = { values, state, time: frame.time, mode };
+    const chapter =
+      options.chapterAt?.(moment) ??
+      chapters?.findLast((chapter) => chapter.start <= frame.time)?.id;
+    return { moment: Object.freeze({ ...moment, chapter }), frame };
   }
   function fail(stage: StoryError['stage'], cause: unknown) {
     phase = 'failed';
@@ -222,6 +238,13 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
     }
     publish(next);
   }
+  function restorePosition(next: Request) {
+    change(() => {
+      for (const listener of seeks) listener(next.frame.time);
+      player.pause();
+      player.seek(next.frame.time);
+    }, next);
+  }
   let unsubscribe: () => void;
   try {
     unsubscribe = player.subscribe((playback, mediaFrame) => {
@@ -265,15 +288,14 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
           const values =
             mode === 'story' ? options.stateAt(frame) : options.checkpoint!.decode(value);
           const next = compute(values, frame, mode);
-          change(() => {
-            for (const listener of seeks) listener(target);
-            player.pause();
-            player.seek(target);
-          }, next);
+          restorePosition(next);
         },
       } satisfies SceneSubject),
     get currentTime() {
       return player.state.time;
+    },
+    get currentChapter() {
+      return requested.moment.chapter;
     },
     update,
     get requested() {
@@ -287,6 +309,47 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
     },
     get error() {
       return error;
+    },
+    /** Restore flat inputs and their position as one accepted condition, before preparation. */
+    restoreInputs(patch: Partial<P>, position: { time: number; mode: StoryMode }) {
+      assertLive();
+      if (!Number.isFinite(position.time) || !['story', 'explore'].includes(position.mode))
+        throw new Error('Invalid story input position');
+      const time = Math.max(0, Math.min(options.script.duration, position.time));
+      const frame = sheet.at(time, forcedReduced ?? media.matches);
+      const authored = options.stateAt(frame);
+      if (position.mode === 'story') return restorePosition(compute(authored, frame, 'story'));
+      const resolved = options.resolveInput
+        ? options.resolveInput(patch, compute(authored, frame, 'story').moment, frame)
+        : { values: { ...authored, ...patch } };
+      const target = resolved.time ?? time;
+      if (!Number.isFinite(target)) throw new Error('Story time must be finite');
+      restorePosition(
+        compute(
+          resolved.values,
+          sheet.at(Math.max(0, Math.min(options.script.duration, target)), frame.reduced),
+          'explore',
+        ),
+      );
+    },
+    /** Apply only the supplied fields; the subject resolves transitions before publication. */
+    input(patch: Partial<P>) {
+      assertLive();
+      const resolved = options.resolveInput?.(patch, requested.moment, requested.frame) ?? {
+        values: { ...requested.moment.values, ...patch },
+      };
+      const time = resolved.time ?? requested.moment.time;
+      if (!Number.isFinite(time)) throw new Error('Story time must be finite');
+      const target = Math.max(0, Math.min(options.script.duration, time));
+      const next = compute(
+        resolved.values,
+        sheet.at(target, forcedReduced ?? media.matches),
+        'explore',
+      );
+      change(() => {
+        player.pause();
+        if (player.state.time !== target) player.seek(target);
+      }, next);
     },
     explore(values: P) {
       assertLive();

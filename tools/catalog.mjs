@@ -8,17 +8,17 @@ import { scenePage } from './scene-entry.mjs';
 const workspace = fileURLToPath(new URL('../', import.meta.url));
 const quote = (value) => `'${value.replaceAll("'", "'\"'\"'")}'`;
 
-export function exampleDetails(entry) {
-  const directory = resolve(workspace, 'examples', entry.id);
-  const built = resolve(workspace, 'site', entry.id, entry.page);
+export function exampleDetails(entry, root = workspace) {
+  const directory = resolve(root, 'examples', entry.id);
+  const built = resolve(root, 'site', entry.id, entry.page ?? scenePage);
   return {
     ...entry,
     directory,
     source: resolve(directory, entry.source),
     page: existsSync(built) ? built : undefined,
     preview: resolve(directory, 'preview.png'),
-    guides: (entry.guides ?? []).map((path) => resolve(workspace, path)),
-    create: `node ${quote(resolve(workspace, 'tools/scene.mjs'))} new ./my-story --example ${entry.id}`,
+    guides: (entry.guides ?? []).map((path) => resolve(root, path)),
+    create: `node ${quote(resolve(root, 'tools/scene.mjs'))} new ./my-story --example ${entry.id}`,
   };
 }
 
@@ -27,7 +27,12 @@ export function describeExamples(catalog, { query = '', group, recommended, json
     throw new Error(`Choose a group: ${Object.keys(exampleGroups).join(', ')}`);
   const entries = selectExamples(catalog, { query, group, recommended });
   const exact = entries.find((entry) => entry.id === query);
-  if (json) return JSON.stringify((exact ? [exact] : entries).map(exampleDetails), null, 2);
+  if (json)
+    return JSON.stringify(
+      (exact ? [exact] : entries).map((entry) => exampleDetails(entry)),
+      null,
+      2,
+    );
   if (exact) {
     const entry = exampleDetails(exact);
     return [
@@ -37,6 +42,7 @@ export function describeExamples(catalog, { query = '', group, recommended, json
       '',
       `Кадр: ${entry.preview}`,
       `Исходник: ${entry.source}`,
+      ...(entry.editing ?? []).map(({ file, purpose }) => `Правка: ${file} — ${purpose}`),
       ...(entry.page ? [`Страница: ${entry.page}`] : []),
       ...entry.guides.map((path) => `Справка: ${path}`),
       '',

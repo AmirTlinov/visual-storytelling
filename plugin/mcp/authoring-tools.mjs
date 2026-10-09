@@ -150,7 +150,7 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_help',
     {
       description:
-        'Discover projects and examples with the shared catalog filters, or read precise public API declarations. queries accepts up to 12 API names in one response. projectId reads the pinned archive before a first successful build or dependency installation. query searches the same example tags and vocabulary as the gallery.',
+        'Discover projects and examples with the shared catalog filters, including previews and editing points. queries accepts up to 12 public API names; combine with query to find a foundation and its APIs together. projectId reads the pinned archive before a first successful build or dependency installation. query searches the same example tags and vocabulary as the gallery.',
       inputSchema: {
         query: z.string().max(300).optional(),
         queries: z.array(z.string().min(1).max(300)).min(1).max(12).optional(),
@@ -161,8 +161,6 @@ export function authoringTools(server, runtime, uri, safely) {
       annotations: read,
     },
     safely(async (args) => {
-      if (args.query && args.queries)
-        throw new Error('Use query for search or queries for batched API declarations.');
       const value = await runtime.call(args.query || args.queries ? 'help' : 'catalog', args);
       return result(value, value.text ?? 'Доступные проекты и основы.');
     }),

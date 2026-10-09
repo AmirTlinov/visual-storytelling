@@ -2,7 +2,7 @@ import { MotionPathPlugin } from 'gsap/MotionPathPlugin';
 import { glyphs } from '../glyphs.js';
 import {
   handwritingFamily,
-  handwritingMetrics,
+  handwritingTransform,
   handwritingProfiles,
   type Handwriting,
 } from '../handwriting.js';
@@ -40,8 +40,7 @@ export function fusionText(value: string, options: FusionTextOptions = {}): Fusi
   const context = document.createElement('canvas').getContext('2d')!;
   context.font = `400 ${size}px ${font}`;
   const family = font.split(',')[0]!.trim().replaceAll(/["']/g, ''),
-    profile = Object.values(handwritingProfiles).find((hand) => hand.family === family),
-    slant = Math.tan(((profile?.slant ?? 0) * Math.PI) / 180);
+    profile = Object.values(handwritingProfiles).find((hand) => hand.family === family);
   const paths: InkPath[] = [],
     letters: FusionGlyph[] = [],
     words: FusionText['words'] = [];
@@ -90,12 +89,7 @@ export function fusionText(value: string, options: FusionTextOptions = {}): Fusi
         local = [];
         const strokes = profile ? glyphs[char] : undefined;
         if (strokes && profile) {
-          const sx = advance / handwritingMetrics.glyphWidth,
-            sy =
-              (size * handwritingMetrics.capHeight) /
-              handwritingMetrics.em /
-              handwritingMetrics.baseline,
-            shear = sy * slant;
+          const [sx, , shear, sy, ox, oy] = handwritingTransform(char, advance, size, profile);
           for (const d of strokes) {
             // Measure each path once. Repeated SVG point queries redo native curve
             // traversal and stall the first frame that needs a new character.
@@ -117,16 +111,15 @@ export function fusionText(value: string, options: FusionTextOptions = {}): Fusi
                     path,
                     Math.min(length, at + 0.01) / length,
                   );
-                const tx = (after.x - before.x) * sx - (after.y - before.y) * shear,
+                const tx = (after.x - before.x) * sx + (after.y - before.y) * shear,
                   ty = (after.y - before.y) * sy,
-                  norm = Math.hypot(tx, ty) || 1,
-                  y = (point.y - handwritingMetrics.baseline) * sy;
+                  norm = Math.hypot(tx, ty) || 1;
                 return [
-                  advance * handwritingMetrics.inset + point.x * sx - y * slant,
-                  y,
+                  point.x * sx + point.y * shear + ox,
+                  point.y * sy + oy,
                   // Support of the transformed round pen along the screen-space normal.
                   (profile.stroke / 2) *
-                    Math.hypot((sx * ty) / norm, (sy * tx + shear * ty) / norm),
+                    Math.hypot((sx * ty) / norm, (sy * tx - shear * ty) / norm),
                 ];
               }),
             );

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
-import { composeChapters, chapterTime } from '../dist/story/composition-plan.js';
+import { composeChapters, chapterTime, chapterPosition } from '../dist/story/composition-plan.js';
 import { renderer } from '../tools/render.mjs';
 import { assetURLs } from '../tools/asset-urls.mjs';
 
@@ -50,6 +50,11 @@ test('narrated local cues retain intervening pauses, words and reversible chapte
   assert.deepEqual(
     [7, 0, 5, 3, 9, 1, 8].map((time) => chapterTime(plan.timings[0], time)),
     [3, 0, 2, 1, 4, 0, 4],
+  );
+  assert.deepEqual(
+    [0, 1, 2, 3, 4].map((time) => chapterPosition(plan.timings[0], time)),
+    [2, 3, 6, 7, 9],
+    'an explored pose follows its narration pause on the existing clock',
   );
   assert.deepEqual(
     plan.script.segments

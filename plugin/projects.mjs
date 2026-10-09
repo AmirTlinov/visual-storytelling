@@ -61,6 +61,10 @@ export class ProjectStore {
   }
   async register(path, options) {
     path = await realpath(path);
+    if (!(await stat(path)).isDirectory())
+      throw new Error(
+        'Open the project directory or its story.vstory file. Open a standalone HTML export in a browser; editing requires its source project.',
+      );
     return this.serial('path:' + path, () => this.registerPath(path, options));
   }
   async registerPath(path, { title, example } = {}) {

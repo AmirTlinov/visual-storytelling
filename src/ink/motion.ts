@@ -12,7 +12,7 @@ interface TextInk {
 import { measureText } from './text-measure.js';
 import { glyphs as SketchPencil } from './glyphs.js';
 import { SVG_NS as NS, clamp } from './dom.js';
-import { handwritingMetrics, handwritingProfiles, type Handwriting } from './handwriting.js';
+import { handwritingTransform, handwritingProfiles, type Handwriting } from './handwriting.js';
 /* Seekable pen strokes. Scene composition and playback belong to their own owners. */
 
 const paths = new WeakMap<SVGPathElement, PathInk>(),
@@ -89,9 +89,7 @@ function prepareText(text: SVGTextElement) {
       Object.values(handwritingProfiles).find(({ family }) =>
         style.fontFamily.split(',').some((font) => font.trim().replaceAll(/["']/g, '') === family),
       ) ??
-      handwritingProfiles.body,
-    verticalScale =
-      (size * handwritingMetrics.capHeight) / handwritingMetrics.em / handwritingMetrics.baseline;
+      handwritingProfiles.body;
   group.setAttribute('aria-hidden', 'true');
   group.setAttribute('data-written-text', text.id);
   group.style.pointerEvents = 'none';
@@ -111,7 +109,7 @@ function prepareText(text: SVGTextElement) {
         letter = document.createElementNS(NS, 'g');
       letter.setAttribute(
         'transform',
-        `translate(${position.x + advance * handwritingMetrics.inset} ${position.y}) skewX(${-profile.slant}) scale(${advance / handwritingMetrics.glyphWidth} ${verticalScale}) translate(0 ${-handwritingMetrics.baseline})`,
+        `translate(${position.x} ${position.y}) matrix(${handwritingTransform(char, advance, size, profile).join(' ')})`,
       );
       group.append(letter);
       glyph.forEach((d) => {
