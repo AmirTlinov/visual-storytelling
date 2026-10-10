@@ -76,6 +76,8 @@ export interface SceneHandle extends SceneRuntime {
   /** Extend capabilities through their owner, retaining live getters and method receivers. */
   extend<T extends object>(extension: T & Partial<SceneRuntime>): this & T;
   connectHost(host: SceneHost): () => void;
+  /** Register presentation resources with the existing owner. Runs once, including failed disposal. */
+  onDispose(cleanup: () => void): () => void;
   readonly restoreNotices?: readonly SceneRestoreNotice[];
   capture(options?: SceneCaptureOptions): SceneCheckpoint;
   restore(state: SceneCheckpoint): Promise<SceneInspection>;
@@ -98,6 +100,7 @@ export function mountScene<T extends SceneRuntime>(
 ): T & SceneHandle {
   if (root.scene) throw new Error('Dispose the mounted scene before replacing it');
   let disposed = false;
+  const disposal = new Set<() => void>();
   let disconnectHost: (() => void) | undefined;
   let restoreNotices: readonly SceneRestoreNotice[] = [];
   const subjects = sceneObjects(root);
@@ -130,6 +133,7 @@ export function mountScene<T extends SceneRuntime>(
       'dispose',
       'extend',
       'connectHost',
+      'onDispose',
       'capture',
       'restore',
       'inspect',
@@ -177,17 +181,34 @@ export function mountScene<T extends SceneRuntime>(
     disconnectHost = connectSceneHost(host);
     return disconnectHost;
   };
+  handle.onDispose = (cleanup) => {
+    assertLive();
+    disposal.add(cleanup);
+    return () => {
+      disposal.delete(cleanup);
+    };
+  };
   Object.defineProperty(handle, 'restoreNotices', { get: () => restoreNotices });
   handle.dispose = () => {
     if (disposed || root.scene !== handle) return;
     disposed = true;
-    disconnectHost?.();
-    subjects.dispose();
-    try {
-      runtime.dispose();
-    } finally {
-      if (root.scene === handle) delete root.scene;
+    const errors: unknown[] = [];
+    for (const cleanup of [
+      () => disconnectHost?.(),
+      () => subjects.dispose(),
+      () => runtime.dispose(),
+      ...disposal,
+    ]) {
+      try {
+        cleanup();
+      } catch (error) {
+        errors.push(error);
+      }
     }
+    disposal.clear();
+    if (root.scene === handle) delete root.scene;
+    if (errors.length === 1) throw errors[0];
+    if (errors.length) throw new AggregateError(errors, 'Scene disposal failed.');
   };
   const access = Object.defineProperties(
     {},

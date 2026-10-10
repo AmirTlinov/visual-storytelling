@@ -8,6 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { projectFiles } from '../plugin/project-files.mjs';
+import { connectRuntime } from '../plugin/runtime/client.mjs';
 
 test(
   'MCP review uses pinned inputs, owns artifacts, cancels and retries through the job queue',
@@ -16,8 +17,31 @@ test(
     const directory = await mkdtemp(join(tmpdir(), 'story-review-job-'));
     const data = join(directory, 'data');
     const client = new Client({ name: 'review-job-contract', version: '1' });
+    let kernelPid, runtime;
     t.after(async () => {
       await client.close();
+      runtime?.close();
+      // The stdio process is a client. Its independent kernel can still be
+      // saving a queued rebuild; stop and await that owner before deleting data.
+      if (kernelPid) {
+        try {
+          process.kill(kernelPid, 'SIGTERM');
+        } catch (error) {
+          if (error.code !== 'ESRCH') throw error;
+        }
+        const deadline = Date.now() + 10000;
+        let running = true;
+        while (running && Date.now() < deadline) {
+          try {
+            process.kill(kernelPid, 0);
+            await delay(25);
+          } catch (error) {
+            if (error.code !== 'ESRCH') throw error;
+            running = false;
+          }
+        }
+        assert.equal(running, false, 'the fixture kernel finishes its writes before cleanup');
+      }
       await rm(directory, { recursive: true, force: true });
     });
     await client.connect(
@@ -28,6 +52,15 @@ test(
         env: { ...process.env, VISUAL_STORY_DATA_DIR: data },
       }),
     );
+    const previousData = process.env.VISUAL_STORY_DATA_DIR;
+    try {
+      process.env.VISUAL_STORY_DATA_DIR = data;
+      runtime = await connectRuntime(resolve('.plugin-release/plugin/dist'));
+      kernelPid = (await runtime.call('hello')).pid;
+    } finally {
+      if (previousData === undefined) delete process.env.VISUAL_STORY_DATA_DIR;
+      else process.env.VISUAL_STORY_DATA_DIR = previousData;
+    }
     const call = async (name, args) => {
       const response = await client.callTool({ name, arguments: args });
       assert.equal(response.isError, undefined, JSON.stringify(response));

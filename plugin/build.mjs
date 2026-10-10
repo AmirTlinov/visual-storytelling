@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -12,6 +12,7 @@ import { scenePage } from '../tools/scene-entry.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url)),
   out = join(root, 'plugin/dist');
 await mkdir(out, { recursive: true });
+await rm(join(out, 'example.json'), { force: true });
 if ((await packageInfo(root)).status !== 'current')
   throw new Error('Build the core before packaging the plugin: npm run build.');
 const catalog = await readCatalog();
@@ -34,8 +35,6 @@ for (const id of shippedExamples) {
       html,
     }),
   );
-  if (id === 'explorer-svg')
-    await writeFile(join(out, 'example.json'), await readFile(join(out, 'examples', id + '.json')));
 }
 const app = await build({
   entryPoints: [join(root, 'plugin/ui/app.mjs')],

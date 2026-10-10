@@ -251,6 +251,7 @@ const script = String.raw`
   const format=x=>x.toFixed(2);
   const nodes=new Map(Array.from(byID('geometry').querySelectorAll('[id]'),node=>[node.id,node]));
   const leaders=new Map(),covers=new Map();
+  const overflow=SvgLayout.overflow(labels,{region:aperture});
   const leaderLayer=SvgLayout.element('g',{'mask':'url(#annotation-ink-mask)'});
   const mask=SvgLayout.element('mask',{
     id:'annotation-ink-mask',maskUnits:'userSpaceOnUse',maskContentUnits:'userSpaceOnUse'
@@ -283,7 +284,7 @@ const script = String.raw`
     const point=p=>{const q=new DOMPoint(p.x,p.y).matrixTransform(worldToLabels);return{x:q.x,y:q.y};};
     const route=r=>({...r,start:point(r.start),end:point(r.end),
       width:r.width*Math.hypot(worldToLabels.a,worldToLabels.b)});
-    const avoid=[byID('sphere-surface'),byID('tensor-surface'),byID('mapping'),byID('mapping-label'),
+    const avoid=[overflow.reserve(),byID('sphere-surface'),byID('tensor-surface'),byID('mapping'),byID('mapping-label'),
       byID('sphere-label'),byID('tensor-label'),...scene.routes.map(route)];
     const ordered=[...scene.annotations].sort((a,b)=>Number(b.role==='vector')-Number(a.role==='vector'));
     for(const item of ordered){
@@ -298,6 +299,10 @@ const script = String.raw`
         avoid.push(label,link);
       }else leader.setAttribute('visibility','hidden');
     }
+    overflow.update(ordered.filter(item=>nodes.get(item.id).dataset.layoutStatus==='overflow').map(item=>({
+      id:item.id,label:nodes.get(item.id).textContent,
+      subject:item.id==='sphere-vector-label'?'Исходный вектор':item.id==='tensor-vector-label'?'Преобразованный вектор':'Главное направление'
+    })));
     for(const item of ordered){
       const label=nodes.get(item.id),cover=covers.get(item.id);
       const ink=SvgLayout.box(label,labels);
@@ -335,7 +340,7 @@ const script = String.raw`
     camera:orbit,
     svg:()=>root,
     snapshot:()=>({t,view:orbit.pose}),
-    dispose(){lifetime.abort();orbit.dispose();}
+    dispose(){lifetime.abort();overflow.dispose();orbit.dispose();}
   },{
     parameters:[{key:'t',label:'Преобразование',type:'range',value:1,min:0,max:1,step:.02}],
     values:()=>({t}),

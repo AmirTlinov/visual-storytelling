@@ -21,6 +21,8 @@ let scene,
 const gestures = new Set();
 const hostRequests = new Map();
 const widgetListeners = new Map();
+const presentationListeners = new Set();
+let presentation = config.presentation ?? { mode: 'inline', canExpand: false };
 let preparedReplacement;
 function beforePlay({ signal }) {
   if (config.preview || suspended) throw new Error('This preview cannot play.');
@@ -43,10 +45,24 @@ function beforePlay({ signal }) {
     else send({ type: 'host-request', action: 'focus', id, report: report('play-intent') });
   });
 }
-addEventListener('scene-frame-reading', (event) => {
-  if (disposed || config.preview || suspended) return;
-  send({ type: 'host-request', action: 'reading', enabled: Boolean(event.detail?.reading) });
-});
+function requestExpanded() {
+  if (disposed || config.preview || suspended)
+    return Promise.reject(new Error('View is unavailable.'));
+  return new Promise((resolve, reject) => {
+    const id = crypto.randomUUID();
+    const finish = (error) => {
+      clearTimeout(timer);
+      hostRequests.delete(id);
+      error ? reject(error) : resolve();
+    };
+    const timer = setTimeout(
+      () => finish(new Error('Codex did not confirm the display mode. Try again.')),
+      9000,
+    );
+    hostRequests.set(id, finish);
+    send({ type: 'host-request', action: 'expand', id });
+  });
+}
 const completed = (pending, signal) => {
   signal?.throwIfAborted();
   if (!signal) return pending;
@@ -80,7 +96,11 @@ const rendered = async (signal) => {
   observationError = undefined;
 };
 const send = (value) => {
-  if (!disposed) parent.postMessage({ channel, generation: config.generation, ...value }, '*');
+  if (!disposed)
+    parent.postMessage(
+      { channel, sessionId: config.sessionId, generation: config.generation, ...value },
+      '*',
+    );
 };
 async function acknowledge(request, reason) {
   const controller = new AbortController();
@@ -204,9 +224,25 @@ addEventListener('message', (event) => {
   if (
     event.source !== parent ||
     event.data?.channel !== channel ||
+    event.data.sessionId !== config.sessionId ||
     event.data.generation !== config.generation
   )
     return;
+  if (event.data.type === 'host-presentation') {
+    const value = event.data.value;
+    if (
+      !value ||
+      !['inline', 'expanded'].includes(value.mode) ||
+      typeof value.canExpand !== 'boolean'
+    )
+      return;
+    if (value.mode !== presentation.mode || value.canExpand !== presentation.canExpand) {
+      presentation = { mode: value.mode, canExpand: value.canExpand };
+      for (const listener of presentationListeners) listener(presentation);
+      scheduleLayout();
+    }
+    return;
+  }
   if (event.data.type === 'host-response') {
     hostRequests.get(event.data.id)?.(event.data.error ? new Error(event.data.error) : undefined);
     return;
@@ -395,6 +431,14 @@ async function ready() {
       throw new Error('Scene needs the current SceneHandle. Rebuild it with Visual Storytelling.');
     scene.pause?.();
     scene.connectHost?.({
+      presentation: {
+        read: () => presentation,
+        requestExpanded,
+        subscribe: (listener) => {
+          presentationListeners.add(listener);
+          return () => presentationListeners.delete(listener);
+        },
+      },
       beforePlay,
       widgetState: {
         read: (id) => config.widgetState?.[id],
@@ -438,6 +482,8 @@ if (document.readyState === 'complete') void ready();
 else addEventListener('load', ready, { once: true });
 addEventListener('pagehide', () => {
   disposed = true;
+  for (const finish of hostRequests.values()) finish(new Error('View closed.'));
+  presentationListeners.clear();
   commandController?.abort(new Error('View closed.'));
   clearTimeout(leaseTimer);
   clearTimeout(reportTimer);

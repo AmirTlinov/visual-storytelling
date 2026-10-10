@@ -354,6 +354,7 @@ test('nested scene assets and data scripts survive building, serving and offline
       </body></html>`,
     );
     await put('artifacts/review/index.html', '<p>Generated report</p>');
+    await put('index.html', '<!doctype html><main>Scene entry</main>');
     await buildScene(source, output);
     await buildScene(source, output); // Never treat the prior build or its reports as source.
     assert.deepEqual(await readFile(join(output, 'assets/dot.png')), png);

@@ -52,9 +52,12 @@ test('one morph lookup explains its inputs without unrelated implementation help
   assert.match(text, /export type MorphTime = number \| Frame/);
   assert.doesNotMatch(text, /declare function (?:bodySize|shapeSize|motionProgress)\(/);
   assert.match(text, /Related API: visual-story api Viewport3D/);
-  const unknown = await describeAPI(root, 'Viewport');
+  const viewport = await describeAPI(root, 'Viewport');
+  assert.deepEqual(viewport.missing, []);
+  assert.match(viewport.text, /import \{ SvgLayout \}/);
+  assert.match(viewport.text, /declare function viewport\(/);
+  const unknown = await describeAPI(root, 'UnimplementedViewport');
   assert.equal(unknown.missing.length, 1);
-  assert.match(unknown.text, /Viewport3D/);
   const panel = await describeAPI(root, 'MathPanel');
   assert.match(panel.text, /ModelPanel/);
   const method = await describeAPI(root, 'SceneMount.attachStory');

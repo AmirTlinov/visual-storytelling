@@ -6,7 +6,7 @@ import { assetURLs } from '../tools/asset-urls.mjs';
 
 async function fixture(contents, work) {
   const bundled = await build({
-    stdin: { contents, resolveDir: process.cwd() },
+    stdin: { contents: `import './dist/style.css';\n${contents}`, resolveDir: process.cwd() },
     bundle: true,
     write: false,
     outdir: '.',
@@ -18,7 +18,6 @@ async function fixture(contents, work) {
   try {
     const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
     await page.setContent('<main class="ve-scene" style="position:relative;width:600px"></main>');
-    await page.addStyleTag({ path: 'src/styles/scene.css' });
     for (const output of bundled.outputFiles.filter((file) => file.path.endsWith('.css')))
       await page.addStyleTag({ content: output.text });
     await page.addScriptTag({
@@ -375,7 +374,11 @@ test('3D hit testing, labels, keyboard and provenance share stable semantic obje
       await page.waitForFunction(
         () =>
           getComputedStyle(document.querySelector('button[data-object="amount"]')).outlineStyle ===
-          'solid',
+          'dashed',
+      );
+      assert.equal(
+        await page.locator('[data-selection-highlight][data-object="amount"]').count(),
+        1,
       );
       await page.keyboard.press('Escape');
       assert.deepEqual(await page.evaluate(() => lab.root.scene.selected), []);
@@ -389,7 +392,11 @@ test('3D hit testing, labels, keyboard and provenance share stable semantic obje
         lab.activations = 0;
         lab.root.addEventListener('scene-selection', () => lab.activations++);
       });
-      await page.mouse.click(area.x + area.width / 2, area.y + area.height / 2);
+      const nestedArea = await page.locator('canvas').first().boundingBox();
+      await page.mouse.click(
+        nestedArea.x + nestedArea.width / 2,
+        nestedArea.y + nestedArea.height / 2,
+      );
       assert.deepEqual(await page.evaluate(() => lab.root.scene.selected), ['amount']);
       assert.equal(
         await page.evaluate(() => lab.activations),
@@ -489,7 +496,7 @@ test('SVG math parts share inspect, find, pointer, keyboard and provenance throu
     import {SceneShell} from './src/scene.ts';
     import {MathMorph2D} from './src/morph/svg.ts';
     import {MathMorph} from './src/morph/math.ts';
-    import './src/style.css';
+    import './dist/style.css';
     const root=document.querySelector('main'), shell=SceneShell.mount(root,{title:'SVG math'});
     const morph=MathMorph2D.mount(shell.stage,MathMorph.dot([1,2,3],[4,5,6]),{id:'dot'});
     window.lab={root,shell,morph,MathMorph};
@@ -503,8 +510,14 @@ test('SVG math parts share inspect, find, pointer, keyboard and provenance throu
       const target = page.locator(`[data-object="${input.id}"]`);
       await target.click();
       assert.deepEqual(await page.evaluate(() => lab.root.scene.selected), [input.id]);
-      assert.equal(await target.evaluate((node) => getComputedStyle(node).outlineStyle), 'solid');
+      assert.equal(await target.getAttribute('aria-pressed'), 'true');
+      assert.equal(await target.evaluate((node) => node.matches(':focus-visible')), false);
+      await page.keyboard.press('Tab');
       await target.focus();
+      assert.equal(await target.evaluate((node) => node.matches(':focus-visible')), true);
+      assert.equal(await target.evaluate((node) => getComputedStyle(node).outlineStyle), 'dashed');
+      assert.equal(await page.locator('[data-selection-highlight]').count(), 1);
+      assert.equal(await target.getAttribute('data-selection-highlight'), '');
       await page.keyboard.press('Enter');
       assert.deepEqual(await page.evaluate(() => lab.root.scene.selected), []);
 
@@ -554,7 +567,7 @@ test('a remounted composition restores the active chapter camera and semantic se
     `
     import {SceneStory} from './src/story/composition.ts';
     import {Viewport3D, ThreeKit as T} from './src/viewport/index.ts';
-    import './src/style.css';
+    import './dist/style.css';
     const root=document.querySelector('main'); let active;
     const chapters=['opening','space','end'].map(id=>({id,title:id,text:id,seconds:2,
       async mount(parent){

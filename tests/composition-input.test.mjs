@@ -72,7 +72,7 @@ test('chapter edits, prediction, history and seeks share the accepted lesson pos
     );
     assert.equal(state.shown.content.area, 6);
     assert.equal(state.chapter, 'prediction.try');
-    assert.equal(state.navigation, 'Записываем прогноз перед удвоением ширины.');
+    assert.equal(state.navigation, 'Удвоить ширину');
     assert.equal(state.time, state.clock);
 
     await page.getByRole('button', { name: '24 см²', exact: true }).click();
@@ -105,7 +105,7 @@ test('chapter edits, prediction, history and seeks share the accepted lesson pos
     assert.equal(state.shown.chapter, 'rows');
     assert.equal(state.shown.content.area, 6);
     assert.equal(state.chapter, 'rows.rule');
-    assert.equal(state.navigation, 'Три умножить на два равно шести квадратным сантиметрам.');
+    assert.equal(state.navigation, 'Повторение → умножение');
     assert.equal(state.time, state.clock);
     assert.equal(state.playing, false);
     const boundary = await page.evaluate(() => lesson.scene.capture());

@@ -338,8 +338,9 @@ test('film authoring: input, response, selection and captions rewind; logical co
               artwork.top >= stage.top - 0.1 &&
               artwork.right <= stage.right + 0.1 &&
               artwork.bottom <= stage.bottom + 0.1,
-            transportInside:
-              controls.top >= stage.bottom - 0.1 && controls.bottom <= outer.bottom + 0.1,
+            transportOutside:
+              controls.top >= outer.bottom - 0.1 &&
+              !e.contains(document.querySelector('[data-player]')),
           };
         });
       assert(Math.abs(geometry.outer - 16 / 9) < 0.005);
@@ -347,7 +348,7 @@ test('film authoring: input, response, selection and captions rewind; logical co
       assert(geometry.aligned < 1);
       assert(Math.abs(geometry.artworkRatio - 16 / 9) < 0.005);
       assert(geometry.artworkInside);
-      assert(geometry.transportInside);
+      assert(geometry.transportOutside);
     }
     assert(
       await page.evaluate(() =>

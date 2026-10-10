@@ -6,6 +6,39 @@ import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { PNG } from 'pngjs';
 import { svgRuntime } from '../tools/svg-runtime.mjs';
+import { videoDimensions } from '../tools/video-dimensions.mjs';
+import { exportVideo } from '../tools/video-export.mjs';
+import { deliver } from '../tools/deliver.mjs';
+
+test('all video sizes use one exact 16:9 contract before any resources are opened', async () => {
+  assert.deepEqual(videoDimensions(), { width: 960, height: 540 });
+  for (const [input, expected] of [
+    [{ width: 375 }, { width: 384, height: 216 }],
+    [{ height: 640 }, { width: 1152, height: 648 }],
+    [
+      { width: 1280, height: 720 },
+      { width: 1280, height: 720 },
+    ],
+    [
+      { width: 1008, height: 567 },
+      { width: 1024, height: 576 },
+    ],
+  ])
+    assert.deepEqual(videoDimensions(input), expected);
+  for (const dimensions of [
+    { width: 640, height: 480 },
+    { width: 375, height: 640 },
+  ]) {
+    assert.throws(() => videoDimensions(dimensions), /16:9/);
+    await assert.rejects(exportVideo({ directory: '/no-resources', ...dimensions }), /16:9/);
+    await assert.rejects(
+      deliver('/no-resources', { formats: ['mp4'], video: { kind: 'story' }, ...dimensions }),
+      /16:9/,
+    );
+  }
+  for (const dimensions of [{ width: 0 }, { height: NaN }, { height: 3840 }])
+    assert.throws(() => videoDimensions(dimensions), /dimensions/);
+});
 
 test('MP4 keeps a circle circular when a chapter changes the HTML frame height', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'story-video-'));
@@ -21,8 +54,9 @@ test('MP4 keeps a circle circular when a chapter changes the HTML frame height',
       VisualStory.mountScene(document.querySelector('main'),{duration:2,dispose(){},pause(){},seek(t){document.querySelector('h1').textContent=t<1?'Short':'A much longer chapter heading that wraps into several lines above the same circular shape';}});
       </script></body></html>`,
     );
-    for (const height of [undefined, 640]) {
-      const output = join(directory, `circle-${height ?? 'auto'}.mp4`);
+    for (const dimensions of [{ width: 375 }, { height: 640 }]) {
+      const expected = videoDimensions(dimensions);
+      const output = join(directory, `circle-${expected.width}.mp4`);
       execFileSync(
         process.execPath,
         [
@@ -33,11 +67,9 @@ test('MP4 keeps a circle circular when a chapter changes the HTML frame height',
           'mp4',
           '--fps',
           '2',
-          '--width',
-          '375',
           '--out',
           output,
-          ...(height ? ['--height', String(height)] : []),
+          ...Object.entries(dimensions).flatMap(([key, value]) => ['--' + key, String(value)]),
         ],
         { stdio: 'pipe' },
       );
@@ -81,8 +113,8 @@ test('MP4 keeps a circle circular when a chapter changes the HTML frame height',
           Math.abs((maxX - minX) / (maxY - minY) - 1) < 0.04,
           'circle must preserve its aspect ratio',
         );
-        if (height) assert.equal(image.height, height);
-        else assert(Math.abs(image.width / image.height - 16 / 9) < 0.01, 'default video is 16:9');
+        assert.deepEqual({ width: image.width, height: image.height }, expected);
+        assert.equal(image.width * 9, image.height * 16, 'video is exactly 16:9');
         frames.push([image.width, image.height]);
       }
       assert.deepEqual(frames[0], frames[1]);

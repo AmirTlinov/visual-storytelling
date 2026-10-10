@@ -12,6 +12,31 @@ test('moving annotations retain their prepared order through coincident anchors'
   assert.ok(after[1].y >= after[0].y + after[0].height + 8 - 1e-5);
 });
 
+test('fading neighbours keep a readable gap while sharing displacement continuously on rewind', () => {
+  const layout = (opacity) => placeLabels([{ ...box(100, 100), opacity }, box(100, 100)], area);
+  const before = layout(0);
+  assert.ok(Math.abs(layout(1e-6)[1].y - before[1].y) < 0.001);
+  const samples = [0, 1e-6, 0.01, 0.1, 0.5, 1].map((opacity) => [opacity, layout(opacity)]);
+  for (let i = 1; i < samples.length; i++) assert.ok(samples[i][1][1].y >= samples[i - 1][1][1].y);
+  for (const [opacity, shown] of samples)
+    if (opacity > 0) {
+      assert.ok(shown[0].y + shown[0].height + 8 <= shown[1].y + 1e-7);
+      verify(shown, area);
+    }
+  for (const [opacity, expected] of samples.reverse()) assert.deepEqual(layout(opacity), expected);
+});
+
+test('fractional opacity cannot weaken clearance at bounds or around opaque obstacles', () => {
+  const obstacles = [{ x: 80, y: 65, width: 150, height: 40 }];
+  const labels = [box(100, 0), box(100, 0), box(100, 0), box(100, 110)];
+  for (const opacity of [1e-6, 0.01, 0.5, 1]) {
+    const preferred = labels.map((label, i) => ({ ...label, opacity: i % 2 ? 1 : opacity }));
+    const result = placeLabels(preferred, area, { obstacles });
+    verify(result, area, { obstacles });
+    assert.deepEqual(placeLabels(preferred, area, { obstacles }), result);
+  }
+});
+
 test('hard clearance includes tall, boundary-constrained and nonadjacent annotations', () => {
   const labels = placeLabels([box(0, 0, 100), box(250, 0), box(0, 0, 100)], area);
   assert.ok(labels[2].y >= labels[0].y + 108 - 1e-5);

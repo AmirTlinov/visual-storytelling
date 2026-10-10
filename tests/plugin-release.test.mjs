@@ -226,7 +226,7 @@ test(
       );
       await app
         .frameLocator('#scene')
-        .getByRole('button', { name: 'Читать крупнее', exact: true })
+        .getByRole('button', { name: 'Открыть крупнее', exact: true })
         .click();
       await app.locator('html[data-mode="fullscreen"]').waitFor();
       await app.locator('#update').click();
@@ -234,7 +234,7 @@ test(
         .frameLocator('#scene')
         .getByText('Latest working revision', { exact: true })
         .waitFor();
-      await app.locator('html[data-mode="inline"]').waitFor();
+      await app.locator('html[data-mode="fullscreen"]').waitFor();
       assert.equal(
         await app
           .frameLocator('#scene')
@@ -244,7 +244,6 @@ test(
       );
       assert.deepEqual(await page.evaluate(() => window.pluginTest.displayRequests), [
         'fullscreen',
-        'inline',
       ]);
       assert.deepEqual(errors, []);
     } finally {

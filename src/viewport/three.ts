@@ -43,7 +43,6 @@ function mount(
   camera.up.set(...up).normalize();
   const renderer = new T.WebGLRenderer({ alpha: true, antialias: true });
   renderer.setClearColor(0, 0);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.outputColorSpace = T.SRGBColorSpace;
   renderer.toneMapping = T.NoToneMapping;
   const canvas = renderer.domElement;
@@ -206,6 +205,25 @@ function mount(
     materials.set(material, color);
     return material;
   }
+  let raster: { width: number; height: number; ratio: number } | undefined;
+  function resizeRaster() {
+    const width = stage.clientWidth,
+      height = stage.clientHeight;
+    if (!width || !height) return;
+    // The composition can change scale without changing its logical layout.
+    // Rasterize at the displayed density while keeping the camera in layout pixels.
+    const bounds = stage.getBoundingClientRect();
+    const scale = Math.max(bounds.width / width, bounds.height / height);
+    const ratio = Math.min(
+      Math.min(devicePixelRatio || 1, 2) * Math.max(scale, 0.01),
+      renderer.capabilities.maxTextureSize / width,
+      renderer.capabilities.maxTextureSize / height,
+    );
+    if (raster?.width === width && raster.height === height && raster.ratio === ratio) return;
+    raster = { width, height, ratio };
+    renderer.setDrawingBufferSize(width, height, ratio);
+    invalidate();
+  }
   function resize() {
     const width = stage.clientWidth,
       height = stage.clientHeight;
@@ -223,12 +241,19 @@ function mount(
     }
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
-    renderer.setSize(width, height, false);
+    resizeRaster();
     if (following && lastShot) shot(lastShot);
     invalidate();
   }
   const sizeObserver = new ResizeObserver(resize);
   sizeObserver.observe(stage);
+  window.addEventListener(
+    'scene-frame-resize',
+    (event) => {
+      if (event.target instanceof Element && event.target.contains(stage)) resizeRaster();
+    },
+    listen,
+  );
   const themeObserver = new MutationObserver(theme);
   for (let ancestor: HTMLElement | null = stage; ancestor; ancestor = ancestor.parentElement)
     themeObserver.observe(ancestor, {

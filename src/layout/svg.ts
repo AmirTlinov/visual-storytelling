@@ -1,6 +1,7 @@
 import { svg as element } from '../ink/dom.js';
 import { connectionRoute, type ConnectionSide } from './connection.js';
 import { placeLabels, type LabelSegment } from './labels.js';
+import { labelOverflow, type OverflowLabel } from './label-overflow.js';
 
 interface Point {
   x: number;
@@ -284,6 +285,51 @@ function along(
   return placement!;
 }
 
+/** A shared overflow action in SVG coordinates. Reserve its box before placing labels. */
+function overflow(space: SVGGraphicsElement, { region }: { region?: SVGGraphicsElement } = {}) {
+  const frame = element('foreignObject', { 'data-svg-overflow': '', 'pointer-events': 'none' });
+  const host = document.createElementNS('http://www.w3.org/1999/xhtml', 'div');
+  host.style.cssText = 'position:relative;width:100%;height:100%';
+  frame.append(host);
+  const obstacle = element('rect', {
+    fill: 'none',
+    'pointer-events': 'none',
+    'aria-hidden': 'true',
+  });
+  const summary = element('desc');
+  space.append(obstacle, frame, summary);
+  const control = labelOverflow(host);
+  let area = { x: 0, y: 0, width: 0, height: 0 };
+  let position = { ...area };
+  return {
+    /** The returned transparent rectangle is a real solver obstacle, even before overflow occurs. */
+    reserve() {
+      area = viewport(space, 4, region).area;
+      for (const key of ['x', 'y', 'width', 'height'] as const)
+        frame.setAttribute(key, String(area[key]));
+      position = control.preferred({ ...area, x: 0, y: 0 });
+      for (const key of ['x', 'y', 'width', 'height'] as const)
+        obstacle.setAttribute(
+          key,
+          String(position[key] + (key === 'x' ? area.x : key === 'y' ? area.y : 0)),
+        );
+      return obstacle;
+    },
+    update(items: readonly OverflowLabel[]) {
+      control.update(items, position);
+      summary.textContent = items.length
+        ? `Неуместившиеся подписи: ${items.map((item) => (item.subject && item.subject !== item.label ? `${item.subject}: ${item.label}` : item.label)).join('; ')}.`
+        : '';
+    },
+    dispose() {
+      control.dispose();
+      obstacle.remove();
+      frame.remove();
+      summary.remove();
+    },
+  };
+}
+
 // Reflow only when width changes. The callback returns the content height.
 async function observe(svg: SVGSVGElement, layout: (width: number) => number | void) {
   await document.fonts.ready;
@@ -327,5 +373,6 @@ export const SvgLayout = {
   connect,
   along,
   viewport,
+  overflow,
   observe,
 };

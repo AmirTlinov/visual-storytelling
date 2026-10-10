@@ -75,7 +75,7 @@ registerAppTool(
   {
     title: 'Визуальное объяснение',
     description:
-      'Open Visual Storytelling in chat. With no arguments opens a ready interactive example. Reuse sessionId to move the same live scene between views. Commands use the existing view and do not create another card.',
+      'Open an explicitly selected Visual Storytelling example or project in chat. With no arguments returns the recommended catalog without creating a scene. Reuse sessionId to move the same live scene between views. Commands use the existing view and do not create another card.',
     inputSchema: {
       sessionId: sessionId.optional(),
       projectId: z.string().uuid().optional(),
@@ -100,9 +100,19 @@ registerAppTool(
       },
     },
   },
-  safely(async (args) =>
-    args.file ? { content: [] } : toolResult(presentSession(await runtime.call('open', args))),
-  ),
+  safely(async (args) => {
+    if (args.file) return { content: [] };
+    const opened = await runtime.call('open', args);
+    return opened.status === 'choose-example'
+      ? result(
+          opened,
+          'Выберите основу и вызовите story_open с её example:\n\n' +
+            opened.examples
+              .map((entry) => `${entry.title} (example: ${entry.id}) — ${entry.summary}`)
+              .join('\n'),
+        )
+      : toolResult(presentSession(opened));
+  }),
 );
 
 server.registerTool(

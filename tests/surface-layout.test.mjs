@@ -7,7 +7,7 @@ import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { serve } from '../tools/site.mjs';
 
-test('SVG shell follows its composition height at wide and narrow widths', async () => {
+test('SVG shell preserves logical drawing geometry within its scaled composition', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'story-surface-'));
   let browser, server;
   try {
@@ -44,16 +44,28 @@ test('SVG shell follows its composition height at wide and narrow widths', async
       await page.setViewportSize({ width, height: 900 });
       await page.waitForFunction(() => {
         const svg = document.querySelector('.vs-canvas');
-        return Math.abs(svg.getBoundingClientRect().width - svg.viewBox.baseVal.width) < 1;
+        const scale = Number(svg.closest('[data-scene-frame]').dataset.frameScale);
+        return Math.abs(svg.getBoundingClientRect().width - svg.viewBox.baseVal.width * scale) < 1;
       });
       const dimensions = await page.locator('.vs-canvas').evaluate((svg) => ({
         height: svg.getBoundingClientRect().height,
-        stage: svg.parentElement.getBoundingClientRect().height,
+        logicalHeight: svg.viewBox.baseVal.height,
+        inside:
+          svg.getBoundingClientRect().bottom <=
+          svg.closest('[data-scene-frame]').getBoundingClientRect().bottom + 0.1,
+        frameScale: Number(svg.closest('[data-scene-frame]').dataset.frameScale),
+        width: svg.getBoundingClientRect().width,
+        logicalWidth: svg.viewBox.baseVal.width,
         scale: svg.getScreenCTM().a,
       }));
-      assert.equal(dimensions.height, 440);
-      assert.equal(dimensions.stage, 440);
-      assert(Math.abs(dimensions.scale - 1) < 1e-6);
+      assert.equal(dimensions.logicalHeight, 440);
+      assert(
+        dimensions.height >= 440 * dimensions.frameScale,
+        'the aperture contains the full logical drawing',
+      );
+      assert(dimensions.inside, 'the drawing stays inside the composition');
+      assert(Math.abs(dimensions.width - dimensions.logicalWidth * dimensions.frameScale) < 0.05);
+      assert(Math.abs(dimensions.scale - dimensions.frameScale) < 1e-6);
     }
     assert.deepEqual(errors, []);
   } finally {

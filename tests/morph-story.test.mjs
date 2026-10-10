@@ -192,7 +192,22 @@ test(
       assert.deepEqual(restored.notices, []);
       assert.equal(restored.projection, '3d');
       assert.equal(restored.focus, true);
-      assert.deepEqual(restored.view, saved.view);
+      const { camera: actualCamera, ...actualView } = restored.view;
+      const { camera: expectedCamera, ...expectedView } = saved.view;
+      assert.deepEqual(actualView, expectedView);
+      const { position, target, ...cameraState } = actualCamera;
+      const {
+        position: expectedPosition,
+        target: expectedTarget,
+        ...expectedCameraState
+      } = expectedCamera;
+      assert.deepEqual(cameraState, expectedCameraState);
+      // OrbitControls reconstructs spherical coordinates; one floating-point ULP is immaterial.
+      for (const [actual, expected] of [
+        [position, expectedPosition],
+        [target, expectedTarget],
+      ])
+        assert.ok(actual.every((coordinate, i) => Math.abs(coordinate - expected[i]) < 1e-12));
       const ink = page.locator('#ink');
       await ink.getByRole('button', { name: 'Исследовать', exact: true }).click();
       await ink.getByRole('textbox', { name: 'Слово', exact: true }).fill('');

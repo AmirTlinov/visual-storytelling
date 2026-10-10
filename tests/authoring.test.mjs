@@ -73,20 +73,33 @@ test('authoring: reload keeps the selected time, failed edits keep the scene, fa
       lab.far();
     });
     await page.waitForFunction(() => lab.label.element.textContent === '123456789.987');
+    const inscription = await page.evaluate(() => {
+      const canvas = lab.label.object.children[0].material.map.image,
+        context = canvas.getContext('2d'),
+        pixels = context.getImageData(0, 0, canvas.width, canvas.height).data,
+        metrics = context.measureText(lab.label.element.textContent);
+      let painted = 0;
+      for (let i = 3; i < pixels.length; i += 4) if (pixels[i]) painted++;
+      // Texture density follows projection. Measure the actual ink at that density;
+      // a fixed texel gutter would consume a distant inscription's whole texture.
+      return {
+        painted,
+        attached: lab.label.object.parent === lab.cube,
+        width: canvas.width,
+        height: canvas.height,
+        left: canvas.width / 2 - metrics.actualBoundingBoxLeft,
+        right: canvas.width / 2 + metrics.actualBoundingBoxRight,
+        top: canvas.height / 2 - metrics.actualBoundingBoxAscent,
+        bottom: canvas.height / 2 + metrics.actualBoundingBoxDescent,
+      };
+    });
+    assert(inscription.painted > 0 && inscription.attached);
     assert(
-      await page.evaluate(() => {
-        const canvas = lab.label.object.children[0].material.map.image;
-        const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
-        let painted = 0;
-        for (let y = 0; y < canvas.height; y++)
-          for (let x = 0; x < canvas.width; x++) {
-            const alpha = pixels[(y * canvas.width + x) * 4 + 3];
-            if (alpha) painted++;
-            if (alpha && (x < 4 || x >= canvas.width - 4 || y < 4 || y >= canvas.height - 4))
-              return false;
-          }
-        return painted > 0 && lab.label.object.parent === lab.cube;
-      }),
+      inscription.left >= 0 &&
+        inscription.top >= 0 &&
+        inscription.right <= inscription.width &&
+        inscription.bottom <= inscription.height,
+      `Face lettering is clipped: ${JSON.stringify(inscription)}`,
     );
     await page.evaluate(() => lab.back());
     await page.waitForFunction(() => lab.label.element.hidden);

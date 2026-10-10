@@ -145,3 +145,32 @@ footer {
     height: var(--scene-height, 640px);
   }
 }
+
+#catalog {
+  padding: 16px 12px;
+  font-size: 16px;
+}
+#catalog h2 {
+  margin: 0 0 16px;
+  font-size: 20px;
+}
+#catalog-examples {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+#catalog-examples button {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  min-height: 44px;
+  padding: 12px;
+  text-align: left;
+  line-height: 1.4;
+}
+#catalog-examples span {
+  font-size: 14px;
+  color: var(--color-text-secondary, light-dark(#615e59, #c3bfb7));
+}

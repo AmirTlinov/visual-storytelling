@@ -34,13 +34,12 @@ test('all examples load in both themes at a narrow width without script errors o
       const composition = await page.evaluate(() => {
         const root = document.querySelector<HTMLElement>('.ve-scene');
         if (!root?.scene) return null;
-        const controls = root.scene.inspect().capabilities.filter(
-          (capability) => !['theme', 'reduced'].includes(capability),
-        );
+        const controls = root.scene
+          .inspect()
+          .capabilities.filter((capability) => !['theme', 'reduced'].includes(capability));
         if (!controls.length) return null; // Static illustrations keep their authored paper size.
         const frame =
-          root.querySelector('[data-scene-frame]') ??
-          (root instanceof SVGSVGElement ? root : null);
+          root.querySelector('[data-scene-frame]') ?? (root instanceof SVGSVGElement ? root : null);
         if (!frame) return { width: 0, height: 1 };
         const { width, height } = frame.getBoundingClientRect();
         return { width, height };
@@ -52,15 +51,23 @@ test('all examples load in both themes at a narrow width without script errors o
         );
       const player = page.locator('.ve-player').first();
       if (await player.isVisible()) {
-        const mids = await player.evaluate((el) =>
-          [...el.children]
-            .filter((c) => getComputedStyle(c).display !== 'none')
-            .map((c) => {
-              const r = c.getBoundingClientRect();
-              return r.top + r.height / 2;
-            }),
-        );
-        expect(Math.max(...mids) - Math.min(...mids), scene).toBeLessThan(3);
+        // A narrow player wraps into rows while retaining actual CSS-pixel targets.
+        await expect(page.locator('.ve-player:visible'), scene).toHaveCount(1);
+        const controls = await player.evaluate((el) => ({
+          insideFrame: !!el.closest('[data-scene-frame]'),
+          boxes: [...el.querySelectorAll('button,input,select')]
+            .filter((control) => control.checkVisibility())
+            .map((control) => control.getBoundingClientRect().toJSON()),
+          timeSize: parseFloat(getComputedStyle(el.querySelector('[data-time]')!).fontSize),
+        }));
+        expect(controls.insideFrame, scene).toBe(false);
+        expect(controls.timeSize, scene).toBeGreaterThanOrEqual(16);
+        for (const box of controls.boxes) {
+          expect(box.width, `${scene}: target width`).toBeGreaterThanOrEqual(43.9);
+          expect(box.height, `${scene}: target height`).toBeGreaterThanOrEqual(43.9);
+          expect(box.left, scene).toBeGreaterThanOrEqual(-0.5);
+          expect(box.right, scene).toBeLessThanOrEqual(375.5);
+        }
       }
     }
   expect(errors).toEqual([]);
@@ -116,7 +123,16 @@ test('shell changes mode, pauses the voice and restores the story after manual i
       .poll(() =>
         page.locator('#displacements').evaluate((svg) => {
           const grid = svg.querySelector('.vs-grid') as SVGGraphicsElement;
-          return Math.abs(grid.getBBox().width - svg.parentElement!.clientWidth);
+          const paper = grid.getBoundingClientRect(),
+            view = svg.getBoundingClientRect();
+          // The measured grid follows the camera and covers its visible aperture.
+          // Compare both in screen space, not a world-space BBox with a CSS width.
+          return Math.max(
+            Math.abs(paper.left - view.left),
+            Math.abs(paper.right - view.right),
+            Math.abs(paper.top - view.top),
+            Math.abs(paper.bottom - view.bottom),
+          );
         }),
       )
       .toBeLessThan(1);

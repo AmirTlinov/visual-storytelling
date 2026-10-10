@@ -14,6 +14,43 @@ const sameShape = (a: number[], b: number[]) =>
   a.length === b.length && a.every((size, i) => size === b[i]);
 const cellCount = (value: MathValue): number =>
   typeof value === 'number' ? 1 : value.reduce<number>((count, item) => count + cellCount(item), 0);
+interface DependencyValue {
+  dimensions: number[];
+  cells: ExpressionBody[][];
+}
+const unique = (cells: ExpressionBody[]) => [...new Set(cells)];
+/** mathjs folds variadic multiplication from left to right, including scalar intermediates. */
+function product(left: DependencyValue, right: DependencyValue): DependencyValue | undefined {
+  const a = left.dimensions,
+    b = right.dimensions;
+  if (!a.length || !b.length) {
+    const dimensions = a.length ? a : b,
+      count = a.length ? left.cells.length : right.cells.length;
+    return {
+      dimensions,
+      cells: Array.from({ length: count }, (_, i) =>
+        unique([...left.cells[a.length ? i : 0]!, ...right.cells[b.length ? i : 0]!]),
+      ),
+    };
+  }
+  if (a.length > 2 || b.length > 2 || a.at(-1) !== b[0]) return undefined;
+  const contracted = a.at(-1)!,
+    rows = a.length === 2 ? a[0]! : 1,
+    columns = b.length === 2 ? b[1]! : 1;
+  return {
+    dimensions: [...(a.length === 2 ? [rows] : []), ...(b.length === 2 ? [columns] : [])],
+    cells: Array.from({ length: rows * columns }, (_, i) => {
+      const row = Math.floor(i / columns),
+        column = i % columns;
+      return unique(
+        Array.from({ length: contracted }, (_, k) => [
+          ...left.cells[row * contracted + k]!,
+          ...right.cells[b.length === 2 ? k * columns + column : k]!,
+        ]).flat(),
+      );
+    }),
+  };
+}
 const elementwise = new Set([
   'add',
   'subtract',
@@ -104,35 +141,24 @@ export function expressionDependencies(
       };
     }
   }
-  if (operator === 'multiply' && args.length === 2) {
-    const [left, right] = args as [ExpressionValue, ExpressionValue],
-      a = shape(left.value),
-      b = shape(right.value);
-    if (a.length && b.length && a.length <= 2 && b.length <= 2) {
-      const contracted = a.at(-1)!;
-      if (contracted === b[0]) {
-        const columns = b.length === 2 ? b[1]! : 1;
-        return {
-          cells: Array.from({ length: count }, (_, i) => {
-            const row = a.length === 2 ? Math.floor(i / columns) : 0,
-              column = i % columns;
-            return present(
-              Array.from({ length: contracted }, (_, k) => [
-                left.cells[row * contracted + k],
-                right.cells[b.length === 2 ? k * columns + column : k],
-              ]).flat(),
-            );
-          }),
-          precision: 'exact',
-        };
-      }
+  if (operator === 'multiply' && args.length >= 2) {
+    const operands = args.map((arg) => ({
+      dimensions: shape(arg.value),
+      cells: arg.cells.map((cell) => (cell ? [cell] : [])),
+    }));
+    let result: DependencyValue | undefined = operands[0]!;
+    for (const operand of operands.slice(1)) {
+      result = product(result, operand);
+      if (!result) break;
     }
+    if (result && sameShape(result.dimensions, dimensions))
+      return { cells: result.cells, precision: 'exact' };
+    return { cells: all(), precision: 'conservative' };
   }
   const scalarArguments = args.every((arg) => typeof arg.value === 'number');
   const scaled =
-    (operator === 'multiply' && args.some((arg) => typeof arg.value === 'number')) ||
     // A matrix denominator is inverted by mathjs; its cells are not independent divisors.
-    (operator === 'divide' && typeof args[1]?.value === 'number');
+    operator === 'divide' && typeof args[1]?.value === 'number';
   if ((scalarArguments && !dimensions.length) || elementwise.has(operator) || scaled) {
     if (
       args.every((arg) => typeof arg.value === 'number' || sameShape(shape(arg.value), dimensions))

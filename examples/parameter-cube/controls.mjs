@@ -4,11 +4,13 @@ import { player, mountScene, SceneShell } from '@visual-storytelling/core';
 
 /** HTML controls delegate to the current SVG owner, including after the object reloads. */
 export function attachProjection(root, object, options = {}) {
+  const controlsHost = root.querySelector('[data-player]');
+  controlsHost.remove();
   const content = document.createElement('div');
   content.className = 'projection-composition';
   content.append(...root.children);
   const frame = SceneShell.frame(content, { width: 1280, height: 720, scope: 'scene' });
-  root.append(frame.element);
+  root.append(frame.element, controlsHost);
   frame.resize();
   const lifetime = new AbortController();
   let controls, scene, resolveReady, rejectReady;

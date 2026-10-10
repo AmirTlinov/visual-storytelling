@@ -16,14 +16,13 @@ window.galleryReady = (async () => {
   toolbar.className = 've-scene-toolbar';
   toolbar.append(root.querySelector('.modes'));
   paper.classList.add('ve-stage');
-  composition.append(
-    toolbar,
-    paper,
+  composition.append(toolbar, paper);
+  const frame = SceneShell.frame(composition, { width: 1280, height: 720, scope: 'scene' });
+  root.append(
+    frame.element,
     root.querySelector('[data-player]'),
     root.querySelector('[data-caption]'),
   );
-  const frame = SceneShell.frame(composition, { width: 1280, height: 720, scope: 'scene' });
-  root.append(frame.element);
   frame.resize();
   const svg = root.querySelector('svg.canvas'),
     layer = root.querySelector('[data-drawing]');

@@ -5,6 +5,14 @@ export interface WidgetSnapshot {
 
 /** Host services are optional. The scene remains a normal offline document. */
 export interface SceneHost {
+  /** Actual host surface, independent of the subject camera and saved conditions. */
+  presentation?: {
+    read(): { mode: 'inline' | 'expanded'; canExpand: boolean };
+    requestExpanded(): Promise<void>;
+    subscribe(
+      listener: (state: { mode: 'inline' | 'expanded'; canExpand: boolean }) => void,
+    ): () => void;
+  };
   beforePlay?(request: {
     muted: boolean;
     hasAudio: boolean;
@@ -37,24 +45,29 @@ const legacyHost: SceneHost = {
     },
   },
 };
-let connected: SceneHost | undefined;
-const listeners = new Set<() => void>();
+// SVG entries and their HTML shell can be bundled independently in the same realm.
+// The host connection belongs to that document, not to an individual module copy.
+const hostKey = Symbol.for('@visual-storytelling/scene-host');
+const realm = globalThis as typeof globalThis & {
+  [hostKey]?: { connected?: SceneHost; listeners: Set<() => void> };
+};
+const registry = (realm[hostKey] ??= { listeners: new Set() });
 
 export const sceneHost = (): SceneHost | undefined =>
-  connected ?? (legacyWidget() ? legacyHost : undefined);
+  registry.connected ?? (legacyWidget() ? legacyHost : undefined);
 
 /** One host connection per document; an obsolete disconnect cannot remove a newer host. */
 export function connectSceneHost(host: SceneHost) {
-  connected = host;
-  for (const listener of listeners) listener();
+  registry.connected = host;
+  for (const listener of registry.listeners) listener();
   return () => {
-    if (connected !== host) return;
-    connected = undefined;
-    for (const listener of listeners) listener();
+    if (registry.connected !== host) return;
+    registry.connected = undefined;
+    for (const listener of registry.listeners) listener();
   };
 }
 
 export function watchSceneHost(listener: () => void) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+  registry.listeners.add(listener);
+  return () => registry.listeners.delete(listener);
 }

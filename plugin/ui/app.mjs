@@ -25,30 +25,35 @@ let session,
 let pollingDone = Promise.resolve();
 let updates = Promise.resolve();
 let displayUpdates = Promise.resolve(),
-  readingDisplayMode;
+  displayMode = 'inline',
+  availableDisplayModes = [],
+  displayRevision = 0;
+const presentation = () => ({
+  mode: displayMode === 'fullscreen' ? 'expanded' : 'inline',
+  canExpand: availableDisplayModes.includes('fullscreen'),
+});
 let connectionState = 'opening',
   recovery,
   recoveryEpoch = 0,
   recoveryAck;
-function readingDisplay(enabled, owner = session) {
-  displayUpdates = displayUpdates
+function requestExpanded(owner = session) {
+  const request = displayUpdates
     .catch(() => {})
     .then(async () => {
-      if (closed || session !== owner) return;
-      const context = app.getHostContext() ?? {};
-      const current = document.documentElement.dataset.mode ?? context.displayMode ?? 'inline';
-      const mode = enabled ? 'fullscreen' : readingDisplayMode;
-      if (enabled) readingDisplayMode ??= current;
-      else readingDisplayMode = undefined;
-      if (!mode || mode === current || !context.availableDisplayModes?.includes(mode)) return;
-      const result = await app.requestDisplayMode({ mode });
-      // A candidate may be promoted while the host negotiates. Its actual mode still belongs to this app.
-      if (!closed) host({ displayMode: result.mode });
-    })
-    .catch((e) => {
-      if (!closed && session === owner) error(e.message);
+      if (closed || session !== owner) throw new Error('Представление уже сменилось.');
+      if (displayMode === 'fullscreen') return;
+      if (!presentation().canExpand)
+        throw new Error('Codex не поддерживает разворачивание этой карточки.');
+      const revision = displayRevision;
+      const result = await app.requestDisplayMode({ mode: 'fullscreen' });
+      // A newer host notification owns the actual mode, including an external close
+      // while this request was pending. A response must not revive that old request.
+      if (!closed && revision === displayRevision) host({ displayMode: result.mode });
+      if (closed || session !== owner) throw new Error('Представление уже сменилось.');
+      if (displayMode !== 'fullscreen') throw new Error('Codex оставил карточку в чате.');
     });
-  return displayUpdates;
+  displayUpdates = request;
+  return request;
 }
 function sync(acknowledgement) {
   const current = report,
@@ -71,7 +76,10 @@ function error(message) {
   $('error').hidden = !message;
 }
 const send = (value) =>
-  frame.contentWindow?.postMessage({ channel, generation: session?.generation, ...value }, '*');
+  frame.contentWindow?.postMessage(
+    { channel, sessionId: session?.sessionId, generation: session?.generation, ...value },
+    '*',
+  );
 async function call(action, args = {}) {
   const result = await app.callServerTool({
     name: 'story_view',
@@ -141,6 +149,8 @@ function recoverView(cause) {
         if (result._meta?.sceneHTML) {
           frame.srcdoc = sceneDocument(result._meta.sceneHTML, {
             theme: app.getHostContext()?.theme,
+            sessionId: session.sessionId,
+            presentation: presentation(),
             generation: session.generation,
             checkpoint: session.checkpoint,
             stateRevision: session.stateRevision,
@@ -244,7 +254,51 @@ async function poll() {
   done();
 }
 async function mount(result) {
-  if (!result.structuredContent?.sessionId || session) return;
+  if (session) return;
+  if (result.structuredContent?.status === 'choose-example') {
+    frame.hidden = true;
+    $('catalog').hidden = false;
+    $('connection').textContent = 'Выберите основу';
+    const list = $('catalog-examples');
+    list.replaceChildren();
+    let opening = false;
+    for (const example of result.structuredContent.examples) {
+      const item = document.createElement('li');
+      const button = document.createElement('button');
+      const title = document.createElement('strong');
+      const description = document.createElement('span');
+      button.type = 'button';
+      title.textContent = example.title;
+      description.textContent = example.summary;
+      button.append(title, description);
+      button.onclick = async () => {
+        if (opening) return;
+        opening = true;
+        for (const choice of list.querySelectorAll('button')) choice.disabled = true;
+        $('connection').textContent = 'Открываю сцену…';
+        try {
+          const selected = await app.callServerTool({
+            name: 'story_open',
+            arguments: { example: example.id },
+          });
+          if (selected.isError) throw new Error(selected.content[0].text);
+          if (!closed) await mount(selected);
+        } catch (e) {
+          error(e.message);
+          $('connection').textContent = 'Выберите основу';
+        } finally {
+          opening = false;
+          for (const choice of list.querySelectorAll('button')) choice.disabled = false;
+        }
+      };
+      item.append(button);
+      list.append(item);
+    }
+    return;
+  }
+  if (!result.structuredContent?.sessionId) return;
+  $('catalog').hidden = true;
+  frame.hidden = false;
   error('');
   session = result.structuredContent;
   connectionState = 'opening';
@@ -256,6 +310,8 @@ async function mount(result) {
   updateJobs(session.jobs ?? []);
   const config = {
     theme: app.getHostContext()?.theme,
+    sessionId: session.sessionId,
+    presentation: presentation(),
     generation: session.generation,
     checkpoint: session.checkpoint,
     stateRevision: session.stateRevision,
@@ -299,6 +355,8 @@ async function prepareUpdate(update) {
     );
     preview.srcdoc = sceneDocument(result._meta.sceneHTML, {
       theme: app.getHostContext()?.theme,
+      sessionId: session.sessionId,
+      presentation: presentation(),
       preview: true,
       generation: candidate.generation,
       checkpoint: next.checkpoint,
@@ -354,6 +412,7 @@ async function applyUpdate() {
       next.frame.contentWindow.postMessage(
         {
           channel,
+          sessionId: owner.sessionId,
           generation: next.generation,
           type: 'restore-preview',
           replacementId: prepared.replacementId,
@@ -384,6 +443,7 @@ async function applyUpdate() {
     frame.contentWindow.postMessage(
       {
         channel,
+        sessionId: owner.sessionId,
         generation: next.generation,
         type: 'activate',
         replacementId: prepared.replacementId,
@@ -394,7 +454,6 @@ async function applyUpdate() {
     );
     candidate = null;
     old.remove();
-    void readingDisplay(false);
     $('update').hidden = true;
     error('');
   } catch (e) {
@@ -483,6 +542,7 @@ addEventListener('message', (event) => {
   if (
     event.source === candidate?.frame.contentWindow &&
     data?.channel === channel &&
+    data.sessionId === session?.sessionId &&
     data.generation === candidate.generation
   ) {
     if (data.type === 'preview-restored' && data.replacementId === candidate.restoration?.id)
@@ -502,6 +562,7 @@ addEventListener('message', (event) => {
   if (
     event.source !== frame.contentWindow ||
     data?.channel !== channel ||
+    data.sessionId !== session?.sessionId ||
     data.generation !== session?.generation
   )
     return;
@@ -536,10 +597,22 @@ addEventListener('message', (event) => {
         (e) => send({ type: 'host-response', id: data.id, error: e.message }),
       );
     }
-    if (data.action === 'reading') void readingDisplay(data.enabled);
+    if (data.action === 'expand') {
+      const owner = session;
+      void requestExpanded(owner).then(
+        () => {
+          if (!closed && session === owner) send({ type: 'host-response', id: data.id });
+        },
+        (e) => {
+          if (!closed && session === owner)
+            send({ type: 'host-response', id: data.id, error: e.message });
+        },
+      );
+    }
     return;
   }
   if (data.type === 'ready') {
+    send({ type: 'host-presentation', value: presentation() });
     connectionState = 'connected';
     $('connection').textContent = 'Готово';
     clearTimeout(loadTimer);
@@ -581,11 +654,25 @@ function host(context) {
   }
   if (context.styles?.variables) applyHostStyleVariables(context.styles.variables);
   modelContext.host(context);
-  const mode =
-    context.displayMode ??
-    document.documentElement.dataset.mode ??
-    app.getHostContext()?.displayMode;
-  document.documentElement.dataset.mode = mode ?? 'inline';
+  const mode = context.displayMode ?? displayMode;
+  const modes = context.availableDisplayModes ?? availableDisplayModes;
+  if (mode !== displayMode || JSON.stringify(modes) !== JSON.stringify(availableDisplayModes))
+    displayRevision++;
+  displayMode = mode;
+  availableDisplayModes = modes;
+  document.documentElement.dataset.mode = displayMode;
+  const value = presentation();
+  send({ type: 'host-presentation', value });
+  candidate?.frame.contentWindow?.postMessage(
+    {
+      channel,
+      sessionId: session?.sessionId,
+      generation: candidate.generation,
+      type: 'host-presentation',
+      value,
+    },
+    '*',
+  );
 }
 async function dispose() {
   closed = true;
@@ -621,7 +708,6 @@ async function open(result) {
   $('back').hidden = true;
   error('');
   await mount(result);
-  void readingDisplay(false);
 }
 const preferences = preferencesUI(app, error);
 fileEntrypoint(app, extensions, { open, error });
@@ -664,7 +750,8 @@ const connectionTimer = setTimeout(() => {
 try {
   await app.connect();
   clearTimeout(connectionTimer);
-  if (!session && $('error').hidden) $('connection').textContent = 'Выберите объяснение';
+  if (!session && $('catalog').hidden && $('error').hidden)
+    $('connection').textContent = 'Выберите объяснение';
   host(app.getHostContext() ?? {});
 } catch (e) {
   clearTimeout(connectionTimer);

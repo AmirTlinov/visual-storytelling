@@ -72,7 +72,7 @@ async function fixture(t) {
     directory = join(release, 'plugin/dist'),
     data = join(temporary, 'data');
   await mkdir(data);
-  await mkdir(directory, { recursive: true });
+  await mkdir(join(directory, 'examples'), { recursive: true });
   await mkdir(join(release, 'tools'));
   await mkdir(join(release, 'dist'));
   const clients = new Set(),
@@ -116,7 +116,10 @@ async function fixture(t) {
       'export const describeAPI = async () => ({ text: "Fixture API", missing: [] });\n',
     ),
     writeFile(join(release, 'dist/index.js'), 'export const runtime = 1;\n'),
-    writeJSON(join(directory, 'example.json'), {
+    writeJSON(join(directory, 'catalog.json'), {
+      fixture: { title: 'Runtime fixture', source: 'scene.js', recommended: true },
+    }),
+    writeJSON(join(directory, 'examples/fixture.json'), {
       revision: 'runtime-fixture',
       title: 'Runtime fixture',
       html: '<main>scene</main>',
@@ -191,7 +194,20 @@ test(
     holder.kill('SIGKILL');
     await stopped;
     let [a, b] = await Promise.all([f.stdio(), f.stdio()]);
-    const [opened, alsoOpened] = await Promise.all([tool(a, 'story_open'), tool(b, 'story_open')]);
+    const catalog = await tool(a, 'story_open');
+    assert.equal(catalog.status, 'choose-example');
+    assert.equal(catalog.sessionId, undefined);
+    assert.deepEqual(
+      catalog.examples.map((entry) => entry.id),
+      ['fixture'],
+    );
+    const unopened = await f.runtime();
+    assert.deepEqual(await unopened.call('list'), []);
+    unopened.close();
+    const [opened, alsoOpened] = await Promise.all([
+      tool(a, 'story_open', { example: 'fixture' }),
+      tool(b, 'story_open', { example: 'fixture' }),
+    ]);
     assert.equal(
       opened.serverInstance,
       alsoOpened.serverInstance,
@@ -317,10 +333,13 @@ test(
     assert.equal(unavailable.structuredContent.error.code, 'RUNTIME_VERSION_CONFLICT');
     assert.match(unavailable.structuredContent.error.action, /reconnect/);
     await writeFile(entry, original);
-    assert.ok((await tool(updating, 'story_open')).sessionId, 'the same MCP connection can retry');
+    assert.ok(
+      (await tool(updating, 'story_open', { example: 'fixture' })).sessionId,
+      'the same MCP connection can retry',
+    );
     const reopened = await f.runtime();
     assert.equal((await reopened.call('hello')).serverInstance, hello.serverInstance);
-    const opened = await runtime.call('open');
+    const opened = await runtime.call('open', { example: 'fixture' });
     const renderer = randomUUID();
     const attached = await runtime.call('attach', { sessionId: opened.sessionId, renderer });
     const state = live(opened.sessionId, renderer, attached.generation);
@@ -335,7 +354,7 @@ test(
     assert.equal((await reopened.call('hello')).pid, hello.pid);
     process.kill(hello.pid, 'SIGTERM');
     await gone(hello.pid);
-    const recovered = await tool(updating, 'story_open');
+    const recovered = await tool(updating, 'story_open', { example: 'fixture' });
     assert.notEqual(recovered.serverInstance, hello.serverInstance);
     const nextRuntime = await f.runtime();
     assert.equal((await nextRuntime.call('hello')).serverInstance, recovered.serverInstance);
@@ -395,7 +414,7 @@ test(
     t.after(() => rm(temporary, { recursive: true, force: true }));
     const data = join(temporary, 'data'),
       directory = join(temporary, 'release/plugin/dist');
-    await mkdir(directory, { recursive: true });
+    await mkdir(join(directory, 'examples'), { recursive: true });
     await writeFile(
       join(directory, 'kernel.mjs'),
       "throw new Error('deliberate startup failure');\n",

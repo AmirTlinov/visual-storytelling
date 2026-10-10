@@ -167,7 +167,7 @@ test('SceneShell uses the same display aliases for visible and accessible chapte
       [undefined, 375],
     ]) {
       const page = await browser.newPage({ viewport: { width, height: 812 } });
-      await page.setContent('<main class="ve-scene"></main>');
+      await page.setContent('<body class="ve-standalone"><main class="ve-scene"></main></body>');
       await page.addStyleTag({
         content: bundle.outputFiles.find((f) => f.path.endsWith('.css')).text,
       });
@@ -198,6 +198,7 @@ test('SceneShell uses the same display aliases for visible and accessible chapte
           return {
             height: el.getBoundingClientRect().height,
             lineHeight: parseFloat(getComputedStyle(el).lineHeight),
+            scale: Number(el.closest('[data-scene-frame]').dataset.frameScale),
             whiteSpace: getComputedStyle(el).whiteSpace,
             wordsPerLine: Object.values(wordsPerLine),
             overflows: el.scrollWidth > el.clientWidth,
@@ -213,7 +214,7 @@ test('SceneShell uses the same display aliases for visible and accessible chapte
           box.wordsPerLine.every((count) => count > 1),
           JSON.stringify(box.wordsPerLine),
         );
-        const rows = box.height / box.lineHeight;
+        const rows = box.height / (box.lineHeight * box.scale);
         assert.ok(
           rows >= 2 - 0.01 && rows <= (width === 375 ? 3 : 2) + 0.01,
           JSON.stringify({ width, ...box }),

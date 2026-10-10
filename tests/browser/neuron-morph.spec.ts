@@ -74,7 +74,7 @@ test('the signed neuron keeps its result through orbit, projection changes and r
   for (const time of ['0', '14', '21']) {
     await page.locator('[data-seek]').fill(time);
     // Read one presented frame: separate protocol calls can straddle a resize.
-    const { stage, player, frame } = await page.locator('#neuron-scene').evaluate((root) => {
+    const { stage, player, frame, shell } = await page.locator('#neuron-scene').evaluate((root) => {
       const box = (selector: string) => {
         const { x, y, width, height } = root.querySelector(selector)!.getBoundingClientRect();
         return { x, y, width, height };
@@ -83,13 +83,16 @@ test('the signed neuron keeps its result through orbit, projection changes and r
         stage: box('.ve-stage'),
         player: box('.ve-player'),
         frame: box('[data-scene-frame]'),
+        shell: root.getBoundingClientRect().toJSON(),
       };
     });
     stageHeight ??= stage.height;
-    // Drawing and transport keep their places inside the complete 16:9 frame.
+    // The composition stays 16:9; one unscaled transport sits below it in the shell.
     expect(stage.height).toBeCloseTo(stageHeight, 1);
-    expect(player.y).toBeGreaterThanOrEqual(stage.y + stage.height);
-    expect(player.y + player.height).toBeLessThanOrEqual(frame.y + frame.height);
+    expect(player.y).toBeGreaterThanOrEqual(frame.y + frame.height);
+    expect(player.y + player.height).toBeLessThanOrEqual(shell.bottom + 0.5);
+    await expect(page.locator('[data-scene-frame] .ve-player')).toHaveCount(0);
+    await expect(page.locator('.ve-player:visible')).toHaveCount(1);
     expect(frame.width / frame.height).toBeCloseTo(16 / 9, 5);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
       375,

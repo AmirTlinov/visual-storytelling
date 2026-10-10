@@ -69,7 +69,7 @@ if (process.argv[2] === 'characters') {
       ...outputOption,
       formats: { type: 'string', default: 'html' },
       silent: { type: 'boolean', default: false },
-      width: { type: 'string', default: '1280' },
+      width: { type: 'string' },
       height: { type: 'string' },
       fps: { type: 'string', default: '30' },
       jobs: { type: 'string', default: '2' },
@@ -129,7 +129,8 @@ Compare content even when versions match; detect stale sources or modified runti
 
 Runs cached narration, builds, and publishes the requested files together. Default: html.
 MP4 exports the whole story; --from SECONDS --to SECONDS selects an interval.
-Video: --width 1280 [--height 720] --fps 30 --jobs 2 --theme light|dark
+Video: [--width 960 | --height 540] --fps 30 --jobs 2 --theme light|dark
+       Always 16:9; dimensions round to 32×18 pixel units.
 --silent keeps an explicitly silent draft. HTML follows the viewer's theme.
 Re-run the same command after changing a line; unchanged voice segments use the cache.`
           : command === 'pack'
@@ -199,7 +200,7 @@ Re-run the same command after changing a line; unchanged voice segments use the 
               values.from !== undefined || values.to !== undefined
                 ? { kind: 'interval', from: Number(values.from), to: Number(values.to) }
                 : { kind: 'story' },
-            width: Number(values.width),
+            width: values.width === undefined ? undefined : Number(values.width),
             height: values.height === undefined ? undefined : Number(values.height),
             fps: Number(values.fps),
             jobs: Number(values.jobs),

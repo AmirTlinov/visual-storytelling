@@ -13,9 +13,9 @@ function mount(root: HTMLElement, { duration }: { duration: number }) {
   if (!object || !controlsHost) throw new Error('SVG player needs an object and player controls');
   const content = document.createElement('div');
   content.className = 've-smil-content';
-  content.append(...root.childNodes);
+  content.append(...[...root.childNodes].filter((node) => node !== controlsHost));
   const presentation = sceneFrame(content, { width: 1280, height: 720, scope: 'scene' });
-  root.append(presentation.element);
+  root.append(presentation.element, controlsHost);
   presentation.resize();
   const controls = PlayerControls.mount(controlsHost, {
     max: duration,

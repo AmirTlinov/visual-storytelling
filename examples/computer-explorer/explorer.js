@@ -24,12 +24,16 @@ import { esc } from './drawing/symbols.js';
 export async function mountComputer(root) {
   const abort = new AbortController(),
     appearance = theme(root);
+  const clockPlayer = root.querySelector('[data-clock-player]'),
+    jobPlayer = root.querySelector('[data-job-player]');
+  clockPlayer.remove();
+  jobPlayer.remove();
   const frame = SceneShell.frame(root.querySelector('.explorer-app'), {
     width: 1280,
     height: 720,
     scope: 'scene',
   });
-  root.append(frame.element);
+  root.append(frame.element, clockPlayer, jobPlayer);
   frame.resize();
   const surface = ExplorerSurface.mount(root.querySelector('.explorer-stage'), {
     label: 'Внутри компьютера',
@@ -53,7 +57,13 @@ export async function mountComputer(root) {
   const execution = new CpuCycle();
   const display = new DisplayModel();
   const nand = new NandModel();
-  const clock = new CpuClock(root.querySelector('.cpu-clock'), execution, paintSceneState, save);
+  const clock = new CpuClock(
+    root.querySelector('.cpu-clock'),
+    clockPlayer,
+    execution,
+    paintSceneState,
+    save,
+  );
   const displayControls = new DisplayControls(
     root.querySelector('.display-controls'),
     display,
@@ -86,7 +96,7 @@ export async function mountComputer(root) {
     scene,
     architecture = 'discrete';
   const job = new ImageJob(nand, display, () => architecture);
-  const jobControls = new ImageJobControls(root.querySelector('.image-job'), job, {
+  const jobControls = new ImageJobControls(root.querySelector('.image-job'), jobPlayer, job, {
     changed: paintSceneState,
     save,
     open: openJob,
@@ -208,7 +218,7 @@ export async function mountComputer(root) {
     root.dataset.depth = String(path.length - 1);
     svg.querySelector('desc').textContent = scene.caption;
     leafControl();
-    clock.show(scene);
+    clock.show(scene, !job.active);
     displayControls.show(scene);
     nandControls.show(scene);
     jobControls.show();
@@ -439,7 +449,9 @@ export async function mountComputer(root) {
     'click',
     (event) => {
       if (
-        event.target.closest('.cpu-clock,.display-controls,.nand-controls,.explorer-leaf-controls')
+        event.target.closest(
+          '.cpu-clock,[data-clock-player],.display-controls,.nand-controls,.explorer-leaf-controls',
+        )
       )
         jobControls.pause(false);
     },

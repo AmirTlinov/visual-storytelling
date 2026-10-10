@@ -21,7 +21,7 @@ test('selectable artwork has no control decoration and retains its own keyboard 
       .evaluate((element) => getComputedStyle(element, '::after').content),
   ).toBe('""');
   await art.focus();
-  await expect.poll(async () => (await decoration()).outline).toBe('solid');
+  await expect.poll(async () => (await decoration()).outline).toBe('dashed');
   await art.press('Enter');
   await expect(art).toHaveAttribute('data-selected');
   expect((await decoration()).after).toBe('none');
@@ -70,54 +70,69 @@ test('review ignores hidden SVG and measures lettering after real perspective pr
   expect(await page.locator('svg g').count()).toBe(2);
 });
 
-test('pointer selection keeps formulas and moving results clean; keyboard focus remains visible', async ({
+test('one visible representation carries selection while keyboard focus follows its control', async ({
   page,
 }) => {
   await page.goto('/result-delivery/index.html');
   await page.evaluate(() => (window as any).galleryReady);
-  await page.locator('[data-seek]').fill('9.5');
+  await page.locator('[data-seek]').fill('7.5');
   const formula = page.locator('.ve-label[data-object="calculation"]:not([hidden])');
   const calculation = page.locator('button[data-object="calculation"]');
   const result = page.locator('button[data-object^="calculation:"]:not([hidden])');
   const decorations = () =>
     page.locator('[data-object]:not([hidden])').evaluateAll((nodes) =>
       nodes.map((node) => ({
+        id: node.getAttribute('data-object'),
+        highlighted: node.hasAttribute('data-selection-highlight'),
         outline: getComputedStyle(node).outlineStyle,
         filter: getComputedStyle(node).filter,
       })),
     );
-  const expectClean = async () => {
+  const expectSelection = async (id: string | null) => {
     await expect
-      .poll(async () =>
-        (await decorations()).every((item) => item.outline === 'none' && item.filter === 'none'),
-      )
+      .poll(async () => {
+        const items = await decorations();
+        const selected = items.filter((item) => item.highlighted);
+        return (
+          selected.length === Number(id !== null) &&
+          selected.every((item) => item.id === id && item.outline === 'solid') &&
+          items.every(
+            (item) => item.filter === 'none' && (item.highlighted || item.outline === 'none'),
+          )
+        );
+      })
       .toBe(true);
     await expect(calculation.locator('span')).toBeHidden();
     await expect(result.locator('span')).toBeHidden();
   };
   await formula.click();
   await expect(calculation).toHaveAttribute('data-selected');
-  await expectClean();
+  await expect(calculation).toHaveAttribute('data-selection-highlight');
+  await expect(formula).not.toHaveAttribute('data-selection-highlight');
+  await expectSelection('calculation');
   await formula.click();
   await expect(calculation).not.toHaveAttribute('data-selected');
+  // Delivery has its own visible moment; at 7.5 the result still belongs to the formula.
+  await page.locator('[data-seek]').fill('9.5');
+  await expect(formula).toBeHidden();
   const body = (await result.boundingBox())!;
   await page.mouse.click(body.x + body.width / 2, body.y + body.height / 2);
   await expect(result).toHaveAttribute('data-selected');
-  await expectClean();
+  await expectSelection(await result.getAttribute('data-object'));
   const canvas = page.locator('.ve-stage canvas');
   await canvas.click({ position: { x: 8, y: 8 } });
   await expect(page.locator('[data-selected]')).toHaveCount(0);
-  // Browser keyboard modality owns the indicator; a remembered selection does not.
+  // Selection and keyboard focus remain different states and visual treatments.
   await canvas.focus();
   await page.keyboard.press('Tab');
   await result.focus();
   await expect
     .poll(() => result.evaluate((node) => getComputedStyle(node).outlineStyle))
-    .toBe('solid');
+    .toBe('dashed');
   await expect(result.locator('span')).toBeVisible();
   await result.press('Enter');
   await expect(result).toHaveAttribute('data-selected');
   await canvas.click({ position: { x: 8, y: 8 } });
   await expect(page.locator('[data-selected]')).toHaveCount(0);
-  await expectClean();
+  await expectSelection(null);
 });

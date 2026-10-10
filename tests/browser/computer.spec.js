@@ -406,3 +406,67 @@ test('computer: a 16:9 frame preserves logical zoom anchors and drag distances a
   for (const view of views.slice(1))
     for (const key of ['s', 'w', 'h']) expect(view[key]).toBeCloseTo(views[0][key], 2);
 });
+
+test('computer: the active CPU or image-job transport stays outside the drawing at usable size', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  for (const width of [375, 960])
+    for (const colorScheme of ['light', 'dark']) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ colorScheme });
+      await ready(page);
+      // Reset the previous iteration's persisted navigation and simulation state.
+      await restore(page, {
+        ...(await state(page)),
+        keys: [],
+        imageJob: at('discrete', 'queued').imageJob,
+      });
+      await page.locator('[data-job-toggle]').press('Enter');
+      await go(page, 'cpu');
+      await go(page, 'die');
+      await go(page, 'core-0');
+      const checkPlayer = async (selector) => {
+        await expect(page.locator('.ve-player:visible')).toHaveCount(1);
+        await expect(page.locator('[data-scene-frame] .ve-player')).toHaveCount(0);
+        const metrics = await page.locator(selector).evaluate((element) => ({
+          controls: [...element.querySelectorAll('button,input,select')]
+            .filter((control) => control.checkVisibility())
+            .map((control) => control.getBoundingClientRect().toJSON()),
+          top: element.getBoundingClientRect().top,
+          bottom: document.querySelector('[data-scene-frame]').getBoundingClientRect().bottom,
+        }));
+        expect(metrics.top).toBeGreaterThanOrEqual(metrics.bottom);
+        for (const box of metrics.controls) {
+          expect(box.width).toBeGreaterThanOrEqual(43.9);
+          expect(box.height).toBeGreaterThanOrEqual(43.9);
+          expect(box.left).toBeGreaterThanOrEqual(-0.5);
+          expect(box.right).toBeLessThanOrEqual(width + 0.5);
+        }
+      };
+      await checkPlayer('[data-clock-player]');
+      await expect(page.locator('[data-scene-frame] .cpu-clock-wave')).toBeVisible();
+      const initial = (await state(page)).cpuCycle;
+      await page.locator('[data-clock-step]').press('Enter');
+      expect((await state(page)).cpuCycle).not.toEqual(initial);
+      await page.locator('[data-clock-play]').click();
+      await expect(page.locator('[data-clock-player]')).toHaveAttribute('data-playing', 'true');
+      await page.locator('[data-job-toggle]').press('Enter');
+      await checkPlayer('[data-job-player]');
+      await expect(page.locator('[data-clock-player]')).toHaveAttribute('data-playing', 'false');
+      const before = await state(page);
+      await page.locator('[data-job-step]').press('Enter');
+      const after = await state(page);
+      expect(after.imageJob).not.toEqual(before.imageJob);
+      expect(after.cpuCycle).toEqual(before.cpuCycle);
+      await open(page, 'cpu');
+      await checkPlayer('[data-job-player]');
+      await page.locator('[data-job-toggle]').press('Enter');
+      await go(page, 'cpu');
+      await go(page, 'die');
+      await go(page, 'core-0');
+      await checkPlayer('[data-clock-player]');
+      expect((await state(page)).cpuCycle).toEqual(after.cpuCycle);
+      await expect(page.locator('.cpu-clock-wave')).toBeVisible();
+    }
+});

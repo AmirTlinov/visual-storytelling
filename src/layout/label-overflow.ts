@@ -7,13 +7,15 @@ export interface OverflowLabel {
 }
 
 let serial = 0;
+const html = <K extends keyof HTMLElementTagNameMap>(name: K) =>
+  document.createElementNS('http://www.w3.org/1999/xhtml', name) as HTMLElementTagNameMap[K];
 
 /** Explicit access to labels that cannot fit; placement remains with the surface's solver. */
 export function labelOverflow(host: HTMLElement) {
   const lifetime = new AbortController(),
     listen = { signal: lifetime.signal },
     id = `ve-label-overflow-${++serial}`;
-  const element = document.createElement('button');
+  const element = html('button');
   element.type = 'button';
   element.className = 've-label-overflow';
   element.hidden = true;
@@ -21,7 +23,7 @@ export function labelOverflow(host: HTMLElement) {
   element.setAttribute('popovertarget', id);
   element.setAttribute('aria-controls', id);
   element.setAttribute('aria-expanded', 'false');
-  const panel = document.createElement('div');
+  const panel = html('div');
   panel.id = id;
   panel.className = 've-label-overflow-list';
   panel.style.pointerEvents = 'auto';
@@ -29,7 +31,7 @@ export function labelOverflow(host: HTMLElement) {
   panel.setAttribute('role', 'region');
   panel.setAttribute('aria-label', 'Подписи, для которых недостаточно места в рисунке');
   panel.tabIndex = 0;
-  const list = document.createElement('ul');
+  const list = html('ul');
   panel.append(list);
   host.append(element, panel);
   const rows = new Map<string, HTMLLIElement>();
@@ -54,6 +56,7 @@ export function labelOverflow(host: HTMLElement) {
     'beforetoggle',
     (event) => {
       if (event.newState === 'closed') returnFocus = panel.contains(document.activeElement);
+      else panel.style.visibility = 'hidden';
     },
     listen,
   );
@@ -63,6 +66,7 @@ export function labelOverflow(host: HTMLElement) {
       element.setAttribute('aria-expanded', String(open()));
       if (open()) {
         place();
+        panel.style.visibility = '';
         panel.focus({ preventScroll: true });
       } else if (
         returnFocus &&
@@ -102,7 +106,7 @@ export function labelOverflow(host: HTMLElement) {
       for (const item of items) {
         let row = rows.get(item.id);
         if (!row) {
-          row = document.createElement('li');
+          row = html('li');
           row.dataset.label = item.id;
           rows.set(item.id, row);
         }

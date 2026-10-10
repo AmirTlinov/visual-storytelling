@@ -202,8 +202,8 @@ test('projected labels keep fixed annotations, inscriptions and protected object
     assert(await trigger.isVisible(), 'physically crowded labels have explicit access');
     await trigger.focus();
     await trigger.press('Enter');
-    await page.waitForFunction(() =>
-      document.querySelector('.ve-label-overflow-list').matches(':popover-open'),
+    await page.waitForFunction(
+      () => document.querySelector('.ve-label-overflow-list') === document.activeElement,
     );
     assert.match(
       await page.locator('.ve-label-overflow-list').innerText(),

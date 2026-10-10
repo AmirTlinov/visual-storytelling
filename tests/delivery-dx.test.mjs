@@ -187,8 +187,9 @@ test('parallel video export has continuous frame indices and audio, and failed o
     );
     const video = probe.streams.find((stream) => stream.codec_type === 'video');
     assert.equal(Number(video.nb_read_frames), 16);
-    assert.equal(video.width, 440, 'output width does not shrink to the captured subject width');
-    assert.equal(video.height, 248, 'default video fits the subject into a 16:9 output');
+    assert.equal(video.width, 448, 'output width rounds to an encoder-safe 16:9 frame');
+    assert.equal(video.height, 252, 'video preserves an exact 16:9 ratio');
+    assert.deepEqual([receipt.width, receipt.height], [video.width, video.height]);
     const audio = probe.streams.find((stream) => stream.codec_type === 'audio');
     assert(Math.abs(Number(audio.duration) - 2) < 0.03);
     const frames = await videoFrames(output, 0, undefined, undefined, join(directory, 'decoded'));

@@ -30,12 +30,14 @@ function mount<T, R>(
   let current = copy(read()),
     pending = false,
     applying = 0,
+    revision = 0,
     disposed = false;
   let field: HTMLElement | null = null;
   function record() {
     if (pending || applying) return;
     const next = copy(read());
     if (equal(next, current)) return;
+    revision++;
     past.push(current);
     if (past.length > 100) past.shift();
     current = next;
@@ -44,6 +46,7 @@ function mount<T, R>(
   }
   function begin() {
     if (applying || pending) return;
+    revision++;
     current = copy(read());
     pending = true;
   }
@@ -53,13 +56,33 @@ function mount<T, R>(
     field = null;
     record();
   }
-  async function restoreState(value: T) {
-    applying++;
-    try {
-      return await restore(copy(value));
-    } finally {
-      applying--;
+  async function restoreState(value: T, accepted?: () => void) {
+    const request = ++revision;
+    const sync = (completed = false) => {
+      // Later input, a gesture or another restore owns the history cursor now.
+      if (disposed || request !== revision) return;
       current = copy(read());
+      if (accepted && (completed || equal(current, value))) {
+        const notify = accepted;
+        accepted = undefined;
+        notify();
+      }
+    };
+    try {
+      let work: R | Promise<R>;
+      applying++;
+      try {
+        work = restore(copy(value));
+      } finally {
+        // Restorers accept inputs synchronously; preparation does not lock user edits.
+        applying--;
+        sync();
+      }
+      const result = await work;
+      sync(true);
+      return result;
+    } finally {
+      sync();
     }
   }
   let travelQueue: Promise<void> | undefined;
@@ -89,10 +112,12 @@ function mount<T, R>(
       target = from.at(-1)!;
     const focused = document.activeElement,
       keepFocus = root.contains(focused);
-    await restoreState(target);
-    to.push(previous);
-    from.pop();
-    changed();
+    await restoreState(target, () => {
+      // The accepted condition owns the cursor even if its preparation later fails.
+      to.push(previous);
+      from.pop();
+      changed();
+    });
     if (keepFocus && focused && !focused.isConnected)
       root.querySelector<HTMLElement>('[data-handle]')?.focus({ preventScroll: true });
   }
@@ -210,14 +235,21 @@ function mount<T, R>(
     get state() {
       return { undo: past.length > 0, redo: future.length > 0 };
     },
-    restore: restoreState,
+    restore: (value: T) => restoreState(value),
     change(work: () => void) {
+      if (!applying) revision++;
       if (!pending && !applying) current = copy(read());
-      work();
-      record();
+      try {
+        work();
+      } finally {
+        // Preparation can fail after the model has already accepted the condition.
+        // Equality keeps rejected edits out of history; gestures still record on end().
+        record();
+      }
     },
     clear() {
       if (applying) return;
+      revision++;
       past.length = 0;
       future.length = 0;
       pending = false;

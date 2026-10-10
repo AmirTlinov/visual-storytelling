@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
+import { PNG } from 'pngjs';
 import { assetURLs } from '../tools/asset-urls.mjs';
 
 test('one live scene owns disposal, semantic visibility, keyboard history and cue-based restoration', async () => {
@@ -77,7 +78,9 @@ test('one live scene owns disposal, semantic visibility, keyboard history and cu
     await item.click();
     assert.deepEqual(await page.evaluate(() => scene.selected), []);
     await item.click();
-    await page.locator('.ve-stage svg').click({ position: { x: 160, y: 65 } });
+    const svg = page.locator('.ve-stage svg'),
+      bounds = await svg.boundingBox();
+    await svg.click({ position: { x: bounds.width * 0.8, y: bounds.height * 0.8125 } });
     assert.deepEqual(await page.evaluate(() => scene.selected), []);
     await page
       .getByRole('button', { name: 'Meaningful item', exact: true })
@@ -190,6 +193,92 @@ test('one live scene owns disposal, semantic visibility, keyboard history and cu
       history.notices.map(({ code, ids }) => ({ code, ids })),
       [{ code: 'parameters-changed', ids: ['x'] }],
     );
+  } finally {
+    await browser.close();
+  }
+});
+
+test('selection chooses one visible representation per object and follows visibility changes', async () => {
+  const bundle = await build({
+    stdin: {
+      resolveDir: process.cwd(),
+      contents: `
+        import { sceneObjects, describeObject } from './src/scene-objects.ts';
+        const root = document.querySelector('main');
+        for (const node of root.querySelectorAll('[data-object]')) {
+          describeObject(node, {label: node.dataset.object});
+          if (node.id === 'annotation') node.tabIndex = -1;
+        }
+        window.owner = sceneObjects(root);
+      `,
+    },
+    bundle: true,
+    format: 'iife',
+    write: false,
+  });
+  const styles = await build({
+    entryPoints: ['src/style.css'],
+    bundle: true,
+    write: false,
+    loader: { '.woff2': 'dataurl', '.svg': 'dataurl' },
+  });
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`<main class="ve-scene">
+      <span id="annotation" data-object="number">Число пять</span>
+      <button id="proxy" class="ve-viewport-object" data-object="number" style="width:80px;height:44px">5</button>
+      <svg width="200" height="100" style="width:200px;height:100px"><g id="sum" data-object="sum"><rect width="200" height="100" fill="#eee"/></g></svg>
+    </main>`);
+    await page.addStyleTag({ content: styles.outputFiles[0].text });
+    await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    const beforeSVG = PNG.sync.read(await page.locator('svg').screenshot());
+    await page.evaluate(() => owner.select(['number', 'sum']));
+    const selectedSVG = PNG.sync.read(await page.locator('svg').screenshot());
+    const painted = Array.from({ length: 6 }, (_, x) => {
+      const offset = (Math.floor(selectedSVG.height / 2) * selectedSVG.width + x) * 4;
+      return selectedSVG.data[offset] < beforeSVG.data[offset] - 50;
+    });
+    assert.ok(painted.some(Boolean), 'SVG selection remains painted inside the viewport clip');
+    const highlights = () =>
+      page
+        .locator('[data-selection-highlight]')
+        .evaluateAll((nodes) => nodes.map((n) => n.id).sort());
+    assert.deepEqual(await highlights(), ['proxy', 'sum']);
+    assert.equal(await page.locator('[data-selected][aria-pressed="true"]').count(), 3);
+    assert.equal(
+      await page.locator('#proxy').evaluate((n) => getComputedStyle(n).outlineStyle),
+      'solid',
+    );
+    assert.equal(
+      await page.locator('#annotation').evaluate((n) => getComputedStyle(n).outlineStyle),
+      'none',
+    );
+    await page.locator('#proxy').evaluate((n) => (n.hidden = true));
+    await page.waitForFunction(() =>
+      document.querySelector('#annotation').hasAttribute('data-selection-highlight'),
+    );
+    assert.deepEqual(await highlights(), ['annotation', 'sum']);
+    await page.locator('#annotation').evaluate((n) => (n.style.opacity = '0'));
+    await page.waitForFunction(
+      () => !document.querySelector('#annotation').hasAttribute('data-selection-highlight'),
+    );
+    assert.deepEqual(await highlights(), ['sum']);
+    assert.deepEqual(await page.evaluate(() => owner.selected), ['number', 'sum']);
+    await page.locator('#proxy').evaluate((n) => (n.hidden = false));
+    await page.waitForFunction(() =>
+      document.querySelector('#proxy').hasAttribute('data-selection-highlight'),
+    );
+    await page.keyboard.press('Tab');
+    await page.locator('#sum').focus();
+    assert.equal(
+      await page.locator('#sum').evaluate((n) => getComputedStyle(n).outlineStyle),
+      'dashed',
+    );
+    assert.deepEqual(await highlights(), ['proxy', 'sum']);
+    await page.evaluate(() => owner.dispose());
+    assert.deepEqual(await highlights(), []);
+    assert.equal(await page.locator('[data-selected]').count(), 0);
   } finally {
     await browser.close();
   }

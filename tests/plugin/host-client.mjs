@@ -17,14 +17,17 @@ let bridge,
 const resources = new Map();
 let focusDelay = 0,
   focusRequests = 0;
-let displayRequests = [];
+let displayRequests = [],
+  displayDelay = 0,
+  displayPending = 0;
 let hostContext = {
   theme: 'light',
   displayMode: 'inline',
   availableDisplayModes: ['inline', 'fullscreen'],
 };
 async function mount(sessionId, result) {
-  opened = result ?? (await call('story_open', sessionId ? { sessionId } : {}));
+  opened =
+    result ?? (await call('story_open', sessionId ? { sessionId } : { example: 'explorer-svg' }));
   iframe = document.createElement('iframe');
   iframe.title = 'MCP App';
   iframe.style.cssText = 'border:0;width:100%;height:730px';
@@ -74,6 +77,11 @@ async function mount(sessionId, result) {
     iframe.style.height = mode === 'fullscreen' ? '900px' : `${inlineHeight}px`;
     hostContext = { ...hostContext, displayMode: mode };
     bridge.setHostContext(hostContext);
+    if (displayDelay) {
+      displayPending++;
+      await new Promise((resolve) => setTimeout(resolve, displayDelay));
+      displayPending--;
+    }
     return { mode };
   };
   bridge.addEventListener('initialized', async () => {
@@ -90,6 +98,12 @@ window.pluginTest = {
   },
   get focusRequests() {
     return focusRequests;
+  },
+  delayDisplay(ms) {
+    displayDelay = ms;
+  },
+  get displayPending() {
+    return displayPending;
   },
   get displayRequests() {
     return displayRequests;

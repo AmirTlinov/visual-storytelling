@@ -3,7 +3,7 @@ export interface LabelBox {
   y: number;
   width: number;
   height: number;
-  /** Fully transparent labels do not reserve space. */
+  /** Fading labels yield space to opaque neighbours; fully transparent labels reserve no space. */
   opacity?: number;
   /** Higher priority keeps its preferred position first when hard constraints require repacking. */
   priority?: number;
@@ -285,12 +285,16 @@ export function placeLabels(
     ...boundaries[i]!,
   ]);
   const centers = preferred.map((box) => box.y + box.height / 2);
+  // Opacity weights displacement, never the readable gap. An arriving label takes
+  // the free position first and gradually shares displacement as it becomes opaque.
+  const mobility = preferred.map(
+    (box) => 1 / Math.max(Number.EPSILON, Math.min(1, box.opacity ?? 1)),
+  );
   const constraints: {
     i: number;
     j?: number;
     sign: number;
     distance: number;
-    weight: number;
     dual: number;
   }[] = [];
   for (const i of active) {
@@ -298,13 +302,12 @@ export function placeLabels(
       bound = bounds[i]!;
     if (!fits(bound)) continue;
     constraints.push(
-      { i, sign: 1, distance: bound.top + box.height / 2, weight: 1, dual: 0 },
-      { i, sign: -1, distance: -(bound.bottom + box.height / 2), weight: 1, dual: 0 },
+      { i, sign: 1, distance: bound.top + box.height / 2, dual: 0 },
+      { i, sign: -1, distance: -(bound.bottom + box.height / 2), dual: 0 },
     );
     for (const j of active) {
       if (j <= i || !fits(bounds[j]!)) continue;
       const other = placed[j]!;
-      const weight = Math.min(1, box.opacity ?? 1, other.opacity ?? 1);
       const clearance =
         Math.abs(box.x + box.width / 2 - other.x - other.width / 2) - (box.width + other.width) / 2;
       const ramp = gap * 3;
@@ -316,7 +319,6 @@ export function placeLabels(
         j,
         sign: -1,
         distance: contact * ((box.height + other.height) / 2 + gap) - (1 - contact) * area.height,
-        weight,
         dual: 0,
       });
     }
@@ -324,9 +326,7 @@ export function placeLabels(
   // Difference constraints follow the input order, so a forward/backward pass detects infeasibility.
   const lower = bounds.map((b, i) => b.top + placed[i]!.height / 2);
   const upper = bounds.map((b, i) => b.bottom + placed[i]!.height / 2);
-  const pairs = constraints.filter(
-    (c): c is typeof c & { j: number } => c.j !== undefined && c.weight === 1,
-  );
+  const pairs = constraints.filter((c): c is typeof c & { j: number } => c.j !== undefined);
   for (const { i, j, distance } of pairs) lower[j] = Math.max(lower[j]!, lower[i]! + distance);
   for (const { i, j, distance } of [...pairs].reverse())
     upper[i] = Math.min(upper[i]!, upper[j]! - distance);
@@ -337,18 +337,15 @@ export function placeLabels(
     for (let iteration = 0; iteration < Math.max(256, 64 * active.length ** 2); iteration++) {
       let change = 0;
       for (const constraint of constraints) {
-        const { i, j, sign, distance, weight } = constraint;
+        const { i, j, sign, distance } = constraint;
         const value = sign * centers[i]! + (j === undefined ? 0 : centers[j]!);
-        const norm = j === undefined ? 1 : 2;
-        const dual = Math.max(
-          0,
-          ((norm * constraint.dual + distance - value) * weight) / (1 + (norm - 1) * weight),
-        );
+        const norm = mobility[i]! + (j === undefined ? 0 : mobility[j]!);
+        const dual = Math.max(0, constraint.dual + (distance - value) / norm);
         const step = dual - constraint.dual;
-        centers[i]! += sign * step;
-        if (j !== undefined) centers[j]! += step;
+        centers[i]! += sign * step * mobility[i]!;
+        if (j !== undefined) centers[j]! += step * mobility[j]!;
         constraint.dual = dual;
-        change = Math.max(change, Math.abs(step));
+        change = Math.max(change, Math.abs(step) * norm);
       }
       if (change < 1e-7) break;
     }

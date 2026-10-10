@@ -108,3 +108,52 @@ test('typed examples release drawing observers and theme subscriptions through t
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('attached presentation resources dispose once even when a subject fails to release', async () => {
+  const bundle = await build({
+    stdin: {
+      contents: "import {mountScene} from './src/scene-handle.ts'; window.mountSubject=mountScene;",
+      resolveDir: resolve('.'),
+      loader: 'ts',
+    },
+    bundle: true,
+    write: false,
+    format: 'iife',
+    platform: 'browser',
+  });
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<main id="subject"></main>');
+    await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    const result = await page.evaluate(() => {
+      const root = document.querySelector('#subject');
+      const calls = [];
+      const scene = mountSubject(root, {
+        dispose() {
+          calls.push('subject');
+          throw new Error('Release failed');
+        },
+      });
+      scene.onDispose(() => calls.push('frame'));
+      const unregister = scene.onDispose(() => calls.push('removed'));
+      unregister();
+      scene.onDispose(() => calls.push('overflow'));
+      let error;
+      try {
+        scene.dispose();
+      } catch (cause) {
+        error = cause.message;
+      }
+      scene.dispose();
+      return { calls, error, published: Boolean(root.scene) };
+    });
+    assert.deepEqual(result, {
+      calls: ['subject', 'frame', 'overflow'],
+      error: 'Release failed',
+      published: false,
+    });
+  } finally {
+    await browser.close();
+  }
+});

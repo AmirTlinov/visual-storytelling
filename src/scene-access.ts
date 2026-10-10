@@ -69,7 +69,10 @@ export interface SceneAccessOwner {
   visible?(key: string): boolean;
   setMode?(value: 'story' | 'explore'): void;
   /** Apply an explicit patch; the subject owns retained values and parameter transitions. */
-  setValues?(values: Record<string, ControlValue>): void | Promise<void>;
+  setValues?(
+    values: Record<string, ControlValue>,
+    options?: { restoring: true },
+  ): void | Promise<void>;
   /** The existing story owner accepts restored inputs and time before preparing their frame. */
   restoreValues?(
     values: Record<string, ControlValue>,

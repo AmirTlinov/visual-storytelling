@@ -23,7 +23,12 @@
       <span id="job-text" role="status"></span><button id="cancel">Отменить</button>
     </aside>
     <main>
+      <section id="catalog" hidden aria-labelledby="catalog-title">
+        <h2 id="catalog-title">Выберите основу объяснения</h2>
+        <ul id="catalog-examples"></ul>
+      </section>
       <iframe
+        hidden
         id="scene"
         title="Интерактивное объяснение"
         sandbox="allow-scripts"

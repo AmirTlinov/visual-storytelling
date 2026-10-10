@@ -49,6 +49,7 @@ export function surfaceLettering(
   (attachment.object ?? scene).add(group);
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d')!;
+  const output = stage.querySelector<HTMLCanvasElement>(':scope > canvas');
   function createTexture() {
     const texture = new T.CanvasTexture(canvas);
     texture.colorSpace = T.SRGBColorSpace;
@@ -100,10 +101,15 @@ export function surfaceLettering(
     opacity = 1,
     previousHeight = options.height,
     previousWidth = options.maxWidth,
-    lineCount = 1;
+    lineCount = 1,
+    logicalWidth = 32,
+    logicalHeight = 160,
+    rasterLineHeight = 160;
+  let lines: string[] = [];
   const font = getComputedStyle(stage).fontFamily;
   function resize() {
-    const aspect = canvas.width / canvas.height;
+    // Geometry uses stable font metrics; changing raster density never moves the inscription.
+    const aspect = logicalWidth / logicalHeight;
     planes.forEach((plane, index) => {
       const face = faceSizes[index];
       const height = face
@@ -117,7 +123,7 @@ export function surfaceLettering(
   function draw(value: string) {
     context.font = `112px ${font}`;
     const limit = ((options.maxWidth ?? Infinity) * 160) / (options.height ?? 0.32) - 16;
-    const lines = value.split('\n').flatMap((line) => {
+    lines = value.split('\n').flatMap((line) => {
       if (!options.wrap || faces.length) return [line];
       const result: string[] = [];
       let current = '';
@@ -131,11 +137,18 @@ export function surfaceLettering(
       return [...result, current];
     });
     lineCount = lines.length;
-    const width = Math.max(
+    logicalWidth = Math.max(
       32,
       Math.ceil(Math.max(...lines.map((line) => context.measureText(line).width)) + 16),
     );
-    const height = 160 * lineCount;
+    logicalHeight = 160 * lineCount;
+    resize();
+    paint();
+  }
+  function paint() {
+    const density = rasterLineHeight / 160,
+      width = Math.max(1, Math.ceil(logicalWidth * density)),
+      height = rasterLineHeight * lineCount;
     if (canvas.width !== width || canvas.height !== height) {
       // GPU texture storage cannot resize: replace it along with the canvas bounds.
       texture.dispose();
@@ -143,14 +156,38 @@ export function surfaceLettering(
       canvas.height = height;
       material.map = texture = createTexture();
     }
-    context.font = `112px ${font}`;
-    resize();
+    context.font = `${112 * density}px ${font}`;
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = '#fff';
     context.textAlign = 'center';
     context.textBaseline = 'middle';
-    lines.forEach((line, i) => context.fillText(line, canvas.width / 2, 80 + 160 * i));
+    lines.forEach((line, i) => context.fillText(line, canvas.width / 2, (80 + 160 * i) * density));
     texture.needsUpdate = true;
+  }
+  const a = new T.Vector3(),
+    b = new T.Vector3();
+  function rasterize(camera: Camera) {
+    if (!output?.width || !output.height || !group.visible) return;
+    const distance = (plane: T.Mesh, x: number, y: number) => {
+      a.set(-x, -y, 0).applyMatrix4(plane.matrixWorld).project(camera);
+      b.set(x, y, 0).applyMatrix4(plane.matrixWorld).project(camera);
+      return Math.hypot(((a.x - b.x) * output.width) / 2, ((a.y - b.y) * output.height) / 2);
+    };
+    let height = 0;
+    for (const plane of planes)
+      height = Math.max(
+        height,
+        distance(plane, 0, 0.5),
+        (distance(plane, 0.5, 0) * logicalHeight) / logicalWidth,
+      );
+    if (!Number.isFinite(height) || height <= 0) return;
+    // Native font rasterization at the projected size preserves thin pen strokes.
+    // Small buckets avoid repainting during subpixel camera motion; mipmaps retain
+    // continuous coverage when a surface turns away or becomes smaller.
+    const next = Math.max(8, Math.min(512, Math.ceil(height / lineCount / 4) * 4));
+    if (next === rasterLineHeight) return;
+    rasterLineHeight = next;
+    paint();
   }
   function prepare() {
     if (typeof text === 'function') element.textContent = text();
@@ -168,6 +205,7 @@ export function surfaceLettering(
   }
   function update(camera: Camera) {
     prepare();
+    rasterize(camera);
     const eye = camera.getWorldPosition(new T.Vector3());
     element.hidden =
       !objectWithin(group, scene) ||

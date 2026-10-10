@@ -68,7 +68,7 @@ test(
       await unlock(temporary);
       await rm(temporary, { recursive: true, force: true });
     });
-    for (const path of ['plugin/dist', 'runtime', 'dist', 'tools'])
+    for (const path of ['plugin/dist/examples', 'runtime', 'dist', 'tools'])
       await mkdir(join(source, path), { recursive: true });
     await Promise.all(
       ['server', 'kernel'].map((name) =>
@@ -102,7 +102,7 @@ test(
       'dist/build-info.json': '{}',
       LICENSE: '0BSD',
       'plugin/dist/app.html': '<main>Install runtime test</main>',
-      'plugin/dist/example.json': JSON.stringify({
+      'plugin/dist/examples/fixture.json': JSON.stringify({
         revision: 'fixture',
         title: 'Fixture',
         html: '<main>Ready</main>',
@@ -173,7 +173,7 @@ process.on('message',async(message)=>{
       runtime = await direct(first.release),
       hello = await runtime.call('hello');
     assert.equal((await tool(a, 'story_help', { query: 'Fixture' })).text, first.release);
-    const opened = await tool(a, 'story_open'),
+    const opened = await tool(a, 'story_open', { example: 'fixture' }),
       renderer = randomUUID();
     const attached = await tool(a, 'story_view', {
       sessionId: opened.sessionId,

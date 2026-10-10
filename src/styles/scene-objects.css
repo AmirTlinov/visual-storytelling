@@ -1,0 +1,29 @@
+.ve-scene [data-object][role='button'] {
+  cursor: pointer;
+  outline: none;
+}
+.ve-viewport-object {
+  outline: none;
+}
+.ve-viewport-object > span {
+  display: none;
+}
+.ve-viewport-object:focus-visible > span {
+  display: block;
+}
+.ve-scene [data-object][data-selection-highlight] {
+  outline: 2px solid var(--ve-blue, #2670a8);
+  outline-offset: 3px;
+}
+:is(.ve-scene svg, svg.ve-scene) [data-object][data-selection-highlight] {
+  /* Logical SVG targets can reach the viewport edge; keep their ring inside the clip. */
+  outline-offset: -3px;
+}
+.ve-scene [data-object][role='button']:focus-visible,
+.ve-viewport-object:focus-visible {
+  outline: 1px dashed var(--ve-pencil, #68747b);
+  outline-offset: 6px;
+}
+:is(.ve-scene svg, svg.ve-scene) [data-object][role='button']:focus-visible {
+  outline-offset: -6px;
+}

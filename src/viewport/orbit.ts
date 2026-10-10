@@ -40,20 +40,24 @@ export function orbitControls(
   controls.mouseButtons.MIDDLE = MOUSE.PAN;
   controls.addEventListener('change', changed);
   controls.addEventListener('start', started);
+  const subjectGesture = (event: Event) =>
+    target.contains(event.target as Node) &&
+    !(
+      event.target instanceof Element &&
+      event.target.closest('button,input,select,textarea,a,[contenteditable],[popover]')
+    );
   const gate = (event: Event) => {
-    controls.enabled = target.contains(event.target as Node);
+    controls.enabled = subjectGesture(event);
     if (controls.enabled && event.type === 'pointerdown')
       (target as HTMLElement).focus({ preventScroll: true });
   };
-  if (target !== element) {
-    element.addEventListener('pointerdown', gate, { ...listen, capture: true });
-    element.addEventListener('wheel', gate, { ...listen, capture: true, passive: true });
-  }
+  element.addEventListener('pointerdown', gate, { ...listen, capture: true });
+  element.addEventListener('wheel', gate, { ...listen, capture: true, passive: true });
   element.addEventListener(
     'keydown',
     (input: Event) => {
       const event = input as KeyboardEvent;
-      if (!target.contains(event.target as Node)) return;
+      if (!subjectGesture(event)) return;
       if (
         !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', '+', '=', '-', '_', 'Home'].includes(
           event.key,

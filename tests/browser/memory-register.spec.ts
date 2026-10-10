@@ -6,16 +6,17 @@ test('the whole lesson remains one bounded 16:9 frame through narration and expl
   await page.goto('/memory-register/index.html');
   await page.evaluate(() => (window as any).galleryReady);
   const frame = page.locator('[data-scene-frame]');
+  const player = page.locator('[data-player]');
+  await expect(player).toHaveCount(1);
+  expect(await player.evaluate((element) => element.closest('[data-scene-frame]'))).toBeNull();
   const geometry = () =>
     page.evaluate(() =>
-      ['[data-scene-frame]', 'h1', '.ve-stage', '.memory-drawing', '[data-player]'].map(
-        (selector) => {
-          const { x, y, width, height } = document.querySelector(selector)!.getBoundingClientRect();
-          return [x + scrollX, y + scrollY, width, height].map(
-            (value) => Math.round(value * 100) / 100,
-          );
-        },
-      ),
+      ['[data-scene-frame]', 'h1', '.ve-stage', '.memory-drawing'].map((selector) => {
+        const { x, y, width, height } = document.querySelector(selector)!.getBoundingClientRect();
+        return [x + scrollX, y + scrollY, width, height].map(
+          (value) => Math.round(value * 100) / 100,
+        );
+      }),
     );
   for (const viewport of [
     { width: 960, height: 900 },
@@ -42,12 +43,25 @@ test('the whole lesson remains one bounded 16:9 frame through narration and expl
         }),
       )
       .toBe(true);
+    await expect(player).toBeVisible();
+    const playerBounds = (await player.boundingBox())!;
+    const frameBounds = (await frame.boundingBox())!;
+    expect(playerBounds.y).toBeGreaterThanOrEqual(frameBounds.y + frameBounds.height);
+    expect(playerBounds.x).toBeGreaterThanOrEqual(0);
+    expect(playerBounds.x + playerBounds.width).toBeLessThanOrEqual(viewport.width);
+    const shellWidth = await page.locator('#ve-scene').evaluate((element) => {
+      const style = getComputedStyle(element);
+      return element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    });
+    expect(playerBounds.width).toBeCloseTo(shellWidth, 1);
     const baseline = await geometry();
     for (const time of [0, 22.6, 34, 58, 8]) {
       await page.evaluate((t) => (document.querySelector('#ve-scene') as any).scene.seek(t), time);
       expect(await geometry()).toEqual(baseline);
     }
     await page.locator('[data-mode="explore"]').click();
+    await expect(player).toBeHidden();
+    await expect(player).toHaveJSProperty('inert', true);
     expect(await geometry()).toEqual(baseline);
     for (const id of ['inside', 'trace-panel']) {
       await page.locator(`[data-panel="${id}"]`).click();
@@ -75,7 +89,58 @@ test('the whole lesson remains one bounded 16:9 frame through narration and expl
     expect(popup.y + popup.height).toBeLessThanOrEqual(bounds.y + bounds.height + 0.1);
     await page.keyboard.press('End');
     await page.keyboard.press('Enter');
+    await expect(player).toBeVisible();
+    await expect(player).toHaveJSProperty('inert', false);
     expect(await geometry()).toEqual(baseline);
+  }
+});
+
+test('a short surface gives playback and errors the full shell width independently of the drawing', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 980, height: 400 });
+  await page.goto('/graph-lab/index.html');
+  await page.evaluate(() => (window as any).galleryReady);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  const message =
+    'Не удалось подготовить звук для выбранной главы. Проверьте доступность локального файла и повторите воспроизведение; положение рассказа и условия опыта сохранены.';
+  await page.evaluate(async (message) => {
+    const { shell } = await (window as any).galleryReady;
+    shell.status.textContent = message;
+  }, message);
+  await expect(page.locator('.ve-scene > .ve-status')).toHaveText(message);
+  for (const height of [400, 360, 400]) {
+    await page.setViewportSize({ width: 980, height });
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const root = document.querySelector('.ve-scene')!;
+          const box = root.getBoundingClientRect();
+          const frame = root.querySelector('[data-scene-frame]')!.getBoundingClientRect();
+          const player = root.querySelector('[data-player]')!.getBoundingClientRect();
+          const status = root.querySelector(':scope > .ve-status')!.getBoundingClientRect();
+          const bottom = parseFloat(getComputedStyle(document.body).paddingBottom);
+          return {
+            playerUsesShellWidth: Math.abs(player.width - box.width) < 0.1,
+            statusUsesShellWidth: Math.abs(status.width - box.width) < 0.1,
+            drawingIsSmaller: frame.width < box.width,
+            fitsHeight: Math.abs(box.bottom + bottom - innerHeight) < 0.1,
+            ratio: Math.abs(frame.width / frame.height - 16 / 9) < 0.001,
+          };
+        }),
+      )
+      .toEqual({
+        playerUsesShellWidth: true,
+        statusUsesShellWidth: true,
+        drawingIsSmaller: true,
+        fitsHeight: true,
+        ratio: true,
+      });
   }
 });
 

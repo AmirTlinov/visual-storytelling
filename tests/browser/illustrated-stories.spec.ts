@@ -44,19 +44,19 @@ for (const [name, values] of [
       ]);
       expect(paper.mode).toBe('explore');
       const sheet = page.locator('.ve-scene-content');
+      const measurementGrid = page.locator('[data-chapter="experiment"] .vs-grid');
       const grid = () =>
-        sheet.evaluate((element) => {
-          const style = getComputedStyle(element);
-          return {
-            image: style.backgroundImage,
-            size: style.backgroundSize,
-            position: style.backgroundPosition,
-          };
-        });
+        measurementGrid.locator('path').evaluateAll((paths) =>
+          paths.map((path) => ({
+            shape: path.getAttribute('d'),
+            transform: path.getAttribute('transform'),
+          })),
+        );
       const paperGrid = await grid();
-      expect(paperGrid.image).not.toBe('none');
-      // The outer paper owns the decorative grid; its nested drawing does not double it.
-      await expect(page.locator('[data-chapter="experiment"] .vs-grid')).toBeHidden();
+      expect(paperGrid.length).toBeGreaterThan(0);
+      // The drawing owns its grid and units; the shell does not add a second grid behind it.
+      await expect(measurementGrid).toBeVisible();
+      await expect(sheet).toHaveCSS('background-image', 'none');
       for (const theme of ['dark', 'light']) {
         const inspection = await command([{ type: 'theme', value: theme }]);
         expect(inspection.presentation.clipped).toEqual([]);
@@ -64,9 +64,9 @@ for (const [name, values] of [
           inspection.presentation.frame.width / inspection.presentation.frame.height,
         ).toBeCloseTo(16 / 9, 4);
         if (!variant) expect(inspection.presentation.unreadableText).toEqual([]);
-        const nextGrid = await grid();
-        expect(nextGrid.size).toBe(paperGrid.size);
-        expect(nextGrid.position).toBe(paperGrid.position);
+        await expect(measurementGrid).toBeVisible();
+        await expect(sheet).toHaveCSS('background-image', 'none');
+        expect(await grid()).toEqual(paperGrid);
       }
       if (variant) {
         // Expanding the same fixed composition restores reading size without changing its model.

@@ -31,7 +31,7 @@ export interface SceneOptions {
   /** Shared controls can follow a product interface while the subject owns its brand. */
   appearance?: 'sketch' | 'interface';
   paper?: boolean;
-  /** Complete 1280×720 composition by default. An explicit stage frame preserves a subject's own canvas. */
+  /** 1280×720 drawing by default. Playback and status stay outside the composition. */
   frame?: SceneFrameOptions;
   /** Hide the shell heading when the subject supplies its own title. */
   heading?: boolean;
@@ -198,12 +198,13 @@ function mount(
   if (captions && !completeFrame && (captions === true || captions.placement !== 'below'))
     stage.append(caption);
   else sheet.append(caption);
-  sheet.append(controls, status);
   if (completeFrame) root.append(composition.element);
+  root.append(controls, status);
   composition.resize();
   let transition: ((mode: 'story' | 'explore') => void) | undefined;
   let mode: 'story' | 'explore' = 'explore';
   let player: { dispose(): void } | undefined;
+  let acceptedCondition = {};
   function refresh() {
     for (const [key, control] of inputs)
       if (control.value !== values[key]) control.setValue(values[key]!);
@@ -226,15 +227,18 @@ function mount(
       onInput({ ...values });
       return;
     }
-    const previous = { ...values };
+    const previous = { ...values },
+      previousCondition = acceptedCondition;
     try {
       Object.assign(values, next);
       onInput({ ...values });
     } catch (error) {
       Object.assign(values, previous);
+      acceptedCondition = previousCondition;
       refresh();
       throw error;
     }
+    acceptedCondition = {};
     refresh();
   }
   function setMode(next: 'story' | 'explore') {
@@ -247,7 +251,9 @@ function mount(
       mode = previous;
       throw error;
     }
+    acceptedCondition = {};
     controls.hidden = exploration === 'model' && mode !== 'story';
+    controls.inert = controls.hidden;
     caption.hidden = controls.hidden;
     fields.hidden = mode === 'story' || !fields.childElementCount;
     storyButton.setAttribute('aria-pressed', String(mode === 'story'));
@@ -271,6 +277,9 @@ function mount(
     root,
     {
       snapshot: () => ({ ...values }),
+      get condition() {
+        return acceptedCondition;
+      },
       presentation: () => inspectPresentation(stage),
       setTheme: sceneTheme.set,
       dispose,
@@ -284,7 +293,7 @@ function mount(
       get setMode() {
         return player ? selectMode : undefined;
       },
-      setValues: changeValues,
+      setValues: (next, options) => (options?.restoring ? applyValues(next) : changeValues(next)),
       get restoreValues() {
         return inputStory ? applyValues : undefined;
       },
@@ -348,6 +357,7 @@ function mount(
       if (inputStory) throw new Error('Story parameters belong to story.input()');
       if (Object.entries(next).some(([key, value]) => values[key] !== value)) {
         Object.assign(values, next);
+        acceptedCondition = {};
         refresh();
       }
     },

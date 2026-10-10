@@ -5,6 +5,7 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { exportVideo } from './video-export.mjs';
+import { videoDimensions } from './video-dimensions.mjs';
 import { captionTrack } from '../dist/story/captions.js';
 import { captionSource } from './caption-source.mjs';
 import { renderer } from './render.mjs';
@@ -25,7 +26,7 @@ export async function runExport(args = process.argv.slice(2)) {
       time: { type: 'string' },
       cue: { type: 'string' },
       progress: { type: 'string' },
-      width: { type: 'string', default: '960' },
+      width: { type: 'string' },
       height: { type: 'string' },
       fps: { type: 'string', default: '30' },
       from: { type: 'string', default: '0' },
@@ -40,8 +41,8 @@ visual-story export --scene NAME --format png|svg|html|mp4 [--out FILE]
 Still image: --time SECONDS or --cue ID [--progress 0..1], --width 960 [--height 1200]
              --height sets the browser viewport; PNG captures the complete scene.
              --theme light|dark
-Video:       --from SECONDS --to SECONDS --fps 30 --width 960 [--height PIXELS] [--jobs 2]
-             Default frame is 16:9; --height explicitly selects another output format.
+Video:       --from SECONDS --to SECONDS --fps 30 [--width 960 | --height 540] [--jobs 2]
+             Always 16:9; sizes round to 32×18 pixel units. A supplied pair must match 16:9.
 Captions:    --format srt|vtt reads the mounted story (Chromium), or an audio-only timeline
 HTML:        --theme auto|light|dark; embeds code, fonts and audio for offline use
 
@@ -68,16 +69,16 @@ Video uses the scene's media timeline and narration. PNG/MP4 need Chromium; MP4 
     throw new Error('Format must be png, svg, html, mp4, srt or vtt');
   if (!(format === 'html' ? ['auto', 'light', 'dark'] : ['light', 'dark']).includes(theme))
     throw new Error('Choose light or dark; interactive HTML also supports auto');
-  const width = Number(values.width),
+  const width = values.width === undefined ? undefined : Number(values.width),
     height = values.height === undefined ? undefined : Number(values.height),
     fps = Number(values.fps),
     from = Number(values.from),
     time = Number(values.time ?? 0);
   if (
-    !Number.isInteger(width) ||
-    width < 320 ||
-    width > 3840 ||
-    (height !== undefined && (!Number.isInteger(height) || height < 240 || height > 3840)) ||
+    (width !== undefined && (!Number.isInteger(width) || width < 320 || width > 3840)) ||
+    (format !== 'mp4' &&
+      height !== undefined &&
+      (!Number.isInteger(height) || height < 240 || height > 3840)) ||
     !Number.isInteger(fps) ||
     fps < 1 ||
     fps > 60 ||
@@ -86,6 +87,7 @@ Video uses the scene's media timeline and narration. PNG/MP4 need Chromium; MP4 
     time < 0
   )
     throw new Error('Invalid export dimensions or time');
+  const dimensions = format === 'mp4' ? videoDimensions({ width, height }) : undefined;
   const output = values.out ?? `artifacts/${scene}.${format}`;
   await mkdir(dirname(output), { recursive: true });
   await cancellableCommand('Export', async (signal) => {
@@ -99,9 +101,8 @@ Video uses the scene's media timeline and narration. PNG/MP4 need Chromium; MP4 
         output,
         scene,
         theme,
-        width,
+        ...dimensions,
         directory: values.directory,
-        height,
         fps,
         from,
         to: values.to === undefined ? undefined : Number(values.to),
@@ -122,7 +123,7 @@ Video uses the scene's media timeline and narration. PNG/MP4 need Chromium; MP4 
       const render = await renderer({
         scene,
         theme,
-        width,
+        width: width ?? 960,
         height,
         directory: values.directory,
         signal,

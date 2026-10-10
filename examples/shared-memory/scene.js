@@ -9,9 +9,11 @@ window.galleryReady = (async () => {
   svg.replaceWith(stage);
   stage.append(svg);
   root.querySelector('h1').classList.add('ve-heading');
+  const controlsHost = root.querySelector('[data-player]');
+  controlsHost.remove();
   composition.append(...root.childNodes);
   const sceneFrame = SceneShell.frame(composition, { width: 1280, height: 720, scope: 'scene' });
-  root.append(sceneFrame.element);
+  root.append(sceneFrame.element, controlsHost);
   sceneFrame.resize();
 
   const detail = root.querySelector('[data-detail]');

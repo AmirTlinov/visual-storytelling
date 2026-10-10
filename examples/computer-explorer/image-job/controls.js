@@ -1,7 +1,8 @@
 import { SimulationPlayer } from '@visual-storytelling/core';
 export class ImageJobControls {
-  constructor(element, model, { changed, save, open, home, pauseOther }) {
+  constructor(element, controls, model, { changed, save, open, home, pauseOther }) {
     this.element = element;
+    this.controls = controls;
     this.model = model;
     this.abort = new AbortController();
     this.toggle = element.querySelector('[data-job-toggle]');
@@ -9,7 +10,7 @@ export class ImageJobControls {
     this.flow = element.querySelector('[data-job-flow]');
     this.status = element.querySelector('[data-job-status]');
     let next = 0;
-    this.player = SimulationPlayer.mount(element.querySelector('[data-job-player]'), {
+    this.player = SimulationPlayer.mount(controls, {
       read: () => ({ value: 0, done: model.done, stamp: '', canStep: !model.done }),
       prepare: () => {
         pauseOther();
@@ -75,6 +76,7 @@ export class ImageJobControls {
     this.toggle.setAttribute('aria-expanded', String(m.active));
     this.toggle.textContent = m.active ? 'SSD → экран · скрыть' : 'SSD → экран';
     this.actions.hidden = !m.active;
+    this.controls.hidden = !m.active;
     this.flow.hidden = !m.active;
     this.status.hidden = !m.active;
     this.player.update();

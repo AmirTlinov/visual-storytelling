@@ -15,6 +15,8 @@ def themed(svg):
     for filename in ("pencil.woff2", "pencil-heading.woff2", "pencil-note.woff2", "shantell.woff2"):
         font = base64.b64encode((ASSETS / filename).read_bytes()).decode()
         ink = ink.replace(f"url('../assets/{filename}')", f"url('data:font/woff2;base64,{font}')")
+    for filename in ('scene-objects.css', 'label-overflow.css'):
+        ink += '\n' + (ASSETS.parent / 'styles' / filename).read_text()
     if '<foreignObject' in svg:
         ink += '\n' + (ASSETS.parent / 'styles' / 'range.css').read_text()
     svg = re.sub(r'<style id="ve-shared-ink">.*?</style>\s*', '', svg, flags=re.S)

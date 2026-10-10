@@ -238,3 +238,114 @@ test('a native host without RAF keeps prepared observations, reversible suspensi
     await browser.close();
   }
 });
+
+test('the isolated renderer accepts host presentation only for its session and generation', async () => {
+  const adapter = await build({
+    entryPoints: ['plugin/ui/scene-frame.mjs'],
+    bundle: true,
+    write: false,
+    format: 'iife',
+  });
+  const scene = await build({
+    stdin: {
+      resolveDir: process.cwd(),
+      contents: `
+      import {SceneShell} from './src/scene.ts';
+      import {sceneHost,watchSceneHost} from './src/host/adapter.ts';
+      window.presentationStates=[];
+      watchSceneHost(()=>{
+        const presentation=sceneHost()?.presentation;
+        if(!presentation)return;
+        window.presentationStates.push(presentation.read());
+        presentation.subscribe(state=>window.presentationStates.push(state));
+        window.expand=()=>{
+          window.expansionResult='pending';
+          presentation.requestExpanded().then(()=>window.expansionResult='expanded',error=>window.expansionResult=error.message);
+        };
+      });
+      const shell=SceneShell.mount(document.querySelector('.ve-scene'),{title:'Host presentation'});
+      shell.attachStory({script:{duration:1,cues:{},segments:[]},stateAt:()=>({value:1}),render(){}});
+      `,
+    },
+    bundle: true,
+    write: false,
+    format: 'iife',
+  });
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.route('http://localhost/', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<iframe title="Scene" sandbox="allow-scripts" style="width:700px;height:700px"></iframe>',
+      }),
+    );
+    await page.goto('http://localhost/');
+    await page.evaluate((html) => {
+      window.messages = [];
+      addEventListener('message', (event) => {
+        if (event.data?.channel === 'visual-story-scene-v1') messages.push(event.data);
+      });
+      document.querySelector('iframe').srcdoc = html;
+    }, `<!doctype html><html><head></head><body><main class="ve-scene"></main><script>${scene.outputFiles[0].text}</script><script>window.__visualStorySession={sessionId:'scene-one',generation:2,stateRevision:0,presentation:{mode:'expanded',canExpand:true}}</script><script>${adapter.outputFiles[0].text}</script></body></html>`);
+    await page.waitForFunction(() => messages.some((message) => message.type === 'ready'));
+    const frame = page.frames().find((frame) => frame.url() === 'about:srcdoc');
+    assert.deepEqual(await frame.evaluate(() => presentationStates), [
+      { mode: 'expanded', canExpand: true },
+    ]);
+    const send = (message) =>
+      page.evaluate(
+        (message) =>
+          document.querySelector('iframe').contentWindow.postMessage(
+            {
+              channel: 'visual-story-scene-v1',
+              sessionId: 'scene-one',
+              generation: 2,
+              ...message,
+            },
+            '*',
+          ),
+        message,
+      );
+    await send({
+      type: 'host-presentation',
+      sessionId: 'another-scene',
+      value: { mode: 'inline', canExpand: false },
+    });
+    await send({
+      type: 'host-presentation',
+      generation: 1,
+      value: { mode: 'inline', canExpand: false },
+    });
+    await send({ type: 'host-presentation', value: { mode: 'inline', canExpand: true } });
+    await frame.waitForFunction(() => presentationStates.length === 2);
+    assert.deepEqual(await frame.evaluate(() => presentationStates), [
+      { mode: 'expanded', canExpand: true },
+      { mode: 'inline', canExpand: true },
+    ]);
+    await frame.evaluate(() => expand());
+    await page.waitForFunction(() =>
+      messages.some((message) => message.type === 'host-request' && message.action === 'expand'),
+    );
+    const request = await page.evaluate(() =>
+      messages.find((message) => message.type === 'host-request' && message.action === 'expand'),
+    );
+    assert.equal(request.sessionId, 'scene-one');
+    assert.equal(request.generation, 2);
+    await send({ type: 'host-presentation', value: { mode: 'expanded', canExpand: true } });
+    await send({ type: 'host-response', id: request.id });
+    await frame.waitForFunction(() => expansionResult === 'expanded');
+    assert.deepEqual(await frame.evaluate(() => presentationStates.at(-1)), {
+      mode: 'expanded',
+      canExpand: true,
+    });
+    await send({ type: 'host-presentation', value: { mode: 'inline', canExpand: false } });
+    await frame.waitForFunction(() => presentationStates.at(-1)?.canExpand === false);
+    assert.deepEqual(await frame.evaluate(() => presentationStates.at(-1)), {
+      mode: 'inline',
+      canExpand: false,
+    });
+  } finally {
+    await browser.close();
+  }
+});

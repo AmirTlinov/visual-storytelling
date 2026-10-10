@@ -212,7 +212,14 @@ test('public 3D models replace subjects, preserve concavity and keep fading anno
       'keyboard input rotates the camera',
     );
     await page.locator('#reused canvas').press('Home');
-    await settle(page);
+    await page.waitForFunction(
+      (expected) =>
+        document
+          .querySelector('#reused canvas')
+          .__visualReview()
+          .camera.matrix.every((value, i) => Math.abs(value - expected[i]) < 1e-7),
+      initialCamera,
+    );
     assert.ok(
       (await camera()).every((v, i) => Math.abs(v - initialCamera[i]) < 1e-7),
       'Home restores the same authored view',

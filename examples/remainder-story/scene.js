@@ -16,13 +16,13 @@ window.galleryReady = (async () => {
   const composition = document.createElement('div'),
     paper = root.querySelector('.paper');
   paper.classList.add('ve-stage');
-  composition.append(
-    paper,
+  composition.append(paper);
+  const frame = SceneShell.frame(composition, { width: 1280, height: 720, scope: 'scene' });
+  root.append(
+    frame.element,
     root.querySelector('[data-player]'),
     root.querySelector('[data-caption]'),
   );
-  const frame = SceneShell.frame(composition, { width: 1280, height: 720, scope: 'scene' });
-  root.append(frame.element);
   frame.resize();
   const layer = root.querySelector('[data-drawing]'),
     audio = root.querySelector('audio');

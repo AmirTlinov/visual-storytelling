@@ -33,14 +33,15 @@ test(
       });
       await page.evaluate(async () => {
         await API.SceneShell.ready();
-        window.create = () => {
+        window.create = ({ syncFailure = false } = {}) => {
           window.lab?.scene.dispose();
           const root = document.querySelector('main'),
             gates = new Map(),
             prepared = new Set([0, 2, 3]),
             aborted = [],
             rendered = [],
-            views = [];
+            views = [],
+            failure = new Error('Resource unavailable');
           let authored = 0,
             selected = [];
           const gate = (value) => {
@@ -80,6 +81,7 @@ test(
             },
             prepare({ value }, _frame, _mode, signal) {
               if (prepared.has(value)) return;
+              if (syncFailure && value === 7) throw failure;
               signal.addEventListener('abort', () => aborted.push(value));
               return gate(value).promise;
             },
@@ -116,6 +118,7 @@ test(
             aborted,
             rendered,
             views,
+            failure,
             setAuthored(value) {
               authored = value;
             },
@@ -153,6 +156,86 @@ test(
         });
         assert.deepEqual(afterFailure, { value: 0, phase: 'ready' });
       });
+      await t.test(
+        'accepted synchronous preparation failures remain undoable; rejected edits do not',
+        async () => {
+          const result = await page.evaluate(async () => {
+            create({ syncFailure: true });
+            let sameError;
+            try {
+              lab.shell.input({ value: 7 });
+            } catch (error) {
+              sameError = error === lab.failure;
+            }
+            const failed = {
+              sameError,
+              requested: lab.controller.requested.values.value,
+              presented: lab.controller.presented.values.value,
+              history: lab.scene.experimentHistory,
+            };
+            await lab.scene.undoExperiment();
+            const undone = lab.scene.snapshot().value;
+            try {
+              lab.shell.input({ low: 2, high: 0 });
+            } catch {}
+            const rejected = lab.scene.experimentHistory;
+            let redoError;
+            try {
+              await lab.scene.redoExperiment();
+            } catch (error) {
+              redoError = error === lab.failure;
+            }
+            const failedRedo = {
+              sameError: redoError,
+              requested: lab.controller.requested.values.value,
+              history: lab.scene.experimentHistory,
+            };
+            await lab.scene.undoExperiment();
+            lab.prepared.add(7);
+            await lab.scene.redoExperiment();
+            const redone = lab.scene.snapshot().value;
+
+            create({ syncFailure: true });
+            const range = document.querySelector('input[type="range"]');
+            range.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+            lab.shell.input({ value: 2 });
+            try {
+              lab.shell.input({ value: 7 });
+            } catch {}
+            document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+            await lab.scene.undoExperiment();
+            const grouped = {
+              value: lab.scene.snapshot().value,
+              history: lab.scene.experimentHistory,
+            };
+            lab.prepared.add(7);
+            await lab.scene.redoExperiment();
+            return {
+              failed,
+              undone,
+              rejected,
+              failedRedo,
+              redone,
+              grouped,
+              groupedRedo: lab.scene.snapshot().value,
+            };
+          });
+          assert.deepEqual(result, {
+            failed: {
+              sameError: true,
+              requested: 7,
+              presented: 0,
+              history: { undo: true, redo: false },
+            },
+            undone: 0,
+            rejected: { undo: false, redo: true },
+            failedRedo: { sameError: true, requested: 7, history: { undo: true, redo: false } },
+            redone: 7,
+            grouped: { value: 0, history: { undo: false, redo: true } },
+            groupedRedo: 7,
+          });
+        },
+      );
       await t.test(
         'same-context restore accepts dependent inputs and time before prepare',
         async () => {
@@ -304,7 +387,9 @@ test(
             const views = [];
             shell.attachView({
               capture: () => ({ id: 'saved' }),
-              restore(value) { views.push(value.id); },
+              restore(value) {
+                views.push(value.id);
+              },
               reset() {},
               dispose() {},
             });
@@ -349,6 +434,209 @@ test(
             identityStable: true,
             identityChanged: true,
           });
+        },
+      );
+      await t.test(
+        'an asynchronous subject readiness promise cannot adopt intervening input',
+        async () => {
+          for (const changed of [false, 'input', 'gesture']) {
+            const result = await page.evaluate(async (changed) => {
+              create();
+              lab.shell.input({ value: 2 });
+              let release;
+              const pending = new Promise((resolve) => (release = resolve));
+              lab.scene.extend({
+                subject: {
+                  capture: () => lab.controller.requested.values,
+                  restore(values, position) {
+                    lab.controller.restoreInputs(values, position);
+                    return pending;
+                  },
+                },
+              });
+              const restoring = lab.scene
+                .restore({
+                  ...lab.scene.capture(),
+                  subject: { value: 3, low: 0, high: 0 },
+                  view: { id: 'saved' },
+                  selected: ['a'],
+                })
+                .then(
+                  () => 'restored',
+                  (error) => error.code,
+                );
+              const accepted = lab.controller.requested.values.value;
+              const range = document.querySelector('input[type="range"]');
+              if (changed === 'gesture')
+                range.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+              if (changed) lab.shell.input({ value: 0 });
+              release();
+              const status = await restoring;
+              if (changed === 'gesture') {
+                lab.shell.input({ value: 2 });
+                document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+              }
+              const result = {
+                accepted,
+                status,
+                value: lab.scene.snapshot().value,
+                views: [...lab.views],
+                selected: [...lab.scene.selected],
+              };
+              if (changed) {
+                await lab.scene.undoExperiment();
+                result.undoValue = lab.scene.snapshot().value;
+              }
+              return result;
+            }, changed);
+            assert.deepEqual(
+              result,
+              changed
+                ? {
+                    accepted: 3,
+                    status: 'scene_restore_superseded',
+                    value: changed === 'gesture' ? 2 : 0,
+                    views: [],
+                    selected: [],
+                    undoValue: 3,
+                  }
+                : {
+                    accepted: 3,
+                    status: 'restored',
+                    value: 3,
+                    views: ['saved'],
+                    selected: ['a'],
+                  },
+            );
+          }
+        },
+      );
+      await t.test(
+        'new input during undo or redo retains one accepted step in history',
+        async () => {
+          for (const direction of ['undoExperiment', 'redoExperiment']) {
+            const result = await page.evaluate(async (direction) => {
+              create();
+              lab.shell.input({ value: 2 });
+              lab.shell.input({ value: 3 });
+              if (direction === 'redoExperiment') await lab.scene.undoExperiment();
+              const target = direction === 'undoExperiment' ? 2 : 3;
+              lab.prepared.delete(target);
+              const travelling = lab.scene[direction]().then(
+                () => null,
+                (error) => error.code,
+              );
+              const accepted = lab.controller.requested.values.value;
+              lab.shell.input({ value: 0 });
+              const code = await travelling;
+              lab.gate(target).resolve();
+              const values = [];
+              while (lab.scene.experimentHistory.undo && values.length < 5) {
+                await lab.scene.undoExperiment();
+                values.push(lab.scene.snapshot().value);
+              }
+              return { accepted, code, values };
+            }, direction);
+            assert.deepEqual(result, {
+              accepted: direction === 'undoExperiment' ? 2 : 3,
+              code: 'scene_restore_superseded',
+              values: direction === 'undoExperiment' ? [2, 0] : [3, 2, 0],
+            });
+          }
+        },
+      );
+      await t.test(
+        'a manual shell fences restored camera by its accepted condition and rolls back rejected input',
+        async () => {
+          for (const edit of ['input', 'sync', 'rejected']) {
+            const result = await page.evaluate(async (edit) => {
+              lab.scene.dispose();
+              const root = document.querySelector('main'),
+                shell = API.SceneShell.mount(root, {
+                  title: 'Manual condition',
+                  parameters: [{ key: 'x', label: 'X', value: 1, min: 0, max: 10 }],
+                  onInput(values) {
+                    if (values.x > 10) throw new Error('Outside experiment');
+                  },
+                });
+              let release,
+                selected = [];
+              const pending = new Promise((resolve) => (release = resolve)),
+                views = [],
+                scene = root.scene;
+              shell.attachView({
+                capture: () => ({ id: 'initial' }),
+                restore(value) {
+                  views.push(value.id);
+                },
+                reset() {},
+                dispose() {},
+              });
+              scene.extend({
+                subject: {
+                  capture: () => ({ ...shell.parameters }),
+                  restore(values) {
+                    shell.syncParameters(values);
+                    return pending;
+                  },
+                },
+                objects: () => [{ id: 'subject' }],
+                get selected() {
+                  return selected;
+                },
+                select(ids) {
+                  selected = [...ids];
+                },
+              });
+              const restoring = scene
+                .restore({
+                  ...scene.capture(),
+                  subject: { x: 3 },
+                  view: { id: 'saved' },
+                  selected: ['subject'],
+                })
+                .then(
+                  () => 'restored',
+                  (error) => error.code,
+                );
+              const condition = scene.condition;
+              if (edit === 'sync') shell.syncParameters({ x: 4 });
+              else {
+                try {
+                  shell.input({ x: edit === 'rejected' ? 11 : 4 });
+                } catch {}
+              }
+              const unchanged = scene.condition === condition;
+              release();
+              const result = {
+                status: await restoring,
+                unchanged,
+                value: shell.parameters.x,
+                selected,
+                views,
+              };
+              shell.dispose();
+              return result;
+            }, edit);
+            assert.deepEqual(
+              result,
+              edit === 'rejected'
+                ? {
+                    status: 'restored',
+                    unchanged: true,
+                    value: 3,
+                    selected: ['subject'],
+                    views: ['saved'],
+                  }
+                : {
+                    status: 'scene_restore_superseded',
+                    unchanged: false,
+                    value: 4,
+                    selected: [],
+                    views: [],
+                  },
+            );
+          }
         },
       );
       await t.test(

@@ -27,6 +27,7 @@ export interface SceneCheckpoint {
 /** The model owner restores its inputs and position together, before publishing a frame. */
 export interface SceneSubject {
   capture(options: SceneCaptureOptions): unknown;
+  /** Accept inputs synchronously. A returned promise may wait for preparation, never defer acceptance. */
   restore(
     value: unknown,
     position: { time: number; mode: 'story' | 'explore' },
@@ -198,14 +199,12 @@ export async function restoreScene(
         code: 'scene_restore_superseded',
       });
   };
-  const complete = async (work?: void | Promise<unknown>, acceptsOnCompletion = false) => {
-    // Only a subject codec can accept its condition after asynchronous work.
-    // Ordinary commands retain their already accepted condition while awaiting readiness.
-    const accepted = acceptsOnCompletion && work ? undefined : condition();
-    await work;
-    owner?.assertLive();
-    acceptedCondition = accepted ?? condition();
+  const complete = async (work?: void | Promise<unknown>) => {
+    // Every owner accepts synchronously; readiness must not adopt a later user's input.
+    acceptedCondition = condition();
     try {
+      await work;
+      assertCurrent();
       await handle.ready?.();
     } finally {
       assertCurrent();
@@ -233,7 +232,7 @@ export async function restoreScene(
   async function restorePosition(time: number) {
     assertCurrent();
     if (subject) {
-      await complete(subject.restore(copySubject(state.subject), { time, mode: state.mode }), true);
+      await complete(subject.restore(copySubject(state.subject), { time, mode: state.mode }));
     } else if (capabilities.includes('seek'))
       await complete(handle.control([{ type: 'seek', time }]));
   }
@@ -273,7 +272,7 @@ export async function restoreScene(
       const value = pending.get(parameter.key)!;
       pending.delete(parameter.key);
       const values = { [parameter.key]: value };
-      if (owner?.setValues) await complete(owner.setValues(values));
+      if (owner?.setValues) await complete(owner.setValues(values, { restoring: true }));
       else await complete(handle.control([{ type: 'parameters', values }]));
     }
     return [...pending.keys()];
@@ -304,7 +303,11 @@ export async function restoreScene(
       }
       if (!first && !Object.keys(values).length) break;
       assertCurrent();
-      await complete(first ? owner!.restoreValues!(values, position) : owner!.setValues!(values));
+      await complete(
+        first
+          ? owner!.restoreValues!(values, position)
+          : owner!.setValues!(values, { restoring: true }),
+      );
       first = false;
     }
     return [...pending.keys()];

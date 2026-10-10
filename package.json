@@ -1,6 +1,6 @@
 {
   "name": "@visual-storytelling/core",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "private": true,
   "license": "0BSD",
   "type": "module",
@@ -77,7 +77,7 @@
     "dev": "node tools/dev-gallery.mjs",
     "build": "node tools/build.mjs",
     "check": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/*.test.ts tests/*.test.mjs",
+    "test": "node --experimental-strip-types --test --test-concurrency=2 tests/*.test.ts tests/*.test.mjs",
     "test:tools": "python3 -m unittest discover -s tests -p 'test_*.py'",
     "test:browser": "playwright test",
     "test:delivery": "node tools/check-delivery.mjs",

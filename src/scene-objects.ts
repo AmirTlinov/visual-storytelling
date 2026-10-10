@@ -33,6 +33,7 @@ export function sceneObjects(root: Element) {
   const controls =
     'button, input, select, textarea, label, summary, a[href], [contenteditable]:not([contenteditable="false"]), [role="button"], [role="slider"], [tabindex]:not(canvas, svg, [role="img"])';
   let selected: string[] = [];
+  const highlighted = new Set<HTMLElement | SVGElement>();
   const nodes = () => {
     if (abort.signal.aborted) throw new Error('Scene objects have been disposed.');
     return [...root.querySelectorAll<HTMLElement | SVGElement>('[data-object]')].filter((node) =>
@@ -62,17 +63,51 @@ export function sceneObjects(root: Element) {
       };
     });
   };
+  const refreshSelection = (elements = nodes()) => {
+    const representatives = new Map<string, HTMLElement | SVGElement>();
+    const priority = (node: Element) =>
+      node.classList.contains('ve-viewport-object')
+        ? 2
+        : node.getAttribute('tabindex') === '0'
+          ? 1
+          : 0;
+    for (const node of elements) {
+      const active = selected.includes(node.dataset.object!);
+      node.toggleAttribute('data-selected', active);
+      if (node.getAttribute('aria-pressed') !== String(active))
+        node.setAttribute('aria-pressed', String(active));
+      if (!active || node.closest('[aria-hidden="true"]') || !isRendered(node)) continue;
+      const bounds = node.getBoundingClientRect();
+      if (!bounds.width || !bounds.height) continue;
+      const previous = representatives.get(node.dataset.object!);
+      if (!previous || priority(node) > priority(previous))
+        representatives.set(node.dataset.object!, node);
+    }
+    const next = new Set(representatives.values());
+    for (const node of highlighted)
+      if (!next.has(node)) node.removeAttribute('data-selection-highlight');
+    highlighted.clear();
+    for (const node of next) {
+      node.toggleAttribute('data-selection-highlight', true);
+      highlighted.add(node);
+    }
+  };
+  const observer = new MutationObserver(() => {
+    if (selected.length && !abort.signal.aborted) refreshSelection();
+  });
+  observer.observe(root, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['data-object', 'hidden', 'style', 'class', 'aria-hidden', 'tabindex'],
+  });
   const select = (ids: readonly string[]) => {
     const elements = nodes(),
       known = new Set(elements.map((node) => node.dataset.object!));
     if (ids.some((id) => !known.has(id)))
       throw new Error('Unknown scene object. Inspect available objects.');
     selected = [...new Set(ids)];
-    for (const node of elements) {
-      const active = selected.includes(node.dataset.object!);
-      node.toggleAttribute('data-selected', active);
-      node.setAttribute('aria-pressed', String(active));
-    }
+    refreshSelection(elements);
     root.dispatchEvent(new CustomEvent('scene-selection', { bubbles: true }));
   };
   const target = (event: Event) => {
@@ -154,6 +189,9 @@ export function sceneObjects(root: Element) {
     },
     dispose() {
       if (abort.signal.aborted) return;
+      observer.disconnect();
+      for (const node of highlighted) node.removeAttribute('data-selection-highlight');
+      highlighted.clear();
       for (const node of nodes()) {
         node.removeAttribute('data-selected');
         node.setAttribute('aria-pressed', 'false');

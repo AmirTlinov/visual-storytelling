@@ -63,6 +63,7 @@ export class SvgCamera {
     this.matrix = matrix;
     for (const layer of this.layers)
       layer.setAttribute('transform', `translate(${matrix.x} ${matrix.y}) scale(${matrix.s})`);
+    this.svg.dispatchEvent(new CustomEvent('scene-camera-change'));
     this.bounds.forEach((hit, i) => {
       const button = this.hits?.children[i] as HTMLElement | undefined;
       if (!button) return;

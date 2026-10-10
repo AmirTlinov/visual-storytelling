@@ -33,25 +33,44 @@ export async function sceneEntry(directory) {
   };
 }
 
-/** SVG keeps its own drawing and runtime; a plain drawing needs only scene access. */
+/** SVG keeps its drawing and runtime; the common frame owns only its presentation. */
 export function svgPage(svg) {
   return `<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 :root{color-scheme:light dark}
-:root:has(>body>svg[data-theme=light]){color-scheme:light}
-:root:has(>body>svg[data-theme=dark]){color-scheme:dark}
-body{margin:0;background:Canvas}body>svg{display:block;width:100%;height:auto}
+:root:has(svg[data-theme=light]){color-scheme:light}
+:root:has(svg[data-theme=dark]){color-scheme:dark}
+body{margin:0;background:Canvas}
+.ve-svg-entry.ve-scene-content{padding:0;display:block}
+.ve-svg-entry>svg.ve-scene{display:block;width:100%;height:100%;max-width:none;margin:0;padding:0}
 </style></head>
-<body>${svg.replace(/<\?xml[^>]*>/, '')}
+<body class="ve-standalone">${svg.replace(/<\?xml[^>]*>/, '')}
 <script type="module">
-import { mountScene as mountSVGEntryScene } from '@visual-storytelling/core';
+import '@visual-storytelling/core/style.css';
+import { mountScene as mountSVGEntryScene, SceneShell, theme } from '@visual-storytelling/core';
 window.galleryReady = Promise.resolve(window.galleryReady).then(async () => {
   await document.fonts.ready;
   const svg = document.querySelector('body > svg');
   if (!svg) throw new Error('The scene entry has no SVG document');
   svg.classList.add('ve-scene');
-  if (!svg.scene) mountSVGEntryScene(svg, { svg: () => svg, dispose() { svg.pauseAnimations(); } });
+  const handle = svg.scene ?? mountSVGEntryScene(svg, { svg: () => svg, dispose() { svg.pauseAnimations(); } });
+  const root = document.createElement('main');
+  root.className = 've-scene';
+  root.dataset.paper = 'false';
+  const colors = theme(root);
+  const sourceColors = handle.setTheme ? undefined : theme(svg);
+  const sourceTheme = handle.setTheme?.bind(handle);
+  handle.extend({ setTheme(value) { colors.set(value); return sourceTheme ? sourceTheme(value) : sourceColors.set(value); } });
+  const content = document.createElement('div');
+  content.className = 've-svg-entry';
+  svg.before(root);
+  content.append(svg);
+  const frame = SceneShell.frame(content, { width: 1280, height: 720, scope: 'scene' });
+  root.append(frame.element);
+  Object.defineProperty(root, 'scene', { configurable: true, get: () => svg.scene });
+  handle.onDispose(() => { frame.dispose(); colors.dispose(); sourceColors?.dispose(); delete root.scene; });
+  frame.resize();
 });
 </script></body></html>`;
 }

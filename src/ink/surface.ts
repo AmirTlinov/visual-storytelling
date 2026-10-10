@@ -45,10 +45,24 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
     if (grid && (!(grid.step > 0) || !Number.isFinite(grid.step)))
       throw new Error('Grid step must be positive');
     gridOptions = grid && { ...grid };
+    // Draw the whole visible paper in world coordinates, including after camera pan/zoom.
+    const transform = paper.transform.baseVal.consolidate()?.matrix;
+    const view = element.viewBox.baseVal;
+    const aperture = view.width && view.height ? view : bounds;
+    const corners = [
+      [aperture.x, aperture.y],
+      [aperture.x + aperture.width, aperture.y],
+      [aperture.x, aperture.y + aperture.height],
+      [aperture.x + aperture.width, aperture.y + aperture.height],
+    ].map(([x, y]) =>
+      transform ? new DOMPoint(x, y).matrixTransform(transform.inverse()) : new DOMPoint(x, y),
+    );
+    const left = Math.min(...corners.map((p) => p.x)),
+      top = Math.min(...corners.map((p) => p.y));
+    const right = Math.max(...corners.map((p) => p.x)),
+      bottom = Math.max(...corners.map((p) => p.y));
     const signature = grid
-      ? [bounds.x, bounds.y, bounds.width, bounds.height, grid.step, grid.x ?? 0, grid.y ?? 0].join(
-          ',',
-        )
+      ? [left, top, right, bottom, grid.step, grid.x ?? 0, grid.y ?? 0].join(',')
       : 'none';
     if (signature === gridSignature) return;
     gridSignature = signature;
@@ -56,10 +70,6 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
     if (!grid) return;
     const minor: string[] = [],
       major: string[] = [];
-    const left = bounds.x,
-      top = bounds.y,
-      right = left + bounds.width,
-      bottom = top + bounds.height;
     const start = (edge: number, origin = 0) =>
       origin + Math.ceil((edge - origin) / grid.step) * grid.step;
     for (let x = start(left, grid.x); x <= right; x += grid.step) {
@@ -82,6 +92,7 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
           fill: 'none',
           stroke: `var(${pigment})`,
           'stroke-width': 1,
+          'vector-effect': 'non-scaling-stroke',
         }),
       );
     }
@@ -137,6 +148,9 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
       setViewport(previous);
     }
   };
+  const cameraChanged = () => drawGrid();
+  element.addEventListener('scene-camera-change', cameraChanged);
+  cleanups.add(() => element.removeEventListener('scene-camera-change', cameraChanged));
   resize(options.width, options.height);
   return {
     element,

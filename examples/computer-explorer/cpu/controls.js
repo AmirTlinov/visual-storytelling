@@ -1,13 +1,14 @@
 import { SimulationPlayer } from '@visual-storytelling/core';
 export class CpuClock {
-  constructor(element, model, changed, save) {
+  constructor(element, controls, model, changed, save) {
     this.element = element;
+    this.controls = controls;
     this.model = model;
     this.points = [];
     this.status = element.querySelector('[data-clock-status]');
     this.marker = element.querySelector('[data-clock-marker]');
     let from = 0;
-    this.player = SimulationPlayer.mount(element.querySelector('[data-clock-player]'), {
+    this.player = SimulationPlayer.mount(controls, {
       read: () => ({
         value: model.time / model.period,
         done: model.done,
@@ -35,8 +36,9 @@ export class CpuClock {
     this.player.view.play.dataset.clockPlay = '';
     this.player.view.next.dataset.clockStep = '';
   }
-  show(scene) {
+  show(scene, transportVisible) {
     this.element.hidden = !scene.clock;
+    this.controls.hidden = !scene.clock || !transportVisible;
     this.points = scene.clock?.points || [];
     this.render();
     this.player.update();

@@ -37,9 +37,11 @@ test('public presentation preserves material paint, narrow layout, focused input
       outfile: join(directory, 'index.js'),
       loader: { '.woff2': 'dataurl' },
     });
+    // Pixel comparisons use a fixed device-pixel origin, independent of the
+    // responsive shell's fractional height and Chromium's SVG crop rounding.
     await writeFile(
       join(directory, 'index.html'),
-      '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="index.css"><style>body{margin:0;background:white}main{width:355px}footer{width:200px}</style></head><body><main class="ve-scene"></main><aside></aside><footer></footer><script src="index.js"></script></body></html>',
+      '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="index.css"><style>body{margin:0;background:white}main{width:355px}footer{position:absolute;left:0;top:400px;width:200px}</style></head><body><main class="ve-scene"></main><aside></aside><footer></footer><script src="index.js"></script></body></html>',
     );
     browser = await chromium.launch();
     const page = await browser.newPage({ viewport: { width: 375, height: 850 } });

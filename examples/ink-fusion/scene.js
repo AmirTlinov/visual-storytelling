@@ -13,10 +13,14 @@ import './style.css';
 window.galleryReady = (async () => {
   await SceneShell.ready();
   const root = document.getElementById('ink-fusion-scene');
+  const controlsHost = root.querySelector('[data-player]'),
+    status = root.querySelector('.fusion-error');
+  controlsHost.remove();
+  status.remove();
   const composition = document.createElement('div');
   composition.append(...root.childNodes);
   const sceneFrame = SceneShell.frame(composition, { width: 1280, height: 720, scope: 'scene' });
-  root.append(sceneFrame.element);
+  root.append(sceneFrame.element, controlsHost, status);
   sceneFrame.resize();
   const stage = root.querySelector('.fusion-stage');
   const equation = root.querySelector('.fusion-equation');

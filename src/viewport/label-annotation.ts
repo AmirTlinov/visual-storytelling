@@ -60,8 +60,8 @@ export function annotation(stage: HTMLElement, tone: string, frame?: LabelFrame,
       const dx = anchor ? anchor[0] - x : 0,
         dy = anchor ? anchor[1] - y : 0,
         ratio = Math.max(Math.abs(dx) / (width / 2), Math.abs(dy) / (height / 2));
-      connected = !!anchor && ratio > 1.05;
-      if (anchor && ratio > 1.05) {
+      connected = !!anchor && ratio > 1;
+      if (anchor && connected) {
         if (!leader) {
           leader = document.createElementNS(ns, 'svg');
           leader.classList.add('ve-annotation-leader');

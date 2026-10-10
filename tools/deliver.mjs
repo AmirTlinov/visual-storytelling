@@ -9,6 +9,7 @@ import { prepareNarration, playbackHTML } from './narration.mjs';
 import { packDirectory, withCheckpoint } from './standalone.mjs';
 import { renderer } from './render.mjs';
 import { exportVideo } from './video-export.mjs';
+import { videoDimensions } from './video-dimensions.mjs';
 import { captionTrack } from '../dist/story/captions.js';
 import { captionSource } from './caption-source.mjs';
 import { pinSceneProject, closeSceneDependencies } from './scene-project.mjs';
@@ -28,7 +29,7 @@ export async function deliver(
     prepared,
     checkpoint,
     video,
-    width = 1280,
+    width,
     height,
     fps = 30,
     jobs = 2,
@@ -64,6 +65,7 @@ export async function deliver(
     throw new Error('A video interval needs finite from/to seconds with 0 <= from < to');
   if (!['light', 'dark'].includes(theme))
     throw new Error('Choose light or dark for the video; the HTML follows the viewer’s theme');
+  const dimensions = wanted.has('mp4') ? videoDimensions({ width, height }) : undefined;
   let ownedFiles = [];
   try {
     const previous = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
@@ -150,7 +152,14 @@ export async function deliver(
         receipt.files.push('story.html');
       }
       if (wanted.has('png') || wanted.has('svg')) {
-        const view = await renderer({ directory: built, width, height, theme, checkpoint, signal });
+        const view = await renderer({
+          directory: built,
+          width: width ?? 1280,
+          height,
+          theme,
+          checkpoint,
+          signal,
+        });
         try {
           for (const format of ['png', 'svg'])
             if (wanted.has(format)) {
@@ -173,8 +182,7 @@ export async function deliver(
         const exported = await exportVideo({
           directory: built,
           output: join(staging, 'story.mp4'),
-          width,
-          height,
+          ...dimensions,
           fps,
           jobs,
           theme,

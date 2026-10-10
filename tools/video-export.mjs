@@ -3,6 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { renderer } from './render.mjs';
+import { videoDimensions } from './video-dimensions.mjs';
 
 function encoder(args, signal, pipe = false) {
   signal.throwIfAborted();
@@ -61,16 +62,11 @@ export async function exportVideo({
   onProgress = () => {},
   ...view
 }) {
+  const { width: w, height: h } = videoDimensions({ width: view.width, height });
+  view = { ...view, width: w, height: h };
   if (!Number.isInteger(jobs) || jobs < 1 || jobs > 8)
     throw new Error('Video jobs must be an integer from 1 to 8');
-  if (
-    !Number.isInteger(fps) ||
-    fps < 1 ||
-    fps > 60 ||
-    (height !== undefined && (!Number.isInteger(height) || height < 240 || height > 3840)) ||
-    (view.width !== undefined &&
-      (!Number.isInteger(view.width) || view.width < 320 || view.width > 3840))
-  )
+  if (!Number.isInteger(fps) || fps < 1 || fps > 60)
     throw new Error('Invalid video dimensions or frame rate');
   const abort = new AbortController();
   const cancel = () => abort.abort(signal?.reason);
@@ -109,9 +105,6 @@ export async function exportVideo({
     )
       throw new Error('Invalid video interval');
     await first.seek(from);
-    const even = (value) => Math.round(value / 2) * 2;
-    const w = even(view.width ?? 960),
-      h = even(height ?? (w * 9) / 16);
     output = resolve(output);
     await mkdir(dirname(output), { recursive: true });
     temporary = await mkdtemp(join(dirname(output), '.visual-story-video-'));

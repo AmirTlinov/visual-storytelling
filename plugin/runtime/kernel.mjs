@@ -21,6 +21,7 @@ import { revisionInput } from '../revision-input.mjs';
 import { selectExamples } from '../../tools/catalog-query.mjs';
 import { exampleDetails } from '../../tools/catalog.mjs';
 import { readPinnedRuntime } from '../../tools/runtime-package.mjs';
+import { videoDimensions } from '../../tools/video-dimensions.mjs';
 
 const [socketPath, data] = process.argv.slice(2),
   directory = await realpath(dirname(process.argv[1]));
@@ -28,7 +29,6 @@ if (!socketPath || !data)
   throw new Error('Runtime requires its private socket and data directory.');
 const protocol = 1;
 const build = await runtimeBuild(directory);
-const example = JSON.parse(await readFile(join(directory, 'example.json'), 'utf8'));
 const sessions = new SessionDirectory();
 const projects = new ProjectStore(data);
 const preferences = new Preferences(data);
@@ -103,7 +103,6 @@ const jobs = new JobRunner(
   { toolchainRoot: resolve(directory, '../..') },
 );
 await jobs.start();
-await writeJSON(join(data, 'builds', example.revision + '.json'), example);
 const connections = new Set(),
   saves = new Map(),
   loads = new Map(),
@@ -199,6 +198,7 @@ async function prepareProject(project, requestId = randomUUID()) {
 }
 
 async function queueRevision(kind, { target, requestId, options = {} }) {
+  if (kind === 'produce' && options.formats?.includes('mp4')) videoDimensions(options);
   return projects.serial('revision:' + requestId, async () => {
     const previous = jobs.forRequest(requestId);
     if (previous) {
@@ -294,7 +294,7 @@ const operations = {
   async hello() {
     return { protocol, build, serverInstance: sessions.instance, pid: process.pid };
   },
-  async open({ sessionId, projectId, path, example: exampleId }) {
+  async open({ sessionId, projectId, path, example: exampleId } = {}) {
     if (sessionId) {
       const session = await load(sessionId);
       return session.build.projectId
@@ -304,16 +304,21 @@ const operations = {
     if (path && basename(path) === 'story.vstory') path = dirname(path);
     if (path || projectId)
       return openProject(path ? await projects.register(path) : await projects.inspect(projectId));
-    let prepared = example;
-    if (exampleId) {
-      const catalog = await readJSON(join(directory, 'catalog.json'));
-      if (!Object.hasOwn(catalog, exampleId))
-        throw new Error('Unknown example. Use story_help to choose a shipped example.');
-      prepared = await readJSON(join(directory, 'examples', exampleId + '.json'));
-      if (!prepared)
-        throw new Error('This example has no prepared preview. Create a project from it.');
-      await writeJSON(join(data, 'builds', prepared.revision + '.json'), prepared);
-    }
+    const catalog = await readJSON(join(directory, 'catalog.json'));
+    if (!exampleId)
+      return {
+        status: 'choose-example',
+        examples: selectExamples(catalog, { recommended: true }).map((entry) =>
+          exampleDetails(entry, resolve(directory, '../..')),
+        ),
+        action: 'story_open',
+      };
+    if (!Object.hasOwn(catalog, exampleId))
+      throw new Error('Unknown example. Use story_help to choose a shipped example.');
+    const prepared = await readJSON(join(directory, 'examples', exampleId + '.json'));
+    if (!prepared)
+      throw new Error('This example has no prepared preview. Create a project from it.');
+    await writeJSON(join(data, 'builds', prepared.revision + '.json'), prepared);
     const s = sessions.open(prepared);
     await save(s);
     return decorate(s);
@@ -584,17 +589,15 @@ const operations = {
     if (matches.length || queries)
       return {
         ...(queries ? api : {}),
-        examples: matches
-          .slice(0, 12)
-          .map((entry) =>
-            pinned?.archive
-              ? {
-                  ...entry,
-                  runtimeArchive: pinned.archive,
-                  source: `package/examples/${entry.id}/${entry.source}`,
-                }
-              : exampleDetails(entry, root),
-          ),
+        examples: matches.slice(0, 12).map((entry) =>
+          pinned?.archive
+            ? {
+                ...entry,
+                runtimeArchive: pinned.archive,
+                source: `package/examples/${entry.id}/${entry.source}`,
+              }
+            : exampleDetails(entry, root),
+        ),
       };
     return api;
   },

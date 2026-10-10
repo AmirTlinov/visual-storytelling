@@ -1,7 +1,9 @@
+import { sceneHost, watchSceneHost } from './host/adapter.js';
+
 export interface SceneFrameOptions {
   width: number;
   height: number;
-  /** Frame the subject only, or the complete lesson including its controls. */
+  /** Frame the subject or the complete drawing. Playback remains outside both. */
   scope?: 'stage' | 'scene';
 }
 
@@ -48,6 +50,42 @@ export function sceneFrame(
   readingButton.title = 'Увеличить рисунок. Прокрутка — к деталям, Escape — весь кадр.';
   readingControls.append(readingButton);
   let root: HTMLElement | null = null;
+  let lastScale = 1;
+  let lastAperture = { width: 0, height: 0 };
+  let attentionCenter = { x: width / 2, y: height / 2 };
+  let placedScroll = { x: 0, y: 0 };
+  const rememberScroll = () => {
+    if (
+      reading &&
+      (Math.abs(element.scrollLeft - placedScroll.x) > 1 ||
+        Math.abs(element.scrollTop - placedScroll.y) > 1)
+    ) {
+      attentionCenter = {
+        x: (element.scrollLeft + lastAperture.width / 2) / lastScale,
+        y: (element.scrollTop + lastAperture.height / 2) / lastScale,
+      };
+      placedScroll = { x: element.scrollLeft, y: element.scrollTop };
+    }
+  };
+  element.addEventListener('scroll', rememberScroll, { signal: abort.signal });
+  const placeAttention = () => {
+    element.scrollLeft = Math.max(0, attentionCenter.x * lastScale - element.clientWidth / 2);
+    element.scrollTop = Math.max(0, attentionCenter.y * lastScale - element.clientHeight / 2);
+    placedScroll = { x: element.scrollLeft, y: element.scrollTop };
+  };
+  let hostPresentation = sceneHost()?.presentation;
+  const inline = () => hostPresentation?.read().mode === 'inline';
+  const updateReadingButton = () => {
+    readingButton.textContent = reading
+      ? 'Весь кадр'
+      : inline()
+        ? 'Открыть крупнее'
+        : 'Читать крупнее';
+    readingButton.title = inline()
+      ? 'Открыть целый рисунок в большой панели.'
+      : 'Увеличить рисунок. Прокрутка — к деталям, Escape — весь кадр.';
+    readingButton.setAttribute('aria-pressed', String(reading));
+  };
   const resize = () => {
     if (!element.parentElement) return;
     if (root !== element.parentElement) {
@@ -56,7 +94,8 @@ export function sceneFrame(
       observer.observe(root);
       if (scope === 'scene') element.after(readingControls);
     }
-    const style = getComputedStyle(root);
+    const style = getComputedStyle(root),
+      standalone = root.closest('.ve-standalone');
     const availableWidth =
       root.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
     if (!availableWidth) return;
@@ -64,22 +103,16 @@ export function sceneFrame(
     if (root.closest('[data-scene-frame]')) {
       availableHeight =
         root.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
-    } else if (root.closest('.ve-standalone')) {
+    } else if (standalone && standalone.querySelectorAll(':scope > .ve-scene').length === 1) {
       const box = root.getBoundingClientRect();
-      const chrome =
-        scope === 'scene'
-          ? (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0)
-          : box.height - element.getBoundingClientRect().height;
+      const chrome = Math.max(0, box.height - element.getBoundingClientRect().height);
       const top = Math.max(0, box.top + scrollY);
       const body = getComputedStyle(document.body);
       const bottom = (parseFloat(body.marginBottom) || 0) + (parseFloat(body.paddingBottom) || 0);
       availableHeight = Math.max(1, innerHeight - top - chrome - bottom);
     }
     const fit = fitFrame(width, height, availableWidth, availableHeight);
-    const center = {
-      x: element.scrollLeft + element.clientWidth / 2,
-      y: element.scrollTop + element.clientHeight / 2,
-    };
+    rememberScroll();
     const scale = reading ? Math.max(1, fit.scale) : fit.scale;
     const changed = element.dataset.frameScale !== String(scale);
     element.dataset.frameLayout = 'fixed';
@@ -87,16 +120,23 @@ export function sceneFrame(
     element.style.width = `${fit.width}px`;
     element.style.height = `${fit.height}px`;
     content.style.transform = `scale(${scale})`;
+    content.style.setProperty('--ve-frame-scale', String(scale));
     element.dataset.frameScale = String(scale);
-    if (reading) {
-      element.scrollLeft = Math.max(0, center.x - element.clientWidth / 2);
-      element.scrollTop = Math.max(0, center.y - element.clientHeight / 2);
-    }
-    readingControls.hidden = scope !== 'scene' || (!reading && fit.scale >= 0.75);
+    lastScale = scale;
+    lastAperture = { width: element.clientWidth, height: element.clientHeight };
+    if (reading) placeAttention();
+    readingControls.hidden =
+      scope !== 'scene' ||
+      (inline() ? !hostPresentation?.read().canExpand : !reading && fit.scale >= 1);
+    updateReadingButton();
     if (changed) element.dispatchEvent(new CustomEvent('scene-frame-resize', { bubbles: true }));
   };
-  const setReading = (next: boolean) => {
-    if (next === reading) return;
+  const setReading = (next: boolean, moveFocus = true) => {
+    if (next && inline()) return;
+    if (next === reading) {
+      resize();
+      return;
+    }
     const candidates = next
       ? [
           ...content.querySelectorAll<Element>(
@@ -117,8 +157,7 @@ export function sceneFrame(
         }
       : { x: width / 2, y: height / 2 };
     reading = next;
-    readingButton.textContent = next ? 'Весь кадр' : 'Читать крупнее';
-    readingButton.setAttribute('aria-pressed', String(next));
+    updateReadingButton();
     if (next) {
       element.tabIndex = 0;
       element.setAttribute('role', 'region');
@@ -131,10 +170,10 @@ export function sceneFrame(
     }
     resize();
     if (next) {
-      element.scrollLeft = Math.max(0, attention.x - element.clientWidth / 2);
-      element.scrollTop = Math.max(0, attention.y - element.clientHeight / 2);
-      element.focus({ preventScroll: true });
-    } else {
+      attentionCenter = attention;
+      placeAttention();
+      if (moveFocus) element.focus({ preventScroll: true });
+    } else if (moveFocus) {
       const focus = readingControls.hidden
         ? content.querySelector<HTMLElement>(
             'button:not([hidden]), input:not([hidden]), [tabindex="0"]',
@@ -142,15 +181,40 @@ export function sceneFrame(
         : readingButton;
       focus?.focus({ preventScroll: true });
     }
-    element.dispatchEvent(
-      new CustomEvent('scene-frame-reading', { bubbles: true, detail: { reading: next } }),
-    );
   };
-  readingButton.addEventListener('click', () => setReading(!reading), { signal: abort.signal });
+  readingButton.addEventListener(
+    'click',
+    async () => {
+      if (!inline()) return setReading(!reading);
+      if (!hostPresentation?.read().canExpand) return;
+      readingButton.disabled = true;
+      try {
+        await hostPresentation.requestExpanded();
+      } catch (error) {
+        readingButton.title = error instanceof Error ? error.message : String(error);
+      } finally {
+        readingButton.disabled = false;
+      }
+    },
+    { signal: abort.signal },
+  );
+  let unsubscribePresentation: (() => void) | undefined;
+  const connectPresentation = () => {
+    unsubscribePresentation?.();
+    hostPresentation = sceneHost()?.presentation;
+    const changed = () => {
+      if (inline()) setReading(false, false);
+      else resize();
+    };
+    unsubscribePresentation = hostPresentation?.subscribe(changed);
+    changed();
+  };
   element.addEventListener(
     'keydown',
     (event) => {
       if (reading && event.key === 'Escape') {
+        // The top layer owns its dismissal before the surrounding drawing does.
+        if (document.querySelector('[popover]:popover-open')) return;
         event.preventDefault();
         event.stopPropagation();
         setReading(false);
@@ -169,11 +233,15 @@ export function sceneFrame(
   const observer = new ResizeObserver(schedule);
   observer.observe(element);
   window.addEventListener('resize', resize);
+  const unwatchHost = watchSceneHost(connectPresentation);
+  connectPresentation();
   return {
     element,
     resize,
     dispose() {
       abort.abort();
+      unsubscribePresentation?.();
+      unwatchHost();
       readingControls.remove();
       observer.disconnect();
       cancelAnimationFrame(pending);

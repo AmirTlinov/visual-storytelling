@@ -96,3 +96,100 @@ test('tensor annotations avoid objects and links through camera changes and chec
   }
   expect(errors).toEqual([]);
 });
+
+test('SVG entry shares the scene handle and exposes overflow details in both standalone forms', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  for (const entry of ['index.html', 'geometric-tensor.svg']) {
+    for (const colorScheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(`/geometric-tensor/${entry}`);
+      await page.waitForFunction(() =>
+        Boolean(document.querySelector<SVGSVGElement>('svg.ve-scene')?.scene),
+      );
+      await page.evaluate(async () => {
+        await (window as any).galleryReady;
+        await document.fonts.ready;
+      });
+      if (entry === 'index.html') {
+        expect(
+          await page.evaluate(
+            () =>
+              document.querySelector<HTMLElement>('.ve-scene')?.scene ===
+              document.querySelector<SVGSVGElement>('svg.ve-scene')?.scene,
+          ),
+        ).toBe(true);
+        await page.evaluate(
+          (theme) => document.querySelector<HTMLElement>('.ve-scene')!.scene!.setTheme!(theme),
+          colorScheme,
+        );
+        expect(
+          await page.locator('svg.ve-scene').evaluate((node) => getComputedStyle(node).colorScheme),
+        ).toBe(colorScheme);
+        const frame = await page.locator('[data-scene-frame]').boundingBox();
+        expect(frame!.width / frame!.height).toBeCloseTo(16 / 9, 5);
+        await page.getByRole('button', { name: 'Читать крупнее', exact: true }).click();
+        expect(
+          await page.evaluate(
+            () =>
+              document.querySelector<HTMLElement>('.ve-scene')!.scene!.presentation()
+                .unreadableText,
+          ),
+        ).toEqual([]);
+      }
+      const missing = await page.evaluate(() => {
+        const scene = document.querySelector<SVGSVGElement>('svg.ve-scene')!.scene!;
+        scene.camera!.restore!({ kind: 'svg-orbit', yaw: 0, pitch: 0.34, zoom: 3, pan: [-500, 0] });
+        return scene.presentation().layoutOverflow.map((item) => item.text);
+      });
+      expect(missing.length).toBeGreaterThan(0);
+      const more = page.getByRole('button', { name: /Показать неуместившиеся подписи/ });
+      await more.press('Enter');
+      const details = page.getByRole('region', {
+        name: 'Подписи, для которых недостаточно места в рисунке',
+      });
+      await expect(details).toBeFocused();
+      const text = await details.innerText();
+      for (const label of missing) expect(text).toContain(label);
+      expect(await details.locator('li').count()).toBe(missing.length);
+      await details.press('Escape');
+      await expect(details).not.toBeVisible();
+      await expect(more).toBeFocused();
+      const camera = await page.evaluate(() =>
+        document.querySelector<SVGSVGElement>('svg.ve-scene')!.scene!.camera!.capture!(),
+      );
+      await more.click();
+      await expect(details).toBeFocused();
+      await details.press('Home');
+      await details.press('Escape');
+      expect(
+        await page.evaluate(() =>
+          document.querySelector<SVGSVGElement>('svg.ve-scene')!.scene!.camera!.capture!(),
+        ),
+      ).toEqual(camera);
+      expect(
+        await page.evaluate(
+          () => document.querySelector<SVGSVGElement>('svg.ve-scene')!.scene!.svg!().localName,
+        ),
+      ).toBe('svg');
+      const disposed = await page.evaluate(() => {
+        const root = document.querySelector<HTMLElement>('.ve-scene')!,
+          svg = document.querySelector<SVGSVGElement>('svg.ve-scene')!;
+        const handle = svg.scene!;
+        handle.dispose();
+        handle.dispose();
+        return {
+          root: Boolean(root.scene),
+          svg: Boolean(svg.scene),
+          overflow: document.querySelectorAll('[data-svg-overflow],.ve-frame-reading-controls')
+            .length,
+        };
+      });
+      expect(disposed).toEqual({ root: false, svg: false, overflow: 0 });
+    }
+  }
+  expect(errors).toEqual([]);
+});

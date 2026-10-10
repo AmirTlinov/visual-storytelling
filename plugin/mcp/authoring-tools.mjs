@@ -66,8 +66,24 @@ export function authoringTools(server, runtime, uri, safely) {
               .array(z.enum(['html', 'png', 'svg', 'mp4', 'source', 'srt', 'vtt']))
               .min(1)
               .default(['html']),
-            width: z.number().int().min(320).max(3840).optional(),
-            height: z.number().int().min(240).max(3840).optional(),
+            width: z
+              .number()
+              .int()
+              .min(320)
+              .max(3840)
+              .describe(
+                'Video defaults to 960×540. Give one dimension to derive the other in exact 16:9; output rounds to 32×18 pixel units.',
+              )
+              .optional(),
+            height: z
+              .number()
+              .int()
+              .min(180)
+              .max(3840)
+              .describe(
+                'For video, height is at most 2160; an explicit width/height pair must be 16:9. Images use this as their browser viewport height.',
+              )
+              .optional(),
             fps: z.number().int().min(1).max(60).optional(),
             theme: z.enum(['light', 'dark']).optional(),
             silent: z

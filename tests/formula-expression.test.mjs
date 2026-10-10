@@ -295,6 +295,88 @@ test('matrix denominators retain all call inputs while scalar and elementwise di
   assert.equal(compile('x / 2', { x: 4 }).steps.at(-1).outputs[0].originPrecision, 'exact');
 });
 
+test('variadic multiplication follows each contraction and keeps animation sources honest', () => {
+  const A = [
+      [1, 2],
+      [3, 4],
+    ],
+    B = [
+      [5, 6],
+      [7, 8],
+    ];
+  for (const formula of ['multiply(A, 2, B)', 'multiply(2, A, B)', 'multiply(A, B, 2)']) {
+    const expression = compile(formula, { A, B }),
+      first = expression.steps.at(-1).outputs[0];
+    assert.deepEqual(expression.result, [
+      [38, 44],
+      [86, 100],
+    ]);
+    assert.deepEqual(
+      new Set(first.origins.map(({ operand, index }) => `${operand}:${index}`)),
+      new Set(['0:0', '0:1', '1:0', '1:2']),
+      formula,
+    );
+    assert.ok(expression.steps.at(-1).outputs.every((body) => body.originPrecision === 'exact'));
+    assert.equal(
+      compile(formula, {
+        A: [
+          [1, 3],
+          [3, 4],
+        ],
+        B,
+      }).result[0][0],
+      52,
+    );
+    assert.equal(
+      compile(formula, {
+        A: [
+          [1, 2],
+          [9, 4],
+        ],
+        B,
+      }).result[0][0],
+      38,
+    );
+    const plan = MathMorph.plan(MathMorph.formula(formula, { A, B })),
+      frame = plan.sample(0.3);
+    for (const target of frame.targets) {
+      const group = frame.sources.filter((source) => source.material === target.material);
+      for (const id of target.inputIds) assert.ok(group.some((source) => source.id === id));
+    }
+    plan.sample(1);
+    plan.sample(0);
+    assert.deepEqual(plan.sample(0.3), frame);
+  }
+
+  const scaled = compile('multiply(A, s, B)', { A, s: 0, B }).steps.at(-1);
+  assert.ok(scaled.outputs.every((body) => body.origins.some((origin) => origin.operand === 1)));
+  assert.equal(scaled.outputs[0].origins.length, 5, 'a zero scalar retains the full contraction');
+
+  const dotThenMatrix = compile('multiply(a, b, M)', { a: [1, 2], b: [3, 4], M: A });
+  assert.deepEqual(dotThenMatrix.result, [
+    [11, 22],
+    [33, 44],
+  ]);
+  for (const [i, output] of dotThenMatrix.steps.at(-1).outputs.entries()) {
+    assert.equal(output.originPrecision, 'exact');
+    assert.deepEqual(
+      new Set(output.origins.map(({ operand, index }) => `${operand}:${index}`)),
+      new Set(['0:0', '0:1', '1:0', '1:1', `2:${i}`]),
+      'the vector dot product becomes one scalar, then scales each matrix cell',
+    );
+  }
+
+  const chain = compile('multiply(A, B, C)', { A, B, C: [[1], [2]] }),
+    chainOutput = chain.steps.at(-1).outputs[0];
+  assert.deepEqual(chain.result, [[63], [143]]);
+  assert.equal(chainOutput.originPrecision, 'exact');
+  assert.deepEqual(
+    new Set(chainOutput.origins.map(({ operand, index }) => `${operand}:${index}`)),
+    new Set(['0:0', '0:1', '1:0', '1:1', '1:2', '1:3', '2:0', '2:1']),
+    'the second contraction retains both intermediate column dependencies and no other row',
+  );
+});
+
 test('opaque functions label call inputs conservatively and keep one whole material group', () => {
   let calls = 0;
   const functions = {

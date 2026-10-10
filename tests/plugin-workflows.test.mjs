@@ -111,6 +111,107 @@ test('retry reuses verified snapshots and rejects damaged inputs or a newer work
   assert.match(await html(recovered), /<main>original<\/main>/);
 });
 
+test('quiet working delivery and retry preserve the chosen inputs without preparing voice', async (t) => {
+  const { input } = await fixture(t);
+  await writeFile(
+    join(input.projectPath, 'voice.json'),
+    JSON.stringify({ provider: 'higgs', enabled: true }),
+  );
+  await writeFile(
+    join(input.projectPath, 'narration.json'),
+    JSON.stringify({ segments: [{ id: 'start', text: 'Покажем результат.' }] }),
+  );
+  input.sourceRevision = (await projectFiles(input.projectPath)).revision;
+  const projects = new ProjectStore(input.data);
+  await projects.remember({ id: input.projectId, path: input.projectPath, title: input.title });
+  const frozen = await revisionInput(input.data, projects, {
+    kind: 'working',
+    projectId: input.projectId,
+    sourceRevision: input.sourceRevision,
+  });
+  const previousFetch = globalThis.fetch;
+  let downloads = 0;
+  globalThis.fetch = async () => {
+    downloads++;
+    throw new Error('Unexpected resource download');
+  };
+  t.after(() => {
+    globalThis.fetch = previousFetch;
+  });
+  const stages = [];
+  const task = () => ({
+    jobId: randomUUID(),
+    signal: new AbortController().signal,
+    progress(stage) {
+      stages.push(stage);
+    },
+  });
+  const firstTask = task();
+  const first = await workflows.produce(
+    { data: input.data, ...frozen, options: { formats: ['html'], silent: true } },
+    firstTask,
+  );
+  assert.match(await readFile(first.files[0], 'utf8'), /<main>original<\/main>/);
+  await writeFile(join(input.projectPath, 'value.txt'), 'a later working edit');
+  const retry = await workflows.produce(
+    {
+      data: input.data,
+      ...frozen,
+      resumeFrom: firstTask.jobId,
+      options: { formats: ['html'], silent: true },
+    },
+    task(),
+  );
+  assert.equal(retry.buildRevision, first.buildRevision);
+  assert.equal(retry.sourceRevision, input.sourceRevision);
+  assert.match(await readFile(retry.files[0], 'utf8'), /<main>original<\/main>/);
+  assert.equal(downloads, 0);
+  assert.ok(
+    stages.every((stage) => !/voice|encoder|голос|озвуч|кодир|речь/i.test(stage)),
+    JSON.stringify(stages),
+  );
+  const receipt = JSON.parse(
+    await readFile(join(input.data, 'snapshots', firstTask.jobId, '.vstory-input.json'), 'utf8'),
+  );
+  assert.deepEqual(receipt.preparation, { silent: true });
+  assert.equal(
+    JSON.parse(await readFile(join(input.projectPath, 'voice.json'), 'utf8')).enabled,
+    true,
+  );
+  // A different narration choice cannot reuse the quiet prepared output as audible.
+  await assert.rejects(
+    workflows.produce(
+      {
+        data: input.data,
+        ...frozen,
+        resumeFrom: firstTask.jobId,
+        options: { formats: ['html'], silent: false },
+      },
+      task(),
+    ),
+    /Unexpected resource download/,
+  );
+  assert.ok(downloads > 0);
+});
+
+test('incompatible video dimensions fail before source capture or environment preparation', async () => {
+  const stages = [];
+  await assert.rejects(
+    workflows.produce(
+      { options: { formats: ['mp4'], width: 640, height: 480 } },
+      {
+        jobId: randomUUID(),
+        signal: new AbortController().signal,
+        progress(stage) {
+          stages.push(stage);
+        },
+      },
+    ),
+    /16:9/,
+  );
+  assert.deepEqual(stages, []);
+});
+
 test('explicit revision survives edits, queued cancellation, retry and cache collection; a built release is reused', async (t) => {
   const counterDirectory = await mkdtemp(join(tmpdir(), 'story-build-counter-'));
   const counter = join(counterDirectory, 'count');

@@ -24,7 +24,7 @@ test(
         path: join(directory, 'project'),
         requestId: randomUUID(),
       });
-      assert.equal(created.authoring, 'ready');
+      assert.equal(created.authoring, 'ready', created.job.error ?? JSON.stringify(created));
       assert.match(created.project.sourceRevision, /^[a-f0-9]{64}$/);
       assert.ok(created.project.files['scene.js']);
       assert.equal(

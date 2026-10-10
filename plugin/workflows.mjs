@@ -26,6 +26,7 @@ import { updateSceneRuntime } from '../tools/runtime-package.mjs';
 import { contentDigest } from '../tools/build-info.mjs';
 import { captureWorkingInput } from './revision-input.mjs';
 import { prepareProjectChanges, writeProjectChange } from './projects.mjs';
+import { videoDimensions } from '../tools/video-dimensions.mjs';
 const execute = promisify(execFile);
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -111,10 +112,19 @@ async function prepare(input, task) {
   const snapshot = join(data, 'snapshots', task.jobId);
   task.progress('Сохраняю исходники…');
   let original, receipt, captured;
+  const preparation = { silent: input.options?.silent === true };
   for (const id of new Set([input.resumeFrom, input.inputSnapshot].filter(Boolean))) {
     const candidate = join(data, 'snapshots', id);
     const saved = await readJSON(join(candidate, '.vstory-input.json'));
     if (!saved || (sourceRevision && saved.revision !== sourceRevision)) continue;
+    // An explicitly selected build is immutable, including its audio. A working
+    // retry can only reuse preparation made for the same narration choice.
+    if (
+      !input.buildRevision &&
+      saved.preparedRevision &&
+      (saved.preparation?.silent ?? false) !== preparation.silent
+    )
+      continue;
     const revision = saved.preparedRevision ?? saved.revision;
     const valid = await projectFiles(candidate).then(
       (value) => value.revision === revision,
@@ -146,10 +156,10 @@ async function prepare(input, task) {
       );
     source = await snapshotProject(projectPath, snapshot, sourceRevision ?? receipt?.revision);
   }
-  await writeJSON(join(snapshot, '.vstory-input.json'), source);
+  await writeJSON(join(snapshot, '.vstory-input.json'), { ...source, preparation });
   await dependencies(snapshot, data, task);
   const voice = await readJSON(join(snapshot, 'voice.json'));
-  if (voice?.enabled && !(reusable && receipt.preparedRevision)) {
+  if (voice?.enabled && !preparation.silent && !(reusable && receipt.preparedRevision)) {
     await prepareEnvironment(data, {
       ...task,
       voice: (voice.provider ?? 'higgs') === 'higgs',
@@ -179,8 +189,16 @@ async function prepare(input, task) {
     ...source,
     preparedRevision,
     buildRevision: prepared?.revision,
+    preparation,
   });
-  return { snapshot, source, preparedRevision, prepared, silent: voice?.enabled === false };
+  return {
+    snapshot,
+    source,
+    preparedRevision,
+    prepared,
+    preparation,
+    silent: preparation.silent || voice?.enabled === false,
+  };
 }
 
 async function unchangedInputs(snapshot, revision) {
@@ -233,6 +251,7 @@ async function prepareBuild(input, task) {
     ...source,
     preparedRevision,
     buildRevision: revision,
+    preparation: result.preparation,
   });
   return { ...result, prepared };
 }
@@ -342,8 +361,9 @@ export const workflows = {
     return { buildRevision: prepared.revision, sourceRevision: source.revision, snapshot };
   },
   async produce(input, task) {
-    const { snapshot, source, silent, prepared } = await prepareBuild(input, task);
     const formats = input.options?.formats ?? ['html'];
+    if (formats.includes('mp4')) videoDimensions(input.options);
+    const { snapshot, source, silent, prepared } = await prepareBuild(input, task);
     await prepareEnvironment(input.data, {
       ...task,
       browser: formats.some((format) => ['png', 'svg', 'mp4', 'srt', 'vtt'].includes(format)),
