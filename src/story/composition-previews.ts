@@ -78,10 +78,8 @@ export function chapterPreviews(
             beat: activeCue(chapter.script, end ? chapter.seconds : 0),
           };
           frame.values = { ...defaults, ...chapter.valuesAt?.(frame) };
-          const hidden = element.hidden,
-            visibility = element.style.visibility;
+          const hidden = element.hidden;
           element.hidden = false;
-          element.style.removeProperty('visibility');
           try {
             drawing.render(frame);
             pending.push({
@@ -97,7 +95,6 @@ export function chapterPreviews(
               });
           } finally {
             element.hidden = hidden;
-            element.style.visibility = visibility;
           }
         }
       } catch (cause) {

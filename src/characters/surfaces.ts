@@ -46,6 +46,25 @@ export function characterSurfaces(
       };
     }
   >();
+  const measuring = new Map<HTMLDivElement, boolean>();
+  const measure = <T>(host: HTMLDivElement, work: () => T): T => {
+    if (measuring.has(host)) return work();
+    const hidden = host.hidden;
+    measuring.set(host, hidden);
+    // SVG groups under display:none have empty bounds and identity CTMs. Drawing
+    // preparation is synchronous: restore visibility before the browser can paint.
+    host.hidden = false;
+    try {
+      return work();
+    } finally {
+      host.hidden = hidden;
+      measuring.delete(host);
+    }
+  };
+  const render = (
+    entry: NonNullable<ReturnType<typeof entries.get>>,
+    viewport: { width: number; height: number },
+  ) => measure(entry.host, () => entry.drawing.render(entry.frame!, viewport));
   const strata: HTMLCanvasElement[] = [];
   let order: (HTMLCanvasElement | string)[] = [],
     camera: FrameBox,
@@ -116,7 +135,7 @@ export function characterSurfaces(
           grid: false,
         });
         Object.assign(view.element.style, { width: '100%', height: '100%', display: 'block' });
-        const drawing = definition.create(view);
+        const drawing = measure(host, () => definition.create(view!));
         entries.set(id, { host, view, drawing, definition, size, colors });
       } catch (error) {
         view?.dispose();
@@ -219,7 +238,7 @@ export function characterSurfaces(
             values.active = channels.active!;
           e.frame = { ...e.frame, values };
         }
-        if (e.presentation) e.drawing.render(e.frame, e.presentation.viewport);
+        if (e.presentation) render(e, e.presentation.viewport);
       }
       for (const layer of strata) layer.hidden = true;
     },
@@ -229,7 +248,7 @@ export function characterSurfaces(
           const mapping = layout(e, e.quad);
           e.host.hidden = !mapping;
           if (mapping) e.host.style.transform = mapping.css;
-          e.drawing.render(e.frame!, e.size);
+          render(e, e.size);
         }
     },
     place(id: string, quad: Quad) {
@@ -237,7 +256,7 @@ export function characterSurfaces(
       if (!entry) return;
       const mapping = layout(entry, quad);
       if (!mapping) return; // Edge-on planes must not discard a world pass.
-      if (!entry.presentation) entry.drawing.render(entry.frame!, entry.size);
+      if (!entry.presentation) render(entry, entry.size);
       const { canvas, renderer } = graphics;
       renderer.flush();
       let layer = strata[pass++];
@@ -271,7 +290,7 @@ export function characterSurfaces(
       if (e.presentation) throw new Error(`Drawing surface ${id} is already presented`);
       // A closed book has no world plane, but entry/reduced motion still needs its current ink.
       // Sample before changing ownership so a failed authored render leaves the world intact.
-      if (e.frame) e.drawing.render(e.frame, e.size);
+      if (e.frame) render(e, e.size);
       const marker = document.createComment(`surface:${id}`);
       e.host.replaceWith(marker);
       host.append(e.host);
@@ -288,7 +307,7 @@ export function characterSurfaces(
         Object.assign(e.host.style, { width: `${e.size.width}px`, height: `${e.size.height}px` });
         e.host.hidden = !mapping;
         if (mapping) e.host.style.transform = mapping.css;
-        if (e.frame) e.drawing.render(e.frame, e.size);
+        if (e.frame) render(e, e.size);
       };
       const presentation = {
         marker,
@@ -322,7 +341,7 @@ export function characterSurfaces(
             Object.assign(e.host.style, { width: `${width}px`, height: `${height}px` });
             // Reflow the same sampled frame now: direct seeks and paused resizes
             // must not wait for another tick to populate the new page aperture.
-            if (e.frame) e.drawing.render(e.frame, presentation.viewport);
+            if (e.frame) render(e, presentation.viewport);
           }
           const mapping = projective(quad, width, height);
           e.host.hidden = !mapping;
@@ -347,13 +366,13 @@ export function characterSurfaces(
             try {
               e.view.fitViewport(e.size.width, e.size.height);
               e.colors?.set(worldTheme(layer));
-              if (e.frame) e.drawing.render(e.frame, e.size);
+              if (e.frame) render(e, e.size);
               image = snapshotSVG(e.view.element, 2);
             } finally {
               const { width, height } = e.presentation.viewport;
               e.view.fitViewport(width, height);
               e.colors?.set(e.presentation.theme);
-              if (e.frame) e.drawing.render(e.frame, e.presentation.viewport);
+              if (e.frame) render(e, e.presentation.viewport);
             }
           } else image = snapshotSVG(e.view.element, 2);
           return {
@@ -386,7 +405,11 @@ export function characterSurfaces(
       Object.fromEntries(
         [...entries].map(([id, e]) => [
           id,
-          { visible: !e.host.hidden, quad: e.quad, content: e.drawing.snapshot?.() },
+          {
+            visible: !(measuring.get(e.host) ?? e.host.hidden),
+            quad: e.quad,
+            content: e.drawing.snapshot?.(),
+          },
         ]),
       ),
     dispose: cleanup,

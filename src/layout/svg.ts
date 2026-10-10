@@ -65,24 +65,33 @@ function row(nodes: SVGGraphicsElement[], { x = 0, y = 0, gap = 12, align = 'cen
   return width;
 }
 
+/** Side and gap use the label parent's coordinates unless an explicit space is supplied. */
 function beside(
   label: SVGGraphicsElement,
   target: SVGGraphicsElement,
   {
     side = 'bottom',
     gap = 10,
-    space = target.ownerSVGElement!,
+    space = label.parentElement as unknown as SVGGraphicsElement,
   }: { side?: 'bottom' | 'top' | 'left' | 'right'; gap?: number; space?: SVGGraphicsElement } = {},
 ) {
   const b = box(target, space);
-  const positions: Record<string, [number, number, string]> = {
-    bottom: [b.cx, b.y + b.height + gap, 'top'],
-    top: [b.cx, b.y - gap, 'bottom'],
-    left: [b.x - gap, b.cy, 'right'],
-    right: [b.x + b.width + gap, b.cy, 'left'],
+  const ink = label.getBBox();
+  const parentToSpace = space
+    .getCTM()!
+    .inverse()
+    .multiply((label.parentElement as unknown as SVGGraphicsElement).getCTM()!);
+  const width = Math.abs(parentToSpace.a) * ink.width + Math.abs(parentToSpace.c) * ink.height;
+  const height = Math.abs(parentToSpace.b) * ink.width + Math.abs(parentToSpace.d) * ink.height;
+  const positions: Record<string, [number, number]> = {
+    bottom: [b.cx, b.y + b.height + gap + height / 2],
+    top: [b.cx, b.y - gap - height / 2],
+    left: [b.x - gap - width / 2, b.cy],
+    right: [b.x + b.width + gap + width / 2, b.cy],
   };
-  const [x, y, anchor] = positions[side]!;
-  place(label, x, y, { anchor });
+  const [x, y] = positions[side]!;
+  const center = new DOMPoint(x, y).matrixTransform(parentToSpace.inverse());
+  place(label, center.x, center.y);
 }
 
 function edge(bounds: Bounds, toward: Point, { shape = 'rect', gap = 0 } = {}) {

@@ -35,8 +35,8 @@ export function chapterPresentations(chapters: readonly SceneChapter[], parent: 
     sourceAt(element, sourceOf(chapters[index]));
     element.dataset.chapter = chapters[index]!.id;
     element.inert = true;
-    // Hidden visibility keeps the actual viewport dimensions available during mount/capture.
-    Object.assign(element.style, { position: 'absolute', inset: '0', visibility: 'hidden' });
+    // Conceal paint without changing authored visibility or SVG geometry during preparation.
+    Object.assign(element.style, { position: 'absolute', inset: '0', clipPath: 'inset(100%)' });
     parent.prepend(element);
     try {
       const drawing = await chapters[index]!.mount(element, signal);
@@ -46,7 +46,7 @@ export function chapterPresentations(chapters: readonly SceneChapter[], parent: 
         throw new Error('Story presentations have been disposed');
       }
       element.hidden = true;
-      element.style.removeProperty('visibility');
+      element.style.removeProperty('clip-path');
       mounted.set(index, { element, drawing });
     } catch (cause) {
       sourceAt(element, undefined);
