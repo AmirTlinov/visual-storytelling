@@ -40,7 +40,6 @@ export function installTemporalNavigation(
     cursor();
   }
   function seek(time) {
-    root.dispatchEvent(new CustomEvent('motionview', { detail: { mode: 'change' } }));
     root.dispatchEvent(new CustomEvent('motionseek', { detail: { time, focus: false } }));
   }
   function pointer(event) {
@@ -53,7 +52,14 @@ export function installTemporalNavigation(
         ((event.clientX - box.left) * view.width) / box.width,
       ),
     );
-    seek(transitionTime(changes, timeAtPoint(view, [x, view.plot.y + view.plot.height / 2])));
+    const tolerance = (3 * (view.range.to - view.range.from)) / view.plot.width;
+    seek(
+      transitionTime(
+        changes,
+        timeAtPoint(view, [x, view.plot.y + view.plot.height / 2]),
+        tolerance,
+      ),
+    );
   }
   element.addEventListener('pointerdown', (event) => {
     if (event.button !== 0) return;

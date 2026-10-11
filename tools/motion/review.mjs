@@ -334,7 +334,6 @@ export async function reviewMotion({
     coverage: session.coverage,
     episodes: episodes.slice(0, 12).map(({ frames, ...e }) => e),
     episodeCount: episodes.length,
-    inspect: `visual-story review inspect '${out}'`,
     timingMs: {
       capture: Math.round(captured - started),
       analysis: Math.round(analyzed - captured),

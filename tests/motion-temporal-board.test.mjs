@@ -9,10 +9,34 @@ import sharp from 'sharp';
 import { analyzeMotionFrames } from '../tools/motion/frames.mjs';
 import { renderTemporalBoard, reportTemporalChanges } from '../tools/motion/temporal-board.mjs';
 import { timeAtChartPoint, transitionTime } from '../tools/motion/temporal-chart.mjs';
+import { renderFrameComparison } from '../tools/motion/frame-comparison.mjs';
 
 const execute = promisify(execFile);
 
-test('standalone timeline board keeps current detail, highlights local changes and roundtrips CLI coordinates', async () => {
+test('clean comparisons preserve white artwork on transparent dark frames at a shared scale', async () => {
+  const frames = await Promise.all(
+    [24, 30].map(async (width, i) => {
+      const raw = Buffer.alloc(width * 20 * 4);
+      raw.set([255, 255, 255, 255], (3 * width + 2) * 4);
+      return {
+        time: i,
+        png: await sharp(raw, { raw: { width, height: 20, channels: 4 } })
+          .png()
+          .toBuffer(),
+      };
+    }),
+  );
+  const image = await renderFrameComparison(frames, { at: 1, theme: 'dark' });
+  const { data, info } = await sharp(image).raw().toBuffer({ resolveWithObject: true });
+  const pixel = (x, y) => [
+    ...data.subarray((y * info.width + x) * 4, (y * info.width + x) * 4 + 3),
+  ];
+  assert.deepEqual(pixel(105, 38), [32, 38, 43]);
+  assert.deepEqual(pixel(107, 41), [255, 255, 255]);
+  assert.deepEqual(pixel(359, 41), [255, 255, 255]);
+});
+
+test('standalone timeline keeps clean detail, separates changes and roundtrips coordinates to an exact clean pair', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'temporal-board-'));
   try {
     const source = [];
@@ -55,7 +79,12 @@ test('standalone timeline board keeps current detail, highlights local changes a
     assert(board.view.plot.y > board.view.frame.height);
     const untouched = (board.view.frame.x + 10) * 4;
     assert.deepEqual([...data.subarray(untouched, untouched + 4)], [255, 255, 255, 255]);
-    assert(data[(board.view.frame.x + 3) * 4 + 1] > 0, 'green marks the changed black pixel');
+    assert.equal(data[(board.view.frame.x + 3) * 4 + 1], 0, 'the selected black pixel stays black');
+    const marked = await sharp(board.changeImage).ensureAlpha().raw().toBuffer();
+    assert(
+      marked[(board.view.frame.x + 3) * 4 + 1] > 0,
+      'the separate view marks the changed pixel green',
+    );
     const point = [board.view.plot.x + board.view.plot.width / 2, board.view.plot.y + 3];
     assert.equal(timeAtChartPoint(board.view, point), 0.1);
     await writeFile(join(directory, 'timeline.png'), board.image);
@@ -69,7 +98,14 @@ test('standalone timeline board keeps current detail, highlights local changes a
       join(directory, 'frames.json'),
       JSON.stringify({
         source: { kind: 'frame-manifest' },
-        frames: source.map((_, i) => ({ time: i / 10, file: `${i}.png` })),
+        frames: source.map((_, i) => ({
+          time: i / 10,
+          file: `${i}.png`,
+          state: {
+            perspective: i ? 'algebra' : 'diagram',
+            trace: Array.from({ length: 1000 }, (_, j) => j),
+          },
+        })),
       }),
     );
     const args = [
@@ -85,6 +121,15 @@ test('standalone timeline board keeps current detail, highlights local changes a
     const result = JSON.parse((await execute(process.execPath, args)).stdout);
     assert.equal(result.requested.at, 0.1);
     assert.deepEqual(result.requested.point, [3, 0]);
+    assert.equal(result.selection.current.time, 0.1);
+    assert.equal(result.selection.previous.time, 0);
+    assert.equal(result.selection.next.time, 0.2);
+    assert.equal((await sharp(result.comparisonImage).metadata()).width, 492);
+    assert.equal(result.frames[0].state.perspective, 'diagram');
+    assert.equal(result.frames[0].state.trace, undefined);
+    assert.deepEqual(result.frames[0].stateOmitted, ['trace']);
+    const full = JSON.parse((await execute(process.execPath, [...args, '--verbose'])).stdout);
+    assert.equal(full.frames[0].state.trace.length, 1000, 'verbose preserves complete saved state');
     const changes = reportTemporalChanges(report);
     assert.equal(changes[0].candidate, true);
     const halfBandPoint = [board.view.plot.x + board.view.plot.width / 8, point[1]];
@@ -102,6 +147,15 @@ test('standalone timeline board keeps current detail, highlights local changes a
     const bandArgs = args.map((arg) => (arg === point.join(',') ? halfBandPoint.join(',') : arg));
     const bandResult = JSON.parse((await execute(process.execPath, bandArgs)).stdout);
     assert.equal(bandResult.requested.at, 0.1, 'left half of a jump band selects its after-frame');
+    const nearPeakArgs = args.map((arg) =>
+      arg === point.join(',') ? [point[0] + 1, point[1]].join(',') : arg,
+    );
+    const nearPeak = JSON.parse((await execute(process.execPath, nearPeakArgs)).stdout);
+    assert.equal(
+      nearPeak.selection.current.time,
+      0.1,
+      'a rounded pixel beside a peak selects that peak, not the following frame',
+    );
     await assert.rejects(execute(process.execPath, [...args, '--at', '0.1']), /cannot be combined/);
     await assert.rejects(
       execute(

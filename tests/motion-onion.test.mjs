@@ -155,6 +155,29 @@ test('saved player shares the PNG weights, seeks in both directions and restores
   await chart.press('ArrowRight');
   assert.equal(await chart.getAttribute('aria-valuenow'), '1');
   assert(await chart.evaluate((element) => element === document.activeElement));
+  assert.equal(await page.locator('.motion-play').getAttribute('data-mode'), 'frame');
+  assert(await page.locator('.motion-play img').isVisible());
+  assert.equal(await page.locator('.motion-play img').getAttribute('src'), report.frames[2].image);
+  await page.getByRole('button', { name: 'Следующий кадр', exact: true }).click();
+  assert.equal(await chart.getAttribute('aria-valuenow'), '1.5');
+  await page.getByRole('button', { name: 'Предыдущий кадр', exact: true }).click();
+  assert.equal(await chart.getAttribute('aria-valuenow'), '1');
+  for (const mode of ['frame', 'onion', 'change']) {
+    await page.locator(`[data-view="${mode}"]`).click();
+    const box = await chart.boundingBox();
+    await page.mouse.click(box.x + box.width * 0.7, box.y + box.height / 2);
+    assert.equal(await page.locator('.motion-play').getAttribute('data-mode'), mode);
+    await chart.press('Home');
+    assert.equal(await chart.getAttribute('aria-valuenow'), '0');
+    assert.equal(await page.locator('.motion-play').getAttribute('data-mode'), mode);
+    await page.getByRole('button', { name: 'Следующий кадр', exact: true }).click();
+    assert.equal(await chart.getAttribute('aria-valuenow'), '0.5');
+    assert.equal(await page.locator('.motion-play').getAttribute('data-mode'), mode);
+    await chart.focus();
+    await chart.press('ArrowRight');
+    assert.equal(await chart.getAttribute('aria-valuenow'), '1');
+    assert.equal(await page.locator('.motion-play').getAttribute('data-mode'), mode);
+  }
   await page.waitForFunction(() => {
     const canvas = document.querySelector('[data-onion-canvas]');
     return !canvas.hidden && canvas.dataset.time === '1';
@@ -176,6 +199,23 @@ test('saved player shares the PNG weights, seeks in both directions and restores
   await page.locator('[data-play]').click();
   await page.locator('[data-view="frame"]').click();
   assert(await page.locator('.motion-play img').isVisible());
+  await page.setViewportSize({ width: 800, height: 600 });
+  await page.locator('[data-onion]').click();
+  await page.waitForFunction(() => {
+    const root = document.querySelector('.motion-play');
+    return (
+      !root.querySelector('[data-onion-canvas]').hidden &&
+      root.getBoundingClientRect().height <= innerHeight - 31
+    );
+  });
+  assert(
+    await page
+      .locator('.motion-play button')
+      .evaluateAll((buttons) =>
+        buttons.every((button) => button.getBoundingClientRect().height >= 44),
+      ),
+    'fitting the frame preserves the controls touch targets',
+  );
   await page.setViewportSize({ width: 375, height: 800 });
   assert(await page.locator('[data-onion]').isVisible());
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));

@@ -118,6 +118,33 @@ export function queryEvidence(data, query = {}) {
   ];
   const currentFrame = nearest(at),
     latest = new Map();
+  // The selected state must survive overview sampling, even with --limit 1.
+  if (!selected.includes(currentFrame)) {
+    const replacement = selected.reduce(
+      (best, frame, i) =>
+        Math.abs(frame.time - at) < Math.abs(selected[best].time - at) ? i : best,
+      0,
+    );
+    selected.splice(replacement, selected.length ? 1 : 0, currentFrame);
+    selected.sort((a, b) => a.time - b.time);
+  }
+  const currentIndex = frames.indexOf(currentFrame);
+  const reference = (frame, index) =>
+    frame
+      ? {
+          id: frame.id,
+          index,
+          time: frame.time,
+          file: frame.file,
+          width: frame.width,
+          height: frame.height,
+        }
+      : null;
+  const selection = {
+    previous: reference(frames[currentIndex - 1], currentIndex - 1),
+    current: reference(currentFrame, currentIndex),
+    next: reference(frames[currentIndex + 1], currentIndex + 1),
+  };
   const documentAt = (telemetry.documents ?? [])
     .filter((d) => d.time <= at)
     .sort((a, b) => a.time - b.time)
@@ -242,6 +269,7 @@ export function queryEvidence(data, query = {}) {
       point: query.point,
     },
     observed: { from: selected[0]?.time, to: selected.at(-1)?.time, frames: observedFrames },
+    selection,
     frames: selected.map((f) => ({
       id: f.id,
       time: f.time,

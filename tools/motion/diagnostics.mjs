@@ -204,6 +204,8 @@ export function playbackMarkup(
   root.addEventListener('motionrange',e=>{stop();rangeStart=clamp(e.detail.from);rangeEnd=clamp(e.detail.to);show(rangeStart);button.click()});
   (${installOnionPlayer.toString()})(root,frames,selectLayers,${composeOnion.toString()},${JSON.stringify(geometry)},stop,${composeChange.toString()},${temporalChangeStrength.toString()},changes);
   (${installTemporalNavigation.toString()})(root,frames,changes,${temporalChart.toString()},${timeAtChartPoint.toString()},${transitionTime.toString()});
+  function fitFrame(){if(!root.open)return;const frame=root.querySelector('.motion-playback:not([hidden])');if(!frame)return;const chrome=root.getBoundingClientRect().height-frame.getBoundingClientRect().height;root.style.setProperty('--motion-frame-height',Math.max(80,innerHeight-chrome-32)+'px')}
+  new ResizeObserver(fitFrame).observe(root);addEventListener('resize',fitFrame);
   root.ontoggle=()=>{if(!root.open)stop()};show(selectLayers(frames,{at:${JSON.stringify(onion.time ?? frames[0].time)}}).time);
   })();</script>`;
 }

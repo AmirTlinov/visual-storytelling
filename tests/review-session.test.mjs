@@ -94,6 +94,31 @@ test('episodes retain observed input timing and separate repeated visits after a
   assert.deepEqual(visits[0].media, { start: 1, end: 3 });
 });
 
+test('time inspection retains the chosen frame and exact neighbours through sampling and sparse boundaries', () => {
+  const frames = Array.from({ length: 19 }, (_, i) => ({
+    id: `f${i}`,
+    time: i / 30,
+    file: `${i}.png`,
+  }));
+  for (const limit of [1, 7]) {
+    const result = queryEvidence({ frames }, { at: 7 / 30, limit });
+    assert(result.frames.some((frame) => frame.id === 'f7'));
+    assert.equal(result.frames.length, limit);
+    assert.deepEqual(
+      [result.selection.previous.id, result.selection.current.id, result.selection.next.id],
+      ['f6', 'f7', 'f8'],
+    );
+  }
+  const sparse = { frames: [frames[0], frames[18]] };
+  const first = queryEvidence(sparse, { at: 0.1, radius: 0.01 });
+  assert.equal(first.selection.previous, null);
+  assert.equal(first.selection.current.time, 0);
+  assert.equal(first.selection.next.time, 0.6);
+  const last = queryEvidence(sparse, { at: 2 });
+  assert.equal(last.selection.current.time, 0.6);
+  assert.equal(last.selection.next, null);
+});
+
 test('interrupted capture recovers completed frames; inspection never recaptures', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'review-recovery-'));
   try {
@@ -114,6 +139,12 @@ test('interrupted capture recovers completed frames; inspection never recaptures
     const evidence = await inspectSession(directory, { at: 0.1 });
     assert.equal(evidence.frames.length, 2);
     assert.equal(evidence.frames[0].file, recovered.samples[0].file);
+    assert(evidence.comparisonImage, 'a clean pair is directly available without a full report');
+    const pair = await sharp(evidence.comparisonImage).metadata();
+    assert.equal(pair.width, 492);
+    assert.equal(pair.height, 48);
+    assert.equal(evidence.selection.previous, null);
+    assert.equal(evidence.selection.next.time, 0.25);
     await assert.rejects(inspectSession(directory, { offset: -1 }), /offset/);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -149,6 +180,9 @@ test('replacing a review recovers only the new run, with its source, cues and un
     'motion.json',
     'motion.png',
     'onion.png',
+    'timeline.png',
+    'changes.png',
+    'comparison.png',
     'frames.png',
     'photometry.png',
   ])
@@ -178,6 +212,9 @@ test('replacing a review recovers only the new run, with its source, cues and un
     'motion.json',
     'motion.png',
     'onion.png',
+    'timeline.png',
+    'changes.png',
+    'comparison.png',
     'frames.png',
     'photometry.png',
   ])

@@ -34,9 +34,11 @@ A cue selects its entire action with context before/after; --frames controls det
 Start with session and index.html: complete episode map, playback, objects and observations.
 image is the overview PNG; framesImage and photometryImage contain detailed measurements.
 onionImage keeps the current frame clear with fading blue past / red future trails.
-timelineImage puts the selected transition above its time graph; --timeline-point x,y selects source time from that PNG.
+timelineImage puts the clean selected frame above its time graph; changesImage shows the difference overlay separately.
+comparisonImage shows adjacent clean frames side by side. selection.previous/current/next give exact times and original PNG paths.
+Append --timeline-point x,y to inspect (or use select) to pick a time from timelineImage; no --out is needed for a clean pair.
 The saved player has an onion-skin toggle and time-window control; all views share its time.
-inspect returns existing evidence without repeating an interaction. --search filters episode text; --offset/--limit page the index.
+inspect renders only the selected clean pair from saved frames, without recapture or browser analysis. --search filters episode text; --offset/--limit page the index.
 Use --out on inspect to render a focused report; raw capture is reused.
 Capture commands print a compact JSON receipt; --verbose includes detailed measurements.
 The saved report and inspect always retain the complete evidence.
@@ -180,31 +182,30 @@ export async function runMotionCLI(args) {
             }))
             .filter((interval) => Number.isFinite(interval.time)),
         );
-      v.at = String(transitionTime(changes, timeAtChartPoint(timelineView, timelinePoint)));
+      const tolerance =
+        (3 * (timelineView.range.to - timelineView.range.from)) / timelineView.plot.width;
+      v.at = String(
+        transitionTime(changes, timeAtChartPoint(timelineView, timelinePoint), tolerance),
+      );
     }
     const point = v.point?.split(',').map(Number);
     if (point && (point.length !== 2 || point.some((n) => !Number.isFinite(n))))
       throw new Error('--point needs x,y in source pixels');
     if (inspecting && !v.out) {
       const { inspectSession } = await import('./inspect.mjs');
-      console.log(
-        JSON.stringify(
-          await inspectSession(input, {
-            episode: v.episode ?? v.cue,
-            at: numeric('at'),
-            radius: numeric('radius'),
-            object: v.object,
-            point,
-            from: numeric('from'),
-            to: v.seconds === undefined ? undefined : (numeric('from') ?? 0) + numeric('seconds'),
-            search: v.search,
-            offset: numeric('offset'),
-            limit: numeric('limit'),
-          }),
-          null,
-          2,
-        ),
-      );
+      const result = await inspectSession(input, {
+        episode: v.episode ?? v.cue,
+        at: numeric('at'),
+        radius: numeric('radius'),
+        object: v.object,
+        point,
+        from: numeric('from'),
+        to: v.seconds === undefined ? undefined : (numeric('from') ?? 0) + numeric('seconds'),
+        search: v.search,
+        offset: numeric('offset'),
+        limit: numeric('limit'),
+      });
+      console.log(JSON.stringify(v.verbose ? result : compactInspection(result), null, 2));
       return 0;
     }
     let replayInput = false;
@@ -330,6 +331,48 @@ export async function runMotionCLI(args) {
 }
 
 /** Keep the next action and evidence paths in context; detailed measurements stay in the report. */
+export function compactInspection(result) {
+  if (!result.selection) return result;
+  const stateSummary = (state) => {
+    if (!state || typeof state !== 'object') return { state };
+    const kept = {},
+      omitted = [];
+    let remaining = 1000;
+    for (const [key, value] of Object.entries(state)) {
+      const size = key.length + (JSON.stringify(value)?.length ?? 0);
+      if (size <= Math.min(320, remaining)) {
+        kept[key] = value;
+        remaining -= size;
+      } else omitted.push(key);
+    }
+    return { state: kept, ...(omitted.length ? { stateOmitted: omitted } : {}) };
+  };
+  const { assets, ...source } = result.source ?? {};
+  const objectSelected = Boolean(result.requested?.object);
+  return {
+    ...result,
+    source: { ...source, ...(assets ? { assetCount: assets.length } : {}) },
+    frames: result.frames.map((frame) => ({
+      id: frame.id,
+      time: frame.time,
+      file: frame.file,
+      ...stateSummary(frame.state),
+      ...(objectSelected ? { objects: frame.objects } : {}),
+    })),
+    objects: objectSelected ? result.objects : result.objects.map(({ id, text }) => ({ id, text })),
+    ...(result.scene ? { scene: { ...result.scene, ...stateSummary(result.scene.state) } } : {}),
+    episodes: result.episodes.map(({ id, kind, title, start, end }) => ({
+      id,
+      kind,
+      title,
+      start,
+      end,
+    })),
+    details:
+      'Compact inspection. --verbose returns full state trees, geometry and observations from the saved capture. --object ID focuses one object.',
+  };
+}
+
 function compactReview(result) {
   const { assets, ...source } = result.source ?? {};
   const paths = Object.fromEntries(
@@ -341,11 +384,14 @@ function compactReview(result) {
       'framesImage',
       'onionImage',
       'timelineImage',
+      'changesImage',
+      'comparisonImage',
       'photometryImage',
       'framesDirectory',
       'captureManifest',
       'replay',
       'inspect',
+      'select',
       'preview',
     ]
       .filter((key) => result[key] !== undefined)
@@ -357,6 +403,7 @@ function compactReview(result) {
     focus: result.focus,
     onion: result.onion,
     timelineView: result.timelineView,
+    selection: result.selection,
     comparison: result.comparison,
     previews: result.previews,
     coverage: result.coverage,
@@ -377,6 +424,11 @@ function compactReview(result) {
     })),
     timingMs: result.timingMs,
     details:
-      'Full evidence is saved in data/session. Use inspect for an episode or object; --verbose prints all measurements.',
+      'Open timelineImage to locate a change, then use select with PNG coordinates or inspect --at SECONDS. The result gives comparisonImage and exact selection.previous/current/next PNGs. Use --out only for a full detail report.',
+    ...(result.source?.kind === 'video'
+      ? {
+          timing: 'Video PTS describes saved frames; perceived smoothness requires playback.',
+        }
+      : {}),
   };
 }

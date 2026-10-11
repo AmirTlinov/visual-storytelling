@@ -97,8 +97,18 @@ export function timeAtChartPoint(view, [x, y]) {
 }
 
 /** Each observed change belongs to (start, end]; select its actual after-frame. */
-export function transitionTime(changes, time) {
+export function transitionTime(changes, time, tolerance = 0) {
   if (!Number.isFinite(time)) throw new Error('Transition time must be finite');
+  // A drawn point spans pixels. Snap close clicks to the point itself before choosing a band.
+  const ends = (changes ?? [])
+    .map((change) => change.endTime ?? change.time)
+    .filter(Number.isFinite);
+  if (tolerance > 0 && ends.length) {
+    const nearest = ends.reduce((best, value) =>
+      Math.abs(value - time) < Math.abs(best - time) ? value : best,
+    );
+    if (Math.abs(nearest - time) <= tolerance) return nearest;
+  }
   for (const change of changes ?? []) {
     const end = change.endTime ?? change.time;
     const start = change.startTime ?? end - change.dtMs / 1000;

@@ -11,6 +11,9 @@ import { sessionMarkup } from './session-view.mjs';
 import { reportUrl, writeReportEvidence } from './report-evidence.mjs';
 import { startupFailureReason } from './doctor.mjs';
 import { renderTemporalBoard, reportTemporalChanges } from './temporal-board.mjs';
+import { queryEvidence } from './inspection.mjs';
+import { comparisonFrames, renderFrameComparison } from './frame-comparison.mjs';
+import { inspectionCommand } from './inspect.mjs';
 export { motionMarkup } from './report-view.mjs';
 
 function summary(report) {
@@ -68,6 +71,11 @@ function summary(report) {
       ...(report.source.kind === 'scene-seek'
         ? ['Model time: use a real playback recording to inspect presentation cadence.']
         : []),
+      ...(report.source.kind === 'video'
+        ? [
+            'Frame timestamps describe the recording. Judge perceived smoothness in playback; uniform timestamps alone do not establish it.',
+          ]
+        : []),
       ...(report.source.sparse
         ? [
             'Compositor captures arrive on image updates. Capture gaps are not display FPS; browser rAF and long-frame observations are reported separately.',
@@ -87,6 +95,8 @@ export async function assertMotionOutput(out) {
     'frames.png',
     'onion.png',
     'timeline.png',
+    'changes.png',
+    'comparison.png',
     'motion.json',
     'replay.json',
     'telemetry.json',
@@ -135,6 +145,19 @@ export async function writeMotionReport(report, out, { context } = {}) {
   const timelineBoard = await renderTemporalBoard(report, changes);
   report.timelineView = timelineBoard.view;
   await writeFile(join(out, 'timeline.png'), timelineBoard.image);
+  await writeFile(join(out, 'changes.png'), timelineBoard.changeImage);
+  const samples = report.samples?.length
+    ? report.samples
+    : report.frames.map((frame) => ({ ...frame, file: join(out, frame.file) }));
+  report.selection = queryEvidence({ frames: samples }, { at: timelineBoard.view.time }).selection;
+  await writeFile(
+    join(out, 'comparison.png'),
+    await renderFrameComparison(comparisonFrames(report.selection), {
+      at: timelineBoard.view.time,
+      theme: report.source.theme,
+      crop: report.samples?.length ? (report.onion.crop ?? undefined) : undefined,
+    }),
+  );
   const playback = report.captureManifest
     ? report.samples.map((f) => ({ time: f.time, image: reportUrl(out, f.file) }))
     : report.frames.map((f) => ({ time: f.time, image: f.image }));
@@ -221,6 +244,11 @@ export async function writeMotionReport(report, out, { context } = {}) {
     focus,
     onionImage: join(out, 'onion.png'),
     timelineImage: join(out, 'timeline.png'),
+    changesImage: join(out, 'changes.png'),
+    comparisonImage: join(out, 'comparison.png'),
+    selection: report.selection,
+    inspect: inspectionCommand(out),
+    select: `${inspectionCommand(out)} --timeline-point X,Y`,
     timelineView: report.timelineView,
     onion: { ...report.onion, image: undefined },
     previews: report.previews,

@@ -367,7 +367,7 @@
 .motion-playback {
   display: block;
   width: 100%;
-  max-height: 600px;
+  max-height: min(600px, var(--motion-frame-height, calc(100dvh - 360px)));
   object-fit: contain;
   margin-top: 18px;
   background: #f4f6f7;
@@ -423,7 +423,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 12px;
+  margin-block: 6px;
 }
 .motion-play input {
   min-width: 40px;
@@ -446,7 +446,7 @@
   white-space: nowrap;
 }
 .motion-view-controls label {
-  flex-basis: 100%;
+  flex-basis: auto;
 }
 .motion-photometry {
   padding: 24px 32px;

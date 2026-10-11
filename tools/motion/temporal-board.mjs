@@ -55,11 +55,13 @@ export async function renderTemporalBoard(report, changes = reportTemporalChange
           temporalChangeStrength(change),
         )
       : current;
-  const frameImage = await sharp(Buffer.from(data), {
-    raw: { width: geometry.width, height: geometry.height, channels: 4 },
-  })
-    .png()
-    .toBuffer();
+  const encode = (pixels) =>
+    sharp(Buffer.from(pixels), {
+      raw: { width: geometry.width, height: geometry.height, channels: 4 },
+    })
+      .png()
+      .toBuffer();
+  const [frameImage, changeImage] = await Promise.all([encode(current), encode(data)]);
   const width = Math.max(320, geometry.width);
   const chart = temporalChart(changes, {
     width,
@@ -75,16 +77,26 @@ export async function renderTemporalBoard(report, changes = reportTemporalChange
     height: geometry.height,
   };
   const height = geometry.height + chart.height;
-  const image = await sharp({ create: { width, height, channels: 4, background: '#fff' } })
-    .composite([
-      { input: frameImage, left: frame.x, top: 0 },
-      { input: Buffer.from(chart.svg), left: 0, top: geometry.height },
-    ])
-    .png()
-    .toBuffer();
+  const board = (pixels) =>
+    sharp({
+      create: {
+        width,
+        height,
+        channels: 4,
+        background: report.source?.theme === 'dark' ? '#20262b' : '#fff',
+      },
+    })
+      .composite([
+        { input: pixels, left: frame.x, top: 0 },
+        { input: Buffer.from(chart.svg), left: 0, top: geometry.height },
+      ])
+      .png()
+      .toBuffer();
   return {
-    image,
+    image: await board(frameImage),
+    changeImage: await board(changeImage),
     view: {
+      mode: 'frame',
       width,
       height,
       frame,
