@@ -379,3 +379,94 @@ test('character actions and prop state survive a score with no visible text', ()
   assert.equal(score.propTracks.dot[0].to.values.active, 1);
   assert.equal(score.script.cues.hold.hold, 'Рассмотреть остаток');
 });
+
+function alignRequestedNarration(projection) {
+  let cursor = projection.intro;
+  const cues = {};
+  const segments = projection.segments.map((segment) => {
+    const start = cursor;
+    const end = start + 1;
+    for (const cue of segment.cues)
+      cues[cue.id] = { start, end, ...(cue.timing ? { timing: cue.timing } : {}) };
+    cursor = end + segment.pause_after;
+    return { id: segment.id, start, end, text: segment.text };
+  });
+  return { duration: cursor + projection.outro, cues, segments };
+}
+
+for (const following of ['spoken', 'silent', 'end']) {
+  test(`a final spoken action reserves its tail before ${following === 'end' ? 'story end' : `the next ${following} chapter`}`, () => {
+    const document = {
+      title: 'Завершить движение',
+      narration: { intro: 0.2, pause: 0.6, outro: 0.3 },
+      chapters: [
+        {
+          id: 'motion',
+          title: 'Движение',
+          beats: [{ id: 'move', say: 'Движение.', timing: { delay: 0.5, duration: 4 } }],
+        },
+      ],
+    };
+    if (following !== 'end')
+      document.chapters.push({
+        id: 'next',
+        title: 'Дальше',
+        beats: [
+          following === 'spoken'
+            ? { id: 'say', say: 'Готово.', timing: { duration: 2 } }
+            : { id: 'hold', seconds: 2 },
+        ],
+      });
+    const projection = documentNarration(document);
+    assert.equal(projection.segments[0].pause_after, following === 'silent' ? 7.1 : 5.1);
+    if (following === 'spoken') assert.equal(projection.segments[1].pause_after, 2.6);
+    const aligned = alignRequestedNarration(projection);
+    const script = documentScript(document, aligned);
+    assert.deepEqual(script.cues['motion.move'].speech, { start: 0.2, end: 1.2 });
+    assert.equal(script.cues['motion.move'].end, 4.7);
+    assert.equal(script.segments, aligned.segments, 'speech remains at its acoustic anchors');
+    assert.equal(script.duration, aligned.duration);
+    for (const cue of Object.values(script.cues)) assert.ok(cue.end <= script.duration);
+    if (following !== 'end') assert.ok(script.cues.next.start >= script.cues.motion.end);
+    assert.doesNotThrow(() =>
+      composeChapters(
+        document.chapters.map(({ id }) => documentChapter(document, id, script)),
+        { script },
+      ),
+    );
+  });
+}
+
+test('a spoken tail already reserved before a silent beat is not added again at chapter end', () => {
+  const document = {
+    title: 'Пауза',
+    narration: { pause: 0.6, outro: 0.3 },
+    chapters: [
+      {
+        id: 'motion',
+        title: 'Движение',
+        beats: [
+          { id: 'move', say: 'Движение.', timing: { delay: 0.5, duration: 4 } },
+          { id: 'hold', seconds: 2 },
+        ],
+      },
+      { id: 'next', title: 'Далее', beats: [{ id: 'say', say: 'Готово.' }] },
+    ],
+  };
+  const projection = documentNarration(document);
+  assert.equal(
+    projection.segments[0].pause_after,
+    7.1,
+    'one action reserve, one silent hold, one chapter pause',
+  );
+  assert.equal(
+    projection.segments[1].pause_after,
+    0.6,
+    'untimed speech adds only its chapter pause',
+  );
+  const aligned = alignRequestedNarration(projection);
+  assert.equal(aligned.duration, 10);
+  const script = documentScript(document, aligned);
+  assert.deepEqual(script.cues['motion.hold'], { start: 4.5, end: 6.5 });
+  assert.equal(script.cues['next.say'].start, 8.1);
+});

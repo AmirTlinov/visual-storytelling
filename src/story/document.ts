@@ -215,7 +215,10 @@ export function documentNarration(document: StoryDocument) {
         ),
       );
     }
-    if (runs.length) pause(spec.pause ?? 0.6);
+    if (runs.length) {
+      pause(actionReserve + (spec.pause ?? 0.6));
+      actionReserve = 0;
+    }
   }
   return {
     version: 3,

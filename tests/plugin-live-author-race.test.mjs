@@ -23,8 +23,8 @@ test(
         resolveDir: process.cwd(),
         contents: `import {mountExplanation} from './dist/explanation/mount.js';
         import './dist/style.css';
-        window.__visualStorySession = {sessionId:'preflight',generation:1,stateRevision:0,buildRevision:'build-14',sourceRevision:'source-14'};
-        window.galleryReady = mountExplanation(document.querySelector('main'), ${JSON.stringify(document)});
+        window.__visualStorySession = window.__testFrameConfig ?? {sessionId:'preflight',generation:1,stateRevision:0,buildRevision:'build-14',sourceRevision:'source-14'};
+        window.galleryReady = mountExplanation(document.querySelector('main'), window.__testDocument ?? ${JSON.stringify(document)});
         import('./plugin/ui/scene-frame.mjs');`,
       },
       bundle: true,
@@ -220,6 +220,47 @@ test(
       assert.equal(continued.report.state.parameters.find((p) => p.key === 'divisor').value, 4);
       assert.equal(
         await scene.evaluate(
+          () => document.querySelector('main').scene.authoring.document.model.count,
+        ),
+        17,
+      );
+      const checkpoint = await scene.evaluate(() => document.querySelector('main').scene.capture());
+      const reattached = {
+        sessionId: 'preflight',
+        generation: 1,
+        stateRevision: continued.report.stateRevision,
+        buildRevision: 'build-17',
+        sourceRevision: 'source-17',
+        authoring: continued.report.authoring,
+        checkpoint,
+      };
+      await page.evaluate(() => {
+        window.messages = [];
+      });
+      await page.locator('iframe').evaluate(
+        (frame, html) => {
+          frame.srcdoc = html;
+        },
+        html.replace(
+          '<script>',
+          `<script>window.__testFrameConfig=${JSON.stringify(reattached)};window.__testDocument=${JSON.stringify(authored)};`,
+        ),
+      );
+      await page.waitForFunction(() =>
+        messages.some((m) => m.type === 'ready' || m.type === 'error'),
+      );
+      assert.equal(
+        await page.evaluate(() => messages.find((m) => m.type === 'error')?.message),
+        undefined,
+      );
+      const remounted = await page.evaluate(() => messages.find((m) => m.type === 'ready').report);
+      assert.deepEqual(remounted.authoring, continued.report.authoring);
+      assert.equal(remounted.state.parameters.find((p) => p.key === 'count').value, 18);
+      assert.equal(remounted.state.parameters.find((p) => p.key === 'divisor').value, 4);
+      assert.deepEqual(remounted.checkpoint, checkpoint);
+      const remountedScene = page.frames().find((frame) => frame !== page.mainFrame());
+      assert.equal(
+        await remountedScene.evaluate(
           () => document.querySelector('main').scene.authoring.document.model.count,
         ),
         17,
