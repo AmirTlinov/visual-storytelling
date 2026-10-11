@@ -192,6 +192,155 @@ test('scale-changing fits keep point and flat bounds finite', () => {
     }
 });
 
+test('locked geographic shots zoom on the authored place and preserve the usable frame', () => {
+  const center = new T.Vector3(-5200, 149, 380);
+  for (const width of [375, 1440]) {
+    const height = 720,
+      camera = new T.PerspectiveCamera(36, width / height, 0.01, 100000);
+    const shot = (size) => ({
+      target: new T.Box3().setFromCenterAndSize(center, size),
+      direction: [0, 7, 10],
+      lockTarget: true,
+      padding: 30,
+      insets: { left: 46, bottom: 100 },
+    });
+    const regional = shot(new T.Vector3(1200, 70, 950));
+    const building = shot(new T.Vector3(15, 11.7, 12));
+    for (const [from, to] of [
+      [regional, building],
+      [building, regional],
+    ]) {
+      const sample = (progress) => shotPose(camera, width, height, { ...to, from, progress });
+      for (let i = 0; i <= 40; i++) {
+        const pose = sample(i / 40);
+        assert(pose.target.distanceTo(center) < 1e-9, `aim drifts at ${i / 40}`);
+      }
+      for (const endpoint of [from, to]) {
+        const pose = shotPose(camera, width, height, endpoint);
+        camera.position.copy(pose.position);
+        camera.lookAt(pose.target);
+        camera.updateMatrixWorld(true);
+        for (const x of [endpoint.target.min.x, endpoint.target.max.x])
+          for (const y of [endpoint.target.min.y, endpoint.target.max.y])
+            for (const z of [endpoint.target.min.z, endpoint.target.max.z]) {
+              const p = new T.Vector3(x, y, z).project(camera);
+              const px = ((p.x + 1) * width) / 2,
+                py = ((1 - p.y) * height) / 2;
+              assert(px >= 45.99 && px <= width - 29.99 && py >= 29.99 && py <= height - 99.99);
+            }
+      }
+      const saved = sample(0.7);
+      sample(1);
+      sample(0.1);
+      assert.deepEqual(sample(0.7), saved, 'rewind changes a fixed aim');
+    }
+  }
+});
+
+test('locked and automatic shots join continuously while keeping shared annotations visible', () => {
+  const bounds = new T.Box3(new T.Vector3(-5, -0.4, -2), new T.Vector3(5, 0.4, 2));
+  const anchors = [{ position: new T.Vector3(4, 2, 1), padding: [36, 18] }];
+  const camera = new T.PerspectiveCamera(36, 960 / 600, 0.01, 10000);
+  for (const [fromLock, toLock] of [
+    [true, true],
+    [false, true],
+    [true, false],
+  ]) {
+    const from = {
+      target: bounds,
+      direction: [1, 1, 2],
+      padding: 30,
+      insets: { bottom: 80 },
+      anchors,
+      lockTarget: fromLock,
+    };
+    const to = { ...from, direction: [-1, 0.6, 2], lockTarget: toLock };
+    const sample = (progress) => shotPose(camera, 960, 600, { ...to, from, progress });
+    const start = sample(0),
+      end = sample(1);
+    for (const [a, b] of [
+      [0, 1e-7],
+      [1, 1 - 1e-7],
+    ]) {
+      assert(sample(a).target.distanceTo(sample(b).target) < 1e-5);
+      assert(sample(a).position.distanceTo(sample(b).position) < 1e-5);
+    }
+    for (let step = 0; step <= 40; step++) {
+      const p = step / 40,
+        t = p * p * (3 - 2 * p),
+        pose = sample(p);
+      assert(pose.target.distanceTo(start.target.clone().lerp(end.target, t)) < 1e-9);
+      camera.position.copy(pose.position);
+      camera.lookAt(pose.target);
+      camera.updateMatrixWorld(true);
+      const a = anchors[0].position.clone().project(camera);
+      const x = (a.x + 1) * 480,
+        y = (1 - a.y) * 300;
+      assert(x - 36 >= 29.99 && x + 36 <= 930.01 && y - 18 >= 29.99 && y + 18 <= 520.01);
+    }
+  }
+});
+
+test('impossible locked frames reject excluded aims and padded labels without searching forever', () => {
+  const camera = new T.PerspectiveCamera(36, 1, 0.01, 1000);
+  const base = {
+    center: new T.Vector3(),
+    direction: new T.Vector3(0, 0, 1),
+    width: 400,
+    height: 400,
+    lockCenter: true,
+  };
+  for (const options of [
+    { insets: { left: 250, right: 20, top: 20, bottom: 20 } },
+    {
+      insets: { left: 175, right: 20 },
+      anchors: [{ position: new T.Vector3(), padding: [36, 18] }],
+    },
+  ])
+    assert.throws(
+      () => readableFrame(camera, { ...base, ...options }),
+      /locked camera target cannot fit/,
+    );
+  // A label beyond the optical center can fit over a finite distance interval.
+  const pose = readableFrame(camera, {
+    ...base,
+    insets: { left: 175, right: 20 },
+    anchors: [{ position: new T.Vector3(1, 0, 0), padding: [36, 18] }],
+  });
+  assert(pose.target.equals(base.center));
+  assert(Number.isFinite(pose.position.length()));
+});
+
+test('a mixed shot respects the maximum distance permitted by a shared padded annotation', () => {
+  const width = 400,
+    height = 400,
+    left = 189.62518924474716;
+  const camera = new T.PerspectiveCamera(36, 1, 0.01, 1000);
+  const anchors = [{ position: new T.Vector3(3.69, 0.746, 0.568), padding: [36, 18] }];
+  const make = (center, size, direction, lockTarget) => ({
+    target: new T.Box3().setFromCenterAndSize(new T.Vector3(...center), new T.Vector3(...size)),
+    direction,
+    lockTarget,
+    anchors,
+    insets: { left, right: 20, top: 20, bottom: 20 },
+  });
+  const from = make([4.72, -0.45, -0.75], [0.3, 2.45, 0.985], [0.7, 0.194, 0.743], false);
+  const to = make([1.83, -0.37, -0.84], [1.33, 0.736, 0.895], [0.114, 1.066, 1.09], true);
+  for (const progress of [0, 0.1, 0.2, 0.31, 0.5, 0.7, 0.9, 1]) {
+    const pose = shotPose(camera, width, height, { ...to, from, progress });
+    camera.position.copy(pose.position);
+    camera.lookAt(pose.target);
+    camera.updateMatrixWorld(true);
+    const point = anchors[0].position.clone().project(camera);
+    const x = ((point.x + 1) * width) / 2,
+      y = ((1 - point.y) * height) / 2;
+    assert(
+      x - 36 >= left - 0.001 && x + 36 <= 380.001 && y - 18 >= 19.999 && y + 18 <= 380.001,
+      `annotation clipped at ${progress}`,
+    );
+  }
+});
+
 test('authored turns keep an elongated subject in frame, including a view along the up axis', () => {
   const target = new T.Box3(new T.Vector3(-5, -1, -0.5), new T.Vector3(5, 1, 0.5));
   for (const width of [375, 960]) {

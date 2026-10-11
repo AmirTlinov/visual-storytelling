@@ -7,6 +7,8 @@ export interface FrameAnchor {
 }
 export interface ReadableFrame {
   center: T.Vector3;
+  /** Preserve this aim point; increase distance to fit instead of panning. */
+  lockCenter?: boolean;
   direction: T.Vector3;
   width: number;
   height: number;
@@ -32,8 +34,8 @@ export function readableFrame(camera: T.PerspectiveCamera, options: ReadableFram
   const basis = new T.Matrix4().lookAt(direction, new T.Vector3(), camera.up);
   const across = new T.Vector3().setFromMatrixColumn(basis, 0);
   const up = new T.Vector3().setFromMatrixColumn(basis, 1);
-  const panX = (width / 2 - (left + right) / 2) / focal;
-  const panY = ((top + bottom) / 2 - height / 2) / focal;
+  const panX = options.lockCenter ? 0 : (width / 2 - (left + right) / 2) / focal;
+  const panY = options.lockCenter ? 0 : ((top + bottom) / 2 - height / 2) / focal;
   const minimum = options.minimum ?? { width: 0.1, height: 0.1 };
   const coordinates = [
     width,
@@ -62,6 +64,19 @@ export function readableFrame(camera: T.PerspectiveCamera, options: ReadableFram
   for (const x of [-minimum.width / 2, minimum.width / 2])
     for (const y of [-minimum.height / 2, minimum.height / 2])
       anchors.push({ x, y, z: 0, padding: [0, 0] });
+  const constraints = anchors.map(({ x, y, z, padding }) => {
+    const px = Math.min(padding[0]!, (right - left) * 0.48),
+      py = Math.min(padding[1]!, (bottom - top) * 0.48);
+    return {
+      x,
+      y,
+      z,
+      l: (left + px - width / 2) / focal,
+      r: (right - px - width / 2) / focal,
+      t: (height / 2 - top - py) / focal,
+      b: (height / 2 - bottom + py) / focal,
+    };
+  });
   // At a fixed distance each anchor permits an interval of camera translations.
   // Their intersection gives the smallest pan needed to preserve the authored composition.
   const intervals = (distance: number) => {
@@ -69,41 +84,61 @@ export function readableFrame(camera: T.PerspectiveCamera, options: ReadableFram
       hiX = Infinity,
       loY = -Infinity,
       hiY = Infinity;
-    for (const { x, y, z, padding } of anchors) {
-      const px = Math.min(padding[0]!, (right - left) * 0.48),
-        py = Math.min(padding[1]!, (bottom - top) * 0.48);
-      const l = (left + px - width / 2) / focal,
-        r = (right - px - width / 2) / focal;
-      const t = (height / 2 - top - py) / focal,
-        b = (height / 2 - bottom + py) / focal;
+    for (const { x, y, z, l, r, t, b } of constraints) {
       loX = Math.max(loX, x + r * z - distance * (r + panX));
       hiX = Math.min(hiX, x + l * z - distance * (l + panX));
       loY = Math.max(loY, y + t * z - distance * (t + panY));
       hiY = Math.min(hiY, y + b * z - distance * (b + panY));
     }
-    return { loX, hiX, loY, hiY, fits: loX <= hiX && loY <= hiY };
+    const fits = loX <= hiX && loY <= hiY;
+    return { loX, hiX, loY, hiY, fits };
   };
   let low = Math.max(
     (minimum.width * focal) / (right - left),
     (minimum.height * focal) / (bottom - top),
     ...anchors.map((a) => a.z + 0.1),
   );
-  let high = low;
-  while (!intervals(high).fits) high *= 1.5;
-  for (let i = 0; i < 18; i++) {
-    const mid = (low + high) / 2;
-    if (intervals(mid).fits) high = mid;
-    else low = mid;
+  let distance: number,
+    maxDistance = Infinity;
+  if (options.lockCenter) {
+    // A fixed aim can have an upper as well as a lower distance bound: a label
+    // or asymmetric inset may exclude the optical center. Solve that interval
+    // directly, including impossible frames, instead of searching indefinitely.
+    let high = Infinity;
+    const require = (coefficient: number, value: number) => {
+      if (coefficient > 0) low = Math.max(low, value / coefficient);
+      else if (coefficient < 0) high = Math.min(high, value / coefficient);
+      else if (value > 0) high = -Infinity;
+    };
+    for (const { x, y, z, l, r, t, b } of constraints) {
+      require(r, x + r * z);
+      require(-l, -x - l * z);
+      require(t, y + t * z);
+      require(-b, -y - b * z);
+    }
+    if (!Number.isFinite(low) || low > high)
+      throw new Error('A locked camera target cannot fit these insets and annotations');
+    distance = low;
+    maxDistance = high;
+  } else {
+    let high = low;
+    while (!intervals(high).fits) high *= 1.5;
+    for (let i = 0; i < 18; i++) {
+      const mid = (low + high) / 2;
+      if (intervals(mid).fits) high = mid;
+      else low = mid;
+    }
+    distance = high;
   }
-  const distance = high,
-    limits = intervals(distance);
-  const shiftX = Math.max(limits.loX, Math.min(limits.hiX, 0));
-  const shiftY = Math.max(limits.loY, Math.min(limits.hiY, 0));
+  const limits = intervals(distance);
+  const shiftX = options.lockCenter ? 0 : Math.max(limits.loX, Math.min(limits.hiX, 0));
+  const shiftY = options.lockCenter ? 0 : Math.max(limits.loY, Math.min(limits.hiY, 0));
   const target = center
     .clone()
     .addScaledVector(across, distance * panX + shiftX)
     .addScaledVector(up, distance * panY + shiftY);
-  return { target, position: target.clone().addScaledVector(direction, distance) };
+  // With a fixed aim a padded annotation can also limit how far away the camera may be.
+  return { target, position: target.clone().addScaledVector(direction, distance), maxDistance };
 }
 
 /** Visible geometry only; hidden future results must not flatten the opening shot. */

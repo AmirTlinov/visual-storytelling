@@ -15,6 +15,8 @@ export interface Shot3D {
   direction?: readonly [number, number, number];
   /** Safe margin in screen pixels. */
   padding?: number;
+  /** Keep the bounds center as the aim point; fit by distance instead of automatic pan. */
+  lockTarget?: boolean;
   anchors?: readonly FrameAnchor[];
   insets?: ReadableFrame['insets'];
 }
@@ -69,6 +71,7 @@ export function shotPose(
     const insets = { top: margin, right: margin, bottom: margin, left: margin, ...options.insets };
     const pose = readableFrame(camera, {
       center: sphere.center,
+      lockCenter: options.lockTarget,
       direction,
       width,
       height,
@@ -83,6 +86,7 @@ export function shotPose(
       bounds,
       insets,
       annotations: options.anchors ?? [],
+      lockTarget: options.lockTarget ?? false,
     };
   }
   const to = frame(shot),
@@ -116,10 +120,14 @@ export function shotPose(
         from.insets[key] + (to.insets[key] - from.insets[key]) * t,
       ]),
     );
+    const fixedAim = from.lockTarget || to.lockTarget;
     const fit = readableFrame(camera, {
       // Endpoint targets already include the screen-space pan. Fit the authored
       // world center so asymmetric insets are applied exactly once during a turn.
-      center: bounds.getCenter(new T.Vector3()),
+      // If either endpoint fixes its aim, follow the two endpoint aims directly.
+      // This also joins a locked shot to an automatically framed shot without a jump.
+      center: fixedAim ? target : bounds.getCenter(new T.Vector3()),
+      lockCenter: fixedAim,
       direction,
       width,
       height,
@@ -133,7 +141,7 @@ export function shotPose(
       ],
     });
     target.copy(fit.target);
-    distance = Math.max(distance, fit.position.distanceTo(fit.target));
+    distance = Math.min(fit.maxDistance, Math.max(distance, fit.position.distanceTo(fit.target)));
   }
   const radius = Math.max(from.radius, to.radius);
   return {
