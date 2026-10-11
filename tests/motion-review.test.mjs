@@ -70,7 +70,7 @@ test('offline CLI analysis keeps evidence when Chromium is unavailable and remov
     assert.equal(result.framesDirectory, join(out, 'analysis'));
     assert.equal(result.onionImage, join(out, 'onion.png'));
     assert.equal(PNG.sync.read(await readFile(result.onionImage)).width, 80);
-    assert.equal(result.onion.layers.at(-1).opacity, 0.5);
+    assert.equal(result.onion.layers.at(-1).opacity, 1);
     for (const key of ['image', 'framesImage', 'photometryImage'])
       assert.equal(key in result, false);
     for (const file of covers) await assert.rejects(readFile(join(out, file)), { code: 'ENOENT' });

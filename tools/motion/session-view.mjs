@@ -49,7 +49,7 @@ export function sessionMarkup(report, out, player, evidence) {
     const index=${json(evidence)},episodes=${json(episodes)},query=${queryEvidence.toString()},quote=${shellQuote.toString()};
     const store=(${createReportEvidence.toString()})(index);
     const inspector=document.getElementById('session-inspector'),select=inspector.querySelector('select'),status=inspector.querySelector('[data-inspection-status]');
-    let at=index.frames[0].time,object='',point,revision=0;
+    let at=Number(document.getElementById('motion-playback')?.dataset.time ?? index.frames[0].time),object='',point,revision=0;
     async function inspect(){const token=++revision,request={at,from:at-.3,to:at+.3,object:object||undefined,point,limit:3};
       inspector.setAttribute('aria-busy','true');
       let data;

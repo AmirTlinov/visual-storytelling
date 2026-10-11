@@ -439,7 +439,7 @@ export const workflows = {
           );
         await access(result[key]);
       }
-      const files = ['path', 'image', 'onionImage', 'framesImage', 'photometryImage']
+      const files = ['path', 'image', 'timelineImage', 'onionImage', 'framesImage', 'photometryImage']
         .map((key) => result[key])
         .filter((path) => typeof path === 'string' && path.startsWith(canonicalOutput + '/'));
       return {

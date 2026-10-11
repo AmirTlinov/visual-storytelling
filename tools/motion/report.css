@@ -376,9 +376,35 @@
 .motion-play [hidden] {
   display: none;
 }
-.motion-play [data-onion][aria-pressed='true'] {
+.motion-play [data-view][aria-pressed='true'] {
   border-color: #2367b0;
   background: #edf4fa;
+}
+.motion-temporal-chart {
+  width: 100%;
+  margin-top: 4px;
+  cursor: crosshair;
+  touch-action: none;
+}
+.motion-temporal-chart svg {
+  display: block;
+  width: 100%;
+}
+.motion-temporal-chart:focus-visible {
+  outline: 2px solid #2367b0;
+  outline-offset: 2px;
+}
+.motion-play .motion-chart-hint {
+  margin: 4px 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.motion-view-controls {
+  margin-top: 8px;
+}
+.motion-change-legend {
+  color: #216e4a;
+  font-size: 14px;
 }
 .motion-onion-legend {
   display: flex;
@@ -414,10 +440,13 @@
   color: var(--ink);
   cursor: pointer;
 }
-.motion-play output {
-  font-size: 12px;
-  min-width: 60px;
-  font-variant-numeric: tabular-nums;
+.motion-view-controls button {
+  padding-inline: 9px;
+  flex: 1;
+  white-space: nowrap;
+}
+.motion-view-controls label {
+  flex-basis: 100%;
 }
 .motion-photometry {
   padding: 24px 32px;

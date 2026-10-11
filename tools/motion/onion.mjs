@@ -53,7 +53,7 @@ export function onionLayers(frames, { at, radius } = {}) {
       index: i,
       time: frames[i].time,
       offset: frames[i].time - time,
-      opacity: 0.5 * Math.max(0, 1 - Math.abs(frames[i].time - time) / radius),
+      opacity: i === index ? 1 : 0.5 * Math.max(0, 1 - Math.abs(frames[i].time - time) / radius),
     }))
     .filter((layer) => layer.opacity > 0)
     .sort((a, b) => Math.abs(b.offset) - Math.abs(a.offset) || a.time - b.time);
@@ -71,49 +71,94 @@ export function composeOnion(rasters, width, height, layers) {
     let r = 0,
       g = 0,
       b = 0,
-      a = 0;
+      weight = 0;
+    const presentAlpha = present[p + 3] / 255;
     for (let i = 0; i < layers.length; i++) {
       const data = rasters[i],
         tint = tints[i];
-      const alpha = (data[p + 3] / 255) * layers[i].opacity;
-      if (!alpha) continue;
-      const retained = 1 - alpha;
-      // Unchanged context keeps its own colours; only temporal differences are tinted.
-      const changed =
-        tint &&
-        (Math.abs(data[p] - present[p]) > 8 ||
-          Math.abs(data[p + 1] - present[p + 1]) > 8 ||
-          Math.abs(data[p + 2] - present[p + 2]) > 8 ||
-          Math.abs(data[p + 3] - present[p + 3]) > 8);
-      // Paint unchanged context once, with the present. Repeated opaque backgrounds erase trails.
-      if (tint && !changed) continue;
-      r = (changed ? data[p] * 0.2 + tint[0] * 0.8 : data[p]) * alpha + r * retained;
-      g = (changed ? data[p + 1] * 0.2 + tint[1] * 0.8 : data[p + 1]) * alpha + g * retained;
-      b = (changed ? data[p + 2] * 0.2 + tint[2] * 0.8 : data[p + 2]) * alpha + b * retained;
-      a = alpha + a * retained;
+      if (!tint) continue;
+      const alpha = data[p + 3] / 255;
+      const delta = Math.max(
+        Math.abs(data[p] * alpha - present[p] * presentAlpha),
+        Math.abs(data[p + 1] * alpha - present[p + 1] * presentAlpha),
+        Math.abs(data[p + 2] * alpha - present[p + 2] * presentAlpha),
+        Math.abs(data[p + 3] - present[p + 3]),
+      );
+      const w = alpha * layers[i].opacity * Math.min(1, Math.max(0, delta - 8) / 96);
+      r += (data[p] * 0.2 + tint[0] * 0.8) * w;
+      g += (data[p + 1] * 0.2 + tint[1] * 0.8) * w;
+      b += (data[p + 2] * 0.2 + tint[2] * 0.8) * w;
+      weight += w;
     }
+    // Bound the entire trail, rather than letting many neighbours obscure current text.
+    const ghost = Math.min(0.28, weight * 0.55);
+    const a = ghost + presentAlpha * (1 - ghost);
     if (a) {
-      output[p] = r / a;
-      output[p + 1] = g / a;
-      output[p + 2] = b / a;
+      const retained = presentAlpha * (1 - ghost),
+        blend = weight ? ghost / weight : 0;
+      output[p] = (r * blend + present[p] * retained) / a;
+      output[p + 1] = (g * blend + present[p + 1] * retained) / a;
+      output[p + 2] = (b * blend + present[p + 2] * retained) / a;
       output[p + 3] = a * 255;
     }
   }
   return output;
 }
 
-/** Installs a view on the existing player's clock; no capture, retiming or second player. */
-export function installOnionPlayer(root, frames, selectLayers, compose, geometry, stop) {
+/** A continuous visual cue; the local rate comparison never declares an animation defective. */
+export function temporalChangeStrength(change) {
+  return 0.18 + 0.82 * Math.max(0, Math.min(1, ((change?.magnitude ?? 1) - 1) / 4));
+}
+
+/** Highlight only observed differences. Preserve the after-frame's detail and empty alpha. */
+export function composeChange(before, after, width, height, strength = 1) {
+  const output = new Uint8ClampedArray(after);
+  const tint = [33, 184, 100];
+  for (let p = 0; p < width * height * 4; p += 4) {
+    const a = before[p + 3] / 255,
+      b = after[p + 3] / 255;
+    const delta = Math.max(
+      Math.abs(before[p] * a - after[p] * b),
+      Math.abs(before[p + 1] * a - after[p + 1] * b),
+      Math.abs(before[p + 2] * a - after[p + 2] * b),
+      Math.abs(before[p + 3] - after[p + 3]),
+    );
+    const amount =
+      0.36 * Math.max(0, Math.min(1, strength)) * Math.min(1, Math.max(0, delta - 8) / 128);
+    if (!amount) continue;
+    const alpha = amount + b * (1 - amount);
+    for (let c = 0; c < 3; c++)
+      output[p + c] = (tint[c] * amount + after[p + c] * b * (1 - amount)) / alpha;
+    output[p + 3] = alpha * 255;
+  }
+  return output;
+}
+
+/** A view of the existing player's clock. Decode only the states visible in this mode. */
+export function installOnionPlayer(
+  root,
+  frames,
+  selectLayers,
+  compose,
+  geometry,
+  stop,
+  changePixels,
+  changeStrength,
+  changes,
+) {
   const image = root.querySelector('img');
   const canvas = root.querySelector('[data-onion-canvas]');
-  const toggle = root.querySelector('[data-onion]');
+  const controls = [...root.querySelectorAll('[data-view]')];
   const windowControl = root.querySelector('[data-onion-window]');
   const input = windowControl.querySelector('input');
   const status = root.querySelector('[data-onion-status]');
+  const legend = root.querySelector('[data-onion-legend]');
+  const greenLegend = root.querySelector('[data-change-legend]');
+  const byTime = new Map(changes.map((change) => [change.endTime ?? change.time, change]));
   let radius = geometry.radius;
-  input.value = Number(radius.toPrecision(3));
+  input.value = Number(radius.toPrecision(6));
   let index = 0,
-    enabled = false,
+    mode = 'frame',
     revision = 0,
     pending = false,
     running = false;
@@ -157,36 +202,55 @@ export function installOnionPlayer(root, frames, selectLayers, compose, geometry
     }
     return cache.get(i);
   };
+  function reflectMode() {
+    root.dataset.mode = mode;
+    controls.forEach((control) =>
+      control.setAttribute('aria-pressed', String(control.dataset.view === mode)),
+    );
+    windowControl.hidden = mode !== 'onion';
+    legend.hidden = mode !== 'onion';
+    greenLegend.hidden = mode !== 'change';
+    status.hidden = mode === 'frame';
+  }
   async function render() {
     if (running) return;
     running = true;
     try {
-      while (pending && enabled) {
+      while (pending && mode !== 'frame') {
         pending = false;
         const token = revision;
         const view = selectLayers(frames, { at: frames[index].time, radius });
-        const keep = new Set(view.layers.map((layer) => layer.index));
+        const selectedMode = mode;
+        const indices =
+          mode === 'onion'
+            ? view.layers.map((layer) => layer.index)
+            : [Math.max(0, index - 1), index];
+        const keep = new Set(indices);
         for (const i of cache.keys()) if (!keep.has(i)) cache.delete(i);
         try {
-          const images = await Promise.all(view.layers.map((layer) => load(layer.index)));
-          if (token !== revision || !enabled) continue;
+          const images = await Promise.all(indices.map(load));
+          if (token !== revision || mode === 'frame') continue;
           canvas.width = images[0].width;
           canvas.height = images[0].height;
-          const ctx = canvas.getContext('2d');
-          ctx.putImageData(
-            new ImageData(
-              compose(
-                images.map((img) => img.data),
-                canvas.width,
-                canvas.height,
-                view.layers,
-              ),
-              canvas.width,
-              canvas.height,
-            ),
-            0,
-            0,
-          );
+          const change = byTime.get(frames[index].time);
+          const pixels =
+            selectedMode === 'onion'
+              ? compose(
+                  images.map((img) => img.data),
+                  canvas.width,
+                  canvas.height,
+                  view.layers,
+                )
+              : changePixels(
+                  images[0].data,
+                  images[1].data,
+                  canvas.width,
+                  canvas.height,
+                  changeStrength(change),
+                );
+          canvas
+            .getContext('2d')
+            .putImageData(new ImageData(pixels, canvas.width, canvas.height), 0, 0);
           canvas.dataset.time = view.time;
           canvas.dataset.sourceX = geometry.crop?.x ?? 0;
           canvas.dataset.sourceY = geometry.crop?.y ?? 0;
@@ -196,17 +260,33 @@ export function installOnionPlayer(root, frames, selectLayers, compose, geometry
           canvas.style.pointerEvents = '';
           canvas.removeAttribute('aria-busy');
           status.textContent =
-            'Текущий кадр: ' + view.time.toFixed(3) + ' с · наложено кадров: ' + view.layers.length;
+            selectedMode === 'onion'
+              ? 'Текущий кадр: ' +
+                view.time.toFixed(3) +
+                ' с · наложено кадров: ' +
+                view.layers.length
+              : index === 0
+                ? 'Первый кадр записи: предыдущего кадра нет.'
+                : frames[index - 1].time.toFixed(3) +
+                  ' → ' +
+                  view.time.toFixed(3) +
+                  ' с' +
+                  (change?.candidate
+                    ? ' · резкое изменение относительно соседних переходов'
+                    : ' · изменившиеся области');
         } catch {
-          if (token !== revision || !enabled) continue;
+          if (token !== revision || mode === 'frame') continue;
           cache.clear();
+          mode = 'frame';
+          reflectMode();
+          status.hidden = false;
           canvas.hidden = true;
           image.hidden = false;
           canvas.removeAttribute('aria-busy');
           status.textContent =
             location.protocol === 'file:'
-              ? 'Для наложения откройте отчёт через visual-story preview КАТАЛОГ_ОТЧЁТА. Браузер ограничивает чтение пикселей локальных файлов.'
-              : 'Не удалось прочитать соседний кадр. Показан текущий; наложение можно включить снова.';
+              ? 'Показан чёткий кадр. Для наложений откройте отчёт через visual-story preview КАТАЛОГ_ОТЧЁТА.'
+              : 'Не удалось прочитать соседний кадр. Показан чёткий кадр; попробуйте включить слой ещё раз.';
         }
       }
     } finally {
@@ -215,45 +295,50 @@ export function installOnionPlayer(root, frames, selectLayers, compose, geometry
   }
   function update() {
     revision++;
-    // Keep one visual mode while decoding. Old pixels remain labelled with their own time.
-    if (!enabled) {
+    if (mode === 'frame') {
       canvas.hidden = true;
       image.hidden = false;
-    }
-    canvas.style.pointerEvents = enabled ? 'none' : '';
-    canvas.setAttribute('aria-busy', String(enabled));
-    status.textContent = enabled
-      ? (canvas.hidden ? '' : 'Показан ' + Number(canvas.dataset.time).toFixed(3) + ' с · ') +
-        'подготовка ' +
-        frames[index].time.toFixed(3) +
-        ' с…'
-      : '';
-    pending = enabled;
-    if (enabled) void render();
+      canvas.removeAttribute('aria-busy');
+    } else canvas.setAttribute('aria-busy', 'true');
+    canvas.style.pointerEvents = mode === 'frame' ? '' : 'none';
+    status.textContent =
+      mode === 'frame'
+        ? ''
+        : (canvas.hidden ? '' : 'Показан ' + Number(canvas.dataset.time).toFixed(3) + ' с · ') +
+          'подготовка ' +
+          frames[index].time.toFixed(3) +
+          ' с…';
+    pending = mode !== 'frame';
+    if (pending) void render();
+  }
+  function setMode(value) {
+    if (value === mode) return;
+    mode = value;
+    reflectMode();
+    update();
+    if (mode === 'frame') cache.clear();
   }
   root.addEventListener('motionframe', (event) => {
     index = event.detail.index;
     update();
   });
-  toggle.onclick = () => {
-    stop();
-    enabled = !enabled;
-    toggle.setAttribute('aria-pressed', String(enabled));
-    windowControl.hidden = !enabled;
-    root.querySelector('[data-onion-legend]').hidden = !enabled;
-    status.hidden = !enabled;
-    update();
-    if (!enabled) cache.clear();
-  };
+  root.addEventListener('motionview', (event) => {
+    if (['frame', 'onion', 'change'].includes(event.detail.mode)) setMode(event.detail.mode);
+  });
+  controls.forEach((control) => {
+    control.onclick = () => {
+      stop();
+      setMode(control.dataset.view === mode ? 'frame' : control.dataset.view);
+    };
+  });
   input.onchange = () => {
     if (!Number.isFinite(input.valueAsNumber) || input.valueAsNumber <= 0) {
-      input.setCustomValidity('Укажите положительный интервал в секундах');
-      input.reportValidity();
+      input.value = radius;
       return;
     }
-    input.setCustomValidity('');
     radius = input.valueAsNumber;
     stop();
     update();
   };
+  reflectMode();
 }

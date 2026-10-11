@@ -1,10 +1,12 @@
 import { parseArgs } from 'node:util';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { resolve, dirname, join } from 'node:path';
 import { reviewMotion } from './review.mjs';
 import { parseCrop } from './frames.mjs';
 import { parseSlice } from './photometry.mjs';
 import { startupFailureReason, offlineReviewHint } from './doctor.mjs';
+import { timeAtChartPoint, transitionTime } from './temporal-chart.mjs';
+import { deriveTemporalChanges } from './timeline.mjs';
 
 const help = `Visual review — one session, full interval, inspect, compare
 
@@ -23,6 +25,7 @@ visual-story review inspect SESSION
 visual-story review inspect SESSION --episode ID
 visual-story review inspect SESSION --at 2.1 --radius .3 --object ID
 visual-story review inspect SESSION --at 2.1 --point 120,80
+visual-story review inspect SESSION --timeline-point 420,680
 visual-story review inspect SESSION --episode ID --out DETAIL
 visual-story review SESSION/replay.json --baseline SESSION --out AFTER
 
@@ -30,7 +33,8 @@ SOURCE: scene, URL, local HTML (--capture), video, frame manifest or saved sessi
 A cue selects its entire action with context before/after; --frames controls detail density.
 Start with session and index.html: complete episode map, playback, objects and observations.
 image is the overview PNG; framesImage and photometryImage contain detailed measurements.
-onionImage overlays past/present/future in one PNG: present 50%, fading to zero at ±radius.
+onionImage keeps the current frame clear with fading blue past / red future trails.
+timelineImage puts the selected transition above its time graph; --timeline-point x,y selects source time from that PNG.
 The saved player has an onion-skin toggle and time-window control; all views share its time.
 inspect returns existing evidence without repeating an interaction. --search filters episode text; --offset/--limit page the index.
 Use --out on inspect to render a focused report; raw capture is reused.
@@ -88,6 +92,7 @@ export async function runMotionCLI(args) {
         radius: { type: 'string' },
         object: { type: 'string' },
         point: { type: 'string' },
+        'timeline-point': { type: 'string' },
         search: { type: 'string' },
         offset: { type: 'string' },
         limit: { type: 'string' },
@@ -136,6 +141,47 @@ export async function runMotionCLI(args) {
     if (v.theme && !['light', 'dark'].includes(v.theme))
       throw new Error('--theme must be light or dark');
     const numeric = (key) => (v[key] === undefined ? undefined : Number(v[key]));
+    if (v['timeline-point'] !== undefined) {
+      if (!inspecting) throw new Error('--timeline-point is for inspect of a saved report');
+      if (v.at !== undefined || v.episode !== undefined || v.cue !== undefined)
+        throw new Error('--timeline-point cannot be combined with --at, --episode or --cue');
+      const timelinePoint = v['timeline-point']
+        .split(',')
+        .map((part) => (part.trim() ? Number(part) : NaN));
+      if (timelinePoint.length !== 2 || timelinePoint.some((value) => !Number.isFinite(value)))
+        throw new Error('--timeline-point needs x,y in timeline.png pixels');
+      const directory = (await stat(input)).isDirectory()
+        ? resolve(input)
+        : dirname(resolve(input));
+      let timelineView;
+      let savedReport;
+      try {
+        savedReport = JSON.parse(await readFile(join(directory, 'motion.json'), 'utf8'));
+        timelineView = savedReport.timelineView;
+        if (
+          !timelineView?.plot ||
+          !timelineView?.range ||
+          !(await stat(join(directory, 'timeline.png'))).isFile()
+        )
+          throw new Error('missing board');
+      } catch {
+        throw new Error(
+          '--timeline-point needs a saved report with timeline.png and timelineView metadata',
+        );
+      }
+      const changes =
+        savedReport.timeline?.changes ??
+        deriveTemporalChanges(
+          (savedReport.intervals ?? [])
+            .map((interval) => ({
+              ...interval,
+              time: savedReport.frames?.[interval.to]?.time,
+              meanDelta: interval.meanDelta ?? interval.meanAbsoluteDelta,
+            }))
+            .filter((interval) => Number.isFinite(interval.time)),
+        );
+      v.at = String(transitionTime(changes, timeAtChartPoint(timelineView, timelinePoint)));
+    }
     const point = v.point?.split(',').map(Number);
     if (point && (point.length !== 2 || point.some((n) => !Number.isFinite(n))))
       throw new Error('--point needs x,y in source pixels');
@@ -294,6 +340,7 @@ function compactReview(result) {
       'image',
       'framesImage',
       'onionImage',
+      'timelineImage',
       'photometryImage',
       'framesDirectory',
       'captureManifest',
@@ -309,6 +356,7 @@ function compactReview(result) {
     source: { ...source, ...(assets ? { assetCount: assets.length } : {}) },
     focus: result.focus,
     onion: result.onion,
+    timelineView: result.timelineView,
     comparison: result.comparison,
     previews: result.previews,
     coverage: result.coverage,

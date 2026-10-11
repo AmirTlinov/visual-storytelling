@@ -1,5 +1,13 @@
 import { observationTitle, observationDetail } from './focus.mjs';
-import { onionLayers, composeOnion, installOnionPlayer } from './onion.mjs';
+import {
+  onionLayers,
+  composeOnion,
+  composeChange,
+  temporalChangeStrength,
+  installOnionPlayer,
+} from './onion.mjs';
+import { temporalChart, timeAtChartPoint, transitionTime } from './temporal-chart.mjs';
+import { installTemporalNavigation } from './temporal-navigation.mjs';
 
 export const escapeText = (value) =>
   String(value).replace(
@@ -151,7 +159,14 @@ export function timeControl(time, playerId, clock = 'recording') {
 
 export function playbackMarkup(
   frames,
-  { id = 'motion-playback', unsynchronized = false, audio, open = false, onion = {} } = {},
+  {
+    id = 'motion-playback',
+    unsynchronized = false,
+    audio,
+    open = false,
+    onion = {},
+    changes = [],
+  } = {},
 ) {
   if (!frames?.length) return '';
   const data = JSON.stringify(frames).replace(/</g, '\\u003c');
@@ -164,27 +179,31 @@ export function playbackMarkup(
     radius: onion.radius ?? onionLayers(frames).radius,
   };
   return `<details class="motion-play" id="${escapeText(id)}" ${open ? 'open' : ''}><summary>Сохранённая запись · кадров: ${frames.length} · ${frames[0].time.toFixed(3)}–${frames.at(-1).time.toFixed(3)} с</summary>
-  ${audio ? `<audio src="${escapeText(audio)}" preload="metadata"></audio>` : ''}<img class="motion-playback" alt="Запись"><canvas class="motion-playback" data-onion-canvas hidden aria-label="Наложение кадров во времени"></canvas>
-  <div class="motion-play-controls"><button type="button" data-play>Воспроизвести</button><button type="button" data-previous aria-label="Предыдущий кадр">← кадр</button><button type="button" data-next aria-label="Следующий кадр">кадр →</button><label>Время, с <input type="number" step="any" aria-label="Перейти ко времени, секунды" min="${frames[0].time}" max="${frames.at(-1).time}"></label><button type="button" data-onion aria-pressed="false">Наложение во времени</button><label data-onion-window hidden>До и после, с <input type="number" step="0.01" min="0" aria-label="Радиус наложения, секунды"></label></div>
-  <div class="motion-onion-legend" data-onion-legend hidden><span class="motion-past">Раньше</span><span>Сейчас · 50%</span><span class="motion-future">Позже</span></div>
+  ${audio ? `<audio src="${escapeText(audio)}" preload="metadata"></audio>` : ''}<img class="motion-playback" alt="Запись"><canvas class="motion-playback" data-onion-canvas hidden aria-label="Текущий кадр с временным слоем"></canvas>
+  <div class="motion-temporal-chart" data-temporal-chart tabindex="0" role="slider" aria-label="Время записи" aria-valuemin="${frames[0].time}" aria-valuemax="${frames.at(-1).time}"></div>
+  <p class="motion-chart-hint">Выбери момент на графике · зелёным выделены резкие изменения</p>
+  <div class="motion-play-controls"><button type="button" data-play>Воспроизвести</button><button type="button" data-previous aria-label="Предыдущий кадр">← кадр</button><button type="button" data-next aria-label="Следующий кадр">кадр →</button><label>Время, с <input type="number" step="any" aria-label="Перейти ко времени, секунды" min="${frames[0].time}" max="${frames.at(-1).time}"></label></div>
+  <div class="motion-play-controls motion-view-controls" aria-label="Вид кадра"><button type="button" data-view="frame" aria-pressed="true">Чёткий кадр</button><button type="button" data-view="onion" data-onion aria-pressed="false">Следы</button><button type="button" data-view="change" aria-pressed="false">Изменения</button><label data-onion-window hidden>До и после, с <input type="number" step="any" min="0" aria-label="Радиус наложения, секунды"></label></div>
+  <div class="motion-onion-legend" data-onion-legend hidden><span class="motion-past">Раньше</span><span>Сейчас · чёткий</span><span class="motion-future">Позже</span></div>
+  <p class="motion-change-legend" data-change-legend hidden>Зелёный — изменившиеся области. Ярче при резком переходе.</p>
   <p data-onion-status hidden role="status"></p>
-  <p><input type="range" aria-label="Время записи" min="${frames[0].time}" max="${frames.at(-1).time}" step="any" value="${frames[0].time}"><output></output></p>
   <p class="motion-frame-position"></p><p class="motion-seek-note" role="status"></p>
   </details><script>(()=>{
-  const root=document.getElementById(${JSON.stringify(id)}),frames=${data},image=root.querySelector('img'),slider=root.querySelector('input[type=range]'),time=root.querySelector('input[type=number]'),button=root.querySelector('[data-play]'),previous=root.querySelector('[data-previous]'),next=root.querySelector('[data-next]'),output=root.querySelector('output'),position=root.querySelector('.motion-frame-position'),note=root.querySelector('.motion-seek-note');
-  const audio=root.querySelector('audio'),selectLayers=${onionLayers.toString()};let rangeEnd=frames.at(-1).time,rangeStart=frames[0].time;
-  let playing=false,started=0,base=0,pending,index=-1;
+  const root=document.getElementById(${JSON.stringify(id)}),frames=${data},image=root.querySelector('img'),time=root.querySelector('input[type=number]'),button=root.querySelector('[data-play]'),previous=root.querySelector('[data-previous]'),next=root.querySelector('[data-next]'),position=root.querySelector('.motion-frame-position'),note=root.querySelector('.motion-seek-note');
+  const audio=root.querySelector('audio'),selectLayers=${onionLayers.toString()},changes=${JSON.stringify(changes).replace(/</g, '\\u003c')};let rangeEnd=frames.at(-1).time,rangeStart=frames[0].time;
+  let playing=false,started=0,base=0,pending,index=-1,currentTime=frames[0].time;
   const clamp=t=>Math.max(frames[0].time,Math.min(frames.at(-1).time,t));
-  function show(t){t=clamp(t);const selected=Math.max(0,frames.findLastIndex(f=>f.time<=t+1e-9));if(selected!==index){index=selected;image.src=frames[index].image;root.dispatchEvent(new CustomEvent('motionframe',{bubbles:true,detail:{time:frames[index].time,index}}))}slider.value=t;time.value=Number(t.toFixed(6));output.textContent=t.toFixed(3)+' с';position.textContent='Кадр '+(index+1)+' / '+frames.length+' · метка '+frames[index].time.toFixed(6)+' с';previous.disabled=index===0;next.disabled=index===frames.length-1}
+  function show(t){t=clamp(t);const selected=Math.max(0,frames.findLastIndex(f=>f.time<=t+1e-9));if(selected!==index){index=selected;image.src=frames[index].image;root.dataset.time=frames[index].time;root.dispatchEvent(new CustomEvent('motionframe',{bubbles:true,detail:{time:frames[index].time,index}}))}currentTime=t;time.value=Number(t.toFixed(6));position.textContent='Кадр '+(index+1)+' / '+frames.length+' · '+frames[index].time.toFixed(3)+' с';previous.disabled=index===0;next.disabled=index===frames.length-1}
+  function manual(){stop();rangeStart=frames[0].time;rangeEnd=frames.at(-1).time;note.textContent=''}
   function stop(){playing=false;audio?.pause();cancelAnimationFrame(pending);button.textContent='Воспроизвести'}
   function tick(now){if(!playing)return;const t=clamp(audio&&!audio.paused?audio.currentTime:base+(now-started)/1000);show(t);if(t>=rangeEnd){show(rangeEnd);if(audio)audio.currentTime=rangeEnd;stop()}else pending=requestAnimationFrame(tick)}
-  button.onclick=()=>{if(playing){stop();return}stop();note.textContent='';playing=true;button.textContent='Пауза';base=Number(slider.value);if(base>=rangeEnd||base<rangeStart)base=rangeStart;started=performance.now();if(audio){audio.currentTime=base;void audio.play().catch(()=>{note.textContent='Звук недоступен; кадры продолжают воспроизводиться.'})}show(base);pending=requestAnimationFrame(tick)};
-  slider.oninput=()=>{stop();note.textContent='';show(Number(slider.value))};
-  time.onchange=()=>{stop();note.textContent='';if(Number.isFinite(time.valueAsNumber))show(selectLayers(frames,{at:time.valueAsNumber}).time)};
-  for(const [control,delta] of [[previous,-1],[next,1]])control.onclick=()=>{stop();note.textContent='';show(frames[Math.max(0,Math.min(frames.length-1,index+delta))].time)};
-  root.addEventListener('motionseek',e=>{const requested=Number(e.detail.time);if(!Number.isFinite(requested))return;stop();const nearest=frames.reduce((best,f)=>Math.abs(f.time-requested)<Math.abs(best.time-requested)?f:best);show(nearest.time);note.textContent='Запрошено '+requested.toFixed(6)+' с; ближайшая метка записи '+nearest.time.toFixed(6)+' с.'+(e.detail.clock==='browser'&&${Boolean(unsynchronized)}?' Синхронизация DOM и пикселей не подтверждена.':'');time.focus({preventScroll:true})});
+  button.onclick=()=>{if(playing){stop();return}stop();note.textContent='';playing=true;button.textContent='Пауза';base=currentTime;if(base>=rangeEnd||base<rangeStart)base=rangeStart;started=performance.now();if(audio){audio.currentTime=base;void audio.play().catch(()=>{note.textContent='Звук недоступен; кадры продолжают воспроизводиться.'})}show(base);pending=requestAnimationFrame(tick)};
+  time.onchange=()=>{manual();show(Number.isFinite(time.valueAsNumber)?selectLayers(frames,{at:time.valueAsNumber}).time:frames[index].time)};
+  for(const [control,delta] of [[previous,-1],[next,1]])control.onclick=()=>{manual();show(frames[Math.max(0,Math.min(frames.length-1,index+delta))].time)};
+  root.addEventListener('motionseek',e=>{const requested=Number(e.detail.time);if(!Number.isFinite(requested))return;manual();const nearest=frames.reduce((best,f)=>Math.abs(f.time-requested)<Math.abs(best.time-requested)?f:best);show(nearest.time);if(e.detail.focus!==false)note.textContent='Запрошено '+requested.toFixed(6)+' с; ближайшая метка записи '+nearest.time.toFixed(6)+' с.'+(e.detail.clock==='browser'&&${Boolean(unsynchronized)}?' Синхронизация DOM и пикселей не подтверждена.':'');if(e.detail.focus!==false)time.focus({preventScroll:true})});
   root.addEventListener('motionrange',e=>{stop();rangeStart=clamp(e.detail.from);rangeEnd=clamp(e.detail.to);show(rangeStart);button.click()});
-  (${installOnionPlayer.toString()})(root,frames,selectLayers,${composeOnion.toString()},${JSON.stringify(geometry)},stop);
-  root.ontoggle=()=>{if(!root.open)stop()};show(frames[0].time);
+  (${installOnionPlayer.toString()})(root,frames,selectLayers,${composeOnion.toString()},${JSON.stringify(geometry)},stop,${composeChange.toString()},${temporalChangeStrength.toString()},changes);
+  (${installTemporalNavigation.toString()})(root,frames,changes,${temporalChart.toString()},${timeAtChartPoint.toString()},${transitionTime.toString()});
+  root.ontoggle=()=>{if(!root.open)stop()};show(selectLayers(frames,{at:${JSON.stringify(onion.time ?? frames[0].time)}}).time);
   })();</script>`;
 }

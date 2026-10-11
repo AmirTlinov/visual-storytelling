@@ -9,6 +9,7 @@ import { motionMarkup } from './report-view.mjs';
 import { sessionMarkup } from './session-view.mjs';
 import { reportUrl, writeReportEvidence } from './report-evidence.mjs';
 import { startupFailureReason } from './doctor.mjs';
+import { renderTemporalBoard, reportTemporalChanges } from './temporal-board.mjs';
 export { motionMarkup } from './report-view.mjs';
 
 function summary(report) {
@@ -84,6 +85,7 @@ export async function assertMotionOutput(out) {
     'photometry.png',
     'frames.png',
     'onion.png',
+    'timeline.png',
     'motion.json',
     'replay.json',
     'telemetry.json',
@@ -128,6 +130,10 @@ export async function writeMotionReport(report, out, { context } = {}) {
     await writeFile(join(out, frame.file), Buffer.from(frame.image.split(',')[1], 'base64'));
   }
   await writeFile(join(out, 'onion.png'), Buffer.from(report.onion.image.split(',')[1], 'base64'));
+  const changes = reportTemporalChanges(report);
+  const timelineBoard = await renderTemporalBoard(report, changes);
+  report.timelineView = timelineBoard.view;
+  await writeFile(join(out, 'timeline.png'), timelineBoard.image);
   const playback = report.captureManifest
     ? report.samples.map((f) => ({ time: f.time, image: reportUrl(out, f.file) }))
     : report.frames.map((f) => ({ time: f.time, image: f.image }));
@@ -166,7 +172,7 @@ export async function writeMotionReport(report, out, { context } = {}) {
           .map(encodeURIComponent)
           .join('/')
       : undefined;
-    const player = `<section class="motion-sheet">${playbackMarkup(playback, { unsynchronized: report.source.domSynchronized === false, audio, open: Boolean(report.session), onion: { ...report.onion, prepared: !report.captureManifest } })}</section>`;
+    const player = `<section class="motion-sheet">${playbackMarkup(playback, { unsynchronized: report.source.domSynchronized === false, audio, open: Boolean(report.session), changes, onion: { ...report.onion, prepared: !report.captureManifest } })}</section>`;
     const session = sessionMarkup(report, out, player, evidence);
     const html = document(session ? session + main : main + player);
     await writeFile(join(out, 'index.html'), html);
@@ -212,6 +218,8 @@ export async function writeMotionReport(report, out, { context } = {}) {
     path: join(out, 'index.html'),
     focus,
     onionImage: join(out, 'onion.png'),
+    timelineImage: join(out, 'timeline.png'),
+    timelineView: report.timelineView,
     onion: { ...report.onion, image: undefined },
     previews: report.previews,
     ...(report.previews.available

@@ -5,6 +5,50 @@ import { photometryCollector } from './photometry.mjs';
 const percentile = (values, p) =>
   values.length ? [...values].sort((a, b) => a - b)[Math.floor((values.length - 1) * p)] : 0;
 
+/** Local visual-change candidates, in source seconds; these are prompts for inspection. */
+export function deriveTemporalChanges(intervals) {
+  const finite = (value) => (Number.isFinite(value) ? value : 0);
+  const changes = intervals.map((interval) => {
+    const duration = Math.max(0, finite(interval.dtMs)) / 1000;
+    const endTime = finite(interval.time);
+    const changeRate =
+      duration > 0 ? finite(Math.max(0, finite(interval.meanDelta)) / duration) : 0;
+    return {
+      ...interval,
+      startTime: endTime - duration,
+      endTime,
+      changeRate,
+    };
+  });
+  return changes.map((interval, index) => {
+    // A median of neighbours on both sides tolerates an isolated flash's two edges.
+    const neighbours = changes
+      .slice(Math.max(0, index - 3), index + 4)
+      .filter((other) => other !== interval && other.dtMs > 0);
+    const localChangeRate = percentile(
+      neighbours.map((other) => other.changeRate),
+      0.5,
+    );
+    const duration = Math.max(0, finite(interval.dtMs)) / 1000;
+    // A small mean-channel floor preserves local gestures without amplifying tiny noise.
+    const baseline = Math.max(localChangeRate, duration > 0 ? 0.05 / duration : 0);
+    const magnitude = baseline > 0 ? finite(interval.changeRate / baseline) : 0;
+    const candidate =
+      neighbours.length > 0 &&
+      duration > 0 &&
+      interval.meanDelta >= 0.05 &&
+      interval.changedPercent >= 0.05 &&
+      magnitude > 3;
+    return {
+      ...interval,
+      localChangeRate,
+      magnitude,
+      candidate,
+      reason: candidate ? 'change-rate-spike' : null,
+    };
+  });
+}
+
 /** A bounded scan of every captured frame chooses detail windows without dropping evidence. */
 export async function scanTimeline(samples, threshold = 8, options = {}) {
   if (samples.length < 2) throw new Error('Timeline scan needs at least two frames');
@@ -122,6 +166,7 @@ export async function scanTimeline(samples, threshold = 8, options = {}) {
     from: samples[0].time,
     to: samples.at(-1).time,
     intervals,
+    changes: deriveTemporalChanges(intervals),
     signals,
     peakFrame: peak?.to ?? 0,
     duplicateIntervals: intervals.filter((v) => v.duplicate).length,

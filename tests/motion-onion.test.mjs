@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
 import { chromium } from 'playwright';
-import { onionLayers } from '../tools/motion/onion.mjs';
+import { onionLayers, composeChange, temporalChangeStrength } from '../tools/motion/onion.mjs';
 import { analyzeMotionFrames } from '../tools/motion/frames.mjs';
 import { selectDetail } from '../tools/motion/timeline.mjs';
 import { writeMotionReport } from '../tools/motion/report.mjs';
@@ -29,7 +29,7 @@ test('onion weights follow actual elapsed time, retain the requested center and 
   const view = onionLayers(frames, { at: 1.01, radius: 1 });
   assert.equal(view.time, 1);
   assert.equal(view.requestedTime, 1.01);
-  assert.equal(view.layers.at(-1).opacity, 0.5);
+  assert.equal(view.layers.at(-1).opacity, 1);
   const weight = (time) => view.layers.find((layer) => layer.time === time)?.opacity;
   assert.equal(weight(0.25), 0.125);
   assert.equal(weight(0.8), 0.4);
@@ -51,14 +51,14 @@ test('onion weights follow actual elapsed time, retain the requested center and 
   );
 });
 
-test('the composite preserves source transparency, fixed positions and a 50 percent present', async () => {
+test('the composite preserves source transparency, fixed positions and the clear present', async () => {
   const report = await analyzeMotionFrames(samples({ alpha: 128 }), { at: 1, radius: 1.5 });
   const png = PNG.sync.read(Buffer.from(report.onion.image.split(',')[1], 'base64'));
   const pixel = (x) => [
     ...png.data.subarray((20 * png.width + x) * 4, (20 * png.width + x) * 4 + 4),
   ];
   assert.equal(pixel(2)[3], 0, 'empty space stays transparent');
-  assert.equal(pixel(35)[3], 64, 'source alpha is multiplied by the present opacity');
+  assert.equal(pixel(35)[3], 128, 'the present keeps its source alpha');
   assert.equal(pixel(21)[3], pixel(49)[3], 'equal time distances have equal weights');
   assert(pixel(7)[3] < pixel(21)[3] && pixel(21)[3] < pixel(35)[3]);
   assert(pixel(21)[2] > pixel(21)[0], 'past differences are blue');
@@ -68,6 +68,17 @@ test('the composite preserves source transparency, fixed positions and a 50 perc
       .slice(0, 3)
       .every((v, i) => Math.abs(v - [34, 60, 88][i]) <= 2),
   );
+});
+
+test('green change strength distinguishes smooth transitions while retaining unchanged detail', () => {
+  const before = new Uint8ClampedArray([12, 18, 24, 255, 0, 0, 0, 0, 34, 60, 88, 255]);
+  const after = new Uint8ClampedArray([12, 18, 24, 255, 0, 0, 0, 0, 230, 240, 250, 255]);
+  const smooth = composeChange(before, after, 3, 1, temporalChangeStrength({ magnitude: 1 }));
+  const jump = composeChange(before, after, 3, 1, temporalChangeStrength({ magnitude: 8 }));
+  assert.deepEqual([...jump.slice(0, 8)], [...after.slice(0, 8)]);
+  assert.equal(jump[11], 255);
+  assert(jump[9] - jump[8] > smooth[9] - smooth[8], 'a jump has a stronger green tint');
+  assert(jump[8] > 150, 'the changed after-frame retains readable light detail');
 });
 
 test('saved player shares the PNG weights, seeks in both directions and restores the original frame', async (t) => {
@@ -121,15 +132,49 @@ test('saved player shares the PNG weights, seeks in both directions and restores
     const c = document.querySelector('[data-onion-canvas]');
     return !c.hidden && c.dataset.time === '0.5';
   });
-  assert.equal(await page.getByLabel('Время записи', { exact: true }).inputValue(), '0.5');
+  assert.equal(
+    await page.getByLabel('Время записи', { exact: true }).getAttribute('aria-valuenow'),
+    '0.5',
+  );
   await page.getByLabel('Радиус наложения, секунды').fill('0.1');
   await page.getByLabel('Радиус наложения, секунды').press('Tab');
   await page.waitForFunction(() =>
     document.querySelector('[data-onion-status]').textContent.includes('кадров: 1'),
   );
+  await page.getByLabel('Радиус наложения, секунды').fill('0.105');
+  await page.getByLabel('Радиус наложения, секунды').press('Tab');
+  assert(
+    await page.getByLabel('Радиус наложения, секунды').evaluate((input) => input.validity.valid),
+  );
   await page.locator('[data-onion]').click();
   assert(await page.locator('.motion-play img').isVisible());
   assert.equal(await page.locator('.motion-play img').getAttribute('src'), report.frames[1].image);
+  const chart = page.getByRole('slider', { name: 'Время записи' });
+  await chart.focus();
+  await chart.press('ArrowRight');
+  assert.equal(await chart.getAttribute('aria-valuenow'), '1');
+  assert(await chart.evaluate((element) => element === document.activeElement));
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('[data-onion-canvas]');
+    return !canvas.hidden && canvas.dataset.time === '1';
+  });
+  assert.equal(await page.locator('[data-view="change"]').getAttribute('aria-pressed'), 'true');
+  await page.getByLabel('Перейти ко времени, секунды').fill('');
+  await page.getByLabel('Перейти ко времени, секунды').press('Tab');
+  assert.equal(await page.getByLabel('Перейти ко времени, секунды').inputValue(), '1');
+  await page.locator('.motion-play').evaluate((root) => {
+    root.dispatchEvent(new CustomEvent('motionrange', { detail: { from: 0, to: 0.5 } }));
+    root.dispatchEvent(new CustomEvent('motionseek', { detail: { time: 1.5 } }));
+    root.querySelector('[data-play]').click();
+  });
+  assert.equal(
+    await chart.getAttribute('aria-valuenow'),
+    '1.5',
+    'manual seek clears the old episode range',
+  );
+  await page.locator('[data-play]').click();
+  await page.locator('[data-view="frame"]').click();
+  assert(await page.locator('.motion-play img').isVisible());
   await page.setViewportSize({ width: 375, height: 800 });
   assert(await page.locator('[data-onion]').isVisible());
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
