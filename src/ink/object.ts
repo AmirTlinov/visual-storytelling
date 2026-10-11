@@ -2,7 +2,7 @@ import { svg } from './dom.js';
 import { color, type Pigment } from './palette.js';
 import { describeObject, type ObjectMeaning } from '../scene-objects.js';
 
-/** Placement belongs to layout; motion is relative. Labels inherit both and pigment. */
+/** Register a subject for selection and review by id. Placement belongs to layout; labels inherit relative motion and pigment. */
 export function object(parent: SVGElement, id: string, pigment: Pigment = 'ink') {
   const element = svg('g', { 'data-object': id, color: color(pigment) });
   const motion = svg('g');

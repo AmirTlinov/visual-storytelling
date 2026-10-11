@@ -140,6 +140,7 @@ function mount(
   const sceneTheme = theme(root);
   cleanups.add(sceneTheme.dispose);
   const values = Object.fromEntries(parameters.map((p) => [p.key, p.value]));
+  let mode: 'story' | 'explore' = 'explore';
   let inputStory:
     | ((
         next: Record<string, ControlValue>,
@@ -292,13 +293,15 @@ function mount(
   }
   function updateChrome(preserveFocus = false) {
     if (!completeFrame || abort.signal.aborted) return;
+    const compact = composition.element.getBoundingClientRect().width < 640;
+    // Opening Conditions exposes the inputs; only editing them enters an experiment.
+    fields.hidden = !fields.childElementCount || (mode === 'story' && !compact);
     const toolbarVisible = [...toolbar.children].some(visibleContent);
     if (toolbar.hidden === toolbarVisible) toolbar.hidden = !toolbarVisible;
     const focused = document.activeElement,
       ownedFocus =
         focused instanceof HTMLElement &&
         (header.contains(focused) || toolbar.contains(focused) || fields.contains(focused)),
-      compact = composition.element.getBoundingClientRect().width < 640,
       hasUI = toolbarVisible || visibleContent(fields),
       popup = compact && hasUI,
       hasConditions = popup || showHistory;
@@ -405,7 +408,6 @@ function mount(
   }
   setPresentation(presentation);
   let transition: ((mode: 'story' | 'explore') => void) | undefined;
-  let mode: 'story' | 'explore' = 'explore';
   let player: { dispose(): void } | undefined;
   let acceptedCondition = {};
   function refresh() {
@@ -675,7 +677,7 @@ function mount(
     const chapters = chapterNavigation(
       heading,
       controller.sheet.script.segments ?? [],
-      controller.seek,
+      (time) => controller.seek(time, { mode: 'story' }),
       showHeading && showNavigation,
     );
     chapters.update(controller.presented?.chapter);
@@ -812,6 +814,7 @@ function mount(
     function preparePlayback() {
       if (controller.waiting) return;
       if (controller.currentTime >= controller.duration - 0.02) view?.reset();
+      if (controller.exploreTimeline && controller.requested.mode === 'explore') return;
       if (exploration === 'model') setMode('story');
       else controller.resume();
     }

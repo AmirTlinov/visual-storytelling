@@ -32,6 +32,8 @@ export type StoryOptions<P, K extends string, S = P> = {
   script: Script<K>;
   audio?: HTMLAudioElement | null;
   stateAt(frame: Frame<K>): P;
+  /** Play and seek retain experimental inputs. Story mode and chapter selection restore authored values. */
+  exploreTimeline?: boolean;
   /** Resolve an explicit user edit before accepting its complete condition and time. */
   resolveInput?(
     patch: Readonly<Partial<P>>,
@@ -315,6 +317,7 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
     review: sheet.review,
     pause: player.pause,
     duration: options.script.duration,
+    exploreTimeline: options.exploreTimeline === true,
     ready,
     subject:
       options.checkpoint &&
@@ -422,12 +425,19 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
       const frame = sheet.at(player.state.time, forcedReduced ?? media.matches);
       publish(compute(options.stateAt(frame), frame, 'story'));
     },
-    seek(time: number) {
+    /** Select time in the active experiment, or explicitly restore an authored story moment. */
+    seek(time: number, position?: { mode: StoryMode }) {
       assertLive();
       if (!Number.isFinite(time)) throw new Error('Story time must be finite');
+      const mode = position?.mode ?? (options.exploreTimeline ? requested.moment.mode : 'story');
+      if (mode !== 'story' && mode !== 'explore') throw new Error('Invalid story mode');
       const target = Math.max(0, Math.min(options.script.duration, time));
       const frame = sheet.at(target, forcedReduced ?? media.matches);
-      const next = compute(options.stateAt(frame), frame, 'story');
+      const next = compute(
+        mode === 'story' ? options.stateAt(frame) : requested.moment.values,
+        frame,
+        mode,
+      );
       change(() => {
         for (const listener of seeks) listener(target);
         player.seek(target);

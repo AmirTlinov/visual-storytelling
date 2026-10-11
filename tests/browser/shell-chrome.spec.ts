@@ -102,6 +102,29 @@ async function metrics(page: Page) {
   });
 }
 
+test('compact Conditions exposes story inputs directly and only an edit enters exploration', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await mount(page);
+  await page.evaluate(() => (window as any).chromeContract.story.resume());
+  const before = await page.evaluate(() => (window as any).chromeContract.story.requested);
+  await page.getByRole('button', { name: 'Условия', exact: true }).click();
+  const range = page.getByRole('slider', { name: 'Значение первого слагаемого перед вычислением' });
+  await expect(range).toBeVisible();
+  expect(await page.evaluate(() => (window as any).chromeContract.story.requested)).toEqual(before);
+  await range.fill('6');
+  const edited = await page.evaluate(() => (window as any).chromeContract.story.requested);
+  expect(edited.mode).toBe('explore');
+  expect(edited.values.amount).toBe(6);
+  await page.getByRole('button', { name: 'Рассказ', exact: true }).click();
+  await expect(range).toBeVisible();
+  await expect(range).toHaveValue('2');
+  await page.getByRole('button', { name: 'Закрыть условия' }).click();
+  await page.setViewportSize({ width: 960, height: 800 });
+  await expect(range).toBeHidden();
+});
+
 test('shared heading and controls remain physically readable while the complete frame fits', async ({
   page,
 }) => {

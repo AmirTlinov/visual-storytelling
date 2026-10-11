@@ -1,6 +1,30 @@
+/** Summaries belong to model-facing sessions; job inspection and app-only delivery stay complete. */
+function presentJob(job) {
+  const error = typeof job.error === 'string' ? job.error.slice(0, 600) : job.error;
+  return {
+    id: job.id,
+    kind: job.kind,
+    status: job.status,
+    stage: job.stage,
+    ...(job.progress && { progress: { done: job.progress.done, total: job.progress.total } }),
+    ...(error !== undefined && { error }),
+    ...(typeof job.error === 'string' && job.error.length > 600 && { errorTruncated: true }),
+    ...(job.sourceRevision && { sourceRevision: job.sourceRevision }),
+    ...((job.result?.buildRevision ?? job.target?.buildRevision) && {
+      buildRevision: job.result?.buildRevision ?? job.target?.buildRevision,
+    }),
+    ...(job.supersededBy && { supersededBy: job.supersededBy }),
+  };
+}
+
 /** The model receives a short observation; word timings and layout diagnostics are opt-in. */
 export function presentSession(value, detail = 'state') {
-  const { state, result, ...session } = value;
+  const { state, result, jobs, ...session } = value;
+  if (jobs) {
+    session.jobs = jobs.map(presentJob);
+    if (jobs.length)
+      session.jobsHint = 'Use story_inspect(jobId) for full job results and artifacts.';
+  }
   if (!state) return session;
   const cueAt = (time) =>
     state.review?.cues
@@ -15,8 +39,8 @@ export function presentSession(value, detail = 'state') {
   const presentedCue =
     state.presentedCue ??
     (value.checkpoint
-      ? state.review?.cues.find((cue) => cue.id === value.checkpoint.cue) ??
-        (cue?.id === value.checkpoint.cue ? cue : undefined)
+      ? (state.review?.cues.find((cue) => cue.id === value.checkpoint.cue) ??
+        (cue?.id === value.checkpoint.cue ? cue : undefined))
       : state.rendering
         ? cueAt(state.rendering.presented?.time)
         : cue);

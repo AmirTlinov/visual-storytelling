@@ -8,6 +8,7 @@ export interface LetteringOptions {
   x?: number;
   y?: number;
   size?: number;
+  /** Defaults to middle. Use start when x is the left edge of a line of text. */
   anchor?: 'start' | 'middle' | 'end';
   tabular?: boolean;
   handwriting?: Handwriting;
