@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -9,7 +10,7 @@ test(
   { timeout: 50000 },
   async () => {
     const host = await pluginHost();
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch(chromiumLaunchOptions({ headless: true }));
     const page = await browser.newPage({ viewport: { width: 820, height: 850 } });
     page.setDefaultTimeout(8000);
     const errors = [];
@@ -17,12 +18,21 @@ test(
     const original = host.client.callTool.bind(host.client);
     let failExchange = false,
       offline = false,
+      updateRequired = false,
       recoveries = 0;
     host.client.callTool = async (request, ...options) => {
       if (request.name === 'story_view' && request.arguments.action === 'recover') {
         recoveries++;
-        await new Promise((resolve) => setTimeout(resolve, 150));
+        if (!updateRequired) await new Promise((resolve) => setTimeout(resolve, 150));
       }
+      if (updateRequired && request.name === 'story_view')
+        return {
+          isError: true,
+          content: [
+            { type: 'text', text: 'This MCP connection belongs to a previous installed release.' },
+          ],
+          structuredContent: { error: { code: 'RUNTIME_UPDATE_REQUIRED' } },
+        };
       if (
         offline &&
         request.name === 'story_view' &&
@@ -44,7 +54,7 @@ test(
       await page.goto(host.url);
       const app = page.frameLocator('iframe[title="MCP App"]');
       await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
-      const opened = await original({ name: 'story_open', arguments: { example: 'explorer-svg' } });
+      const opened = await original({ name: 'story_open', arguments: { example: 'gpt-model' } });
       assert.equal(opened.isError, undefined, JSON.stringify(opened));
       await page.evaluate((result) => window.pluginTest.openResult(result), opened);
       await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
@@ -94,18 +104,32 @@ test(
       assert.ok(page.frames().includes(frame));
       const navigation = await original({
         name: 'story_navigate',
-        arguments: { sessionId, target: { example: 'graph-lab' } },
+        arguments: { sessionId, target: { example: 'gpt-model' } },
       });
       assert.equal(navigation.isError, undefined, JSON.stringify(navigation));
-      await app.frameLocator('#scene').getByText('Скорость — это наклон', { exact: true }).waitFor();
+      assert.notEqual(navigation.structuredContent.sessionId, sessionId);
+      await app.locator('#back').waitFor();
       await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
       await app.locator('#back').click();
-      await app
-        .frameLocator('#scene')
-        .getByText('Одна клетка — один шаг', { exact: true })
-        .waitFor();
+      await app.frameLocator('#scene').locator('[data-scene-frame]').waitFor();
       await app.locator('#back').waitFor({ state: 'hidden' });
+      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
       assert.equal(await app.locator('#error').isVisible(), false);
+      const recoveriesBeforeUpdate = recoveries,
+        frameBeforeUpdate = page.frames().find((value) => value.url() === 'about:srcdoc');
+      updateRequired = true;
+      await app
+        .locator('#error')
+        .filter({ hasText: 'Установлена новая версия' })
+        .waitFor({ timeout: 3000 });
+      assert.equal(await app.locator('#connection').innerText(), 'Сцена на паузе');
+      assert.equal(await app.locator('#reconnect').isVisible(), false);
+      assert.equal(
+        recoveries,
+        recoveriesBeforeUpdate,
+        'a stale MCP does not retry recovery against the wrong release',
+      );
+      assert.ok(page.frames().includes(frameBeforeUpdate), 'the update keeps the displayed frame');
       assert.deepEqual(errors, []);
     } finally {
       await browser.close();

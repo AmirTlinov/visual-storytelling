@@ -33,11 +33,15 @@ async function mount(root: HTMLElement, options: CharacterStoryOptions) {
           ];
     const shell = SceneShell.mount(root, {
       title: options.title,
-      paper: false,
+      presentation: 'stage',
       parameters,
     });
     cleanup = shell.dispose;
-    const drawing = await characterStage(shell.stage, options, score);
+    const drawing = await characterStage(
+      shell.stage,
+      { ...options, camera: options.camera ?? 'responsive' },
+      score,
+    );
     shell.onDispose(drawing.dispose);
     const story = shell.attachStory({
       script: score.script,

@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -24,7 +25,7 @@ test('replacing a 3D subject retains shared resources and their theme until fina
     plugins: [assetURLs()],
     define: { 'import.meta.url': 'document.baseURI' },
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage();
     await page.setContent(
@@ -112,7 +113,7 @@ test('transparent packed annotations neither displace visible labels nor enlarge
     plugins: [assetURLs()],
     define: { 'import.meta.url': 'document.baseURI' },
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage();
     await page.setContent(
@@ -215,7 +216,7 @@ test('a fixed shot envelope reserves hidden titles without exposing them or foll
     plugins: [assetURLs()],
     define: { 'import.meta.url': 'document.baseURI' },
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage();
     await page.setContent(
@@ -346,7 +347,7 @@ test('computed local labels share framing, semantics and lifetime with their rep
     plugins: [assetURLs()],
     define: { 'import.meta.url': 'document.baseURI' },
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage({ viewport: { width: 900, height: 600 } });
     const errors = [];
@@ -602,7 +603,7 @@ test('3D annotations stay readable, attached and non-intercepting during orbit a
     `,
     );
     server = await develop(source, 0, { sourcePackage: true });
-    browser = await chromium.launch();
+    browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage({ viewport: { width: 800, height: 650 } });
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));

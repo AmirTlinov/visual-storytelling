@@ -1,6 +1,7 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { captionTrack } from '../dist/story/captions.js';
@@ -134,11 +135,11 @@ test('a short isolated caption holds in silence without joining across a pause o
 });
 
 test('word-aligned captions accept existing narration receipts without changing the spoken text', async () => {
-  for (const name of await readdir(new URL('../examples/', import.meta.url))) {
+  for (const name of ['scene-shell', 'arithmetic']) {
     let script;
     try {
       script = JSON.parse(
-        await readFile(new URL(`../examples/${name}/timeline.json`, import.meta.url)),
+        await readFile(new URL(`./fixtures/${name}/timeline.json`, import.meta.url)),
       );
     } catch (error) {
       if (error.code === 'ENOENT' || error.code === 'ENOTDIR') continue;
@@ -200,7 +201,7 @@ test('film authoring: input, response, selection and captions rewind; logical co
     outdir: '.',
     loader: { '.woff2': 'dataurl' },
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     const errors = [];

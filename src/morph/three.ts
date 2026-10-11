@@ -39,6 +39,12 @@ function mount(
     layout?: 'scene' | 'content';
     /** Maximum cells per row. Omit to adapt the row count to the viewport. */
     columns?: number;
+    /** Hide the automatic equation when the surrounding composition supplies it. */
+    formula?: boolean;
+    /** Suppress auxiliary written steps when an authored explanation supplies them. */
+    notes?: boolean | 'operators';
+    /** Presentation rounding only; arithmetic and inspected values remain exact. */
+    format?: (value: number) => string;
     /** Deliver the computed result into this receiver using a separate Story cue. */
     delivery?: MathDelivery3DOptions;
   } = {},
@@ -244,7 +250,12 @@ function mount(
     const widthAvailable = stage.clientWidth || layoutWidth || 640;
     if (plan.encoding !== 'quantity') {
       if (!arrangement || widthAvailable !== layoutWidth) {
-        arrangement = cellLayout(plan, widthAvailable, options.columns);
+        arrangement = cellLayout(
+          plan,
+          widthAvailable,
+          options.columns,
+          options.notes !== false && options.notes !== 'operators',
+        );
         layoutWidth = widthAvailable;
         viewport?.resize(arrangement.height + 64);
       }
@@ -264,7 +275,7 @@ function mount(
         ? frame.formula.replace(/\[[^\]]*\]|\([^)]*\)/g, (part) => part.replaceAll(' ', '\u00a0'))
         : frame.formula,
     );
-    formula.show(annotationsVisible);
+    formula.show(annotationsVisible && options.formula !== false);
     lastTime = input;
     lastCues = cues;
     lastDelivery = placement;
@@ -279,7 +290,8 @@ function mount(
       gap = plan.encoding !== 'quantity' ? 0.6 : Math.max(0.7, extent * 0.12);
     annotationGap = gap;
     annotationWidth = Math.max(6, width + gap * 1.2);
-    const formulaHeight = 'measure' in formula ? formula.measure()[1] : 0;
+    const formulaHeight =
+      options.formula !== false && 'measure' in formula ? formula.measure()[1] : 0;
     formulaAnchor.position.set(
       (min[0] + max[0]) / 2,
       max[1] + (embedded ? gap * 0.5 + formulaHeight / 2 : gap * 1.4),
@@ -340,7 +352,7 @@ function mount(
       bounds.max.x = Math.max(bounds.max.x, center + annotationWidth / 2);
     }
     if (deliveredBounds) bounds.union(deliveredBounds);
-    body.render(mathBodies(frame, measured));
+    body.render(mathBodies(frame, measured, options.format));
     const currentNotes = new Set((frame.notes ?? []).map((note) => note.id));
     for (const [id, note] of notes)
       if (!currentNotes.has(id)) {
@@ -365,7 +377,11 @@ function mount(
       entry.anchor.position.set(...note.position);
       entry.label.set(note.text);
       entry.label.opacity(note.opacity);
-      entry.label.show(annotationsVisible);
+      entry.label.show(
+        annotationsVisible &&
+          options.notes !== false &&
+          (options.notes !== 'operators' || note.id.startsWith('operator:')),
+      );
     }
     view.invalidate();
     return frame;

@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
@@ -22,7 +23,7 @@ test('SVG instances retain their fitted size, paint order and authored visibilit
     plugins: [assetURLs()],
     define: { 'import.meta.url': 'document.baseURI' },
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage({ viewport: { width: 500, height: 400 } });
     const errors = [];

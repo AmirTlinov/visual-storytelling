@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PNG } from 'pngjs';
 import { chromium } from 'playwright';
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { captureWriter, loadCapture } from '../tools/motion/session.mjs';
 import { reviewMotion } from '../tools/motion/review.mjs';
 import { renderOnionFrames } from '../tools/motion/frames.mjs';
@@ -52,7 +53,7 @@ test('saved capture onion and player share full-timeline states and source crop'
   assert.equal(result.onion.height, crop.height);
   assert.equal(result.onion.scale, 1);
 
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   t.after(() => browser.close());
   const preview = await previewReport(output);
   t.after(() => preview.close());

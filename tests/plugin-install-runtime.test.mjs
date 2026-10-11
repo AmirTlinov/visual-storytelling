@@ -41,7 +41,7 @@ async function tool(client, name, args = {}) {
 }
 
 test(
-  'installed version flip keeps an active job and one session owner, then resumes without replay',
+  'installed update drains jobs and connected clients, preserves the session and rejects stale launchers',
   { timeout: 20000 },
   async (t) => {
     const temporary = await mkdtemp(join(tmpdir(), 'story-installed-runtime-')),
@@ -209,22 +209,77 @@ process.on('message',async(message)=>{
       };
     const created = await tool(a, 'story_create', input);
     assert.equal(created.job.status, 'running');
+    const control = runtime.call('request', {
+      sessionId: opened.sessionId,
+      request: { op: 'seek', time: 8 },
+    });
+    const commands = await runtime.call('exchange', {
+      sessionId: opened.sessionId,
+      renderer,
+      generation: attached.generation,
+    });
+    assert.equal(commands.commands.length, 1);
     await writeFile(join(source, 'plugin/dist/value.mjs'), `export const value='second';`);
     const next = await installRelease(source, { directory, register: false });
     await rm(source, { recursive: true, force: true });
     const b = await stdio();
     const conflict = await b.callTool({ name: 'story_open', arguments: {} });
-    assert.equal(conflict.structuredContent.error.code, 'RUNTIME_VERSION_CONFLICT');
-    assert.match(conflict.structuredContent.error.action, /reconnect/);
+    assert.equal(conflict.structuredContent.error.code, 'RUNTIME_UPDATE_PENDING');
+    assert.match(conflict.structuredContent.error.action, /preparation to finish/);
     assert.equal((await runtime.call('hello')).pid, hello.pid);
-    runtime.close();
-    await a.close();
+    await assert.rejects(runtime.call('create', input), { code: 'RUNTIME_UPDATE_REQUIRED' });
     await delay(1700);
-    process.kill(hello.pid, 0); // No clients remain; the active job still owns this runtime.
+    process.kill(hello.pid, 0); // The active job retains its immutable release, not stdio clients.
     await writeFile(join(data, 'finish'), 'finish');
+    await wait(
+      async () => (await runtime.call('job', { jobId: created.job.id })).status === 'succeeded',
+    );
+    let updated = false;
+    const currentHelp = tool(b, 'story_help', { query: 'Fixture' }).finally(() => {
+      updated = true;
+    });
+    await delay(150);
+    process.kill(hello.pid, 0); // An already issued command still awaits its renderer's ACK.
+    assert.equal(updated, false, 'the successor cannot serve until the previous owner finishes');
+    await runtime.call('exchange', {
+      sessionId: opened.sessionId,
+      renderer,
+      generation: attached.generation,
+      wait: false,
+      acknowledgements: [{ id: commands.commands[0].id, result: { time: 8 } }],
+    });
+    assert.equal((await control).result.time, 8);
+    const finalCheckpoint = { ...checkpoint, time: 9, progress: 0.9 };
+    const finalPoll = runtime
+      .call('exchange', {
+        sessionId: opened.sessionId,
+        renderer,
+        generation: attached.generation,
+        report: {
+          stateRevision: 2,
+          checkpoint: finalCheckpoint,
+          state: {
+            time: 9,
+            duration: 10,
+            mode: 'explore',
+            playing: false,
+            parameters: [],
+            capabilities: ['seek'],
+          },
+        },
+      })
+      .catch(() => null);
+    await runtime.call('hello'); // The report was accepted, but its long poll is still pending.
     await gone(hello.pid);
+    await finalPoll;
+    await assert.rejects(
+      direct(first.release),
+      (error) => error.cause?.code === 'RUNTIME_UPDATE_REQUIRED',
+    );
+    const stale = await a.callTool({ name: 'story_help', arguments: { query: 'Fixture' } });
+    assert.equal(stale.structuredContent.error.code, 'RUNTIME_UPDATE_REQUIRED');
     assert.equal(
-      (await tool(b, 'story_help', { query: 'Fixture' })).text,
+      (await currentHelp).text,
       next.release,
       'the same new MCP connection can retry after the previous owner exits',
     );
@@ -236,7 +291,7 @@ process.on('message',async(message)=>{
       action: 'attach',
     });
     assert.equal(recovered.generation, attached.generation + 1);
-    assert.deepEqual(recovered.checkpoint, checkpoint);
+    assert.deepEqual(recovered.checkpoint, finalCheckpoint);
     const again = await tool(b, 'story_create', input);
     assert.equal(again.job.id, created.job.id);
     assert.equal(again.job.status, 'succeeded');

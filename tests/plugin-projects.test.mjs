@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { ProjectStore } from '../plugin/projects.mjs';
-import { projectFiles, snapshotProject, projectFile } from '../plugin/project-files.mjs';
+import { projectFiles, snapshotProject, projectFile } from '../tools/project-files.mjs';
 import { pinSceneProject } from '../tools/scene-project.mjs';
 import { writeBuildInfo } from '../tools/build-info.mjs';
 

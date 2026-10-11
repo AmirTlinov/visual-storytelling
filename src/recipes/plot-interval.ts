@@ -52,7 +52,7 @@ export function plotInterval(
       const anchor: Point = [(a[0] + b[0]) / 2, a[1]];
       return { anchor, preferred: besidePoint(ink, anchor, 'bottom', 12), priority: 65 };
     },
-    () => visible && Math.abs(b[0] - a[0]) >= horizontal.bounds.width + 18,
+    () => visible,
     true,
   );
   const removeY = labels.add(
@@ -65,7 +65,7 @@ export function plotInterval(
         priority: 65,
       };
     },
-    () => visible && Math.abs(b[1] - a[1]) >= vertical.bounds.height + 12,
+    () => visible,
     true,
   );
   const removeGeometry = labels.geometry(() => ({

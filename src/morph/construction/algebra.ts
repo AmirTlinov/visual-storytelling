@@ -86,10 +86,10 @@ export function linearMap(matrix: Matrix2): ConstructionPlan {
     x! + p * ((a - 1) * x! + b * y!),
     y! + p * (c * x! + (d - 1) * y!),
   ]);
-  const grid = model.material(transform, {
+  const reference = model.material((point) => point, {
     domain: [
       [0, 0],
-      [2, 2],
+      [1, 1],
     ],
     grid: [4, 4],
     fill: false,
@@ -103,7 +103,6 @@ export function linearMap(matrix: Matrix2): ConstructionPlan {
     ],
     grid: [4, 4],
     fill: true,
-    text: '1',
   });
   const origin = sheet.at([0, 0]),
     e1 = sheet.at([1, 0]),
@@ -116,7 +115,7 @@ export function linearMap(matrix: Matrix2): ConstructionPlan {
         title: 'Сетка деформируется целиком',
         axes: true,
         objects: [
-          grid,
+          reference,
           sheet,
           model.vector(origin, e1, {
             pigment: 'orange',
@@ -124,6 +123,16 @@ export function linearMap(matrix: Matrix2): ConstructionPlan {
             side: 'bottom',
           }),
           model.vector(origin, e2, { pigment: 'purple', label: e2.map(coordinates), side: 'top' }),
+          model.label(
+            area.map((value) => `S = ${number(Math.abs(value))}`),
+            sheet.at([0.5, 0.5]),
+            { pigment: 'ink' },
+          ),
+          model.label('было 1', [0.5, 0.5], {
+            side: 'left',
+            pigment: 'muted',
+            visible: model.value(({ deformation }) => Math.min(1, deformation * 3)),
+          }),
         ],
       },
     ],
@@ -132,7 +141,7 @@ export function linearMap(matrix: Matrix2): ConstructionPlan {
         to: { deformation: 1 },
         formula: area.map((value) => `Площадь: ${number(Math.abs(value))}`),
         explanation:
-          'Каждая точка следует одному преобразованию; надпись и клетки движутся вместе.',
+          'Исходная единичная клетка остаётся ориентиром. Каждая точка цветной клетки следует одному преобразованию.',
       },
       {
         to: {},

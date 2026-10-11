@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -43,7 +44,7 @@ test('public presentation preserves material paint, narrow layout, focused input
       join(directory, 'index.html'),
       '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="index.css"><style>body{margin:0;background:white}main{width:355px}footer{position:absolute;left:0;top:400px;width:200px}</style></head><body><main class="ve-scene"></main><aside></aside><footer></footer><script src="index.js"></script></body></html>',
     );
-    browser = await chromium.launch();
+    browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage({ viewport: { width: 375, height: 850 } });
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -164,7 +165,7 @@ test('public presentation preserves material paint, narrow layout, focused input
           map: ([x, y], p) => [x, y + p * x * x],
         }),
       ];
-      let minLogicalText = Infinity;
+      let minPhysicalText = Infinity;
       for (const operation of ops) {
         drawing.setOperation(operation);
         drawing.render(0.57);
@@ -178,7 +179,6 @@ test('public presentation preserves material paint, narrow layout, focused input
           host = shell.stage.getBoundingClientRect();
         const aperture = shell.stage.closest('[data-scene-frame]');
         const frameBox = aperture.getBoundingClientRect();
-        const frameScale = Number(aperture.dataset.frameScale);
         if (Math.abs(frameBox.width / frameBox.height - 16 / 9) > 1e-6)
           throw new Error('Construction changed the complete 16:9 frame');
         for (const lettering of svg.querySelectorAll('.vs-lettering')) {
@@ -186,10 +186,9 @@ test('public presentation preserves material paint, narrow layout, focused input
           const reference = lettering.querySelector('text'),
             matrix = lettering.getScreenCTM();
           if (reference && matrix)
-            minLogicalText = Math.min(
-              minLogicalText,
-              (Number(reference.getAttribute('font-size')) * Math.hypot(matrix.c, matrix.d)) /
-                frameScale,
+            minPhysicalText = Math.min(
+              minPhysicalText,
+              Number(reference.getAttribute('font-size')) * Math.hypot(matrix.c, matrix.d),
             );
         }
         if (host.height + 1 < r.height) throw new Error('The drawing overflows its stage');
@@ -310,13 +309,13 @@ test('public presentation preserves material paint, narrow layout, focused input
         flowBox.height > 400;
       flowing.dispose();
       flowHost.remove();
-      return { atomic, minLogicalText, documentFlow, empty: shell.stage.children.length === 0 };
+      return { atomic, minPhysicalText, documentFlow, empty: shell.stage.children.length === 0 };
     });
     assert.equal(result.atomic, true);
     assert.equal(result.empty, true);
     assert.ok(
-      result.minLogicalText >= 14 - 0.01,
-      `fitted logical lettering stays readable: ${result.minLogicalText}`,
+      result.minPhysicalText >= 16 - 0.01,
+      `physical lettering stays readable: ${result.minPhysicalText}`,
     );
     assert.equal(
       result.documentFlow,

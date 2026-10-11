@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises';
@@ -128,7 +129,7 @@ test('large review loads bounded evidence on file and HTTP, preserving queries a
     `${bytes} bytes of detailed evidence; ${Buffer.byteLength(html)} bytes of HTML; ${index.chunks.length} chunks`,
   );
 
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   const server = await serve(directory);
   try {
     for (const protocol of ['file', 'http']) {
@@ -183,7 +184,7 @@ test('large review loads bounded evidence on file and HTTP, preserving queries a
         'Opening a report must not preload its whole capture',
       );
       assert.equal(await page.evaluate(() => window.injected), undefined);
-      const playerImage = page.locator('.motion-playback');
+      const playerImage = page.getByRole('img', { name: 'Запись', exact: true });
       const box = await playerImage.boundingBox();
       const scale = Math.min(box.width / 200, box.height / 100);
       await playerImage.click({

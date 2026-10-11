@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -12,15 +13,17 @@ import { chromium } from 'playwright';
 import sharp from 'sharp';
 import { pluginHost } from './plugin/host.mjs';
 import { deliver } from '../tools/deliver.mjs';
+import { createProjectFixture } from './plugin/authoring-fixture.mjs';
 
 test(
   'release uses the shown revision, current frame and explicit working choice through real jobs',
-  { timeout: 180000 },
+  // The scenario chains bounded preparation/release jobs and a direct image capture.
+  { timeout: 8 * 60000 },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'story-release-'));
     const data = join(directory, 'data');
     const host = await pluginHost({ dataDirectory: data });
-    const browser = await chromium.launch();
+    const browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage({ viewport: { width: 820, height: 900 } });
     page.setDefaultTimeout(15000);
     const errors = [];
@@ -31,9 +34,18 @@ test(
       return result;
     };
     const finish = async (id) => {
+      const started = performance.now();
       const until = Date.now() + 60000;
+      let previous;
       while (Date.now() < until) {
         const { structuredContent: job } = await call('story_inspect', { jobId: id });
+        const stage = `${job.status}: ${job.stage}`;
+        if (stage !== previous) {
+          console.info(
+            `[release ${id.slice(0, 8)}] ${Math.round(performance.now() - started)}ms ${stage}`,
+          );
+          previous = stage;
+        }
         if (!['running', 'queued', 'cancelling'].includes(job.status)) {
           assert.equal(job.status, 'succeeded', JSON.stringify(job));
           return job.result;
@@ -46,16 +58,16 @@ test(
       await page.goto(host.url);
       const app = page.frameLocator('iframe[title="MCP App"]');
       await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
-      const created = await call('story_create', {
+      const created = await createProjectFixture(host.client, {
         title: 'Выбранная редакция',
-        example: 'explorer-svg',
         path: join(directory, 'project'),
-        requestId: randomUUID(),
       });
-      await page.evaluate((result) => window.pluginTest.openResult(result), created);
-      await finish(created.structuredContent.job.id);
+      await finish(created.job.id);
+      const opened = await call('story_open', { projectId: created.project.id });
+      await page.evaluate((result) => window.pluginTest.openResult(result), opened);
       await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
-      const { project, sessionId } = created.structuredContent;
+      const project = created.project,
+        { sessionId } = opened.structuredContent;
       assert.equal(await app.locator('#voice, #release').count(), 0);
       const voice = (await call('story_voice', { projectId: project.id })).structuredContent;
       assert.equal(voice.provider, 'higgs');
@@ -160,6 +172,7 @@ test(
         difference < 1,
         `PNG matches the displayed selected frame (mean channel difference ${difference})`,
       );
+      console.info(`[release PNG] mean channel difference ${difference}`);
 
       const current = await inspect();
       await call('story_control', {
@@ -224,27 +237,32 @@ test(
         await app.locator('html').evaluate((element) => element.scrollWidth <= innerWidth),
         true,
       );
-      await app
-        .frameLocator('#scene')
-        .getByRole('button', { name: 'Открыть крупнее', exact: true })
-        .click();
+      await page.evaluate(() => window.pluginTest.display('fullscreen', ['inline', 'fullscreen']));
       await app.locator('html[data-mode="fullscreen"]').waitFor();
       await app.locator('#update').click();
-      await app
-        .frameLocator('#scene')
-        .getByText('Latest working revision', { exact: true })
-        .waitFor();
+      const updatedScene = app.frameLocator('#scene');
+      const updatedText = updatedScene.getByText('Latest working revision', { exact: true });
+      await updatedText.waitFor({ state: 'attached' });
+      await updatedScene.getByRole('button', { name: 'Условия', exact: true }).click();
+      await updatedText.waitFor();
+      await updatedScene.getByRole('button', { name: 'Закрыть условия', exact: true }).click();
       await app.locator('html[data-mode="fullscreen"]').waitFor();
-      assert.equal(
-        await app
-          .frameLocator('#scene')
-          .locator('[data-scene-frame]')
-          .getAttribute('data-frame-view'),
-        'overview',
-      );
-      assert.deepEqual(await page.evaluate(() => window.pluginTest.displayRequests), [
-        'fullscreen',
-      ]);
+      const geometry = await app
+        .frameLocator('#scene')
+        .locator('[data-scene-frame]')
+        .evaluate((node) => {
+          const bounds = node.getBoundingClientRect(),
+            content = node.firstElementChild.getBoundingClientRect();
+          return {
+            ratio: bounds.width / bounds.height,
+            difference: Math.abs(bounds.width - content.width),
+            scroll: [node.scrollLeft, node.scrollTop],
+          };
+        });
+      assert.ok(Math.abs(geometry.ratio - 16 / 9) < 0.001);
+      assert.ok(geometry.difference < 1);
+      assert.deepEqual(geometry.scroll, [0, 0]);
+      assert.deepEqual(await page.evaluate(() => window.pluginTest.displayRequests), []);
       assert.deepEqual(errors, []);
     } finally {
       await browser.close();

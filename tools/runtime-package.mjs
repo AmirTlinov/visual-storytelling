@@ -173,17 +173,25 @@ export async function readPinnedRuntime(directory) {
     if (valid(installed) && installed.build === declaredBuild)
       return {
         root: installed.root,
+        runtime: { name, version: installed.version, build: declaredBuild, dependency: spec },
         api: JSON.parse(await readFile(join(installed.root, 'dist/api.json'), 'utf8')),
         catalog: JSON.parse(await readFile(join(installed.root, 'examples/catalog.json'), 'utf8')),
       };
     const archive = localFile(spec, directory);
     const read = async (file) =>
       JSON.parse((await execute('tar', ['-xOf', archive, 'package/' + file], command())).stdout);
-    const [api, catalog] = await Promise.all([
+    const [api, catalog, metadata] = await Promise.all([
       read('dist/api.json'),
       read('examples/catalog.json'),
+      read('package.json'),
     ]);
-    return { root: archive + '/package', archive, api, catalog };
+    return {
+      root: archive + '/package',
+      archive,
+      api,
+      catalog,
+      runtime: { name, version: metadata.version, build: declaredBuild, dependency: spec },
+    };
   }
   const installed = await installedRuntime(directory);
   if (!valid(installed))
@@ -192,6 +200,7 @@ export async function readPinnedRuntime(directory) {
     );
   return {
     root: installed.root,
+    runtime: { name, version: installed.version, build: installed.build, dependency: spec },
     api: JSON.parse(await readFile(join(installed.root, 'dist/api.json'), 'utf8')),
     catalog: JSON.parse(await readFile(join(installed.root, 'examples/catalog.json'), 'utf8')),
   };

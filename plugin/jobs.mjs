@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { release } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { readJSON, writeJSON } from '../tools/storage.mjs';
-import { digest } from './project-files.mjs';
+import { digest } from '../tools/project-files.mjs';
 import { contentDigest } from '../tools/build-info.mjs';
 import { failure } from './errors.mjs';
 
@@ -70,7 +70,6 @@ export class JobRunner {
                 'release.json',
                 'plugin/runtime/worker.mjs',
                 'plugin/workflows.mjs',
-                'plugin/project-files.mjs',
                 'plugin/projects.mjs',
                 'plugin/revision-input.mjs',
                 'runtime/npm/package.json',

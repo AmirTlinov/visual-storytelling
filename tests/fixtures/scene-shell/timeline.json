@@ -1,0 +1,40 @@
+{
+  "duration": 20,
+  "segments": [
+    {
+      "id": "horizontal",
+      "text": "Три шага вправо.",
+      "start": 0,
+      "end": 6,
+      "title": "Горизонталь"
+    },
+    {
+      "id": "vertical",
+      "text": "Два шага вверх.",
+      "start": 6,
+      "end": 12,
+      "title": "Вертикаль"
+    },
+    {
+      "id": "result",
+      "text": "Начало и конец связаны.",
+      "start": 12,
+      "end": 20,
+      "title": "Сумма"
+    }
+  ],
+  "cues": {
+    "move_x": {
+      "start": 0,
+      "end": 6
+    },
+    "move_y": {
+      "start": 6,
+      "end": 12
+    },
+    "result_arrow": {
+      "start": 12,
+      "end": 20
+    }
+  }
+}

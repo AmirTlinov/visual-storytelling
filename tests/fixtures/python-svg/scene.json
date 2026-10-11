@@ -1,0 +1,4 @@
+{
+  "entry": "subject.svg",
+  "generator": { "file": "build.py", "runner": "python3" }
+}

@@ -52,12 +52,6 @@ export async function generateScene(
     (!process.env.VISUAL_STORY_PYTHON ||
       (generator.runner === 'uv' && !process.env.VISUAL_STORY_UV))
   ) {
-    if (process.platform !== 'darwin' || process.arch !== 'arm64')
-      throw new Error(
-        'Automatic SVG generator preparation supports macOS Apple Silicon. Set VISUAL_STORY_PYTHON to a Python executable' +
-          (generator.runner === 'uv' ? ' and VISUAL_STORY_UV to a uv executable' : '') +
-          ' on this platform.',
-      );
     await prepareEnvironment(data, { python: true, signal, progress });
   }
   const { file } = generator;

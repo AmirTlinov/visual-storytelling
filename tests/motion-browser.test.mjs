@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
@@ -156,7 +157,7 @@ test('browser records repeated input, attributes a stall and blink, replays and 
     );
 
     // The portable report must keep playback functional after copying all evidence.
-    const browser = await chromium.launch();
+    const browser = await chromium.launch(chromiumLaunchOptions());
     const reports = await serve(directory);
     try {
       const page = await browser.newPage({ viewport: { width: 1320, height: 900 } });
@@ -177,10 +178,8 @@ test('browser records repeated input, attributes a stall and blink, replays and 
         Math.abs(frame.time - requested) < Math.abs(best.time - requested) ? frame : best,
       );
       assert.notEqual(await page.locator('.motion-play').getAttribute('open'), null);
-      assert.equal(
-        await page.locator('.motion-play input[type=range]').inputValue(),
-        String(nearest.time),
-      );
+      const slider = page.getByRole('slider', { name: 'Время записи' });
+      assert.equal(await slider.getAttribute('aria-valuenow'), String(nearest.time));
       assert.match(
         await page.locator('.motion-seek-note').innerText(),
         /Синхронизация DOM и пикселей не подтверждена/,
@@ -202,17 +201,17 @@ test('browser records repeated input, attributes a stall and blink, replays and 
           await summary.click();
       if ((await page.locator('.motion-play').getAttribute('open')) === null)
         await page.locator('.motion-play summary').click();
-      const slider = page.locator('.motion-play input[type=range]');
-      const maximum = await slider.getAttribute('max');
+      const maximum = await slider.getAttribute('aria-valuemax');
       await slider.focus();
       await slider.press('End');
       await page.waitForFunction(() => {
         const image = document.querySelector('.motion-play img');
         return image.complete && image.naturalWidth > 0;
       });
+      assert.equal(await slider.getAttribute('aria-valuenow'), maximum);
       assert.equal(
-        await page.locator('.motion-play output').innerText(),
-        `${Number(maximum).toFixed(3)} с`,
+        await page.locator('.motion-frame-position').innerText(),
+        `Кадр ${captures.frames.length} / ${captures.frames.length} · ${Number(maximum).toFixed(3)} с`,
       );
       assert(
         new URL(await page.locator('.motion-play img').getAttribute('src'), page.url()).pathname ===
@@ -221,7 +220,7 @@ test('browser records repeated input, attributes a stall and blink, replays and 
       );
       await page.locator('.motion-play [data-play]').click();
       await page.waitForTimeout(100);
-      assert(Number(await slider.inputValue()) < Number(maximum));
+      assert(Number(await slider.getAttribute('aria-valuenow')) < Number(maximum));
       assert(
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
         'report fits a narrow viewport',
@@ -276,9 +275,11 @@ test('late-mounted targets and action failures retain a usable partial report', 
 test('CDP reuses the selected authenticated tab, preserves its viewport and disconnects cleanly', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'motion-cdp-'));
   const server = await serve(resolve('tests/fixtures'));
-  const browser = await chromium.launch({
-    args: ['--remote-debugging-port=0', '--enable-automation'],
-  });
+  const browser = await chromium.launch(
+    chromiumLaunchOptions({
+      args: ['--remote-debugging-port=0', '--enable-automation'],
+    }),
+  );
   try {
     const session = await browser.newBrowserCDPSession();
     const { arguments: args } = await session.send('Browser.getBrowserCommandLine');

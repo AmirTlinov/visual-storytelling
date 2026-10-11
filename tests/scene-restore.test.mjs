@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
@@ -21,7 +22,7 @@ test(
       plugins: [assetURLs()],
       loader: { '.woff2': 'dataurl' },
     });
-    const browser = await chromium.launch();
+    const browser = await chromium.launch(chromiumLaunchOptions());
     try {
       const page = await browser.newPage();
       await page.setContent('<main></main>');
@@ -125,6 +126,69 @@ test(
           };
         };
       });
+      await t.test(
+        'adding narration preserves real mute choices without inheriting a silent clock',
+        async () => {
+          const result = await page.evaluate(async () => {
+            const mounted = [];
+            const mount = (silent) => {
+              const root = document.createElement('section');
+              const audio = document.createElement('audio');
+              if (silent) audio.dataset.silent = 'true';
+              root.append(audio);
+              document.body.append(root);
+              const shell = API.SceneShell.mount(root, { title: 'Narration' });
+              shell.attachStory({
+                audio,
+                script: { duration: 10, cues: {} },
+                stateAt: () => ({}),
+                render() {},
+              });
+              const item = { root, audio, scene: root.scene };
+              mounted.push(item);
+              return item;
+            };
+            try {
+              const silent = mount(true);
+              await silent.scene.ready();
+              const quiet = silent.scene.capture();
+              const spoken = mount(false);
+              await spoken.scene.ready();
+              await spoken.scene.restore(quiet);
+              const enabled = {
+                muted: spoken.audio.muted,
+                playing: spoken.scene.inspect().playing,
+              };
+              await spoken.scene.control([{ type: 'mute', value: true }]);
+              const explicit = spoken.scene.capture();
+              const replacement = mount(false);
+              await replacement.scene.ready();
+              await replacement.scene.restore(explicit);
+              return {
+                quietMuted: quiet.muted,
+                quietHasMute: silent.scene.inspect().capabilities.includes('mute'),
+                enabled,
+                explicitMuted: explicit.muted,
+                restoredMuted: replacement.audio.muted,
+                restoredPlaying: replacement.scene.inspect().playing,
+              };
+            } finally {
+              for (const { root, scene } of mounted) {
+                scene.dispose();
+                root.remove();
+              }
+            }
+          });
+          assert.deepEqual(result, {
+            quietMuted: undefined,
+            quietHasMute: false,
+            enabled: { muted: false, playing: false },
+            explicitMuted: true,
+            restoredMuted: true,
+            restoredPlaying: false,
+          });
+        },
+      );
       await t.test('Undo cancels a pending load, including a later rejection', async () => {
         const result = await page.evaluate(async () => {
           create();

@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from './chromium.mjs';
 import { chromium } from 'playwright';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -26,7 +27,7 @@ const server = await serve(directory);
 let browser;
 const report = [];
 try {
-  browser = await chromium.launch();
+  browser = await chromium.launch(chromiumLaunchOptions());
   for (const width of [960, 375])
     for (const theme of ['light', 'dark']) {
       const context = await browser.newContext({

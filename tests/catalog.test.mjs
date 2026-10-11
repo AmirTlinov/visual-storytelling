@@ -11,31 +11,39 @@ const examples = async (...args) =>
     (await promisify(execFile)(process.execPath, [cli, 'examples', ...args, '--json'])).stdout,
   );
 
-test('the authoring catalog resolves every preview, source and guide and narrows to a useful starting point', async () => {
+test('the public catalog exposes one complete exemplar with source, preview and guides', async () => {
   const entries = await examples();
+  assert.deepEqual(
+    entries.map(({ id }) => id),
+    ['gpt-model'],
+  );
   await Promise.all(
     entries.flatMap((entry) =>
-      [entry.source, entry.page, entry.preview, ...entry.guides].map((path) => access(path)),
+      [entry.source, entry.page, entry.preview, ...entry.guides]
+        .filter(Boolean)
+        .map((path) => access(path)),
     ),
   );
   const recommended = await examples('--recommended');
-  assert.ok(recommended.some((entry) => entry.id === 'explorer-svg'));
-  assert.ok(recommended.some((entry) => entry.id === 'explorer-3d'));
-  assert.ok(recommended.every((entry) => entry.recommended));
-  const [detail] = await examples('explorer-svg');
-  assert.ok(detail.create.includes('--example explorer-svg'));
-  assert.ok(detail.source.endsWith('/explorer-svg/scene.js'));
+  assert.deepEqual(
+    recommended.map(({ id }) => id),
+    ['gpt-model'],
+  );
+  const [detail] = await examples('gpt-model');
+  assert.ok(detail.create.includes('--example gpt-model'));
+  assert.ok(detail.source.endsWith('/gpt-model/scene.js'));
 });
 
 test('CLI search combines topic and group, handles multiple words and reports no matches', async () => {
   assert.deepEqual(
-    (await examples('НейРон', '--group', 'techniques')).map(({ id }) => id),
-    ['neuron-morph', 'long-calculation'],
+    (await examples('ТоКеН', '--group', 'explanations')).map(({ id }) => id),
+    ['gpt-model'],
   );
   assert.deepEqual(
-    (await examples('3d', 'камера', '--recommended')).map(({ id }) => id),
-    ['explorer-3d'],
+    (await examples('GPT', 'слово', '--recommended')).map(({ id }) => id),
+    ['gpt-model'],
   );
+  assert.deepEqual(await examples('GPT', '--group', 'techniques'), []);
   assert.deepEqual(await examples('no-such-example'), []);
   await assert.rejects(examples('--group', 'unknown'), /Choose a group/);
 });

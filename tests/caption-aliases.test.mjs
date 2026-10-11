@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
@@ -159,7 +160,7 @@ test('SceneShell uses the same display aliases for visible and accessible chapte
     platform: 'browser',
     loader: { '.woff2': 'dataurl' },
   });
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch(chromiumLaunchOptions({ headless: true }));
   try {
     for (const [captions, width] of [
       [true, 1280],

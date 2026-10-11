@@ -71,8 +71,11 @@ test('official preview serves referenced PNG/audio while denying unrelated neigh
   const audio = join(source, 'voice.wav');
   await writeFile(audio, Buffer.from('captured-audio-range'));
   const outsidePNG = fileURLToPath(
-    new URL('../examples/explorer-svg/preview.png', import.meta.url),
+    new URL('../artifacts/tests/preview-outside.png', import.meta.url),
   );
+  await mkdir(dirname(outsidePNG), { recursive: true });
+  await writeFile(outsidePNG, png);
+  t.after(() => rm(outsidePNG, { force: true }));
   // On macOS this crosses /private/tmp and /Users: the common URL root is '/'.
   const samples = [...writer.frames, { time: 2, file: outsidePNG }];
   const captureManifest = await saveCapture(samples, metadata, report, undefined, { audio });

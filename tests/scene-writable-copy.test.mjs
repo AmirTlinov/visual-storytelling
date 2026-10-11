@@ -20,7 +20,7 @@ import { buildScene } from '../tools/build-pages.mjs';
 import { writeBuildInfo } from '../tools/build-info.mjs';
 import { copySceneInput } from '../tools/copy-scene-input.mjs';
 import { deliver } from '../tools/deliver.mjs';
-import { snapshotProject } from '../plugin/project-files.mjs';
+import { snapshotProject } from '../tools/project-files.mjs';
 
 const execute = promisify(execFile);
 

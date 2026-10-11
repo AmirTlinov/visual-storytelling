@@ -1,4 +1,9 @@
-import { SceneShell, type SceneOptions, type SceneView } from '../scene.js';
+import {
+  SceneShell,
+  type SceneOptions,
+  type SceneView,
+  type SceneFramePresentation,
+} from '../scene.js';
 import { theme, type Theme } from '../ink/palette.js';
 import type { ControlValue } from '../controls/fields.js';
 import { activeCue, type Frame, type Script } from './cues.js';
@@ -34,6 +39,8 @@ export interface ChapterPresentation {
   dispose(): void;
 }
 export interface SceneChapter extends ChapterTiming {
+  /** The published chapter owns its frame; preparation leaves the previous frame intact. */
+  presentation?: SceneFramePresentation;
   controls?: readonly string[];
   /** Authored inputs, also used when entering this chapter through a user edit. */
   valuesAt?(frame: ChapterFrame): Record<string, ControlValue>;
@@ -115,6 +122,7 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
   const colors = theme(parent, options.theme ?? 'auto');
   const shell = SceneShell.mount(parent, {
     title: options.title,
+    presentation: options.chapters[0]?.presentation,
     parameters,
     frame: options.frame,
     captions: options.captions,
@@ -283,6 +291,7 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
         } = selection(values, frame, mode);
         current = index;
         const presentation = presentations.show(index);
+        shell.setPresentation(chapter.presentation ?? 'explanation');
         shell.stage.removeAttribute('aria-busy');
         latest = {
           ...state.frame,

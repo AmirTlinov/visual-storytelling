@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../chromium.mjs';
 import { execFile } from 'node:child_process';
 import { createServer } from 'node:net';
 import { promisify } from 'node:util';
@@ -30,7 +31,7 @@ export function startupFailureReason(error) {
 async function probeBrowser() {
   let browser;
   try {
-    browser = await chromium.launch({ headless: true, timeout: 5000 });
+    browser = await chromium.launch(chromiumLaunchOptions({ headless: true, timeout: 5000 }));
     return { available: true };
   } catch (error) {
     return { available: false, reason: startupFailureReason(error) };

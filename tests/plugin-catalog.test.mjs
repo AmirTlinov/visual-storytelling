@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
@@ -8,7 +9,7 @@ test(
   { timeout: 30000 },
   async () => {
     const host = await pluginHost(),
-      browser = await chromium.launch();
+      browser = await chromium.launch(chromiumLaunchOptions());
     try {
       const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
       const errors = [];
@@ -23,6 +24,10 @@ test(
       const catalog = await host.client.callTool({ name: 'story_open', arguments: {} });
       assert.equal(catalog.structuredContent.status, 'choose-example');
       assert.equal(catalog.structuredContent.sessionId, undefined);
+      assert.deepEqual(
+        catalog.structuredContent.examples.map(({ id }) => id),
+        ['gpt-model'],
+      );
       assert.deepEqual(await sessions(), before);
       for (const example of catalog.structuredContent.examples) {
         assert(
@@ -43,7 +48,7 @@ test(
         catalog.structuredContent.examples.length,
       );
       const expected = catalog.structuredContent.examples.find(
-        (example) => example.id === 'graph-lab',
+        (example) => example.id === 'gpt-model',
       );
       const choice = app.getByRole('button', {
         name: `${expected.title} ${expected.summary}`,

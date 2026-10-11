@@ -5,14 +5,6 @@ export interface WidgetSnapshot {
 
 /** Host services are optional. The scene remains a normal offline document. */
 export interface SceneHost {
-  /** Actual host surface, independent of the subject camera and saved conditions. */
-  presentation?: {
-    read(): { mode: 'inline' | 'expanded'; canExpand: boolean };
-    requestExpanded(): Promise<void>;
-    subscribe(
-      listener: (state: { mode: 'inline' | 'expanded'; canExpand: boolean }) => void,
-    ): () => void;
-  };
   beforePlay?(request: {
     muted: boolean;
     hasAudio: boolean;

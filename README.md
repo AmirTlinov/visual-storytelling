@@ -1,193 +1,113 @@
 # Visual Storytelling
 
-TypeScript-библиотека рисованных объяснений и локальный плагин Visual Storytelling для Codex. Речь и действия собираются из одного сценария. Живые рисунки работают на доске, в предметах и на странице; подготовленные движения, камера и выпуск переиспользуются между темами. Рисунок интерактива и ролик используют общий кадр 16:9; единственный плеер расположен под ним и сохраняет удобный размер. Объяснение развивается в самом рисунке. Рассказ, поля, главы и камера связаны через `root.scene`; авторский комплект поставляется вместе с runtime.
+TypeScript-библиотека наглядных объяснений и локальный плагин для Codex. Модель, рисунок, рассказ и ручной ввод связаны через один `root.scene`. Интерактив и видео используют общий кадр 16:9; плеер под рисунком сохраняет удобный размер. Основные штрихи — нейтральные чернила, почерк прямой, цвет связывает смысловые роли.
 
-Авторский код и документация — [0BSD](LICENSE); [сторонние компоненты](THIRD_PARTY.md) сохраняют свои условия. Устройство плагина и оставшиеся этапы публичного выпуска описаны в [техническом дизайне](docs/codex-plugin-tdd.md).
+В комплекте один законченный эталон — [«Как GPT выбирает следующее слово»](examples/gpt-model/scene.js). Он раскрывает токены, представления, attention, residual stream, MLP и выбор продолжения через локальную учебную модель с открытыми весами. [Модель](examples/gpt-model/model.js), [рисунок](examples/gpt-model/drawing.js) и [вычисления](examples/gpt-model/computation.js) читают одни данные. Это небольшая обученная модель для объяснения устройства GPT; её границы показаны внутри сцены.
 
-[Аудит авторства и качества](docs/authoring-audit.md) описывает действующие границы, проверки и оставшиеся возможности.
+Новая тема начинается с нейтрального каркаса. SVG, 3D, морфинг, физика, персонажи, графики и документные уроки остаются общими возможностями библиотеки.
 
-## Плагин Codex
-
-Локальный комплект для macOS 13.5+ Apple Silicon. Готовый архив устанавливается по [инструкции](plugin/INSTALL.md) без разработческих Node/Python/Xcode. Сборка из репозитория:
-
-```sh
-npm ci
-npm run plugin:release
-./.plugin-release/runtime/node ./.plugin-release/plugin/install.mjs
-```
-
-Сборка появляется в `.plugin-release/`, архив с SHA-256 — в `artifacts/plugin/`; Node/npm включены. После установки открой Visual Storytelling в Codex или попроси открыть пример в чате. Агент создаёт редактируемый проект, управляет сценой и применяет правки; краткий контекст кадра автоматически заменяется в одном вложении.
-
-Установщик хранит неизменяемые версии и стабильный launcher вне кэша Codex. Работы и выпуски также хранятся вне кэша установки, по умолчанию в `~/Library/Application Support/Visual Storytelling/projects`. Папка новых работ, язык и бюджет кэша доступны в настройках. Первая подготовка использует npm registry; Chromium и FFmpeg для видео загружаются по необходимости с проверкой SHA-256. После обновления переподключи плагин и начни следующий ход чата; порядок описан в [инструкции](plugin/INSTALL.md).
-
-`story_open` требует выбранный пример, проект или сессию; без входа возвращает основы из общего каталога. Первичная настройка явно открывает `graph-lab`. Плагин поставляет весь [каталог](examples/catalog.json): схемы, графики, опыты, математические разборы, подробные уроки и персонажные постановки. Выпуск поддерживает HTML, PNG, SVG для совместимых сцен, MP4, субтитры и редактируемый проект. Агент выпускает показанную сборку или явно выбранные последние правки через `story_produce`. Верхней панели плагина нет; выбор озвучки и выпуска происходит в чате.
-
-По запросу плагин подготавливает закреплённые Python, Higgs и акустический выравниватель: около 12 ГБ загрузок, 18 ГБ свободного места, рекомендуются 32 ГБ памяти. Прогресс, отмена и повтор принадлежат общей очереди; проверенные ресурсы переиспользуются. Музыка загружается при использовании, системный голос macOS выбирается явно. Проекты сохраняют закреплённую библиотеку; её явное обновление отменяется. [Приёмка](docs/codex-plugin-tdd.md#приёмка) учитывает нативный Codex и самостоятельную установку на другом Mac.
-
-## Запуск библиотеки
+## Запуск
 
 Нужен Node.js ≥ 22.18.
 
 ```sh
 npm ci
-npm run build           # dist/ — пакет; site/ — галерея примеров
-npm run preview         # http://127.0.0.1:8793
+npm run build          # dist/ — пакет; site/ — эталон и его страница
+npm run check
+npm run preview        # http://127.0.0.1:8793
 ```
 
-Для разработки — `npm run dev`: тот же сборщик следит за примерами и библиотекой, сохраняет выбранное действие и параметры и показывает ошибку поверх последней рабочей версии. `scene.json.entry` задаёт авторский HTML или SVG в корне сцены (по умолчанию `index.html`); сборка всегда выпускает `dist/index.html`, в галерее — `site/ИМЯ/index.html`. SVG может создавать `scene.json.generator`; Node-генератор, вызывающий Python, объявляет `generator.python: true`. CLI и плагин автоматически готовят закреплённые Python и `uv` на macOS Apple Silicon и используют общий кэш; Higgs нужен только для озвучки. На других платформах укажи исполняемые файлы через `VISUAL_STORY_PYTHON` и, для runner `uv`, `VISUAL_STORY_UV`. [Каталог](examples/catalog.json) задаёт учебную задачу, исходник и кадры для сравнения.
+`npm run dev` пересобирает изменения и возвращает сцену к выбранному времени и параметрам. Исходники эталона находятся в `examples/gpt-model/`; `dist/` и `site/` — производные артефакты.
 
-## Создание сцены
+## Создание и правка
 
 ```sh
-node tools/scene.mjs examples --recommended    # выбрать форму по задаче
-node tools/scene.mjs new /absolute/output/my-story --example graph-lab  # пример зависимости величин
+node tools/scene.mjs new /absolute/output/my-story --title "Моя тема" --json
 cd /absolute/output/my-story
-npm install
-npx visual-story api SceneShell.mount SceneOptions  # точный контракт пакета
-npx visual-story info                     # фактическая сборка
+npm ci
+npx visual-story api SceneShell.mount StoryOptions
+npx visual-story info
 npm run build
 npm run dev
 ```
 
-Обновление существующей сцены из текущей библиотеки:
+Команда возвращает `files`, `entry`, закреплённый `runtime` и `sourceRevision`. В `scene.js` уже подключены оболочка и поверхность; добавь предметную модель и рисунок. `package.json`, lockfile и точный архив runtime входят в проект.
+
+Для явной копии эталона:
+
+```sh
+node tools/scene.mjs examples gpt-model --json
+node tools/scene.mjs new /absolute/output/gpt-model --example gpt-model
+```
+
+Эти же команды работают из установленного пакета через `npx visual-story`. API читается из деклараций именно установленной версии: `api NAME.member` показывает метод, `api ./three` — модуль, `--full` раскрывает связанные типы. Старый проект сохраняет свой runtime; обновление выполняется явно:
 
 ```sh
 node tools/scene.mjs update /absolute/output/my-story
-# Из потребителя: npx visual-story update . --from /absolute/library
 ```
 
-Команда собирает изменённый runtime, закрепляет архив с идентификатором содержимого,
-устанавливает его и сверяет фактический пакет. Скрипты и другие зависимости сцены
-сохраняются. Повторный вызов не переустанавливает тот же пакет; npm lifecycle-скрипты
-при обновлении не запускаются.
+## Плагин Codex
 
-`examples нейрон` ищет по теме и API; `examples graph-lab` показывает кадр, исходники, точки правки и команду создания. `new` копирует предметный исходник и точную упакованную зависимость библиотеки. Уроки доступны в тихом режиме. `--no-audio` откладывает озвучку до `npm run audio`, `--silent` создаёт сцену без речевых файлов. Встроенный мужской образец, модели и акустическое выравнивание принадлежат `tools/audio/`.
-
-Пакет содержит библиотеку, CLI, каталог, исходники и кадры примеров, инструкции навыка и документацию одной версии. `new` и `examples` работают и из установленного пакета. Готовые WAV из галереи в пакет не входят: такие шаблоны начинают с отложенной озвучкой; `npm run audio` собирает голос по сохранённому сценарию. `--audio` создаёт его сразу.
-
-`sketch-audio audition narration.json --segment question --out artifacts/voice` сравнивает цельные дубли одной мысли; выбранный `seed` сегмента сохраняет исполнение при следующей сборке. Подача и метки описаны в [озвучке](skills/visual-explainer/references/narration.md).
-
-Для историй с персонажами начни с `new --example tesla-circuit`: `story.json` содержит
-речь и действия, `scene.js` выбирает модель, cast и set. [IllustratedStory](docs/lessons.md)
-соединяет их автоматически. [Площадь](examples/area-lesson/scene.js) и
-[термостат](examples/thermostat-story/scene.js) проверяют тот же путь на других темах.
-[График](examples/graph-lab/scene.js) связывает путь, наклон и прогноз через [общую композицию](docs/explanations.md); [регистр](examples/memory-register/scene.js) предлагает сначала записать предположение. В dev после правки речи пересобираются только изменённые дубли.
-
-Размещение подписей в графиках, SVG-связях и 3D использует общий `placeLabels`.
-Он учитывает реальные размеры письма, препятствия и линии; одинаковое состояние
-даёт одинаковый кадр. `plot.label` и `Viewport3D.label` сохраняют связь с предметом
-при переносе. Для нехватки места предусмотрено явное раскрытие; список доступен
-в `SceneHandle.presentation().layoutOverflow`. [Рабочий пример и API](docs/explanations.md).
+Локальные комплекты для macOS Apple Silicon и Linux x86_64/ARM64 устанавливаются по [инструкции](plugin/INSTALL.md). Они содержат Node/npm, runtime, навыки и готовый GPT-эталон. Сборка для текущей ОС и установка из репозитория:
 
 ```sh
-npx visual-story session http://127.0.0.1:8793 status
-npx visual-story session http://127.0.0.1:8793 find --query "лампа"
-npx visual-story session http://127.0.0.1:8793 control --commands '[{"type":"pause"},{"type":"cue","id":"workshop.explain","progress":0.6}]'
+npm run plugin:release
+./.plugin-release/runtime/node ./.plugin-release/plugin/install.mjs
 ```
 
-Сеанс сообщает собранную и показанную ревизии, параметры и диагностику кадра.
-При нескольких открытых представлениях выбери `--view`; `--revision` защищает
-команду от применения к другой сборке. Команды вызывает существующий `SceneHandle`.
+Архив и SHA-256 появляются в `artifacts/plugin/`, распакованный выпуск — в `.plugin-release/`. Установщик сохраняет неизменяемые версии вне кэша Codex. После обновления переподключи плагин.
 
-Пример импорта:
+`npm run plugin:linux` собирает обе Linux-архитектуры через закреплённый Docker-образ и проверяет каждый установленный комплект: MCP, редактируемый проект, HTML/PNG/MP4. Linux использует glibc; Higgs на Apple MLX доступен только на Mac. Требования Chromium — в инструкции установки.
 
-```ts
-import '@visual-storytelling/core/style.css';
-import { SceneShell, SketchMotion, SvgLayout } from '@visual-storytelling/core';
-import { Viewport3D, ThreeKit } from '@visual-storytelling/core/three';
-```
+Авторский маршрут: `story_help → story_create → story_edit → story_review → story_open → story_produce`. `story_create` без `example` создаёт редактируемый каркас без карточки и сеанса; `example: "gpt-model"` явно копирует эталон. `story_open(projectId)` показывает подготовленную работу. Правки используют `sourceRevision` и уникальный `requestId`; повтор сохраняет исходный receipt. Голос, выпуск и обновление runtime выбираются в чате.
 
-Исходники сцен — в [examples](examples). Их [каталог](examples/catalog.json) задаёт подбор в галерее, CLI и навыке: описание, раздел, метки поиска, исходник и справки. `recommended` отмечает основу новой сцены, `reference` — визуально принятый эталон. Обновляй сведения и превью вместе со сценой.
+Проекты по умолчанию хранятся в `~/Library/Application Support/Visual Storytelling/projects` на Mac и `${XDG_DATA_HOME:-$HOME/.local/share}/visual-storytelling/projects` на Linux. Первая установка зависимостей использует npm registry; видео и озвучка подготавливают свои инструменты по необходимости. Озвучка необязательна: `story_voice` сообщает доступность и включает выбранного провайдера. [Формат сценария и голос](skills/visual-explainer/references/narration.md).
 
-Общие владельцы перечислены в [архитектуре](docs/architecture.md), правила сцены — в [контракте автора](docs/authoring.md), визуальный характер — в [PHILOSOPHY.md](PHILOSOPHY.md).
+## Возможности и владельцы
 
-[Персонажи и постановка](docs/characters.md) связывают готовый Chibi-риг, SVG-облики,
-декорации и предметы с раскадровкой `CharacterStory`. [Тесла](examples/chibi-tesla/scene.js),
-[Мира](examples/chibi-garden/scene.js) и [общая идея](examples/chibi-transfer/scene.js)
-показывают один API на разных историях. `visual-story characters` перечисляет набор;
-`characters new/build` создаёт редактируемый облик и автоматически собирает атлас.
-Подготовленные `perform` ведут ходьбу, книгу, посадку, дверь, лестницу и совместные
-действия; `arrange` задаёт размещение отношениями, `routines` собирает готовые цепочки.
-`characters --json` возвращает облики, одежду, подготовленные действия, последовательности и места.
+| Область                  | Владелец                                                                                  |
+| ------------------------ | ----------------------------------------------------------------------------------------- |
+| Публичный API            | `src/index.ts` и экспорты `package.json`                                                  |
+| Сцена, команды, снимок   | `src/scene-handle.ts`, `src/scene-checkpoint.ts`; один `root.scene`                       |
+| Кадр и управление        | `src/scene-frame.ts`, `src/scene.ts`; рисунок 16:9 и отдельный плеер                      |
+| Время и главы            | `src/story/`; `stateAt → derive → render`, принятый ввод и завершённый кадр               |
+| SVG, письмо и палитра    | `src/ink/`, `src/styles/`, `src/assets/`; общий почерк для шрифтов и штрихов              |
+| Раскладка и 3D           | `src/layout/`, `src/viewport/`; подписи, препятствия, камеры и тензоры                    |
+| Превращения и вычисления | `src/morph/`, `src/math/`; `MathMorph`, `InkMorph`, происхождение результата              |
+| Физика и персонажи       | `src/physics/`, `src/characters/`; Rapier, постановка и живые поверхности                 |
+| Создание и ревизии       | `tools/create-scene.mjs`, `tools/project-files.mjs`; CLI и плагин используют один путь    |
+| Сборка, review и выпуск  | `tools/`; установленный runtime, готовность сцены и атомарная публикация                  |
+| Плагин                   | `plugin/runtime/`, `plugin/projects.mjs`, `plugin/jobs.mjs`; сеансы, транзакции и очередь |
+| Предметный эталон        | `examples/gpt-model/`; модель и композиция принадлежат сцене                              |
 
-[Подробный урок](docs/lessons.md) собирает главы из одного `StoryDocument`:
-реплики, действия и тихая разметка сохраняют общие часы. `IllustratedStory`
-подключает документ к `SceneStory`; `inkChapter`, `physicsChapter` и
-`characterChapter` выбирают подходящее представление каждой мысли.
-[Площадь](examples/area-lesson/scene.js) предлагает записать прогноз, выполнить
-опыт и исследовать результат. [Персонажный урок](examples/character-lesson/scene.js)
-соединяет перенос предметов, математику и физический опыт. Рисунок и сетка
-используют общий масштаб; детали раскрываются рядом с объясняемым предметом.
+[Архитектура](docs/architecture.md) раскрывает границы; [контракт автора](docs/authoring.md) — управление и восстановление; [PHILOSOPHY.md](PHILOSOPHY.md) — визуальный характер. При изменении пера пересобери шрифты командой `uv run tools/build_pencil_font.py`.
 
-[Физические объекты](docs/physics.md) добавляют SVG и Three.js столкновения, упругие материалы, деформацию и захват. Rapier подключается через отдельные `./physics/2d` и `./physics/3d`; почерк, пигменты, материалы и плеер остаются общими.
+Подробные API: [композиция объяснения](docs/explanations.md), [тензоры](docs/tensors.md), [морфинг](docs/morphing.md), [физика](docs/physics.md), [персонажи](docs/characters.md), [документные уроки](docs/lessons.md), [SVG-предметы](docs/svg-artwork.md). Сокращение каталога не меняет эти экспорты. Небольшие регрессионные сцены находятся в `tests/fixtures/` и в пакет не входят.
 
-[SVG-предметы](docs/svg-artwork.md) переиспользуют рисунок с разными палитрами,
-размерами и глубиной через `SvgArtwork3D`. Нормализация, перекрытия и прозрачность
-входят в общий объект; [пример](examples/svg-artwork/scene.js) работает на часах рассказа.
+## Review и выпуск
 
-[Запись результата](examples/result-delivery/scene.js) связывает вычисление и ячейку:
-Опция `delivery` у `MathMorph3D` ведёт перенос, размер, видимость и перемотку по меткам рассказа.
-
-[Тензоры и срезы](docs/tensors.md) сохраняют исходные адреса при перестановке осей,
-выборе слоя и вычислении. `TensorData` задаёт снимок, `Tensor3D` — адресуемые ячейки,
-`TensorSlice3D` — извлечение текущей выборки. [Выбор дня](examples/tensor-slices/scene.js)
-и [происхождение результата](examples/math-workbench/scene.js) используют общие
-`MathMorph`, камеру, семантику и часы рассказа.
-
-[Согласованный морфинг](docs/morphing.md) связывает формы, числа, надписи и физический контакт. Автор задаёт операцию, объекты и время; [«Форма несёт смысл»](examples/written-morph/scene.js) показывает общий API в 2D/3D, на словах и абзацах. [Общий граф связей](examples/mathematical-relations/models.js) превращает формулы в связанные точки, материалы, траектории и измерения в 2D/3D. [Математика меняет форму](examples/formula-objects/scene.js) показывает площадь, линейное преобразование, синусоиду, касательную, интеграл, энергию и объёмную цепочку через общий `MathMorph.mount`.
-
-## Экспорт
+В каталоге подготовленной копии GPT:
 
 ```sh
-npx visual-story deliver . --out artifacts/release --formats mp4,html,source
+npx visual-story review dist --cue attention --out artifacts/review
+npx visual-story review inspect artifacts/review --at 36
+npx visual-story export dist --format png --time 36 --out artifacts/gpt.png
+npx visual-story deliver . --out artifacts/release --formats html,png,svg,mp4,source --from 42 --to 44 --width 960 --fps 24 --silent
 ```
 
-Одна команда собирает озвучку с кэшем, страницу и выбранные результаты; после правки реплики повторяется она же. `--jobs 2` ограничивает параллельный рендер; сборка видео и непрерывного звука принадлежит экспортёру. По необходимости доступны `srt,vtt` из общей дорожки слов. Обычный автономный HTML сжимает исходный звук для доставки.
+Review сохраняет кадры, состояния и карту эпизодов; `inspect` читает эти же данные. HTML содержит код, шрифты и ресурсы и работает офлайн. PNG/SVG сохраняют рисунок без плеера; видео имеет тот же кадр 16:9. `--from/--to` выбирают отрезок, без них выпускается весь рассказ. Исходный архив содержит редактируемую сцену и закреплённый runtime. Для озвученного проекта доступны `srt/vtt` и общая дорожка речи; `--silent` выпускает тихий вариант.
 
-[Учебный разбор](examples/interface-walkthrough/scene.js) и [продуктовая инструкция](examples/product-walkthrough/scene.js) используют одни `storyActions` и фиксированный кадр `SceneShell`, сохраняя разную подачу. [Подключение](skills/visual-explainer/references/scene-authoring.md#видеокадр-и-действия).
-
-```sh
-npm run export -- --scene area-story --format html --out artifacts/area.html
-npm run export -- --scene area-story --format svg --time 61.9 --out artifacts/area.svg
-npm run export -- --scene lc-oscillator --format png --time .75 --theme dark
-npm run export -- --scene area-story --format mp4 --fps 30 --width 960
-```
-
-PNG/MP4 используют Chromium, MP4 также требует FFmpeg. `--from` и `--to` выбирают отрезок; видео получает соответствующую часть исходного звука. Видео всегда имеет пропорции 16:9, по умолчанию 960×540. Передай `--width` или `--height`: второй размер вычисляется, оба округляются до единиц 32×18 px. Явная пара должна соответствовать 16:9; фактические размеры возвращаются в результате выпуска. Плеер находится за границей изображения. SVG сохраняет прозрачность; самодостаточный HTML работает офлайн и следует теме интерфейса. Для отдельной сцены: `npm run export -- --format png --time 4` или `npm run pack`. Упаковка для чата: `npm run pack -- --inline`; большой результат остаётся файлом для браузера.
-
-## Проверка и навык
+## Проверки
 
 ```sh
-npm run build          # свежие dist/ и site/ для проверок
+npm run build
 npm run check
 npm test
-npm run test:tools      # сценарий озвучки и структура SVG, без загрузки моделей
-npm run test:browser    # взаимодействия со сборкой site/, порт 8794
-npm run test:delivery   # отдельный потребитель пакета, офлайн HTML и озвучка
+npm run test:tools
+npm run test:browser
+npm run test:delivery
 ```
 
-Проверка рассказа или любого UI использует один сеанс наблюдения:
+`npm test` сначала пересобирает локальный release-пакет для plugin-тестов. Браузерные проверки используют Chromium (`npx playwright install chromium`); видеовыпуск также требует FFmpeg. `test:delivery` создаёт отдельного потребителя пакета, проверяет API, автономный GPT, review, SVG/PNG/MP4 и повторную сборку исходного архива. Результаты — в `artifacts/delivery/`. Для нативного плагина дополнительно нужна [приёмка в Codex](docs/codex-plugin-tdd.md#приёмка).
 
-```sh
-node tools/scene.mjs review site/remainder-story --out artifacts/review
-node tools/scene.mjs review http://localhost:3000 --click '#open' --out artifacts/ui
-node tools/scene.mjs review inspect artifacts/ui --at .4 --object '#panel'
-node tools/scene.mjs review artifacts/ui/replay.json --baseline artifacts/ui --out artifacts/after
-```
-
-`image` даёт обзор, `index.html` — карту эпизодов, запись и выбор объекта;
-`inspect` читает те же кадры, события и состояние без повторного запуска приложения.
-`--cue ID` сохраняет весь переход с контекстом; `record/stop/status` позволяет
-записывать ручные взаимодействия. Поддерживаются HTML, SVG/WebGL, видео, PNG и окна
-macOS. В сцене доступны речь, реально прочитанные метки, группы 3D и этапы MathMorph.
-`--object`/`--crop` приближают деталь, `--baseline` сравнивает каждый эпизод по времени
-и стадиям с сохранением длительности. `framesImage` и `photometryImage` содержат
-разности, яркость, цвет и кимограмму. [Команды, источники времени и ограничения](skills/visual-explainer/references/motion.md#проверка).
-
-При изменении общего рисунка сохрани исходные кадры до правки: `node tools/visual-regression.mjs capture site artifacts/reference/pixels`, затем сравни сборку через `npm run test:visual`. `VISUAL_SCENES=area-story,vector` ограничивает проверку затронутыми примерами; обе темы и две ширины сохраняются. Отчёт в `artifacts/migrated/report.json` сообщает все различия, а просмотр помогает оценить их смысл.
-
-Экспорт, превью, отчёт переходов и сравнение кадров используют `tools/open-scene.mjs`: он дожидается готовности, останавливает сцену и обращается к её `seek()`. `npm run profile` измеряет перематываемые сцены; для симуляций и статичных схем нужен конкретный сценарий взаимодействия. Проверки CTC и монтажа лежат в `tests/audio/test_pipeline.py` и запускаются отдельно в подготовленном окружении `sketch-audio`.
-
-[skills/visual-explainer/SKILL.md](skills/visual-explainer/SKILL.md) содержит действующий навык и ссылается прямо на `tools`, `examples` и `docs`: они поставляются из того же исходника вместе с закреплённой зависимостью сцены. PNG лежат рядом с исходниками; работающая галерея собирается в `site/`. После изменения пакета пересобери страницы. Устанавливай навык ссылкой на `skills/visual-explainer/`, сохраняя один источник инструкций и исполнения. Источники и лицензии — [THIRD_PARTY.md](THIRD_PARTY.md).
-
-[Computer Explorer](examples/computer-explorer) связывает SSD, RAM, CPU, GPU и LCD и раскрывает оборудование до ячеек и транзисторов. [Контракт исследования](skills/visual-explainer/references/nested-explorer.md) описывает общие камеру, жесты, контуры и симуляцию; [нейрон](examples/neuron-explorer) использует их с другой моделью и рисованным оформлением.
+Действующий [навык](skills/visual-explainer/SKILL.md), CLI, документация и эталон поставляются из одного исходника. Авторский код — [0BSD](LICENSE); условия сторонних компонентов сохранены в [THIRD_PARTY.md](THIRD_PARTY.md).

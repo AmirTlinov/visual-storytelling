@@ -48,7 +48,7 @@ export async function characterStage(
   aperture.className = 've-character-aperture';
   element.append(aperture);
   let replay: (() => void) | undefined;
-  const resize = () => {
+  const resize = (repaint = true) => {
     const width = element.clientWidth || parseFloat(aperture.style.width) || set.width,
       height = element.clientHeight || parseFloat(aperture.style.height) || set.height,
       fit =
@@ -65,9 +65,9 @@ export async function characterStage(
       top: `${(height - fit.height) / 2}px`,
     });
     surfaces?.resize();
-    if (changed && !element.hidden && canvas.parentElement === aperture) replay?.();
+    if (repaint && changed && !element.hidden && canvas.parentElement === aperture) replay?.();
   };
-  const observer = new ResizeObserver(resize);
+  const observer = new ResizeObserver(() => resize());
   observer.observe(element);
   const layer = (markup = '') => {
     const svg = document.createElementNS(NS, 'svg');
@@ -298,6 +298,8 @@ export async function characterStage(
       },
       render(time: number, reduced = false, frame?: ChapterFrame, captureView?: CaptureView) {
         if (disposed) return;
+        // A chapter can change the shared frame's layout in this same publication turn.
+        resize(false);
         latest = [time, reduced, frame];
         graphics.activate(aperture, front);
         aperture.hidden = false;

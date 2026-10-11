@@ -7,12 +7,14 @@ import { buildNarration, deferNarration, silenceSceneCopy } from './narration.mj
 import { buildOutput } from './build-output.mjs';
 import { sceneEntry } from './scene-entry.mjs';
 import { copySceneInput } from './copy-scene-input.mjs';
+import { projectFiles } from './project-files.mjs';
 
 /** CLI and plugin create the same editable project with an immutable runtime dependency. */
 export async function createScene(
   destination,
   {
     example,
+    title,
     deferAudio = false,
     silent = false,
     audio = false,
@@ -23,13 +25,13 @@ export async function createScene(
   signal?.throwIfAborted();
   destination = resolve(destination);
   const catalog = JSON.parse(await readFile(join(root, 'examples/catalog.json'), 'utf8'));
-  if (!example)
-    throw new Error(
-      'Choose a starting point with visual-story examples, then pass --example NAME.',
-    );
   if ([audio, deferAudio, silent].filter(Boolean).length > 1)
     throw new Error('Choose one of --audio, --no-audio or --silent');
-  if (!catalog[example]) throw new Error(`Choose an example: ${Object.keys(catalog).join(', ')}`);
+  if (example !== undefined && !Object.hasOwn(catalog, example))
+    throw new Error(`Choose an example: ${Object.keys(catalog).join(', ')}`);
+  title ??= example ? catalog[example].title : 'Новое объяснение';
+  if (typeof title !== 'string' || !title.trim() || title.length > 160)
+    throw new Error('Use a project title of 1–160 characters');
   try {
     if ((await readdir(destination)).some((name) => name !== 'story.vstory'))
       throw new Error('Choose an empty output directory');
@@ -37,8 +39,9 @@ export async function createScene(
     if (error.code !== 'ENOENT') throw error;
   }
   await mkdir(destination, { recursive: true });
-  const source = join(root, 'examples', example);
+  const source = example ? join(root, 'examples', example) : join(root, 'tools/scaffold');
   const target = destination;
+  let runtime;
   const manifest = await readFile(join(target, 'story.vstory')).catch((error) => {
     if (error.code !== 'ENOENT') throw error;
     return null;
@@ -58,8 +61,22 @@ export async function createScene(
         signal,
       });
     }
+    if (!example) {
+      const page = join(destination, 'index.html');
+      const escaped = title
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;');
+      await writeFile(
+        page,
+        (await readFile(page, 'utf8')).replace(
+          /<title>.*?<\/title>/s,
+          () => `<title>${escaped}</title>`,
+        ),
+      );
+    }
     if (silent) await silenceSceneCopy(destination);
-    await pinSceneProject(destination, { root, signal });
+    runtime = await pinSceneProject(destination, { root, signal });
     const hasAudio = await access(join(destination, 'audio.wav')).then(
       () => true,
       () => false,
@@ -78,10 +95,19 @@ export async function createScene(
     if (Boolean(current) !== Boolean(manifest) || (current && !current.equals(manifest)))
       throw new Error('The project manifest changed while preparing it. Open it again.');
   });
+  const sourceFiles = await projectFiles(target);
   return {
     directory: target,
     example,
-    title: catalog[example].title,
+    title,
     entry: (await sceneEntry(target)).source,
+    files: sourceFiles.files,
+    sourceRevision: sourceFiles.revision,
+    runtime: {
+      name: runtime.name,
+      version: runtime.version,
+      build: runtime.build,
+      dependency: runtime.dependency,
+    },
   };
 }

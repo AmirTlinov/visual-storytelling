@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { workflows } from '../plugin/workflows.mjs';
-import { projectFiles } from '../plugin/project-files.mjs';
+import { projectFiles } from '../tools/project-files.mjs';
 import { ProjectStore } from '../plugin/projects.mjs';
 import { revisionInput } from '../plugin/revision-input.mjs';
 import { collectCache } from '../plugin/cache.mjs';

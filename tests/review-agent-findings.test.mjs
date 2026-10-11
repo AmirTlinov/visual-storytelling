@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
@@ -35,7 +36,7 @@ test('actions at a chapter boundary belong to the new chapter, including repeate
 });
 
 test('accessible-only captions stay observed without hiding actual content clipping', async () => {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage({ viewport: { width: 640, height: 480 } });
     await page.setContent(`<style>

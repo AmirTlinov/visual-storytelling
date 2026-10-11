@@ -310,10 +310,15 @@ export const MathMorph = {
     operator,
     values,
   }),
-  dot: (left: VectorInput, right: VectorInput): Extract<MathOperation, { kind: 'dot' }> => ({
+  dot: (
+    left: VectorInput,
+    right: VectorInput,
+    options: { batchSize?: number } = {},
+  ): Extract<MathOperation, { kind: 'dot' }> => ({
     kind: 'dot',
     left,
     right,
+    ...options,
   }),
   vectorAdd: (
     left: VectorInput,

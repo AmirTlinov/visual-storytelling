@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
@@ -141,7 +142,7 @@ test('tensor snapshots retain cells, refresh source meaning and release the rend
     format: 'iife',
     platform: 'browser',
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage();
     await page.setContent(

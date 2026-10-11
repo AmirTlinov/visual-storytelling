@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -37,7 +38,7 @@ test('bounded nodes retain complete centered ink, readable size and body-owned c
       join(directory, 'index.html'),
       '<!doctype html><link rel="stylesheet" href="index.css"><main></main><script src="index.js"></script>',
     );
-    browser = await chromium.launch();
+    browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage();
     await page.goto(pathToFileURL(join(directory, 'index.html')).href);
     await page.evaluate(() => window.ready);

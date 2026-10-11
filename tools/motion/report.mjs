@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../chromium.mjs';
 import { mkdir, writeFile, lstat, readdir, rm } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { chromium } from 'playwright';
@@ -149,10 +150,11 @@ export async function writeMotionReport(report, out, { context } = {}) {
   report.previews = { available: true };
   if (!context) {
     try {
-      browser = await chromium.launch({
-        timeout: 5000,
-        executablePath: process.env.VISUAL_STORY_CHROMIUM,
-      });
+      browser = await chromium.launch(
+        chromiumLaunchOptions({
+          timeout: 5000,
+        }),
+      );
     } catch (error) {
       report.previews = { available: false, reason: startupFailureReason(error) };
     }

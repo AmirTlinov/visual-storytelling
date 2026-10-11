@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
@@ -131,7 +132,7 @@ test('a preview session pins shown content, controls semantics and restores a cu
     );
     await writeFile(join(source, 'scene.js'), code(5));
     server = await develop(source, 0, { sourcePackage: true });
-    browser = await chromium.launch();
+    browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage();
     await page.goto(server.url);
     await page.waitForFunction(() => document.querySelector('main')?.scene?.inspect);

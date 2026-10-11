@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -34,7 +35,7 @@ test('unchanged SVG state is quiet; text, geometry, grid and reverse seek still 
       join(directory, 'index.html'),
       '<!doctype html><html><head><link rel="stylesheet" href="index.css"></head><body><main></main><script src="index.js"></script></body></html>',
     );
-    browser = await chromium.launch();
+    browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage();
     await page.goto(pathToFileURL(join(directory, 'index.html')).href);
     await page.evaluate(() => window.galleryReady);

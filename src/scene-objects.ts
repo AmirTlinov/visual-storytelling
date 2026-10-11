@@ -2,6 +2,8 @@ import { containingSource, sourceAt, sourceOf, type SourceSpan } from './scene-s
 
 export interface ObjectMeaning {
   label: string;
+  /** Inspect and select programmatically without making the drawing a user control. */
+  interactive?: boolean;
   value?: () => unknown;
   unit?: string;
   source?: SourceSpan;
@@ -9,22 +11,48 @@ export interface ObjectMeaning {
   inputs?: () => readonly string[];
   provenance?: () => unknown;
 }
-const meanings = new WeakMap<Element, { meaning: ObjectMeaning }>();
+const attributes = ['aria-label', 'role', 'tabindex', 'aria-pressed'] as const;
+type ObjectAttribute = (typeof attributes)[number];
+const meanings = new WeakMap<
+  Element,
+  { meaning: ObjectMeaning; original: Record<ObjectAttribute, string | null> }
+>();
+const hits = new WeakMap<Event, Element>();
+const attribute = (element: Element, name: string, value: string | null) => {
+  if (value === null) element.removeAttribute(name);
+  else if (element.getAttribute(name) !== value) element.setAttribute(name, value);
+};
+const interactive = (element: Element) => meanings.get(element)?.meaning.interactive !== false;
+
+/** A renderer's geometry hit keeps its semantic target while the pointer event still bubbles. */
+export function sceneObjectHit(event: Event, element: Element) {
+  if (meanings.has(element)) hits.set(event, element);
+}
 
 /** Meaning belongs to the rendered object. Geometry and labels keep its existing stable ID. */
 export function describeObject(element: Element, meaning: ObjectMeaning) {
   if (!element.getAttribute('data-object')?.trim() || !meaning.label.trim())
     throw new Error('A scene object needs a stable ID and a meaningful label');
-  const registration = { meaning };
+  const original =
+    meanings.get(element)?.original ??
+    (Object.fromEntries(attributes.map((name) => [name, element.getAttribute(name)])) as Record<
+      ObjectAttribute,
+      string | null
+    >);
+  const registration = { meaning, original };
   meanings.set(element, registration);
   sourceAt(element, sourceOf(meaning) ?? containingSource(element.parentElement));
   element.setAttribute('aria-label', meaning.label);
-  element.setAttribute('role', 'button');
-  element.setAttribute('tabindex', '0');
+  attribute(element, 'role', meaning.interactive === false ? original.role : 'button');
+  attribute(element, 'tabindex', meaning.interactive === false ? original.tabindex : '0');
+  if (meaning.interactive === false) attribute(element, 'aria-pressed', original['aria-pressed']);
   return () => {
     if (meanings.get(element) !== registration) return;
     meanings.delete(element);
     sourceAt(element, undefined);
+    for (const name of attributes) attribute(element, name, original[name]);
+    element.removeAttribute('data-selected');
+    element.removeAttribute('data-selection-highlight');
   };
 }
 
@@ -74,8 +102,8 @@ export function sceneObjects(root: Element) {
     for (const node of elements) {
       const active = selected.includes(node.dataset.object!);
       node.toggleAttribute('data-selected', active);
-      if (node.getAttribute('aria-pressed') !== String(active))
-        node.setAttribute('aria-pressed', String(active));
+      if (interactive(node) && node.matches('button, [role="button"]'))
+        attribute(node, 'aria-pressed', String(active));
       if (!active || node.closest('[aria-hidden="true"]') || !isRendered(node)) continue;
       const bounds = node.getBoundingClientRect();
       if (!bounds.width || !bounds.height) continue;
@@ -112,12 +140,14 @@ export function sceneObjects(root: Element) {
   };
   const target = (event: Event) => {
     // An embedded control owns its activation, even inside a described object.
-    const node = (event.target as Element)?.closest?.(`[data-object], ${controls}`);
+    const node =
+      hits.get(event) ?? (event.target as Element)?.closest?.(`[data-object], ${controls}`);
     return node && root.contains(node) && meanings.has(node)
       ? (node as HTMLElement | SVGElement)
       : null;
   };
   const activate = (node: HTMLElement | SVGElement) => {
+    if (!interactive(node)) return;
     const id = node.dataset.object!;
     select(selected.length === 1 && selected[0] === id ? [] : [id]);
   };
@@ -173,7 +203,7 @@ export function sceneObjects(root: Element) {
       const e = event as KeyboardEvent,
         node = target(e);
       if (e.defaultPrevented) return;
-      if (node && !node.matches('button') && ['Enter', ' '].includes(e.key)) {
+      if (node && interactive(node) && !node.matches('button') && ['Enter', ' '].includes(e.key)) {
         e.preventDefault();
         activate(node);
       } else if (e.key === 'Escape' && selected.length) select([]);
@@ -194,7 +224,8 @@ export function sceneObjects(root: Element) {
       highlighted.clear();
       for (const node of nodes()) {
         node.removeAttribute('data-selected');
-        node.setAttribute('aria-pressed', 'false');
+        if (interactive(node) && node.matches('button, [role="button"]'))
+          node.setAttribute('aria-pressed', 'false');
       }
       selected = [];
       down = undefined;

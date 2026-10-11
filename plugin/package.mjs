@@ -70,10 +70,60 @@ function compareVersion(a, b) {
   return 0;
 }
 
+/** Record and validate every native Linux executable shipped to the recipient. */
+export async function linuxDeployment(root, arch = process.arch) {
+  const binaries = [];
+  const machine = { x64: 62, arm64: 183 }[arch];
+  if (!machine) throw new Error(`Unsupported Linux release architecture: ${arch}`);
+  async function visit(directory) {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const file = join(directory, entry.name);
+      if (entry.isDirectory()) await visit(file);
+      else if (entry.isFile()) {
+        const handle = await open(file, 'r'),
+          header = Buffer.alloc(20);
+        try {
+          await handle.read(header, 0, header.length, 0);
+        } finally {
+          await handle.close();
+        }
+        const magic = header.subarray(0, 4).toString('hex');
+        if (['cffaedfe', 'cefaedfe', 'cafebabe', 'bebafeca'].includes(magic))
+          throw new Error(`macOS executable in Linux release: ${relative(root, file)}`);
+        if (magic !== '7f454c46') continue;
+        if (header[4] !== 2 || header[5] !== 1 || header.readUInt16LE(18) !== machine)
+          throw new Error(`Wrong Linux executable architecture: ${relative(root, file)}`);
+        const { stdout } = await execute('readelf', ['--version-info', file], {
+          maxBuffer: 2_000_000,
+        });
+        const versions = [...stdout.matchAll(/\bGLIBC_([\d.]+)/g)].map((match) => match[1]);
+        binaries.push({
+          path: relative(root, file),
+          ...(versions.length ? { minimumGLIBC: versions.sort(compareVersion).at(-1) } : {}),
+        });
+      }
+    }
+  }
+  await visit(root);
+  return {
+    minimumGLIBC: binaries
+      .map((binary) => binary.minimumGLIBC)
+      .filter(Boolean)
+      .sort(compareVersion)
+      .at(-1),
+    nativeBinaries: binaries,
+  };
+}
+
 /** A distributable local beta: runtime, authoring tools, docs and licensed assets travel together. */
 export async function packagePlugin(root) {
-  if (process.platform !== 'darwin' || process.arch !== 'arm64')
-    throw new Error('This release profile targets macOS Apple Silicon.');
+  if (
+    !(
+      (process.platform === 'darwin' && process.arch === 'arm64') ||
+      (process.platform === 'linux' && ['x64', 'arm64'].includes(process.arch))
+    )
+  )
+    throw new Error('Release profiles support macOS Apple Silicon and Linux x64/ARM64.');
   const release = join(root, '.plugin-release');
   await rm(release, { recursive: true, force: true });
   await mkdir(release, { recursive: true });
@@ -125,7 +175,8 @@ export async function packagePlugin(root) {
   pkg.scripts = { build: 'visual-story build .', dev: 'visual-story dev .' };
   await writeFile(join(release, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
   await buildAPI(release, join(release, 'dist'));
-  await execute('npm', ['install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], {
+  await cp(join(root, 'package-lock.json'), join(release, 'package-lock.json'));
+  await execute('npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], {
     cwd: release,
     maxBuffer: 2_000_000,
   });
@@ -148,7 +199,13 @@ export async function packagePlugin(root) {
   await writeFile(join(runtime, 'bin/node'), '#!/bin/sh\nexec "$(dirname "$0")/../node" "$@"\n', {
     mode: 0o755,
   });
-  const deployment = await macosDeployment(release);
+  const deployment =
+    process.platform === 'darwin'
+      ? await macosDeployment(release).then(({ minimumMacOS, binaries }) => ({
+          minimumMacOS,
+          nativeBinaries: binaries,
+        }))
+      : await linuxDeployment(release);
   const core = JSON.parse(await readFile(join(release, 'dist/build-info.json'), 'utf8'));
   await writeFile(
     join(release, 'release.json'),
@@ -157,8 +214,7 @@ export async function packagePlugin(root) {
         platform: process.platform,
         arch: process.arch,
         node: process.version,
-        minimumMacOS: deployment.minimumMacOS,
-        nativeBinaries: deployment.binaries,
+        ...deployment,
         core: { version: pkg.version, build: core.build },
         plugin: JSON.parse(await readFile(join(root, 'plugin.json'), 'utf8')).version,
         examples: shippedExamples,
@@ -178,12 +234,14 @@ export async function packagePlugin(root) {
   const archive = join(
     root,
     'artifacts/plugin',
-    `visual-storytelling-${version}-darwin-arm64.tar.gz`,
+    `visual-storytelling-${version}-${process.platform}-${process.arch}.tar.gz`,
   );
   await mkdir(dirname(archive), { recursive: true });
   await execute(
     '/usr/bin/tar',
     [
+      '--exclude=.DS_Store',
+      '--exclude=._*',
       '-czf',
       archive,
       '-C',

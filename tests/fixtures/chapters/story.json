@@ -1,0 +1,69 @@
+{
+  "title": "Chapter owner fixture",
+  "chapters": [
+    {
+      "id": "workshop",
+      "title": "Staged subject",
+      "beats": [
+        {
+          "id": "approach",
+          "say": "Проследим цепь.",
+          "perform": [
+            {
+              "action": "walk",
+              "actor": "hero",
+              "to": "presenter"
+            }
+          ],
+          "text": "Проследим цепь."
+        },
+        {
+          "id": "explain",
+          "say": "Разомкнутая цепь не проводит ток.",
+          "perform": [
+            {
+              "action": "point",
+              "actor": "hero",
+              "target": "board.content"
+            }
+          ],
+          "shot": {
+            "focus": ["board.content"],
+            "framing": "detail"
+          },
+          "text": "Разомкнутая цепь не проводит ток."
+        },
+        {
+          "id": "idea",
+          "say": "Замкнутая цепь проводит ток.",
+          "perform": [
+            {
+              "action": "turn",
+              "actor": "hero",
+              "facing": "front"
+            }
+          ],
+          "actors": {
+            "hero": "idea"
+          },
+          "shot": {
+            "focus": ["hero"],
+            "framing": "medium"
+          },
+          "text": "Замкнутая цепь проводит ток."
+        }
+      ]
+    },
+    {
+      "id": "experiment",
+      "title": "Paper subject",
+      "beats": [
+        {
+          "id": "change",
+          "say": "Измените выключатель.",
+          "text": "Измените выключатель."
+        }
+      ]
+    }
+  ]
+}

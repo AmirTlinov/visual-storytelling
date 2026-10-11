@@ -20,6 +20,8 @@ export interface Cue extends CueSpan {
   action?: string;
   /** A deliberate interval for reading, comparing or predicting. */
   hold?: string;
+  /** Automatic playback stops at this cue until the subject accepts an action. Explicit seek stays available. */
+  awaitInput?: boolean;
 }
 export interface Chapter extends Cue {
   id: string;

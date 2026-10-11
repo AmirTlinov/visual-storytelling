@@ -376,3 +376,80 @@ test('preparation retains the media clock, pause intent and only the latest requ
     controller.dispose();
   }
 });
+
+test('interactive cue catches skipped media frames, preserves an attempt on Play, and permits explicit seek', async (t) => {
+  const descriptors = new Map();
+  for (const [key, value] of Object.entries({
+    matchMedia: () => Object.assign(new EventTarget(), { matches: false }),
+    requestAnimationFrame: () => 1,
+    cancelAnimationFrame: () => {},
+    HTMLAudioElement: class {},
+  })) {
+    descriptors.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+    Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
+  let controller;
+  t.after(() => {
+    controller?.dispose();
+    for (const [key, descriptor] of descriptors)
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else Reflect.deleteProperty(globalThis, key);
+  });
+  const audio = Object.assign(new EventTarget(), {
+    currentTime: 0,
+    paused: true,
+    ended: false,
+    muted: true,
+    playbackRate: 3,
+    async play() {
+      this.paused = false;
+      this.dispatchEvent(new Event('play'));
+    },
+    pause() {
+      this.paused = true;
+      this.dispatchEvent(new Event('pause'));
+    },
+  });
+  const frames = [];
+  controller = story({
+    script: {
+      duration: 10,
+      cues: { question: { start: 3, end: 5, awaitInput: true }, answer: { start: 5, end: 10 } },
+    },
+    audio,
+    stateAt: (frame) => ({ guess: '', checked: frame.time >= 5 }),
+    canContinue: (_cue, moment) => moment.values.checked,
+    resolveInput: (patch, current) => ({
+      values: { ...current.values, ...patch },
+      time: patch.checked ? 5 : current.time,
+    }),
+    render: (state, frame) => frames.push({ ...state, time: frame.time }),
+  });
+  await controller.player.play();
+  audio.currentTime = 8;
+  audio.dispatchEvent(new Event('timeupdate'));
+  assert.equal(controller.currentTime, 3);
+  assert.equal(controller.waiting, 'question');
+  assert.equal(controller.player.state.playing, false);
+  assert.equal(frames.at(-1).checked, false, 'a late frame cannot expose the answer');
+  controller.input({ guess: 'wrong' });
+  const attempt = controller.requested;
+  controller.resume();
+  await controller.player.play();
+  assert.equal(controller.requested, attempt, 'Play does not erase an accepted prediction');
+  assert.equal(controller.player.state.playing, false);
+  controller.input({ checked: true });
+  assert.equal(controller.currentTime, 5);
+  assert.equal(controller.waiting, undefined, 'checking, not correctness, permits continuation');
+  assert.equal(controller.player.state.playing, false);
+  controller.seek(2);
+  controller.seek(8);
+  assert.equal(
+    frames.at(-1).checked,
+    true,
+    'explicit seek and export can inspect the authored answer',
+  );
+  controller.seek(3);
+  controller.setReduced(true);
+  assert.equal(controller.waiting, 'question');
+});

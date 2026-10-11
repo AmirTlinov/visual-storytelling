@@ -7,8 +7,9 @@ import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { projectFiles } from '../plugin/project-files.mjs';
+import { projectFiles } from '../tools/project-files.mjs';
 import { connectRuntime } from '../plugin/runtime/client.mjs';
+import { createProjectFixture } from './plugin/authoring-fixture.mjs';
 
 test(
   'MCP review uses pinned inputs, owns artifacts, cancels and retries through the job queue',
@@ -81,14 +82,13 @@ test(
       }
       throw new Error('Review job deadline');
     };
-    const created = await call('story_create', {
+    const created = await createProjectFixture(client, {
       title: 'Проверка ревизии',
-      example: 'explorer-svg',
       path: join(directory, 'project'),
-      requestId: randomUUID(),
     });
     assert.equal((await wait(created.job.id)).status, 'succeeded');
     const projectId = created.project.id;
+    const opened = await call('story_open', { projectId });
     const project = await call('story_inspect', { projectId });
     const before = await projectFiles(project.path);
     const request = {
@@ -161,7 +161,7 @@ test(
         assert.equal(job.status, 'running', 'the review stays active while its rebuild queues');
         const { sessions } = await call('story_inspect', {});
         return sessions
-          .find((session) => session.sessionId === created.sessionId)
+          .find((session) => session.sessionId === opened.sessionId)
           ?.jobs.some(
             (job) =>
               job.kind === 'build' &&

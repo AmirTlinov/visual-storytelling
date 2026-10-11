@@ -1,5 +1,3 @@
-import { sceneHost, watchSceneHost } from './host/adapter.js';
-
 export interface SceneFrameOptions {
   width: number;
   height: number;
@@ -37,62 +35,13 @@ export function sceneFrame(
     transformOrigin: '0 0',
   });
   element.append(content);
-  const abort = new AbortController();
-  let reading = false;
-  const readingControls = document.createElement('div');
-  readingControls.className = 've-frame-reading-controls';
-  readingControls.hidden = true;
-  const readingButton = document.createElement('button');
-  readingButton.type = 'button';
-  readingButton.dataset.frameReading = '';
-  readingButton.textContent = 'Читать крупнее';
-  readingButton.setAttribute('aria-pressed', 'false');
-  readingButton.title = 'Увеличить рисунок. Прокрутка — к деталям, Escape — весь кадр.';
-  readingControls.append(readingButton);
   let root: HTMLElement | null = null;
-  let lastScale = 1;
-  let lastAperture = { width: 0, height: 0 };
-  let attentionCenter = { x: width / 2, y: height / 2 };
-  let placedScroll = { x: 0, y: 0 };
-  const rememberScroll = () => {
-    if (
-      reading &&
-      (Math.abs(element.scrollLeft - placedScroll.x) > 1 ||
-        Math.abs(element.scrollTop - placedScroll.y) > 1)
-    ) {
-      attentionCenter = {
-        x: (element.scrollLeft + lastAperture.width / 2) / lastScale,
-        y: (element.scrollTop + lastAperture.height / 2) / lastScale,
-      };
-      placedScroll = { x: element.scrollLeft, y: element.scrollTop };
-    }
-  };
-  element.addEventListener('scroll', rememberScroll, { signal: abort.signal });
-  const placeAttention = () => {
-    element.scrollLeft = Math.max(0, attentionCenter.x * lastScale - element.clientWidth / 2);
-    element.scrollTop = Math.max(0, attentionCenter.y * lastScale - element.clientHeight / 2);
-    placedScroll = { x: element.scrollLeft, y: element.scrollTop };
-  };
-  let hostPresentation = sceneHost()?.presentation;
-  const inline = () => hostPresentation?.read().mode === 'inline';
-  const updateReadingButton = () => {
-    readingButton.textContent = reading
-      ? 'Весь кадр'
-      : inline()
-        ? 'Открыть крупнее'
-        : 'Читать крупнее';
-    readingButton.title = inline()
-      ? 'Открыть целый рисунок в большой панели.'
-      : 'Увеличить рисунок. Прокрутка — к деталям, Escape — весь кадр.';
-    readingButton.setAttribute('aria-pressed', String(reading));
-  };
   const resize = () => {
     if (!element.parentElement) return;
     if (root !== element.parentElement) {
       if (root) observer.unobserve(root);
       root = element.parentElement;
       observer.observe(root);
-      if (scope === 'scene') element.after(readingControls);
     }
     const style = getComputedStyle(root),
       standalone = root.closest('.ve-standalone');
@@ -112,116 +61,15 @@ export function sceneFrame(
       availableHeight = Math.max(1, innerHeight - top - chrome - bottom);
     }
     const fit = fitFrame(width, height, availableWidth, availableHeight);
-    rememberScroll();
-    const scale = reading ? Math.max(1, fit.scale) : fit.scale;
-    const changed = element.dataset.frameScale !== String(scale);
+    const changed = element.dataset.frameScale !== String(fit.scale);
     element.dataset.frameLayout = 'fixed';
-    element.dataset.frameView = reading ? 'reading' : 'overview';
     element.style.width = `${fit.width}px`;
     element.style.height = `${fit.height}px`;
-    content.style.transform = `scale(${scale})`;
-    content.style.setProperty('--ve-frame-scale', String(scale));
-    element.dataset.frameScale = String(scale);
-    lastScale = scale;
-    lastAperture = { width: element.clientWidth, height: element.clientHeight };
-    if (reading) placeAttention();
-    readingControls.hidden =
-      scope !== 'scene' ||
-      (inline() ? !hostPresentation?.read().canExpand : !reading && fit.scale >= 1);
-    updateReadingButton();
+    content.style.transform = `scale(${fit.scale})`;
+    content.style.setProperty('--ve-frame-scale', String(fit.scale));
+    element.dataset.frameScale = String(fit.scale);
     if (changed) element.dispatchEvent(new CustomEvent('scene-frame-resize', { bubbles: true }));
   };
-  const setReading = (next: boolean, moveFocus = true) => {
-    if (next && inline()) return;
-    if (next === reading) {
-      resize();
-      return;
-    }
-    const candidates = next
-      ? [
-          ...content.querySelectorAll<Element>(
-            '.ve-stage [data-selected], .ve-stage [aria-selected="true"], .ve-stage [role="button"], .ve-stage [data-review-id], .ve-stage [data-plot-point]',
-          ),
-        ].filter((node) => isRendered(node) && node.getBoundingClientRect().width > 0)
-      : [];
-    const anchor =
-      candidates.find((node) => node.matches('[data-selected], [aria-selected="true"]')) ??
-      candidates[0];
-    const bounds = anchor?.getBoundingClientRect();
-    const canvas = content.getBoundingClientRect();
-    const scale = Number(element.dataset.frameScale) || 1;
-    const attention = bounds
-      ? {
-          x: (bounds.x + bounds.width / 2 - canvas.x) / scale,
-          y: (bounds.y + bounds.height / 2 - canvas.y) / scale,
-        }
-      : { x: width / 2, y: height / 2 };
-    reading = next;
-    updateReadingButton();
-    if (next) {
-      element.tabIndex = 0;
-      element.setAttribute('role', 'region');
-      element.setAttribute('aria-label', 'Увеличенный рисунок. Прокрутка к деталям.');
-    } else {
-      element.removeAttribute('tabindex');
-      element.removeAttribute('role');
-      element.removeAttribute('aria-label');
-      element.scrollLeft = element.scrollTop = 0;
-    }
-    resize();
-    if (next) {
-      attentionCenter = attention;
-      placeAttention();
-      if (moveFocus) element.focus({ preventScroll: true });
-    } else if (moveFocus) {
-      const focus = readingControls.hidden
-        ? content.querySelector<HTMLElement>(
-            'button:not([hidden]), input:not([hidden]), [tabindex="0"]',
-          )
-        : readingButton;
-      focus?.focus({ preventScroll: true });
-    }
-  };
-  readingButton.addEventListener(
-    'click',
-    async () => {
-      if (!inline()) return setReading(!reading);
-      if (!hostPresentation?.read().canExpand) return;
-      readingButton.disabled = true;
-      try {
-        await hostPresentation.requestExpanded();
-      } catch (error) {
-        readingButton.title = error instanceof Error ? error.message : String(error);
-      } finally {
-        readingButton.disabled = false;
-      }
-    },
-    { signal: abort.signal },
-  );
-  let unsubscribePresentation: (() => void) | undefined;
-  const connectPresentation = () => {
-    unsubscribePresentation?.();
-    hostPresentation = sceneHost()?.presentation;
-    const changed = () => {
-      if (inline()) setReading(false, false);
-      else resize();
-    };
-    unsubscribePresentation = hostPresentation?.subscribe(changed);
-    changed();
-  };
-  element.addEventListener(
-    'keydown',
-    (event) => {
-      if (reading && event.key === 'Escape') {
-        // The top layer owns its dismissal before the surrounding drawing does.
-        if (document.querySelector('[popover]:popover-open')) return;
-        event.preventDefault();
-        event.stopPropagation();
-        setReading(false);
-      }
-    },
-    { signal: abort.signal },
-  );
   let pending = 0;
   const schedule = () => {
     if (!pending)
@@ -233,16 +81,10 @@ export function sceneFrame(
   const observer = new ResizeObserver(schedule);
   observer.observe(element);
   window.addEventListener('resize', resize);
-  const unwatchHost = watchSceneHost(connectPresentation);
-  connectPresentation();
   return {
     element,
     resize,
     dispose() {
-      abort.abort();
-      unsubscribePresentation?.();
-      unwatchHost();
-      readingControls.remove();
       observer.disconnect();
       cancelAnimationFrame(pending);
       window.removeEventListener('resize', resize);
@@ -274,8 +116,6 @@ export interface ScenePresentation {
   unreadableText: { id: string; pixels: number; minimum: number }[];
   /** Full labels exposed by the surface's overflow action instead of overlapping the drawing. */
   layoutOverflow: { id: string; text: string }[];
-  /** Reading enlarges the existing drawing inside its 16:9 aperture; authored geometry is unchanged. */
-  viewing?: { mode: 'reading'; aperture: Rectangle; scroll: { x: number; y: number } };
 }
 
 /** Shared by visual review and semantic inspection, including Chromium's hidden SVG case. */
@@ -353,11 +193,7 @@ export function inspectPresentation(stage: HTMLElement | SVGSVGElement): ScenePr
   });
   const framed = stage.closest<HTMLElement>('[data-scene-frame]');
   const subject = framed?.dataset.frameScope === 'scene' ? framed : stage;
-  const reading = framed?.dataset.frameView === 'reading';
-  const canvas = reading
-    ? framed?.querySelector<HTMLElement>(':scope > .ve-scene-content')
-    : undefined;
-  const frame = rectangle((canvas ?? framed ?? stage).getBoundingClientRect());
+  const frame = rectangle((framed ?? stage).getBoundingClientRect());
   const result: ScenePresentation = {
     viewport: { width: innerWidth, height: innerHeight },
     frame,
@@ -366,15 +202,6 @@ export function inspectPresentation(stage: HTMLElement | SVGSVGElement): ScenePr
     uninspectedCanvases: 0,
     unreadableText: [],
     layoutOverflow: [],
-    ...(reading && framed
-      ? {
-          viewing: {
-            mode: 'reading' as const,
-            aperture: rectangle(framed.getBoundingClientRect()),
-            scroll: { x: framed.scrollLeft, y: framed.scrollTop },
-          },
-        }
-      : {}),
   };
   const outside = (a: Rectangle, b: Rectangle) =>
     a.x < b.x - 1 ||
@@ -402,8 +229,7 @@ export function inspectPresentation(stage: HTMLElement | SVGSVGElement): ScenePr
         text: node.getAttribute('aria-label') || node.textContent || '',
       });
   }
-  result.outsideViewport =
-    !reading && outside(frame, { x: 0, y: 0, width: innerWidth, height: innerHeight });
+  result.outsideViewport = outside(frame, { x: 0, y: 0, width: innerWidth, height: innerHeight });
   const inspect = (node: Element, object: InspectedObject, canvas = false) => {
     if (
       object.visible === false ||
@@ -427,8 +253,7 @@ export function inspectPresentation(stage: HTMLElement | SVGSVGElement): ScenePr
       const style = styleOf(ancestor),
         box = ancestor.getBoundingClientRect();
       const clips = (axis: string) =>
-        (canvas && ancestor === node) ||
-        ((ancestor !== framed || !reading) && ['hidden', 'clip', 'scroll', 'auto'].includes(axis));
+        (canvas && ancestor === node) || ['hidden', 'clip', 'scroll', 'auto'].includes(axis);
       if (clips(style.overflowX)) {
         const right = Math.min(clip.x + clip.width, box.right);
         clip.x = Math.max(clip.x, box.x);

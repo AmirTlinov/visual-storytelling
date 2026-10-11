@@ -68,7 +68,12 @@ export function verifyInscriptions() {
   const seekRestores = halfway === JSON.stringify(flatten(sample(cube, box([0.8, 4, 1]), 0.4)));
   const number = '0,858',
     numeric = bounds(sample(box([0.8, 4, 1], number)));
-  const rawNumber = fusionText(number, { size: 100, maxWidth: 1e6, lineHeight: 1.25 });
+  const rawNumber = fusionText(number, {
+    size: 100,
+    maxWidth: 1e6,
+    lineHeight: 1.25,
+    handwriting: 'heading',
+  });
   const clock = (three: boolean) => {
     const host = document.createElement('div');
     host.style.cssText = 'width:320px;height:200px';

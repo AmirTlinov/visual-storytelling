@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promises';
@@ -135,7 +136,7 @@ test('parallel video export has continuous frame indices and audio, and failed o
       format: 'iife',
       write: false,
     });
-    const browser = await chromium.launch();
+    const browser = await chromium.launch(chromiumLaunchOptions());
     try {
       const page = await browser.newPage({ offline: true });
       await page.goto(pathToFileURL(offline).href);

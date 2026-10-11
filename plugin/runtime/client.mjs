@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, rm, lstat, open, realpath, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { runtimeBuild } from './identity.mjs';
+import { runtimeBuild, requireSelectedRuntime } from './identity.mjs';
 import { dataDirectory } from '../../tools/storage.mjs';
 import { acquireDirectoryLock } from '../../tools/file-lock.mjs';
 
@@ -147,6 +147,7 @@ export function runtimeClient(serverDirectory) {
 export async function connectRuntime(serverDirectory) {
   const data = await privateDirectory(dataDirectory(), true);
   serverDirectory = await realpath(serverDirectory);
+  const installed = await requireSelectedRuntime(serverDirectory);
   const entry = join(serverDirectory, 'kernel.mjs');
   const build = await runtimeBuild(serverDirectory);
   // Binary changes share the endpoint; the handshake prevents two owners of persisted sessions.
@@ -185,6 +186,23 @@ export async function connectRuntime(serverDirectory) {
     try {
       const hello = await client.call('hello', {}, 1500);
       if (hello.protocol !== protocol || hello.build !== build) {
+        if (installed && hello.protocol === protocol) {
+          // Only the installed release requests retirement. No user operation is retried.
+          const update = await client.call('prepareUpdate', {}, 1500).catch((error) => {
+            if (error.message === 'Unknown runtime operation.') return null;
+            throw error;
+          });
+          if (update?.updating) {
+            if (update.busy)
+              throw Object.assign(new Error('The previous runtime is finishing active work.'), {
+                code: 'RUNTIME_UPDATE_PENDING',
+                action:
+                  'Wait for the current preparation to finish, then retry. Other chats may stay connected.',
+              });
+            client.close();
+            return null;
+          }
+        }
         const error = new Error(
           'The local runtime belongs to another plugin build. Close Visual Storytelling panels and reconnect the plugin to finish updating.',
         );
@@ -195,7 +213,7 @@ export async function connectRuntime(serverDirectory) {
       return client;
     } catch (error) {
       client.close();
-      if (error.code === 'RUNTIME_VERSION_CONFLICT') throw error;
+      if (['RUNTIME_VERSION_CONFLICT', 'RUNTIME_UPDATE_PENDING'].includes(error.code)) throw error;
       // A kernel already closing its last connection cannot accept this client.
       if (/disconnected|shutting down|EPIPE|ECONNRESET/.test(error.message)) return null;
       throw error;
@@ -213,6 +231,7 @@ export async function connectRuntime(serverDirectory) {
         if (!attempt.aborted) throw error;
       }
       if (unlock) {
+        await requireSelectedRuntime(serverDirectory);
         client = await dial();
         if (client) break;
         const info = await lstat(socketPath).catch((error) => {

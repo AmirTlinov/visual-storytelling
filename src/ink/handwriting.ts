@@ -2,9 +2,9 @@ import { glyphWidthFactors } from './glyphs.js';
 
 /** One pen specification drives both the animated centerlines and generated font outlines. */
 export const handwritingProfiles = {
-  body: { family: 'SketchPencil', stroke: 0.8, slant: 2 },
-  heading: { family: 'SketchPencilHeading', stroke: 1.16, slant: 8 },
-  note: { family: 'SketchPencilNote', stroke: 0.68, slant: 11 },
+  body: { family: 'SketchPencil', stroke: 0.8, slant: 0 },
+  heading: { family: 'SketchPencilHeading', stroke: 1.16, slant: 0 },
+  note: { family: 'SketchPencilNote', stroke: 0.68, slant: 0 },
 } as const;
 
 export type Handwriting = keyof typeof handwritingProfiles;

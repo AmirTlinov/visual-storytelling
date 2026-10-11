@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
@@ -21,7 +22,7 @@ test('plot and route labels share the actual SVG boundary after placement, motio
     outfile: 'svg-label-boundary.js',
     loader: { '.woff2': 'dataurl' },
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
     const errors = [];

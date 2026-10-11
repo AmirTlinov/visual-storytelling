@@ -9,37 +9,11 @@ import {
   configureVoiceEnvironment,
   voiceEnvironmentStatus,
   prepareVoiceEnvironment,
+  requireVoiceSupport,
 } from './environment/voice.mjs';
 import { pythonEnvironment, preparePythonEnvironment } from './environment/python.mjs';
+import { environmentProfile, requireEnvironmentProfile } from './environment/resources.mjs';
 const execute = promisify(execFile);
-
-// Immutable upstream artifacts for the supported macOS ARM64 release.
-const resources = {
-  uv: {
-    version: '0.11.3',
-    url: 'https://releases.astral.sh/github/uv/releases/download/0.11.3/uv-aarch64-apple-darwin.tar.gz',
-    algorithm: 'sha256',
-    digest: '2bc3d0c7bf2bd08325b1e170abac6f7e5b3346e1d4eab3370d17cefec934996f',
-    binary: 'uv-aarch64-apple-darwin/uv',
-    archive: 'tgz',
-  },
-  chromium: {
-    version: '153.0.8010.12',
-    url: 'https://cdn.playwright.dev/builds/cft/153.0.8010.12/mac-arm64/chrome-headless-shell-mac-arm64.zip',
-    algorithm: 'sha256',
-    digest: '89d80a6d26ccd0ccfd51e22d9e1297283862af2b0cd91dce07459b35ca0059f2',
-    binary: 'chrome-headless-shell-mac-arm64/chrome-headless-shell',
-    archive: 'zip',
-  },
-  ffmpeg: {
-    version: '8.0.3-build4',
-    url: 'https://github.com/AtlasYang/ffmpeg-static-builds/releases/download/ffmpeg-8.0.3-build4/ffmpeg-8.0.3-macos-arm64.tar.gz',
-    algorithm: 'sha256',
-    digest: '26f6269b117a51c5fdfd3a870c4e0a62b99f0575740a3933fc3d852f0a3f80b1',
-    binary: 'ffmpeg',
-    archive: 'tgz',
-  },
-};
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const prependPath = (directory) => {
   process.env.PATH = [
@@ -49,6 +23,14 @@ const prependPath = (directory) => {
 };
 
 export async function environmentStatus(data) {
+  const resources = environmentProfile()?.resources;
+  if (!resources)
+    return {
+      ...Object.fromEntries(
+        ['uv', 'chromium', 'ffmpeg'].map((id) => [id, { ready: false, supported: false }]),
+      ),
+      higgs: await voiceEnvironmentStatus(data),
+    };
   const status = Object.fromEntries(
     await Promise.all(
       Object.entries(resources).map(async ([id, resource]) => {
@@ -69,7 +51,7 @@ export async function environmentStatus(data) {
 
 async function prepareResource(data, id, task) {
   const { signal, progress } = task;
-  const resource = resources[id],
+  const resource = requireEnvironmentProfile().resources[id],
     directory = join(data, 'environment', `${id}-${resource.version}`);
   return withPreparationLock(directory + '.lock', task, async () => {
     const binary = join(directory, resource.binary);
@@ -82,8 +64,6 @@ async function prepareResource(data, id, task) {
       ))
     )
       return binary;
-    if (process.platform !== 'darwin' || process.arch !== 'arm64')
-      throw new Error('Automatic export preparation supports macOS Apple Silicon.');
     progress(
       `Подготавливаю ${{ chromium: 'движок видео', ffmpeg: 'кодировщик звука и видео', uv: 'установщик Python' }[id]}…`,
     );
@@ -121,7 +101,7 @@ async function prepareResource(data, id, task) {
         resource.archive === 'zip' ? '/usr/bin/unzip' : '/usr/bin/tar',
         resource.archive === 'zip'
           ? ['-q', archive, '-d', temporary]
-          : ['-xzf', archive, '-C', temporary],
+          : ['-xf', archive, '-C', temporary],
         { signal },
       );
       await rm(archive);
@@ -138,6 +118,14 @@ async function prepareResource(data, id, task) {
         source: resource.url,
         digest: resource.digest,
         binary: hash(await readFile(join(temporary, resource.binary))),
+        ...(resource.license
+          ? {
+              license: resource.license,
+              licenseURL: resource.licenseURL,
+              sourceCode: resource.sourceCode,
+              ...(resource.upstreamSource ? { upstreamSource: resource.upstreamSource } : {}),
+            }
+          : {}),
       });
       await rm(directory, { recursive: true, force: true });
       await rename(temporary, directory);
@@ -151,17 +139,23 @@ async function prepareResource(data, id, task) {
 /** Bind already prepared resources. Doctor never downloads. */
 export async function configureEnvironment(data) {
   await configureVoiceEnvironment(data);
+  const resources = environmentProfile()?.resources;
+  if (!resources) return;
   const ffmpeg = join(
     data,
     'environment',
     `ffmpeg-${resources.ffmpeg.version}`,
     resources.ffmpeg.binary,
   );
+  const receipt = await readJSON(
+    join(data, 'environment', `ffmpeg-${resources.ffmpeg.version}`, 'receipt.json'),
+  );
   if (
-    await access(ffmpeg).then(
+    receipt?.digest === resources.ffmpeg.digest &&
+    (await access(ffmpeg).then(
       () => true,
       () => false,
-    )
+    ))
   )
     prependPath(dirname(ffmpeg));
 }
@@ -178,8 +172,9 @@ export async function prepareEnvironment(
   },
 ) {
   const task = { signal, progress };
+  if (voice) requireVoiceSupport();
   if (encoder) prependPath(dirname(await prepareResource(data, 'ffmpeg', task)));
-  if (encoder) process.env.VISUAL_STORY_VIDEO_ENCODER = 'h264_videotoolbox';
+  if (encoder) process.env.VISUAL_STORY_VIDEO_ENCODER = requireEnvironmentProfile().encoder;
   if (browser) process.env.VISUAL_STORY_CHROMIUM = await prepareResource(data, 'chromium', task);
   if (voice || python) {
     const uv = (!voice && process.env.VISUAL_STORY_UV) || (await prepareResource(data, 'uv', task));

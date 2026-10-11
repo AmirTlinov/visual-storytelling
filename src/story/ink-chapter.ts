@@ -26,6 +26,7 @@ export function inkChapter(
 ): SceneChapter {
   return {
     ...options,
+    presentation: 'explanation',
     async mount(parent, signal) {
       signal.throwIfAborted();
       const view = surface(parent, {

@@ -7,7 +7,7 @@
 | [Rough.js](https://github.com/rough-stuff/rough)            | 4.6.6, контуры и штриховка                                                                                                  | MIT, лицензия в установленном пакете.                                                                                                                                                         |
 | [GSAP](https://gsap.com/docs/v3/GSAP/gsap.utils/)           | 3.15.0, интерполяция                                                                                                        | [Standard GSAP License](https://gsap.com/community/standard-license/): разрешены коммерческие проекты и генерация кода AI; есть ограничения для конкурирующих визуальных редакторов анимации. |
 | [Shantell Sans](https://github.com/arrowtype/shantell-sans) | Локальный WOFF2 из visual-explainer                                                                                         | SIL OFL 1.1: [текст](dist/assets/shantell-OFL.txt), включён в поставку.                                                                                                                       |
-| Sketch Pencil WOFF2                                         | Три авторских WOFF2 (`pencil`, `pencil-heading`, `pencil-note`) из `src/ink/glyphs.ts` и `src/ink/handwriting.ts`                                               | Основной почерк интерфейса и источник метрик; Shantell используется для отсутствующих знаков.                                                                                                 |
+| Sketch Pencil WOFF2                                         | Три авторских WOFF2 (`pencil`, `pencil-heading`, `pencil-note`) из `src/ink/glyphs.ts` и `src/ink/handwriting.ts`           | Основной почерк интерфейса и источник метрик; Shantell используется для отсутствующих знаков.                                                                                                 |
 | Маркер и палитра                                            | `src/ink/marks.ts` и `src/styles/`                                                                                          | Перенесены в общие владельцы `src/ink` и `src/style.css`.                                                                                                                                     |
 | Однолинейные буквы                                          | Авторские штрихи из visual-explainer, `src/ink/glyphs.ts`                                                                   | Перенесены в `src/ink/glyphs.ts`, дополнены и оформлены как плотные чернила.                                                                                                                  |
 | Озвученные рассказы                                         | `examples/*/narration.json`, голос Higgs TTS 3 и акустические метки `timeline.json`                                         | Атрибуция голоса и музыки — в `CREDITS.txt` каждого рассказа; упаковка сохраняет её.                                                                                                          |
@@ -33,7 +33,9 @@
 
 Системная озвучка использует установленные на Mac голоса через AVSpeechSynthesizer; веса голосов в комплект не включаются. Бинарник адаптера собран из `tools/voice/macos.swift` (0BSD). Доступность языков определяется установленными голосами.
 
-Первое видео отдельно загружает Chrome Headless Shell 153.0.8010.12 из официального Chrome for Testing CDN и FFmpeg 8.0.3-build4 из [AtlasYang/ffmpeg-static-builds](https://github.com/AtlasYang/ffmpeg-static-builds/releases/tag/ffmpeg-8.0.3-build4). URL, SHA-256 и пути закреплены в `tools/environment.mjs`; receipt сохраняет источник, версию и хеш бинарника. FFmpeg-сборка имеет LGPL-профиль без GPL/nonfree компонентов; исходники и сборочные инструкции доступны у поставщика. Видео кодируется системным VideoToolbox. Chromium сохраняет собственные notices в архиве. Эти загрузки не входят в установочный архив плагина.
+Первое видео отдельно загружает Chrome Headless Shell 153.0.8010.12 из официального Chrome for Testing CDN для macOS ARM64, Linux x64 или Linux ARM64. URL, SHA-256 и пути инструментов закреплены в `tools/environment/resources.mjs`; receipt сохраняет источник, версию и хеш бинарника. Chromium сохраняет собственные notices в архиве. Эти загрузки не входят в установочный архив плагина.
+
+На macOS используется FFmpeg 8.0.3-build4 из [AtlasYang/ffmpeg-static-builds](https://github.com/AtlasYang/ffmpeg-static-builds/releases/tag/ffmpeg-8.0.3-build4): LGPL-2.1-or-later без GPL/nonfree компонентов, кодирование через системный VideoToolbox. Linux x64 и ARM64 используют FFmpeg `n8.1.3-9-g29e619e767`, [GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html), с программным кодировщиком libx264 из [месячной сборки BtbN](https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-09-30-13-08). Этот отдельный исполняемый инструмент загружается по запросу и запускается дочерним процессом; архив сохраняет документацию поставщика. [Исходники FFmpeg](https://github.com/FFmpeg/FFmpeg/tree/29e619e767), [сборочные инструкции и закреплённые зависимости BtbN](https://github.com/BtbN/FFmpeg-Builds/tree/autobuild-2026-09-30-13-08) доступны у поставщиков. Receipt Linux-комплекта также сохраняет лицензию, ссылку на её полный текст и обе ссылки на исходники.
 
 ## Персонажи
 
@@ -45,10 +47,12 @@ Visual Storytelling и имеют лицензию 0BSD; атласы строя
 
 ## Подготовка голоса
 
-`tools/environment.mjs` закрепляет uv 0.11.3 и SHA-256 официального архива Astral.
+`tools/environment/resources.mjs` закрепляет uv 0.11.3 и SHA-256 официальных архивов Astral для macOS ARM64, Linux x64 и ARM64.
 uv распространяется по MIT/Apache-2.0; уведомления поставляются в его архиве.
 Python 3.12.13 устанавливается управляемым uv-комплектом; зависимости и хеши
 закреплены в `tools/uv.lock`. Модели Higgs и русского выравнивания закреплены в
 `tools/audio/models.json`; подготовка сохраняет LICENSE/README поставщика и
 проверяет Git/LFS digest каждого загруженного файла. Атрибуция синтезированной
 речи сохраняется в `CREDITS.txt` выпуска.
+
+В этом выпуске синтез Higgs использует MLX/Metal и доступен на macOS Apple Silicon. Linux сообщает эту границу до подготовки Python-зависимостей и моделей речи; генераторы сцен с управляемым Python и выпуск видео без синтеза работают отдельно.

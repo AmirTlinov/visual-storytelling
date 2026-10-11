@@ -30,6 +30,10 @@ function mount(
     width?: number;
     height?: number;
     columns?: number;
+    /** Presentation only; full expressions and values remain available to inspection. */
+    formula?: boolean;
+    notes?: boolean | 'operators';
+    format?: (value: number) => string;
     /** A scene owns its bounded aperture; content owns its natural row height. */
     layout?: 'scene' | 'content';
   },
@@ -115,10 +119,15 @@ function mount(
     if (plan.encoding !== 'quantity') {
       width = Math.max(180, available || width);
       if (!arrangement || `${width}` !== layoutKey) {
-        arrangement = cellLayout(plan, width, options.columns);
+        arrangement = cellLayout(
+          plan,
+          width,
+          options.columns,
+          options.notes !== false && options.notes !== 'operators',
+        );
         layoutKey = `${width}`;
-        headingSpace = 36;
-        for (let stage = 0; stage < plan.stages; stage++)
+        headingSpace = options.formula === false ? 0 : 36;
+        for (let stage = 0; options.formula !== false && stage < plan.stages; stage++)
           for (const p of [0, 1 - 1e-12]) {
             const text = plan.sample((stage + p) / plan.stages).formula;
             headingSpace = Math.max(headingSpace, formula.render(text, width - 32, width / 2, 34));
@@ -146,8 +155,9 @@ function mount(
       element.setAttribute('aria-label', record.meaning.label);
     }
     if (!parent.getClientRects().length) return frame;
-    formula.render(frame.formula, width - 32, width / 2, 34);
-    const headingHeight = arrangement ? headingSpace : 36;
+    formula.element.style.display = options.formula === false ? 'none' : '';
+    if (options.formula !== false) formula.render(frame.formula, width - 32, width / 2, 34);
+    const headingHeight = options.formula === false ? 0 : arrangement ? headingSpace : 36;
     if (options.layout === 'scene') {
       height = parent.clientHeight || height;
     } else if (arrangement) {
@@ -195,7 +205,7 @@ function mount(
     const active =
       plan.encoding === 'quantity' ? (frame.morph >= 0.5 ? frame.targets : frame.sources) : [];
     body.render(
-      mathBodies(frame, plan.encoding === 'quantity'),
+      mathBodies(frame, plan.encoding === 'quantity', options.format),
       width / 2 - center[0]! * scale,
       cy + center[1]! * scale,
       scale,
@@ -241,6 +251,11 @@ function mount(
         `translate(${width / 2 + (note.position[0] - center[0]!) * scale - (label.width * fit) / 2} ${cy - (note.position[1] - center[1]!) * scale + 9 * fit}) scale(${fit})`,
       );
       label.element.style.opacity = String(note.opacity);
+      label.element.style.display =
+        options.notes === false ||
+        (options.notes === 'operators' && !note.id.startsWith('operator:'))
+          ? 'none'
+          : '';
     }
     return frame;
   }

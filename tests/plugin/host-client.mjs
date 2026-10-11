@@ -1,5 +1,6 @@
 import { AppBridge, PostMessageTransport } from '@modelcontextprotocol/ext-apps/app-bridge';
 const token = document.body.dataset.token;
+const initialTarget = JSON.parse(decodeURIComponent(document.body.dataset.initial));
 const call = async (name, args = {}) => {
   const response = await fetch('/call', {
     method: 'POST',
@@ -17,17 +18,14 @@ let bridge,
 const resources = new Map();
 let focusDelay = 0,
   focusRequests = 0;
-let displayRequests = [],
-  displayDelay = 0,
-  displayPending = 0;
+const displayRequests = [];
 let hostContext = {
   theme: 'light',
   displayMode: 'inline',
   availableDisplayModes: ['inline', 'fullscreen'],
 };
 async function mount(sessionId, result) {
-  opened =
-    result ?? (await call('story_open', sessionId ? { sessionId } : { example: 'explorer-svg' }));
+  opened = result ?? (await call('story_open', sessionId ? { sessionId } : initialTarget));
   iframe = document.createElement('iframe');
   iframe.title = 'MCP App';
   iframe.style.cssText = 'border:0;width:100%;height:730px';
@@ -77,11 +75,6 @@ async function mount(sessionId, result) {
     iframe.style.height = mode === 'fullscreen' ? '900px' : `${inlineHeight}px`;
     hostContext = { ...hostContext, displayMode: mode };
     bridge.setHostContext(hostContext);
-    if (displayDelay) {
-      displayPending++;
-      await new Promise((resolve) => setTimeout(resolve, displayDelay));
-      displayPending--;
-    }
     return { mode };
   };
   bridge.addEventListener('initialized', async () => {
@@ -98,12 +91,6 @@ window.pluginTest = {
   },
   get focusRequests() {
     return focusRequests;
-  },
-  delayDisplay(ms) {
-    displayDelay = ms;
-  },
-  get displayPending() {
-    return displayPending;
   },
   get displayRequests() {
     return displayRequests;

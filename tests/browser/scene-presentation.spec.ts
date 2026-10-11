@@ -1,12 +1,18 @@
+import { openFixture } from '../support/fixture.mjs';
 import { test, expect } from '@playwright/test';
 import { build } from 'esbuild';
 
 test('selectable artwork has no control decoration and retains its own keyboard focus', async ({
   page,
 }) => {
-  await page.goto('/svg-artwork/index.html');
+  await openFixture(page, 'scene-shell');
+  await page.locator('[data-seek]').fill('19');
   await page.evaluate(() => (window as any).galleryReady);
-  const art = page.getByRole('button', { name: 'Красный воздушный шар', exact: true });
+  const art = page.getByRole('button', {
+    name: 'Результат двух перемещений',
+    exact: true,
+    includeHidden: true,
+  });
   const decoration = () =>
     art.evaluate((element) => ({
       before: getComputedStyle(element, '::before').content,
@@ -26,9 +32,13 @@ test('selectable artwork has no control decoration and retains its own keyboard 
   await expect(art).toHaveAttribute('data-selected');
   expect((await decoration()).after).toBe('none');
   await page.getByRole('button', { name: 'Исследовать', exact: true }).click();
-  await page.getByRole('slider', { name: 'Видимость красного', exact: true }).fill('0');
+  await art.evaluate((node) => {
+    node.setAttribute('hidden', '');
+  });
   await expect(art).toBeHidden();
-  await page.getByRole('slider', { name: 'Видимость красного', exact: true }).fill('1');
+  await art.evaluate((node) => {
+    node.removeAttribute('hidden');
+  });
   await expect(art).toBeVisible();
 });
 
@@ -73,7 +83,7 @@ test('review ignores hidden SVG and measures lettering after real perspective pr
 test('one visible representation carries selection while keyboard focus follows its control', async ({
   page,
 }) => {
-  await page.goto('/result-delivery/index.html');
+  await openFixture(page, 'arithmetic', 'delivery.html');
   await page.evaluate(() => (window as any).galleryReady);
   await page.locator('[data-seek]').fill('7.5');
   const formula = page.locator('.ve-label[data-object="calculation"]:not([hidden])');

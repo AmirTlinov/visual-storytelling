@@ -46,6 +46,9 @@ function mount(
   renderer.outputColorSpace = T.SRGBColorSpace;
   renderer.toneMapping = T.NoToneMapping;
   const canvas = renderer.domElement;
+  // A viewport can live inside a bounded pane, beyond SceneShell's direct-child
+  // styles. CSS layout stays in host pixels; the drawing buffer owns density.
+  Object.assign(canvas.style, { display: 'block', width: '100%', height: '100%' });
   let frameSequence = 0,
     renderedAt = 0;
   const detachInspection = attachInspection(canvas, scene, camera, () => ({
@@ -520,6 +523,11 @@ function mount(
           .multiplyScalar(aperture(state.aspect) / aperture(camera.aspect))
           .add(controls.target);
       }
+      // A checkpoint may focus one cell of a much larger authored shot. The
+      // current shot's orbit limits must not push that saved viewpoint away.
+      const distance = camera.position.distanceTo(controls.target);
+      controls.minDistance = Math.min(controls.minDistance, distance);
+      controls.maxDistance = Math.max(controls.maxDistance, distance);
       controls.update();
       invalidate();
       return true;

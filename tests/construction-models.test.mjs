@@ -186,12 +186,21 @@ test('linear and distribution graphs preserve material identity, measurements an
     assert.equal(plan.stages, 2);
     for (const p of [0, 0.125, 0.3, 0.5, 1]) {
       const frame = plan.sample(p),
-        patch = frame.panels[0].patches.find((p) => p.text === '1');
+        patch = frame.panels[0].patches.find((p) => p.fill),
+        reference = frame.panels[0].patches.find((p) => p.fill === false);
+      assert.deepEqual(reference.domain, [
+        [0, 0],
+        [1, 1],
+      ]);
+      assert.deepEqual(reference.map([0.25, 0.75]), [0.25, 0.75]);
       const e1 = frame.panels[0].paths.find((p) => p.arrow && p.pigment === 'orange').points[1];
       const e2 = frame.panels[0].paths.find((p) => p.arrow && p.pigment === 'purple').points[1];
       close(patchArea(patch), e1[0] * e2[1] - e1[1] * e2[0]);
+      const shownArea = Number(Math.abs(patchArea(patch)).toFixed(2));
+      assert.ok(frame.panels[0].labels.some((label) => label.text === `S = ${shownArea}`));
+      if (frame.stage === 0) assert.equal(frame.formula, `Площадь: ${shownArea}`);
     }
-    close(patchArea(plan.sample(1).panels[0].patches.find((p) => p.text === '1')), plan.result);
+    close(patchArea(plan.sample(1).panels[0].patches.find((p) => p.fill)), plan.result);
     joinedStages(plan);
   }
   const split = distribution(2, 3, 4);

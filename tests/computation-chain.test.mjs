@@ -109,7 +109,20 @@ test('a computed result becomes the same body and provenance at every following 
     for (let stage = 1; stage < plan.stages; stage++) {
       const before = plan.sample((stage - 1e-9) / plan.stages, { columns });
       const after = plan.sample(stage / plan.stages, { columns });
-      assert.deepEqual(after.sources, before.targets);
+      for (const carried of before.targets)
+        assert.deepEqual(
+          after.sources.find((part) => part.id === carried.id),
+          carried,
+        );
+      const added = after.sources.filter(
+        (part) => !before.targets.some((carried) => carried.id === part.id),
+      );
+      assert.deepEqual(
+        added.map((part) => part.value),
+        stage === 2 ? [3] : stage === 4 ? [2] : [],
+        'binary chain steps disclose their new operand beside the preserved result',
+      );
+      if (added.length) assert.ok(after.targets[0].inputIds.includes(added[0].id));
     }
   }
   const frame = structuredClone(plan.sample(0.73));

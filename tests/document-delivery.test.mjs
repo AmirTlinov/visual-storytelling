@@ -15,15 +15,15 @@ const repository = fileURLToPath(new URL('../', import.meta.url));
 const evidence = join(repository, 'artifacts/coherent-authoring/document-delivery');
 
 test(
-  'the three quiet documents pack and reopen without a narration resource',
+  'a quiet mixed document packs and reopens without a narration resource',
   { timeout: 120000 },
   async (t) => {
     const temporary = await mkdtemp(join(tmpdir(), 'quiet-document-'));
     t.after(() => rm(temporary, { recursive: true, force: true }));
     await mkdir(evidence, { recursive: true });
-    for (const name of ['tesla-circuit', 'thermostat-story', 'area-lesson']) {
+    for (const name of ['chapters']) {
       const built = join(temporary, name + '-build');
-      await buildScene(join(repository, 'examples', name), built, {
+      await buildScene(join(repository, 'tests/fixtures', name), built, {
         sourcePackage: true,
         silent: true,
       });
@@ -43,7 +43,7 @@ test(
         await render.control([
           {
             type: 'cue',
-            id: name === 'area-lesson' ? 'prediction' : 'workshop.explain',
+            id: 'workshop.explain',
             progress: 0.7,
           },
         ]);

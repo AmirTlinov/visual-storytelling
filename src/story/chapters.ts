@@ -7,9 +7,10 @@ export function chapterNavigation(
   chapters: readonly Chapter[],
   seek: (time: number) => void,
   toolbar?: HTMLElement,
+  enabled = !heading.hidden,
 ) {
   const named = chapters.filter((chapter) => chapter.title).sort((a, b) => a.start - b.start);
-  if (!named.length || heading.hidden) return { update(_id: string | undefined) {}, dispose() {} };
+  if (!named.length || !enabled) return { update(_id: string | undefined) {}, dispose() {} };
   const navigation = document.createElement('nav');
   navigation.className = 've-chapter-navigation';
   navigation.setAttribute('aria-label', 'Главы рассказа');

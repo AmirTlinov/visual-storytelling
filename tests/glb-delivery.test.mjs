@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, cp, rm } from 'node:fs/promises';
@@ -39,7 +40,7 @@ test('shared 3D viewport decodes a compressed GLB in offline HTML without author
       join(directory, 'compiled.html'),
       html(`<script type="module">${compiled.outputFiles[0].text}</script>`),
     );
-    browser = await chromium.launch();
+    browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage();
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));

@@ -16,6 +16,11 @@
 реальный модуль, `inputs()` — ID исходных предметов. `frame.target(cue,id)` связывает
 действие с ними. MathMorph3D передаёт `MathPart.id`, исходные величины и этап операции
 автоматически; для нескольких морфов задай разные `options.id`.
+Для числа или вектора, у которого нет собственного действия, добавь
+`interactive: false` в описание. Значение, входы и происхождение доступны
+инспектору; рисунок сохраняет подпись и программный выбор через `scene.select`,
+не получает кнопку или остановку Tab и пропускает события вложенных контролов.
+Один контракт действует для `object.describe`, `describeObject` и `view.describe`.
 Сборщик добавляет `SourceSpan` в модулях JS/TS к прямым вызовам описания предметов, операциям
 `MathMorph` и статическим главам `SceneStory`: путь внутри исходного проекта,
 SHA-256 и диапазон исходного текста (`start/end`, конец исключён; строки и столбцы
@@ -70,16 +75,17 @@ runtime предоставляет существующие команды и с
 возвращает JSON со схемой предмета и конечными числами, `decode(saved)` проверяет его и возвращает
 новые входы. Story сам выбирает `requested` или `presented`, а общий checkpoint
 сохраняет независимую JSON-копию в `subject` для режима `explore`.
-Например, [регистр](../examples/memory-register/scene.js) подключает
-[единственную схему своей модели](../examples/memory-register/memory.js):
+Предметные вычисления держи в отдельном модуле, как в
+[модели GPT](../examples/gpt-model/model.js). Схема вложенного состояния принадлежит
+этому же модулю:
 
 ```js
-import { memoryCheckpoint, storyState } from './memory.js';
+import { subjectCheckpoint, storyState } from './model.js';
 
 const controller = shell.attachStory({
   script: timing,
   stateAt: storyState,
-  checkpoint: memoryCheckpoint, // encode / decode: байт, прогноз и история действий
+  checkpoint: subjectCheckpoint, // encode / decode: собственная схема условий
   render,
 });
 const saved = root.scene.capture();
@@ -111,6 +117,6 @@ await root.scene.restore(saved);
 checkpoint сохраняет размеры показанной сцены перед восстановлением камеры.
 Интерактивный HTML и проверка с управлением используют обычную компоновку.
 
-Для живой изменяемой модели используй `SimulationPlayer`: модель реализует шаг и продвижение времени, общий плеер владеет управлением и остановкой. Повтор восстанавливает явно определённое исходное состояние. Для вложенного SVG — [пример компьютера и контракт](../skills/visual-explainer/references/nested-explorer.md).
+Для живой изменяемой модели используй `SimulationPlayer`: модель реализует шаг и продвижение времени, общий плеер владеет управлением и остановкой. Повтор восстанавливает явно определённое исходное состояние. Для вложенного SVG используй [контракт исследования](../skills/visual-explainer/references/nested-explorer.md).
 
 Для рассказов используй `visual-story review dist --out review`: кадры до, внутри и после метки рядом с репликой. Подключение — в [справке озвучки](../skills/visual-explainer/references/narration.md#проверка); [раскадровка](../skills/visual-explainer/references/visual-storytelling.md) описывает построение понимания.

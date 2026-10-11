@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -37,7 +38,7 @@ test('a superseded chapter cancels its resource request before the next mount an
     loader: { '.woff2': 'dataurl' },
     plugins: [assetURLs()],
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage();
     page.setDefaultTimeout(5000);
@@ -203,5 +204,102 @@ test('cold and reverse chapter seeks await bounded GPU owners, including export 
   } finally {
     await capture?.close();
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('chapter frame presentation is published with its drawing, including preparation failure, retry and reverse seek', async () => {
+  const bundle = await build({
+    stdin: {
+      resolveDir: process.cwd(),
+      contents: `
+        import {SceneStory,inkChapter} from './dist/story/index.js';
+        import './dist/style.css';
+        const root=document.querySelector('main');
+        let release;
+        const drawing=id=>inkChapter({id,title:id,text:id,seconds:1,grid:false,
+          create(view){return {render(){view.layer.textContent=id}}}});
+        const staged={...drawing('stage'),presentation:'stage',
+          async mount(parent,signal){
+            await new Promise((resolve,reject)=>{release={resolve,reject};signal.addEventListener('abort',()=>reject(signal.reason),{once:true})});
+            return drawing('stage').mount(parent,signal);
+          }};
+        window.finish=error=>error?release.reject(new Error(error)):release.resolve();
+        window.pending=()=>Boolean(release);
+        window.galleryReady=SceneStory.mount(root,{title:'One frame',chapters:[drawing('paper'),staged]}).then(lab=>window.lab=lab);
+      `,
+    },
+    bundle: true,
+    write: false,
+    outdir: '.',
+    format: 'iife',
+    loader: { '.woff2': 'dataurl' },
+    plugins: [assetURLs()],
+  });
+  const browser = await chromium.launch(chromiumLaunchOptions());
+  try {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 1000 } });
+    await page.setContent('<main class="ve-scene"></main>');
+    await page.addStyleTag({
+      content: bundle.outputFiles.find((file) => file.path.endsWith('.css')).text,
+    });
+    await page.addScriptTag({
+      content: bundle.outputFiles.find((file) => file.path.endsWith('.js')).text,
+    });
+    await page.evaluate(() => window.galleryReady);
+    const state = () =>
+      page.evaluate(() => {
+        const root = document.querySelector('main'),
+          sheet = root.querySelector('.ve-scene-content');
+        return {
+          presentation: root.dataset.presentation,
+          paper: root.dataset.paper,
+          shown: lab.scene.snapshot().chapter,
+          heading: root.querySelector('.ve-heading').checkVisibility(),
+          toolbarInside: sheet.contains(root.querySelector('.ve-scene-toolbar')),
+          grid: getComputedStyle(sheet).backgroundImage !== 'none',
+          players: root.querySelectorAll('.ve-player').length,
+        };
+      });
+    const paper = await state();
+    assert.deepEqual(paper, {
+      presentation: 'explanation',
+      paper: 'true',
+      shown: 'paper',
+      heading: true,
+      toolbarInside: true,
+      grid: true,
+      players: 1,
+    });
+    await page.evaluate(() => lab.scene.seek(1.4));
+    await page.waitForFunction(() => window.pending());
+    assert.deepEqual(await state(), paper, 'preparation does not publish its frame appearance');
+    await page.evaluate(async () => {
+      window.finish('Unavailable drawing');
+      await lab.scene.ready().catch(() => {});
+    });
+    assert.deepEqual(await state(), paper, 'failed preparation leaves the existing complete frame');
+    await page.evaluate(() => lab.scene.seek(1.4));
+    await page.waitForFunction(() => document.querySelector('[data-chapter="stage"]'));
+    await page.evaluate(async () => {
+      window.finish();
+      await lab.scene.ready();
+    });
+    assert.deepEqual(await state(), {
+      presentation: 'stage',
+      paper: 'false',
+      shown: 'stage',
+      heading: false,
+      toolbarInside: false,
+      grid: false,
+      players: 1,
+    });
+    await page.evaluate(async () => {
+      lab.scene.seek(0.4);
+      await lab.scene.ready();
+    });
+    assert.deepEqual(await state(), paper, 'reverse seek restores the explanation and its paper');
+    await page.evaluate(() => lab.scene.dispose());
+  } finally {
+    await browser.close();
   }
 });

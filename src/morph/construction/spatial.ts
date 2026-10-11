@@ -218,11 +218,14 @@ export function spatialPanelRenderer(sheet: Surface, id: string, up?: DiagramCam
       width: number,
       height: number,
       layout: { order: string[]; camera?: DiagramCamera },
+      placement: { heading?: boolean } = {},
     ) {
       used = new Set();
       root.setAttribute('transform', `translate(${x} ${y})`);
-      const head = heading.render(panel.title, width - 12, width / 2, 23),
-        top = head + 34;
+      const showHeading = placement.heading !== false;
+      heading.element.style.display = showHeading ? '' : 'none';
+      const head = showHeading ? heading.render(panel.title, width - 12, width / 2, 23) : 0,
+        top = showHeading ? head + 34 : 0;
       foreign.setAttribute('y', String(top));
       foreign.setAttribute('width', String(width));
       foreign.setAttribute('height', String(height - top));

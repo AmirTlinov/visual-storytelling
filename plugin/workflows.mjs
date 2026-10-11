@@ -18,11 +18,11 @@ import { buildScene } from '../tools/build-pages.mjs';
 import { sceneEntry } from '../tools/scene-entry.mjs';
 import { packDirectory } from '../tools/standalone.mjs';
 import { deliver } from '../tools/deliver.mjs';
-import { snapshotProject, projectFiles, projectFile, digest } from './project-files.mjs';
+import { snapshotProject, projectFiles, projectFile, digest } from '../tools/project-files.mjs';
 import { writeJSON, readJSON } from '../tools/storage.mjs';
 import { prepareEnvironment } from '../tools/environment.mjs';
 import { buildNarration } from '../tools/narration.mjs';
-import { updateSceneRuntime } from '../tools/runtime-package.mjs';
+import { updateSceneRuntime, readPinnedRuntime } from '../tools/runtime-package.mjs';
 import { contentDigest } from '../tools/build-info.mjs';
 import { captureWorkingInput } from './revision-input.mjs';
 import { prepareProjectChanges, writeProjectChange } from './projects.mjs';
@@ -322,6 +322,7 @@ export const workflows = {
       : await createScene(input.projectPath, {
           root,
           example: input.example,
+          title: input.title,
           deferAudio: true,
           signal: task.signal,
         });
@@ -346,6 +347,9 @@ export const workflows = {
       sourceRevision: frozen.sourceRevision,
       files: authored.files,
       entry: (await sceneEntry(join(input.data, 'snapshots', frozen.inputSnapshot))).source,
+      runtime:
+        created.runtime ??
+        (await readPinnedRuntime(join(input.data, 'snapshots', frozen.inputSnapshot))).runtime,
       inputSnapshot: frozen.inputSnapshot,
     });
     return {
@@ -402,7 +406,18 @@ export const workflows = {
     await prepareEnvironment(input.data, { ...task, browser: true });
     const options = input.options ?? {};
     const args = [cli, 'review', join(snapshot, 'dist')];
-    for (const key of ['cue', 'from', 'at', 'radius', 'seconds', 'frames', 'width', 'height', 'theme', 'object'])
+    for (const key of [
+      'cue',
+      'from',
+      'at',
+      'radius',
+      'seconds',
+      'frames',
+      'width',
+      'height',
+      'theme',
+      'object',
+    ])
       if (options[key] !== undefined) args.push('--' + key, String(options[key]));
     if (options.reduced) args.push('--reduced');
     if (options.crop) {
@@ -439,7 +454,14 @@ export const workflows = {
           );
         await access(result[key]);
       }
-      const files = ['path', 'image', 'timelineImage', 'onionImage', 'framesImage', 'photometryImage']
+      const files = [
+        'path',
+        'image',
+        'timelineImage',
+        'onionImage',
+        'framesImage',
+        'photometryImage',
+      ]
         .map((key) => result[key])
         .filter((path) => typeof path === 'string' && path.startsWith(canonicalOutput + '/'));
       return {

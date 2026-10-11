@@ -17,19 +17,18 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { acquireDirectoryLock } from '../tools/file-lock.mjs';
+import { applicationDirectory } from '../tools/storage.mjs';
 import { parseArgs } from 'node:util';
 
 const execute = promisify(execFile);
 const receiptFile = '.installation.json';
 export const installationDirectory = () =>
-  process.env.VISUAL_STORY_INSTALL_DIR ??
-  join(homedir(), 'Library/Application Support/Visual Storytelling/installation');
+  process.env.VISUAL_STORY_INSTALL_DIR ?? join(applicationDirectory(), 'installation');
 
 /** A stable executable resolves one immutable release before Node or any late import starts. */
 export const launcher = `#!/bin/sh

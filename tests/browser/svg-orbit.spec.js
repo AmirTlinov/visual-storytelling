@@ -1,22 +1,20 @@
+import { openFixture } from '../support/fixture.mjs';
 import { test, expect } from '@playwright/test';
 
 for (const [name, entry, region] of [
-  ['geometric-tensor', 'index.html', '#viewport'],
-  ['parameter-cube', 'index.html', '#stage'],
+  ['SVG in HTML', 'index.html', '#viewport'],
+  ['SVG entry', 'subject.svg', '#viewport'],
 ]) {
   test(`${name}: common orbit, middle/shift pan, zoom and reset preserve the model`, async ({
     page,
   }) => {
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto(`/${name}/${entry}`);
+    await openFixture(page, 'svg', entry);
     await page.evaluate(async () => {
       await window.galleryReady;
     });
-    const frame =
-      name === 'geometric-tensor'
-        ? page.mainFrame()
-        : page.frames().find((frame) => frame.url().endsWith('.svg'));
+    const frame = page.mainFrame();
     const svg = frame.locator('svg.ve-scene');
     await expect(svg).toBeVisible();
     await expect.poll(() => svg.evaluate((n) => Boolean(n.scene))).toBe(true);
@@ -63,12 +61,9 @@ for (const [name, entry, region] of [
   }) => {
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto(`/${name}/${entry}`);
+    await openFixture(page, 'svg', entry);
     await page.evaluate(() => window.galleryReady);
-    const frame =
-      name === 'geometric-tensor'
-        ? page.mainFrame()
-        : page.frames().find((item) => item.url().endsWith('.svg'));
+    const frame = page.mainFrame();
     await frame.evaluate(() => window.galleryReady);
     const capture = () =>
       page.evaluate(() => {
@@ -78,39 +73,20 @@ for (const [name, entry, region] of [
     const restore = (value) =>
       page.evaluate((value) => document.querySelector('.ve-scene').scene.restore(value), value);
     const initial = await capture();
-    const immediate = await frame.evaluate((name) => {
-      const field = document.querySelector(
-        name === 'geometric-tensor' ? '#tensor-control-input' : '#layers-input',
-      );
+    const immediate = await frame.evaluate(() => {
+      const field = document.querySelector('#condition');
       field.value = '0.38';
       field.dispatchEvent(new Event('input', { bubbles: true }));
       const scene = document.querySelector('svg.ve-scene').scene;
       return {
         checkpoint: scene.capture(),
         snapshot: scene.snapshot(),
-        eigen: document.querySelector('#eigen-0')?.textContent,
+        eigen: document.querySelector('#value')?.textContent,
       };
-    }, name);
-    if (name === 'geometric-tensor') {
-      expect(immediate.checkpoint.values).toEqual({ t: 0.38 });
-      expect(immediate.snapshot.t).toBe(0.38);
-      expect(immediate.eigen).toBe('1.32');
-    } else {
-      expect(immediate.checkpoint.subject.spread).toBe(0.38);
-      expect(immediate.snapshot.spread).toBe(0.38);
-      await frame.evaluate(() => {
-        const projection = structuredClone(window.getProjection());
-        projection.inputs[2][0] += 0.25;
-        projection.queries[3][2][1] += 0.5;
-        window.setProjection(projection);
-      });
-      await page.evaluate(() =>
-        document.querySelector('.ve-scene').scene.control([
-          { type: 'parameters', values: { selected: '2-1-3', token: 2, spread: 0.68 } },
-          { type: 'seek', time: 3.1 },
-        ]),
-      );
-    }
+    });
+    expect(immediate.checkpoint.values).toEqual({ t: 0.38 });
+    expect(immediate.snapshot.t).toBe(0.38);
+    expect(immediate.eigen).toBe('0.38');
     const stage = frame.locator(region);
     await stage.press('ArrowLeft');
     await stage.press('ArrowUp');
@@ -120,13 +96,6 @@ for (const [name, entry, region] of [
     expect(saved.checkpoint.view.kind).toBe('svg-orbit');
     expect(saved.checkpoint.view.zoom).toBeGreaterThan(1);
     expect(Math.hypot(...saved.checkpoint.view.pan)).toBeGreaterThan(1);
-    if (name === 'parameter-cube') {
-      expect(saved.checkpoint.values).toEqual({ selected: '2-1-3', token: 2, spread: 0.68 });
-      expect(saved.checkpoint.time).toBe(3.1);
-      expect(saved.checkpoint.subject.projection).not.toEqual(
-        initial.checkpoint.subject.projection,
-      );
-    }
     await restore(initial.checkpoint);
     expect((await capture()).snapshot).not.toEqual(saved.snapshot);
     const recovered = await restore(saved.checkpoint);
@@ -147,41 +116,6 @@ for (const [name, entry, region] of [
       return { rejected, unchanged: JSON.stringify(before) === JSON.stringify(scene.capture()) };
     });
     expect(invalidCamera).toEqual({ rejected: false, unchanged: true });
-    if (name === 'parameter-cube') {
-      await expect(
-        restore({
-          ...saved.checkpoint,
-          time: 0,
-          subject: { ...saved.checkpoint.subject, token: 100000 },
-        }),
-      ).rejects.toThrow(/existing coefficient/);
-      expect((await capture()).checkpoint).toEqual(restored.checkpoint);
-      const invalidObjects = await page.evaluate(async () => {
-        const scene = document.querySelector('.ve-scene').scene;
-        const before = scene.capture();
-        class CustomState {
-          constructor(value) {
-            Object.assign(this, value);
-          }
-        }
-        const failures = [];
-        for (const subject of [
-          new CustomState(before.subject),
-          Object.assign(Object.create({ custom: true }), before.subject),
-        ]) {
-          try {
-            await scene.restore({ ...before, subject });
-          } catch (error) {
-            failures.push(error.message);
-          }
-        }
-        return { failures, unchanged: JSON.stringify(scene.capture()) === JSON.stringify(before) };
-      });
-      expect(invalidObjects.failures).toEqual(
-        Array(2).fill('A scene subject checkpoint must contain finite JSON values.'),
-      );
-      expect(invalidObjects.unchanged).toBe(true);
-    }
     expect(errors).toEqual([]);
   });
 }

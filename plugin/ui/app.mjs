@@ -24,37 +24,11 @@ let session,
   loadTimer;
 let pollingDone = Promise.resolve();
 let updates = Promise.resolve();
-let displayUpdates = Promise.resolve(),
-  displayMode = 'inline',
-  availableDisplayModes = [],
-  displayRevision = 0;
-const presentation = () => ({
-  mode: displayMode === 'fullscreen' ? 'expanded' : 'inline',
-  canExpand: availableDisplayModes.includes('fullscreen'),
-});
+let displayMode = 'inline';
 let connectionState = 'opening',
   recovery,
   recoveryEpoch = 0,
   recoveryAck;
-function requestExpanded(owner = session) {
-  const request = displayUpdates
-    .catch(() => {})
-    .then(async () => {
-      if (closed || session !== owner) throw new Error('Представление уже сменилось.');
-      if (displayMode === 'fullscreen') return;
-      if (!presentation().canExpand)
-        throw new Error('Codex не поддерживает разворачивание этой карточки.');
-      const revision = displayRevision;
-      const result = await app.requestDisplayMode({ mode: 'fullscreen' });
-      // A newer host notification owns the actual mode, including an external close
-      // while this request was pending. A response must not revive that old request.
-      if (!closed && revision === displayRevision) host({ displayMode: result.mode });
-      if (closed || session !== owner) throw new Error('Представление уже сменилось.');
-      if (displayMode !== 'fullscreen') throw new Error('Codex оставил карточку в чате.');
-    });
-  displayUpdates = request;
-  return request;
-}
 function sync(acknowledgement) {
   const current = report,
     owner = session;
@@ -68,8 +42,13 @@ function sync(acknowledgement) {
       });
     })
     .catch((e) => {
-      if (!closed && session === owner) error(e.message);
+      if (!closed && session === owner) error(connectionErrorMessage(e));
     });
+}
+function connectionErrorMessage(failure) {
+  return failure?.code === 'RUNTIME_UPDATE_REQUIRED'
+    ? 'Установлена новая версия. Переподключите Visual Storytelling в настройках плагинов Codex.'
+    : (failure?.message ?? 'Связь пока недоступна.');
 }
 function error(message) {
   $('error').textContent = message;
@@ -127,9 +106,12 @@ function recoverView(cause) {
       delay = 250;
     while (!closed && epoch === recoveryEpoch && session?.sessionId === owner) {
       if (
-        ['view_replaced', 'RUNTIME_VERSION_CONFLICT', 'installation_missing'].includes(
-          failure?.code,
-        )
+        [
+          'view_replaced',
+          'RUNTIME_VERSION_CONFLICT',
+          'RUNTIME_UPDATE_REQUIRED',
+          'installation_missing',
+        ].includes(failure?.code)
       )
         break;
       try {
@@ -150,7 +132,6 @@ function recoverView(cause) {
           frame.srcdoc = sceneDocument(result._meta.sceneHTML, {
             theme: app.getHostContext()?.theme,
             sessionId: session.sessionId,
-            presentation: presentation(),
             generation: session.generation,
             checkpoint: session.checkpoint,
             stateRevision: session.stateRevision,
@@ -177,11 +158,12 @@ function recoverView(cause) {
     if (!closed && epoch === recoveryEpoch) {
       connectionState = 'unavailable';
       $('connection').textContent = 'Сцена на паузе';
-      error(failure?.message ?? 'Связь пока недоступна.');
+      const updateRequired = failure?.code === 'RUNTIME_UPDATE_REQUIRED';
+      error(connectionErrorMessage(failure));
       $('reconnect').textContent =
         failure?.code === 'view_replaced' ? 'Открыть здесь' : 'Восстановить связь';
       $('reconnect').dataset.takeover = String(failure?.code === 'view_replaced');
-      $('reconnect').hidden = false;
+      $('reconnect').hidden = updateRequired;
     }
     return false;
   })().finally(() => {
@@ -311,7 +293,6 @@ async function mount(result) {
   const config = {
     theme: app.getHostContext()?.theme,
     sessionId: session.sessionId,
-    presentation: presentation(),
     generation: session.generation,
     checkpoint: session.checkpoint,
     stateRevision: session.stateRevision,
@@ -356,7 +337,6 @@ async function prepareUpdate(update) {
     preview.srcdoc = sceneDocument(result._meta.sceneHTML, {
       theme: app.getHostContext()?.theme,
       sessionId: session.sessionId,
-      presentation: presentation(),
       preview: true,
       generation: candidate.generation,
       checkpoint: next.checkpoint,
@@ -597,22 +577,9 @@ addEventListener('message', (event) => {
         (e) => send({ type: 'host-response', id: data.id, error: e.message }),
       );
     }
-    if (data.action === 'expand') {
-      const owner = session;
-      void requestExpanded(owner).then(
-        () => {
-          if (!closed && session === owner) send({ type: 'host-response', id: data.id });
-        },
-        (e) => {
-          if (!closed && session === owner)
-            send({ type: 'host-response', id: data.id, error: e.message });
-        },
-      );
-    }
     return;
   }
   if (data.type === 'ready') {
-    send({ type: 'host-presentation', value: presentation() });
     connectionState = 'connected';
     $('connection').textContent = 'Готово';
     clearTimeout(loadTimer);
@@ -654,25 +621,8 @@ function host(context) {
   }
   if (context.styles?.variables) applyHostStyleVariables(context.styles.variables);
   modelContext.host(context);
-  const mode = context.displayMode ?? displayMode;
-  const modes = context.availableDisplayModes ?? availableDisplayModes;
-  if (mode !== displayMode || JSON.stringify(modes) !== JSON.stringify(availableDisplayModes))
-    displayRevision++;
-  displayMode = mode;
-  availableDisplayModes = modes;
+  displayMode = context.displayMode ?? displayMode;
   document.documentElement.dataset.mode = displayMode;
-  const value = presentation();
-  send({ type: 'host-presentation', value });
-  candidate?.frame.contentWindow?.postMessage(
-    {
-      channel,
-      sessionId: session?.sessionId,
-      generation: candidate.generation,
-      type: 'host-presentation',
-      value,
-    },
-    '*',
-  );
 }
 async function dispose() {
   closed = true;

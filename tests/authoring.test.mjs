@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -32,7 +33,7 @@ test('authoring: reload keeps the selected time, failed edits keep the scene, fa
       })();`;
     await writeFile(join(source, 'scene.js'), 'const broken = ;');
     server = await develop(source, 0, { sourcePackage: true });
-    browser = await chromium.launch();
+    browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage({ viewport: { width: 375, height: 850 } });
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
@@ -53,9 +54,10 @@ test('authoring: reload keeps the selected time, failed edits keep the scene, fa
     await page.evaluate(() => lab.controller.seek(7));
     await writeFile(join(source, 'scene.js'), program.replaceAll('Revision one', 'Revision two'));
     await page
-      .getByRole('combobox', { name: 'Глава' })
+      .getByRole('combobox', { name: 'Глава', includeHidden: true })
       .filter({ hasText: 'Revision two' })
-      .waitFor();
+      .waitFor({ state: 'attached' });
+    await page.getByRole('button', { name: 'Условия', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('main').scene.currentTime === 7);
     const heading = page.getByRole('combobox', { name: 'Глава' });
     assert(await heading.evaluate((element) => element.scrollHeight <= element.clientHeight + 1));
@@ -64,9 +66,11 @@ test('authoring: reload keeps the selected time, failed edits keep the scene, fa
     assert.equal(await page.evaluate(() => document.querySelector('main').scene.currentTime), 7);
     await writeFile(join(source, 'scene.js'), program.replaceAll('Revision one', 'Revision three'));
     await page
-      .getByRole('combobox', { name: 'Глава' })
+      .getByRole('combobox', { name: 'Глава', includeHidden: true })
       .filter({ hasText: 'Revision three' })
-      .waitFor();
+      .waitFor({ state: 'attached' });
+    await page.getByRole('button', { name: 'Условия', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Глава' }).waitFor();
     await page.waitForFunction(() => document.querySelector('main').scene.currentTime === 7);
     await page.evaluate(() => {
       lab.setValue('123456789.987');

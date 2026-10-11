@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from './chromium.mjs';
 import { chromium } from 'playwright';
 import { build } from 'esbuild';
 import { fileURLToPath } from 'node:url';
@@ -39,11 +40,7 @@ export async function renderer({
     void close().catch(() => {});
   };
   try {
-    launched = chromium.launch({
-      executablePath: process.env.VISUAL_STORY_CHROMIUM,
-      // Headless Chromium otherwise selects SwiftShader on macOS, even with Metal available.
-      args: process.platform === 'darwin' ? ['--use-angle=metal', '--enable-gpu'] : [],
-    });
+    launched = chromium.launch(chromiumLaunchOptions());
     signal?.addEventListener('abort', abort, { once: true });
     const browser = await launched;
     signal?.throwIfAborted();
@@ -88,6 +85,16 @@ export async function renderer({
     // change the available height before restoring the saved camera.
     if (!controls && !checkpoint)
       await page.evaluate(() => {
+        const style = document.createElement('style');
+        if (document.querySelector('[data-scene-frame][data-frame-scope="scene"]')) {
+          // The canonical composition owns its subject controls, including those
+          // moved to Conditions. Legacy selectors would hide them there, make
+          // the shell move them back, and start a visibility/relocation loop.
+          style.textContent =
+            '.ve-scene:has(> [data-frame-scope="scene"]) > :is([data-player],.ve-status){display:none!important}';
+          document.head.append(style);
+          return;
+        }
         const drawing = document.querySelector('svg.canvas,svg.vs-canvas');
         const paper = drawing?.closest('.ve-scene');
         const before = drawing?.getBoundingClientRect();
@@ -95,7 +102,6 @@ export async function renderer({
         const position =
           paper &&
           getComputedStyle(paper).backgroundPosition.split(',')[0].split(/\s+/).map(parseFloat);
-        const style = document.createElement('style');
         style.textContent =
           ':is(.ve-player,.modes,.ve-parameters,.ve-view-actions,.ve-chapter-navigation,.caption,.ve-status):not(:where(.ve-scene-content *)){display:none!important}';
         document.head.append(style);
@@ -143,7 +149,8 @@ export async function renderer({
         const frame = page.locator('[data-scene-frame]').first();
         const stage = page.locator('.ve-stage').first();
         const main = page.locator('.ve-scene').first();
-        const target = (await frame.count())
+        const completeFrame = Boolean(await frame.count());
+        const target = completeFrame
           ? frame
           : checkpoint && (await stage.count())
             ? stage
@@ -151,42 +158,74 @@ export async function renderer({
               ? main
               : undefined;
         if (!target) return page.screenshot({ fullPage: true });
-        const area = await target.evaluate((element) => {
-          const { x, y, width, height } = element.getBoundingClientRect();
-          return {
-            x,
-            y,
-            width,
-            height,
-            viewportWidth: innerWidth,
-            viewportHeight: innerHeight,
-            scrollX,
-            scrollY,
-          };
-        });
-        // Capture a visible frame without resizing the viewport or recompressing
-        // PNG for size. Beyond-viewport capture can temporarily reflow a live scene.
-        if (
-          !area.scrollX &&
-          !area.scrollY &&
-          area.x >= 0 &&
-          area.y >= 0 &&
-          area.width > 0 &&
-          area.height > 0 &&
-          area.x + area.width <= area.viewportWidth &&
-          area.y + area.height <= area.viewportHeight
-        ) {
-          screenshots ??= await context.newCDPSession(page);
-          const { data } = await screenshots.send('Page.captureScreenshot', {
-            format: 'png',
-            fromSurface: true,
-            captureBeyondViewport: false,
-            optimizeForSpeed: true,
-            clip: { x: area.x, y: area.y, width: area.width, height: area.height, scale: 1 },
+        // Conditions are root-owned UI outside the composition, as in SVG.
+        // Opacity keeps the native popup, focus and unfinished field edit alive;
+        // nested popovers also leave their parent's painted top layer.
+        const chrome = completeFrame
+          ? await target.evaluateHandle((element) => {
+              const panels = [
+                ...(element
+                  .closest('.ve-scene')
+                  ?.querySelectorAll(':scope > .ve-scene-conditions:popover-open') ?? []),
+              ];
+              return panels
+                .flatMap((panel) => [panel, ...panel.querySelectorAll('[popover]:popover-open')])
+                .map((panel) => {
+                  const value = panel.style.getPropertyValue('opacity'),
+                    priority = panel.style.getPropertyPriority('opacity');
+                  panel.style.setProperty('opacity', '0', 'important');
+                  return { panel, value, priority };
+                });
+            })
+          : undefined;
+        try {
+          const area = await target.evaluate((element) => {
+            const { x, y, width, height } = element.getBoundingClientRect();
+            return {
+              x,
+              y,
+              width,
+              height,
+              viewportWidth: innerWidth,
+              viewportHeight: innerHeight,
+              scrollX,
+              scrollY,
+            };
           });
-          return Buffer.from(data, 'base64');
+          // Capture a visible frame without resizing the viewport or recompressing
+          // PNG for size. Beyond-viewport capture can temporarily reflow a live scene.
+          if (
+            !area.scrollX &&
+            !area.scrollY &&
+            area.x >= 0 &&
+            area.y >= 0 &&
+            area.width > 0 &&
+            area.height > 0 &&
+            area.x + area.width <= area.viewportWidth &&
+            area.y + area.height <= area.viewportHeight
+          ) {
+            screenshots ??= await context.newCDPSession(page);
+            const { data } = await screenshots.send('Page.captureScreenshot', {
+              format: 'png',
+              fromSurface: true,
+              captureBeyondViewport: false,
+              optimizeForSpeed: true,
+              clip: { x: area.x, y: area.y, width: area.width, height: area.height, scale: 1 },
+            });
+            return Buffer.from(data, 'base64');
+          }
+          return await target.screenshot();
+        } finally {
+          if (chrome) {
+            await chrome.evaluate((entries) =>
+              entries.forEach(({ panel, value, priority }) => {
+                if (value) panel.style.setProperty('opacity', value, priority);
+                else panel.style.removeProperty('opacity');
+              }),
+            );
+            await chrome.dispose();
+          }
         }
-        return target.screenshot();
       },
       svg: () => capture.evaluate((scene) => scene.exportSVG()),
       close,

@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -67,7 +68,7 @@ test('one scene boundary preserves capabilities, live time and model ownership t
       '<!doctype html><html><head><link rel="stylesheet" href="index.css"></head><body><main class="ve-scene"></main><section class="ve-scene"></section><aside></aside><script src="index.js"></script></body></html>',
     );
     server = await serve(directory);
-    browser = await chromium.launch();
+    browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage();
     const capture = await openScene(page, server.url);
     const initial = await page.evaluate(() => ({

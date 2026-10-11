@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -7,19 +8,20 @@ import { chromium } from 'playwright';
 import { pluginHost } from './plugin/host.mjs';
 
 test(
-  'packed Tesla reads local glTF assets under the declared MCP policy, seeks and edits the board',
+  'a staged project reads local glTF assets under the declared MCP policy, seeks and edits the board',
   { timeout: 45000 },
   async () => {
     const release = process.env.VISUAL_STORY_TEST_RELEASE;
     const host = await pluginHost(
       release
         ? {
+            fixture: 'chapters',
             serverCommand: join(release, 'runtime/node'),
             serverEntry: join(release, 'plugin/dist/server.mjs'),
           }
-        : {},
+        : { fixture: 'chapters' },
     );
-    const browser = await chromium.launch();
+    const browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage({ viewport: { width: 820, height: 960 } });
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
@@ -29,14 +31,7 @@ test(
       const app = page.frameLocator('iframe[title="MCP App"]');
       await page.goto(host.url);
       await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
-      const opened = await host.client.callTool({
-        name: 'story_open',
-        arguments: { example: 'tesla-circuit' },
-      });
-      assert.equal(opened.isError, undefined);
-      await page.evaluate((result) => window.pluginTest.openResult(result), opened);
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
-      const sessionId = opened.structuredContent.sessionId;
+      const sessionId = (await page.evaluate(() => window.pluginTest.session)).sessionId;
       const call = async (name, arguments_ = {}) => {
         const result = await host.client.callTool({
           name,
@@ -80,7 +75,7 @@ test(
       assert.equal(await button.getAttribute('aria-pressed'), 'false');
       await mkdir('artifacts/coherent-authoring/mcp-character', { recursive: true });
       await page.screenshot({
-        path: 'artifacts/coherent-authoring/mcp-character/tesla.png',
+        path: 'artifacts/coherent-authoring/mcp-character/stage.png',
         fullPage: true,
       });
       assert.deepEqual(errors, []);

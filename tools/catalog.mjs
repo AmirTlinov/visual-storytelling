@@ -49,7 +49,8 @@ export function describeExamples(catalog, { query = '', group, recommended, json
       entry.create,
     ].join('\n');
   }
-  if (!entries.length) return 'Совпадений нет. Попробуйте тему или приём: нейрон, 3d, морфинг.';
+  if (!entries.length)
+    return 'Совпадений нет. Эталон: examples gpt-model. Новая тема: new DIRECTORY.';
   return (
     Object.entries(exampleGroups)
       .flatMap(([id, title]) => {

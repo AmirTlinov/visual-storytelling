@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
@@ -27,7 +28,7 @@ test('projected labels keep fixed annotations, inscriptions and protected object
       loader: { '.woff2': 'dataurl', '.svg': 'dataurl' },
     }),
   ]);
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage({ viewport: { width: 1040, height: 720 } });
     const errors = [];

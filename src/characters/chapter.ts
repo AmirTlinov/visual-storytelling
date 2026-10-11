@@ -15,6 +15,7 @@ export function characterChapter(
   if (options.seconds !== undefined && Math.abs(options.seconds - score.script.duration) > 1e-6)
     throw new Error(`Character chapter ${options.id}: seconds must match its script`);
   return {
+    presentation: 'stage',
     id: options.id,
     title: options.title,
     text: options.text ?? options.beats.map((beat) => beat.text).join('\n\n'),
@@ -23,7 +24,13 @@ export function characterChapter(
     controls: options.controls,
     valuesAt: options.valuesAt,
     async mount(parent, signal) {
-      const stage = await characterStage(parent, options, score, undefined, signal);
+      const stage = await characterStage(
+        parent,
+        { ...options, camera: options.camera ?? 'responsive' },
+        score,
+        undefined,
+        signal,
+      );
       return {
         render: (frame) => stage.render(frame.time, frame.reduced, frame),
         snapshot: stage.snapshot,

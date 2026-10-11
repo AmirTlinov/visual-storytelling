@@ -127,8 +127,7 @@ export async function openScene(page, url) {
           svg.closest('.ve-stage') ??
           svg.closest('.ve-scene') ??
           svg;
-        const chrome =
-          '.ve-heading,.ve-scene-toolbar,.ve-chapter-navigation,.modes,.ve-parameters,.ve-view-actions,[data-player],.ve-status,.sr-only,.vs-sr';
+        const chrome = '[data-player],.ve-status,.sr-only,.vs-sr';
         const extra = [frame, ...frame.querySelectorAll('*')].some(
           (element) =>
             !svg.contains(element) &&

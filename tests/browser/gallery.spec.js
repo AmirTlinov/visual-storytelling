@@ -1,63 +1,54 @@
 import { test, expect } from '@playwright/test';
-import catalog from '../../examples/catalog.json' with { type: 'json' };
 
-test('search, sections and the return from a scene preserve the chosen context', async ({
-  page,
-}) => {
+test('one exemplar opens directly and its source remains available', async ({ page }) => {
   await page.goto('/');
-  const search = page.getByRole('searchbox', { name: 'Найти пример' });
-  await search.fill('НейРон');
-  await page.getByRole('button', { name: 'Приёмы и API', exact: true }).click();
-  await expect(page.locator('[data-example]:visible')).toHaveCount(2);
-  await expect(page.locator('[data-example="neuron-morph"]')).toBeVisible();
-  await expect(page.locator('[data-example="long-calculation"]')).toBeVisible();
-  await search.fill('нет-такого-примера');
-  await expect(page.locator('#empty')).toBeVisible();
-  await page.getByRole('button', { name: 'Сбросить' }).click();
-  await expect(search).toBeFocused();
-  await expect(page.locator('[data-example]:visible')).toHaveCount(Object.keys(catalog).length);
-  await search.fill('сложение');
-  await page.locator('[data-example="explorer-svg"] .example-open').click();
-  await expect(page).toHaveURL(/explorer-svg\/index.html/);
-  await page.goBack();
-  await expect(search).toHaveValue('сложение');
-  await expect(page.locator('[data-example="explorer-svg"]')).toBeVisible();
-  await expect(page.locator('[data-example="computer-explorer"]')).toBeHidden();
-});
-
-test('a card exposes copyable creation commands and the real source', async ({ page, context }) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-  await page.goto('/?q=explorer-svg');
-  const card = page.locator('[data-example="explorer-svg"]');
-  await card.locator('summary').click();
-  const commands = await card.locator('textarea').inputValue();
-  await card.getByRole('button', { name: 'Копировать команды' }).click();
-  await expect(card.getByRole('button', { name: 'Скопировано' })).toBeVisible();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(commands);
-  expect(commands).toContain('--example explorer-svg');
+  await expect(page.locator('[data-example]')).toHaveCount(1);
+  await expect(page.getByRole('searchbox')).toHaveCount(0);
+  await expect(page.locator('.gallery-filters')).toHaveCount(0);
   const source = await page.request.get(
-    await card.getByRole('link', { name: /Исходник/ }).getAttribute('href'),
+    await page.getByRole('link', { name: /Исходник/ }).getAttribute('href'),
   );
   expect(source.ok()).toBe(true);
   expect(await source.text()).toContain('SceneShell');
+  await page.getByRole('link', { name: 'Исследовать объяснение', exact: true }).click();
+  await expect(page).toHaveURL(/gpt-model\/index.html/);
+  await page.goBack();
+  await expect(page.locator('[data-example="gpt-model"]')).toBeVisible();
 });
 
-test('narrow dark gallery remains readable and keyboard controls filter immediately', async ({
+test('clean project and explicit exemplar have distinct copyable commands', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto('/');
+  for (const [summary, exemplar] of [
+    ['Создать своё объяснение', false],
+    ['Изменить этот разбор', true],
+  ]) {
+    const detail = page
+      .locator('details')
+      .filter({ has: page.locator('summary', { hasText: summary }) });
+    await detail.locator('summary').click();
+    const commands = await detail.locator('textarea').inputValue();
+    expect(commands.includes('--example gpt-model')).toBe(exemplar);
+    await detail.getByRole('button', { name: 'Копировать команды' }).click();
+    await expect(detail.getByRole('button', { name: 'Скопировано' })).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(commands);
+  }
+});
+
+test('narrow dark catalog preserves readable text, keyboard access and bounded layout', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
   await page.goto('/');
-  const search = page.getByRole('searchbox', { name: 'Найти пример' });
-  await search.focus();
-  await search.pressSequentially('3d');
-  const filter = page.getByRole('button', { name: 'Приёмы и API', exact: true });
-  await filter.focus();
+  const detail = page.locator('details').first();
+  await detail.locator('summary').focus();
   await page.keyboard.press('Enter');
-  await expect(filter).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('[data-example="physical-objects"]')).toBeVisible();
-  await expect(page.locator('[data-example="explorer-3d"]')).toBeHidden();
-  await page.locator('[data-example="physical-objects"] summary').click();
+  await expect(detail).toHaveAttribute('open', '');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await expect(filter).toHaveAttribute('aria-pressed', 'true');
+  const target = await detail.getByRole('button').boundingBox();
+  expect(target.height).toBeGreaterThanOrEqual(44);
 });

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { openFixture } from '../support/fixture.mjs';
 import { readCatalog } from '../../tools/catalog.mjs';
 const catalog = await readCatalog();
 
@@ -72,10 +73,10 @@ test('all examples load in both themes at a narrow width without script errors o
     }
   expect(errors).toEqual([]);
 });
-test('audio controls play, pause, seek backwards and keep the exact area model', async ({
+test('one audio clock drives play, pause, reverse seek and deterministic drawing', async ({
   page,
 }) => {
-  await ready(page, '/area-story/index.html');
+  await openFixture(page, 'scene-shell', 'media.html');
   const play = page.locator('[data-play]'),
     seek = page.locator('[data-seek]');
   await seek.fill('4.3');
@@ -83,233 +84,109 @@ test('audio controls play, pause, seek backwards and keep the exact area model',
   await expect.poll(() => seek.inputValue().then(Number)).toBeGreaterThan(4.4);
   await play.click();
   await expect(play).toHaveAttribute('aria-label', 'Воспроизвести');
-  const ending = (Number(await seek.getAttribute('max')) - 0.1).toFixed(2);
-  await seek.fill(ending);
-  await expect(page.locator('[data-square]')).toHaveCount(20);
-  const complete = await page.locator('[data-drawing]').innerHTML();
+  await seek.fill('19');
+  const complete = await page.locator('#shell-subject').innerHTML();
   await seek.fill('0');
-  await seek.fill(ending);
-  expect(await page.locator('[data-drawing]').innerHTML()).toBe(complete);
-  await page.locator('[data-formulas]').click();
-  await expect(page.locator('[data-formulas]')).toHaveAttribute('aria-pressed', 'true');
+  await seek.fill('19');
+  expect(await page.locator('#shell-subject').innerHTML()).toBe(complete);
   for (let i = 0; i < 4; i++) await play.click();
   const paused = await seek.inputValue();
   await page.waitForTimeout(150);
   expect(await seek.inputValue()).toBe(paused);
-  await page.locator('[data-mute]').click();
-  expect(await page.locator('audio').evaluate((a: HTMLAudioElement) => a.muted)).toBe(true);
   await play.focus();
   await expect(play).toBeFocused();
 });
-test('shell changes mode, pauses the voice and restores the story after manual input', async ({
+
+test('manual input pauses audio, undo restores its condition and the narrative owns a new seek', async ({
   page,
 }) => {
-  await ready(page, '/explorer-svg/index.html');
-  await page.locator('[data-mode=story]').click();
+  await openFixture(page, 'scene-shell', 'media.html');
   await page.locator('[data-seek]').fill('15');
-  await page.locator('[data-play]').click();
-  await page.locator('[data-mode=explore]').click();
-  expect(await page.locator('audio').evaluate((a: HTMLAudioElement) => a.paused)).toBe(true);
-  const field = page.getByRole('slider', { name: 'По горизонтали' });
-  await field.fill('-2');
-  await expect(field).toHaveValue('-2');
-  await page.reload();
-  await page.evaluate(() => window.galleryReady);
-  await expect(page.locator('#ve-scene')).toHaveAttribute('data-scene-mode', 'explore');
-  await expect(field).toHaveValue('-2');
-  for (const width of [375, 960]) {
-    await page.setViewportSize({ width, height: 1000 });
-    await expect
-      .poll(() =>
-        page.locator('#displacements').evaluate((svg) => {
-          const grid = svg.querySelector('.vs-grid') as SVGGraphicsElement;
-          const paper = grid.getBoundingClientRect(),
-            view = svg.getBoundingClientRect();
-          // The measured grid follows the camera and covers its visible aperture.
-          // Compare both in screen space, not a world-space BBox with a CSS width.
-          return Math.max(
-            Math.abs(paper.left - view.left),
-            Math.abs(paper.right - view.right),
-            Math.abs(paper.top - view.top),
-            Math.abs(paper.bottom - view.bottom),
-          );
-        }),
-      )
-      .toBeLessThan(1);
-  }
-  await page.locator('[data-mode=story]').click();
-  await expect(page.locator('#ve-scene')).toHaveAttribute('data-scene-mode', 'story');
-  await page.locator('[data-seek]').fill('15');
-  await page.locator('[data-mode=explore]').click();
-  expect(Number(await field.inputValue())).not.toBe(-2);
-});
-test('typed stories use the same shell and preserve model state through mode changes', async ({
-  page,
-}) => {
-  await ready(page, '/vector/index.html');
-  await page.waitForFunction(() => !!document.querySelector<HTMLElement>('.ve-scene')!.scene!);
-  await page.evaluate(() => document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek!(10));
   const original = await page.evaluate(() =>
     document.querySelector<HTMLElement>('.ve-scene')!.scene!.snapshot(),
   );
+  await page.locator('[data-play]').click();
   await page.locator('[data-mode=explore]').click();
-  await page.getByRole('slider', { name: 'Масштаб x', exact: true }).fill('-1.4');
-  expect(
-    await page.evaluate(() => document.querySelector<HTMLElement>('.ve-scene')!.scene!.snapshot()),
-  ).toMatchObject({
-    input: { a: -1.4 },
-  });
+  const field = page.getByRole('slider', { name: 'По горизонтали' });
+  await field.fill('-2');
+  expect(await page.locator('audio').evaluate((audio: HTMLAudioElement) => audio.paused)).toBe(
+    true,
+  );
+  await page.evaluate(() =>
+    document.querySelector<HTMLElement>('.ve-scene')!.scene!.control([{ type: 'undoExperiment' }]),
+  );
+  expect(Number(await field.inputValue())).toBe(3);
   await page.locator('[data-mode=story]').click();
+  await page.locator('[data-seek]').fill('15');
   expect(
     await page.evaluate(() => document.querySelector<HTMLElement>('.ve-scene')!.scene!.snapshot()),
   ).toEqual(original);
-  for (const time of [0, 5, 10, 16]) {
-    await page.evaluate(
-      (t) => document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek!(t),
-      time,
-    );
-    const state = await page.evaluate(() =>
-      document.querySelector<HTMLElement>('.ve-scene')!.scene!.snapshot(),
-    );
-    await page.evaluate(() => {
-      document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek!(18);
-      document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek!(0);
-    });
-    await page.evaluate(
-      (t) => document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek!(t),
-      time,
-    );
-    expect(
-      await page.evaluate(() =>
-        document.querySelector<HTMLElement>('.ve-scene')!.scene!.snapshot(),
-      ),
-    ).toEqual(state);
-  }
+  await expect(page.locator('.ve-player:visible')).toHaveCount(1);
 });
-test('controls preserve pointer targets, keyboard editing and undo/redo', async ({ page }) => {
-  await ready(page, '/controls/index.html');
-  const width = page.getByRole('slider', { name: 'Ширина', exact: true });
-  await width.fill('7');
-  await expect(width).toHaveValue('7');
-  await page.getByRole('radio', { name: 'Фиолетовый', exact: true }).click();
-  const vertex = page.locator('[data-handle]').first();
-  const before = await vertex.getAttribute('transform');
-  await vertex.focus();
-  await page.keyboard.press('ArrowRight');
-  expect(await vertex.getAttribute('transform')).not.toBe(before);
-  await page.keyboard.press('ControlOrMeta+z');
-  expect(await vertex.getAttribute('transform')).toBe(before);
-  await page.keyboard.press('ControlOrMeta+Shift+z');
-  expect(await vertex.getAttribute('transform')).not.toBe(before);
-});
-test('vector: intermediate displayed products distinguish approximation from equality', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1040, height: 800 });
-  await ready(page, '/vector/index.html');
-  const relation = page.locator('[data-object="horizontal:eq"] .vs-lettering');
-  for (const [time, sign] of [
-    [13, '≈'],
-    [16, '='],
-    [13, '≈'],
-  ] as const) {
-    await page.evaluate(
-      (time) => document.querySelector<HTMLElement>('.ve-scene')!.scene!.seek!(time),
-      time,
-    );
-    await expect(relation).toHaveAttribute('aria-label', sign);
-  }
-  const lettering = await page.locator('#vector .vs-lettering text').evaluateAll((labels) =>
-    labels.map((element) => {
-      const label = element as SVGTextElement;
-      const transform = label.getScreenCTM()!;
-      return parseFloat(getComputedStyle(label).fontSize) * Math.hypot(transform.a, transform.b);
-    }),
-  );
-  expect(Math.min(...lettering)).toBeGreaterThanOrEqual(18);
-});
-test('all BERT tokens can be selected at their center and edges', async ({ page }) => {
-  await ready(page, '/parameter-cube/index.html');
-  const frame = page.frames().find((f) => f.url().includes('tensor-cube.svg'))!;
-  const tokens = frame.locator('#tokens [data-token]');
-  await expect(tokens).toHaveCount(4);
-  for (let i = 0; i < 4; i++)
-    for (const edge of [false, true]) {
-      const token = tokens.nth(i);
-      await token.scrollIntoViewIfNeeded();
-      const box = await token.boundingBox();
-      expect(box).not.toBeNull();
-      await page.mouse.click(box!.x + (edge ? 4 : box!.width / 2), box!.y + box!.height / 2);
-      await expect(token).toHaveAttribute('aria-selected', 'true');
-    }
-});
-test('LC player owns native SVG time, including reverse seek and reduced motion', async ({
+
+test('native SMIL time follows the common player through reverse seek and reduced motion', async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await ready(page, '/lc-oscillator/index.html');
+  await openFixture(page, 'smil');
   const seek = page.locator('[data-seek]');
   await expect(seek).toBeEnabled();
   for (const time of [0.75, 1.5, 2.25, 0]) {
     await seek.fill(String(time));
-    const state = await page.locator('object').evaluate((o: HTMLObjectElement) => {
-      const s = o.contentDocument!.documentElement as unknown as SVGSVGElement;
-      return { paused: s.animationsPaused(), time: s.getCurrentTime() };
+    const state = await page.locator('object').evaluate((object: HTMLObjectElement) => {
+      const svg = object.contentDocument!.querySelector('svg')!;
+      return { paused: svg.animationsPaused(), time: svg.getCurrentTime() };
     });
     expect(state.paused).toBe(true);
     expect(state.time).toBeCloseTo(time, 2);
   }
+  const box = await page.locator('[data-scene-frame]').boundingBox();
+  expect(box!.width / box!.height).toBeCloseTo(16 / 9, 3);
 });
 
-for (const name of ['area-story', 'remainder-story'])
-  test(`${name}: removing a playing scene releases its audio and controls`, async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (error) => errors.push(error.message));
-    await ready(page, `/${name}/index.html`);
-    await page.evaluate(async () => {
-      const scene = document.querySelector<HTMLElement>('.ve-scene')!.scene!;
-      scene.seek!(1);
-      if (scene.currentTime !== 1 || !scene.snapshot()) throw new Error('Incomplete scene handle');
-      await scene.play!();
-    });
-    await expect
-      .poll(() => page.locator('audio').evaluate((a: HTMLAudioElement) => a.paused))
-      .toBe(false);
-    expect(
-      await page.evaluate(() => {
-        const root = document.querySelector('.ve-scene') as HTMLElement & {
-          scene: { dispose(): void };
-        };
-        const audio = root.querySelector('audio')!;
-        const scene = root.scene;
-        scene.dispose();
-        scene.dispose();
-        return audio.paused && !root.scene;
-      }),
-    ).toBe(true);
-    await page.setViewportSize({ width: 500, height: 800 });
-    await expect(page.locator('.ve-scene')).toBeEmpty();
-    expect(errors).toEqual([]);
-  });
+test('disposing a playing scene releases its audio, camera, frame and controls exactly once', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await openFixture(page, 'scene-shell', 'media.html');
+  await page.locator('[data-play]').click();
+  await expect
+    .poll(() => page.locator('audio').evaluate((audio: HTMLAudioElement) => audio.paused))
+    .toBe(false);
+  expect(
+    await page.evaluate(() => {
+      const root = document.querySelector<HTMLElement>('.ve-scene')!,
+        audio = root.querySelector('audio')!,
+        scene = root.scene!;
+      scene.dispose();
+      scene.dispose();
+      return audio.paused && !root.scene;
+    }),
+  ).toBe(true);
+  await page.setViewportSize({ width: 500, height: 800 });
+  await expect(page.locator('.ve-scene')).toBeEmpty();
+  expect(errors).toEqual([]);
+});
 
-test('audio: a second click cancels pending playback without reporting an error', async ({
+test('a second click cancels pending audio playback without reporting an error', async ({
   page,
 }) => {
   await page.addInitScript(() => {
     HTMLMediaElement.prototype.play = function () {
-      return new Promise((_resolve, reject) => {
+      return new Promise((_resolve, reject) =>
         this.addEventListener(
           'cancel-play',
           () => reject(new DOMException('Interrupted', 'AbortError')),
           { once: true },
-        );
-      });
+        ),
+      );
     };
     HTMLMediaElement.prototype.pause = function () {
       this.dispatchEvent(new Event('cancel-play'));
     };
   });
-  await ready(page, '/area-story/index.html');
+  await openFixture(page, 'scene-shell', 'media.html');
   const button = page.locator('[data-play]');
   await button.click();
   await expect(button).toHaveAttribute('aria-label', 'Пауза');
@@ -318,62 +195,27 @@ test('audio: a second click cancels pending playback without reporting an error'
   await expect(page.locator('[data-caption]')).toHaveAttribute('role', 'status');
 });
 
-for (const name of ['explorer-svg', 'explorer-3d'])
-  test(`${name}: manual camera keeps real audio running, seeking restores its authored pose`, async ({
-    page,
-  }) => {
-    await ready(page, `/${name}/index.html`);
-    const play = page.locator('[data-play]'),
-      seek = page.locator('[data-seek]');
-    await play.click();
-    await expect
-      .poll(() => page.locator('audio').evaluate((audio: HTMLAudioElement) => audio.currentTime))
-      .toBeGreaterThan(0.1);
-    const canvas = page.locator(name === 'explorer-svg' ? '#displacements' : '.ve-stage > canvas');
-    await canvas.focus();
-    await page.keyboard.press('ArrowRight');
-    expect(
-      await page.evaluate(() => {
-        const scene = (document.querySelector('.ve-scene') as any).scene;
-        return (scene.camera ?? scene.view).following;
-      }),
-    ).toBe(false);
-    const before = Number(await seek.inputValue());
-    await expect.poll(() => seek.inputValue().then(Number)).toBeGreaterThan(before + 0.1);
-    await play.click();
-    await seek.fill('12');
-    const pose = () =>
-      page.evaluate(() => {
-        const scene = (document.querySelector('.ve-scene') as any).scene;
-        const camera = scene.camera ?? scene.view;
-        return {
-          following: camera.following,
-          pose: camera.pose ?? camera.camera.position.toArray(),
-        };
-      });
-    const expected = await pose();
-    expect(expected.following).toBe(true);
-    await seek.fill((await seek.getAttribute('max'))!);
-    await seek.fill('0');
-    await seek.fill('12');
-    expect(await pose()).toEqual(expected);
-    await page.getByRole('combobox', { name: 'Глава' }).click();
-    await page
-      .getByRole('listbox', { name: 'Глава', exact: true })
-      .getByRole('option')
-      .last()
-      .click();
-    expect(Number(await seek.inputValue())).toBeGreaterThan(12);
-    await expect(page.locator('[data-caption]')).not.toBeEmpty();
-    if (name === 'explorer-svg') await expect(canvas).toHaveCSS('overflow', 'hidden');
-    await page.locator('[data-mode=explore]').click();
-    const field = page.locator('.ve-parameters input[type=range]').first();
-    await field.fill((await field.getAttribute('min')) ?? '0');
-    expect(await page.locator('audio').evaluate((audio: HTMLAudioElement) => audio.paused)).toBe(
-      true,
-    );
-    await page.locator('[data-mode=story]').click();
-    await expect(page.locator('.ve-scene')).toHaveAttribute('data-scene-mode', 'story');
-    await page.evaluate(() => (document.querySelector('.ve-scene') as any).scene.dispose());
-    await expect(page.locator('.ve-scene')).toBeEmpty();
-  });
+test('manual camera changes preserve audio playback and model conditions', async ({ page }) => {
+  await openFixture(page, 'scene-shell', 'media.html');
+  await page.locator('[data-play]').click();
+  await expect
+    .poll(() => page.locator('audio').evaluate((audio: HTMLAudioElement) => audio.currentTime))
+    .toBeGreaterThan(0.1);
+  const drawing = page.locator('#shell-subject');
+  await drawing.focus();
+  await drawing.press('ArrowRight');
+  expect(
+    await page.evaluate(
+      () => (document.querySelector('.ve-scene') as any).scene.capture().view.following,
+    ),
+  ).toBe(false);
+  const seek = page.locator('[data-seek]'),
+    before = Number(await seek.inputValue());
+  await expect.poll(() => seek.inputValue().then(Number)).toBeGreaterThan(before + 0.1);
+  await page.locator('[data-play]').click();
+  for (const time of [12, 19, 0, 12]) await seek.fill(String(time));
+  expect(
+    await page.evaluate(() => document.querySelector<HTMLElement>('.ve-scene')!.scene!.snapshot()),
+  ).toEqual({ x: 3, y: 2 });
+  await expect(drawing).toHaveCSS('overflow', 'hidden');
+});

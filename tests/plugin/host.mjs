@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { createProjectFixture, finishFixtureJob } from './authoring-fixture.mjs';
 
 /** Development host uses the real SDK and stdio server; it does not claim native Codex acceptance. */
 export async function pluginHost({
@@ -14,6 +15,8 @@ export async function pluginHost({
   dataDirectory,
   serverCommand = process.execPath,
   serverEntry = fileURLToPath(new URL('../../plugin/dist/server.mjs', import.meta.url)),
+  fixture,
+  initialTarget = { example: 'gpt-model' },
 } = {}) {
   const temporary = !dataDirectory;
   dataDirectory ??= await mkdtemp(join(tmpdir(), 'visual-story-host-'));
@@ -26,6 +29,18 @@ export async function pluginHost({
       env: { ...process.env, VISUAL_STORY_DATA_DIR: dataDirectory },
     }),
   );
+  if (fixture) {
+    const authored = await createProjectFixture(
+      client,
+      {
+        path: join(dataDirectory, 'test-project'),
+        title: 'Regression fixture',
+      },
+      fixture,
+    );
+    await finishFixtureJob(client, authored.job.id);
+    initialTarget = { projectId: authored.project.id };
+  }
   const { tools } = await client.listTools();
   const { contents } = await client.readResource({
     uri: tools.find((t) => t.name === 'story_open')._meta.ui.resourceUri,
@@ -69,7 +84,7 @@ export async function pluginHost({
         res
           .writeHead(200, { 'content-type': 'text/html' })
           .end(
-            `<!doctype html><html><head><meta charset="utf-8"><title>Visual Storytelling · MCP contract host</title></head><body data-token="${token}" style="margin:0;max-width:820px;margin:auto"><script type="module" src="/host.js"></script></body></html>`,
+            `<!doctype html><html><head><meta charset="utf-8"><title>Visual Storytelling · MCP contract host</title></head><body data-token="${token}" data-initial="${encodeURIComponent(JSON.stringify(initialTarget))}" style="margin:0;max-width:820px;margin:auto"><script type="module" src="/host.js"></script></body></html>`,
           );
       else res.writeHead(404).end();
     } catch (error) {

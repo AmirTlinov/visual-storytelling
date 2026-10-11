@@ -78,18 +78,46 @@ function slots(count: number, columns = count, xGap = 3.4, yGap = 7.2): MorphPoi
 
 /** A carried result keeps its body while a unary step changes the writing on it. */
 function applyTo(input: MathPart, step: MathStep): Stage {
-  const value =
-    step.operator === 'apply'
-      ? step.value(input.value)
-      : evaluate(step.operator, [input.value, step.value]);
+  const id = `${input.id}:step`;
+  if (step.operator !== 'apply') {
+    const operand = Math.max(0, ...(input.origins ?? []).map((origin) => origin.operand)) + 1;
+    const constant = cell(
+      step.value,
+      `${input.id}:constant`,
+      [input.position[0] + 3.4, input.position[1], input.position[2]],
+      [{ operand, index: 0, value: step.value }],
+    );
+    return reduceCells(
+      [input, constant],
+      step.operator,
+      [],
+      {
+        // Introduce the new operand beside the carried body without moving that
+        // body at a stage boundary, including a one-column arrangement.
+        start: (columns) => [
+          input,
+          columns === 1
+            ? {
+                ...constant,
+                position: [input.position[0], input.position[1] - 3.4, input.position[2]],
+              }
+            : constant,
+        ],
+      },
+      id,
+    );
+  }
+  const value = step.value(input.value);
   if (!Number.isFinite(value)) throw new Error('The calculation must have a finite real result');
-  if (step.operator === 'apply' && !step.label.trim())
-    throw new Error('A function needs a visible label');
-  const target = { ...input, value: Object.is(value, -0) ? 0 : value };
-  const expression =
-    step.operator === 'apply'
-      ? `${step.label}(${mathNumber(input.value)})`
-      : `${term(input.value)} ${symbols[step.operator]} ${term(step.value)}`;
+  if (!step.label.trim()) throw new Error('A function needs a visible label');
+  const target: MathPart = {
+    ...input,
+    id,
+    value: Object.is(value, -0) ? 0 : value,
+    inputIds: input.id ? [input.id] : [],
+    originPrecision: 'conservative',
+  };
+  const expression = `${step.label}(${mathNumber(input.value)})`;
   return {
     bounds: [input, target],
     sample(p) {
@@ -131,6 +159,7 @@ function reduceCells(
     start(columns?: number): MathPart[];
     contact?(columns?: number): MorphPoint[];
   },
+  id = 'result',
 ): Stage {
   const result = evaluate(
     operator,
@@ -138,10 +167,14 @@ function reduceCells(
   );
   const target = cell(
     result,
-    'result',
+    id,
     [0, 0, 0],
     inputs.flatMap((p) => p.origins ?? []),
   );
+  target.inputIds = inputs.flatMap((input) => (input.id ? [input.id] : []));
+  target.originPrecision = inputs.some((input) => input.originPrecision === 'conservative')
+    ? 'conservative'
+    : 'exact';
   const expression = inputs.map((p) => term(p.value)).join(` ${symbols[operator]} `);
   return {
     bounds: [...inputs, target],
@@ -233,6 +266,7 @@ function pairs(
   operator: 'add' | 'multiply',
   offset = 0,
   end = leftOperand.values.length,
+  horizontal = false,
 ): Stage {
   const left = leftOperand.values.slice(offset, end),
     right = rightOperand.values.slice(offset, end);
@@ -243,7 +277,7 @@ function pairs(
     return cell(
       value,
       `${operand ? 'right' : 'left'}:${offset + i}`,
-      [(i - (n - 1) / 2) * spacing, y, 0],
+      horizontal ? [-y, 0, 0] : [(i - (n - 1) / 2) * spacing, y, 0],
       [(operand ? rightOperand : leftOperand).origins[offset + i]!],
     );
   };
@@ -251,14 +285,15 @@ function pairs(
     ...left.map((_, i) => source(0, i, 1.65)),
     ...right.map((_, i) => source(1, i, -1.65)),
   ];
-  const targets = left.map((a, i) =>
-    cell(
+  const targets = left.map((a, i) => ({
+    ...cell(
       evaluate(operator, [a, right[i]!]),
       `pair:${offset + i}`,
       [(i - (n - 1) / 2) * spacing, 0, 0],
       [starts[i]!.origins![0]!, starts[n + i]!.origins![0]!],
     ),
-  );
+    inputIds: [starts[i]!.id!, starts[n + i]!.id!],
+  }));
   return {
     bounds: starts,
     sample(p, columns) {
@@ -269,9 +304,13 @@ function pairs(
       const sources = starts.map((part, i) => ({
         ...part,
         position: [
-          locations[i % n]![0],
-          locations[i % n]![1] +
-            mix(part.position[1], i < n ? cellSize / 2 : -cellSize / 2, approach),
+          horizontal
+            ? mix(part.position[0], i < n ? -cellSize / 2 : cellSize / 2, approach)
+            : locations[i % n]![0],
+          horizontal
+            ? 0
+            : locations[i % n]![1] +
+              mix(part.position[1], i < n ? cellSize / 2 : -cellSize / 2, approach),
           0,
         ] as MorphPoint,
       }));
@@ -318,22 +357,25 @@ function contactAboveResult(count: number, columns?: number): MorphPoint[] {
   return [[0, 0, 0], ...positions.map(([x, y, z]): MorphPoint => [x, y - bottom + cellSize, z])];
 }
 
-function dotStages(left: VectorOperand, right: VectorOperand): Stage[] {
+function dotStages(left: VectorOperand, right: VectorOperand, batchSize = batchTerms): Stage[] {
   const stages: Stage[] = [];
   let carried: MathPart | undefined;
-  for (let offset = 0; offset < left.values.length; offset += batchTerms) {
-    const end = Math.min(left.values.length, offset + batchTerms);
-    const paired = pairs(left, right, 'multiply', offset, end);
+  for (let offset = 0; offset < left.values.length; offset += batchSize) {
+    const end = Math.min(left.values.length, offset + batchSize);
+    const horizontal = batchSize === 1;
+    const paired = pairs(left, right, 'multiply', offset, end, horizontal);
     const previous = carried;
     const sample = (p: number, columns?: number) => {
       const frame = paired.sample(p, columns);
       // Each partial sum retains its own field while the next pairs make contact.
-      const lift =
-        4.5 - Math.min(...paired.sample(0, columns).sources.map((part) => part.position[1]));
+      const lift = horizontal
+        ? 0
+        : 4.5 - Math.min(...paired.sample(0, columns).sources.map((part) => part.position[1]));
+      const shift = horizontal && previous ? 3.4 : 0;
       const move = (part: MathPart): MathPart => ({
         ...part,
         material: `pair:${part.origins![0]!.index}`,
-        position: [part.position[0], part.position[1] + lift, part.position[2]],
+        position: [part.position[0] + shift, part.position[1] + lift, part.position[2]],
       });
       const accumulator = previous ? [{ ...previous, material: 'accumulator' }] : [];
       return {
@@ -342,7 +384,11 @@ function dotStages(left: VectorOperand, right: VectorOperand): Stage[] {
         targets: [...frame.targets.map(move), ...accumulator],
         notes: frame.notes?.map((note) => ({
           ...note,
-          position: [note.position[0], note.position[1] + lift, note.position[2]] as MorphPoint,
+          position: [
+            note.position[0] + shift,
+            note.position[1] + lift,
+            note.position[2],
+          ] as MorphPoint,
         })),
         formula: `Умножаем пары ${offset + 1}–${end} из ${left.values.length}`,
       };
@@ -360,8 +406,12 @@ function dotStages(left: VectorOperand, right: VectorOperand): Stage[] {
       sample(1).notes?.filter((note) => note.opacity > 0),
       {
         start: inputs,
-        contact: previous ? (columns) => contactAboveResult(end - offset, columns) : undefined,
+        contact:
+          previous && !horizontal
+            ? (columns) => contactAboveResult(end - offset, columns)
+            : undefined,
       },
+      end === left.values.length ? 'result' : `sum:${end}`,
     );
     stages.push(reduction);
     carried = reduction.sample(1).targets[0]!;
@@ -390,10 +440,16 @@ function calculationStages(values: readonly number[], operator: Arithmetic): Sta
       );
       return previous ? [previous, ...fresh] : fresh;
     };
-    const reduction = reduceCells(inputs(), operator, [], {
-      start: inputs,
-      contact: previous ? (columns) => contactAboveResult(end - index, columns) : undefined,
-    });
+    const reduction = reduceCells(
+      inputs(),
+      operator,
+      [],
+      {
+        start: inputs,
+        contact: previous ? (columns) => contactAboveResult(end - index, columns) : undefined,
+      },
+      end === values.length ? 'result' : `sum:${end}`,
+    );
     stages.push(reduction);
     carried = reduction.sample(1).targets[0]!;
     offset = end;
@@ -463,8 +519,11 @@ export function arithmeticPlan(operation: CellOperation): MathMorphPlan {
       right.values.length !== left.values.length
     )
       throw new Error(`Vector operations need equally sized rows of 1 to ${limit} numbers`);
-    if (operation.kind === 'dot' && left.values.length > batchTerms) {
-      stages.push(...dotStages(left, right));
+    const batchSize = operation.kind === 'dot' ? (operation.batchSize ?? batchTerms) : batchTerms;
+    if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > batchTerms)
+      throw new Error(`Dot batch size must be an integer from 1 to ${batchTerms}`);
+    if (operation.kind === 'dot' && (left.values.length > batchSize || batchSize === 1)) {
+      stages.push(...dotStages(left, right, batchSize));
       result = stages.at(-1)!.sample(1).targets[0]!.value;
     } else {
       const paired = pairs(left, right, operation.kind === 'dot' ? 'multiply' : 'add');

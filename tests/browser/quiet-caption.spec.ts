@@ -1,3 +1,4 @@
+import { openFixture } from '../support/fixture.mjs';
 import { expect, test } from '@playwright/test';
 
 test('a quiet character story explains on its drawing and retains an accessible transcript', async ({
@@ -6,7 +7,7 @@ test('a quiet character story explains on its drawing and retains an accessible 
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/tesla-circuit/index.html');
+  await openFixture(page, 'chapters');
   await page.evaluate(() => (window as any).galleryReady);
   const caption = page.locator('[data-caption]');
   const seek = (id: string) =>
@@ -40,9 +41,8 @@ test('a quiet character story explains on its drawing and retains an accessible 
     expect(state.clipped).toEqual([]);
   };
 
-  const open = 'Разомкнём цепь. Путь прервался, и лампа погасла.';
-  const start =
-    'Проследим путь энергии. Источник создаёт напряжение, а замкнутая цепь позволяет току идти через лампу.';
+  const open = 'Разомкнутая цепь не проводит ток.';
+  const start = 'Проследим цепь.';
   await seek('workshop.explain');
   await explained(open, false);
   await seek('workshop.approach');

@@ -100,38 +100,24 @@ function selectControl(
   function place() {
     const r = trigger.getBoundingClientRect(),
       viewport = window.visualViewport,
-      frame = trigger.closest<HTMLElement>('[data-scene-frame]'),
-      frameBounds = frame?.getBoundingClientRect(),
-      scale = Number(frame?.dataset.frameScale) || 1;
-    const left = Math.max(viewport?.offsetLeft || 0, frameBounds?.left ?? -Infinity),
-      top = Math.max(viewport?.offsetTop || 0, frameBounds?.top ?? -Infinity),
-      right = Math.min(
-        (viewport?.offsetLeft || 0) + (viewport?.width || innerWidth),
-        frameBounds?.right ?? Infinity,
-      ),
-      bottom = Math.min(
-        (viewport?.offsetTop || 0) + (viewport?.height || innerHeight),
-        frameBounds?.bottom ?? Infinity,
-      ),
-      margin = 8 * scale,
-      gap = 6 * scale;
+      left = viewport?.offsetLeft || 0,
+      top = viewport?.offsetTop || 0,
+      right = left + (viewport?.width || innerWidth),
+      bottom = top + (viewport?.height || innerHeight),
+      margin = 8,
+      gap = 6;
     if (r.bottom <= top || r.top >= bottom || r.right <= left || r.left >= right) {
       menu.hidePopover();
       return;
     }
-    const width = Math.max(
-        0,
-        Math.min(Math.max(r.width, frame ? 280 * scale : 0), right - left - margin * 2),
-      ),
+    const width = Math.max(0, Math.min(Math.max(r.width, 280), right - left - margin * 2)),
       below = Math.max(0, bottom - r.bottom - margin - gap),
       above = Math.max(0, r.top - top - margin - gap);
-    const up = below < Math.min(180, rows.length * 44 + 20) * scale && above > below;
-    // A native popover leaves transformed ancestors for the top layer. Restore
-    // the frame's scale explicitly and place it in screen coordinates.
-    menu.style.transformOrigin = '0 0';
-    menu.style.transform = scale === 1 ? '' : `scale(${scale})`;
-    menu.style.width = `${width / scale}px`;
-    menu.style.maxHeight = `${Math.max(0, Math.min(320 * scale, up ? above : below)) / scale}px`;
+    const up = below < Math.min(180, rows.length * 44 + 20) && above > below;
+    // Top-layer choices use physical control sizes, independently of the drawing's
+    // scale and of an enclosing conditions popover.
+    menu.style.width = `${width}px`;
+    menu.style.maxHeight = `${Math.max(0, Math.min(320, up ? above : below))}px`;
     menu.style.left = `${Math.max(left + margin, Math.min(r.left, right - width - margin))}px`;
     const menuHeight = menu.getBoundingClientRect().height;
     menu.style.top = `${Math.max(top + margin, Math.min(up ? r.top - menuHeight - gap : r.bottom + gap, bottom - menuHeight - margin))}px`;
@@ -353,6 +339,7 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
     input.addEventListener(
       'blur',
       () => {
+        if (input.closest('[data-scene-controls-moving]')) return;
         update();
         input.removeAttribute('aria-invalid');
       },

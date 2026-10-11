@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
@@ -24,7 +25,7 @@ const bundle = await build({
 });
 let browser;
 before(async () => {
-  browser = await chromium.launch();
+  browser = await chromium.launch(chromiumLaunchOptions());
 });
 after(async () => {
   await browser.close();

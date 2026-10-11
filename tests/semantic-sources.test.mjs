@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, cp, rm } from 'node:fs/promises';
@@ -7,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 import { annotateSources, sourceHash } from '../tools/build-sources.mjs';
 import { buildScene } from '../tools/build-pages.mjs';
-import { readProjectFile } from '../plugin/project-files.mjs';
+import { readProjectFile } from '../tools/project-files.mjs';
 
 test('source annotation resolves lexical bindings and never guesses a dynamic factory', () => {
   const source = `import * as Story from '@visual-storytelling/core';
@@ -111,7 +112,7 @@ window.galleryReady=SceneStory.mount(root,{title:'Sources',chapters,frame:{width
     await writeFile(join(working, 'parts/scene.js'), source);
     await cp(working, snapshot, { recursive: true });
     await buildScene(snapshot, output, { sourcePackage: true });
-    browser = await chromium.launch();
+    browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
     await page.goto(pathToFileURL(join(output, 'index.html')).href);
     await page.evaluate(() => galleryReady);
@@ -208,7 +209,7 @@ await buildPage(join(out,'index.html'),out,{sourcePackage:true});
     assert(
       !receipt.inputs.some((input) => input.references.some((file) => file.endsWith('scene.js'))),
     );
-    browser = await chromium.launch();
+    browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage();
     await page.goto(pathToFileURL(join(output, 'index.html')).href);
     assert.equal(await page.locator('button').getAttribute('aria-label'), 'Generated');

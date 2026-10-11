@@ -34,6 +34,7 @@ export function chapterPresentations(chapters: readonly SceneChapter[], parent: 
     const element = document.createElement('div');
     sourceAt(element, sourceOf(chapters[index]));
     element.dataset.chapter = chapters[index]!.id;
+    element.dataset.chapterPending = '';
     element.inert = true;
     // Conceal paint without changing authored visibility or SVG geometry during preparation.
     Object.assign(element.style, { position: 'absolute', inset: '0', clipPath: 'inset(100%)' });
@@ -46,6 +47,7 @@ export function chapterPresentations(chapters: readonly SceneChapter[], parent: 
         throw new Error('Story presentations have been disposed');
       }
       element.hidden = true;
+      delete element.dataset.chapterPending;
       element.style.removeProperty('clip-path');
       mounted.set(index, { element, drawing });
     } catch (cause) {

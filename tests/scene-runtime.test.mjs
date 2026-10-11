@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -47,7 +48,6 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
             const cleared = !cell.label.element.dataset.layoutError;
             const wide = token(paper,'wide','123456',{width:140});
             const chart = plot(paper,'axis',{x:180,y:30,width:200,height:180,xDomain:[0,2],yDomain:[-1,1],xTicks:[{value:1,label:'1'}]});
-            const tick = paper.element.querySelector('[data-stroke="axis:xtick:1"]').getBBox();
             let renders=0, disposed=0;
             const story = shell.attachStory({script:{duration:10,cues:{},segments:[
               {id:'first',title:'First question',text:'First',start:0,end:5},
@@ -58,6 +58,9 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
             const transition = {events:[...events],renders,mode:story.requested.mode};
             shell.onDispose(()=>disposed++);
             window.lab={shell,story,view,detail,events,model,pigment,paper,chart,portion,disposeCount:()=>disposed};
+            // The shell publishes its action surface after the DOM mutation observer.
+            await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+            const tick = paper.element.querySelector('[data-stroke="axis:xtick:1"]').getBBox();
             return {detailWidth,shortInk,shortError,overflow,cleared,wideInk:wide.label.bounds,
               wideError:wide.label.element.dataset.layoutError,invalidColor,transition,
               axisY:chart.point(0,0)[1],tickY:tick.y+tick.height/2};
@@ -94,7 +97,7 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
       '<!doctype html><html><head><link rel="stylesheet" href="index.css"></head><body class="ve-standalone"><main class="ve-scene"></main><script src="index.js"></script></body></html>',
     );
     server = await serve(directory);
-    browser = await chromium.launch();
+    browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage({ viewport: { width: 960, height: 1100 } });
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
@@ -106,12 +109,15 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
     assert.match(result.overflow, /Enlarge its cell/);
     assert(result.cleared);
     assert(result.wideInk.width > 0 && result.wideInk.width <= 128.5 && !result.wideError);
-    for (const [ink, width] of [[result.shortInk, 44], [result.wideInk, 140]]) {
+    for (const [ink, width] of [
+      [result.shortInk, 44],
+      [result.wideInk, 140],
+    ]) {
       assert(ink.x >= -width / 2 && ink.x + ink.width <= width / 2);
       assert(ink.y >= -22 && ink.y + ink.height <= 22);
     }
     assert.match(result.invalidColor, /Unknown 3D pigment: unknown/);
-    assert(Math.abs(result.tickY - result.axisY) < 1);
+    assert(Math.abs(result.tickY - result.axisY) < 1, JSON.stringify(result));
     const plotLifecycle = await page.evaluate(() => {
       const { chart, paper } = lab;
       const trace = chart.trace(

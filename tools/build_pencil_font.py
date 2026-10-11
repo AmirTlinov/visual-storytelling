@@ -5,8 +5,8 @@
 # ///
 """Build static lettering from the same pen strokes used by narrated writing.
 
-Run after editing src/ink/glyphs.ts. Shantell supplies spacing and fallback;
-the generated outlines are the skill's own strokes, without browser-side copies.
+Run after editing src/ink/glyphs.ts or src/ink/handwriting.ts. Shantell supplies
+spacing and fallback; generated outlines use the same geometry as animated strokes.
 """
 import json
 from pathlib import Path

@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
@@ -42,7 +43,7 @@ test('drawn SVG controls own pointer, keyboard, disabled state and disposal insi
     outdir: resolve('artifacts/test-svg-button'),
     loader: { '.woff2': 'dataurl' },
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage();
     await page.setContent(

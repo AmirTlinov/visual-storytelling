@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
@@ -14,7 +15,7 @@ async function fixture(contents, work) {
     loader: { '.woff2': 'dataurl' },
     plugins: [assetURLs()],
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
     await page.setContent('<main class="ve-scene" style="position:relative;width:600px"></main>');
@@ -295,7 +296,9 @@ test('async input keeps one undo step and agent view commands match manual explo
       );
       await page.locator('canvas').first().focus();
       await page.keyboard.press('ArrowLeft');
+      await page.getByRole('button', { name: 'Условия', exact: true }).click();
       await page.getByRole('button', { name: 'Рассказ', exact: true }).click();
+      await page.getByRole('button', { name: 'Закрыть условия', exact: true }).click();
       await page.evaluate(
         () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
       );
@@ -466,17 +469,37 @@ test('3D hit testing, labels, keyboard and provenance share stable semantic obje
         return { collecting, partial, complete, reverse: lab.root.scene.objects() };
       });
       for (const state of [batched.collecting, batched.reverse]) {
-        const carried = state.find((o) => o.id === 'dot:result');
+        const carried = state.find((o) => o.id === 'dot:sum:16');
+        assert.equal(carried.visible, true);
         assert.equal(carried.value, 16, 'a carried result describes the currently visible value');
         assert.equal(carried.provenance.origins.length, 32);
       }
-      assert.equal(batched.partial.find((o) => o.id === 'dot:result').value, 20);
+      const partial = batched.partial.find((o) => o.id === 'dot:sum:20');
+      assert.equal(partial.visible, true);
+      assert.equal(partial.value, 20);
+      assert.equal(partial.provenance.origins.length, 40);
       const complete = batched.complete.find((o) => o.id === 'dot:result');
       assert.equal(complete.value, 32);
-      assert.equal(
-        complete.inputs.length,
-        64,
-        'direct seeking retains input IDs from stages that have never been displayed',
+      assert.deepEqual(
+        complete.inputs,
+        ['dot:sum:28', ...[28, 29, 30, 31].map((i) => `dot:pair:${i}`)],
+        'the last reduction describes its immediate accumulator and four products',
+      );
+      assert.equal(complete.provenance.origins.length, 64);
+      const leaves = new Set();
+      const visit = (id, ancestors = []) => {
+        assert.ok(!ancestors.includes(id), 'the immediate dependency graph is acyclic');
+        const object = batched.complete.find((part) => part.id === id);
+        assert.ok(object, `direct seeking retains the unseen dependency ${id}`);
+        if (!object.inputs.length) leaves.add(id);
+        else object.inputs.forEach((input) => visit(input, [...ancestors, id]));
+      };
+      visit(complete.id);
+      assert.deepEqual(
+        [...leaves].sort(),
+        ['left', 'right']
+          .flatMap((side) => Array.from({ length: 32 }, (_, i) => `dot:${side}:${i}`))
+          .sort(),
       );
       assert.equal(batched.complete.find((o) => o.id === 'dot').inputs.length, 64);
       assert.deepEqual(
@@ -527,11 +550,17 @@ test('SVG math parts share inspect, find, pointer, keyboard and provenance throu
       });
       const result = complete.find((part) => part.id === 'dot:result');
       assert.equal(result.value, 32);
-      assert.equal(
-        result.inputs.length,
-        6,
-        'direct seeking preserves original inputs from unseen stages',
+      assert.deepEqual(
+        result.inputs,
+        ['dot:pair:0', 'dot:pair:1', 'dot:pair:2'],
+        'the sum points to the three immediate products',
       );
+      for (let i = 0; i < 3; i++)
+        assert.deepEqual(
+          complete.find((part) => part.id === `dot:pair:${i}`).inputs,
+          [`dot:left:${i}`, `dot:right:${i}`],
+          'direct seeking retains both original operands of every unseen product',
+        );
       assert.equal(result.provenance.origins.length, 6);
       assert.equal(complete.find((part) => part.id === 'dot').value, 32);
       assert.equal(complete.find((part) => part.id === input.id).visible, false);
@@ -664,7 +693,13 @@ test('revised chapters, typed extensions, late host state and playback approval 
     window.mount=(revised=false)=>{
       const shell=SceneShell.mount(root,{title:'Restore',parameters:[{key:'x',label:'X',value:1,min:0,max:revised?2:10}]});
       const script=revised?{duration:25,cues:{last:{start:20,end:25}},segments:[{...chapters[0],end:20},{...chapters[2],start:20,end:25}]}:{duration:10,cues:{moment:{start:4,end:6}},segments:chapters};
-      const story=shell.attachStory({script,stateAt:()=>({x:1}),render:()=>{}});
+      // A media owner with sound exposes mute; a silent clock intentionally does not.
+      const audio=Object.assign(new EventTarget(),{
+        currentTime:0,paused:true,ended:false,muted:true,playbackRate:1,
+        async play(){this.paused=false;this.dispatchEvent(new Event('play'))},
+        pause(){this.paused=true;this.dispatchEvent(new Event('pause'))},
+      });
+      const story=shell.attachStory({script,audio,stateAt:()=>({x:1}),render:()=>{}});
       window.lab={root,shell,story};
     }; mount();
     window.widgetState=widgetState;

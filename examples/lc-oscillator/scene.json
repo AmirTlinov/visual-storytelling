@@ -1,7 +1,0 @@
-{
-  "entry": "preview.html",
-  "generator": {
-    "file": "build.py",
-    "runner": "uv"
-  }
-}

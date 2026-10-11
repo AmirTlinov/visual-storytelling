@@ -11,7 +11,7 @@ const html = <K extends keyof HTMLElementTagNameMap>(name: K) =>
   document.createElementNS('http://www.w3.org/1999/xhtml', name) as HTMLElementTagNameMap[K];
 
 /** Explicit access to labels that cannot fit; placement remains with the surface's solver. */
-export function labelOverflow(host: HTMLElement) {
+export function labelOverflow(host: HTMLElement, { label }: { label?: string } = {}) {
   const lifetime = new AbortController(),
     listen = { signal: lifetime.signal },
     id = `ve-label-overflow-${++serial}`;
@@ -19,7 +19,7 @@ export function labelOverflow(host: HTMLElement) {
   element.type = 'button';
   element.className = 've-label-overflow';
   element.hidden = true;
-  element.textContent = 'Ещё подписи';
+  element.textContent = label ?? 'Ещё подписи';
   element.setAttribute('popovertarget', id);
   element.setAttribute('aria-controls', id);
   element.setAttribute('aria-expanded', 'false');
@@ -29,7 +29,7 @@ export function labelOverflow(host: HTMLElement) {
   panel.style.pointerEvents = 'auto';
   panel.setAttribute('popover', 'auto');
   panel.setAttribute('role', 'region');
-  panel.setAttribute('aria-label', 'Подписи, для которых недостаточно места в рисунке');
+  panel.setAttribute('aria-label', label ?? 'Подписи, для которых недостаточно места в рисунке');
   panel.tabIndex = 0;
   const list = html('ul');
   panel.append(list);
@@ -126,8 +126,11 @@ export function labelOverflow(host: HTMLElement) {
         host
           .querySelector<HTMLElement>('canvas[tabindex],svg[tabindex],button:not([hidden])')
           ?.focus({ preventScroll: true });
-      element.textContent = `Ещё подписи · ${items.length}`;
-      element.setAttribute('aria-label', `Показать неуместившиеся подписи: ${items.length}`);
+      element.textContent = label ?? `Ещё подписи · ${items.length}`;
+      element.setAttribute(
+        'aria-label',
+        label ?? `Показать неуместившиеся подписи: ${items.length}`,
+      );
       element.style.left = `${bounds.x}px`;
       element.style.top = `${bounds.y}px`;
       element.style.width = `${bounds.width}px`;

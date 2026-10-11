@@ -16,6 +16,20 @@ export const voiceRequirements = {
   requiredDiskBytes: 18_000_000_000,
   recommendedMemoryBytes: 32_000_000_000,
 };
+
+export function voiceSupport(platform = process.platform, arch = process.arch) {
+  return platform === 'darwin' && arch === 'arm64'
+    ? { supported: true }
+    : {
+        supported: false,
+        reason: 'Higgs speech synthesis in this release requires MLX/Metal on macOS Apple Silicon.',
+      };
+}
+
+export function requireVoiceSupport() {
+  const support = voiceSupport();
+  if (!support.supported) throw new Error(support.reason);
+}
 const exists = (path) =>
   access(path).then(
     () => true,
@@ -46,6 +60,9 @@ export async function configureVoiceEnvironment(data) {
 }
 
 export async function voiceEnvironmentStatus(data) {
+  const support = voiceSupport();
+  if (!support.supported)
+    return { ...support, ready: false, requirements: voiceRequirements, stage: 'unsupported' };
   const selected = await paths(data);
   const receipt = await readJSON(join(selected.directory, 'receipt.json'));
   const resources = await readJSON(join(selected.cache, 'resources.json'));
@@ -71,6 +88,7 @@ export async function voiceEnvironmentStatus(data) {
     )
   ).every(Boolean);
   return {
+    ...support,
     ready: Boolean(
       receipt?.lock === selected.lock &&
         receipt.managedPython &&
@@ -154,6 +172,7 @@ async function command(binary, args, { signal, progress, env, stage }) {
 }
 
 export async function prepareVoiceEnvironment(data, uv, task) {
+  requireVoiceSupport();
   const selected = await configureVoiceEnvironment(data);
   return withPreparationLock(selected.directory + '.lock', task, async () => {
     await mkdir(selected.directory, { recursive: true });

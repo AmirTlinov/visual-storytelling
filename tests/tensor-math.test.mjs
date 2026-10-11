@@ -55,7 +55,10 @@ test('a transposed, sliced and reshaped tensor keeps original cell addresses thr
 
   const chain = MathMorph.plan(MathMorph.chain(operation, { operator: 'add', value: 5 }));
   assert.equal(chain.result, -19);
-  assert.deepEqual(chain.sample(1).targets[0].origins, origins);
+  assert.deepEqual(chain.sample(1).targets[0].origins, [
+    ...origins,
+    { operand: 2, index: 0, value: 5 },
+  ]);
 });
 
 test('vector addition uses the same arithmetic and preserves mixed tensor and plain-array inputs', () => {
@@ -141,7 +144,11 @@ test('selected arithmetic results and operation roots expose original tensor cel
   const result = semantics.parts.get('calculation:result');
   assert.equal(result.visible, true);
   assert.equal(result.meaning.value(), -24);
-  assert.deepEqual(new Set(result.meaning.inputs()), new Set(expectedIds));
+  assert.deepEqual(result.meaning.inputs(), [
+    'calculation:sum:4',
+    'calculation:pair:4',
+    'calculation:pair:5',
+  ]);
   assert.deepEqual(
     result.meaning
       .provenance()
@@ -157,7 +164,11 @@ test('selected arithmetic results and operation roots expose original tensor cel
   semantics.update(MathMorph.plan(operation).sample(1));
   const updated = semantics.parts.get('calculation:result');
   assert.equal(updated.meaning.value(), 76);
-  assert.deepEqual(new Set(updated.meaning.inputs()), new Set(expectedIds));
+  assert.deepEqual(updated.meaning.inputs(), [
+    'calculation:sum:4',
+    'calculation:pair:4',
+    'calculation:pair:5',
+  ]);
   assert.equal(updated.meaning.provenance().origins[0].source.value, 103);
   assert.equal(result.meaning.value(), -24, 'the earlier snapshot still describes its own values');
 });

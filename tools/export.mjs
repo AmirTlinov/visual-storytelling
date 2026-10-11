@@ -18,7 +18,7 @@ export async function runExport(args = process.argv.slice(2)) {
     allowPositionals: true,
     options: {
       help: { type: 'boolean', short: 'h' },
-      scene: { type: 'string', default: 'area-story' },
+      scene: { type: 'string', default: 'gpt-model' },
       directory: { type: 'string' },
       format: { type: 'string', default: 'png' },
       theme: { type: 'string' },

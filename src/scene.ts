@@ -11,6 +11,7 @@ import { captionTrack, type CaptionOptions } from './story/captions.js';
 import { sceneFrame, inspectPresentation, type SceneFrameOptions } from './scene-frame.js';
 export type { SceneFrameOptions, ScenePresentation } from './scene-frame.js';
 import { loadFonts } from './ink/fonts.js';
+import { exportCompositionSVG } from './export/composition.js';
 import { theme } from './ink/palette.js';
 import { SceneHistory } from './controls/history.js';
 import { player as statePlayer } from './controls/player.js';
@@ -26,15 +27,20 @@ export type {
 } from './scene-checkpoint.js';
 export { mountScene } from './scene-handle.js';
 export type { SceneHandle, SceneRuntime, SceneHost } from './scene-handle.js';
+/** Explanation keeps annotations on the sheet; stage gives the subject the complete frame. */
+export type SceneFramePresentation = 'explanation' | 'stage';
 export interface SceneOptions {
   title: string;
   /** Shared controls can follow a product interface while the subject owns its brand. */
   appearance?: 'sketch' | 'interface';
   paper?: boolean;
+  presentation?: SceneFramePresentation;
   /** 1280×720 drawing by default. Playback and status stay outside the composition. */
   frame?: SceneFrameOptions;
   /** Hide the shell heading when the subject supplies its own title. */
   heading?: boolean;
+  /** Hide shared chapter/mode/history navigation when the subject supplies its own. Camera and history ownership are unchanged. */
+  navigation?: boolean;
   /** Optional visible word-aligned captions; omitted keeps the accessible chapter text. */
   captions?:
     | true
@@ -56,8 +62,12 @@ export interface SceneMount {
   actions: HTMLDivElement;
   status: HTMLParagraphElement;
   parameters: Record<string, ControlValue>;
+  /** Current subject geometry, including the scale to the displayed CSS pixels. */
+  readonly layout: SceneLayout;
   readonly mode: 'story' | 'explore';
   setMode(mode: 'story' | 'explore'): void;
+  /** Publish the current subject's frame without changing its clock, inputs or player. */
+  setPresentation(presentation: SceneFramePresentation): void;
   /** Reflect subject-owned edits in an editable shell; story edits use story.input(). */
   syncParameters(values: Record<string, ControlValue>): void;
   /** Commit a subject-owned user action through the existing controls and undo history. */
@@ -71,6 +81,17 @@ export interface SceneMount {
   /** View gestures keep media running; mode buttons and seeking restore the authored shot. */
   attachView(view: SceneView): void;
   dispose(): void;
+}
+export interface SceneLayout {
+  /** Available subject space in the composition's logical coordinates. */
+  readonly width: number;
+  readonly height: number;
+  /** Subject size after the complete composition has been fitted to its surface. */
+  readonly displayWidth: number;
+  readonly displayHeight: number;
+  /** Uniform composition scale; 1 before the hidden subject can be measured. */
+  readonly scale: number;
+  readonly compact: boolean;
 }
 import {
   SketchControls,
@@ -90,11 +111,13 @@ const node = <K extends keyof HTMLElementTagNameMap>(
   if (text !== undefined) element.textContent = text;
   return element;
 };
+let shellSerial = 0;
 function mount(
   root: HTMLElement,
   {
     title,
     paper,
+    presentation = 'explanation',
     appearance = 'sketch',
     parameters = [],
     onInput = () => {},
@@ -102,6 +125,7 @@ function mount(
     exploration = 'model',
     frame = { width: 1280, height: 720, scope: 'scene' },
     heading: showHeading = true,
+    navigation: showNavigation = true,
     captions,
     history: retainHistory = true,
   }: SceneOptions,
@@ -185,12 +209,53 @@ function mount(
     options,
   );
   const completeFrame = frame.scope === 'scene';
+  const showHistory = parameters.length > 0 && retainHistory && showNavigation;
   const sheet = completeFrame ? node('div') : root;
   const composition = sceneFrame(completeFrame ? sheet : stage, frame);
+  const conditionsId = `ve-conditions-${++shellSerial}`,
+    conditions = node('div', {
+      id: conditionsId,
+      class: 've-scene-conditions',
+      popover: 'auto',
+      role: 'dialog',
+      'aria-label': 'Условия объяснения',
+    }),
+    conditionsButton = node(
+      'button',
+      {
+        type: 'button',
+        class: 've-conditions-trigger',
+        popovertarget: conditionsId,
+        'aria-expanded': 'false',
+        'aria-controls': conditionsId,
+        hidden: '',
+      },
+      'Условия',
+    ),
+    header = node('div', { class: 've-scene-header' }),
+    conditionsTitle = node('div', { class: 've-conditions-heading' });
+  conditionsTitle.append(
+    node('h2', {}, title),
+    node(
+      'button',
+      {
+        type: 'button',
+        popovertarget: conditionsId,
+        popovertargetaction: 'hide',
+        'aria-label': 'Закрыть условия',
+      },
+      '×',
+    ),
+  );
+  conditions.append(conditionsTitle);
+  header.append(heading, conditionsButton);
+  heading.title = title;
+  let subjectWidth = frame.width,
+    subjectHeight = frame.height;
   cleanups.add(composition.dispose);
   if (completeFrame) toolbar.append(modes, actions);
   sheet.append(
-    heading,
+    completeFrame ? header : heading,
     ...(completeFrame ? [toolbar] : [modes, actions]),
     fields,
     completeFrame ? stage : composition.element,
@@ -200,7 +265,133 @@ function mount(
   else sheet.append(caption);
   if (completeFrame) root.append(composition.element);
   root.append(controls, status);
-  composition.resize();
+  if (completeFrame) root.append(conditions);
+  let shownPresentation: SceneFramePresentation | undefined;
+  const visibleContent = (element: Element): boolean => {
+    if (element.hasAttribute('hidden') || getComputedStyle(element).display === 'none')
+      return false;
+    return (
+      element.matches('input,textarea,button') ||
+      [...element.childNodes].some((child) =>
+        child instanceof Element ? visibleContent(child) : Boolean(child.textContent?.trim()),
+      )
+    );
+  };
+  function placeConditions() {
+    if (!conditions.matches(':popover-open')) return;
+    const viewport = window.visualViewport,
+      left = viewport?.offsetLeft || 0,
+      top = viewport?.offsetTop || 0,
+      width = viewport?.width || innerWidth,
+      height = viewport?.height || innerHeight,
+      button = conditionsButton.getBoundingClientRect(),
+      panelWidth = Math.min(520, width - 16, composition.element.getBoundingClientRect().width);
+    conditions.style.width = `${Math.max(0, panelWidth)}px`;
+    conditions.style.maxHeight = `${Math.max(0, height - 16)}px`;
+    conditions.style.left = `${Math.max(left + 8, Math.min(button.right - panelWidth, left + width - panelWidth - 8))}px`;
+    conditions.style.top = `${Math.max(top + 8, Math.min(button.bottom + 6, top + height - conditions.getBoundingClientRect().height - 8))}px`;
+  }
+  function updateChrome(preserveFocus = false) {
+    if (!completeFrame || abort.signal.aborted) return;
+    const toolbarVisible = [...toolbar.children].some(visibleContent);
+    if (toolbar.hidden === toolbarVisible) toolbar.hidden = !toolbarVisible;
+    const focused = document.activeElement,
+      ownedFocus =
+        focused instanceof HTMLElement && (toolbar.contains(focused) || fields.contains(focused)),
+      compact = composition.element.getBoundingClientRect().width < 640,
+      hasUI = toolbarVisible || visibleContent(fields),
+      popup = shownPresentation === 'explanation' && compact && hasUI,
+      hasConditions = popup || showHistory;
+    sheet.dataset.compactChrome = String(compact);
+    conditionsButton.hidden = !hasConditions;
+    header.hidden = heading.hidden && !hasConditions;
+    if (shownPresentation === 'stage') {
+      if (header.parentElement !== root) controls.before(header);
+    } else if (header.parentElement !== sheet) sheet.prepend(header);
+    const parent = shownPresentation === 'stage' ? root : popup ? conditions : sheet;
+    const moved = toolbar.parentElement !== parent || fields.parentElement !== parent;
+    const leavingConditions =
+      moved && parent !== conditions && toolbar.parentElement === conditions;
+    const keepEdit = moved && preserveFocus && ownedFocus,
+      restoreFocus = keepEdit && document.hasFocus();
+    if (keepEdit)
+      for (const controls of [toolbar, fields]) controls.dataset.sceneControlsMoving = '';
+    try {
+      if ((!hasConditions || leavingConditions) && conditions.matches(':popover-open'))
+        conditions.hidePopover();
+      if (moved) {
+        if (parent === conditions) {
+          const historyBar = conditions.querySelector(':scope > .ve-experiment-history');
+          conditions.insertBefore(toolbar, historyBar);
+          conditions.insertBefore(fields, historyBar);
+        } else if (parent === root) controls.before(toolbar, fields);
+        else stage.before(toolbar, fields);
+      }
+      // Reparenting a native field emits blur/focus. Its draft and history gesture
+      // still belong to the same edit; only an actual departure commits them.
+      if (restoreFocus) {
+        if (popup && !conditions.matches(':popover-open')) conditions.showPopover();
+        if (focused.checkVisibility() && document.activeElement !== focused)
+          focused.focus({ preventScroll: true });
+      }
+    } finally {
+      if (keepEdit)
+        for (const controls of [toolbar, fields]) delete controls.dataset.sceneControlsMoving;
+    }
+    placeConditions();
+  }
+  conditions.addEventListener(
+    'toggle',
+    () => {
+      conditionsButton.setAttribute('aria-expanded', String(conditions.matches(':popover-open')));
+      placeConditions();
+    },
+    options,
+  );
+  const dismissConditions = (event: Event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (conditions.matches(':popover-open')) conditions.hidePopover();
+    conditionsButton.focus({ preventScroll: true });
+  };
+  conditionsTitle.querySelector('button')!.addEventListener('click', dismissConditions, options);
+  conditions.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) dismissConditions(event);
+    },
+    options,
+  );
+  root.addEventListener('scene-frame-resize', () => updateChrome(true), options);
+  // Actions/chapter navigation are public extension points of this shell.
+  const chromeObserver = new MutationObserver(() => updateChrome());
+  if (completeFrame)
+    chromeObserver.observe(toolbar, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['hidden'],
+    });
+  cleanups.add(() => {
+    chromeObserver.disconnect();
+    if (conditions.matches(':popover-open')) conditions.hidePopover();
+  });
+  function setPresentation(next: SceneFramePresentation) {
+    assertLive();
+    if (shownPresentation === next) return;
+    shownPresentation = next;
+    root.dataset.presentation = next;
+    root.dataset.paper = String(next === 'stage' ? false : (paper ?? appearance === 'sketch'));
+    heading.hidden = !showHeading || next === 'stage';
+    if (completeFrame) {
+      if (next === 'stage') controls.before(caption);
+      else stage.after(caption);
+    }
+    updateChrome(true);
+    composition.resize();
+    updateChrome(true);
+  }
+  setPresentation(presentation);
   let transition: ((mode: 'story' | 'explore') => void) | undefined;
   let mode: 'story' | 'explore' = 'explore';
   let player: { dispose(): void } | undefined;
@@ -252,10 +443,11 @@ function mount(
       throw error;
     }
     acceptedCondition = {};
-    controls.hidden = exploration === 'model' && mode !== 'story';
-    controls.inert = controls.hidden;
-    caption.hidden = controls.hidden;
+    controls.hidden = false;
+    controls.inert = false;
+    caption.hidden = exploration === 'model' && mode !== 'story';
     fields.hidden = mode === 'story' || !fields.childElementCount;
+    updateChrome();
     storyButton.setAttribute('aria-pressed', String(mode === 'story'));
     exploreButton.setAttribute('aria-pressed', String(mode === 'explore'));
     root.dataset.sceneMode = mode;
@@ -271,7 +463,6 @@ function mount(
   exploreButton.addEventListener('click', () => selectMode('explore'), options);
   refresh();
   root.dataset.sceneMode = mode;
-  root.dataset.paper = String(paper ?? appearance === 'sketch');
   root.dataset.appearance = appearance;
   const handle = mountScene(
     root,
@@ -281,6 +472,7 @@ function mount(
         return acceptedCondition;
       },
       presentation: () => inspectPresentation(stage),
+      exportSVG: () => exportCompositionSVG(completeFrame ? sheet : stage),
       setTheme: sceneTheme.set,
       dispose,
     },
@@ -302,10 +494,13 @@ function mount(
   );
   if (parameters.length && retainHistory) {
     const bar = node('div', { class: 've-experiment-history', hidden: '' });
-    const undo = node('button', { type: 'button' }, 'Отменить условие'),
-      redo = node('button', { type: 'button' }, 'Повторить');
+    const undo = node('button', { type: 'button', disabled: '' }, 'Отменить условие'),
+      redo = node('button', { type: 'button', disabled: '' }, 'Повторить');
     bar.append(undo, redo);
-    actions.append(bar);
+    // Undo belongs to the editing session, not the exported subject or its geometry.
+    if (completeFrame) conditions.append(bar);
+    else controls.before(bar);
+    bar.hidden = !showNavigation;
     history = SceneHistory.mount(root, {
       read: () => handle.capture({ basis: 'requested' }),
       restore: handle.restore,
@@ -318,7 +513,6 @@ function mount(
         const focused = document.activeElement;
         undo.disabled = !history!.state.undo;
         redo.disabled = !history!.state.redo;
-        bar.hidden = !history!.state.undo && !history!.state.redo;
         if (focused === undo && undo.disabled && !redo.disabled)
           redo.focus({ preventScroll: true });
         else if (focused === redo && redo.disabled && !undo.disabled)
@@ -347,10 +541,28 @@ function mount(
     actions,
     status,
     parameters: values,
+    get layout(): SceneLayout {
+      // Hidden preparation keeps the last logical space without inventing a visible frame.
+      // clientWidth rounds fractional CSS geometry and would invent a second scale.
+      const bounds = stage.getBoundingClientRect(),
+        frameBounds = composition.element.getBoundingClientRect(),
+        scale = frameBounds.width > 0 ? frameBounds.width / frame.width : 1;
+      if (bounds.width > 0) subjectWidth = bounds.width / scale;
+      if (bounds.height > 0) subjectHeight = bounds.height / scale;
+      return Object.freeze({
+        width: subjectWidth,
+        height: subjectHeight,
+        displayWidth: bounds.width,
+        displayHeight: bounds.height,
+        scale,
+        compact: frameBounds.width < 640,
+      });
+    },
     get mode() {
       return mode;
     },
     setMode,
+    setPresentation,
     input: changeValues,
     syncParameters(next: Record<string, ControlValue>) {
       assertLive();
@@ -368,6 +580,8 @@ function mount(
         if (!control.element.hidden) count++;
       }
       fields.style.setProperty('--ve-parameter-columns', String(Math.min(3, count) || 1));
+      if (player) modes.hidden = !showNavigation || (!count && !view);
+      updateChrome();
     },
     describeParameter(key: string, description: ControlDescription) {
       const control = inputs.get(key);
@@ -402,7 +616,7 @@ function mount(
           return next.focus ? focus : undefined;
         },
       });
-      modes.hidden = false;
+      modes.hidden = !showNavigation;
     },
     dispose: handle.dispose,
   };
@@ -452,6 +666,7 @@ function mount(
       controller.sheet.script.segments ?? [],
       controller.seek,
       completeFrame ? toolbar : undefined,
+      showHeading && showNavigation,
     );
     let resetAfterSeek = false;
     const stopSeeking = controller.onSeek(() => {
@@ -462,23 +677,29 @@ function mount(
     let layoutFrame = 0,
       stageWidth = stage.clientWidth,
       stageHeight = stage.clientHeight;
+    const requestLayout = () => {
+      if (layoutFrame) return;
+      layoutFrame = requestAnimationFrame(() => {
+        layoutFrame = 0;
+        controller.update();
+      });
+    };
     const layout = new ResizeObserver(() => {
       const width = stage.clientWidth,
         height = stage.clientHeight;
       if (width === stageWidth && height === stageHeight) return;
       stageWidth = width;
       stageHeight = height;
-      if (layoutFrame) return;
-      layoutFrame = requestAnimationFrame(() => {
-        layoutFrame = 0;
-        controller.update();
-      });
+      requestLayout();
     });
     layout.observe(stage);
+    // The logical canvas can stay fixed while its displayed size crosses a layout breakpoint.
+    root.addEventListener('scene-frame-resize', requestLayout);
     let unsubscribe = () => {};
     player = {
       dispose() {
         layout.disconnect();
+        root.removeEventListener('scene-frame-resize', requestLayout);
         cancelAnimationFrame(layoutFrame);
         unsubscribe();
         ui.dispose();
@@ -488,7 +709,9 @@ function mount(
       },
     };
     storyButton.hidden = false;
-    modes.hidden = !parameters.length && !view;
+    modes.hidden =
+      !showNavigation ||
+      (![...inputs.values()].some((control) => !control.element.hidden) && !view);
     function reflectState({ requested, phase, error }: StoryStatus<P, S>) {
       const { mode: next, values: state } = requested;
       if (next !== 'story') resetAfterSeek = false;
@@ -519,10 +742,15 @@ function mount(
       seek: controller.seek,
       ready: controller.ready,
       pause: controller.pause,
-      mute: controller.player.mute,
+      // A silent clock has no sound preference to carry into a narrated build.
+      // Expose the media capability only when there is actual audio to mute.
+      get mute() {
+        return controller.player.state.hasAudio ? controller.player.mute : undefined;
+      },
       setRate: controller.player.rate,
       get muted() {
-        return controller.player.state.muted;
+        const state = controller.player.state;
+        return state.hasAudio ? state.muted : undefined;
       },
       get rate() {
         return controller.player.state.rate;
@@ -570,6 +798,7 @@ function mount(
     });
     return handle;
     function preparePlayback() {
+      if (controller.waiting) return;
       if (controller.currentTime >= controller.duration - 0.02) view?.reset();
       if (exploration === 'model') setMode('story');
       else controller.resume();

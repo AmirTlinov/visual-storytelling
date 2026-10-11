@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -92,7 +93,7 @@ test(
         join(directory, 'index.html'),
         '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="index.css"></head><body class="ve-standalone"><main id="math" class="ve-scene"></main><main id="ink" class="ve-scene"></main><script src="index.js"></script></body></html>',
       );
-      browser = await chromium.launch();
+      browser = await chromium.launch(chromiumLaunchOptions());
       const page = await browser.newPage({ viewport: { width: 800, height: 900 } });
       const errors = [];
       page.on('pageerror', (error) => errors.push(error.message));

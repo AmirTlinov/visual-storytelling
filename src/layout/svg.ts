@@ -297,6 +297,7 @@ function along(
 /** A shared overflow action in SVG coordinates. Reserve its box before placing labels. */
 function overflow(space: SVGGraphicsElement, { region }: { region?: SVGGraphicsElement } = {}) {
   const frame = element('foreignObject', { 'data-svg-overflow': '', 'pointer-events': 'none' });
+  frame.style.display = 'none';
   const host = document.createElementNS('http://www.w3.org/1999/xhtml', 'div');
   host.style.cssText = 'position:relative;width:100%;height:100%';
   frame.append(host);
@@ -325,6 +326,7 @@ function overflow(space: SVGGraphicsElement, { region }: { region?: SVGGraphicsE
       return obstacle;
     },
     update(items: readonly OverflowLabel[]) {
+      frame.style.display = items.length ? '' : 'none';
       control.update(items, position);
       summary.textContent = items.length
         ? `Неуместившиеся подписи: ${items.map((item) => (item.subject && item.subject !== item.label ? `${item.subject}: ${item.label}` : item.label)).join('; ')}.`

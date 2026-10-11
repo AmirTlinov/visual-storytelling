@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
@@ -42,7 +43,7 @@ test('one live scene owns disposal, semantic visibility, keyboard history and cu
     loader: { '.woff2': 'dataurl' },
     plugins: [assetURLs()],
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage();
     await page.setContent(
@@ -111,6 +112,7 @@ test('one live scene owns disposal, semantic visibility, keyboard history and cu
         { type: 'parameters', values: { x: 7 } },
       ]),
     );
+    await page.locator('main').getByRole('button', { name: 'Условия', exact: true }).click();
     await page.getByRole('button', { name: 'Отменить условие', exact: true }).click();
     assert.equal(await page.getByRole('slider', { name: 'X', exact: true }).inputValue(), '1');
     await page.keyboard.press('Control+Shift+z');
@@ -222,7 +224,7 @@ test('selection chooses one visible representation per object and follows visibi
     write: false,
     loader: { '.woff2': 'dataurl', '.svg': 'dataurl' },
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage();
     await page.setContent(`<main class="ve-scene">

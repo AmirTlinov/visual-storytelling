@@ -1,5 +1,6 @@
 import { svg } from '../ink/dom.js';
 import { snapshotRaster } from './raster.js';
+import { appendPaper, paint } from './paper.js';
 
 const properties = [
   'color',
@@ -23,20 +24,30 @@ const properties = [
   'font-family',
   'font-size',
   'font-weight',
+  'font-style',
+  'font-stretch',
+  'font-variant-numeric',
+  'letter-spacing',
+  'word-spacing',
   'text-anchor',
   'paint-order',
+  'transform',
+  'transform-origin',
+  'transform-box',
+  'translate',
+  'rotate',
+  'scale',
+  'outline-color',
+  'outline-width',
+  'outline-style',
+  'outline-offset',
 ] as const;
 
-// CSS Color 4 is resolved by Chromium, but SVG renderers also need CSS 3 paint.
-const paint = (value: string) =>
-  value.replace(
-    /color\(srgb ([\d.e+-]+) ([\d.e+-]+) ([\d.e+-]+)(?: \/ ([\d.e+-]+))?\)/g,
-    (_, r: string, g: string, b: string, alpha: string | undefined) =>
-      `rgba(${Number(r) * 100}%,${Number(g) * 100}%,${Number(b) * 100}%,${alpha ?? '1'})`,
-  );
-
 /** Resolve the current theme and bundle the font; exported SVG has no runtime dependency. */
-export async function exportSVG(source: SVGSVGElement): Promise<string> {
+export async function exportSVG(
+  source: SVGSVGElement,
+  { paper = true }: { paper?: boolean } = {},
+): Promise<string> {
   const fonts = [
     { name: 'SketchPencil', url: new URL('../assets/pencil.woff2', import.meta.url).href },
     {
@@ -54,7 +65,8 @@ export async function exportSVG(source: SVGSVGElement): Promise<string> {
       copy = copies[i]!;
     for (const property of properties) {
       copy.style.setProperty(property, paint(style.getPropertyValue(property)));
-      copy.removeAttribute(property);
+      // SVG text.rotate and filter scale are attributes independent of CSS motion longhands.
+      if (!['rotate', 'translate', 'scale'].includes(property)) copy.removeAttribute(property);
     }
     // SMIL values live in animVal, while cloneNode copies the original base geometry.
     for (const animation of node.querySelectorAll(':scope > animate,:scope > animateTransform')) {
@@ -89,57 +101,11 @@ export async function exportSVG(source: SVGSVGElement): Promise<string> {
   const viewBox = source.viewBox.baseVal;
   clone.setAttribute('width', String(viewBox.width));
   clone.setAttribute('height', String(viewBox.height));
-  // Notebook paper may belong to the surrounding HTML shell. Preserve its scale
-  // and origin when that shell is removed from the exported SVG.
-  const paper = source.closest<HTMLElement>('.ve-frame-content, .ve-scene-content, .ve-scene');
-  if (paper) {
-    const style = getComputedStyle(paper);
-    const background = svg('g', { 'aria-hidden': 'true' });
-    const area = { x: viewBox.x, y: viewBox.y, width: viewBox.width, height: viewBox.height };
-    background.append(svg('rect', { ...area, fill: paint(style.backgroundColor) }));
-    if (style.backgroundImage !== 'none') {
-      const bounds = source.getBoundingClientRect(),
-        origin = paper.getBoundingClientRect();
-      const sx = viewBox.width / bounds.width,
-        sy = viewBox.height / bounds.height;
-      const paperScaleX = origin.width / (paper.offsetWidth || origin.width),
-        paperScaleY = origin.height / (paper.offsetHeight || origin.height);
-      const sizes = style.backgroundSize
-        .split(',')
-        .map((size) => size.trim().split(/\s+/).map(parseFloat));
-      const size = sizes[0]!,
-        minor = sizes[2]!;
-      const position = style.backgroundPosition.split(',')[0]!.trim().split(/\s+/).map(parseFloat);
-      const width = size[0]! * paperScaleX * sx,
-        height = (size[1] ?? size[0])! * paperScaleY * sy;
-      const x = viewBox.x + (origin.left - bounds.left + position[0]! * paperScaleX) * sx;
-      const y =
-        viewBox.y + (origin.top - bounds.top + (position[1] ?? position[0])! * paperScaleY) * sy;
-      const resolveInk = (variable: string) => {
-        const probe = svg('rect', { width: 0, height: 0, fill: `var(${variable})` });
-        source.append(probe);
-        const ink = paint(getComputedStyle(probe).fill);
-        probe.remove();
-        return ink;
-      };
-      const ink = resolveInk('--ve-grid-ink'),
-        majorInk = resolveInk('--ve-grid-major-ink');
-      let id = 'export-paper';
-      while (clone.querySelector(`#${id}`)) id += '-';
-      const pattern = svg('pattern', { id, x, y, width, height, patternUnits: 'userSpaceOnUse' });
-      for (let column = 0; column < width - 0.01; column += minor[0]! * paperScaleX * sx)
-        pattern.append(svg('rect', { x: column, width: sx * paperScaleX, height, fill: ink }));
-      for (let row = 0; row < height - 0.01; row += minor[1]! * paperScaleY * sy)
-        pattern.append(svg('rect', { y: row, width, height: sy * paperScaleY, fill: ink }));
-      pattern.append(
-        svg('rect', { width: sx * paperScaleX, height, fill: majorInk }),
-        svg('rect', { width, height: sy * paperScaleY, fill: majorInk }),
-      );
-      definitions.append(pattern);
-      background.append(svg('rect', { ...area, fill: `url(#${id})` }));
-    }
-    definitions.after(background);
-  }
+  const backgroundOwner = paper
+    ? source.closest<HTMLElement>('.ve-frame-content, .ve-scene-content, .ve-scene')
+    : null;
+  if (backgroundOwner)
+    appendPaper(clone, definitions, backgroundOwner, viewBox, source.getBoundingClientRect());
   clone.style.width = `${viewBox.width}px`;
   clone.style.height = `${viewBox.height}px`;
   // Freeze geometry, raster layers and computed style before waiting for font bytes.

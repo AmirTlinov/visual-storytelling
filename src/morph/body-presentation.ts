@@ -17,6 +17,9 @@ export function mountBodies(
     pigment?: string;
     columns?: number;
     layout?: 'scene' | 'content';
+    formula?: boolean;
+    notes?: boolean | 'operators';
+    format?: (value: number) => string;
   } = {},
 ) {
   const plan = mathPlan(operation);

@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
@@ -13,7 +14,7 @@ test('beside places labels in their board coordinates and converts explicit spac
     format: 'iife',
     globalName: 'Layout',
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage({ viewport: { width: 1000, height: 600 } });
     await page.setContent(`<svg viewBox="0 0 1280 720" width="1000" height="562.5">
@@ -117,7 +118,7 @@ test('character boards keep real ink measurable through hidden preparation, pres
     outfile: 'svg-beside-board.js',
     loader: { '.woff2': 'dataurl' },
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage({ viewport: { width: 1000, height: 600 } });
     await page.setContent(
@@ -347,7 +348,7 @@ test('pending ink chapters preserve static layout obstacles without publishing t
     format: 'iife',
     plugins: [assetURLs()],
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage({ viewport: { width: 640, height: 320 } });
     await page.setContent(

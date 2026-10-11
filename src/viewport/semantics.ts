@@ -1,5 +1,5 @@
 import { Box3, Raycaster, Vector2, Vector3, type Camera, type Object3D } from 'three';
-import { describeObject, type ObjectMeaning } from '../scene-objects.js';
+import { describeObject, sceneObjectHit, type ObjectMeaning } from '../scene-objects.js';
 import { objectVisible, objectWithin, drawsGeometry } from './visibility.js';
 
 interface Subject {
@@ -40,7 +40,7 @@ export function semanticObjects3D(
   const records = new Map<
     string,
     Subject & {
-      element: HTMLButtonElement;
+      element: HTMLElement;
       options: SubjectOptions3D;
       dispose(): void;
     }
@@ -127,6 +127,8 @@ export function semanticObjects3D(
           ? region.record
           : subject && records.get(subject.id);
       if (record && visible(record)) {
+        sceneObjectHit(event, record.element);
+        if (record.meaning.interactive === false) return;
         event.preventDefault();
         record.element.click();
       }
@@ -188,8 +190,8 @@ export function semanticObjects3D(
     describe(object: Object3D, id: string, meaning: ObjectMeaning, options: SubjectOptions3D = {}) {
       if (abort.signal.aborted) throw new Error('3D subjects have been disposed');
       if (records.has(id) || subjects.has(object)) throw new Error(`Duplicate 3D subject: ${id}`);
-      const element = document.createElement('button');
-      element.type = 'button';
+      const element = document.createElement(meaning.interactive === false ? 'div' : 'button');
+      if (element instanceof HTMLButtonElement) element.type = 'button';
       element.className = 've-viewport-object';
       element.dataset.object = id;
       element.style.cssText =

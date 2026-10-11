@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
@@ -34,7 +35,7 @@ test('story pointer: scaled approach, click, type/caret, rewind and disposal hav
     format: 'iife',
     outdir: '.',
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
     await page.setContent(
@@ -190,7 +191,7 @@ test('typing follows the text end through nested scale and restores field scroll
     format: 'iife',
     outdir: '.',
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage();
     await page.setContent(

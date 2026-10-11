@@ -1,10 +1,11 @@
+import { openFixture } from '../support/fixture.mjs';
 import { test, expect, type Page } from '@playwright/test';
 import type { SceneCommand } from '../../src/scene-access.js';
 
-async function openScene(page: Page, name: 'tensor-slices' | 'math-workbench') {
+async function openScene(page: Page, name: 'slice' | 'tensor') {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto(`/${name}/index.html`);
+  await openFixture(page, 'arithmetic', name === 'slice' ? 'slice.html' : 'tensor.html');
   await page.evaluate(() => window.galleryReady);
   return errors;
 }
@@ -37,7 +38,7 @@ test('an extracted day follows changed source values and selected cell provenanc
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  const errors = await openScene(page, 'tensor-slices');
+  const errors = await openScene(page, 'slice');
   await control(page, [
     { type: 'pause' },
     { type: 'theme', value: 'light' },
@@ -95,7 +96,7 @@ test('an extracted day follows changed source values and selected cell provenanc
 test('tensor calculation and delivery keep one visible result through rewind and rapid operation changes', async ({
   page,
 }) => {
-  const errors = await openScene(page, 'math-workbench');
+  const errors = await openScene(page, 'tensor');
   const receiver = page.locator('[data-object="answer:scalar"]');
   const computed = page.locator('[data-object^="calculation:"]:not([hidden])');
   const visibleEquation = () =>
@@ -208,7 +209,7 @@ test('tensor calculation and delivery keep one visible result through rewind and
 test('orbit and Home keep tensor playback running, and the result remains keyboard accessible after a narrow dark resize', async ({
   page,
 }) => {
-  const errors = await openScene(page, 'math-workbench');
+  const errors = await openScene(page, 'tensor');
   await control(page, [
     { type: 'pause' },
     { type: 'theme', value: 'light' },
@@ -261,7 +262,7 @@ test('orbit and Home keep tensor playback running, and the result remains keyboa
 test('elementwise multiplication exposes the same pairs it animates after input changes and reverse seek', async ({
   page,
 }) => {
-  const errors = await openScene(page, 'math-workbench');
+  const errors = await openScene(page, 'tensor');
   await control(page, [
     { type: 'pause' },
     { type: 'parameters', values: { kind: 'multiply', time: 17 } },
@@ -312,7 +313,7 @@ test('a horizontal physical equation remains readable and framed through input c
   page,
 }) => {
   await page.setViewportSize({ width: 1040, height: 800 });
-  const errors = await openScene(page, 'math-workbench');
+  const errors = await openScene(page, 'tensor');
   await control(page, [
     { type: 'pause' },
     { type: 'parameters', values: { kind: 'multiply', first: 10, time: 17 } },
@@ -383,4 +384,40 @@ test('a horizontal physical equation remains readable and framed through input c
   expect(await read()).toEqual(completed);
   await expectNoHorizontalOverflow(page);
   expect(errors).toEqual([]);
+});
+
+test('prepared math rendering reuses its shader programs through reverse seek and signed edits', async ({
+  page,
+}) => {
+  await openFixture(page, 'arithmetic', 'tensor.html');
+  const info = () =>
+    page.evaluate(() => {
+      const { renderer } = (document.querySelector('.ve-scene') as any).scene.view;
+      return {
+        frame: renderer.info.render.frame,
+        programs: (renderer.info.programs ?? []).map((program: any) => program.id),
+      };
+    });
+  await page.locator('canvas').first().screenshot();
+  const baseline = await info();
+  expect(baseline.programs.length).toBeGreaterThan(0);
+  for (const time of [8, 16, 2, 23, 8, 23]) {
+    const before = await info();
+    await page.evaluate(
+      async (time) =>
+        (document.querySelector('.ve-scene') as any).scene.control([{ type: 'seek', time }]),
+      time,
+    );
+    await expect.poll(async () => (await info()).frame).toBeGreaterThan(before.frame);
+    expect((await info()).programs).toEqual(baseline.programs);
+  }
+  await page.evaluate(() =>
+    (document.querySelector('.ve-scene') as any).scene.control([
+      { type: 'parameters', values: { first: -4, kind: 'multiply', time: 16 } },
+    ]),
+  );
+  const result = await page.evaluate(
+    () => (document.querySelector('.ve-scene') as any).scene.tensorState().result,
+  );
+  expect(result[0]).toBe(-1);
 });

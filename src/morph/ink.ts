@@ -102,7 +102,14 @@ export function surfaceInscriptions() {
       id = layoutKey(body);
     let result = texts.get(id);
     if (!result) {
-      result = fusionText(value, { size: 100, maxWidth: 1e6, lineHeight: 1.25 });
+      result = fusionText(value, {
+        size: 100,
+        maxWidth: 1e6,
+        lineHeight: 1.25,
+        // A number is the subject of the calculation. Its stronger pen keeps
+        // the same handwriting legible on a small projected material surface.
+        handwriting: numeric(value) ? 'heading' : 'body',
+      });
       // Layout belongs to the authored surface, not its animated scale or the
       // camera. Choose it once; the same strokes then travel through every seek.
       if (!numeric(value)) {

@@ -1,0 +1,1 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720"><rect width="1280" height="720" fill="white"/><path d="M120 360H1160" stroke="black" stroke-width="4"/><circle cy="360" r="32" fill="black"><animate attributeName="cx" values="120;1160;120" dur="4s" repeatCount="indefinite"/></circle></svg>

@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -8,6 +9,7 @@ import { chromium } from 'playwright';
 import { serve } from '../tools/site.mjs';
 import { renderer } from '../tools/render.mjs';
 import { packDirectory, withCheckpoint } from '../tools/standalone.mjs';
+import { buildPage } from '../tools/build-pages.mjs';
 import { viewReport } from '../plugin/mcp/schema.mjs';
 
 test('subject checkpoints follow completed inputs and atomically supersede failed or pending preparation', async () => {
@@ -47,7 +49,7 @@ test('subject checkpoints follow completed inputs and atomically supersede faile
     outdir: '.',
     loader: { '.woff2': 'dataurl' },
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage();
     await page.setContent('<main class="ve-scene"></main>');
@@ -136,337 +138,85 @@ test('subject checkpoints follow completed inputs and atomically supersede faile
 });
 
 test(
-  'the register prediction survives seek, widget reload, current HTML and current PNG',
+  'an arbitrary accepted subject survives seek, offline reload, portable HTML and current PNG',
   { timeout: 90000 },
   async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'story-subject-'));
-    const server = await serve('site');
-    let browser, exported, output;
+    const directory = await mkdtemp(join(tmpdir(), 'story-subject-portable-'));
+    let browser, server, exported, output;
     try {
-      browser = await chromium.launch();
-      const page = await browser.newPage({ viewport: { width: 960, height: 1200 } });
+      const source = join(directory, 'source');
+      await buildPage(resolve('tests/fixtures/scene-shell/subject.html'), source, {
+        outputName: 'index.html',
+      });
+      server = await serve(source);
+      browser = await chromium.launch(chromiumLaunchOptions());
+      const page = await browser.newPage({ viewport: { width: 960, height: 1000 } });
       const errors = [];
       page.on('pageerror', (error) => errors.push(error.message));
-      await page.goto(server.url + '/memory-register/index.html');
+      await page.goto(server.url);
       await page.evaluate(() => window.galleryReady);
-      await page.locator('[data-mode="explore"]').click();
-      await page.locator('#challenge-start').click();
-      await page.locator('#prediction').getByRole('button', { name: '42', exact: true }).click();
-      await page.getByRole('button', { name: 'Проверить фронтом ↑' }).click();
-      const before = await page.evaluate(() => ({
-        state: document.querySelector('.ve-scene').scene.snapshot(),
-        checkpoint: document.querySelector('.ve-scene').scene.capture(),
-      }));
-      assert.equal(before.state.input, 165);
-      assert.equal(before.state.saved, 42);
-      assert.equal(before.state.checked, true);
-      assert.equal(before.state.guess, 42);
-      assert.deepEqual(before.state.trace, [
-        { input: 165, saved: 42, we: false, edge: '↑', write: false },
-      ]);
-      const accepted = viewReport.parse({
-        stateRevision: 1,
-        state: {},
-        checkpoint: before.checkpoint,
-      });
-      assert.deepEqual(
-        accepted.checkpoint.subject,
-        before.checkpoint.subject,
-        'the MCP report preserves the subject',
-      );
-      const restored = await page.evaluate(async (checkpoint) => {
+      await page.evaluate(() => {
         const scene = document.querySelector('.ve-scene').scene;
-        await scene.control([{ type: 'seek', time: 0 }]);
-        const reset = scene.snapshot();
+        scene.seek(2);
+        scene.explore({ x: 4, trace: [{ sample: 42 }, { sample: -2 }] });
+      });
+      const before = await page.evaluate(() => {
+        const scene = document.querySelector('.ve-scene').scene;
+        return { state: scene.snapshot(), checkpoint: scene.capture() };
+      });
+      assert.equal(before.state.total, 44);
+      assert.deepEqual(before.checkpoint.subject.input.trace, [{ sample: 42 }, { sample: -2 }]);
+      assert.deepEqual(
+        viewReport.parse({ stateRevision: 1, state: {}, checkpoint: before.checkpoint }).checkpoint
+          .subject,
+        before.checkpoint.subject,
+      );
+      await page.evaluate(async (checkpoint) => {
+        const scene = document.querySelector('.ve-scene').scene;
+        scene.seek(0);
         await scene.restore(checkpoint);
-        return { reset, state: scene.snapshot() };
       }, before.checkpoint);
-      assert.equal(restored.reset.saved, 0);
-      assert.deepEqual(restored.state, before.state);
+      assert.deepEqual(
+        await page.evaluate(() => document.querySelector('.ve-scene').scene.snapshot()),
+        before.state,
+      );
       await page.reload();
       await page.evaluate(() => window.galleryReady);
       assert.deepEqual(
         await page.evaluate(() => document.querySelector('.ve-scene').scene.snapshot()),
         before.state,
-        'widget persistence uses the same checkpoint owner',
       );
-      const html = withCheckpoint(
-        await packDirectory(resolve('site/memory-register'), 'index.html', { audio: 'original' }),
+      const packed = withCheckpoint(
+        await packDirectory(source, 'index.html', { audio: 'original' }),
         before.checkpoint,
       );
-      await writeFile(join(directory, 'index.html'), html);
+      await writeFile(join(directory, 'index.html'), packed);
       exported = await serve(directory);
-      const fresh = await browser.newContext({ viewport: { width: 960, height: 1200 } });
-      const artifact = await fresh.newPage();
+      const context = await browser.newContext({ viewport: { width: 960, height: 1000 } });
+      const artifact = await context.newPage();
       artifact.on('pageerror', (error) => errors.push(error.message));
       await artifact.goto(exported.url);
       await artifact.evaluate(() => window.galleryReady);
       assert.deepEqual(
         await artifact.evaluate(() => document.querySelector('.ve-scene').scene.snapshot()),
         before.state,
-        'standalone HTML restores in a context with no widget storage',
       );
-      assert.match(
-        await artifact.locator('.ve-prediction [role=status]').textContent(),
-        /Верно.*Получилось 42/,
-      );
+      assert.match(await artifact.locator('.ve-stage output').textContent(), /4 \+ 42 \+ -2 = 44/);
       output = await renderer({
-        scene: 'memory-register',
-        theme: 'light',
-        width: 960,
-        height: 1200,
+        directory: source,
+        width: 390,
+        height: 1000,
         reduced: true,
         checkpoint: before.checkpoint,
       });
-      assert.deepEqual(
-        await output.capture.evaluate((scene) => scene.snapshot()),
-        before.state,
-        'the PNG renderer restores the same subject',
-      );
-      const png = await output.png();
-      assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
-      if (process.env.VISUAL_STORY_CHECKPOINT_PNG)
-        await writeFile(process.env.VISUAL_STORY_CHECKPOINT_PNG, png);
+      assert.deepEqual(await output.capture.evaluate((scene) => scene.snapshot()), before.state);
+      assert.deepEqual([...(await output.png()).subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
       assert.deepEqual(errors, []);
     } finally {
       await output?.close();
       await browser?.close();
+      await server?.close();
       await exported?.close();
-      await server.close();
-      await rm(directory, { recursive: true, force: true });
-    }
-  },
-);
-
-test(
-  'register details and clock history retain their visible panel through reload and current HTML',
-  { timeout: 60000 },
-  async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'story-register-panels-'));
-    const server = await serve('site');
-    const exported = await serve(directory);
-    const browser = await chromium.launch();
-    let current, fixed;
-    try {
-      const page = await browser.newPage({ viewport: { width: 960, height: 1000 } });
-      const errors = [];
-      page.on('pageerror', (error) => errors.push(error.message));
-      await page.goto(server.url + '/memory-register/index.html');
-      await page.evaluate(() => window.galleryReady);
-      await page.evaluate(() => document.querySelector('.ve-scene').scene.seek(34));
-      const cell = page.locator('[data-select="7"]');
-      await cell.focus();
-      await cell.press('Enter');
-      assert.equal(
-        await page.evaluate(() => document.activeElement.id),
-        'inside',
-        'opening a detail from narrated mode first reveals and then focuses its panel',
-      );
-      const html = await packDirectory(resolve('site/memory-register'), 'index.html', {
-        audio: 'original',
-      });
-      for (const panel of ['inside', 'trace-panel']) {
-        if (panel === 'trace-panel') {
-          await page.keyboard.press('Escape');
-          assert.equal(await cell.evaluate((element) => element === document.activeElement), true);
-          await page.locator('#clock').click();
-          await page.locator('#clock').click();
-          await page.locator('[data-panel="trace-panel"]').click();
-        }
-        const before = await page.evaluate(() => ({
-          state: document.querySelector('.ve-scene').scene.snapshot(),
-          checkpoint: document.querySelector('.ve-scene').scene.capture(),
-        }));
-        assert.equal(before.state.panel, panel);
-        assert.equal(before.state.selected, 7);
-        assert.equal(before.checkpoint.subject.state.panel, panel);
-        if (panel === 'trace-panel') {
-          assert.equal(before.state.saved, 165);
-          assert.equal(before.state.trace.at(-1).write, true);
-        }
-        await page.evaluate(async (checkpoint) => {
-          const scene = document.querySelector('.ve-scene').scene;
-          await scene.control([{ type: 'seek', time: 0 }]);
-          await scene.restore(checkpoint);
-        }, before.checkpoint);
-        assert.deepEqual(
-          await page.evaluate(() => document.querySelector('.ve-scene').scene.snapshot()),
-          before.state,
-          panel + ' capture restores after seeking away',
-        );
-        assert.equal(await page.locator('#' + panel).isVisible(), true);
-        await page.reload();
-        await page.evaluate(() => window.galleryReady);
-        assert.deepEqual(
-          await page.evaluate(() => document.querySelector('.ve-scene').scene.snapshot()),
-          before.state,
-          panel + ' widget reload uses the captured subject',
-        );
-        assert.equal(await page.locator('#' + panel).isVisible(), true);
-        assert.equal(await page.evaluate(() => document.activeElement.id), panel);
-        assert.equal(
-          await page.locator('.memory-drawing').evaluate((element) => element.inert),
-          true,
-        );
-        await writeFile(join(directory, panel + '.html'), withCheckpoint(html, before.checkpoint));
-        const context = await browser.newContext({ viewport: { width: 960, height: 1000 } });
-        const artifact = await context.newPage();
-        artifact.on('pageerror', (error) => errors.push(error.message));
-        await artifact.goto(exported.url + '/' + panel + '.html');
-        await artifact.evaluate(() => window.galleryReady);
-        assert.deepEqual(
-          await artifact.evaluate(() => document.querySelector('.ve-scene').scene.snapshot()),
-          before.state,
-          panel + ' current HTML restores without widget storage',
-        );
-        assert.equal(await artifact.locator('#' + panel).isVisible(), true);
-        if (panel === 'inside')
-          assert.match(
-            await artifact.locator('#detail-bit').innerText(),
-            /Бит 7.*вход D = 1.*Q = 0/,
-          );
-        else assert.equal(await artifact.locator('#trace tr').count(), before.state.trace.length);
-        await artifact.keyboard.press('Escape');
-        const opener = panel === 'inside' ? '[data-select="7"]' : '[data-panel="trace-panel"]';
-        assert.equal(
-          await artifact.locator(opener).evaluate((element) => element === document.activeElement),
-          true,
-          'restored detail returns keyboard focus to a visible subject control',
-        );
-        await context.close();
-      }
-      await page.setViewportSize({ width: 375, height: 1000 });
-      await page.waitForFunction(
-        () => document.querySelector('[data-scene-frame]').dataset.frameLayout === 'fixed',
-      );
-      const checkpoint = await page.evaluate(() =>
-        document.querySelector('.ve-scene').scene.capture(),
-      );
-      current = await renderer({ scene: 'memory-register', width: 375, height: 1000, checkpoint });
-      assert.equal(
-        await current.page.locator('[data-scene-frame]').getAttribute('data-frame-layout'),
-        'fixed',
-        'current PNG retains the same authored frame at narrow width',
-      );
-      assert.deepEqual(
-        await current.page.evaluate(
-          () => document.querySelector('.ve-scene').scene.capture().subject,
-        ),
-        checkpoint.subject,
-      );
-      assert.deepEqual(
-        [...(await current.png()).subarray(0, 8)],
-        [137, 80, 78, 71, 13, 10, 26, 10],
-      );
-      fixed = await renderer({ scene: 'memory-register', width: 480, height: 300 });
-      const frame = await fixed.page.locator('[data-scene-frame]').evaluate((element) => {
-        const bounds = element.getBoundingClientRect();
-        return { layout: element.dataset.frameLayout, ratio: bounds.width / bounds.height };
-      });
-      assert.equal(
-        frame.layout,
-        'fixed',
-        'authored export uses the same frame as the interactive scene',
-      );
-      assert.ok(Math.abs(frame.ratio - 16 / 9) < 0.001);
-      assert.deepEqual([...(await fixed.png()).subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
-      assert.deepEqual(errors, []);
-    } finally {
-      await current?.close();
-      await fixed?.close();
-      await browser.close();
-      await exported.close();
-      await server.close();
-      await rm(directory, { recursive: true, force: true });
-    }
-  },
-);
-
-test(
-  'flat controls and manual experiment owners restore the same displayed conditions',
-  { timeout: 90000 },
-  async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'story-subject-examples-'));
-    const server = await serve('site');
-    const exported = await serve(directory);
-    const browser = await chromium.launch();
-    try {
-      for (const name of [
-        'explorer-svg',
-        'threshold-neuron',
-        'fraction-of-a-set',
-        'equation-balance',
-      ]) {
-        const context = await browser.newContext({ viewport: { width: 960, height: 1200 } });
-        const page = await context.newPage();
-        await page.goto(server.url + '/' + name + '/index.html');
-        await page.evaluate(() => window.galleryReady);
-        if (name === 'explorer-svg')
-          await page.evaluate(() =>
-            document
-              .querySelector('.ve-scene')
-              .scene.control([{ type: 'parameters', values: { x: -2, y: 1 } }]),
-          );
-        if (name === 'threshold-neuron') {
-          await page.locator('[data-a]').fill('4');
-          await page.locator('[data-mode="formulas"]').click();
-        }
-        if (name === 'fraction-of-a-set') await page.locator('[data-parts="6"]').click();
-        if (name === 'equation-balance') await page.locator('[data-next]').click();
-        const before = await page.evaluate(() => {
-          const scene = document.querySelector('.ve-scene').scene;
-          return { state: scene.snapshot(), checkpoint: scene.capture() };
-        });
-        if (name === 'explorer-svg') {
-          assert.equal(before.checkpoint.subject, undefined);
-          assert.deepEqual(before.checkpoint.values, { x: -2, y: 1 });
-        } else {
-          assert(before.checkpoint.subject, name + ' must include its model');
-          assert.equal(
-            before.state.progress === undefined
-              ? (before.state.settled ?? before.state.complete)
-              : before.state.progress === 1,
-            false,
-            name + ' is captured during its visible motion',
-          );
-        }
-        await page.evaluate(async (checkpoint) => {
-          const scene = document.querySelector('.ve-scene').scene;
-          if (checkpoint.subject) {
-            const altered = structuredClone(checkpoint);
-            if (altered.subject.example === 'neuron') altered.subject.a = 0;
-            if (altered.subject.example === 'fraction') altered.subject.taken = 0;
-            if (altered.subject.example === 'balance') altered.subject.step = 0;
-            await scene.restore(altered);
-          } else await scene.control([{ type: 'parameters', values: { x: 3, y: 3 } }]);
-          await scene.restore(checkpoint);
-        }, before.checkpoint);
-        assert.deepEqual(
-          await page.evaluate(() => document.querySelector('.ve-scene').scene.snapshot()),
-          before.state,
-          name + ' round trip preserves model and current motion',
-        );
-        const html = withCheckpoint(
-          await packDirectory(resolve('site', name), 'index.html', { audio: 'original' }),
-          before.checkpoint,
-        );
-        await writeFile(join(directory, name + '.html'), html);
-        const fresh = await browser.newContext({ viewport: { width: 960, height: 1200 } });
-        const artifact = await fresh.newPage();
-        await artifact.goto(exported.url + '/' + name + '.html');
-        await artifact.evaluate(() => window.galleryReady);
-        assert.deepEqual(
-          await artifact.evaluate(() => document.querySelector('.ve-scene').scene.snapshot()),
-          before.state,
-          name + ' standalone restores the same frame without widget storage',
-        );
-        await fresh.close();
-        await context.close();
-      }
-    } finally {
-      await browser.close();
-      await exported.close();
-      await server.close();
       await rm(directory, { recursive: true, force: true });
     }
   },

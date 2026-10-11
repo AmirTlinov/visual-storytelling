@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -29,7 +30,7 @@ test('Russian explanations and mathematics share one complete pen across fonts, 
       loader: { '.woff2': 'dataurl' },
       logLevel: 'silent',
     });
-    browser = await chromium.launch();
+    browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
@@ -39,6 +40,7 @@ test('Russian explanations and mathematics share one complete pen across fonts, 
     await page.evaluate(() => ink.loadFonts());
     const result = await page.evaluate(async () => {
       const cases = [
+        'Т',
         'Почему более крутая линия означает большую скорость?',
         'За каждую секунду — ещё три метра',
         'Δs / Δt = 3 м/с',
@@ -108,6 +110,12 @@ test('Russian explanations and mathematics share one complete pen across fonts, 
             handwriting: profile,
           });
           const paths = [...root.querySelectorAll('path')];
+          // A capital Т exposes any profile-wide lean in its long vertical stem.
+          const stem = text === 'Т' ? paths.at(-1) : undefined;
+          const stemStart = stem?.getPointAtLength(0).matrixTransform(stem.getCTM());
+          const stemEnd = stem
+            ?.getPointAtLength(stem.getTotalLength())
+            .matrixTransform(stem.getCTM());
           const written = label.element.querySelector('[data-written-text]');
           const font = canvas();
           font.font = context.font;
@@ -153,6 +161,7 @@ test('Russian explanations and mathematics share one complete pen across fonts, 
             text,
             advances,
             minimumGap,
+            stemDrift: stem ? Math.abs(stemEnd.x - stemStart.x) : undefined,
             paths: paths.length,
             fusionPaths: shape.paths.length,
             complete: Boolean(written),
@@ -193,6 +202,8 @@ test('Russian explanations and mathematics share one complete pen across fonts, 
     for (const sample of result.samples) {
       const description = `${sample.profile}: ${sample.text}`;
       assert.equal(sample.complete, true, `complete authored pen: ${description}`);
+      if (sample.stemDrift !== undefined)
+        assert.ok(sample.stemDrift < 0.5, `upright handwriting: ${description}`);
       assert.ok(
         sample.mismatch < 0.015,
         `font and animated pen diverged ${sample.mismatch}: ${description}`,

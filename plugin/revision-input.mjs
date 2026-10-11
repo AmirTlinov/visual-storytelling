@@ -2,7 +2,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { rename, rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { readJSON, writeJSON } from '../tools/storage.mjs';
-import { projectFiles, snapshotProject } from './project-files.mjs';
+import { projectFiles, snapshotProject } from '../tools/project-files.mjs';
 import { failure } from './errors.mjs';
 
 /** Resolve and freeze a user's revision before queueing work. Jobs never follow working files. */

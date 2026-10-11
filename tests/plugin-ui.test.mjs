@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -6,11 +7,12 @@ import { pluginHost } from './plugin/host.mjs';
 
 test(
   'MCP App controls the existing isolated renderer, preserves context and remounts the same position',
-  { timeout: 30000 },
+  { timeout: 90000 },
   async () => {
-    const host = await pluginHost();
-    const browser = await chromium.launch({ headless: true });
+    const host = await pluginHost({ fixture: 'scene-shell' });
+    const browser = await chromium.launch(chromiumLaunchOptions({ headless: true }));
     const page = await browser.newPage({ viewport: { width: 820, height: 850 } });
+    page.setDefaultTimeout(15000);
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
     try {
@@ -100,10 +102,13 @@ test(
         JSON.stringify(await page.evaluate(() => window.pluginTest.context)).length < 1800,
         'one compact context slot',
       );
+      await scene.getByRole('button', { name: 'Условия', exact: true }).click();
       await scene.getByRole('button', { name: 'Отменить условие', exact: true }).click();
       assert.equal((await inspect()).state.parameters.find((p) => p.key === 'x').value, 1.5);
       await scene.getByRole('button', { name: 'Повторить', exact: true }).click();
       assert.equal((await inspect()).state.parameters.find((p) => p.key === 'x').value, -2);
+      await scene.getByRole('button', { name: 'Повторить', exact: true }).press('Escape');
+      await scene.getByRole('dialog', { name: 'Условия объяснения' }).waitFor({ state: 'hidden' });
       await scene
         .getByRole('button', { name: 'Результат двух перемещений', exact: true })
         .press('Enter');

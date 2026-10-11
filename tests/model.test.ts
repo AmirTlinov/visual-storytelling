@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cueSheet } from '../dist/story/cues.js';
 import { regroup, swap } from '../dist/recipes/tokens.js';
-import { transform } from '../examples/vector/model.ts';
 test('word intervals preserve timing across reverse seeking and reject invalid cues', () => {
   const sheet = cueSheet({
     duration: 6,
@@ -79,5 +78,3 @@ test('grouping preserves identities and endpoint positions', () => {
   );
   assert.throws(() => regroup(before, [], 0.5), /preserve/);
 });
-test('matrix output uses both independent coefficients', () =>
-  assert.deepEqual(transform({ x: 1.5, y: -1, a: -2, b: 0.5 }), { x: -3, y: -0.5 }));

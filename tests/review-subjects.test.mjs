@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import sharp from 'sharp';
 import { build } from 'esbuild';
+import { buildPage } from '../tools/build-pages.mjs';
 import { captureScene } from '../tools/motion/scene-capture.mjs';
 import { subjectDigests } from '../tools/motion/subject-digests.mjs';
 import { buildEpisodes } from '../tools/motion/episodes.mjs';
@@ -13,23 +14,27 @@ import { queryEvidence } from '../tools/motion/inspection.mjs';
 test('3D action targets use their existing semantic regions, including inscriptions', async () => {
   const out = await mkdtemp(join(tmpdir(), 'review-3d-subject-'));
   try {
+    const fixture = join(out, 'scene');
+    await buildPage(resolve('tests/fixtures/arithmetic/tensor.html'), fixture, {
+      outputName: 'index.html',
+    });
     const capture = await captureScene({
-      input: resolve('site/explorer-3d'),
+      input: fixture,
       directory: true,
       out,
-      cue: 'unit_volume',
+      cue: 'calculate',
       frames: 3,
       width: 480,
       height: 640,
       theme: 'light',
     });
     assert(capture.samples.length >= 3);
-    assert(capture.samples.every((sample) => sample.subjects['unit-cube']));
-    assert(capture.samples.some((sample) => sample.subjects['unit-cube'] !== 'hidden'));
+    assert(capture.samples.every((sample) => sample.subjects['calculation']));
+    assert(capture.samples.some((sample) => sample.subjects['calculation'] !== 'hidden'));
     const episode = buildEpisodes(capture.samples, { context: capture.context }).find(
-      (episode) => episode.cue === 'unit_volume',
+      (episode) => episode.cue === 'calculate',
     );
-    assert.deepEqual(episode.observed.scope, { objects: ['unit-cube'] });
+    assert.deepEqual(episode.observed.scope, { objects: ['calculation'] });
     assert(!episode.observations.some((text) => text.includes('Нет области')));
   } finally {
     await rm(out, { recursive: true, force: true });

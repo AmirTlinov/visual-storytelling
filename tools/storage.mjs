@@ -1,11 +1,26 @@
 import { mkdir, readFile, open, rename, rm } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 
-export const dataDirectory = () =>
-  process.env.VISUAL_STORY_DATA_DIR ??
-  join(homedir(), 'Library/Application Support/Visual Storytelling');
+/** The installed application owns data and releases outside the plugin host's cache. */
+export function applicationDirectory({
+  platform = process.platform,
+  home = homedir(),
+  environment = process.env,
+} = {}) {
+  if (platform === 'darwin') return join(home, 'Library/Application Support/Visual Storytelling');
+  if (platform === 'linux') {
+    const data = environment.XDG_DATA_HOME;
+    return join(
+      data && isAbsolute(data) ? data : join(home, '.local/share'),
+      'visual-storytelling',
+    );
+  }
+  throw new Error(`Visual Storytelling does not support ${platform}.`);
+}
+
+export const dataDirectory = () => process.env.VISUAL_STORY_DATA_DIR ?? applicationDirectory();
 
 export async function readJSON(file) {
   try {

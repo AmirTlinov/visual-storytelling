@@ -46,6 +46,9 @@ export function svgButton(
   parent: SVGElement,
   options: SvgButtonBounds & SvgButtonState & { label: string; onPress: () => void },
 ) {
+  // A drawing containing controls is a group of accessible subjects, not one opaque image.
+  const drawing = parent instanceof SVGSVGElement ? parent : parent.ownerSVGElement;
+  if (drawing?.getAttribute('role') === 'img') drawing.setAttribute('role', 'group');
   const element = parent.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'rect'),
     abort = new AbortController();
   element.classList.add('ve-svg-button');

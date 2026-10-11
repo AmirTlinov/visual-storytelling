@@ -6,7 +6,11 @@ import { quantityStep } from './measure.js';
 import { mathOriginKey } from './origins.js';
 
 /** Arithmetic owns values and lineage; the shared body owns every visible stroke. */
-export function mathBodies(frame: MathMorphFrame, measured: boolean): MorphFrame {
+export function mathBodies(
+  frame: MathMorphFrame,
+  measured: boolean,
+  format: (value: number) => string = mathNumber,
+): MorphFrame {
   const body = (part: MathPart) => ({
     // Authored dimensions belong to the material. A pose scale is reserved for
     // deformation, so local measurement marks deform with their body as well.
@@ -14,7 +18,7 @@ export function mathBodies(frame: MathMorphFrame, measured: boolean): MorphFrame
     scale: part.scale,
     rounding: part.rounding,
     material: part.material,
-    text: mathNumber(part.value),
+    text: format(part.value),
     position: part.position,
     origins: part.origins?.map(mathOriginKey),
     grid: measured ? quantityStep(part) : undefined,

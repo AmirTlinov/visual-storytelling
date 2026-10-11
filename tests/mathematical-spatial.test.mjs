@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -105,7 +106,7 @@ test('public 3D models replace subjects, preserve concavity and keep fading anno
       <main id="reused" class="ve-scene"></main><main id="fresh" class="ve-scene"></main>
       <script src="index.js"></script>`,
     );
-    browser = await chromium.launch();
+    browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));

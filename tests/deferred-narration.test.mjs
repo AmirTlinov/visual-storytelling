@@ -5,7 +5,7 @@ import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/pr
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { workflows } from '../plugin/workflows.mjs';
-import { projectFiles } from '../plugin/project-files.mjs';
+import { projectFiles } from '../tools/project-files.mjs';
 import { buildNarration, checkNarration, prepareNarration } from '../tools/narration.mjs';
 import { narrationSource } from '../tools/story-document.mjs';
 
@@ -37,7 +37,14 @@ test(
         downloads++;
         throw new Error('Quiet authoring must not download a voice environment');
       };
-      await workflows.create({ ...input, example: 'memory-register' }, task());
+      await workflows.create(input, task());
+      await cp(new URL('./fixtures/scene-shell/', import.meta.url), projectPath, {
+        recursive: true,
+      });
+      await workflows.build(
+        { ...input, sourceRevision: (await projectFiles(projectPath)).revision },
+        task(),
+      );
       const voice = await read('voice.json');
       assert.deepEqual(voice, { provider: 'higgs', enabled: false, language: 'ru-RU' });
       const timeline = await readFile(join(projectPath, 'timeline.json'), 'utf8');
@@ -45,7 +52,7 @@ test(
       assert.deepEqual(
         authored,
         JSON.parse(
-          await readFile(new URL('../examples/memory-register/narration.json', import.meta.url)),
+          await readFile(new URL('./fixtures/scene-shell/narration.json', import.meta.url)),
         ),
         'deferring speech preserves the editable script',
       );
@@ -110,11 +117,11 @@ test(
     const directory = await mkdtemp(join(tmpdir(), 'quiet-document-voice-'));
     const projections = [];
     try {
-      for (const example of ['area-lesson', 'tesla-circuit', 'thermostat-story']) {
+      for (const example of ['chapters']) {
         const project = join(directory, example);
         await mkdir(project);
         for (const name of ['story.json', 'voice.json', 'index.html'])
-          await cp(new URL(`../examples/${example}/${name}`, import.meta.url), join(project, name));
+          await cp(new URL(`./fixtures/${example}/${name}`, import.meta.url), join(project, name));
         const authored = await readFile(join(project, 'story.json'), 'utf8');
         await prepareNarration(project, { audible: true });
         assert.equal(JSON.parse(await readFile(join(project, 'voice.json'))).enabled, false);
@@ -130,7 +137,7 @@ test(
           ),
         );
       }
-      const project = join(directory, 'area-lesson');
+      const project = join(directory, 'chapters');
       await writeFile(
         join(project, 'voice.json'),
         JSON.stringify({ enabled: false, provider: 'macos', language: 'ru-RU' }),

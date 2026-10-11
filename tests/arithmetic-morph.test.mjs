@@ -140,6 +140,65 @@ test('full 32 and 64 input reductions carry one result through bounded visible b
   );
 });
 
+test('dot batches retain an acyclic graph of immediate pairs, sums and explicit chain operands', () => {
+  const left = Array.from({ length: 32 }, (_, i) => (i - 16) / 11);
+  const right = Array.from({ length: 32 }, (_, i) => ((i % 7) - 3) / 9);
+  const result = left.reduce((sum, value, i) => sum + value * right[i], 0);
+  for (const batchSize of [1, 2, 4]) {
+    const dot = MathMorph.plan(MathMorph.dot(left, right, { batchSize }));
+    assert.equal(dot.result, result, 'readable grouping retains exact accumulation order');
+    const parts = new Map();
+    for (let stage = 0; stage < dot.stages; stage++) {
+      const frame = dot.sample(stage / dot.stages);
+      const activeInputs = new Set(frame.sources.map((part) => part.id));
+      for (const part of [...frame.sources, ...frame.targets]) parts.set(part.id, part);
+      for (const target of frame.targets) {
+        if (frame.sources.some((source) => source.id === target.id)) continue;
+        assert.ok(target.inputIds.length);
+        assert.ok(target.inputIds.every((id) => activeInputs.has(id)));
+        assert.equal(target.originPrecision, 'exact');
+      }
+    }
+    const leaves = (id, path = []) => {
+      assert.ok(!path.includes(id), `cyclic dependency ${[...path, id].join(' → ')}`);
+      const part = parts.get(id);
+      assert.ok(part, `missing dependency ${id}`);
+      return part.inputIds?.length
+        ? part.inputIds.flatMap((input) => leaves(input, [...path, id]))
+        : [id];
+    };
+    assert.deepEqual(
+      new Set(leaves('result')),
+      new Set(left.flatMap((_, i) => [`left:${i}`, `right:${i}`])),
+    );
+    const chain = MathMorph.plan(
+      MathMorph.chain(MathMorph.dot(left, right, { batchSize }), { operator: 'add', value: 0.25 }),
+    );
+    const biased = chain.sample(1);
+    assert.equal(chain.result, result + 0.25);
+    assert.deepEqual(
+      biased.targets[0].inputIds,
+      biased.sources.map((part) => part.id),
+    );
+    assert.deepEqual(
+      biased.sources.map((part) => part.value),
+      [result, 0.25],
+    );
+    assert.equal(biased.targets[0].origins.at(-1).value, 0.25);
+    const nonlinear = MathMorph.plan(
+      MathMorph.chain(MathMorph.dot(left, right, { batchSize }), {
+        operator: 'apply',
+        label: 'f',
+        value: (x) => x * x,
+      }),
+    ).sample(1);
+    assert.equal(nonlinear.targets[0].originPrecision, 'conservative');
+    assert.deepEqual(nonlinear.targets[0].inputIds, [nonlinear.sources[0].id]);
+  }
+  for (const batchSize of [0, -1, 1.5, 5, Infinity])
+    assert.throws(() => MathMorph.plan(MathMorph.dot([1], [2], { batchSize })), /batch size/);
+});
+
 test('sources meet before their shared shape transforms', () => {
   for (const operation of [
     MathMorph.calculate('add', 1, 2, 3),

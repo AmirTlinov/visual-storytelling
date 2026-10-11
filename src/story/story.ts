@@ -41,6 +41,8 @@ export type StoryOptions<P, K extends string, S = P> = {
   /** Resolve a selected chapter at a shared time boundary from the accepted condition. */
   chapterAt?(moment: StoryMoment<P, NoInfer<S>>): string | undefined;
   checkpoint?: StoryCheckpoint<P>;
+  /** The subject owns the attempt. Returning true releases an awaitInput cue, including a wrong but checked answer. */
+  canContinue?(cue: K, moment: StoryMoment<P, NoInfer<S>>): boolean;
   /** Prepare resources without changing the visible frame. Honour cancellation before effects. */
   prepare?(
     state: NoInfer<S>,
@@ -206,7 +208,32 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
   }
   function update() {
     if (disposed || changing || error) return;
-    const frame = sheet.at(player.state.time, forcedReduced ?? media.matches);
+    let time = player.state.time;
+    if (requested && player.state.playing) {
+      const stop = Object.entries(sheet.script.cues)
+        .map(([id, cue]) => ({ id: id as K, cue: cue as Script<K>['cues'][K] }))
+        .filter(
+          ({ cue }) => cue.awaitInput && cue.start >= requested.moment.time && cue.start <= time,
+        )
+        .sort((a, b) => a.cue.start - b.cue.start)
+        .find(({ id, cue }) => {
+          const at = sheet.at(cue.start, forcedReduced ?? media.matches);
+          const values =
+            requested.moment.mode === 'story' ? options.stateAt(at) : requested.moment.values;
+          return !options.canContinue?.(id, compute(values, at, requested.moment.mode).moment);
+        });
+      if (stop) {
+        time = stop.cue.start;
+        changing = true;
+        try {
+          player.pause();
+          player.seek(time);
+        } finally {
+          changing = false;
+        }
+      }
+    }
+    const frame = sheet.at(time, forcedReduced ?? media.matches);
     const mode = requested?.moment.mode ?? 'story';
     // A resize while loading needs the eventual render at the latest viewport, not another load.
     if (
@@ -246,8 +273,29 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
     }, next);
   }
   let unsubscribe: () => void;
+  function waiting() {
+    if (!requested) return undefined;
+    return (Object.keys(sheet.script.cues) as K[]).find((id) => {
+      const cue = sheet.script.cues[id];
+      return (
+        cue.awaitInput &&
+        requested.moment.time >= cue.start &&
+        requested.moment.time < cue.end &&
+        !options.canContinue?.(id, requested.moment)
+      );
+    });
+  }
   try {
     unsubscribe = player.subscribe((playback, mediaFrame) => {
+      if (!changing && playback.playing && waiting()) {
+        changing = true;
+        try {
+          player.pause();
+        } finally {
+          changing = false;
+        }
+        return;
+      }
       if (error && playback.playing) {
         const stage = error.stage;
         error = undefined;
@@ -296,6 +344,10 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
     },
     get currentChapter() {
       return requested.moment.chapter;
+    },
+    /** Pending subject action; remains derived from the accepted condition and cue. */
+    get waiting() {
+      return waiting();
     },
     update,
     get requested() {
@@ -366,6 +418,7 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
     },
     resume() {
       assertLive();
+      if (waiting()) return;
       const frame = sheet.at(player.state.time, forcedReduced ?? media.matches);
       publish(compute(options.stateAt(frame), frame, 'story'));
     },

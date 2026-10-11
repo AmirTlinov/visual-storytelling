@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
@@ -29,7 +30,7 @@ test('physical handwriting retains stroke coverage through subpixel motion and f
     loader: { '.woff2': 'dataurl' },
     plugins: [assetURLs()],
   });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage({
       viewport: { width: 1200, height: 800 },

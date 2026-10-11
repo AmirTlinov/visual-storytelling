@@ -5,6 +5,7 @@ import { fusionText } from '../../ink/fusion/text.js';
 import { color } from '../../ink/palette.js';
 import { placeLabels, type LabelBox, type LabelLimits } from '../../layout/labels.js';
 import { contentViewport } from '../../layout/content.js';
+import { labelOverflow, type OverflowLabel } from '../../layout/label-overflow.js';
 import { materialDrawing } from './material.js';
 import { spatialPanelRenderer } from './spatial.js';
 import { constructionCamera } from './camera.js';
@@ -131,6 +132,7 @@ function panelRenderer(sheet: Surface, id: string) {
   const materials = new Map<string, ReturnType<typeof materialDrawing>>();
   const inkBounds = new Map<string, LabelBox>();
   let used = new Set<string>();
+  let overflow: OverflowLabel[] = [];
 
   const draw = (item: DiagramPath, pixel: (point: DiagramPoint) => DiagramPoint) => {
     const key = item.id;
@@ -261,14 +263,19 @@ function panelRenderer(sheet: Surface, id: string) {
       width: number,
       height: number,
       margins: AnnotationLayout,
+      placement: { bounded?: boolean; heading?: boolean; obstacles?: LabelBox[] } = {},
     ) {
       used = new Set();
       inkBounds.clear();
 
       root.setAttribute('transform', `translate(${x} ${y})`);
-      const headingHeight = heading.render(panel.title, width - 12, width / 2, 23);
+      const showHeading = placement.heading !== false;
+      heading.element.style.display = showHeading ? '' : 'none';
+      const headingHeight = showHeading
+        ? heading.render(panel.title, width - 12, width / 2, 23)
+        : 0;
       const [[left, bottom], [right, top]] = panel.bounds;
-      const plotTop = 30 + headingHeight;
+      const plotTop = showHeading ? 30 + headingHeight : 8;
       const leftMargin = Math.min(width * 0.44, margins.left),
         rightMargin = Math.min(width * 0.44, margins.right);
       const availableWidth = width - leftMargin - rightMargin;
@@ -278,8 +285,8 @@ function panelRenderer(sheet: Surface, id: string) {
           ? 220
           : Math.min(480, (availableWidth * (top - bottom)) / Math.max(0.001, right - left));
       const requiredHeight = plotTop + 50 + readablePlotHeight;
-      if (requiredHeight > height + 0.5) return requiredHeight;
-      const availableHeight = height - plotTop - 50;
+      if (!placement.bounded && requiredHeight > height + 0.5) return requiredHeight;
+      const availableHeight = Math.max(1, height - plotTop - (placement.bounded ? 18 : 50));
       let sx = availableWidth / Math.max(0.001, right - left),
         sy = availableHeight / Math.max(0.001, top - bottom);
       if (panel.aspect !== 'free') sx = sy = Math.min(sx, sy);
@@ -419,16 +426,25 @@ function panelRenderer(sheet: Surface, id: string) {
         -8,
       );
       // Reserve the visible stack before solving its protected regions and material obstacles.
-      if (labelHeight > height - plotTop + 9) return plotTop - 9 + labelHeight;
+      if (!placement.bounded && labelHeight > height - plotTop + 9)
+        return plotTop - 9 + labelHeight;
       const placed = placeLabels(
         preferred,
         {
           x: 3,
-          y: plotTop - 12,
+          y: Math.max(2, plotTop - 12),
           width: width - 6,
-          height: height - plotTop + 9,
+          height: Math.max(1, height - Math.max(2, plotTop - 12) - 3),
         },
-        { limits: protectedSpace, obstacles: [...inkBounds.values()] },
+        {
+          limits: protectedSpace,
+          obstacles: [...inkBounds.values(), ...(placement.obstacles ?? [])],
+        },
+      );
+      overflow = entries.flatMap(({ item }, i) =>
+        (item.opacity ?? 1) > 0 && placed[i]!.status === 'overflow'
+          ? [{ id: `${id}/${item.id}`, label: item.text, subject: panel.title }]
+          : [],
       );
       root.dataset.labelOverflowCount = String(
         placed.filter((p) => (p.opacity ?? 1) > 0 && p.status === 'overflow').length,
@@ -482,6 +498,9 @@ function panelRenderer(sheet: Surface, id: string) {
         if (!panel.patches?.some((p) => p.id === key)) materials.delete(key);
       return height;
     },
+    get overflow() {
+      return overflow;
+    },
     dispose() {
       root.remove();
       heading.dispose();
@@ -515,9 +534,21 @@ export function mountConstruction(
   sheet.element.classList.add('ve-construction');
   sheet.element.setAttribute('preserveAspectRatio', 'xMidYMid meet');
   const viewport = layout === 'scene' ? undefined : contentViewport(parent);
-  const equation = paragraph(sheet.layer, { size: 26 }),
-    explanation = paragraph(sheet.layer, { size: 20 });
+  const equation = paragraph(sheet.layer, { size: layout === 'scene' ? 20 : 26 }),
+    explanation = paragraph(sheet.layer, { size: layout === 'scene' ? 18 : 20 });
   equation.element.style.color = color('purple');
+  const detailFrame = svg('foreignObject', {
+    'data-construction-details': '',
+    'pointer-events': 'none',
+  });
+  const detailHost = document.createElement('div');
+  detailHost.style.cssText = 'position:relative;width:100%;height:100%';
+  detailFrame.append(detailHost);
+  const details = layout === 'scene' ? labelOverflow(detailHost, { label: 'Разбор' }) : undefined;
+  if (details) {
+    details.element.style.pointerEvents = 'auto';
+    sheet.layer.append(detailFrame);
+  }
   const panels = new Map<
     string,
     {
@@ -531,12 +562,63 @@ export function mountConstruction(
     const timing = morphTiming(time, cues, plan.stages);
     const frame = mathMotionFrame(plan, timing);
     projection = frame.panels.some((p) => p.space === '3d') ? '3d' : '2d';
-    const width = Math.max(280, parent.clientWidth),
-      gap = 24;
-    const columns = width >= 680 ? Math.min(2, frame.panels.length) : 1;
-    const panelWidth = (width - gap * (columns - 1)) / columns;
-    let panelHeight =
-      columns === 1 && frame.panels.length === 1 ? Math.max(290, Math.min(430, width * 0.55)) : 330;
+    // A scene is a bounded composition. Its parent may itself be transformed by
+    // SceneFrame, so use the displayed aperture once; a natural document keeps
+    // local CSS coordinates and may earn additional vertical room.
+    const bounded = layout === 'scene',
+      screen = parent.getBoundingClientRect(),
+      width = bounded ? Math.max(1, screen.width) : Math.max(280, parent.clientWidth),
+      apertureHeight = Math.max(1, screen.height),
+      gap = bounded ? 16 : 24,
+      sideNotes = bounded && width >= 620 && apertureHeight >= 220,
+      noteWidth = sideNotes ? Math.min(360, width * 0.36) : width - 16;
+    if (bounded && (!screen.width || !screen.height)) {
+      lastTime = time;
+      lastCues = cues;
+      return frame;
+    }
+    const extra: OverflowLabel[] = [];
+    let drawingWidth = width,
+      drawingHeight = apertureHeight;
+    if (bounded) {
+      equation.render(frame.formula, Math.max(1, noteWidth), 0, 0);
+      const formula = equation.bounds;
+      if (sideNotes) {
+        drawingWidth = width - noteWidth - 28;
+        const x = drawingWidth + 28 + noteWidth / 2,
+          y = Math.max(12, apertureHeight * 0.16) - formula.y;
+        equation.render(frame.formula, noteWidth, x, y);
+        const descriptionY = y + formula.y + formula.height + 28;
+        explanation.render(frame.explanation, noteWidth, x, 0);
+        const prose = explanation.bounds;
+        const fits = descriptionY + prose.height + 12 <= apertureHeight;
+        explanation.element.style.display = fits ? '' : 'none';
+        if (fits) explanation.render(frame.explanation, noteWidth, x, descriptionY - prose.y);
+        else extra.push({ id: 'explanation', label: frame.explanation });
+      } else {
+        const footerHeight = formula.height + 14;
+        equation.render(
+          frame.formula,
+          Math.max(1, noteWidth),
+          width / 2,
+          apertureHeight - 6 - formula.y - formula.height,
+        );
+        drawingHeight = Math.max(1, apertureHeight - footerHeight);
+        // The explanation action has its own small column; it never covers a
+        // mathematical surface, even when every source label fits this frame.
+        drawingWidth = Math.max(1, width - 96);
+        explanation.element.style.display = 'none';
+        extra.push({ id: 'explanation', label: frame.explanation });
+      }
+    } else explanation.element.style.display = '';
+    const columns = drawingWidth >= 680 ? Math.min(2, frame.panels.length) : 1,
+      rows = Math.ceil(frame.panels.length / columns),
+      panelWidth = Math.max(1, (drawingWidth - gap * (columns - 1)) / columns);
+    let panelHeight = bounded
+      ? Math.max(1, (drawingHeight - (rows - 1) * 16) / rows)
+      : columns === 1 && frame.panels.length === 1
+        ? Math.max(290, Math.min(430, width * 0.55))
+        : 330;
     const renderPanels = () =>
       Math.max(
         ...frame.panels.map((panel, i) => {
@@ -567,38 +649,59 @@ export function mountConstruction(
             panelWidth,
             panelHeight,
             margins.get(panel.id)!,
+            { bounded, heading: !bounded || (panelHeight >= 240 && frame.panels.length > 1) },
           );
         }),
       );
     const measuredHeight = renderPanels();
-    if (measuredHeight > panelHeight) {
+    if (!bounded && measuredHeight > panelHeight) {
       panelHeight = measuredHeight;
       renderPanels();
     }
-    const rows = Math.ceil(frame.panels.length / columns),
+    let height = apertureHeight;
+    if (!bounded) {
       drawingHeight = rows * panelHeight + (rows - 1) * 16;
-    const formulaY = drawingHeight + 22;
-    const equationHeight = equation.render(frame.formula, width - 28, width / 2, formulaY);
-    const descriptionY = formulaY + Math.max(equationHeight, width < 480 ? 64 : 36) + 22;
-    const descriptionHeight = explanation.render(
-      frame.explanation,
-      width - 32,
-      width / 2,
-      descriptionY,
-    );
-    const height = Math.ceil(
-      descriptionY + Math.max(descriptionHeight, width < 480 ? 140 : 70) + 14,
-    );
+      const formulaY = drawingHeight + 22;
+      const equationHeight = equation.render(frame.formula, width - 28, width / 2, formulaY);
+      const descriptionY = formulaY + Math.max(equationHeight, width < 480 ? 64 : 36) + 22;
+      const descriptionHeight = explanation.render(
+        frame.explanation,
+        width - 32,
+        width / 2,
+        descriptionY,
+      );
+      height = Math.ceil(descriptionY + Math.max(descriptionHeight, width < 480 ? 140 : 70) + 14);
+    }
     sheet.resize(width, height, false);
-    if (layout === 'scene')
-      sheet.fitViewport(Math.max(1, parent.clientWidth), Math.max(1, parent.clientHeight));
     viewport?.resize(height);
     for (const [id, entry] of panels)
       if (!frame.panels.some((p) => p.id === id)) {
         entry.renderer.dispose();
         panels.delete(id);
       }
-    sheet.element.querySelector('desc')!.textContent = `${frame.formula}. ${frame.explanation}`;
+    if (details) {
+      for (const entry of panels.values())
+        if ('overflow' in entry.renderer) extra.push(...entry.renderer.overflow);
+      detailFrame.setAttribute('width', String(width));
+      detailFrame.setAttribute('height', String(height));
+      details.preferred({ x: 0, y: 0, width, height });
+      details.update(extra, {
+        x: width - 92,
+        y: Math.max(0, drawingHeight / 2 - 22),
+        width: 88,
+        height: 44,
+      });
+      detailFrame.style.display = extra.length ? '' : 'none';
+      // Renderers are mounted lazily; the action stays above their SVG groups.
+      sheet.layer.append(detailFrame);
+    }
+    sheet.element.querySelector('desc')!.textContent = [
+      ...frame.panels.map((panel) => panel.title),
+      frame.formula,
+      frame.explanation,
+    ]
+      .filter(Boolean)
+      .join('. ');
     sheet.element.dataset.stage = String(frame.stage);
     lastTime = time;
     lastCues = cues;
@@ -606,15 +709,20 @@ export function mountConstruction(
   }
   const observer = new ResizeObserver(() => render(lastTime, lastCues));
   observer.observe(parent);
+  const frame = parent.closest('[data-scene-frame]');
+  const resizeFrame = () => render(lastTime, lastCues);
+  frame?.addEventListener('scene-frame-resize', resizeFrame);
   const unwatch = watchMotion(() => render(lastTime, lastCues));
   function dispose() {
     if (disposed) return;
     disposed = true;
     observer.disconnect();
+    frame?.removeEventListener('scene-frame-resize', resizeFrame);
     unwatch();
     panels.forEach((p) => p.renderer.dispose());
     equation.dispose();
     explanation.dispose();
+    details?.dispose();
     viewport?.dispose();
     sheet.dispose();
   }

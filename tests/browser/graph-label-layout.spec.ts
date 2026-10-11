@@ -1,10 +1,11 @@
+import { openFixture } from '../support/fixture.mjs';
 import { test, expect } from '@playwright/test';
 import { build } from 'esbuild';
 
 test('graph labels retain the axes, readable values and matching hitboxes across the experiment', async ({
   page,
 }) => {
-  await page.goto('/graph-lab/index.html');
+  await openFixture(page, 'scene-shell', 'plot.html');
   await page.evaluate(() => (window as any).galleryReady);
   for (const width of [1312, 390])
     for (const theme of ['light', 'dark']) {
@@ -22,7 +23,7 @@ test('graph labels retain the axes, readable values and matching hitboxes across
             for (const compare of [false, true])
               for (const detail of [false, true]) {
                 await scene.control([
-                  { type: 'parameters', values: { speed, time, compare, detail, practice: false } },
+                  { type: 'parameters', values: { speed, time, compare, detail } },
                 ]);
                 const state = { speed, time, compare, detail };
                 const labels = [

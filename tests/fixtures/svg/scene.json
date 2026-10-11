@@ -1,0 +1,1 @@
+{ "entry": "subject.svg", "generator": { "file": "build.mjs", "runner": "node", "python": true } }

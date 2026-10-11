@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -83,7 +84,7 @@ test('green change strength distinguishes smooth transitions while retaining unc
 
 test('saved player shares the PNG weights, seeks in both directions and restores the original frame', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'onion-player-'));
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(chromiumLaunchOptions());
   t.after(async () => {
     await browser.close();
     await rm(directory, { recursive: true, force: true });

@@ -6,7 +6,7 @@
       "command": "sh",
       "args": [
         "-c",
-        "if [ -n \"$VISUAL_STORY_INSTALL_DIR\" ]; then exec \"$VISUAL_STORY_INSTALL_DIR/launch\" \"$@\"; else exec \"$HOME/Library/Application Support/Visual Storytelling/installation/launch\" \"$@\"; fi",
+        "if [ -n \"$VISUAL_STORY_INSTALL_DIR\" ]; then exec \"$VISUAL_STORY_INSTALL_DIR/launch\" \"$@\"; fi; case \"$(uname -s)\" in Darwin) base=\"$HOME/Library/Application Support/Visual Storytelling\";; Linux) case \"$XDG_DATA_HOME\" in /*) base=\"$XDG_DATA_HOME/visual-storytelling\";; *) base=\"$HOME/.local/share/visual-storytelling\";; esac;; *) echo 'Unsupported Visual Storytelling platform' >&2; exit 1;; esac; exec \"$base/installation/launch\" \"$@\"",
         "visual-storytelling"
       ],
       "cwd": "${PLUGIN_DATA}"

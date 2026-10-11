@@ -1,6 +1,6 @@
 {
   "name": "@visual-storytelling/core",
-  "version": "0.25.1",
+  "version": "0.26.4",
   "private": true,
   "license": "0BSD",
   "type": "module",
@@ -8,7 +8,8 @@
   "files": [
     "dist",
     "tools",
-    "examples/**/*.{html,js,mjs,ts,json,css,svg,png,jpg,webp,woff2,py,txt,md,command}",
+    "examples/catalog.json",
+    "examples/gpt-model/**/*.{html,js,mjs,ts,json,css,svg,png,jpg,webp,woff2,py,txt,md,command}",
     "!examples/**/{dist,site,artifacts,review,node_modules}/**",
     "!examples/**/.*",
     "!examples/**/.*/**",
@@ -71,12 +72,14 @@
   },
   "sideEffects": [
     "**/*.css",
-    "./examples/**"
+    "./examples/**",
+    "./tests/fixtures/**"
   ],
   "scripts": {
     "dev": "node tools/dev-gallery.mjs",
     "build": "node tools/build.mjs",
     "check": "tsc --noEmit",
+    "pretest": "node plugin/build.mjs --release",
     "test": "node --experimental-strip-types --test --test-concurrency=2 tests/*.test.ts tests/*.test.mjs",
     "test:tools": "python3 -m unittest discover -s tests -p 'test_*.py'",
     "test:browser": "playwright test",
@@ -90,7 +93,8 @@
     "test:visual": "node tools/visual-regression.mjs compare site artifacts/migrated",
     "build:characters": "node tools/characters/build-builtin.mjs",
     "build:plugin": "node plugin/build.mjs",
-    "plugin:release": "npm run build && node plugin/build.mjs --release"
+    "plugin:release": "npm run build && node plugin/build.mjs --release",
+    "plugin:linux": "node plugin/linux-build.mjs"
   },
   "dependencies": {
     "@babel/parser": "7.29.9",

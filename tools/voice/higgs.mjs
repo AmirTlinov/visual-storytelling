@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { delimiter, dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { voiceSupport, requireVoiceSupport } from '../environment/voice.mjs';
 
 const execute = promisify(execFile);
 const available = (file, mode = constants.F_OK) =>
@@ -55,6 +56,13 @@ async function inspect(args, { signal } = {}) {
 export const higgsVoice = {
   id: 'higgs',
   async doctor(task = {}) {
+    const capability = voiceSupport();
+    if (!capability.supported)
+      return {
+        ...capability,
+        ready: false,
+        voices: [{ id: 'higgs', name: 'Higgs TTS 3', language: 'ru-RU' }],
+      };
     try {
       const { stdout } = await inspect(['doctor'], task);
       const resources = JSON.parse(stdout);
@@ -66,6 +74,7 @@ export const higgsVoice = {
           resources.ffmpeg,
       );
       return {
+        ...capability,
         ready,
         voices: [{ id: 'higgs', name: 'Higgs TTS 3', language: 'ru-RU' }],
         ...(!ready && {
@@ -76,6 +85,7 @@ export const higgsVoice = {
     } catch (error) {
       task.signal?.throwIfAborted();
       return {
+        ...capability,
         ready: false,
         voices: [{ id: 'higgs', name: 'Higgs TTS 3', language: 'ru-RU' }],
         reason: error.stderr?.trim() || error.message,
@@ -93,6 +103,7 @@ export const higgsVoice = {
     if (!status.ready) throw new Error(status.reason);
   },
   async build(source, directory, { signal, progress = () => {} } = {}) {
+    requireVoiceSupport();
     const { command, prefix, env } = await installation();
     progress('Готовлю нейросетевую озвучку Higgs TTS 3');
     await new Promise((resolve, reject) => {

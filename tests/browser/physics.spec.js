@@ -1,7 +1,8 @@
+import { openFixture } from '../support/fixture.mjs';
 import { test, expect } from '@playwright/test';
 
 async function ready(page, file) {
-  await page.goto(`/physical-objects/${file}.html`);
+  await openFixture(page, 'physics', `${file}.html`);
   await page.evaluate(async () => {
     await window.galleryReady;
     await document.fonts.ready;
@@ -154,8 +155,16 @@ test('physical ink keeps its material through grabs, keyboard input, pause and r
     const paused = await state(page);
     await page.waitForTimeout(100);
     expect(await state(page)).toEqual(paused);
-    await page.getByRole('button', { name: 'Сначала', exact: true }).click();
+    const reset = page.getByRole('button', { name: 'Сначала', exact: true });
+    if (!(await reset.isVisible()))
+      await page.getByRole('button', { name: 'Условия', exact: true }).click();
+    await reset.click();
     expect(await state(page)).toEqual(initial);
+    const conditions = page.getByRole('dialog', { name: 'Условия объяснения' });
+    if (await conditions.isVisible()) {
+      await page.keyboard.press('Escape');
+      await expect(conditions).toBeHidden();
+    }
     await page.locator('[data-physical-body="material-0"]').press('ArrowRight');
     await expect(page.locator('[data-player]')).toHaveAttribute('data-playing', 'true');
     await expect

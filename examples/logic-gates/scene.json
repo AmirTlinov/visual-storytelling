@@ -1,7 +1,0 @@
-{
-  "entry": "logic-gates.svg",
-  "generator": {
-    "file": "build.py",
-    "runner": "python3"
-  }
-}

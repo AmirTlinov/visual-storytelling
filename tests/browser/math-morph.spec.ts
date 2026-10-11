@@ -1,3 +1,4 @@
+import { openFixture } from '../support/fixture.mjs';
 import { test, expect } from '@playwright/test';
 import sharp from 'sharp';
 
@@ -6,7 +7,7 @@ test('a hidden 2D view starts safely and shows the latest sought operation when 
 }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto('/math-morph/index.html');
+  await openFixture(page, 'arithmetic', 'projection.html');
   await page.evaluate(() => window.galleryReady);
   const flat = page.locator('[data-projection="2d"]');
   await expect(flat).toBeHidden();
@@ -63,7 +64,7 @@ test('a hidden 2D view starts safely and shows the latest sought operation when 
 test('the largest authored power remains a visible measured area after changing inputs', async ({
   page,
 }) => {
-  await page.goto('/math-morph/index.html');
+  await openFixture(page, 'arithmetic', 'projection.html');
   await page.evaluate(() => window.galleryReady);
   await page.locator('[data-mode=explore]').click();
   await expect(page.locator('[data-caption]')).toBeHidden();

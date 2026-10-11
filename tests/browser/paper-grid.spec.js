@@ -1,3 +1,4 @@
+import { openFixture } from '../support/fixture.mjs';
 import { test, expect } from '@playwright/test';
 import { PNG } from 'pngjs';
 
@@ -11,9 +12,21 @@ test('paper remains visible in small frames in both themes while measuring grids
     await page.setViewportSize(viewport);
     for (const colorScheme of ['light', 'dark']) {
       await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
-      await page.goto('/memory-register/index.html');
+      await openFixture(page, 'scene-shell', 'plot.html');
       await page.evaluate(() => window.galleryReady);
+      await expect
+        .poll(() =>
+          page.locator('.ve-scene-content').evaluate((content) => {
+            const scale = content.getBoundingClientRect().width / content.offsetWidth;
+            const sizes = getComputedStyle(content).backgroundSize.split(',').map(parseFloat);
+            return Math.max(Math.abs(sizes[0] * scale - 100), Math.abs(sizes[2] * scale - 20));
+          }),
+        )
+        .toBeLessThan(0.01);
       // This blank part of the real composition contains only the paper material.
+      // One raster pixel in each 20px direction covers about 9.75% of a sheet.
+      // Allow subpixel ink and crop phase while requiring measurable line contrast.
+      const expectedCoverage = 1 - (1 - 1 / 20) ** 2;
       let coverage = 0;
       await expect
         .poll(
@@ -50,10 +63,12 @@ test('paper remains visible in small frames in both themes while measuring grids
           },
           { message: `${viewport.width}px ${colorScheme}: visible paper lines` },
         )
-        .toBeGreaterThan(0.15);
-      expect(coverage, 'the paper retains open space between its lines').toBeLessThan(0.75);
+        .toBeGreaterThan(expectedCoverage * 0.45);
+      expect(coverage, 'the paper retains open space between its lines').toBeLessThan(
+        expectedCoverage * 2.5,
+      );
 
-      await page.goto('/explorer-svg/index.html');
+      await openFixture(page, 'scene-shell', 'camera.html');
       await page.evaluate(() => window.galleryReady);
       await expect(page.locator('.ve-scene-content')).toHaveCSS('background-image', 'none');
       await expect(page.locator('.vs-grid > path').first()).toBeVisible();

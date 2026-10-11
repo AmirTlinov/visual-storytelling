@@ -7,19 +7,27 @@
 и `visual-story characters --json` дают точные имена.
 
 ```sh
-node tools/scene.mjs new /absolute/my-story --example chibi-tesla
+node tools/scene.mjs new /absolute/my-story --title "Нашлось решение"
 cd /absolute/my-story
-npm install
+npm ci
 npm run dev
 ```
 
-Меняй `cast`, `set` и `beats` в одном `scene.js`.
-[Тесла](../examples/chibi-tesla/scene.js), [Мира](../examples/chibi-garden/scene.js)
-и [два героя](../examples/chibi-transfer/scene.js) используют один исполнитель.
+В нейтральном проекте замени `scene.js` фрагментом ниже. Меняй `cast`, `set` и
+`beats`: Tesla, Mira и несколько героев используют один исполнитель.
+
+Постановка занимает весь кадр 16:9. `CharacterStory` и `characterChapter`
+выбирают `presentation: 'stage'`: декорация заполняет рисунок без тетрадной сетки
+и внешнего заголовка. Общие параметры, выбор главы и плеер расположены под кадром.
+Для тетрадного разбора используй отдельную `inkChapter` в том же `SceneStory`.
+Одна модель может работать и на доске персонажа, и в следующем тетрадном кадре.
+Встраивать персонажную сценку внутрь листа в клетку нельзя.
 
 ```js
 import { CharacterStory, chibi, laboratory } from '@visual-storytelling/core/characters';
+import '@visual-storytelling/core/style.css';
 
+const root = document.querySelector('main');
 window.galleryReady = CharacterStory.mount(root, {
   title: 'Нашлось решение',
   description: 'Учёный размышляет, находит решение и радуется.',
@@ -52,9 +60,8 @@ window.galleryReady = CharacterStory.mount(root, {
 
 ## Размещение и действия
 
-Для истории из нескольких сцен начни с `new --example character-lesson`: она сочетает
-персонажей, исследуемую математику и физический опыт. Для отдельного действия подходят
-`chibi-reading`, `chibi-partners` и `chibi-adventure`. `visual-story characters --json` возвращает
+Для истории из нескольких сцен используй `characterChapter` в [SceneStory](lessons.md).
+`visual-story characters --json` возвращает
 точные имена, предметы, точки и аргументы действий из общего `stagingCatalog`.
 
 ```js
@@ -123,11 +130,10 @@ await CharacterStory.mount(root, {
 `theme: library | laboratory | classroom`, `seat: chair | bench`,
 `furnitureScale`, `depth`; `street` — `theme: town | park`, `depth`; `courtyard`
 принимает `theme: workshop | library`, `entranceScale` и содержит вход с комнатой,
-фасад и лестницу с площадкой. [Одна цепочка для двух разных героев](../examples/chibi-reading/scene.js)
-выбирает Миру через `?variant=mira`, меняя только облик, рост и декорацию.
+фасад и лестницу с площадкой. Облик, рост героя и декорацию можно менять, сохраняя
+ту же последовательность действий.
 Все три семейства принимают `perspective: 'stage' | 'overview'`: контуры, контакты
-и пути используют одну проекцию. В `chibi-adventure?variant=tesla` другой герой
-проходит ту же последовательность у входа и лестницы.
+и пути используют одну проекцию.
 
 ### Постановка отношениями и готовые последовательности
 
@@ -196,8 +202,7 @@ const beats = routines.read('reading', { actor: 'reader', pages: 2 });
 Маршрут сохраняет контакт с ручкой и свободное место для створки. Следующий
 эпизод `passDoor` проводит через середину открытого проёма. Называй `inside` или
 `outside`; траектория тела и шагов общая. Цвета `object.color`, `facade.wall` и
-`facade.inside` меняют оформление без изменения контактов. Пример
-`chibi-adventure?variant=tesla` использует тот же сценарий с другим ростом и размером входа.
+`facade.inside` меняют оформление без изменения контактов.
 
 Называй места в декорации и используй их в `cast.at` и `to`. Книгу нужно взять или
 сразу объявить через `cast.reader.holding`; после `put` предмет остаётся на выбранной опоре.
@@ -229,8 +234,7 @@ const beats = routines.read('reading', { actor: 'reader', pages: 2 });
 ### Переносимые предметы и управление прибором
 
 `portable('letter' | 'cup' | 'instrument', at, color?)` даёт совместимый предмет.
-[Письмо из мастерской](../examples/character-lesson/scene.js) берёт письмо,
-свободной рукой нажимает кнопку и оставляет письмо на скамье.
+Герой может держать его, нажимать кнопку свободной рукой и оставлять на опоре.
 
 ```js
 objects: {
@@ -265,7 +269,7 @@ props: {
 задаёт длительность, `delay` — осмысленную паузу после контакта. Путь до кнопки,
 обход мебели и явное изменение длительности действия учитываются автоматически.
 В reduced motion значение переключается на той же метке контакта. Неизвестное
-или неоднозначное нажатие отклоняется при подготовке. [Пример](../examples/press-reaction/scene.js).
+или неоднозначное нажатие отклоняется при подготовке.
 
 Размещение физического предмета принадлежит `perform`, поэтому его `props` меняет
 только значения. Полноразмерный `art.paint` использует общую живую поверхность;
@@ -362,7 +366,6 @@ props: { token: { at: { actor: 'bob', anchor: 'hand-right' }, arc: 100 } }
 ## Персонажи внутри существующего фильма
 
 `CharacterStage` использует тот же исполнитель без плеера. Хост владеет временем:
-рабочий пример — [персонажи и приближение модели](../examples/chibi-stage/scene.js).
 
 ```js
 const actors = await CharacterStage.mount(host, {
@@ -418,7 +421,7 @@ SVG, Three.js и Ink используют одну камеру. Resize на п�
 
 Проверь характерные позы и переходы вперёд/назад, контакт с предметом и узкую ширину.
 Новый облик проходит те же движения: подумать, озарение, радость, поднятая рука.
-Принятый ориентир — [кадр Tesla](../examples/chibi-tesla/preview.png).
+Для проверки силуэта используй `sheet.svg` из редактируемого каталога облика.
 
 Встроенные рисунки — собственные SVG под 0BSD, риг и исходные движения —
 public domain, движок Three.js — MIT. Происхождение указано в

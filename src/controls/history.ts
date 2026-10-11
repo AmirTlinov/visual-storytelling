@@ -208,6 +208,7 @@ function mount<T, R>(
   gestureRoot.addEventListener(
     'focusin',
     (event) => {
+      if (gestureRoot.closest('[data-scene-controls-moving]')) return;
       if (editable(event.target) || (event.target as Element).matches('input[type="number"]')) {
         end();
         begin();
@@ -219,6 +220,7 @@ function mount<T, R>(
   gestureRoot.addEventListener(
     'focusout',
     (event) => {
+      if (gestureRoot.closest('[data-scene-controls-moving]')) return;
       if (event.target === field) end();
     },
     listen,

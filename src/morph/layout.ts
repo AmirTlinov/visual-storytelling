@@ -7,7 +7,12 @@ export function validateCellColumns(columns: number | undefined) {
 }
 
 /** Reserve one readable composition for the operation, including its intermediate steps. */
-export function cellLayout(plan: MathMorphPlan, width: number, authoredColumns?: number) {
+export function cellLayout(
+  plan: MathMorphPlan,
+  width: number,
+  authoredColumns?: number,
+  notes = true,
+) {
   validateCellColumns(authoredColumns);
   const columns = authoredColumns ?? Math.max(1, Math.floor((width - 24) / 140));
   let bounds = plan.boundsFor?.(columns);
@@ -17,7 +22,7 @@ export function cellLayout(plan: MathMorphPlan, width: number, authoredColumns?:
       for (const phase of [0, 1 - 1e-12]) {
         const frame = plan.sample((stage + phase) / plan.stages, { columns });
         parts.push(...frame.sources, ...frame.targets);
-        for (const note of frame.notes ?? [])
+        for (const note of notes ? (frame.notes ?? []) : [])
           if (!note.id.startsWith('operator:'))
             parts.push({
               position: note.position,

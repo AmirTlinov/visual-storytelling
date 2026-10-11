@@ -7,7 +7,7 @@ export type Arithmetic = 'add' | 'subtract' | 'multiply' | 'divide' | 'power';
 export type VectorInput = readonly number[] | TensorData;
 export type CellOperation =
   | { kind: 'calculate'; operator: Arithmetic; values: readonly number[] }
-  | { kind: 'dot'; left: VectorInput; right: VectorInput }
+  | { kind: 'dot'; left: VectorInput; right: VectorInput; batchSize?: number }
   | { kind: 'vectorAdd'; left: VectorInput; right: VectorInput }
   | { kind: 'apply'; input: number; label: string; value: (input: number) => number }
   | { kind: 'chain'; input: CellOperation; steps: readonly MathStep[] };

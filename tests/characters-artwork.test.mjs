@@ -8,7 +8,7 @@ import { build } from 'esbuild';
 import { renderer } from '../tools/render.mjs';
 import { assetURLs } from '../tools/asset-urls.mjs';
 import { compileScore } from '../dist/characters/score.js';
-import { experiment } from '../examples/press-reaction/experiment.js';
+import { experiment } from './fixtures/chapters/contact.js';
 
 test('physical art shares contact tracks, placement, capture and host values through rewind', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'physical-art-'));
@@ -21,7 +21,7 @@ test('physical art shares contact tracks, placement, capture and host values thr
         contents: `
           import {CharacterStage,portable,arrange} from '@visual-storytelling/core/characters';
           import {compileScore} from './dist/characters/score.js';
-          import {experiment} from './examples/press-reaction/experiment.js';
+          import {experiment} from './tests/fixtures/chapters/contact.js';
           import './src/style.css';
           const host=document.querySelector('#scene');
           const options={...experiment,props:{flat:{art:{svg:'<circle r="4"/>'},at:{x:100,y:100},values:{level:0}}},

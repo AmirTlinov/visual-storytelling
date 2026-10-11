@@ -7,16 +7,18 @@ import { pathToFileURL } from 'node:url';
 import { SessionDirectory } from '../session-directory.mjs';
 import { readJSON, writeJSON } from '../../tools/storage.mjs';
 import { ProjectStore } from '../projects.mjs';
-import { readProjectFile } from '../project-files.mjs';
+import { readProjectFile } from '../../tools/project-files.mjs';
 import { JobRunner } from '../jobs.mjs';
 import { ProjectWatch } from '../project-watch.mjs';
 import { Preferences } from '../preferences.mjs';
 import { environmentStatus, configureEnvironment } from '../../tools/environment.mjs';
 import { macosVoice } from '../../tools/voice/macos.mjs';
 import { higgsVoice } from '../../tools/voice/higgs.mjs';
+import { requireVoiceSupport } from '../../tools/environment/voice.mjs';
 import { collectCache } from '../cache.mjs';
 import { errorData } from '../errors.mjs';
-import { runtimeBuild } from './identity.mjs';
+import { runtimeBuild, installedRuntime, requireSelectedRuntime } from './identity.mjs';
+import { acquireDirectoryLock } from '../../tools/file-lock.mjs';
 import { revisionInput } from '../revision-input.mjs';
 import { selectExamples } from '../../tools/catalog-query.mjs';
 import { exampleDetails } from '../../tools/catalog.mjs';
@@ -28,6 +30,15 @@ const [socketPath, data] = process.argv.slice(2),
 if (!socketPath || !data)
   throw new Error('Runtime requires its private socket and data directory.');
 const protocol = 1;
+await requireSelectedRuntime(directory);
+// Startup and retirement can overlap at the socket, never at persisted session/job ownership.
+const unlockOwner = await acquireDirectoryLock(socketPath + '.owner');
+try {
+  await requireSelectedRuntime(directory);
+} catch (error) {
+  await unlockOwner();
+  throw error;
+}
 const build = await runtimeBuild(directory);
 const sessions = new SessionDirectory();
 const projects = new ProjectStore(data);
@@ -37,6 +48,7 @@ await projects.start();
 const watched = new ProjectWatch(async (id) => {
   const project = await projects.inspect(id);
   if (
+    updating ||
     projects.queues.has(id) ||
     jobs
       .list(id)
@@ -106,8 +118,10 @@ await jobs.start();
 const connections = new Set(),
   saves = new Map(),
   loads = new Map(),
-  active = new Set();
+  active = new Set(),
+  work = new Set();
 let closing = false,
+  updating = false,
   shutdown,
   idleTimer,
   socketIdentity;
@@ -187,7 +201,7 @@ const decorate = (session) => ({
   jobs: jobs.list(session.build.projectId).filter((j) => j.projectId === session.build.projectId),
 });
 async function prepareProject(project, requestId = randomUUID()) {
-  return jobs.preserveInputs(async () => {
+  const preparation = jobs.preserveInputs(async () => {
     const input = await revisionInput(data, projects, {
       kind: 'working',
       projectId: project.id,
@@ -195,6 +209,13 @@ async function prepareProject(project, requestId = randomUUID()) {
     });
     return jobs.enqueue('build', { data, ...input }, requestId);
   });
+  work.add(preparation);
+  try {
+    return await preparation;
+  } finally {
+    work.delete(preparation);
+    scheduleClose();
+  }
 }
 
 async function queueRevision(kind, { target, requestId, options = {} }) {
@@ -290,9 +311,25 @@ async function openProject(project, { prepare = true, session } = {}) {
     await projects.remember({ ...projects.get(project.id), lastSessionId: session.id });
   return { ...decorate(session), project };
 }
+async function createdProject(job) {
+  const prepared = await jobs.wait(job.id, { until: 'authored', timeout: 15000 });
+  return {
+    project: prepared.authored ?? (await projects.inspect(job.projectId)),
+    job: prepared,
+    authoring: prepared.authored ? 'ready' : 'preparing',
+  };
+}
 const operations = {
   async hello() {
     return { protocol, build, serverInstance: sessions.instance, pid: process.pid };
+  },
+  async prepareUpdate() {
+    const installed = await installedRuntime(directory);
+    if (!installed || installed.directory === directory) return { updating: false };
+    updating = true;
+    watched.close();
+    scheduleClose();
+    return { updating: true, busy: jobs.busy };
   },
   async open({ sessionId, projectId, path, example: exampleId } = {}) {
     if (sessionId) {
@@ -335,34 +372,18 @@ const operations = {
           (path && previous.input.projectPath !== (await realpath(path)))
         )
           throw new Error('requestId already belongs to another project creation.');
-        return {
-          ...(await openProject(await projects.inspect(previous.projectId), {
-            prepare: false,
-            session: await load(previous.input.sessionId),
-          })),
-          job: jobs.describe(previous),
-          authoring: previous.authored ? 'ready' : 'preparing',
-        };
+        return createdProject(previous);
       }
       path ??= join(
         (await preferences.read()).projectsDirectory,
         `${title.replace(/[^\p{L}\p{N}-]+/gu, '-').slice(0, 60)}-${randomUUID().slice(0, 8)}`,
       );
       const catalog = await readJSON(join(directory, 'catalog.json'));
-      if (!Object.hasOwn(catalog, example))
+      if (example !== undefined && !Object.hasOwn(catalog, example))
         throw new Error(
-          'Choose a shipped starting point with story_help before creating a project.',
+          'Unknown example. Omit example for an empty project or use story_help to inspect the exemplar.',
         );
       const project = await projects.create(path, { title, example });
-      const session = sessions.open({
-        projectId: project.id,
-        title,
-        revision: 'preparing-' + project.id,
-        html: '',
-      });
-      await writeJSON(join(data, 'builds', session.build.revision + '.json'), session.build);
-      await save(session);
-      await projects.remember({ ...projects.get(project.id), lastSessionId: session.id });
       const job = await jobs.enqueue(
         'create',
         {
@@ -371,17 +392,10 @@ const operations = {
           projectId: project.id,
           title,
           example,
-          sessionId: session.id,
         },
         requestId,
       );
-      const prepared = await jobs.wait(job.id, { until: 'authored', timeout: 15000 });
-      return {
-        ...decorate(session),
-        project: prepared.authored ?? project,
-        job: prepared,
-        authoring: prepared.authored ? 'ready' : 'preparing',
-      };
+      return createdProject(job);
     });
   },
   async project({ projectId, file }) {
@@ -427,6 +441,7 @@ const operations = {
       : undefined;
     provider ??= previous?.provider ?? 'higgs';
     if (!['higgs', 'macos'].includes(provider)) throw new Error('Unknown narration provider.');
+    if (enabled && provider === 'higgs') requireVoiceSupport();
     const selectedLanguage = language ?? previous?.language ?? defaults.language;
     if (enabled === undefined) {
       await configureEnvironment(data);
@@ -434,7 +449,7 @@ const operations = {
       const environment = await environmentStatus(data);
       const choices = [
         { provider: 'higgs', kind: 'neural', ...higgs },
-        { provider: 'macos', kind: 'system', ...macos },
+        { provider: 'macos', kind: 'system', supported: process.platform === 'darwin', ...macos },
       ].map((status) => {
         const voices = status.voices.filter(
           (v) => v.language.split('-')[0] === selectedLanguage.split('-')[0],
@@ -453,6 +468,7 @@ const operations = {
       const status = choices.find((choice) => choice.provider === provider);
       return {
         provider,
+        supported: status.supported,
         ready: status.ready,
         reason: status.reason,
         voices: choices.flatMap((choice) =>
@@ -461,6 +477,7 @@ const operations = {
             provider: choice.provider,
             kind: choice.kind,
             ready: choice.ready,
+            supported: choice.supported,
             reason: choice.reason,
           })),
         ),
@@ -695,12 +712,30 @@ const operations = {
 
 function scheduleClose() {
   clearTimeout(idleTimer);
-  if (!connections.size && !closing)
-    idleTimer = setTimeout(() => {
-      if (jobs.busy) scheduleClose();
-      else void close();
-    }, 1500);
+  if ((updating || !connections.size) && !closing)
+    idleTimer = setTimeout(
+      () => {
+        if (jobs.busy || (updating && work.size)) scheduleClose();
+        else void close();
+      },
+      updating ? 100 : 1500,
+    );
 }
+
+// Existing render reports/ACKs and preparation observation finish on their current owner.
+const updateOperations = new Set([
+  'hello',
+  'prepareUpdate',
+  'job',
+  'cancel',
+  'exchange',
+  'detach',
+  'widget',
+  'list',
+  'project',
+  'shownSource',
+]);
+const pollingOperations = new Set(['hello', 'prepareUpdate', 'exchange', 'job', 'list']);
 
 const server = createServer((socket) => {
   if (closing) {
@@ -721,14 +756,22 @@ const server = createServer((socket) => {
     while ((end = buffer.indexOf('\n')) >= 0) {
       const line = buffer.slice(0, end);
       buffer = buffer.slice(end + 1);
+      let method;
       const operation = (async () => {
         let id;
         try {
           if (closing) throw new Error('Runtime shutting down.');
           const request = JSON.parse(line);
           id = request.id;
+          method = request.method;
           if (!Object.hasOwn(operations, request.method))
             throw new Error('Unknown runtime operation.');
+          if (updating && !updateOperations.has(request.method))
+            throw Object.assign(new Error('The installed runtime is changing.'), {
+              code: 'RUNTIME_UPDATE_REQUIRED',
+              action:
+                'Reconnect Visual Storytelling in this chat after the current preparation finishes.',
+            });
           const result = await operations[request.method](request.params);
           if (!socket.destroyed) socket.write(JSON.stringify({ id, result }) + '\n');
         } catch (error) {
@@ -737,7 +780,12 @@ const server = createServer((socket) => {
         }
       })();
       active.add(operation);
-      const finished = () => active.delete(operation);
+      if (!pollingOperations.has(method)) work.add(operation);
+      const finished = () => {
+        active.delete(operation);
+        work.delete(operation);
+        scheduleClose();
+      };
       operation.then(finished, finished);
     }
   });
@@ -752,21 +800,37 @@ function close() {
   if (shutdown) return shutdown;
   closing = true;
   clearTimeout(idleTimer);
-  const stopped = new Promise((resolve) => server.close(resolve));
-  sessions.close();
   watched.close();
+  let released = false;
   shutdown = (async () => {
+    // A long poll may have accepted a report before its response is released.
+    await Promise.all([...sessions.sessions.values()].map(save));
+    sessions.close();
     await Promise.allSettled([...active]);
     await jobs.close();
     await Promise.allSettled([...saves.values()]);
+    const stopped = new Promise((resolve) => server.close(resolve));
+    for (const socket of connections) socket.destroy();
     await stopped;
+    released = true;
     const current = await lstat(socketPath).catch((error) => {
       if (error.code === 'ENOENT') return null;
       throw error;
     });
     if (current && current.dev === socketIdentity.dev && current.ino === socketIdentity.ino)
       await rm(socketPath, { force: true });
-  })().catch((error) => console.error(error.message));
+  })()
+    .catch((error) => {
+      console.error(error.message);
+      if (!released) {
+        closing = false;
+        shutdown = undefined;
+        scheduleClose();
+      }
+    })
+    .finally(async () => {
+      if (released) await unlockOwner();
+    });
   return shutdown;
 }
 

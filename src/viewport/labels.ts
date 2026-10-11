@@ -86,9 +86,11 @@ export function projectedLabels(
           if (subject) {
             a.element.dataset.object = subject.id;
             item.forget = describeObject(a.element, subject.meaning);
-            // Keyboard traversal has one target per object, owned by the viewport.
-            a.element.tabIndex = -1;
-            a.element.style.pointerEvents = 'auto';
+            // Keyboard traversal has one target per interactive object, owned by the viewport.
+            if (subject.meaning.interactive !== false) {
+              a.element.tabIndex = -1;
+              a.element.style.pointerEvents = 'auto';
+            } else a.element.style.pointerEvents = '';
           } else {
             for (const name of [
               'data-object',

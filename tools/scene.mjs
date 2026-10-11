@@ -44,6 +44,8 @@ if (process.argv[2] === 'characters') {
   const commandOptions = {
     new: {
       example: { type: 'string' },
+      title: { type: 'string' },
+      json: { type: 'boolean', default: false },
       'no-audio': { type: 'boolean', default: false },
       silent: { type: 'boolean', default: false },
       audio: { type: 'boolean', default: false },
@@ -93,8 +95,8 @@ if (process.argv[2] === 'characters') {
   });
   const [command, directory = '.'] = positionals,
     destination = resolve(directory);
-  const catalog = ['examples', 'new'].includes(command) ? await readCatalog() : undefined;
-  const newUsage = `visual-story new DIRECTORY --example NAME [--no-audio | --silent | --audio]`;
+  const catalog = command === 'examples' ? await readCatalog() : undefined;
+  const newUsage = `visual-story new DIRECTORY [--title TITLE] [--example gpt-model] [--json] [--no-audio | --silent | --audio]`;
   const help = `${newUsage}
 visual-story examples [QUERY] [--json] [--recommended] [--group explanations|techniques]
 visual-story info [DIRECTORY] [--json]        actual packages, build identity and stale sources
@@ -179,13 +181,18 @@ Re-run the same command after changing a line; unchanged voice segments use the 
     console.log(text);
     if (missing.length) process.exitCode = 1;
   } else if (command === 'new') {
-    await createScene(destination, {
+    const created = await createScene(destination, {
       example: values.example,
+      title: values.title,
       deferAudio: values['no-audio'],
       silent: values.silent,
       audio: values.audio,
     });
-    console.log(`${destination}\ncd ${destination}\nnpm install\nnpm run build\nnpm run dev`);
+    console.log(
+      values.json
+        ? JSON.stringify(created, null, 2)
+        : `${destination}\ncd ${destination}\nnpm install\nnpm run build\nnpm run dev`,
+    );
   } else if (command === 'audio') {
     await buildNarration(destination);
   } else if (command === 'deliver') {

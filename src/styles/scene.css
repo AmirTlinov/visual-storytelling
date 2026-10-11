@@ -462,11 +462,13 @@ html:has(> body.ve-standalone > .ve-scene[data-theme='dark']) {
 }
 .ve-experiment-history {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
 }
 .ve-experiment-history button {
-  font-size: 13px;
+  font-size: 16px;
   padding: 5px 9px;
-  min-height: 36px;
+  min-width: 44px;
+  min-height: 44px;
 }

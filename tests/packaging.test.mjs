@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm, cp, symlink, readdir } from 'node:fs/promises';
@@ -32,7 +33,18 @@ test('a production-only installation of the packed public API typechecks outside
       ['pack', '--ignore-scripts', '--json', '--pack-destination', directory],
       { cwd: root },
     );
-    const archive = JSON.parse(packed.stdout)[0].filename;
+    const distribution = JSON.parse(packed.stdout)[0];
+    const archive = distribution.filename;
+    const publicFiles = distribution.files.map(({ path }) => path);
+    assert.ok(publicFiles.includes('tools/scaffold/scene.js'));
+    assert.ok(publicFiles.includes('tools/project-files.mjs'));
+    assert.ok(
+      publicFiles
+        .filter((path) => path.startsWith('examples/'))
+        .every(
+          (path) => path === 'examples/catalog.json' || path.startsWith('examples/gpt-model/'),
+        ),
+    );
     const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
     await writeFile(
       join(directory, 'package.json'),
@@ -44,7 +56,7 @@ test('a production-only installation of the packed public API typechecks outside
     );
     await execute(
       'npm',
-      ['install', '--omit=dev', '--offline', '--ignore-scripts', '--no-audit', '--no-fund'],
+      ['install', '--omit=dev', '--prefer-offline', '--ignore-scripts', '--no-audit', '--no-fund'],
       { cwd: directory },
     );
     await writeFile(
@@ -80,12 +92,13 @@ test('a production-only installation of the packed public API typechecks outside
     const cli = join(installed, 'tools/scene.mjs');
     const entries = JSON.parse(
       (
-        await execute(process.execPath, [cli, 'examples', 'character-lesson', '--json'], {
+        await execute(process.execPath, [cli, 'examples', '--json'], {
           cwd: directory,
         })
       ).stdout,
     );
     assert.equal(entries.length, 1);
+    assert.equal(entries[0].id, 'gpt-model');
     for (const file of [
       entries[0].source,
       ...entries[0].guides,
@@ -93,25 +106,18 @@ test('a production-only installation of the packed public API typechecks outside
     ])
       assert.ok((await readFile(file, 'utf8')).length > 0);
     const scene = join(directory, 'new-scene');
-    // Local development outputs must not become template inputs on the next copy.
-    const template = join(installed, 'examples/explorer-svg');
-    for (const folder of ['dist', 'artifacts', 'nested/review', 'nested/.scratch']) {
-      await mkdir(join(template, folder), { recursive: true });
-      await writeFile(join(template, folder, 'old.json'), '{}');
-    }
-    await writeFile(join(template, '.private.html'), '<script src="absent.js"></script>');
-    await execute(process.execPath, [cli, 'new', scene, '--example', 'explorer-svg'], {
-      cwd: directory,
-    });
-    for (const path of [
-      'dist/old.json',
-      'artifacts/old.json',
-      'nested/review/old.json',
-      'nested/.scratch/old.json',
-      '.private.html',
-    ])
-      await assert.rejects(readFile(join(scene, path)), { code: 'ENOENT' });
-    assert.match(await readFile(join(scene, 'index.html'), 'utf8'), /data-silent="true"/);
+    const created = JSON.parse(
+      (
+        await execute(process.execPath, [cli, 'new', scene, '--json'], {
+          cwd: directory,
+        })
+      ).stdout,
+    );
+    assert.equal(created.entry, 'index.html');
+    assert.equal(created.runtime.version, pkg.version);
+    assert.ok(created.files['scene.js']);
+    assert.match(created.sourceRevision, /^[a-f0-9]{64}$/);
+    assert.match(await readFile(join(scene, 'scene.js'), 'utf8'), /SceneShell\.mount/);
     await execute(process.execPath, [cli, 'build', scene], { cwd: directory });
     assert.ok((await readFile(join(scene, 'dist/index.js'), 'utf8')).length > 1000);
   } finally {
@@ -367,7 +373,7 @@ test('nested scene assets and data scripts survive building, serving and offline
 
     const file = join(directory, 'offline.html');
     await writeFile(file, await packDirectory(output, 'pages/index.html', { theme: 'dark' }));
-    browser = await chromium.launch();
+    browser = await chromium.launch(chromiumLaunchOptions());
     const context = await browser.newContext({ colorScheme: 'light', offline: true });
     const page = await context.newPage(),
       errors = [],

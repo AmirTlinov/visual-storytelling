@@ -154,10 +154,11 @@ float writing(vec3 p, vec3 n, float pixel) {
 }
 vec3 shade(vec3 n, float edge, float pen) {
   float crease = smoothstep(.2,1.4,edge);
-  float stroke = .5 * crease;
+  float stroke = .86 * crease;
   vec3 w = abs(n);
   float wash = dot(w,vec3(n.x > 0. ? .88 : 1.,n.y > 0. ? .82 : 1.,n.z > 0. ? .93 : .85)) / max(w.x+w.y+w.z,.00001);
-  return mix(mix(paper,pigment,.65*wash),ink,max(stroke,pen));
+  // Quiet marker fill leaves the written ink readable in either paper theme.
+  return mix(mix(paper,pigment,.18*wash),ink,max(stroke,pen));
 }
 void main() {
   vec3 direction = normalize(rayExit-rayOrigin);

@@ -1,7 +1,6 @@
 import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { z } from 'zod';
 import { read, changeView, revisionTarget } from './schema.mjs';
-import { presentSession, toolResult } from './presentation.mjs';
 
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/);
 const projectId = z.string().uuid();
@@ -16,23 +15,23 @@ const fileChanges = z
   .max(64);
 export function authoringTools(server, runtime, uri, safely) {
   const result = (value, text) => ({ content: [{ type: 'text', text }], structuredContent: value });
-  registerAppTool(
-    server,
+  server.registerTool(
     'story_create',
     {
       title: 'Создать визуальное объяснение',
       description:
-        'Create an editable local project from an explicitly chosen shipped example. Waits up to 15 seconds for the scaffold, returning authoring=ready with its sourceRevision/files while dependencies and preview continue in JobRunner. If authoring=preparing, story_inspect(jobId,waitMs) continues the bounded wait. No voice model is required. Use story_help to choose a template; edit through story_edit.',
+        'Create an editable local project without opening a card or session. Omit example for a neutral technical scaffold; example="gpt-model" copies the complete exemplar. Waits up to 15 seconds for authoring=ready with project.files, entry, pinned runtime and sourceRevision while dependencies and build continue in JobRunner. If authoring=preparing, story_inspect(jobId,waitMs) continues the bounded wait. Edit through story_edit, review the result, then show it with story_open(projectId). No voice model is required.',
       inputSchema: {
         title: z.string().min(1).max(160),
-        example: z.string().min(1),
+        example: z.string().min(1).optional(),
         path: z.string().optional(),
         requestId,
       },
       annotations: changeView,
-      _meta: { ui: { resourceUri: uri, visibility: ['model', 'app'] } },
     },
-    safely(async (args) => toolResult(presentSession(await runtime.call('create', args)))),
+    safely(async (args) =>
+      result(await runtime.call('create', args), 'Редактируемый проект создан.'),
+    ),
   );
   server.registerTool(
     'story_edit',
@@ -179,7 +178,7 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_help',
     {
       description:
-        'Discover projects and examples with the shared catalog filters, including previews and editing points. queries accepts up to 12 public API names; combine with query to find a foundation and its APIs together. projectId reads the pinned archive before a first successful build or dependency installation. query searches the same example tags and vocabulary as the gallery.',
+        'Read public APIs, existing projects and the complete gpt-model exemplar, including its preview, source and editing points. Start a new subject with story_create without example; copy gpt-model only when its subject is wanted. The authoring route is help → create → edit → review → open → produce. queries accepts up to 12 public API names; projectId reads the pinned archive before a successful build or dependency installation.',
       inputSchema: {
         query: z.string().max(300).optional(),
         queries: z.array(z.string().min(1).max(300)).min(1).max(12).optional(),
@@ -191,7 +190,7 @@ export function authoringTools(server, runtime, uri, safely) {
     },
     safely(async (args) => {
       const value = await runtime.call(args.query || args.queries ? 'help' : 'catalog', args);
-      return result(value, value.text ?? 'Доступные проекты и основы.');
+      return result(value, value.text ?? 'Доступные проекты и эталон объяснения.');
     }),
   );
   server.registerTool(

@@ -1,11 +1,14 @@
+import { openFixture } from '../support/fixture.mjs';
 import { test, expect } from '@playwright/test';
 
 test('computed results arrive once and rewind through the same path, including exploration', async ({
   page,
 }) => {
+  // This scenario captures fifteen GPU frames; its overall budget includes readback under CI load.
+  test.setTimeout(60_000);
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto('/result-delivery/index.html');
+  await openFixture(page, 'arithmetic', 'delivery.html');
   await page.evaluate(() => window.galleryReady);
   const receiver = page.getByRole('button', { name: 'Записанный результат', exact: true });
   const computed = page.locator('[data-object^="calculation:"]:not([hidden])');

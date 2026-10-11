@@ -10,26 +10,37 @@ import {
   symlink,
   rm,
   writeFile,
+  cp,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { sceneGenerator } from '../tools/generate-scene.mjs';
 import { createScene } from '../tools/create-scene.mjs';
+import { environmentProfile } from '../tools/environment/resources.mjs';
 
-const examples = ['logic-gates', 'lc-oscillator', 'parameter-cube', 'geometric-tensor'];
+const forms = [
+  { id: 'node-svg', fixture: 'svg', runner: 'node' },
+  { id: 'python-svg', fixture: 'python-svg', runner: 'python3' },
+  { id: 'uv-svg', fixture: 'python-svg', runner: 'uv' },
+  { id: 'node-svg-concurrent', fixture: 'svg', runner: 'node' },
+];
 const root = new URL('../', import.meta.url).pathname;
 const execute = promisify(execFile);
 
-test('all Python-backed catalog generators declare their actual preparation need', async () => {
-  for (const id of examples)
-    assert.equal((await sceneGenerator(join(root, 'examples', id))).python, true, id);
-  assert.equal(await sceneGenerator(join(root, 'examples/explorer-svg')), undefined);
+test('Node and Python generators declare their actual preparation need', async () => {
+  for (const fixture of ['svg', 'python-svg'])
+    assert.equal(
+      (await sceneGenerator(join(root, 'tests/fixtures', fixture))).python,
+      true,
+      fixture,
+    );
+  assert.equal(await sceneGenerator(join(root, 'tests/fixtures/scene-shell')), undefined);
 });
 
 test(
   'pinned SVG projects build concurrently through their CLI without system Python, uv or voice models',
-  { timeout: 300000, skip: process.platform !== 'darwin' || process.arch !== 'arm64' },
+  { timeout: process.platform === 'linux' ? 900000 : 300000, skip: !environmentProfile() },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'story-generators-'));
     try {
@@ -37,6 +48,9 @@ test(
       await mkdir(path);
       await symlink(process.execPath, join(path, 'node'));
       await symlink('/bin/sh', join(path, 'sh'));
+      if (process.platform === 'linux') {
+        for (const name of ['gzip', 'xz']) await symlink('/usr/bin/' + name, join(path, name));
+      }
       const npm = await realpath(join(dirname(process.execPath), 'npm'));
       const data = join(directory, 'data');
       const env = { ...process.env, PATH: path, MPLCONFIGDIR: join(directory, 'matplotlib') };
@@ -44,9 +58,16 @@ test(
         if (key.startsWith('VISUAL_STORY_') || key.startsWith('UV_')) delete env[key];
       env.VISUAL_STORY_DATA_DIR = data;
       const projects = [];
-      for (const example of examples) {
-        const project = join(directory, example);
-        await createScene(project, { example, deferAudio: true });
+      for (const { id, fixture, runner } of forms) {
+        const project = join(directory, id);
+        await createScene(project, { title: id });
+        await rm(join(project, 'index.html'));
+        await rm(join(project, 'scene.js'));
+        await cp(join(root, 'tests/fixtures', fixture), project, { recursive: true });
+        const config = JSON.parse(await readFile(join(project, 'scene.json'), 'utf8'));
+        config.generator.runner = runner;
+        await writeFile(join(project, 'scene.json'), JSON.stringify(config));
+        assert.equal((await sceneGenerator(project)).python, true, id);
         await execute(
           process.execPath,
           [npm, 'ci', '--ignore-scripts', '--no-audit', '--no-fund'],
@@ -64,23 +85,18 @@ test(
             cwd: project,
             env,
             maxBuffer: 4_000_000,
-            timeout: 180000,
+            timeout: process.platform === 'linux' ? 900000 : 180000,
           }),
         ),
       );
       for (const result of built) {
         if (result.status === 'rejected') throw result.reason;
       }
-      for (const [index, file] of [
-        'logic-gates.svg',
-        'LC-oscillator.svg',
-        'tensor-cube.svg',
-        'geometric-tensor.svg',
-      ].entries()) {
-        const svg = await readFile(join(projects[index], 'dist', file), 'utf8');
+      for (const project of projects) {
+        const svg = await readFile(join(project, 'dist/subject.svg'), 'utf8');
         assert.match(svg, /<svg\b/);
         assert.match(svg, /id="ve-shared-ink"/);
-        assert.match(await readFile(join(projects[index], 'dist/index.html'), 'utf8'), /<html\b/i);
+        assert.match(await readFile(join(project, 'dist/index.html'), 'utf8'), /<html\b/i);
       }
       const prepared = await readdir(join(data, 'environment'));
       assert.ok(prepared.includes('python'));
@@ -105,17 +121,13 @@ test(
               PATH: ['node', 'sh'],
               clearedEnvironmentPrefixes: ['VISUAL_STORY_', 'UV_'],
               dataDirectory: 'isolated temporary directory; removed after verification',
-              concurrentProcesses: 4,
+              concurrentProcesses: forms.length,
             },
-            forms: examples.map((example, index) => ({
-              example,
+            forms: forms.map(({ id, runner }) => ({
+              id,
+              runner,
               built: true,
-              svg: [
-                'logic-gates.svg',
-                'LC-oscillator.svg',
-                'tensor-cube.svg',
-                'geometric-tensor.svg',
-              ][index],
+              svg: 'subject.svg',
               page: 'dist/index.html',
               sharedInk: true,
             })),

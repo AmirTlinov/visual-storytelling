@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -11,7 +12,7 @@ test(
   },
   async () => {
     const host = await pluginHost(),
-      browser = await chromium.launch();
+      browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage({ viewport: { width: 820, height: 850 } });
     try {
       await page.goto(host.url);
@@ -64,47 +65,47 @@ test(
         document.querySelector('.ve-scene').scene.capture(),
       );
       const session = await page.evaluate(() => pluginTest.session.sessionId);
-      await drawing.getByRole('button', { name: 'Открыть крупнее', exact: true }).click();
-      await panel.waitForFunction(() => document.documentElement.dataset.mode === 'fullscreen');
-      assert.equal(
-        await drawing.locator('[data-scene-frame]').getAttribute('data-frame-view'),
-        'overview',
-      );
-      await drawing.getByRole('button', { name: 'Читать крупнее', exact: true }).click();
-      await drawing
-        .getByRole('region', { name: 'Увеличенный рисунок. Прокрутка к деталям.' })
-        .press('Escape');
-      assert.equal(
-        await panel.locator('html').getAttribute('data-mode'),
-        'fullscreen',
-        'closing a detail leaves host display control with Codex',
-      );
-      assert.equal(
-        await drawing.locator('[data-scene-frame]').getAttribute('data-frame-view'),
-        'overview',
-      );
+      const transport = drawing.locator('.ve-player button').first();
+      await transport.focus();
+      const wholeFrame = async () => {
+        const geometry = await scene.locator('[data-scene-frame]').evaluate((frame) => {
+          const outer = frame.getBoundingClientRect(),
+            content = frame.firstElementChild.getBoundingClientRect();
+          frame.scrollLeft = 400;
+          frame.scrollTop = 180;
+          return {
+            ratio: outer.width / outer.height,
+            difference: Math.max(
+              Math.abs(outer.width - content.width),
+              Math.abs(outer.height - content.height),
+            ),
+            scroll: [frame.scrollLeft, frame.scrollTop],
+          };
+        });
+        assert.ok(Math.abs(geometry.ratio - 16 / 9) < 0.001);
+        assert.ok(geometry.difference < 1, 'the whole composition fits its aperture');
+        assert.deepEqual(geometry.scroll, [0, 0], 'the wrapper has no zoom or scroll surface');
+        assert.equal(
+          await drawing
+            .getByRole('button', { name: /^(Читать крупнее|Открыть крупнее|Весь кадр)$/ })
+            .count(),
+          0,
+        );
+        assert.equal(
+          await transport.evaluate((node) => document.activeElement === node),
+          true,
+          'native host transitions preserve focus',
+        );
+      };
       for (let index = 0; index < 10; index++) {
         await page.evaluate(() => pluginTest.display('fullscreen', ['inline', 'fullscreen']));
         await panel.waitForFunction(() => document.documentElement.dataset.mode === 'fullscreen');
-        await drawing.getByRole('button', { name: 'Читать крупнее', exact: true }).click();
-        await drawing.locator('[data-frame-view="reading"]').waitFor();
-        await scene.evaluate(() => {
-          const frame = document.querySelector('[data-scene-frame]');
-          frame.scrollLeft = 400;
-          frame.scrollTop = 180;
-        });
+        await fits();
+        await wholeFrame();
         await page.evaluate(() => pluginTest.display('inline', ['inline', 'fullscreen']));
         await panel.waitForFunction(() => document.documentElement.dataset.mode === 'inline');
-        await drawing.locator('[data-frame-view="overview"]').waitFor();
         assert.equal(await fits(), narrowHeight);
-        assert.deepEqual(
-          await scene.evaluate(() => {
-            const frame = document.querySelector('[data-scene-frame]');
-            return [frame.scrollLeft, frame.scrollTop];
-          }),
-          [0, 0],
-          'external host close resets the detail aperture',
-        );
+        await wholeFrame();
         assert.ok(await scene.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       }
       await page.evaluate(() => {
@@ -114,33 +115,27 @@ test(
         }
       });
       await panel.waitForFunction(() => document.documentElement.dataset.mode === 'inline');
-      await drawing.locator('[data-frame-view="overview"]').waitFor();
+      await fits();
+      await wholeFrame();
       assert.deepEqual(
         await scene.evaluate(() => document.querySelector('.ve-scene').scene.capture()),
         beforeTransitions,
+      );
+      assert.equal(
+        await scene.evaluate(() => document.querySelector('.ve-scene').scene.inspect().playing),
+        false,
       );
       assert.equal(await page.evaluate(() => pluginTest.session.sessionId), session);
       assert.equal(await drawing.locator('[data-player]').count(), 1);
       assert.equal(
         page.frames().includes(scene),
         true,
-        'display transitions keep the same renderer',
+        'native display changes keep the same renderer',
       );
-      assert.deepEqual(await page.evaluate(() => pluginTest.displayRequests), ['fullscreen']);
-      await page.evaluate(() => pluginTest.delayDisplay(300));
-      await drawing.getByRole('button', { name: 'Открыть крупнее', exact: true }).click();
-      await page.waitForFunction(() => pluginTest.displayPending === 1);
-      await page.evaluate(() => pluginTest.display('inline', ['inline', 'fullscreen']));
-      await page.waitForFunction(() => pluginTest.displayPending === 0);
-      await drawing.getByRole('button', { name: 'Открыть крупнее', exact: true }).waitFor();
-      assert.equal(
-        await panel.locator('html').getAttribute('data-mode'),
-        'inline',
-        'late request response cannot undo external host close',
-      );
-      assert.equal(
-        await drawing.locator('[data-scene-frame]').getAttribute('data-frame-view'),
-        'overview',
+      assert.deepEqual(
+        await page.evaluate(() => pluginTest.displayRequests),
+        [],
+        'only native Codex UI owns expansion',
       );
       const player = await scene.evaluate(() => {
         const player = document.querySelector('.ve-player');

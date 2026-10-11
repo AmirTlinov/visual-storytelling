@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -10,6 +11,7 @@ import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
 import { pluginHost } from './plugin/host.mjs';
+import { createProjectFixture } from './plugin/authoring-fixture.mjs';
 
 test(
   'installed release completes silent authoring, local narration, cancel/retry, file reopening and portable delivery',
@@ -21,7 +23,7 @@ test(
       serverCommand: resolve('.plugin-release/runtime/node'),
       serverEntry: resolve('.plugin-release/plugin/dist/server.mjs'),
     });
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch(chromiumLaunchOptions({ headless: true }));
     const page = await browser.newPage();
     const call = async (name, args) => {
       const result = await host.client.callTool({ name, arguments: args });
@@ -39,6 +41,7 @@ test(
       }
       throw new Error('Authoring job deadline');
     };
+    let primaryError;
     try {
       await page.goto(host.url);
       const app = page.frameLocator('iframe[title="MCP App"]');
@@ -50,16 +53,16 @@ test(
       await app.locator('#preferences button[type="submit"]').click();
       await app.locator('#preferences').waitFor({ state: 'hidden' });
       assert.equal((await call('story_preferences', {})).structuredContent.cacheLimitMB, 1024);
-      const created = await call('story_create', {
+      const created = await createProjectFixture(host.client, {
         title: 'Перемещения',
         path: join(directory, 'lesson'),
-        requestId: randomUUID(),
-        example: 'explorer-svg',
       });
-      await page.evaluate((result) => window.pluginTest.openResult(result), created);
-      await finish(created.structuredContent.job.id);
+      await finish(created.job.id);
+      const opened = await call('story_open', { projectId: created.project.id });
+      await page.evaluate((result) => window.pluginTest.openResult(result), opened);
       await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
-      const { project, sessionId } = created.structuredContent;
+      const project = created.project,
+        { sessionId } = opened.structuredContent;
       const { structuredContent: before } = await call('story_inspect', { projectId: project.id });
       const { structuredContent: file } = await call('story_inspect', {
         projectId: project.id,
@@ -169,6 +172,14 @@ test(
         'enabling narration keeps the project voice and language',
       );
       await app.frameLocator('#scene').locator('audio:not([muted])').waitFor({ state: 'attached' });
+      assert.equal(
+        await app
+          .frameLocator('#scene')
+          .locator('audio')
+          .evaluate((audio) => audio.muted),
+        false,
+        'enabling narration does not restore the absent sound of a silent clock as mute',
+      );
       const narration = (
         await call('story_inspect', { projectId: project.id, file: 'narration.json' })
       ).structuredContent;
@@ -251,11 +262,6 @@ test(
         uri: pathToFileURL(join(source, 'source/story.vstory')).href,
         text: manifest,
       });
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
-      await app
-        .frameLocator('#scene')
-        .getByText('Одна клетка — один шаг', { exact: true })
-        .waitFor();
       let copied;
       for (let attempt = 0; attempt < 80 && !copied; attempt++) {
         copied = (await call('story_help', {})).structuredContent.projects.find((p) =>
@@ -265,16 +271,58 @@ test(
       }
       assert.ok(copied, 'the restored archive is an independent editable project');
       assert.notEqual(copied.id, project.id);
+      // A file-open notification returns before preparation. The old card has
+      // the same text; wait for the new project's displayed context first.
+      await page.waitForFunction(
+        (projectId) =>
+          window.pluginTest.context?.structuredContent?.visualStory?.projectId === projectId,
+        copied.id,
+        { timeout: 60000 },
+      );
+      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app
+        .frameLocator('#scene')
+        .getByText('Одна клетка — один шаг', { exact: true })
+        .waitFor();
       assert.equal(
         (await call('story_inspect', {})).structuredContent.sessions.find(
           (s) => s.sessionId === sessionId,
         ).sessionId,
         sessionId,
       );
+    } catch (error) {
+      primaryError = error;
+      throw error;
     } finally {
-      await browser.close();
-      await host.close();
-      await rm(directory, { recursive: true, force: true });
+      const failures = [];
+      const cleanup = async (action) => {
+        try {
+          await action();
+        } catch (error) {
+          failures.push(error);
+        }
+      };
+      await cleanup(() => browser.close());
+      await cleanup(async () => {
+        const jobs = join(directory, 'data/jobs');
+        for (const name of await readdir(jobs)) {
+          if (!name.endsWith('.json')) continue;
+          const job = JSON.parse(await readFile(join(jobs, name), 'utf8'));
+          if (!['queued', 'running', 'cancelling'].includes(job.status)) continue;
+          await call('story_cancel', { jobId: job.id });
+          const stopped = (await call('story_inspect', { jobId: job.id, waitMs: 15000 }))
+            .structuredContent;
+          assert.ok(['cancelled', 'failed', 'succeeded', 'interrupted'].includes(stopped.status));
+        }
+      });
+      await cleanup(() => host.close());
+      await cleanup(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
+      if (failures.length)
+        throw new AggregateError(
+          [...(primaryError ? [primaryError] : []), ...failures],
+          'Authoring test cleanup failed',
+          { cause: primaryError ?? failures[0] },
+        );
     }
   },
 );

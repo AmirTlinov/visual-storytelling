@@ -1,8 +1,0 @@
-{
-  "entry": "preview.html",
-  "generator": {
-    "file": "cube.mjs",
-    "runner": "node",
-    "python": true
-  }
-}

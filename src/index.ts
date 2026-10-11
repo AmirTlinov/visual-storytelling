@@ -15,7 +15,7 @@ export {
 } from './layout/labels.js';
 export * from './layout/svg.js';
 export * from './scene.js';
-export { describeObject } from './scene-objects.js';
+export { describeObject, type ObjectMeaning } from './scene-objects.js';
 export type { SourceSpan } from './scene-source.js';
 export * from './viewport/svg.js';
 export { default as rough } from 'roughjs';

@@ -18,7 +18,7 @@ from resources import REFERENCE_AUDIO, REFERENCE_TEXT, digest, file_digest
 from script import read_script, words, check_timeline
 from speech import Speaker, GENERATION, SAMPLE_RATE, SpeechLimitError, generation_parameters
 
-EXAMPLE = Path(__file__).resolve().parents[2] / "examples" / "remainder-story" / "narration.json"
+EXAMPLE = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "scene-shell" / "narration.json"
 
 
 class AudioChecks(unittest.TestCase):
@@ -274,8 +274,14 @@ class AudioChecks(unittest.TestCase):
             root = Path(folder)
             script, output = root/"script.json", root/"output"
             spec = json.loads(EXAMPLE.read_text())
+            spec["intro"] = .25
+            spec["segments"][0]["pause_after"] = .3
+            spec["music"] = {"track": "inspired"}
+            music = root / "fixture-music.wav"
+            sf.write(music, .1 * np.sin(np.arange(SAMPLE_RATE * 2) * .03), SAMPLE_RATE)
             script.write_text(json.dumps(spec, ensure_ascii=False))
-            first = build_audio(script, output, "auto")
+            with patch('assembly.prepare_music'), patch('script.MUSIC', music), patch('mixing.MUSIC', music):
+                first = build_audio(script, output, "auto")
             for name in ["audio.wav", "voice.wav", "music.wav"]:
                 data, rate = sf.read(output/name)
                 self.assertEqual(rate, 48000)

@@ -1,9 +1,7 @@
+import { fixturePage, openFixture } from '../support/fixture.mjs';
 import { test, expect } from '@playwright/test';
 
-for (const [name, values] of [
-  ['tesla-circuit', { closed: false }],
-  ['thermostat-story', { temperature: 22, target: 22 }],
-] as const)
+for (const [name, values] of [['chapters', { closed: false }]] as const)
   for (const variant of [false, true]) {
     test(`${name}: character chapter and live drawing share state, framing and rewind ${variant ? 'compact alternate set' : 'wide'}`, async ({
       page,
@@ -11,7 +9,7 @@ for (const [name, values] of [
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
       await page.setViewportSize({ width: variant ? 375 : 1000, height: 800 });
-      await page.goto(`/${name}/index.html${variant ? '?variant' : ''}`);
+      await page.goto((await fixturePage(name)) + (variant ? '?variant' : ''));
       await page.evaluate(() => window.galleryReady);
       const command = (commands: unknown[]) =>
         page.evaluate(async (commands) => {
@@ -23,12 +21,65 @@ for (const [name, values] of [
         { type: 'pause' },
         { type: 'cue', id: 'workshop.explain', progress: 0.65 },
       ]);
+      const root = page.locator('#story');
+      const sheet = page.locator('.ve-scene-content');
+      await expect(root).toHaveAttribute('data-presentation', 'stage');
+      await expect(root).toHaveAttribute('data-paper', 'false');
+      await expect(sheet).toHaveCSS('padding', '0px');
+      await expect(sheet).toHaveCSS('background-image', 'none');
+      await expect(sheet.locator('.ve-heading')).toBeHidden();
+      await expect(sheet.locator('.ve-scene-toolbar, .ve-parameters, .ve-player')).toHaveCount(0);
+      const stageFrame = await sheet.evaluate((element) => {
+        const frame = element.getBoundingClientRect();
+        const aperture = element.querySelector('.ve-character-aperture')!.getBoundingClientRect();
+        (window as any).originalPlayer = document.querySelector('.ve-player');
+        return ['x', 'y', 'width', 'height'].map((key) =>
+          Math.abs(
+            (frame[key as keyof DOMRect] as number) - (aperture[key as keyof DOMRect] as number),
+          ),
+        );
+      });
+      expect(Math.max(...stageFrame)).toBeLessThan(0.1);
+      expect(
+        close.snapshot.content.camera.width / close.snapshot.content.camera.height,
+      ).toBeCloseTo(16 / 9, 5);
       expect(close.snapshot.content.surfaces.board.visible).toBe(true);
       expect(close.presentation.clipped).toEqual([]);
       if (!variant) expect(close.presentation.unreadableText).toEqual([]);
+      const navigation = root.locator('.ve-chapter-navigation .ve-select-trigger');
+      await expect(navigation).toBeVisible();
+      await navigation.click();
+      await navigation.press('End');
+      await navigation.press('Enter');
+      await expect(root).toHaveAttribute('data-presentation', 'explanation');
+      await expect(navigation).toBeFocused();
       await command([{ type: 'cue', id: 'experiment.change', progress: 0.8 }]);
+      await expect(root).toHaveAttribute('data-presentation', 'explanation');
+      await expect(root).toHaveAttribute('data-paper', 'true');
+      await expect(sheet.locator('.ve-heading')).toBeVisible();
+      const explanationControls = variant
+        ? root.getByRole('dialog', { name: 'Условия объяснения' })
+        : sheet;
+      await expect(explanationControls.locator('.ve-scene-toolbar')).toHaveCount(1);
+      await expect(explanationControls.locator('.ve-parameters')).toHaveCount(1);
+      await navigation.click();
+      await navigation.press('Home');
+      await navigation.press('Enter');
+      await expect(root).toHaveAttribute('data-presentation', 'stage');
+      await expect(navigation).toBeFocused();
       const rewind = await command([{ type: 'cue', id: 'workshop.explain', progress: 0.65 }]);
       expect(rewind.snapshot).toEqual(close.snapshot);
+      await expect(root).toHaveAttribute('data-presentation', 'stage');
+      expect(
+        await page.evaluate(
+          () => document.querySelector('.ve-player') === (window as any).originalPlayer,
+        ),
+      ).toBe(true);
+      await expect(page.locator('.ve-player')).toHaveCount(1);
+      if (!variant)
+        await page
+          .locator('[data-scene-frame]')
+          .screenshot({ path: `artifacts/frame-consistency/${name}-stage.png` });
       for (const progress of [0.4, 0.8]) {
         const idea = await command([{ type: 'cue', id: 'workshop.idea', progress }]);
         const { bounds, camera } = idea.snapshot.content;
@@ -43,7 +94,6 @@ for (const [name, values] of [
         { type: 'parameters', values: { chapter: 'experiment', sceneTime: 1, ...values } },
       ]);
       expect(paper.mode).toBe('explore');
-      const sheet = page.locator('.ve-scene-content');
       const measurementGrid = page.locator('[data-chapter="experiment"] .vs-grid');
       const grid = () =>
         measurementGrid.locator('path').evaluateAll((paths) =>
@@ -80,7 +130,7 @@ for (const [name, values] of [
         expect(expanded.presentation.unreadableText).toEqual([]);
         await page.setViewportSize({ width: 375, height: 800 });
       }
-      if (name === 'tesla-circuit') {
+      if (name === 'chapters') {
         expect(paper.snapshot.content.closed).toBe(false);
         await page
           .getByRole('button', { name: 'Замкнуть или разомкнуть цепь' })
@@ -88,8 +138,6 @@ for (const [name, values] of [
           .press('Enter');
         expect((await command([{ type: 'pause' }])).snapshot.content.closed).toBe(true);
       }
-      if (name === 'thermostat-story')
-        expect(paper.snapshot.content.conclusion).toBe('Нагрев выключен');
       expect(errors).toEqual([]);
     });
   }
@@ -97,7 +145,7 @@ for (const [name, values] of [
 test('an interactive control on the world plane edits the same parameter as its paper page', async ({
   page,
 }) => {
-  await page.goto('/tesla-circuit/index.html');
+  await openFixture(page, 'chapters');
   await page.evaluate(() => window.galleryReady);
   await page.evaluate(async () => {
     const s = (document.querySelector('#story') as any).scene;
@@ -115,80 +163,3 @@ test('an interactive control on the world plane edits the same parameter as its 
   expect(state.mode).toBe('explore');
   expect(state.parameters.find((p: any) => p.key === 'closed').value).toBe(true);
 });
-
-for (const theme of ['light', 'dark'] as const)
-  test(`area prediction belongs to the drawing and survives undo and rewind: ${theme}`, async ({
-    page,
-  }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (error) => errors.push(error.message));
-    await page.setViewportSize({ width: 390, height: 850 });
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.goto('/area-lesson/index.html');
-    await page.evaluate(() => window.galleryReady);
-    await page.evaluate(async (theme) => {
-      const scene = (document.querySelector('.ve-scene') as any).scene;
-      await scene.control([
-        { type: 'theme', value: theme },
-        { type: 'cue', id: 'prediction', progress: 0.5 },
-      ]);
-    }, theme);
-    const trial = page.locator('[data-chapter="prediction"]');
-    const run = trial.getByRole('button', { name: 'Удвоить ширину и проверить' });
-    const outcome = trial.locator('[data-area-outcome]');
-    const area = () =>
-      page.evaluate(
-        () => (document.querySelector('.ve-scene') as any).scene.snapshot().content.area,
-      );
-    await expect(run).toHaveAttribute('aria-disabled', 'true');
-    await expect(outcome).toHaveAttribute('aria-label', 'Прогноз ещё не проверен');
-    expect(await area()).toBe(6);
-    const choice = trial.getByRole('button', { name: '24 см²', exact: true });
-    await choice.focus();
-    await choice.press('Enter');
-    await expect(choice).toHaveAttribute('aria-pressed', 'true');
-    await expect(choice).toBeFocused();
-    await expect(run).toHaveAttribute('aria-disabled', 'false');
-    await expect(outcome).toHaveAttribute('aria-label', 'Прогноз ещё не проверен');
-    await run.focus();
-    await run.press('Enter');
-    await expect(outcome).toHaveAttribute(
-      'aria-label',
-      'Ваш прогноз: 24 см². Получилось 12 см²: 6 + 6.',
-    );
-    await expect(outcome).toBeFocused();
-    expect(await area()).toBe(12);
-    await expect(trial.locator('[data-object="formula"] .vs-lettering')).toHaveAttribute(
-      'aria-label',
-      '6 + 6 = 12 см²',
-    );
-    await page.getByRole('button', { name: 'Отменить условие', exact: true }).click();
-    await expect(run).toHaveAttribute('aria-disabled', 'false');
-    await expect(choice).toHaveAttribute('aria-pressed', 'true');
-    await expect(outcome).toHaveAttribute('aria-label', 'Прогноз ещё не проверен');
-    expect(await area()).toBe(6);
-    await page.getByRole('button', { name: 'Повторить', exact: true }).click();
-    await expect(outcome).toHaveAttribute('aria-label', /Получилось 12 см²/);
-    await page.getByRole('button', { name: 'Попробовать свои стороны' }).click();
-    await expect(trial).toBeHidden();
-    const increase = page.getByRole('button', { name: 'Увеличить высоту', exact: true });
-    await increase.focus();
-    for (let i = 0; i < 3; i++) await increase.press('Enter');
-    await expect.poll(area).toBe(30);
-    await expect(increase).toHaveAttribute('aria-disabled', 'true');
-    const decrease = page.getByRole('button', { name: 'Уменьшить высоту', exact: true });
-    await decrease.focus();
-    await decrease.press(' ');
-    await expect.poll(area).toBe(24);
-    await expect(decrease).toBeFocused();
-    await page.evaluate(async () =>
-      (document.querySelector('.ve-scene') as any).scene.control([
-        { type: 'cue', id: 'prediction', progress: 0.5 },
-      ]),
-    );
-    await expect(trial).toBeVisible();
-    await expect(run).toHaveAttribute('aria-disabled', 'true');
-    await expect(outcome).toHaveAttribute('aria-label', 'Прогноз ещё не проверен');
-    expect(await area()).toBe(6);
-    expect(errors).toEqual([]);
-  });

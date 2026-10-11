@@ -43,7 +43,7 @@ test(
       env.VISUAL_STORY_DATA_DIR = directory;
       cli = spawn(
         process.execPath,
-        ['tools/scene.mjs', 'build', 'examples/logic-gates', '--out', join(directory, 'output')],
+        ['tools/scene.mjs', 'build', 'tests/fixtures/svg', '--out', join(directory, 'output')],
         { env, stdio: ['ignore', 'pipe', 'pipe'] },
       );
       const closed = once(cli, 'close');

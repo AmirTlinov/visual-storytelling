@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -9,7 +10,7 @@ test(
   { timeout: 90000 },
   async () => {
     const host = await pluginHost(),
-      browser = await chromium.launch();
+      browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage();
     const call = async (name, args = {}) => {
       const result = await host.client.callTool({ name, arguments: args });
@@ -35,12 +36,13 @@ test(
       const before = await state(first.sessionId);
       const visited = await call('story_navigate', {
         sessionId: first.sessionId,
-        target: { example: 'explorer-3d' },
+        target: { example: 'gpt-model' },
       });
       await app.locator('#back').waitFor();
-      await app.frameLocator('#scene').locator('canvas').waitFor();
-      const spatial = await state(visited.structuredContent.sessionId);
-      assert.ok(spatial.state.objects.length >= 1);
+      await app.frameLocator('#scene').locator('[data-scene-frame]').waitFor();
+      const visitedState = await state(visited.structuredContent.sessionId);
+      assert.notEqual(visitedState.sessionId, first.sessionId);
+      assert.equal(visitedState.state.duration, 94);
       await app.locator('#back').click();
       await app.locator('#back').waitFor({ state: 'hidden' });
       const returned = await state(first.sessionId);
@@ -53,7 +55,7 @@ test(
       const otherApp = other.frameLocator('iframe[title="MCP App"]');
       await otherApp.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
       const otherId = (await call('story_inspect')).structuredContent.sessions.find(
-        (s) => s.sessionId !== first.sessionId && s.sessionId !== spatial.sessionId,
+        (s) => s.sessionId !== first.sessionId && s.sessionId !== visitedState.sessionId,
       ).sessionId;
       for (const id of [first.sessionId, otherId]) {
         const current = await state(id);
