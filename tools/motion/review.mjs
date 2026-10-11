@@ -9,7 +9,7 @@ import { scanTimeline, selectDetail, overviewSamples } from './timeline.mjs';
 import { summarizeRuntime, presentationInsights } from './runtime.mjs';
 import { compareMotion } from './comparison.mjs';
 import { loadCapture, saveSession } from './session.mjs';
-import { queryEvidence } from './inspection.mjs';
+import { cropForFrames } from './inspection-crop.mjs';
 import { buildEpisodes, selectEpisode } from './episodes.mjs';
 
 export async function reviewMotion({
@@ -221,34 +221,12 @@ export async function reviewMotion({
   }
   if (samples.length < 2) throw new Error('Selected interval contains fewer than two frames');
   if ((target || point) && !crop) {
-    const evidence = queryEvidence(
-      { frames: samples, telemetry, source },
-      {
-        object: target,
-        point,
-        at: at ?? (samples[0].time + samples.at(-1).time) / 2,
-        from: samples[0].time,
-        to: samples.at(-1).time,
-      },
+    const focused = await cropForFrames(
+      { samples, telemetry, source },
+      { at, object: target, point },
     );
-    target = evidence.requested.object;
-    const box = evidence.bounds;
-    if (!box)
-      throw new Error(
-        `No observed bounds for ${target ?? 'this point'}; inspect the session objects or select --crop x,y,w,h`,
-      );
-    const sharp = (await import('sharp')).default;
-    const size = await sharp(samples[0].png ?? samples[0].file).metadata();
-    const x = Math.max(0, Math.floor(box.x - 12)),
-      y = Math.max(0, Math.floor(box.y - 12));
-    crop = {
-      x,
-      y,
-      width: Math.min(size.width - x, Math.ceil(box.x + box.width + 12) - x),
-      height: Math.min(size.height - y, Math.ceil(box.y + box.height + 12) - y),
-    };
-    if (crop.width <= 0 || crop.height <= 0)
-      throw new Error('The selected object is outside the captured image');
+    crop = focused.crop;
+    target = focused.focus.object;
   }
   if (saved) captureManifest = await saveCapture(samples, source, out, telemetry, context);
   const captured = performance.now();

@@ -105,6 +105,8 @@ visual-story review inspect /absolute/SESSION --change largest
 visual-story review inspect /absolute/SESSION --change change:12 --view changes
 visual-story review inspect /absolute/SESSION --frame 12 --step -1
 visual-story review inspect /absolute/SESSION --frame 12 --view frame --crop 100,80,320,200 --max-size 0
+visual-story review inspect /absolute/SESSION --frame 12 --list objects --search 'подпись'
+visual-story review inspect /absolute/SESSION --frame 12 --object ID --crop auto --max-size 0
 visual-story review inspect /absolute/SESSION --at 2.1 --view onion --radius .3
 visual-story review inspect /absolute/SESSION --episode cue:copy
 visual-story review inspect /absolute/SESSION --at 2.1 --point 120,80
@@ -125,8 +127,14 @@ visual-story review /absolute/SESSION/replay.json --baseline /absolute/SESSION -
 Без `--out` создаётся свежий каталог `artifacts/motion-*`. Команда возвращает
 абсолютные пути, покрытие записи и время выполнения. `inspect` сначала выдаёт
 компактный индекс эпизодов и крупнейших изменений с готовыми командами выбора.
-`--list changes|frames|episodes` читает метаданные без обработки изображений;
-`--search` ищет по тексту эпизодов, `--offset/--limit` листают результаты.
+`--list changes|frames|episodes|objects` читает метаданные без обработки изображений;
+`--search` ищет по тексту эпизодов или списка объектов, `--offset/--limit` листают результаты.
+`--list objects` принимает выбранный кадр или время и возвращает готовые команды
+увеличения деталей. `--object ID --crop auto` выбирает общую область вокруг предмета
+во всех показываемых кадрах. Переход к соседнему кадру сохраняет выбор предмета;
+числовой crop сохраняет фиксированную область. `focus.clipped` показывает, выходит ли
+наблюдаемая геометрия за границы записи. В видео без метаданных объектов можно
+использовать `--point x,y --crop auto` для области вокруг точки.
 Переходы отсортированы по средней разности пикселей; `change:12` — постоянный ID
 перехода к кадру 12 этой записи, независимо от сортировки и фильтров.
 `--change largest` выбирает крупнейшее ненулевое изменение, `--change ID` — указанное.
@@ -139,9 +147,11 @@ visual-story review /absolute/SESSION/replay.json --baseline /absolute/SESSION -
 `--object` и `--point x,y` выбирают факты; `--out` создаёт подробный отчёт из тех же
 кадров. Точность ограничена сохранёнными отсчётами: для промежутка между ними
 возвращаются ближайшие границы, без дорисованных состояний.
-Обычный ответ сохраняет простые поля состояния; `stateOmitted` называет крупные
-деревья вычислений, доступные через `--verbose`. `--object ID` раскрывает выбранный
-предмет. Полные данные остаются в записи.
+Обычный ответ начинается с `image`, выбора кадра и следующих команд, сохраняет
+простые поля ближайших состояний. `stateOmitted` называет крупные деревья вычислений;
+полные состояния, траектории, события и геометрия доступны через `--verbose`.
+Если изображение не удалось получить, данные сохраняются в JSON с `imageUnavailable`,
+а CLI возвращает код 2. Полные данные остаются в записи.
 
 `timelineImage` показывает чистый выбранный кадр с графиком непосредственно под ним.
 `comparisonImage` ставит рядом чистые предыдущий и выбранный кадры с точным временем;
@@ -175,6 +185,22 @@ visual-story review /absolute/SESSION/replay.json --baseline /absolute/SESSION -
 локальной разностью и резкостью перехода.
 Открывай интерактивный отчёт через `visual-story preview REPORT`: прямой `file://`
 ограничивает чтение пикселей соседних файлов в браузере. Оба PNG доступны без Chromium.
+
+### CLI и изображение одним вызовом
+
+В `functions.exec` выполни CLI и открой путь из JSON сразу, без ручного переноса имени
+PNG в следующий вызов. `command` — готовая команда `inspect` из receipt с выбранными
+аргументами. `login: false` сохраняет stdout чистым JSON; готовая команда содержит
+абсолютные пути Node и CLI.
+
+```js
+const run = await tools.exec_command({ cmd: command, login: false, max_output_tokens: 8000 });
+const receipt = JSON.parse(run.output);
+text(receipt);
+if (receipt.image) image((await tools.view_image({ path: receipt.image })).image_url);
+```
+
+### Интерактивный отчёт и исходные данные
 
 В HTML выбери эпизод, затем кадр или объект на записи. Рядом остаются общий вид,
 увеличение детали, траектория, события и доступное состояние. Объект 3D сохраняет

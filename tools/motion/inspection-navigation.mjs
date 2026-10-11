@@ -64,7 +64,9 @@ export function inspectionNavigation(command, selection, query) {
     ['point', query.point?.join(',')],
     [
       'crop',
-      query.crop && [query.crop.x, query.crop.y, query.crop.width, query.crop.height].join(','),
+      query.crop === 'auto'
+        ? 'auto'
+        : query.crop && [query.crop.x, query.crop.y, query.crop.width, query.crop.height].join(','),
     ],
     ['max-size', query.maxSize],
     ['limit', query.limit],

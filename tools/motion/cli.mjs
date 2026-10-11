@@ -7,6 +7,7 @@ import { parseSlice } from './photometry.mjs';
 import { startupFailureReason, offlineReviewHint } from './doctor.mjs';
 import { timeAtChartPoint, transitionTime } from './temporal-chart.mjs';
 import { reportTemporalChanges } from './temporal-board.mjs';
+import { compactInspection } from './inspection-receipt.mjs';
 
 const help = `Visual review — one session, full interval, inspect, compare
 
@@ -27,6 +28,8 @@ visual-story review inspect SESSION --change largest
 visual-story review inspect SESSION --change change:12 --view changes
 visual-story review inspect SESSION --frame 12 --step -1
 visual-story review inspect SESSION --frame frame:12 --view frame --crop 100,80,320,200 --max-size 0
+visual-story review inspect SESSION --frame 12 --list objects --search 'label'
+visual-story review inspect SESSION --frame 12 --object ID --crop auto --max-size 0
 visual-story review inspect SESSION --at 2.1 --view onion --radius .3
 visual-story review inspect SESSION --episode ID
 visual-story review inspect SESSION --at 2.1 --radius .3 --object ID
@@ -45,10 +48,13 @@ comparisonImage shows adjacent clean frames side by side. selection.previous/cur
 Select --change ID|largest, --frame ID|INDEX|first|last or --at SECONDS; --step N moves by observed frames from that anchor.
 Frame indices are zero-based. Change IDs stay fixed when paging/filtering; --list changes sorts by mean visual difference, not defect severity.
 --view pair|frame|onion|changes returns image plus the named image path. Default: pair. Navigation commands preserve view and crop.
---list frames|changes|episodes reads metadata only; --from/--seconds filters time, --offset/--limit pages results.
+--list frames|changes|episodes|objects reads metadata only; --from/--seconds filters time, --offset/--limit pages results.
+--list objects accepts a frame/time anchor and --search text. Each match has a ready command to enlarge it.
+--object ID --crop auto fits the same source-pixel region around the object across the view; navigation follows that object.
 --timeline-point x,y remains available for selecting from timelineImage.
 The saved player has an onion-skin toggle and time-window control; all views share its time.
-inspect renders only the requested view from saved frames, without recapture or browser analysis. --search filters episode text.
+inspect renders only the requested view from saved frames, without recapture or browser analysis. --search filters episodes or --list objects.
+Its compact JSON starts with image; --verbose includes all evidence. Exit 2 retains evidence but indicates the requested image is unavailable.
 Use --out on inspect to render a focused report; raw capture is reused.
 Capture commands print a compact JSON receipt; --verbose includes detailed measurements.
 The saved report and inspect always retain the complete evidence.
@@ -223,7 +229,7 @@ export async function runMotionCLI(args) {
         step: numeric('step'),
         list: v.list,
         view: v.view,
-        crop: parseCrop(v.crop),
+        crop: v.crop === 'auto' ? 'auto' : parseCrop(v.crop),
         maxSize: numeric('max-size'),
         render: !v.out,
         radius: numeric('radius'),
@@ -238,10 +244,15 @@ export async function runMotionCLI(args) {
       if (!v.out) {
         result.elapsedMs = Math.round(performance.now() - started);
         console.log(JSON.stringify(v.verbose ? result : compactInspection(result), null, 2));
-        return 0;
+        return result.imageUnavailable ? 2 : 0;
       }
       if (v.frame !== undefined || v.change !== undefined || v.step !== undefined)
         v.at = String(result.selection.current.time);
+      if (v.crop === 'auto') {
+        // Full reports choose their own interval, including sparse bracketing states.
+        // Let reviewMotion fit the object after that selection instead of fixing a preview crop.
+        v.crop = undefined;
+      }
     }
     let replayInput = false;
     if (/\.json$/i.test(input ?? '') && !/^https?:\/\//i.test(input) && !v.scenario) {
@@ -363,49 +374,6 @@ export async function runMotionCLI(args) {
     );
     return 1;
   }
-}
-
-/** Keep the next action and evidence paths in context; detailed measurements stay in the report. */
-export function compactInspection(result) {
-  if (!result.selection) return result;
-  const stateSummary = (state) => {
-    if (!state || typeof state !== 'object') return { state };
-    const kept = {},
-      omitted = [];
-    let remaining = 1000;
-    for (const [key, value] of Object.entries(state)) {
-      const size = key.length + (JSON.stringify(value)?.length ?? 0);
-      if (size <= Math.min(320, remaining)) {
-        kept[key] = value;
-        remaining -= size;
-      } else omitted.push(key);
-    }
-    return { state: kept, ...(omitted.length ? { stateOmitted: omitted } : {}) };
-  };
-  const { assets, ...source } = result.source ?? {};
-  const objectSelected = Boolean(result.requested?.object);
-  return {
-    ...result,
-    source: { ...source, ...(assets ? { assetCount: assets.length } : {}) },
-    frames: result.frames.map((frame) => ({
-      id: frame.id,
-      time: frame.time,
-      file: frame.file,
-      ...stateSummary(frame.state),
-      ...(objectSelected ? { objects: frame.objects } : {}),
-    })),
-    objects: objectSelected ? result.objects : result.objects.map(({ id, text }) => ({ id, text })),
-    ...(result.scene ? { scene: { ...result.scene, ...stateSummary(result.scene.state) } } : {}),
-    episodes: result.episodes.map(({ id, kind, title, start, end }) => ({
-      id,
-      kind,
-      title,
-      start,
-      end,
-    })),
-    details:
-      'Compact inspection. --verbose returns full state trees, geometry and observations from the saved capture. --object ID focuses one object.',
-  };
 }
 
 function compactReview(result) {

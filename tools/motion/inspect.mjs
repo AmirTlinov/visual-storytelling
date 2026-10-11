@@ -12,20 +12,27 @@ import {
   shellQuote,
 } from './inspection-navigation.mjs';
 import { renderInspectionImage } from './inspection-image.mjs';
+import { focusCrop } from './inspection-crop.mjs';
 
 export function inspectionCommand(input) {
   return `${shellQuote(process.execPath)} ${shellQuote(fileURLToPath(new URL('../scene.mjs', import.meta.url)))} review inspect ${shellQuote(input)}`;
 }
 
 export async function inspectSession(input, query = {}) {
+  if (query.crop === 'auto' && !query.object && !query.point)
+    throw new Error('--crop auto needs --object ID or --point x,y');
   if (query.view !== undefined && !['pair', 'frame', 'onion', 'changes'].includes(query.view))
     throw new Error('--view must be pair, frame, onion or changes');
-  if (query.list !== undefined && !['changes', 'frames', 'episodes'].includes(query.list))
-    throw new Error('--list must be changes, frames or episodes');
+  if (
+    query.list !== undefined &&
+    !['changes', 'frames', 'episodes', 'objects'].includes(query.list)
+  )
+    throw new Error('--list must be changes, frames, episodes or objects');
   if (['at', 'frame', 'change'].filter((key) => query[key] !== undefined).length > 1)
     throw new Error('Choose one of --at, --frame or --change');
   if (
     query.list &&
+    query.list !== 'objects' &&
     ['at', 'frame', 'change', 'episode', 'step', 'view', 'object', 'point'].some(
       (key) => query[key] !== undefined,
     )
@@ -33,6 +40,8 @@ export async function inspectSession(input, query = {}) {
     throw new Error(
       '--list cannot be combined with a frame, change, episode, object or view selection',
     );
+  if (query.list && ['view', 'crop', 'object', 'point'].some((key) => query[key] !== undefined))
+    throw new Error('--list reads metadata; omit --view, --crop, --object and --point');
   for (const key of ['from', 'to'])
     if (query[key] !== undefined && !Number.isFinite(query[key]))
       throw new Error(`${key} must be finite`);
@@ -46,7 +55,8 @@ export async function inspectSession(input, query = {}) {
   const allEpisodes = loaded.session?.episodes ?? buildEpisodes(loaded.samples, loaded);
   const episodes = allEpisodes.filter(
     (e) =>
-      (!query.search ||
+      (query.list === 'objects' ||
+        !query.search ||
         [e.id, e.title, e.text, e.cue]
           .filter(Boolean)
           .join(' ')
@@ -75,7 +85,7 @@ export async function inspectSession(input, query = {}) {
     inspect: `${command} --change ${shellQuote(entry.id)}`,
   });
   const source = loaded.source;
-  if (query.list) {
+  if (query.list && query.list !== 'objects') {
     const items =
       query.list === 'changes'
         ? changes.map(changeEntry)
@@ -136,8 +146,12 @@ export async function inspectSession(input, query = {}) {
         ]),
       ].slice(0, 40),
       usage:
-        'Select --change ID|largest, --frame ID|INDEX|first|last or --at SECONDS. --step N moves from that anchor. --view pair|frame|onion|changes renders only that view. --crop x,y,w,h --max-size 0 shows pixel detail. --out DIRECTORY makes a full report.',
-      commands: { changes: `${command} --list changes`, frames: `${command} --list frames` },
+        'Select --change ID|largest, --frame ID|INDEX|first|last or --at SECONDS. --step N moves from that anchor. --view pair|frame|onion|changes renders only that view. --list objects --search TEXT finds details; --object ID --crop auto --max-size 0 enlarges them. --out DIRECTORY makes a full report.',
+      commands: {
+        changes: `${command} --list changes`,
+        frames: `${command} --list frames`,
+        objects: `${command} --list objects`,
+      },
       inspect: command,
     };
   }
@@ -154,11 +168,58 @@ export async function inspectSession(input, query = {}) {
   }
   const evidence = queryEvidence(
     { frames: loaded.samples, episodes, telemetry: loaded.telemetry, source: loaded.source },
-    query,
+    query.list === 'objects' ? { ...query, limit: 1, objectLimit: Infinity } : query,
   );
+  if (query.list === 'objects') {
+    const items = evidence.objects
+      .filter(
+        (object) =>
+          !query.search ||
+          [object.id, object.text]
+            .filter(Boolean)
+            .join(' ')
+            .toLocaleLowerCase()
+            .includes(query.search.toLocaleLowerCase()),
+      )
+      .map(({ id, text, x, y, width, height }) => ({
+        id,
+        text,
+        bounds: { x, y, width, height },
+        inspect: `${command} --frame ${evidence.selection.current.index} --object ${shellQuote(id)} --crop auto --max-size 0`,
+      }));
+    return {
+      session: loaded.session?.id,
+      source,
+      list: 'objects',
+      frame: evidence.selection.current,
+      ...inspectionPage(items, query),
+    };
+  }
+  if (query.object && !evidence.objects.length && !evidence.trajectorySamples) {
+    // A known object may disappear from the selected state. Its earlier geometry still
+    // belongs in a comparison; only reject identities absent from the entire capture.
+    const history = queryEvidence(
+      { frames: loaded.samples, telemetry: loaded.telemetry, source },
+      {
+        object: query.object,
+        from: loaded.samples[0].time,
+        to: loaded.samples.at(-1).time,
+        limit: 1,
+      },
+    );
+    if (!history.objects.length && !history.trajectorySamples)
+      throw new Error(`Object ${query.object} is not observed in this capture; use --list objects`);
+  }
   const navigation = inspectionNavigation(command, evidence.selection, query);
+  if (evidence.objects.length)
+    navigation.objects = `${command} --frame ${evidence.selection.current.index} --list objects`;
+  const focus =
+    query.crop === 'auto' && query.render !== false
+      ? await focusCrop(loaded, evidence.selection, query)
+      : {};
+  const crop = focus.crop ?? query.crop;
   if (query.render === false)
-    return { session: loaded.session?.id, source, ...evidence, navigation };
+    return { session: loaded.session?.id, source, ...evidence, navigation, crop, ...focus };
   const folder = join(directory, 'analysis');
   // Full analysis and browser previews belong to --out; each inspection decodes only its view.
   const image = join(folder, `selection-${randomUUID()}.png`);
@@ -172,7 +233,7 @@ export async function inspectSession(input, query = {}) {
       loaded.samples,
       evidence.selection,
       measured.changes,
-      { ...query, theme: source?.theme },
+      { ...query, crop, theme: source?.theme },
     );
     // A source may itself live in analysis, or alias one of its PNGs. Never replace a file.
     handle = await open(image, 'wx');
@@ -197,7 +258,8 @@ export async function inspectSession(input, query = {}) {
     session: loaded.session?.id,
     source,
     view: query.view ?? 'pair',
-    ...(query.crop ? { crop: query.crop } : {}),
+    ...(crop ? { crop } : {}),
+    ...focus,
     ...preview,
     ...evidence,
     navigation,

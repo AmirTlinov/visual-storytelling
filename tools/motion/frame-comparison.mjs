@@ -27,7 +27,8 @@ export async function renderFrameComparison(
     .map((frame, i) => {
       const role = frame.time === at ? 'Selected' : frame.time < at ? 'Previous' : 'Next';
       const selected = frame.time === at;
-      return `<text x="${i * (cellWidth + gap) + 12}" y="25" font-weight="${selected ? 600 : 400}">${role} · ${frame.time.toFixed(6)} s</text>`;
+      const index = Number.isInteger(frame.index) ? ` #${frame.index}` : '';
+      return `<text x="${i * (cellWidth + gap) + 12}" y="25" font-weight="${selected ? 600 : 400}">${role}${index} · ${frame.time.toFixed(6)} s</text>`;
     })
     .join('');
   const background = theme === 'dark' ? '#20262b' : '#f5f7f8';

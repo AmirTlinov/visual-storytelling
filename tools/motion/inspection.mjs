@@ -319,7 +319,10 @@ export function queryEvidence(data, query = {}) {
         .slice(0, wanted ? 32 : 12)
         .map((o) => (wanted ? o : compact(o))),
     })),
-    objects: hit.filter((o) => (wanted ? o.id === wanted : visible(o))).slice(0, wanted ? 32 : 40),
+    objects: hit
+      .filter((o) => (wanted ? o.id === wanted : visible(o)))
+      .slice(0, query.objectLimit ?? (wanted ? 32 : 40)),
+    objectCount: hit.filter((o) => (wanted ? o.id === wanted : visible(o))).length,
     hits: query.point ? hit.slice(0, 12).map(compact) : undefined,
     ancestors: ancestry,
     bounds,

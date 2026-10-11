@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm, readdir } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -9,6 +9,7 @@ import sharp from 'sharp';
 import { captureWriter } from '../tools/motion/session.mjs';
 import { deriveTemporalChanges } from '../tools/motion/timeline.mjs';
 import { inspectSession } from '../tools/motion/inspect.mjs';
+import { compactInspection } from '../tools/motion/inspection-receipt.mjs';
 
 const execute = promisify(execFile);
 async function fixture(t) {
@@ -30,16 +31,14 @@ async function fixture(t) {
     JSON.stringify({
       timeline: {
         changes: deriveTemporalChanges(
-          times
-            .slice(1)
-            .map((time, i) => ({
-              from: i,
-              to: i + 1,
-              time,
-              dtMs: (time - times[i]) * 1000,
-              meanDelta: i ? 1 : 100,
-              changedPercent: i ? 2 : 90,
-            })),
+          times.slice(1).map((time, i) => ({
+            from: i,
+            to: i + 1,
+            time,
+            dtMs: (time - times[i]) * 1000,
+            meanDelta: i ? 1 : 100,
+            changedPercent: i ? 2 : 90,
+          })),
         ),
       },
     }),
@@ -135,4 +134,142 @@ test('invalid or conflicting navigation fails explicitly instead of silently sel
     [{ list: 'frames', limit: 0 }, /limit/],
   ])
     await assert.rejects(inspectSession(directory, query), message);
+});
+
+test('object search and auto crop retain moving, disappearing and clipped details in source pixels', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'review-focus-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const writer = await captureWriter(directory);
+  const png = await sharp({ create: { width: 200, height: 100, channels: 4, background: '#fff' } })
+    .png()
+    .toBuffer();
+  for (let i = 0; i < 3; i++)
+    await writer.append({
+      time: i,
+      png,
+      state: { phase: i, trace: Array.from({ length: 1000 }, (_, n) => n) },
+      objects: [
+        ...Array.from({ length: 50 }, (_, n) => ({
+          id: `label:${n}`,
+          text: `Detail ${n}`,
+          x: n,
+          y: 1,
+          width: 1,
+          height: 1,
+        })),
+        ...(i === 2
+          ? []
+          : [
+              {
+                id: 'moving',
+                text: 'Moving value',
+                coordinates: 'css-viewport',
+                viewport: { width: 100, height: 50 },
+                x: 10.25 + i * 30,
+                y: 10.25,
+                width: 20.5,
+                height: 15.25,
+                visible: true,
+              },
+            ]),
+        { id: 'edge', x: 196, y: 20, width: 40, height: 20, visible: true },
+      ],
+    });
+  await writer.finish({ kind: 'frame-manifest' });
+  const page = await inspectSession(directory, {
+    list: 'objects',
+    frame: 1,
+    search: 'Moving',
+    limit: 1,
+  });
+  assert.equal(
+    page.items[0].id,
+    'moving',
+    'object discovery must not truncate after the first 40 objects',
+  );
+  const result = JSON.parse((await execute('/bin/sh', ['-c', page.items[0].inspect])).stdout);
+  assert.deepEqual(result.crop, { x: 8, y: 8, width: 126, height: 55 });
+  assert.equal(result.focus.clipped, false);
+  assert.equal(result.frames[1].state.phase, 1);
+  assert.deepEqual(result.frames[1].stateOmitted, ['trace']);
+  const next = JSON.parse((await execute('/bin/sh', ['-c', result.navigation.next])).stdout);
+  assert.equal(next.selection.current.index, 2);
+  assert.match(next.navigation.previous, /--crop 'auto'/);
+  assert.equal(
+    next.objects.length,
+    0,
+    'an object removed from the current state can still be compared with its previous location',
+  );
+  assert.deepEqual(next.crop, { x: 68, y: 8, width: 66, height: 55 });
+  const clipped = await inspectSession(directory, {
+    frame: 1,
+    object: 'edge',
+    crop: 'auto',
+    view: 'frame',
+  });
+  assert.equal(clipped.focus.clipped, true);
+  assert.equal(clipped.crop.x + clipped.crop.width, 200);
+  const full = await inspectSession(directory, {
+    frame: 1,
+    object: 'moving',
+    radius: 2,
+    render: false,
+  });
+  assert.equal(full.frames[0].state.trace.length, 1000, 'full evidence is preserved');
+  const reportDirectory = join(directory, 'detail');
+  await execute(process.execPath, [
+    'tools/scene.mjs',
+    'review',
+    'inspect',
+    directory,
+    '--frame',
+    '1',
+    '--object',
+    'moving',
+    '--crop',
+    'auto',
+    '--out',
+    reportDirectory,
+  ]);
+  const report = JSON.parse(await readFile(join(reportDirectory, 'motion.json'), 'utf8'));
+  assert.deepEqual(
+    report.onion.crop,
+    { x: 8, y: 8, width: 126, height: 55 },
+    'full reports fit all actual bracketing states, including those outside the requested radius',
+  );
+  assert.equal(report.timeline.frames, 3);
+  assert.equal(
+    Object.keys(compactInspection(clipped))[0],
+    'image',
+    'opening the image needs no search through metadata',
+  );
+});
+
+test('failed rendering returns evidence with a failure exit code; an absent object never silently renders the whole scene', async (t) => {
+  const directory = await fixture(t);
+  await assert.rejects(
+    inspectSession(directory, { frame: 1, object: 'missing', crop: 'auto' }),
+    /not observed/,
+  );
+  await assert.rejects(inspectSession(directory, { frame: 1, crop: 'auto' }), /needs --object/);
+  await assert.rejects(
+    execute(process.execPath, [
+      'tools/scene.mjs',
+      'review',
+      'inspect',
+      directory,
+      '--frame',
+      '1',
+      '--crop',
+      '100,100,10,10',
+    ]),
+    (error) => {
+      assert.equal(error.code, 2);
+      const evidence = JSON.parse(error.stdout);
+      assert.match(evidence.imageUnavailable, /Crop must fit/);
+      assert.equal(evidence.selection.current.index, 1);
+      assert(evidence.selection.current.file);
+      return true;
+    },
+  );
 });
