@@ -93,6 +93,9 @@ npm run plugin:release
 ```sh
 npx visual-story review dist --cue attention --out artifacts/review
 npx visual-story review inspect artifacts/review --at 36
+npx visual-story review inspect artifacts/review --list changes --limit 5
+npx visual-story review inspect artifacts/review --change largest --view pair
+npx visual-story review inspect artifacts/review --frame 12 --step -1 --view onion
 npx visual-story export dist --format png --time 36 --out artifacts/gpt.png
 npx visual-story deliver . --out artifacts/release --formats html,png,svg,mp4,source --from 42 --to 44 --width 960 --fps 24 --silent
 ```

@@ -6,7 +6,7 @@ import { parseCrop } from './frames.mjs';
 import { parseSlice } from './photometry.mjs';
 import { startupFailureReason, offlineReviewHint } from './doctor.mjs';
 import { timeAtChartPoint, transitionTime } from './temporal-chart.mjs';
-import { deriveTemporalChanges } from './timeline.mjs';
+import { reportTemporalChanges } from './temporal-board.mjs';
 
 const help = `Visual review — one session, full interval, inspect, compare
 
@@ -22,6 +22,12 @@ visual-story review record --window ID --out SESSION
 visual-story review stop SESSION
 visual-story review status SESSION
 visual-story review inspect SESSION
+visual-story review inspect SESSION --list changes
+visual-story review inspect SESSION --change largest
+visual-story review inspect SESSION --change change:12 --view changes
+visual-story review inspect SESSION --frame 12 --step -1
+visual-story review inspect SESSION --frame frame:12 --view frame --crop 100,80,320,200 --max-size 0
+visual-story review inspect SESSION --at 2.1 --view onion --radius .3
 visual-story review inspect SESSION --episode ID
 visual-story review inspect SESSION --at 2.1 --radius .3 --object ID
 visual-story review inspect SESSION --at 2.1 --point 120,80
@@ -31,14 +37,18 @@ visual-story review SESSION/replay.json --baseline SESSION --out AFTER
 
 SOURCE: scene, URL, local HTML (--capture), video, frame manifest or saved session.
 A cue selects its entire action with context before/after; --frames controls detail density.
-Start with session and index.html: complete episode map, playback, objects and observations.
+Start with inspect SESSION: episodes, largest changes and executable selection commands.
 image is the overview PNG; framesImage and photometryImage contain detailed measurements.
 onionImage keeps the current frame clear with fading blue past / red future trails.
 timelineImage puts the clean selected frame above its time graph; changesImage shows the difference overlay separately.
 comparisonImage shows adjacent clean frames side by side. selection.previous/current/next give exact times and original PNG paths.
-Append --timeline-point x,y to inspect (or use select) to pick a time from timelineImage; no --out is needed for a clean pair.
+Select --change ID|largest, --frame ID|INDEX|first|last or --at SECONDS; --step N moves by observed frames from that anchor.
+Frame indices are zero-based. Change IDs stay fixed when paging/filtering; --list changes sorts by mean visual difference, not defect severity.
+--view pair|frame|onion|changes returns image plus the named image path. Default: pair. Navigation commands preserve view and crop.
+--list frames|changes|episodes reads metadata only; --from/--seconds filters time, --offset/--limit pages results.
+--timeline-point x,y remains available for selecting from timelineImage.
 The saved player has an onion-skin toggle and time-window control; all views share its time.
-inspect renders only the selected clean pair from saved frames, without recapture or browser analysis. --search filters episode text; --offset/--limit page the index.
+inspect renders only the requested view from saved frames, without recapture or browser analysis. --search filters episode text.
 Use --out on inspect to render a focused report; raw capture is reused.
 Capture commands print a compact JSON receipt; --verbose includes detailed measurements.
 The saved report and inspect always retain the complete evidence.
@@ -62,7 +72,13 @@ export async function runMotionCLI(args) {
   const started = performance.now();
   try {
     const { values: v, positionals } = parseArgs({
-      args,
+      args: args.flatMap((arg, index) =>
+        arg === '--step' && /^[+-]\d+$/.test(args[index + 1] ?? '')
+          ? [`--step=${args[index + 1]}`]
+          : index && args[index - 1] === '--step' && /^[+-]\d+$/.test(arg)
+            ? []
+            : [arg],
+      ),
       allowPositionals: true,
       options: {
         help: { type: 'boolean', short: 'h' },
@@ -91,6 +107,11 @@ export async function runMotionCLI(args) {
         fps: { type: 'string' },
         episode: { type: 'string' },
         at: { type: 'string' },
+        frame: { type: 'string' },
+        change: { type: 'string' },
+        step: { type: 'string' },
+        list: { type: 'string' },
+        view: { type: 'string' },
         radius: { type: 'string' },
         object: { type: 'string' },
         point: { type: 'string' },
@@ -143,10 +164,21 @@ export async function runMotionCLI(args) {
     if (v.theme && !['light', 'dark'].includes(v.theme))
       throw new Error('--theme must be light or dark');
     const numeric = (key) => (v[key] === undefined ? undefined : Number(v[key]));
+    if (
+      !inspecting &&
+      ['frame', 'change', 'step', 'list', 'view'].some((key) => v[key] !== undefined)
+    )
+      throw new Error(
+        '--frame, --change, --step, --list and --view are for inspect of saved frames',
+      );
+    if (v.out && (v.list !== undefined || v.view !== undefined))
+      throw new Error('--list and --view inspect saved evidence directly; omit --out');
     if (v['timeline-point'] !== undefined) {
       if (!inspecting) throw new Error('--timeline-point is for inspect of a saved report');
-      if (v.at !== undefined || v.episode !== undefined || v.cue !== undefined)
-        throw new Error('--timeline-point cannot be combined with --at, --episode or --cue');
+      if (['at', 'episode', 'cue', 'frame', 'change', 'list'].some((key) => v[key] !== undefined))
+        throw new Error(
+          '--timeline-point cannot be combined with --at, --episode, --cue, --frame, --change or --list',
+        );
       const timelinePoint = v['timeline-point']
         .split(',')
         .map((part) => (part.trim() ? Number(part) : NaN));
@@ -171,17 +203,7 @@ export async function runMotionCLI(args) {
           '--timeline-point needs a saved report with timeline.png and timelineView metadata',
         );
       }
-      const changes =
-        savedReport.timeline?.changes ??
-        deriveTemporalChanges(
-          (savedReport.intervals ?? [])
-            .map((interval) => ({
-              ...interval,
-              time: savedReport.frames?.[interval.to]?.time,
-              meanDelta: interval.meanDelta ?? interval.meanAbsoluteDelta,
-            }))
-            .filter((interval) => Number.isFinite(interval.time)),
-        );
+      const changes = reportTemporalChanges(savedReport);
       const tolerance =
         (3 * (timelineView.range.to - timelineView.range.from)) / timelineView.plot.width;
       v.at = String(
@@ -191,11 +213,19 @@ export async function runMotionCLI(args) {
     const point = v.point?.split(',').map(Number);
     if (point && (point.length !== 2 || point.some((n) => !Number.isFinite(n))))
       throw new Error('--point needs x,y in source pixels');
-    if (inspecting && !v.out) {
+    if (inspecting) {
       const { inspectSession } = await import('./inspect.mjs');
       const result = await inspectSession(input, {
         episode: v.episode ?? v.cue,
         at: numeric('at'),
+        frame: v.frame,
+        change: v.change,
+        step: numeric('step'),
+        list: v.list,
+        view: v.view,
+        crop: parseCrop(v.crop),
+        maxSize: numeric('max-size'),
+        render: !v.out,
         radius: numeric('radius'),
         object: v.object,
         point,
@@ -205,8 +235,13 @@ export async function runMotionCLI(args) {
         offset: numeric('offset'),
         limit: numeric('limit'),
       });
-      console.log(JSON.stringify(v.verbose ? result : compactInspection(result), null, 2));
-      return 0;
+      if (!v.out) {
+        result.elapsedMs = Math.round(performance.now() - started);
+        console.log(JSON.stringify(v.verbose ? result : compactInspection(result), null, 2));
+        return 0;
+      }
+      if (v.frame !== undefined || v.change !== undefined || v.step !== undefined)
+        v.at = String(result.selection.current.time);
     }
     let replayInput = false;
     if (/\.json$/i.test(input ?? '') && !/^https?:\/\//i.test(input) && !v.scenario) {
@@ -391,7 +426,7 @@ function compactReview(result) {
       'captureManifest',
       'replay',
       'inspect',
-      'select',
+      'changes',
       'preview',
     ]
       .filter((key) => result[key] !== undefined)
@@ -424,7 +459,7 @@ function compactReview(result) {
     })),
     timingMs: result.timingMs,
     details:
-      'Open timelineImage to locate a change, then use select with PNG coordinates or inspect --at SECONDS. The result gives comparisonImage and exact selection.previous/current/next PNGs. Use --out only for a full detail report.',
+      'Use changes to list measured transitions, then inspect --change ID|largest, --frame ID|INDEX or --at SECONDS. Add --step N or --view pair|frame|onion|changes. Each selection returns an image and executable previous/next commands; --out makes a full report.',
     ...(result.source?.kind === 'video'
       ? {
           timing: 'Video PTS describes saved frames; perceived smoothness requires playback.',

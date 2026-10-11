@@ -248,7 +248,7 @@ export async function writeMotionReport(report, out, { context } = {}) {
     comparisonImage: join(out, 'comparison.png'),
     selection: report.selection,
     inspect: inspectionCommand(out),
-    select: `${inspectionCommand(out)} --timeline-point X,Y`,
+    changes: `${inspectionCommand(out)} --list changes`,
     timelineView: report.timelineView,
     onion: { ...report.onion, image: undefined },
     previews: report.previews,

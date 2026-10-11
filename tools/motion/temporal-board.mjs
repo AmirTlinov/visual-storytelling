@@ -8,10 +8,10 @@ export function reportTemporalChanges(report) {
   return (
     report.timeline?.changes ??
     deriveTemporalChanges(
-      report.intervals.map((interval) => ({
+      (report.timeline?.intervals ?? report.intervals ?? []).map((interval) => ({
         ...interval,
-        time: report.frames[interval.to].time,
-        meanDelta: interval.meanAbsoluteDelta,
+        time: interval.time ?? report.frames?.[interval.to]?.time,
+        meanDelta: interval.meanDelta ?? interval.meanAbsoluteDelta,
       })),
     )
   );

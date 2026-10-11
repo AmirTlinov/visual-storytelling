@@ -2,6 +2,7 @@
 export function queryEvidence(data, query = {}) {
   const { frames, episodes = [], telemetry = {}, source = {} } = data;
   if (!frames?.length) throw new Error('This capture has no frames');
+  query = { ...query };
   const limit = query.limit ?? 7;
   if (!Number.isInteger(limit) || limit < 1 || limit > 32)
     throw new Error('limit must be between 1 and 32');
@@ -9,6 +10,38 @@ export function queryEvidence(data, query = {}) {
     if (query[key] !== undefined && !Number.isFinite(query[key]))
       throw new Error(`${key} must be finite`);
   if (query.radius !== undefined && query.radius <= 0) throw new Error('radius must be positive');
+  if (query.frame !== undefined) {
+    if (query.at !== undefined) throw new Error('--frame cannot be combined with --at');
+    const value = String(query.frame);
+    const index =
+      value === 'first'
+        ? 0
+        : value === 'last'
+          ? frames.length - 1
+          : /^\d+$/.test(value)
+            ? Number(value)
+            : frames.findIndex((frame) => frame.id === value);
+    if (!frames[index])
+      throw new Error(`Unknown frame ${value}; use --list frames (indices are zero-based)`);
+    query.at = frames[index].time;
+  }
+  if (query.step !== undefined) {
+    if (!Number.isInteger(query.step))
+      throw new Error('--step must be an integer number of captured frames');
+    if (query.at === undefined)
+      throw new Error('--step needs --frame, --at or --change as its anchor');
+    const index = frames.reduce(
+      (best, frame, i) =>
+        Math.abs(frame.time - query.at) <= Math.abs(frames[best].time - query.at) ? i : best,
+      0,
+    );
+    const target = index + query.step;
+    if (!frames[target])
+      throw new Error(
+        `Step reaches frame ${target}; available indices are 0..${frames.length - 1}`,
+      );
+    query.at = frames[target].time;
+  }
   const episode = query.episode
     ? episodes.find((e) => e.id === query.episode || e.cue === query.episode)
     : undefined;
@@ -264,6 +297,9 @@ export function queryEvidence(data, query = {}) {
       from,
       to,
       at: query.at,
+      frame: query.frame,
+      step: query.step,
+      change: query.change,
       episode: query.episode,
       object: wanted,
       point: query.point,

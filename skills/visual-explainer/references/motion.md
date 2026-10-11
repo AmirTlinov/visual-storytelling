@@ -100,6 +100,12 @@ visual-story review record --window 123 --out /absolute/SESSION
 visual-story review /absolute/recording.mp4 --from 1 --seconds 30 --out /absolute/SESSION
 # Уже сохранённые данные: ни запуск приложения, ни повтор действий не требуются.
 visual-story review inspect /absolute/SESSION
+visual-story review inspect /absolute/SESSION --list changes --limit 5
+visual-story review inspect /absolute/SESSION --change largest
+visual-story review inspect /absolute/SESSION --change change:12 --view changes
+visual-story review inspect /absolute/SESSION --frame 12 --step -1
+visual-story review inspect /absolute/SESSION --frame 12 --view frame --crop 100,80,320,200 --max-size 0
+visual-story review inspect /absolute/SESSION --at 2.1 --view onion --radius .3
 visual-story review inspect /absolute/SESSION --episode cue:copy
 visual-story review inspect /absolute/SESSION --at 2.1 --point 120,80
 visual-story review inspect /absolute/SESSION --at 2.1 --object '#panel' --out /absolute/DETAIL
@@ -118,7 +124,18 @@ visual-story review /absolute/SESSION/replay.json --baseline /absolute/SESSION -
 
 Без `--out` создаётся свежий каталог `artifacts/motion-*`. Команда возвращает
 абсолютные пути, покрытие записи и время выполнения. `inspect` сначала выдаёт
-компактный индекс; `--search` ищет по тексту, `--offset/--limit` листают результаты. `--at/--radius`, `--episode`,
+компактный индекс эпизодов и крупнейших изменений с готовыми командами выбора.
+`--list changes|frames|episodes` читает метаданные без обработки изображений;
+`--search` ищет по тексту эпизодов, `--offset/--limit` листают результаты.
+Переходы отсортированы по средней разности пикселей; `change:12` — постоянный ID
+перехода к кадру 12 этой записи, независимо от сортировки и фильтров.
+`--change largest` выбирает крупнейшее ненулевое изменение, `--change ID` — указанное.
+`--frame ID|INDEX|first|last` выбирает кадр (индексы от нуля), `--at SECONDS` — ближайший
+сохранённый момент. `--step N` двигается от выбранного кадра по реальным отсчётам,
+сохраняя неравномерные интервалы; выход за границу выдаёт ошибку. Общего курсора нет.
+В ответе `navigation.previous/next` — готовые команды с сохранением режима и crop;
+на границах соответствующая команда равна `null`.
+`--at/--radius`, `--episode`,
 `--object` и `--point x,y` выбирают факты; `--out` создаёт подробный отчёт из тех же
 кадров. Точность ограничена сохранёнными отсчётами: для промежутка между ними
 возвращаются ближайшие границы, без дорисованных состояний.
@@ -131,11 +148,14 @@ visual-story review /absolute/SESSION/replay.json --baseline /absolute/SESSION -
 на начале записи — выбранный и следующий. X — секунды записи, Y — средняя межкадровая
 разность в процентах. Зелёные отметки выделяют переходы с резко возросшей скоростью
 изменения относительно соседних; их смысл оценивай по замыслу сцены. Неподвижные
-детали сохраняют исходный вид. Для выбора по координатам PNG выполни команду `select`
-из результата, подставив X,Y, или `inspect REPORT --timeline-point 420,680`.
-Ответ сразу даёт `comparisonImage` и `selection.previous/current/next`: точные времена
+детали сохраняют исходный вид. CLI позволяет выбирать время и переход напрямую;
+если нужна привязка к картинке, доступен `inspect REPORT --timeline-point 420,680`.
+Ответ по умолчанию даёт `comparisonImage` и `selection.previous/current/next`: точные времена
 и пути оригинальных PNG. `--at SECONDS` выбирает ближайший сохранённый кадр.
-Для пары не нужен `--out`: он запускает полный подробный отчёт. Точные границы графика
+`--view pair|frame|onion|changes` создаёт только запрошенное изображение и возвращает
+общий путь `image` вместе с именованным `comparisonImage`, `frameImage`, `onionImage`
+или `changesImage`. `--crop x,y,w,h --max-size 0` показывает деталь в исходном разрешении.
+Для этих видов не нужен `--out`: он запускает полный подробный отчёт. Точные границы графика
 возвращаются в `timelineView.plot`; `--point x,y` по-прежнему выбирает объект в
 исходных координатах кадра. Зелёное наложение вынесено в `changesImage` и режим
 «Изменения». Просмотр использует сохранённые кадры; равномерные временные метки MP4
@@ -145,7 +165,7 @@ visual-story review /absolute/SESSION/replay.json --baseline /absolute/SESSION -
 следами будущего. Веса затухают с расстоянием по времени; сила совокупного слоя
 ограничена для чтения деталей. Используются до девяти сохранённых кадров в общих
 координатах. PNG и проигрыватель используют те же кадры и область.
-Для точного момента: `inspect SESSION --at 2.1 --radius .3 --out DETAIL`.
+Для точного момента: `inspect SESSION --at 2.1 --view onion --radius .3`.
 В `story_review` момент и радиус задаются через `options.at` и `options.radius`
 (секунды); живая сцена наблюдается в точный момент через её `seek`.
 В проигрывателе выбери время на графике мышью или стрелками; выбранный режим
