@@ -98,10 +98,18 @@ export function shotPose(
   let distance = Math.exp(Math.log(from.distance) * (1 - t) + Math.log(to.distance) * t);
   if (t > 0 && t < 1) {
     // Endpoint fits alone can clip a long object halfway through a turn.
-    const bounds = new T.Box3(
-      from.bounds.min.clone().lerp(to.bounds.min, t),
-      from.bounds.max.clone().lerp(to.bounds.max, t),
-    );
+    // Separate shape from scale so this guard follows the same logarithmic zoom
+    // as the endpoint poses, instead of delaying a large close-up until the end.
+    const center = from.bounds
+      .getCenter(new T.Vector3())
+      .lerp(to.bounds.getCenter(new T.Vector3()), t);
+    // Use the same finite scale at a point and its arbitrarily small neighbourhood.
+    const half = from.bounds
+      .getSize(new T.Vector3())
+      .multiplyScalar(0.5 / from.radius)
+      .lerp(to.bounds.getSize(new T.Vector3()).multiplyScalar(0.5 / to.radius), t)
+      .multiplyScalar(Math.exp(Math.log(from.radius) * (1 - t) + Math.log(to.radius) * t));
+    const bounds = new T.Box3(center.clone().sub(half), center.clone().add(half));
     const insets = Object.fromEntries(
       (['top', 'right', 'bottom', 'left'] as const).map((key) => [
         key,

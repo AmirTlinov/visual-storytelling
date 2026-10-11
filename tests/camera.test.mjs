@@ -96,6 +96,102 @@ test('camera turns join their endpoint shots continuously with asymmetric interf
   }
 });
 
+test('scale-changing shots distribute zoom across the transition in both directions and replay exactly', () => {
+  for (const width of [375, 1440])
+    for (const shape of [new T.Vector3(1, 0.4, 0.7), new T.Vector3(1, 0, 0.7)]) {
+      const camera = new T.PerspectiveCamera(36, width / 600, 0.01, 100000);
+      const shot = (center, scale) => ({
+        target: new T.Box3().setFromCenterAndSize(center, shape.clone().multiplyScalar(scale)),
+        direction: [0.35, 1.6, 2.8],
+        padding: 34,
+        insets: { bottom: 84, left: 55 },
+      });
+      const overview = shot(new T.Vector3(), 1000);
+      const detail = shot(new T.Vector3(300, 0, 200), 15);
+      for (const [from, to] of [
+        [overview, detail],
+        [detail, overview],
+      ]) {
+        const sample = (progress) => shotPose(camera, width, 600, { ...to, from, progress });
+        const distance = (pose) => pose.position.distanceTo(pose.target);
+        const samples = new Map([0, 0.25, 0.5, 0.75, 1].map((p) => [p, sample(p)]));
+        const start = distance(samples.get(0)),
+          end = distance(samples.get(1));
+        // At halfway, the camera must have covered half the scale range in log space.
+        // A linear intermediate fit left a 1000-to-15 close-up almost entirely at the end.
+        const halfway = distance(samples.get(0.5));
+        assert(
+          Math.abs(halfway / Math.sqrt(start * end) - 1) < 1e-6,
+          `zoom is delayed at ${width}px: halfway distance ${halfway}, endpoints ${start},${end}`,
+        );
+        const direction = Math.sign(end - start);
+        const distances = [...samples.values()].map(distance);
+        for (let i = 1; i < distances.length; i++)
+          assert(direction * (distances[i] - distances[i - 1]) > 0, 'zoom reverses during a leg');
+        for (const progress of [1, 0.25, 0.75, 0, 0.5, 1])
+          assert.deepEqual(
+            sample(progress),
+            samples.get(progress),
+            'seeking changes the fitted pose',
+          );
+      }
+    }
+});
+
+test('point shots remain continuous with arbitrarily small targets in both directions', () => {
+  for (const width of [375, 1440]) {
+    const camera = new T.PerspectiveCamera(36, width / 600, 0.01, 100000);
+    const bounds = (size) =>
+      new T.Box3().setFromCenterAndSize(new T.Vector3(3, 0, 2), new T.Vector3(size, size, size));
+    const point = bounds(0),
+      tiny = bounds(1e-9),
+      large = bounds(1000);
+    for (const reverse of [false, true])
+      for (const progress of [0, 0.25, 0.5, 0.75, 1]) {
+        const sample = (small) =>
+          shotPose(camera, width, 600, {
+            target: reverse ? small : large,
+            direction: [0, 0, 1],
+            from: { target: reverse ? large : small, direction: [0, 0, 1] },
+            progress,
+          });
+        const a = sample(point),
+          b = sample(tiny);
+        assert(a.position.distanceTo(b.position) < 1e-5, 'a point must not switch the zoom law');
+        assert(a.target.distanceTo(b.target) < 1e-5, 'a point must not switch the pan law');
+      }
+  }
+});
+
+test('scale-changing fits keep point and flat bounds finite', () => {
+  const camera = new T.PerspectiveCamera(36, 960 / 600, 0.01, 100000);
+  const point = new T.Box3(new T.Vector3(3, 0, 2), new T.Vector3(3, 0, 2));
+  const flat = new T.Box3(new T.Vector3(-500, 0, -300), new T.Vector3(500, 0, 300));
+  for (const [from, target] of [
+    [point, flat],
+    [flat, point],
+    [point, point],
+  ])
+    for (const progress of [0, 0.25, 0.5, 0.75, 1]) {
+      const pose = shotPose(camera, 960, 600, {
+        target,
+        direction: [0, 1, 1],
+        from: { target: from, direction: [0, 1, 1] },
+        progress,
+      });
+      assert(
+        [
+          ...pose.position.toArray(),
+          ...pose.target.toArray(),
+          pose.radius,
+          pose.near,
+          pose.far,
+        ].every(Number.isFinite),
+      );
+      assert(pose.position.distanceTo(pose.target) > 0 && pose.near > 0 && pose.far > pose.near);
+    }
+});
+
 test('authored turns keep an elongated subject in frame, including a view along the up axis', () => {
   const target = new T.Box3(new T.Vector3(-5, -1, -0.5), new T.Vector3(5, 1, 0.5));
   for (const width of [375, 960]) {
