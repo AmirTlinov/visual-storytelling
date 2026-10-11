@@ -678,6 +678,7 @@ function mount(
       controller.seek,
       showHeading && showNavigation,
     );
+    chapters.update(controller.presented?.chapter);
     let resetAfterSeek = false;
     const stopSeeking = controller.onSeek(() => {
       resetAfterSeek = true;
@@ -722,7 +723,7 @@ function mount(
     modes.hidden =
       !showNavigation ||
       (![...inputs.values()].some((control) => !control.element.hidden) && !view);
-    function reflectState({ requested, phase, error }: StoryStatus<P, S>) {
+    function reflectState({ requested, presented, phase, error }: StoryStatus<P, S>) {
       const { mode: next, values: state } = requested;
       if (next !== 'story') resetAfterSeek = false;
       if (phase === 'ready' && resetAfterSeek) {
@@ -739,7 +740,8 @@ function mount(
       for (const { key } of parameters) values[key] = (state as Record<string, ControlValue>)[key]!;
       if (exploration === 'model') setMode(next);
       refresh();
-      chapters.update(controller.currentChapter);
+      // The heading is part of the drawing, including while a later chapter prepares or fails.
+      if (presented) chapters.update(presented.chapter);
     }
     unsubscribe = controller.subscribe(reflectState);
     setMode('story');
