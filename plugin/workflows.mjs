@@ -402,7 +402,7 @@ export const workflows = {
     await prepareEnvironment(input.data, { ...task, browser: true });
     const options = input.options ?? {};
     const args = [cli, 'review', join(snapshot, 'dist')];
-    for (const key of ['cue', 'from', 'seconds', 'frames', 'width', 'height', 'theme', 'object'])
+    for (const key of ['cue', 'from', 'at', 'radius', 'seconds', 'frames', 'width', 'height', 'theme', 'object'])
       if (options[key] !== undefined) args.push('--' + key, String(options[key]));
     if (options.reduced) args.push('--reduced');
     if (options.crop) {

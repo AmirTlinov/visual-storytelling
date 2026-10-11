@@ -1,6 +1,5 @@
-import sharp from 'sharp';
-import { frameInput } from './session.mjs';
-import { onionLayers } from './onion.mjs';
+import { onionLayers, composeOnion } from './onion.mjs';
+import { decodeMotionRasters, rasterImageURL as imageURL } from './rasters.mjs';
 
 export function frameColor(index, count) {
   const t = count > 1 ? index / (count - 1) : 0;
@@ -29,75 +28,57 @@ export function parseCrop(value) {
   return { x, y, width, height };
 }
 
-const imageURL = async ({ data, width, height }) =>
-  `data:image/png;base64,${(
-    await sharp(data, { raw: { width, height, channels: 4 } })
-      .png({ compressionLevel: 3 })
-      .toBuffer()
-  ).toString('base64')}`;
+/** Select from the complete source timeline; only the bounded onion states are decoded. */
+export async function renderOnionFrames(samples, { at, radius, crop, maxSize = 960 } = {}) {
+  const plan = onionLayers(samples, { at, radius });
+  const { rasters, sizes, ...geometry } = await decodeMotionRasters(
+    plan.layers.map((layer) => samples[layer.index]),
+    { crop, maxSize },
+  );
+  const data = composeOnion(rasters, geometry.width, geometry.height, plan.layers);
+  return { ...plan, ...geometry, image: await imageURL({ data, ...geometry }) };
+}
 
 /** Compare one fixed coordinate system. Never deduplicate or retime. */
 export async function analyzeMotionFrames(
   samples,
-  { crop, threshold = 8, maxSize = 960, at, radius } = {},
+  { crop, threshold = 8, maxSize = 960, at, radius, includeOnion = true } = {},
 ) {
   if (samples.length < 2 || samples.length > 32) throw new Error('Motion review needs 2–32 frames');
   if (!Number.isFinite(threshold) || threshold < 0 || threshold > 255)
     throw new Error('Pixel threshold must be between 0 and 255');
-  if (!Number.isInteger(maxSize) || maxSize < 0)
-    throw new Error('--max-size must be a positive integer, or 0 for source resolution');
   for (let i = 0; i < samples.length; i++)
     if (!Number.isFinite(samples[i].time) || (i && samples[i].time <= samples[i - 1].time))
       throw new Error('Frame times must be finite and strictly increasing, in seconds');
-  const sizes = await Promise.all(
-    samples.map(async (sample) => {
-      const { width, height } = await sharp(frameInput(sample)).metadata();
-      return { width, height };
-    }),
-  );
-  const sourceWidth = crop?.width ?? Math.max(...sizes.map((s) => s.width));
-  const sourceHeight = crop?.height ?? Math.max(...sizes.map((s) => s.height));
-  if (
-    crop &&
-    (!Object.values(crop).every(Number.isInteger) ||
-      crop.x < 0 ||
-      crop.y < 0 ||
-      sourceWidth <= 0 ||
-      sourceHeight <= 0 ||
-      sizes.some((s) => crop.x + sourceWidth > s.width || crop.y + sourceHeight > s.height))
-  )
-    throw new Error('Crop must fit inside every source frame');
-  const scale = maxSize ? Math.min(1, maxSize / Math.max(sourceWidth, sourceHeight)) : 1;
-  const width = Math.max(1, Math.round(sourceWidth * scale));
-  const height = Math.max(1, Math.round(sourceHeight * scale));
+  const { rasters, sizes, width, height, scale, sourceWidth, sourceHeight } =
+    await decodeMotionRasters(samples, { crop, maxSize });
   const pixels = width * height;
-  if (pixels > 16_000_000 || pixels * samples.length > 160_000_000)
-    throw new Error('Analysis is too large; use --crop or --max-size 960');
+  let onion;
+  if (includeOnion) {
+    const plan = onionLayers(samples, { at, radius });
+    const data = composeOnion(
+      plan.layers.map((layer) => rasters[layer.index]),
+      width,
+      height,
+      plan.layers,
+    );
+    onion = {
+      ...plan,
+      width,
+      height,
+      crop: crop ?? null,
+      scale,
+      sourceWidth,
+      sourceHeight,
+      image: await imageURL({ data, width, height }),
+    };
+  }
   const frames = [],
     images = [];
   let hasTransparency = false;
-  // Decode one source at a time; retain only the bounded analysis rasters.
-  for (let i = 0; i < samples.length; i++) {
-    let pipeline = sharp(frameInput(samples[i])).toColourspace('srgb').ensureAlpha();
-    if (crop)
-      pipeline = pipeline.extract({
-        left: crop.x,
-        top: crop.y,
-        width: sourceWidth,
-        height: sourceHeight,
-      });
-    const w = crop ? width : Math.max(1, Math.round(sizes[i].width * scale));
-    const h = crop ? height : Math.max(1, Math.round(sizes[i].height * scale));
-    pipeline = pipeline.resize(w, h, { fit: 'fill' });
-    if (w < width || h < height)
-      pipeline = pipeline.extend({
-        right: width - w,
-        bottom: height - h,
-        background: { r: 0, g: 0, b: 0, alpha: 0 },
-      });
-    const data = await pipeline.raw().toBuffer();
+  for (const data of rasters) {
     images.push(await imageURL({ data, width, height }));
-    // Invisible RGB contributes nothing; alpha remains a comparison channel.
+    // Only difference/edge diagnostics use premultiplied source RGB.
     for (let p = 0; p < pixels; p++) {
       const alpha = data[p * 4 + 3];
       if (alpha === 255) continue;
@@ -224,23 +205,6 @@ export async function analyzeMotionFrames(
     )
   )
     suggestedCrop = null;
-  const onion = onionLayers(samples, { at, radius });
-  const composite = Buffer.alloc(pixels * 4);
-  // Source RGB is already premultiplied. Paint distant states first and the present last.
-  for (const layer of onion.layers) {
-    const data = frames[layer.index].data;
-    for (let p = 0; p < composite.length; p += 4) {
-      const alpha = (data[p + 3] / 255) * layer.opacity;
-      const retained = (composite[p + 3] / 255) * (1 - alpha);
-      const combined = alpha + retained;
-      if (!combined) continue;
-      for (let c = 0; c < 3; c++)
-        composite[p + c] = Math.round(
-          (data[p + c] * layer.opacity + composite[p + c] * retained) / combined,
-        );
-      composite[p + 3] = Math.round(combined * 255);
-    }
-  }
   return {
     width,
     height,
@@ -252,7 +216,7 @@ export async function analyzeMotionFrames(
     hasTransparency,
     motionBounds,
     suggestedCrop,
-    onion: { ...onion, image: await imageURL({ data: composite, width, height }) },
+    ...(onion ? { onion } : {}),
     sizeChanged: sizes.some((s) => s.width !== sizes[0].width || s.height !== sizes[0].height),
     frames: samples.map((sample, i) => ({
       time: sample.time,

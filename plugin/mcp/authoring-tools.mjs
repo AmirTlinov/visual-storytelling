@@ -125,6 +125,10 @@ export function authoringTools(server, runtime, uri, safely) {
           .object({
             cue: z.string().min(1).max(256).optional(),
             from: z.number().finite().nonnegative().optional(),
+            at: z.number().finite().nonnegative().optional()
+              .describe('Center of the temporal overlay, in source seconds.'),
+            radius: z.number().finite().positive().optional()
+              .describe('Fade distance before and after the center, in seconds.'),
             seconds: z.number().finite().positive().optional(),
             frames: z.number().int().min(2).max(32).optional(),
             width: z.number().int().min(320).max(3840).optional(),
@@ -148,6 +152,10 @@ export function authoringTools(server, runtime, uri, safely) {
           .refine(
             (options) => !options.scenario || !options.cue,
             'Use a cue for checkpoints, or a scenario for browser interaction.',
+          )
+          .refine(
+            (options) => !options.cue || options.at === undefined,
+            'Use either a cue or an explicit at time.',
           )
           .optional(),
       },

@@ -82,7 +82,7 @@ export function motionMarkup(
     `<svg class="${className}" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}" role="img" aria-label="${label}"><image href="${image}" width="${report.width}" height="${report.height}"/></svg>`;
   const overlay = `<figure><h3>Выбранное окно · наложение контуров</h3>${map(report.overlay, 'Наложение изменяющихся контуров')}<div class="motion-legend"><span style="color:${color(0, frames.length)}">${seconds(frames[0].time)} с · раньше</span><span>цвет → порядок</span><span style="color:${color(frames.length - 1, frames.length)}">${seconds(frames.at(-1).time)} с · позже</span></div></figure>`;
   const onion = report.onion
-    ? `<figure><h3>Наложение во времени</h3>${map(report.onion.image, 'Прошлые и будущие кадры вокруг выбранного момента')}<figcaption>Текущий ${timeControl(report.onion.time, playerId)} · 50%<br>Затухание к краям окна ±${seconds(report.onion.radius)} с · кадров: ${report.onion.layers.length}</figcaption></figure>`
+    ? `<figure><h3>Наложение во времени</h3><img class="motion-map" src="${report.onion.image}" alt="Прошлые и будущие кадры вокруг выбранного момента"><div class="motion-onion-legend"><span class="motion-past">Раньше</span><span>Сейчас · 50%</span><span class="motion-future">Позже</span></div><figcaption>Текущий ${timeControl(report.onion.time, playerId)}<br>Затухание к краям окна ±${seconds(report.onion.radius)} с · кадров: ${report.onion.layers.length}</figcaption></figure>`
     : overlay;
   const sourceLabels = {
     'scene-seek': 'Сцена · время модели',

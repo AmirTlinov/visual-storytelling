@@ -166,7 +166,7 @@ export async function writeMotionReport(report, out, { context } = {}) {
           .map(encodeURIComponent)
           .join('/')
       : undefined;
-    const player = `<section class="motion-sheet">${playbackMarkup(playback, { unsynchronized: report.source.domSynchronized === false, audio, open: Boolean(report.session), onionRadius: report.onion.radius })}</section>`;
+    const player = `<section class="motion-sheet">${playbackMarkup(playback, { unsynchronized: report.source.domSynchronized === false, audio, open: Boolean(report.session), onion: { ...report.onion, prepared: !report.captureManifest } })}</section>`;
     const session = sessionMarkup(report, out, player, evidence);
     const html = document(session ? session + main : main + player);
     await writeFile(join(out, 'index.html'), html);

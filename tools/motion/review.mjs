@@ -1,6 +1,6 @@
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { resolve, join, dirname, extname, basename } from 'node:path';
-import { analyzeMotionFrames } from './frames.mjs';
+import { analyzeMotionFrames, renderOnionFrames } from './frames.mjs';
 import { assertMotionOutput, writeMotionReport } from './report.mjs';
 import { videoFrames, saveCapture } from './media.mjs';
 import { captureBrowser } from './browser.mjs';
@@ -26,7 +26,7 @@ export async function reviewMotion({
   cue,
   episode,
   at,
-  radius = 0.3,
+  radius,
   threshold,
   maxSize,
   capture: captureOptions,
@@ -48,16 +48,24 @@ export async function reviewMotion({
   if (seconds !== undefined && (!Number.isFinite(seconds) || seconds <= 0))
     throw new Error('--seconds must be positive');
   if (
-    at !== undefined &&
-    (!Number.isFinite(at) || at < 0 || !Number.isFinite(radius) || radius <= 0)
+    (at !== undefined && (!Number.isFinite(at) || at < 0)) ||
+    (radius !== undefined && (!Number.isFinite(radius) || radius <= 0))
   )
     throw new Error('--at must be non-negative and --radius positive');
+  if (cue && at !== undefined)
+    throw new Error('Choose --cue or --at; a cue and an exact-time window are separate selections');
   if (fps !== undefined && (!Number.isFinite(fps) || fps < 1 || fps > 240))
     throw new Error('--fps must be between 1 and 240');
   if (threshold !== undefined && (!Number.isFinite(threshold) || threshold < 0 || threshold > 255))
     throw new Error('--threshold must be between 0 and 255');
   if (maxSize !== undefined && (!Number.isInteger(maxSize) || maxSize < 0))
     throw new Error('--max-size must be a non-negative integer');
+  const windowRadius = radius ?? 0.3;
+  // Capture the requested neighborhood, rather than choosing from coarse whole-scene checkpoints.
+  if (at !== undefined) {
+    from = Math.max(0, at - windowRadius);
+    seconds = at + windowRadius - from;
+  }
   let replay, manifest;
   const native = captureOptions?.window !== undefined;
   const isURL = /^https?:\/\//i.test(input);
@@ -167,6 +175,7 @@ export async function reviewMotion({
       directory: isDirectory,
       out,
       cue,
+      at,
       from,
       seconds,
       frames,
@@ -196,8 +205,8 @@ export async function reviewMotion({
     seconds = Math.min(samples.at(-1).time, chosen.end + 0.15) - from;
   }
   if (at !== undefined) {
-    from = Math.max(samples[0].time, at - radius);
-    seconds = at + radius - from;
+    from = Math.max(samples[0].time, at - windowRadius);
+    seconds = at + windowRadius - from;
   }
   if (saved && (from !== undefined || seconds !== undefined)) {
     const lo = from ?? samples[0].time,
@@ -259,6 +268,7 @@ export async function reviewMotion({
     crop,
     threshold,
     maxSize,
+    includeOnion: false,
   });
   const session = await saveSession(out, {
     captureManifest,
@@ -276,8 +286,14 @@ export async function reviewMotion({
       threshold,
       maxSize,
       at,
-      radius: at === undefined ? undefined : radius,
+      includeOnion: false,
     })),
+    onion: await renderOnionFrames(samples, {
+      crop,
+      maxSize,
+      at: at ?? (detail[0].time + detail.at(-1).time) / 2,
+      radius: at === undefined ? radius : windowRadius,
+    }),
     title: source.title || source.app || basename(source.path ?? input),
     source,
     sampling: source.kind === 'scene-seek' ? 'model-checkpoints' : 'captured-window',

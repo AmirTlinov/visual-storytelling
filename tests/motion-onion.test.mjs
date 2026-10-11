@@ -42,6 +42,13 @@ test('onion weights follow actual elapsed time, retain the requested center and 
   assert(onionLayers(dense, { at: 0 }).layers.every((layer) => layer.offset >= 0));
   assert(onionLayers(dense, { at: 10 }).layers.every((layer) => layer.offset <= 0));
   assert(selectDetail(dense, { at: 5.005, count: 12 }).some((frame) => frame.time === 5.005));
+  assert.equal(
+    onionLayers(
+      [0, 1, 2, 3, 4].map((time) => ({ time })),
+      { at: 2, radius: 100 },
+    ).layers.length,
+    5,
+  );
 });
 
 test('the composite preserves source transparency, fixed positions and a 50 percent present', async () => {
@@ -54,6 +61,8 @@ test('the composite preserves source transparency, fixed positions and a 50 perc
   assert.equal(pixel(35)[3], 64, 'source alpha is multiplied by the present opacity');
   assert.equal(pixel(21)[3], pixel(49)[3], 'equal time distances have equal weights');
   assert(pixel(7)[3] < pixel(21)[3] && pixel(21)[3] < pixel(35)[3]);
+  assert(pixel(21)[2] > pixel(21)[0], 'past differences are blue');
+  assert(pixel(49)[0] > pixel(49)[2], 'future differences are red');
   assert(
     pixel(35)
       .slice(0, 3)
@@ -70,7 +79,11 @@ test('saved player shares the PNG weights, seeks in both directions and restores
   });
   const context = await browser.newContext();
   const report = {
-    ...(await analyzeMotionFrames(samples({ opaque: true }), { at: 1, radius: 1.5 })),
+    ...(await analyzeMotionFrames(samples({ opaque: true }), {
+      at: 1,
+      radius: 1.5,
+      crop: { x: 0, y: 8, width: 80, height: 24 },
+    })),
     source: { kind: 'frame-manifest' },
   };
   const result = await writeMotionReport(report, directory, { context });
@@ -90,9 +103,16 @@ test('saved player shares the PNG weights, seeks in both directions and restores
   });
   const pixels = await page
     .locator('[data-onion-canvas]')
-    .evaluate((canvas) => [...canvas.getContext('2d').getImageData(0, 0, 80, 40).data]);
+    .evaluate((canvas) => [
+      ...canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data,
+    ]);
   const error = Math.max(...pixels.map((v, i) => Math.abs(v - png.data[i])));
   assert(error <= 3, `browser and static PNG differ by ${error}/255`);
+  const corner = [...png.data.subarray(0, 3)];
+  assert.deepEqual(corner, [255, 255, 255], 'unchanged background retains its colours');
+  await page.getByLabel('Перейти ко времени, секунды').fill('0.9');
+  await page.getByLabel('Перейти ко времени, секунды').press('Tab');
+  assert.equal(await page.getByLabel('Перейти ко времени, секунды').inputValue(), '1');
   await page.locator('.motion-play').evaluate((root) => {
     for (const time of [2, 0, 1.5, 0.5])
       root.dispatchEvent(new CustomEvent('motionseek', { detail: { time } }));

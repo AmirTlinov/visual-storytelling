@@ -1,7 +1,16 @@
 import { storyEpisodes, selectEpisode } from './episodes.mjs';
 
 /** Authored checkpoints, not a playback cadence. Short --from sweeps retain their frame step. */
-export function sceneCheckpoints({ review, duration, cue, from, seconds, frames = 12, fps = 60 }) {
+export function sceneCheckpoints({
+  review,
+  duration,
+  cue,
+  at,
+  from,
+  seconds,
+  frames = 12,
+  fps = 60,
+}) {
   const episodes = review ? storyEpisodes(review) : [];
   const selected = cue ? selectEpisode(episodes, cue) : undefined;
   const lo = Math.max(0, selected ? selected.start - 0.15 : (from ?? 0));
@@ -41,6 +50,12 @@ export function sceneCheckpoints({ review, duration, cue, from, seconds, frames 
         }
       }
     }
+  }
+  // The scene owner seeks this exact state; an even sweep need not contain its midpoint.
+  if (at !== undefined) {
+    if (!Number.isFinite(at) || at < lo || at > hi)
+      throw new Error('Requested --at must be inside the selected scene interval');
+    add(at);
   }
   return { times: [...times].sort((a, b) => a - b), selected };
 }

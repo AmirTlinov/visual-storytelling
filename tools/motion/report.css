@@ -131,15 +131,16 @@
   margin-top: 14px;
 }
 .motion-play-controls label {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--muted);
 }
 .motion-play-controls input {
   width: 110px;
-  min-height: 38px;
+  min-height: 44px;
   border: 1px solid var(--line);
   padding: 6px;
   font: inherit;
+  font-size: 16px;
   color: var(--ink);
 }
 .motion-frame-position,
@@ -379,6 +380,19 @@
   border-color: #2367b0;
   background: #edf4fa;
 }
+.motion-onion-legend {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  font-size: 14px;
+}
+.motion-past {
+  color: #2f6bad;
+}
+.motion-future {
+  color: #ba4543;
+}
 .motion-play p {
   display: flex;
   align-items: center;
@@ -391,11 +405,12 @@
 }
 .motion-sheet button {
   padding: 8px 14px;
-  min-height: 40px;
+  min-height: 44px;
   border: 1px solid var(--line);
   border-radius: 4px;
   background: #fff;
   font: inherit;
+  font-size: 16px;
   color: var(--ink);
   cursor: pointer;
 }
