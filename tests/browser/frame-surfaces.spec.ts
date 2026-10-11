@@ -119,6 +119,10 @@ test('the same complete frame follows native surface sizes without changing stat
     ),
   ).toBe(3);
   await page.setViewportSize({ width: 390, height: 1000 });
+  const conditions = page.getByRole('dialog', { name: 'Условия объяснения' });
+  // setViewportSize precedes the browser's resize delivery. The old desktop field
+  // is still focused until the shell moves the active edit into this popover.
+  await expect(conditions).toBeVisible();
   await expect(speed).toHaveValue('3');
   await expect(speed).toBeFocused();
   await expect(page.locator('.ve-player:visible')).toHaveCount(1);
@@ -127,7 +131,23 @@ test('the same complete frame follows native surface sizes without changing stat
   );
   expect(beforePlay.playing).toBe(false);
   await speed.press('Escape');
-  await expect(page.getByRole('dialog', { name: 'Условия объяснения' })).toBeHidden();
+  await expect(conditions).toBeHidden();
+  const conditionsTrigger = page.getByRole('button', { name: 'Условия', exact: true });
+  await expect(conditionsTrigger).toBeFocused();
+  await page.setViewportSize({ width: 375, height: 1000 });
+  await expect
+    .poll(() =>
+      page.locator('[data-scene-frame]').evaluate((node) => {
+        const root = node.parentElement!,
+          style = getComputedStyle(root),
+          availableWidth =
+            root.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+        return Math.abs(node.getBoundingClientRect().width - availableWidth);
+      }),
+    )
+    .toBeLessThan(1);
+  await expect(conditions).toBeHidden();
+  await expect(conditionsTrigger).toBeFocused();
   await page.locator('[data-play]').click();
   await expect(
     page.getByRole('button', { name: 'Рассказ', exact: true, includeHidden: true }),

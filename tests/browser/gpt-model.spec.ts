@@ -668,23 +668,109 @@ test('warm local input reaches the next displayed frame within the interaction b
   await ready(page);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await command(page, parameters({ view: 'attention' }));
-  const report = await page.evaluate(async () => {
-    const scene = document.getElementById('gpt-model')!.scene!;
-    const samples = [];
-    for (let i = 0; i < 35; i++) {
-      const start = performance.now();
-      await scene.control([{ type: 'parameters', values: { token: 1 + (i % 3), source: i % 4 } }]);
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      if (i >= 5) samples.push(performance.now() - start);
+  const timings = [];
+  for (let i = 0; i < 35; i++) {
+    const field = i % 2 === 0 ? 'token' : 'source';
+    const value = field === 'token' ? 1 + (Math.floor(i / 2) % 3) : Math.floor(i / 2) % 4;
+    const action = `${field}-${value}`;
+    // Measure the actual input owner from its trusted click, excluding automation
+    // dispatch. scene.control also builds an agent inspection and has a separate budget.
+    const pending = await page.evaluateHandle(
+      ({ action, field }) => {
+        const root = document.getElementById('gpt-model')!;
+        const scene = root.scene!;
+        const abort = new AbortController();
+        let start = 0,
+          trusted = false;
+        const matches = (event: Event) =>
+          (event.target as Element).getAttribute('data-action') === action;
+        const result = new Promise<any>((resolve, reject) => {
+          root.addEventListener(
+            'click',
+            (event) => {
+              if (!matches(event)) return;
+              start = performance.now();
+              trusted = event.isTrusted;
+            },
+            { capture: true, signal: abort.signal },
+          );
+          root.addEventListener(
+            'click',
+            (event) => {
+              if (!matches(event)) return;
+              const handlerEnd = performance.now();
+              abort.abort();
+              void (async () => {
+                await scene.ready!();
+                const ready = performance.now();
+                const frames: number[] = [];
+                await new Promise<void>((painted) =>
+                  requestAnimationFrame(() => {
+                    frames.push(performance.now());
+                    requestAnimationFrame(() => {
+                      frames.push(performance.now());
+                      painted();
+                    });
+                  }),
+                );
+                const end = performance.now();
+                const state = scene.snapshot() as Record<string, unknown>;
+                resolve({
+                  trusted,
+                  action,
+                  elapsed: end - start,
+                  handler: handlerEnd - start,
+                  preparation: ready - handlerEnd,
+                  raf1: frames[0]! - ready,
+                  raf2: frames[1]! - frames[0]!,
+                  frameCount: frames.length,
+                  phase: scene.rendering?.phase,
+                  requested: scene.rendering?.requested.values[field],
+                  presented: scene.rendering?.presented?.values[field],
+                  value: state[field],
+                  pressed: root
+                    .querySelector(`[data-action="${action}"]`)
+                    ?.getAttribute('aria-pressed'),
+                  focus: (document.activeElement as HTMLElement | null)?.dataset.action,
+                  playing: scene.inspect({ presentation: false }).playing,
+                });
+              })().catch(reject);
+            },
+            { signal: abort.signal },
+          );
+        });
+        return { result };
+      },
+      { action, field },
+    );
+    try {
+      await page.locator(`#gpt-drawing [data-action="${action}"]`).click();
+      const measured = await pending.evaluate(({ result }) => result);
+      expect(measured.trusted, action).toBe(true);
+      expect(measured.phase, action).toBe('ready');
+      expect([measured.requested, measured.presented, measured.value], action).toEqual([
+        value,
+        value,
+        value,
+      ]);
+      expect(measured.pressed, action).toBe('true');
+      expect(measured.focus, action).toBe(action);
+      expect(measured.playing, action).toBe(false);
+      expect(measured.frameCount, action).toBe(2);
+      if (i >= 5) timings.push(measured);
+    } finally {
+      await pending.dispose();
     }
-    samples.sort((a, b) => a - b);
-    return {
-      samples,
-      p95: samples[Math.ceil(samples.length * 0.95) - 1],
-      surface: [innerWidth, innerHeight],
-      excludes: ['first preparation', 'LLM'],
-    };
-  });
+  }
+  const samples = timings.map((sample) => sample.elapsed).sort((a, b) => a - b);
+  const report = {
+    samples,
+    timings,
+    p95: samples[Math.ceil(samples.length * 0.95) - 1],
+    surface: await page.evaluate(() => [innerWidth, innerHeight]),
+    input: 'trusted token/source click → subject ready → two animation frames',
+    excludes: ['first preparation', 'LLM'],
+  };
   await mkdir(resolve('artifacts/gpt-acceptance'), { recursive: true });
   await writeFile(
     resolve('artifacts/gpt-acceptance/performance.json'),
