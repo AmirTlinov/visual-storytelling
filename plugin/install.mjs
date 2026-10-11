@@ -221,31 +221,42 @@ export async function installRelease(
     await pointAt(directory, relativeRelease);
     let priorRegistration,
       movedRegistration = false,
-      addedRegistration = false;
+      addedRegistration = false,
+      pluginRegistrationAttempted = false;
     try {
       if (register) {
-        const listed = await execute(codex, ['plugin', 'marketplace', 'list', '--json'], {
-          maxBuffer: 2_000_000,
-        });
-        priorRegistration = JSON.parse(listed.stdout).marketplaces.find(
-          (item) => item.name === 'visual-storytelling-local',
+        const listed = await execute(
+          codex,
+          ['plugin', 'list', '--marketplace', 'visual-storytelling-local', '--available', '--json'],
+          { maxBuffer: 2_000_000 },
         );
-        if (priorRegistration && (await realpath(priorRegistration.root)) !== directory) {
+        const registry = JSON.parse(listed.stdout);
+        if (!Array.isArray(registry.installed) || !Array.isArray(registry.available))
+          throw new Error('Codex returned an invalid Visual Storytelling plugin listing.');
+        priorRegistration = [...registry.installed, ...registry.available].find(
+          (item) => item.pluginId === 'visual-storytelling@visual-storytelling-local',
+        );
+        if (priorRegistration) {
           if (priorRegistration.marketplaceSource?.sourceType !== 'local')
             throw new Error(
               'The Visual Storytelling marketplace has a non-local source. Select its local installation explicitly.',
             );
-          await execute(
-            codex,
-            ['plugin', 'marketplace', 'remove', 'visual-storytelling-local', '--json'],
-            { maxBuffer: 2_000_000 },
-          );
-          movedRegistration = true;
+          if ((await realpath(priorRegistration.marketplaceSource.source)) !== directory) {
+            await execute(
+              codex,
+              ['plugin', 'marketplace', 'remove', 'visual-storytelling-local', '--json'],
+              { maxBuffer: 2_000_000 },
+            );
+            movedRegistration = true;
+          }
         }
-        await execute(codex, ['plugin', 'marketplace', 'add', directory, '--json'], {
-          maxBuffer: 2_000_000,
-        });
-        addedRegistration = true;
+        if (!priorRegistration || movedRegistration) {
+          await execute(codex, ['plugin', 'marketplace', 'add', directory, '--json'], {
+            maxBuffer: 2_000_000,
+          });
+          addedRegistration = true;
+        }
+        pluginRegistrationAttempted = true;
         await execute(
           codex,
           ['plugin', 'add', 'visual-storytelling@visual-storytelling-local', '--json'],
@@ -272,7 +283,7 @@ export async function installRelease(
       if (previousManifest) await atomicFile(marketplaceFile, previousManifest);
       else await rm(marketplaceFile, { force: true });
       let recovery = '';
-      if (movedRegistration || addedRegistration) {
+      if (movedRegistration || addedRegistration || pluginRegistrationAttempted) {
         try {
           if (addedRegistration && (movedRegistration || !priorRegistration))
             await execute(

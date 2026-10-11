@@ -78,6 +78,61 @@ function start(
   };
 }
 
+async function codexFixture(f, initial = {}) {
+  const state = join(f.root, 'codex-state.json'),
+    codex = join(f.root, 'codex');
+  await writeFile(
+    state,
+    JSON.stringify({
+      root: null,
+      sourceType: 'local',
+      installed: true,
+      removed: 0,
+      added: 0,
+      pluginInstalls: 0,
+      calls: [],
+      ...initial,
+    }),
+  );
+  await writeFile(
+    codex,
+    `#!${process.execPath}
+import assert from 'node:assert/strict';
+import {readFileSync,writeFileSync} from 'node:fs';
+import {join,resolve} from 'node:path';
+const path=${JSON.stringify(state)},state=JSON.parse(readFileSync(path)),args=process.argv.slice(2);
+const save=()=>writeFileSync(path,JSON.stringify(state));
+state.calls.push(args);save();
+if(args[0]==='mcp') {
+  assert.deepEqual(args,['mcp','get','visual-storytelling','--json']);
+  if(state.rejectMcp) {state.rejectMcp=false;save();process.exit(2)}
+  const spec=JSON.parse(readFileSync(${JSON.stringify(join(f.source, 'mcp.json'))})).mcpServers['visual-storytelling'];
+  console.log(JSON.stringify({enabled:true,transport:{...spec,cwd:'/stable-data',env:{PLUGIN_DATA:'/stable-data'}}}));
+} else if(args[1]==='list') {
+  assert.deepEqual(args,['plugin','list','--marketplace','visual-storytelling-local','--available','--json']);
+  const entries=state.root?[{pluginId:'visual-storytelling@visual-storytelling-local',marketplaceName:'visual-storytelling-local',name:'visual-storytelling',marketplaceSource:{sourceType:state.sourceType,source:state.root}}]:[];
+  console.log(JSON.stringify({installed:state.installed?entries:[],available:state.installed?[]:entries}));
+} else if(args[1]==='marketplace') {
+  if(args[2]==='list') throw new Error('An unrelated marketplace has a missing manifest');
+  if(args[2]==='remove') {
+    assert.equal(args[3],'visual-storytelling-local');state.root=null;state.removed++;
+  } else {
+    assert.equal(args[2],'add');state.root=args[3];state.sourceType='local';state.added++;
+  }
+  save();console.log('{}');
+} else {
+  assert.deepEqual(args,['plugin','add','visual-storytelling@visual-storytelling-local','--json']);
+  const marketplace=JSON.parse(readFileSync(join(state.root,'.agents/plugins/marketplace.json')));
+  state.cachedFrom=state.root;state.cachedRelease=resolve(state.root,marketplace.plugins[0].source.path);
+  state.cachedSkill=readFileSync(join(state.cachedRelease,'skills/setup/SKILL.md'),'utf8');
+  state.installed=true;state.pluginInstalls++;save();console.log('{}');
+}
+`,
+  );
+  await chmod(codex, 0o755);
+  return { codex, state, read: async () => JSON.parse(await readFile(state, 'utf8')) };
+}
+
 test('stable launcher survives source removal; upgrades preserve late imports in an active process', async (t) => {
   const f = await fixture(t),
     first = await installRelease(f.source, { directory: f.directory, register: false });
@@ -201,38 +256,21 @@ test('stale installation contenders preserve the new lock owner and publish comp
 test('moving an existing Codex marketplace restores registration when MCP loading fails', async (t) => {
   const f = await fixture(t),
     first = await installRelease(f.source, { directory: f.directory, register: false }),
-    prior = join(f.root, 'previous-marketplace'),
-    state = join(f.root, 'codex-state.json'),
-    codex = join(f.root, 'codex');
-  await mkdir(prior);
+    prior = join(f.root, 'previous-marketplace');
+  await mkdir(join(prior, '.agents/plugins'), { recursive: true });
   await writeFile(
-    state,
-    JSON.stringify({ root: await realpath(prior), rejectMcp: true, removed: 0 }),
+    join(prior, '.agents/plugins/marketplace.json'),
+    JSON.stringify({ plugins: [{ source: { source: 'local', path: first.release } }] }),
   );
-  await writeFile(
-    codex,
-    `#!${process.execPath}
-import {readFileSync,writeFileSync} from 'node:fs';
-const path=${JSON.stringify(state)},state=JSON.parse(readFileSync(path)),args=process.argv.slice(2);
-const save=()=>writeFileSync(path,JSON.stringify(state));
-if(args[0]==='mcp') {
-  if(state.rejectMcp) {state.rejectMcp=false;save();process.exit(2)}
-  const spec=JSON.parse(readFileSync(${JSON.stringify(join(f.source, 'mcp.json'))})).mcpServers['visual-storytelling'];
-  console.log(JSON.stringify({enabled:true,transport:{...spec,cwd:'/stable-data',env:{PLUGIN_DATA:'/stable-data'}}}));
-} else if(args[1]==='marketplace') {
-  if(args[2]==='list') console.log(JSON.stringify({marketplaces:state.root?[{name:'visual-storytelling-local',root:state.root,marketplaceSource:{sourceType:'local',source:state.root}}]:[]}));
-  else {if(args[2]==='remove'){state.root=null;state.removed++}else state.root=args[3];save();console.log('{}')}
-} else {state.cachedFrom=state.root;save();console.log('{}')}
-`,
-  );
-  await chmod(codex, 0o755);
+  const cli = await codexFixture(f, { root: await realpath(prior), rejectMcp: true }),
+    { codex } = cli;
   await writeFile(join(f.source, 'plugin/dist/value.mjs'), `export const value='update';`);
   await assert.rejects(
     installRelease(f.source, { directory: f.directory, codex }),
     /registration failed/,
   );
   assert.equal(await realpath(join(f.directory, 'current')), first.release);
-  const restored = JSON.parse(await readFile(state, 'utf8'));
+  const restored = await cli.read();
   assert.equal(restored.root, await realpath(prior));
   assert.equal(
     restored.cachedFrom,
@@ -241,12 +279,72 @@ if(args[0]==='mcp') {
   );
   const installed = await installRelease(f.source, { directory: f.directory, codex });
   assert.equal(installed.registered, true);
-  const accepted = JSON.parse(await readFile(state, 'utf8'));
+  const accepted = await cli.read();
   assert.equal(accepted.root, await realpath(f.directory));
   await installRelease(f.source, { directory: f.directory, codex });
   assert.equal(
-    JSON.parse(await readFile(state, 'utf8')).removed,
+    (await cli.read()).removed,
     accepted.removed,
     'subsequent updates retain the stable marketplace',
   );
+});
+
+test('registration refreshes its own cached skill without scanning unrelated marketplaces', async (t) => {
+  const f = await fixture(t),
+    cli = await codexFixture(f),
+    options = { directory: f.directory, codex: cli.codex };
+  const first = await installRelease(f.source, options);
+  const initial = await cli.read();
+  assert.equal(initial.added, 1, 'first installation registers its marketplace');
+  assert.equal(initial.cachedRelease, first.release);
+  const skill = '---\nname: setup\ndescription: Updated\n---\nUpdated authoring guidance';
+  await writeFile(join(f.source, 'skills/setup/SKILL.md'), skill);
+  const updated = await installRelease(f.source, options);
+  const registered = await cli.read();
+  assert.notEqual(updated.release, first.release);
+  assert.equal(registered.cachedRelease, updated.release);
+  assert.equal(registered.cachedSkill, skill, 'plugin add refreshes the installed skill');
+  assert.equal(registered.added, 1, 'the stable root is reused');
+  assert.equal(registered.removed, 0);
+  await writeFile(cli.state, JSON.stringify({ ...registered, installed: false }));
+  await installRelease(f.source, options);
+  const available = await cli.read();
+  assert.equal(available.added, 1, 'a configured but uninstalled plugin is found in available');
+  assert.equal(available.removed, 0);
+  assert.equal(available.installed, true);
+});
+
+test('failed stable-root updates restore both the selected release and the cached skill', async (t) => {
+  const f = await fixture(t),
+    cli = await codexFixture(f),
+    options = { directory: f.directory, codex: cli.codex };
+  const first = await installRelease(f.source, options),
+    before = await cli.read();
+  await writeFile(join(f.source, 'skills/setup/SKILL.md'), 'Updated authoring guidance');
+  await writeFile(cli.state, JSON.stringify({ ...before, rejectMcp: true }));
+  await assert.rejects(installRelease(f.source, options), /registration failed/);
+  const restored = await cli.read();
+  assert.equal(await realpath(join(f.directory, 'current')), first.release);
+  assert.equal(restored.root, await realpath(f.directory));
+  assert.equal(restored.cachedRelease, first.release);
+  assert.equal(restored.cachedSkill, before.cachedSkill);
+  assert.equal(restored.pluginInstalls, before.pluginInstalls + 2);
+  assert.equal(restored.added, before.added);
+  assert.equal(restored.removed, before.removed);
+});
+
+test('registration preserves a non-local marketplace with the same name', async (t) => {
+  const f = await fixture(t),
+    first = await installRelease(f.source, { directory: f.directory, register: false }),
+    cli = await codexFixture(f, { root: 'https://example.com/marketplace.git', sourceType: 'git' });
+  await writeFile(join(f.source, 'plugin/dist/value.mjs'), `export const value='update';`);
+  await assert.rejects(
+    installRelease(f.source, { directory: f.directory, codex: cli.codex }),
+    /non-local source/,
+  );
+  const after = await cli.read();
+  assert.equal(await realpath(join(f.directory, 'current')), first.release);
+  assert.equal(after.added, 0);
+  assert.equal(after.removed, 0);
+  assert.equal(after.pluginInstalls, 0);
 });
