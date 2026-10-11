@@ -126,20 +126,9 @@ else if (args[0] === 'build') {
     );
     await assert.rejects(
       checkNarration(await readFile(join(scene, 'index.html'), 'utf8'), scene),
-      /provider changed/,
+      /Unsupported narration provider/,
     );
-    await audio({ SKETCH_AUDIO_BIN: join(directory, 'missing-higgs') });
-    const system = JSON.parse(await readFile(join(scene, 'voice.json'), 'utf8'));
-    assert.equal(system.provider, 'macos');
-    assert.ok(system.voice);
-    const systemWaveform = await readFile(join(scene, 'audio.wav'));
-    assert.equal(systemWaveform.toString('ascii', 0, 4), 'RIFF');
-    await checkNarration(await readFile(join(scene, 'index.html'), 'utf8'), scene);
-    await writeFile(
-      join(scene, 'voice.json'),
-      JSON.stringify({ ...system, voice: 'missing-voice' }),
-    );
-    await assert.rejects(audio(), (error) => /Выбранный голос отсутствует/.test(error.stderr));
-    assert.deepEqual(await readFile(join(scene, 'audio.wav')), systemWaveform);
+    await assert.rejects(audio(), (error) => /Unsupported narration provider/.test(error.stderr));
+    assert.deepEqual(await readFile(join(scene, 'audio.wav')), waveform);
   },
 );

@@ -124,9 +124,17 @@ export function authoringTools(server, runtime, uri, safely) {
           .object({
             cue: z.string().min(1).max(256).optional(),
             from: z.number().finite().nonnegative().optional(),
-            at: z.number().finite().nonnegative().optional()
+            at: z
+              .number()
+              .finite()
+              .nonnegative()
+              .optional()
               .describe('Center of the temporal overlay, in source seconds.'),
-            radius: z.number().finite().positive().optional()
+            radius: z
+              .number()
+              .finite()
+              .positive()
+              .optional()
               .describe('Fade distance before and after the center, in seconds.'),
             seconds: z.number().finite().positive().optional(),
             frames: z.number().int().min(2).max(32).optional(),
@@ -224,15 +232,17 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_voice',
     {
       description:
-        'Inspect local neural Higgs, its download/disk/memory requirements, and explicitly selectable macOS voices. Enable narration only when the user wants it; discuss missing language, voice, delivery and pace preferences in chat before synthesis. enabled=true saves one undoable edit then prepares needed Python, models and synchronized narration through the cancellable JobRunner. New narration defaults to Higgs; choose provider="macos" only for an explicitly requested system voice. Toggling preserves the provider and voice; playback muting is separate.',
+        'Inspect or select narration: default local Higgs TTS 3 BF16, a user-selected local model, or an API connected by the agent. For local/api, provide model and a project-relative .mjs adapter; read skills/visual-explainer/references/voice-adapter.md in the installed plugin. The adapter returns WAV and actual speech timestamps; keep API credentials in the runtime environment, outside project files. Inspection checks adapter configuration without a synthesis/API request. enabled=true saves one undoable edit and prepares synchronized narration through the cancellable JobRunner. Only Higgs prepares MLX dependencies. Enable narration when requested; preserve the selected model when it fails. Toggling preserves settings; playback muting is separate.',
       inputSchema: {
         projectId: projectId.optional(),
         sourceRevision: z.string().optional(),
         requestId: requestId.optional(),
         enabled: z.boolean().optional(),
-        provider: z.enum(['higgs', 'macos']).optional(),
+        provider: z.enum(['higgs', 'local', 'api']).optional(),
         voice: z.string().max(200).optional(),
         language: z.string().max(35).optional(),
+        model: z.string().min(1).max(200).optional(),
+        adapter: z.string().min(1).max(1000).optional(),
       },
       annotations: changeView,
     },
@@ -260,7 +270,6 @@ export function authoringTools(server, runtime, uri, safely) {
           .object({
             projectsDirectory: z.string().min(1).max(1000).optional(),
             language: z.string().min(2).max(35).optional(),
-            voice: z.string().max(200).nullable().optional(),
             cacheLimitMB: z.number().int().min(256).max(32768).optional(),
           })
           .strict()

@@ -159,7 +159,11 @@ test('retry verifies the recorded worker, toolchain and bundled runtime across r
   assert.notEqual(retried.id, job.id);
   assert.equal((await terminal(same, retried.id)).status, 'failed');
   await same.close();
-  for (const relative of ['tools/prepare.mjs', 'dist/voice/macos', 'runtime/npm/bin/npm-cli.js']) {
+  for (const relative of [
+    'tools/prepare.mjs',
+    'tools/voice/adapter.mjs',
+    'runtime/npm/bin/npm-cli.js',
+  ]) {
     const file = join(toolchainRoot, relative);
     await mkdir(dirname(file), { recursive: true });
     await writeFile(file, 'updated toolchain');

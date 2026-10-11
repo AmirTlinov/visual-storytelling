@@ -170,12 +170,10 @@ export async function pinSceneProject(
 ) {
   const { packRuntime } = await import('./runtime-package.mjs');
   const receipt = await packRuntime(destination, { root, build, signal });
-  const hasVoice = await stat(join(root, 'dist/voice/macos'))
-    .catch(() => stat(join(root, 'tools/sketch-audio')))
-    .then(
-      () => true,
-      () => false,
-    );
+  const hasVoice = await stat(join(root, 'tools/narration.mjs')).then(
+    () => true,
+    () => false,
+  );
   await writeFile(
     join(destination, 'package.json'),
     JSON.stringify(

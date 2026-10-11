@@ -12,8 +12,9 @@ import { JobRunner } from '../jobs.mjs';
 import { ProjectWatch } from '../project-watch.mjs';
 import { Preferences } from '../preferences.mjs';
 import { environmentStatus, configureEnvironment } from '../../tools/environment.mjs';
-import { macosVoice } from '../../tools/voice/macos.mjs';
 import { higgsVoice } from '../../tools/voice/higgs.mjs';
+import { adapterVoiceStatus, validateAdapterSettings } from '../../tools/voice/adapter.mjs';
+import { narrationProvider, voiceSettingsForDisplay } from '../../tools/voice/settings.mjs';
 import { requireVoiceSupport } from '../../tools/environment/voice.mjs';
 import { collectCache } from '../cache.mjs';
 import { errorData } from '../errors.mjs';
@@ -434,22 +435,75 @@ const operations = {
   async preferences({ patch } = {}) {
     return patch ? preferences.update(patch) : preferences.read();
   },
-  async voice({ projectId, sourceRevision, requestId, enabled, provider, voice, language }) {
+  async voice({
+    projectId,
+    sourceRevision,
+    requestId,
+    enabled,
+    provider,
+    voice,
+    language,
+    model,
+    adapter,
+  }) {
     const defaults = await preferences.read();
     const previous = projectId
       ? await readJSON(join(projects.get(projectId).path, 'voice.json'))
       : undefined;
     provider ??= previous?.provider ?? 'higgs';
-    if (!['higgs', 'macos'].includes(provider)) throw new Error('Unknown narration provider.');
-    if (enabled && provider === 'higgs') requireVoiceSupport();
     const selectedLanguage = language ?? previous?.language ?? defaults.language;
+    const settings = {
+      ...(previous?.provider === provider ? previous : {}),
+      ...(enabled !== undefined && { enabled }),
+      provider,
+      language: selectedLanguage,
+      ...(voice !== undefined && { voice }),
+      ...(model !== undefined && { model }),
+      ...(adapter !== undefined && { adapter }),
+    };
+    const persist = () =>
+      operations.edit({
+        projectId,
+        sourceRevision,
+        requestId,
+        changes: [{ path: 'voice.json', content: JSON.stringify(settings, null, 2) + '\n' }],
+      });
+    // Turning speech off must remain possible when a selected backend is incomplete or removed.
+    if (enabled === false) return persist();
+    try {
+      narrationProvider(settings);
+    } catch (error) {
+      if (enabled !== undefined) throw error;
+      return {
+        provider,
+        supported: false,
+        ready: false,
+        reason: error.message,
+        voices: [],
+        settings: voiceSettingsForDisplay(previous),
+      };
+    }
+    if (enabled && provider === 'higgs') requireVoiceSupport();
     if (enabled === undefined) {
       await configureEnvironment(data);
-      const [higgs, macos] = await Promise.all([higgsVoice.doctor(), macosVoice.doctor()]);
+      const higgs = await higgsVoice.doctor();
       const environment = await environmentStatus(data);
       const choices = [
-        { provider: 'higgs', kind: 'neural', ...higgs },
-        { provider: 'macos', kind: 'system', supported: process.platform === 'darwin', ...macos },
+        { provider: 'higgs', kind: 'local', ...higgs },
+        ...(await Promise.all(
+          ['local', 'api'].map(async (id) => ({
+            provider: id,
+            kind: id,
+            ...(id === provider && projectId
+              ? await adapterVoiceStatus(projects.get(projectId).path, settings)
+              : {
+                  supported: true,
+                  ready: false,
+                  voices: [],
+                  reason: 'Выберите модель и подключите её адаптер через агента.',
+                }),
+          })),
+        )),
       ].map((status) => {
         const voices = status.voices.filter(
           (v) => v.language.split('-')[0] === selectedLanguage.split('-')[0],
@@ -471,6 +525,7 @@ const operations = {
         supported: status.supported,
         ready: status.ready,
         reason: status.reason,
+        providers: choices,
         voices: choices.flatMap((choice) =>
           choice.voices.map((item) => ({
             ...item,
@@ -481,35 +536,31 @@ const operations = {
             reason: choice.reason,
           })),
         ),
-        settings: previous,
-        requirements: environment.higgs.requirements,
+        settings: voiceSettingsForDisplay(previous),
+        ...(provider === 'higgs' && { requirements: environment.higgs.requirements }),
+        ...(provider !== 'higgs' && {
+          readiness: status.ready ? 'adapter-configured' : 'configuration-required',
+          synthesisVerified: false,
+        }),
       };
     }
-    const settings = {
-      ...(previous?.provider === provider ? previous : {}),
-      enabled,
-      provider,
-      language: selectedLanguage,
-    };
-    if (provider === 'macos') {
-      settings.voice = voice ?? settings.voice ?? defaults.voice;
-      if (enabled) {
-        const selected = await macosVoice.prepare(settings, {});
-        settings.voice = selected.id;
-        settings.rate = selected.rate;
-      }
-    } else {
+    if (provider === 'higgs') {
+      if (adapter !== undefined || model !== undefined)
+        throw new Error('Для своей модели выберите provider: "local" или "api".');
       if (voice && voice !== 'higgs')
-        throw new Error('Для системного голоса явно выберите provider: "macos".');
+        throw new Error(
+          'Голос Higgs задаётся образцом в narration.json; другую модель подключите как local или api.',
+        );
       if (enabled && selectedLanguage.split('-')[0] !== 'ru')
         throw new Error('Для Higgs сейчас поддерживается русская речь. Выберите ru-RU.');
+    } else {
+      validateAdapterSettings(settings);
+      if (enabled) {
+        const status = await adapterVoiceStatus(projects.get(projectId).path, settings);
+        if (!status.ready) throw new Error(status.reason);
+      }
     }
-    return operations.edit({
-      projectId,
-      sourceRevision,
-      requestId,
-      changes: [{ path: 'voice.json', content: JSON.stringify(settings, null, 2) + '\n' }],
-    });
+    return persist();
   },
   async focus({ sessionId, renderer, generation, report }) {
     const claim = playbackClaim

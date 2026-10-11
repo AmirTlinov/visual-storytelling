@@ -137,25 +137,68 @@ test(
       assert.match(JSON.stringify(help.structuredContent), /SceneHandle/);
       const voiceList = (await call('story_voice', { projectId: project.id })).structuredContent;
       assert.equal(voiceList.provider, 'higgs');
-      assert.equal(voiceList.voices[0].kind, 'neural');
-      assert.ok(voiceList.voices.length);
-      const selectedVoice = voiceList.voices.find(
-        (voice) => voice.provider === 'macos' && voice.language.startsWith('ru'),
+      assert.equal(voiceList.settings.provider, 'higgs');
+      assert.deepEqual(
+        voiceList.providers.map(({ provider }) => provider),
+        ['higgs', 'local', 'api'],
       );
-      assert.ok(selectedVoice?.ready);
+      assert.equal(voiceList.voices[0].kind, 'local');
+      assert.ok(voiceList.voices.length);
+      assert.ok(voiceList.voices.every((voice) => voice.provider !== 'macos'));
       assert.equal(await app.locator('#voice, #voice-options').count(), 0);
       assert.equal(Boolean(voiceList.settings?.enabled), false);
-      const voiceDisabled = await call('story_voice', {
+      const voiceTool = (await host.client.listTools()).tools.find(
+        ({ name }) => name === 'story_voice',
+      );
+      assert.deepEqual(voiceTool.inputSchema.properties.provider.enum, ['higgs', 'local', 'api']);
+      assert.equal(voiceTool.inputSchema.properties.model.type, 'string');
+      assert.equal(voiceTool.inputSchema.properties.adapter.type, 'string');
+      const jobsBeforeUnsupportedVoice = await readdir(join(directory, 'data/jobs'));
+      const unsupportedVoice = await host.client.callTool({
+        name: 'story_voice',
+        arguments: {
+          projectId: project.id,
+          sourceRevision: undone.structuredContent.project.sourceRevision,
+          requestId: randomUUID(),
+          enabled: true,
+          provider: 'macos',
+        },
+      });
+      assert.equal(unsupportedVoice.isError, true);
+      assert.equal(
+        (await call('story_inspect', { projectId: project.id })).structuredContent.sourceRevision,
+        undone.structuredContent.project.sourceRevision,
+        'an unsupported provider does not edit the project',
+      );
+      assert.deepEqual(await readdir(join(directory, 'data/jobs')), jobsBeforeUnsupportedVoice);
+      const adapterAdded = await call('story_edit', {
         projectId: project.id,
         sourceRevision: undone.structuredContent.project.sourceRevision,
         requestId: randomUUID(),
+        changes: [
+          {
+            path: 'voice/adapter.mjs',
+            content: await readFile(
+              new URL('./fixtures/voice-adapter.mjs', import.meta.url),
+              'utf8',
+            ),
+          },
+        ],
+      });
+      await finish(adapterAdded.structuredContent.job.id);
+      const voiceDisabled = await call('story_voice', {
+        projectId: project.id,
+        sourceRevision: adapterAdded.structuredContent.project.sourceRevision,
+        requestId: randomUUID(),
         enabled: false,
-        provider: 'macos',
-        voice: selectedVoice.id,
+        provider: 'local',
+        model: 'fixture',
+        adapter: 'voice/adapter.mjs',
+        voice: 'fixture',
         language: 'ru',
       });
       await finish(voiceDisabled.structuredContent.job.id);
-      await call('story_preferences', { patch: { language: 'en', voice: null } });
+      await call('story_preferences', { patch: { language: 'en' } });
       const narrated = await call('story_voice', {
         projectId: project.id,
         sourceRevision: voiceDisabled.structuredContent.project.sourceRevision,
@@ -165,8 +208,10 @@ test(
       await finish(narrated.structuredContent.job.id);
       const voiceSettings = (await call('story_voice', { projectId: project.id })).structuredContent
         .settings;
-      assert.equal(voiceSettings.voice, selectedVoice.id);
-      assert.equal(voiceSettings.provider, 'macos');
+      assert.equal(voiceSettings.voice, 'fixture');
+      assert.equal(voiceSettings.provider, 'local');
+      assert.equal(voiceSettings.model, 'fixture');
+      assert.equal(voiceSettings.adapter, 'voice/adapter.mjs');
       assert.equal(
         voiceSettings.language,
         'ru',
@@ -196,7 +241,7 @@ test(
       assert.equal(
         (await readdir(join(directory, 'data/speech'))).length,
         script.segments.length + 1,
-        'only the changed phrase adds a synthesized take',
+        'only the changed phrase adds an adapter take',
       );
       const produced = await call('story_produce', {
         target: {
@@ -237,9 +282,15 @@ test(
       assert.equal(media.streams.find((s) => s.codec_type === 'video').width, 640);
       assert.ok(
         media.streams.some((s) => s.codec_type === 'audio'),
-        'export includes actual narration',
+        'export includes the decodable adapter-produced audio',
       );
       assert.ok(Number(media.format.duration) > 1, 'the published video contains the story');
+      const captions = await readFile(
+        job.result.files.find((p) => p.endsWith('.srt')),
+        'utf8',
+      );
+      assert.match(captions, /Три шага вправо/);
+      assert.match(captions, /Теперь проверьте свой вариант/);
       const delivery = await browser.newPage();
       await delivery.context().setOffline(true);
       await delivery.goto(pathToFileURL(job.result.files.find((p) => p.endsWith('.html'))).href);

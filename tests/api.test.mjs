@@ -30,7 +30,8 @@ test('CLI discovery respects a runtime without character and Higgs authoring too
   const creation = (await run('new', '--help')).stdout;
   assert.match(creation, /story_voice/);
   assert.match(creation, /local neural Higgs/);
-  assert.match(creation, /provider.*macos/);
+  assert.match(creation, /provider: local or api/);
+  assert.doesNotMatch(creation, /provider.*macos/);
   await assert.rejects(run('characters', '--help'), (error) => {
     assert.match(error.stderr, /does not include \.\/characters/);
     assert.doesNotMatch(error.stderr, /ERR_MODULE_NOT_FOUND/);

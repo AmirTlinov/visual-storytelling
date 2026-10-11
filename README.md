@@ -63,7 +63,7 @@ npm run plugin:release
 
 Авторский маршрут: `story_help → story_create → story_edit → story_review → story_open → story_produce`. `story_create` без `example` создаёт редактируемый каркас без карточки и сеанса; `example: "gpt-model"` явно копирует эталон. `story_open(projectId)` показывает подготовленную работу. Правки используют `sourceRevision` и уникальный `requestId`; повтор сохраняет исходный receipt. Голос, выпуск и обновление runtime выбираются в чате.
 
-Проекты по умолчанию хранятся в `~/Library/Application Support/Visual Storytelling/projects` на Mac и `${XDG_DATA_HOME:-$HOME/.local/share}/visual-storytelling/projects` на Linux. Первая установка зависимостей использует npm registry; видео и озвучка подготавливают свои инструменты по необходимости. Озвучка необязательна: `story_voice` сообщает доступность и включает выбранного провайдера. [Формат сценария и голос](skills/visual-explainer/references/narration.md).
+Проекты по умолчанию хранятся в `~/Library/Application Support/Visual Storytelling/projects` на Mac и `${XDG_DATA_HOME:-$HOME/.local/share}/visual-storytelling/projects` на Linux. Первая установка зависимостей использует npm registry; видео и озвучка подготавливают свои инструменты по необходимости. Озвучка необязательна. По умолчанию используется локальный Higgs TTS 3 BF16 с принятым мужским образцом; другую локальную модель или API агент подключает через [адаптер проекта](skills/visual-explainer/references/voice-adapter.md). `story_voice` сохраняет выбор в `voice.json`; системных голосов и автоматической замены провайдера нет. [Формат сценария и голос](skills/visual-explainer/references/narration.md).
 
 ## Возможности и владельцы
 

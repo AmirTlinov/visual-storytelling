@@ -7,12 +7,13 @@ export class Preferences {
     this.data = data;
   }
   async read() {
+    const saved = { ...(await readJSON(join(this.data, 'preferences.json'))) };
+    delete saved.voice;
     return {
       projectsDirectory: join(this.data, 'projects'),
       language: 'ru-RU',
-      voice: null,
       cacheLimitMB: 2048,
-      ...(await readJSON(join(this.data, 'preferences.json'))),
+      ...saved,
     };
   }
   async update(patch) {

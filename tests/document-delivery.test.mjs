@@ -6,10 +6,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildScene } from '../tools/build-pages.mjs';
 import { packDirectory } from '../tools/standalone.mjs';
-import { setNarrationMode } from '../tools/narration.mjs';
-import { voiceDigest } from '../tools/voice/macos.mjs';
+import { playbackTimeline, setNarrationMode } from '../tools/narration.mjs';
+import { buildAdapterNarration } from '../tools/voice/adapter.mjs';
+import { narrationSource } from '../tools/story-document.mjs';
 import { renderer } from '../tools/render.mjs';
-import { documentNarration } from '../dist/story/document.js';
 
 const repository = fileURLToPath(new URL('../', import.meta.url));
 const evidence = join(repository, 'artifacts/coherent-authoring/document-delivery');
@@ -95,48 +95,41 @@ test(
         },
       ],
     };
-    const timing = {
-      duration: 6,
-      segments: [
-        { id: 'area', start: 0, end: 6, text: 'Сначала считаем клетки. Два ряда по три клетки.' },
-      ],
-      cues: { 'area.count': { start: 0, end: 3 }, 'area.result': { start: 3, end: 6 } },
+    const settings = {
+      enabled: true,
+      provider: 'local',
+      model: 'fixture',
+      adapter: 'voice/adapter.mjs',
+      voice: 'fixture',
+      language: 'ru-RU',
     };
-    const explicit = {
-      duration: 6,
-      segments: timing.segments,
-      cues: { 'area.count': { start: 0, end: 1 }, 'area.result': { start: 1, end: 6 } },
-    };
-    const settings = { enabled: true, provider: 'macos', voice: 'test-fixture' };
     await writeFile(join(source, 'story.json'), JSON.stringify(document));
     await writeFile(join(source, 'voice.json'), JSON.stringify(settings));
+    await mkdir(join(source, 'voice'));
     await writeFile(
-      join(source, 'timeline.json'),
-      JSON.stringify({
-        ...timing,
-        audio: 'audio.wav',
-        digest_format: 'canonical-json-v1',
-        source_sha256: voiceDigest(documentNarration(document)),
-        voice_settings: settings,
-        synthesis: { provider: 'macos', reference_path: '/private/source-only.wav' },
-      }),
+      join(source, settings.adapter),
+      await readFile(new URL('./fixtures/voice-adapter.mjs', import.meta.url)),
     );
-    // A real, decodable WAV exercises media duration and absolute seek without a model download.
-    const rate = 8000,
-      wav = Buffer.alloc(44 + 6 * rate * 2);
-    wav.write('RIFF');
-    wav.writeUInt32LE(wav.length - 8, 4);
-    wav.write('WAVEfmt ', 8);
-    wav.writeUInt32LE(16, 16);
-    wav.writeUInt16LE(1, 20);
-    wav.writeUInt16LE(1, 22);
-    wav.writeUInt32LE(rate, 24);
-    wav.writeUInt32LE(rate * 2, 28);
-    wav.writeUInt16LE(2, 32);
-    wav.writeUInt16LE(16, 34);
-    wav.write('data', 36);
-    wav.writeUInt32LE(wav.length - 44, 40);
-    await writeFile(join(source, 'audio.wav'), wav);
+    const speech = await narrationSource(source);
+    await buildAdapterNarration(source, speech.file, settings, {
+      cache: join(temporary, 'speech'),
+    });
+    const receipt = JSON.parse(await readFile(join(source, 'timeline.json'), 'utf8'));
+    const timing = playbackTimeline(receipt);
+    assert.equal(receipt.synthesis.provider, 'local');
+    assert.equal(
+      timing.cues['area.result'].start,
+      2.2,
+      'the second phrase starts at its generated tone',
+    );
+    const explicit = {
+      duration: timing.duration,
+      segments: timing.segments,
+      cues: {
+        'area.count': { start: timing.cues['area.count'].start, end: 1 },
+        'area.result': { start: 1, end: timing.duration },
+      },
+    };
     const html =
       '<!doctype html><html><head></head><body><main class="ve-scene" id="story"></main><audio data-silent="true" src="audio.wav"></audio><script type="module" src="scene.js"></script></body></html>';
     await writeFile(join(source, 'index.html'), setNarrationMode(html, false));
@@ -157,7 +150,6 @@ test(
     );
     await buildScene(source, built, { sourcePackage: true });
     const packed = await packDirectory(built, 'index.html', { audio: 'original' });
-    assert.ok(!packed.includes('/private/source-only.wav'));
     await writeFile(join(portable, 'index.html'), packed);
     await writeFile(
       join(built, 'index.html'),
@@ -179,7 +171,7 @@ test(
     await rm(source, { recursive: true });
     await rm(built, { recursive: true });
     for (const [entry, start, audible] of [
-      ['index.html', 3, true],
+      ['index.html', timing.cues['area.result'].start, true],
       ['explicit.html', 1, true],
       ['silent.html', 2.5, false],
     ]) {
@@ -215,15 +207,25 @@ test(
           source: audio.getAttribute('src'),
           timing: audio.dataset.storyTimeline,
         }));
-        assert.equal(media.duration, 6);
+        assert.equal(media.duration, timing.duration);
         assert.equal(media.time, 4);
         assert.match(media.source, /^data:audio\//);
         assert.match(media.timing, /^data:application\/json/);
-        if (entry === 'index.html')
-          assert.deepEqual(
-            JSON.parse(Buffer.from(media.timing.split(',')[1], 'base64').toString()),
-            timing,
-          );
+        if (entry === 'index.html') {
+          const embedded = JSON.parse(Buffer.from(media.timing.split(',')[1], 'base64').toString());
+          assert.deepEqual(embedded, timing);
+          for (const name of [
+            'source_sha256',
+            'authored_source_sha256',
+            'audio_sha256',
+            'digest_format',
+            'voice_settings',
+            'synthesis',
+            'alignment',
+            'sample_rate',
+          ])
+            assert.equal(Object.hasOwn(embedded, name), false, `playback excludes ${name}`);
+        }
         await render.seek(0.5);
         assert.equal(
           await render.page.locator('audio').evaluate((audio) => audio.currentTime),

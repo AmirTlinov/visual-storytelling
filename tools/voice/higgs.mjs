@@ -95,7 +95,7 @@ export const higgsVoice = {
   async prepare(settings, task = {}) {
     if (settings.voice && settings.voice !== 'higgs')
       throw new Error(
-        'Для системного голоса явно выберите provider: "macos". Голос Higgs задаётся образцом в narration.json.',
+        'Голос Higgs задаётся образцом в narration.json. Для другой модели выберите provider: "local" или "api" и подключите её адаптер.',
       );
     if (settings.language && settings.language.split('-')[0] !== 'ru')
       throw new Error('Локальный Higgs настроен на русскую речь и русское выравнивание слов.');
@@ -126,7 +126,7 @@ export const higgsVoice = {
           ? resolve()
           : reject(
               new Error(
-                `Higgs narration failed (exit ${code}). Системный голос автоматически не выбирается.`,
+                `Higgs narration failed (exit ${code}). Выбранная модель сохранена; исправьте её подготовку или выберите другую в чате.`,
               ),
             ),
       );

@@ -343,7 +343,7 @@ try {
   const jobsBeforeVoice = (await readdir(join(data, 'jobs'))).sort();
   const historyBeforeVoice = await directoryState(join(project.path, '.vstory'));
   const rejectedProviders = [];
-  for (const provider of ['higgs', 'macos']) {
+  for (const provider of ['higgs', 'macos', 'local', 'api']) {
     const rejected = await client.callTool(
       {
         name: 'story_voice',
@@ -364,7 +364,14 @@ try {
       .filter((item) => item.type === 'text')
       .map((item) => item.text)
       .join('\n');
-    assert.match(reason, provider === 'higgs' ? /MLX.*macOS Apple Silicon/ : /macOS/);
+    assert.match(
+      reason,
+      provider === 'higgs'
+        ? /MLX.*macOS Apple Silicon/
+        : provider === 'macos'
+          ? /Invalid|Unsupported|higgs.*local.*api/is
+          : /model|adapter/i,
+    );
     assert.equal(
       (await call('story_inspect', { projectId: project.id })).sourceRevision,
       project.sourceRevision,

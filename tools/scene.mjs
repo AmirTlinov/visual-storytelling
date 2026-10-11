@@ -125,7 +125,7 @@ Compare content even when versions match; detect stale sources or modified runti
   else if (values.help || command === 'help' || !command)
     console.log(
       command === 'new'
-        ? `${newUsage}\n\n--no-audio defers narration while keeping its editable script.\n--silent creates a scene without speech files or audio controls, preserving cues and asset credits.\n--audio synthesizes the template narration immediately using voice.json. Without a provider, local neural Higgs is used through sketch-audio. Missing Higgs stops preparation; system voices require explicit provider: macos. In the plugin, story_voice owns this choice.`
+        ? `${newUsage}\n\n--no-audio defers narration while keeping its editable script.\n--silent creates a scene without speech files or audio controls, preserving cues and asset credits.\n--audio synthesizes the template narration immediately using voice.json. Without a provider, local neural Higgs is used through sketch-audio. Missing Higgs stops preparation. Choose provider: local or api with a selected model and a project adapter to connect another speech backend. In the plugin, story_voice owns this choice.`
         : command === 'deliver'
           ? `visual-story deliver DIRECTORY [--out artifacts/release] [--formats html,png,svg,mp4,srt,vtt,source]
 

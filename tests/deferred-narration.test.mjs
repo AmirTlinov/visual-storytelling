@@ -112,7 +112,7 @@ test(
 
 test(
   'quiet story documents retain a speech projection and explicit audio activates the same script',
-  { timeout: 90000, skip: process.platform !== 'darwin' },
+  { timeout: 90000 },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'quiet-document-voice-'));
     const projections = [];
@@ -138,9 +138,20 @@ test(
         );
       }
       const project = join(directory, 'chapters');
+      await mkdir(join(project, 'voice'));
+      await cp(
+        new URL('./fixtures/voice-adapter.mjs', import.meta.url),
+        join(project, 'voice/adapter.mjs'),
+      );
       await writeFile(
         join(project, 'voice.json'),
-        JSON.stringify({ enabled: false, provider: 'macos', language: 'ru-RU' }),
+        JSON.stringify({
+          enabled: false,
+          provider: 'api',
+          model: 'fixture',
+          adapter: 'voice/adapter.mjs',
+          language: 'ru-RU',
+        }),
       );
       const result = await buildNarration(project, {
         cache: join(directory, 'speech'),

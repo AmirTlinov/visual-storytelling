@@ -22,6 +22,7 @@ import { snapshotProject, projectFiles, projectFile, digest } from '../tools/pro
 import { writeJSON, readJSON } from '../tools/storage.mjs';
 import { prepareEnvironment } from '../tools/environment.mjs';
 import { buildNarration } from '../tools/narration.mjs';
+import { narrationProvider } from '../tools/voice/settings.mjs';
 import { updateSceneRuntime, readPinnedRuntime } from '../tools/runtime-package.mjs';
 import { contentDigest } from '../tools/build-info.mjs';
 import { captureWorkingInput } from './revision-input.mjs';
@@ -160,12 +161,17 @@ async function prepare(input, task) {
   await dependencies(snapshot, data, task);
   const voice = await readJSON(join(snapshot, 'voice.json'));
   if (voice?.enabled && !preparation.silent && !(reusable && receipt.preparedRevision)) {
+    const localHiggs = narrationProvider(voice) === 'higgs';
     await prepareEnvironment(data, {
       ...task,
-      voice: (voice.provider ?? 'higgs') === 'higgs',
-      encoder: true,
+      voice: localHiggs,
+      encoder: localHiggs,
     });
-    await buildNarration(snapshot, { ...task, cache: join(data, 'speech') });
+    await buildNarration(snapshot, {
+      ...task,
+      cache: join(data, 'speech'),
+      managedProcessGroup: Boolean(task.jobId),
+    });
   }
   task.signal.throwIfAborted();
   const preparedRevision = (await projectFiles(snapshot)).revision;

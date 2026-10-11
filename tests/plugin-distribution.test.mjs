@@ -41,7 +41,7 @@ test('silent authoring needs no Python and preserves authored cues, assets and c
       await writeFile(join(directory, name), 'source');
     await writeFile(
       join(directory, 'voice.json'),
-      JSON.stringify({ provider: 'macos', voice: 'chosen', language: 'ru', enabled: true }),
+      JSON.stringify({ provider: 'api', voice: 'chosen', language: 'ru', enabled: true }),
     );
     await writeFile(
       join(directory, 'index.html'),
@@ -79,7 +79,7 @@ test('silent authoring needs no Python and preserves authored cues, assets and c
       'voice.json',
     ]);
     assert.deepEqual(JSON.parse(await readFile(join(directory, 'voice.json'))), {
-      provider: 'macos',
+      provider: 'api',
       voice: 'chosen',
       language: 'ru',
       enabled: false,

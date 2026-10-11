@@ -2,8 +2,9 @@ import { readdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
 import { narrationSource } from './story-document.mjs';
 import { parse } from 'parse5';
-import { macosVoice, systemNarration, voiceDigest } from './voice/macos.mjs';
 import { higgsVoice } from './voice/higgs.mjs';
+import { buildAdapterNarration, checkAdapterNarration } from './voice/adapter.mjs';
+import { narrationProvider } from './voice/settings.mjs';
 
 function editAudioTags(html, edit) {
   const edits = [];
@@ -174,7 +175,10 @@ export async function silenceSceneCopy(directory) {
 }
 
 /** The same cached synthesis/alignment route for audio, scaffolding and delivery. */
-export async function buildNarration(directory, { signal, progress, cache } = {}) {
+export async function buildNarration(
+  directory,
+  { signal, progress, cache, managedProcessGroup = false } = {},
+) {
   signal?.throwIfAborted();
   const source = await narrationSource(directory);
   if (!source) throw new Error('Provide story.json or narration.json for speech');
@@ -182,33 +186,25 @@ export async function buildNarration(directory, { signal, progress, cache } = {}
   let settings = await readFile(settingsFile, 'utf8').then(JSON.parse, (error) => {
     if (error.code !== 'ENOENT') throw error;
   });
-  const provider = settings?.provider ?? 'higgs';
+  const provider = narrationProvider(settings);
   let result;
-  if (provider === 'macos') {
-    if (settings?.provider !== 'macos' || settings?.enabled !== true || !settings?.voice) {
-      const voice = await macosVoice.prepare(settings ?? {}, { signal });
-      settings = {
-        ...settings,
-        enabled: true,
-        provider,
-        voice: voice.id,
-        language: voice.language,
-        rate: voice.rate,
-      };
-      signal?.throwIfAborted();
-      await writeFile(settingsFile, JSON.stringify(settings, null, 2) + '\n');
-    }
-    result = await systemNarration(directory, source.file, settings, { signal, progress, cache });
-  } else if (provider === 'higgs') {
+  if (provider === 'higgs') {
     await higgsVoice.prepare(settings ?? {}, { signal });
     await higgsVoice.build(source, directory, { signal, progress });
     signal?.throwIfAborted();
     settings = { ...settings, enabled: true, provider };
     await writeFile(settingsFile, JSON.stringify(settings, null, 2) + '\n');
-  } else
-    throw new Error(
-      `Unknown narration provider: ${provider}. Choose "higgs" or explicitly "macos" in voice.json.`,
-    );
+  } else {
+    settings = { ...settings, enabled: true, provider };
+    result = await buildAdapterNarration(directory, source.file, settings, {
+      signal,
+      progress,
+      cache,
+      managedProcessGroup,
+    });
+    signal?.throwIfAborted();
+    await writeFile(settingsFile, JSON.stringify(settings, null, 2) + '\n');
+  }
   for (const name of await readdir(directory)) {
     signal?.throwIfAborted();
     if (!name.endsWith('.html')) continue;
@@ -273,32 +269,12 @@ export async function checkNarration(html, directory, { signal } = {}) {
       matched = true;
       if (!receipt.source_sha256)
         throw new Error('Generated narration has no source receipt. Run visual-story audio.');
-      const provider =
-        receipt.synthesis?.provider ??
-        (receipt.digest_format === 'canonical-json-v1' ? 'macos' : 'higgs');
-      if (provider !== (settings?.provider ?? 'higgs'))
+      const selected = narrationProvider(settings);
+      const provider = receipt.synthesis?.provider ?? 'higgs';
+      if (provider !== selected)
         throw new Error('Narration provider changed. Prepare the selected voice before building.');
-      if (receipt.digest_format === 'canonical-json-v1') {
-        const authored = JSON.parse(await readFile(script.file, 'utf8'));
-        if (
-          receipt.source_sha256 !== voiceDigest(authored) ||
-          voiceDigest(receipt.voice_settings) !== voiceDigest(settings)
-        )
-          throw new Error(
-            'Narration or voice changed. Prepare the current narration before building.',
-          );
-        for (const segment of authored.segments ?? [])
-          for (const cue of segment.cues ?? [])
-            if (
-              !receipt.cues?.[cue.id] ||
-              voiceDigest({ timing: cue.timing }) !==
-                voiceDigest({ timing: receipt.cues[cue.id].timing })
-            )
-              throw new Error(
-                `Narration action timing is stale for ${cue.id}. Prepare the current narration before building.`,
-              );
-        const { cueSheet } = await import('../dist/story/cues.js');
-        cueSheet(receipt);
+      if (selected !== 'higgs') {
+        await checkAdapterNarration(directory, script, receipt, settings, audio);
         break;
       }
       try {

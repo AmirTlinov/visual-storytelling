@@ -24,7 +24,7 @@
    ./.plugin-release/runtime/node ./.plugin-release/node_modules/playwright/cli.js install-deps chromium
    ```
 
-Команда может запросить sudo. Интерактивный пример и автономный HTML этих библиотек не требуют. Higgs использует Apple MLX и в Linux-выпуске недоступен; системные голоса macOS также доступны только на Mac. Тихий авторский путь, Python SVG, HTML/PNG/SVG и MP4 доступны на обеих ОС.
+Команда может запросить sudo. Интерактивный пример и автономный HTML этих библиотек не требуют. Озвучка по умолчанию — локальный Higgs TTS 3 BF16 на Apple MLX, доступный на Mac. На обеих ОС агент может подключить выбранную пользователем локальную модель или API по [контракту адаптера](../skills/visual-explainer/references/voice-adapter.md); требования определяет выбранная модель. Системных голосов и автоматической замены провайдера нет. Тихий авторский путь, Python SVG, HTML/PNG/SVG и MP4 доступны на обеих ОС.
 
 Для разработки: обновите версию `plugin.json`, выполните `npm run plugin:release` и команду установки выше. Проверяйте новый API через `story_help` после переподключения. `--skip-registration` устанавливает runtime без изменения регистрации Codex; вместе с `--directory <path>` задаёт изолированный каталог для проверки, launcher в таком случае запускают с `VISUAL_STORY_INSTALL_DIR=<path>`.
 
