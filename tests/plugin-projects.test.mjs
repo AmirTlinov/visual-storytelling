@@ -42,6 +42,27 @@ async function fixture(t) {
   };
 }
 
+test('a failed registry write never publishes a successful receipt in memory; retry survives restart', async (t) => {
+  const f = await fixture(t);
+  const file = join(f.directory, 'data/projects.json');
+  const original = await readFile(file);
+  const before = structuredClone(f.store.get(f.project.id));
+  const next = {
+    ...before,
+    creation: { requestId: 'creation-retry', receipt: { accepted: true } },
+  };
+  await rm(file);
+  await mkdir(file);
+  await assert.rejects(f.store.remember(next));
+  assert.deepEqual(f.store.get(f.project.id), before);
+  await rm(file, { recursive: true });
+  await writeFile(file, original);
+  await f.store.remember(next);
+  const reopened = new ProjectStore(join(f.directory, 'data'));
+  await reopened.start();
+  assert.deepEqual(reopened.get(f.project.id), JSON.parse(JSON.stringify(next)));
+});
+
 test('authoring undo walks applied edits across restart and a new branch; request receipts never become undo entries', async (t) => {
   const f = await fixture(t);
   await f.edit([{ path: 'a.js', content: 'a1' }]);

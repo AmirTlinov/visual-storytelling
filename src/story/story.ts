@@ -381,15 +381,9 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
       const resolved = options.resolveInput
         ? options.resolveInput(patch, compute(authored, frame, 'story').moment, frame)
         : { values: { ...authored, ...patch } };
-      const target = resolved.time ?? time;
-      if (!Number.isFinite(target)) throw new Error('Story time must be finite');
-      restorePosition(
-        compute(
-          resolved.values,
-          sheet.at(Math.max(0, Math.min(options.script.duration, target)), frame.reduced),
-          'explore',
-        ),
-      );
+      // A restored position is already an accepted observation. Input resolution
+      // still normalizes its values, but a new-input transition cannot move it.
+      restorePosition(compute(resolved.values, frame, 'explore'));
     },
     /** Apply only the supplied fields; the subject resolves transitions before publication. */
     input(patch: Partial<P>) {

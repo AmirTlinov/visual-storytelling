@@ -75,7 +75,7 @@ registerAppTool(
   {
     title: 'Визуальное объяснение',
     description:
-      'Open a reviewed Visual Storytelling project or the gpt-model exemplar in chat. With no arguments returns the exemplar catalog without creating a scene. Create a new subject with story_create, edit it, then story_review before showing it here. Reuse sessionId to move the same live scene between views. Commands use the existing view and do not create another card.',
+      'Open a saved Visual Storytelling project or the gpt-model exemplar in chat. A prepared explanation is already shown by story_create(explanation); reuse its sessionId to move that scene between views. Source-code scenes use edit and review before showing. With no arguments returns the exemplar catalog. Commands continue the existing view.',
     inputSchema: {
       sessionId: sessionId.optional(),
       projectId: z.string().uuid().optional(),
@@ -106,7 +106,7 @@ registerAppTool(
     return opened.status === 'choose-example'
       ? result(
           opened,
-          'Эталон можно открыть через story_open с его example. Для новой темы: story_create → story_edit → story_review → story_open.\n\n' +
+          'Эталон открывается через story_open с его example. Группы и остаток: story_create с explanation сразу показывает опыт; продолжайте через story_edit с operations. Собственная JS/TS-сцена: story_create → story_edit → story_review → story_open.\n\n' +
             opened.examples
               .map((entry) => `${entry.title} (example: ${entry.id}) — ${entry.summary}`)
               .join('\n'),

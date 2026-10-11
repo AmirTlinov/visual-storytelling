@@ -166,10 +166,19 @@ export async function closeSceneDependencies(source, destination, { signal, runt
 /** New scenes and editable deliveries use the same immutable runtime dependency. */
 export async function pinSceneProject(
   destination,
-  { signal, build = true, root = fileURLToPath(new URL('../', import.meta.url)) } = {},
+  {
+    signal,
+    build = true,
+    prepared = false,
+    root = fileURLToPath(new URL('../', import.meta.url)),
+  } = {},
 ) {
-  const { packRuntime } = await import('./runtime-package.mjs');
-  const receipt = await packRuntime(destination, { root, build, signal });
+  const { packRuntime, pinPreparedRuntime, linkPreparedRuntime } = await import(
+    './runtime-package.mjs'
+  );
+  const receipt = prepared
+    ? await pinPreparedRuntime(destination, { root })
+    : await packRuntime(destination, { root, build, signal });
   const hasVoice = await stat(join(root, 'tools/narration.mjs')).then(
     () => true,
     () => false,
@@ -197,10 +206,12 @@ export async function pinSceneProject(
       2,
     ) + '\n',
   );
-  await execute(
-    'npm',
-    ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'],
-    { cwd: destination, signal },
-  );
+  if (prepared) await linkPreparedRuntime(destination);
+  else
+    await execute(
+      'npm',
+      ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'],
+      { cwd: destination, signal },
+    );
   return receipt;
 }

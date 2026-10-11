@@ -219,6 +219,9 @@ export async function deliver(
           });
         } else
           await closeSceneDependencies(source, sourceCopy, { signal, runtime: packages.consumer });
+        // The portable archive now owns the exact package bytes and lockfile.
+        // A machine-local release path must not override them after reopening.
+        await rm(join(sourceCopy, 'scene-runtime.json'), { force: true });
         await execute('tar', ['-czf', join(staging, 'source.tar.gz'), '-C', staging, 'source'], {
           signal,
           env: { ...process.env, COPYFILE_DISABLE: '1' },

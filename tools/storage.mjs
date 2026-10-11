@@ -21,6 +21,8 @@ export function applicationDirectory({
 }
 
 export const dataDirectory = () => process.env.VISUAL_STORY_DATA_DIR ?? applicationDirectory();
+export const installationDirectory = () =>
+  process.env.VISUAL_STORY_INSTALL_DIR ?? join(applicationDirectory(), 'installation');
 
 export async function readJSON(file) {
   try {

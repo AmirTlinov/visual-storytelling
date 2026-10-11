@@ -122,7 +122,15 @@ export function compileScore(options: CharacterStageOptions) {
     if (!beat.id.trim() || ids.has(beat.id)) throw new Error(`Duplicate or empty beat: ${beat.id}`);
     if (beat.seconds !== undefined && (!finite(beat.seconds) || beat.seconds <= 0))
       throw new Error(`Invalid beat duration: ${beat.id}`);
-    if (!beat.text.trim()) throw new Error(`Beat needs its visible action: ${beat.id}`);
+    if (beat.text !== undefined && typeof beat.text !== 'string')
+      throw new Error(`Beat text must be a string: ${beat.id}`);
+    if (
+      (beat.action !== undefined && beat.hold !== undefined) ||
+      [beat.action, beat.hold].some(
+        (value) => value !== undefined && (typeof value !== 'string' || !value.trim()),
+      )
+    )
+      throw new Error(`Beat ${beat.id}: provide either a non-empty action or hold`);
     ids.add(beat.id);
   }
   const supplied = options.script && cueSheet(options.script).script;
@@ -137,13 +145,22 @@ export function compileScore(options: CharacterStageOptions) {
   for (const beat of beats) {
     if (!options.script) {
       const span = blocking?.cues[beat.id] ?? { start: time, end: time + (beat.seconds ?? 2.5) };
-      script.cues[beat.id] = { ...span, action: beat.text };
-      (script.segments as Array<unknown>).push({
-        id: beat.id,
+      script.cues[beat.id] = {
         ...span,
-        text: beat.text,
-        title: beat.title ?? beat.text,
-      });
+        ...(beat.action !== undefined
+          ? { action: beat.action }
+          : beat.hold === undefined && beat.text?.trim()
+            ? { action: beat.text }
+            : {}),
+        ...(beat.hold !== undefined ? { hold: beat.hold } : {}),
+      };
+      if (beat.text?.trim())
+        (script.segments as Array<unknown>).push({
+          id: beat.id,
+          ...span,
+          text: beat.text,
+          title: beat.title ?? beat.text,
+        });
     }
     if (!Object.hasOwn(script.cues, beat.id))
       throw new Error(`Narration is missing cue: ${beat.id}`);

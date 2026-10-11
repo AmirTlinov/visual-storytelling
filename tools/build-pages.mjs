@@ -191,7 +191,12 @@ export async function buildScene(source, target, options = {}) {
       () => undefined,
     ),
   };
-  const configuration = new Set(['package.json', 'package-lock.json', 'scene.json']);
+  const configuration = new Set([
+    'package.json',
+    'package-lock.json',
+    'scene.json',
+    'scene-runtime.json',
+  ]);
   async function visit(directory, output) {
     options.signal?.throwIfAborted();
     const entries = (await readdir(directory, { withFileTypes: true })).filter((entry) => {

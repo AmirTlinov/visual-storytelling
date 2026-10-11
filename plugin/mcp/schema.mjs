@@ -42,6 +42,14 @@ export const viewReport = z
     stateRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
     renderStatus: z.enum(['rendered', 'prepared', 'failed']).optional(),
     observationError: z.string().max(4096).optional(),
+    authoring: z
+      .object({
+        requestId: id,
+        commandId: id,
+        buildRevision: revision,
+        sourceRevision: revision,
+      })
+      .optional(),
     state: z.record(z.string(), z.unknown()),
     checkpoint: z
       .object({

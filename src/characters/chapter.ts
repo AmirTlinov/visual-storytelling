@@ -18,7 +18,12 @@ export function characterChapter(
     presentation: 'stage',
     id: options.id,
     title: options.title,
-    text: options.text ?? options.beats.map((beat) => beat.text).join('\n\n'),
+    text:
+      options.text ??
+      options.beats
+        .map((beat) => beat.text)
+        .filter(Boolean)
+        .join('\n\n'),
     seconds: score.script.duration,
     script: score.script,
     controls: options.controls,

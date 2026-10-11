@@ -5,6 +5,8 @@ import { sceneDocument } from './scene-document.mjs';
 import { frameContext } from './frame-context.mjs';
 import { preferencesUI } from './preferences.mjs';
 import { fileEntrypoint } from './file-entrypoint.mjs';
+import preparedLiveHTML from 'visual-story:prepared-live-scene';
+import { validateExplanation } from '../../src/explanation/document.ts';
 
 const app = new App({ name: 'Visual Storytelling', version: manifest.version });
 const extensions = new OpenAIExtensions(app);
@@ -22,6 +24,57 @@ let session,
   closed = false,
   polling = false,
   loadTimer;
+let provisional;
+const creationMetrics = { inputAt: undefined, firstContentAt: undefined, confirmedAt: undefined };
+window.__visualStoryCreationMetrics = creationMetrics;
+function previewInput({ arguments: args } = {}) {
+  if (session || !args?.explanation) return;
+  creationMetrics.inputAt ??= performance.now();
+  let document;
+  try {
+    document = validateExplanation(args.explanation);
+  } catch {
+    return;
+  } // An incomplete operation leaves the last coherent preview visible.
+  const identity = JSON.stringify(document);
+  if (provisional?.identity === identity) return;
+  if (!provisional) {
+    provisional = { id: crypto.randomUUID(), generation: -1, identity, document, ready: false };
+    const setup = `<script>window.__visualStoryExplanation=${identity.replaceAll('<', '\\u003c')}</script>`;
+    frame.hidden = false;
+    $('catalog').hidden = true;
+    frame.dataset.provisional = 'true';
+    $('notice').textContent = 'Предварительный показ';
+    $('notice').hidden = false;
+    frame.srcdoc = sceneDocument(
+      preparedLiveHTML.replace('</head>', () => setup + '</head>'),
+      {
+        sessionId: provisional.id,
+        generation: provisional.generation,
+        preview: true,
+        provisional: true,
+        stateRevision: 0,
+        theme: app.getHostContext()?.theme,
+      },
+    );
+  } else {
+    provisional.document = document;
+    provisional.identity = identity;
+    if (provisional.ready) sendPreview('author-preview', { document });
+  }
+}
+function sendPreview(type, values) {
+  frame.contentWindow?.postMessage(
+    {
+      channel,
+      sessionId: provisional.id,
+      generation: provisional.generation,
+      type,
+      ...values,
+    },
+    '*',
+  );
+}
 let pollingDone = Promise.resolve();
 let updates = Promise.resolve();
 let displayMode = 'inline';
@@ -40,11 +93,15 @@ function sync(acknowledgement) {
   updates = updates
     .then(async () => {
       if (closed || session !== owner) return;
-      await call('exchange', {
+      const exchanged = await call('exchange', {
         report: current,
         acknowledgements: acknowledgement ? [acknowledgement] : [],
         wait: false,
       });
+      if (session === owner && exchanged.structuredContent.generation === owner.generation) {
+        for (const key of ['buildRevision', 'sourceRevision', 'shownSourceRevision'])
+          owner[key] = exchanged.structuredContent[key];
+      }
     })
     .catch((e) => {
       if (!closed && session === owner) error(connectionErrorMessage(e));
@@ -295,9 +352,24 @@ async function mount(result) {
     checkpoint: session.checkpoint,
     stateRevision: session.stateRevision,
     widgetState: session.widgetState,
+    authoring: session.authoring,
   };
   if (attached._meta.sceneHTML) {
-    frame.srcdoc = sceneDocument(attached._meta.sceneHTML, config);
+    if (provisional && session.authoredDocument) {
+      provisional.confirmation = {
+        document: session.authoredDocument,
+        nextSessionId: session.sessionId,
+        nextGeneration: session.generation,
+        stateRevision: session.stateRevision,
+        checkpoint: session.checkpoint,
+        authoring: session.authoring,
+      };
+      if (provisional.ready) sendPreview('confirm-preview', provisional.confirmation);
+    } else {
+      provisional = undefined;
+      delete frame.dataset.provisional;
+      frame.srcdoc = sceneDocument(attached._meta.sceneHTML, config);
+    }
     loadTimer = setTimeout(
       () => error('Сцена не загрузилась. Закройте и откройте её снова.'),
       10000,
@@ -491,6 +563,25 @@ $('update').onclick = () => void applyUpdate();
 addEventListener('message', (event) => {
   const data = event.data;
   if (
+    provisional &&
+    event.source === frame.contentWindow &&
+    data?.channel === channel &&
+    data.sessionId === provisional.id &&
+    data.generation === provisional.generation
+  ) {
+    if (data.type === 'ready') {
+      provisional.ready = true;
+      if (data.report?.renderStatus === 'rendered')
+        creationMetrics.firstContentAt ??= performance.now();
+      if (provisional.confirmation) sendPreview('confirm-preview', provisional.confirmation);
+      else sendPreview('author-preview', { document: provisional.document });
+    }
+    if (data.type === 'preview-content' && data.renderStatus === 'rendered')
+      creationMetrics.firstContentAt ??= performance.now();
+    if (data.type === 'error') error(data.message);
+    return;
+  }
+  if (
     event.source === candidate?.frame.contentWindow &&
     data?.channel === channel &&
     data.sessionId === session?.sessionId &&
@@ -551,6 +642,14 @@ addEventListener('message', (event) => {
     return;
   }
   if (data.type === 'ready') {
+    if (provisional) {
+      provisional = undefined;
+      delete frame.dataset.provisional;
+    }
+    if (data.report?.renderStatus === 'rendered') {
+      creationMetrics.firstContentAt ??= performance.now();
+      creationMetrics.confirmedAt ??= performance.now();
+    }
     setConnectionState('connected');
     clearTimeout(loadTimer);
     const notices = report.state.restoreNotices?.map((notice) => notice.message) ?? [];
@@ -654,6 +753,8 @@ app.ontoolresult = (result) => {
   }
   void mount(result).catch((e) => error(e.message));
 };
+app.ontoolinputpartial = previewInput;
+app.ontoolinput = previewInput;
 app.onhostcontextchanged = host;
 app.onteardown = dispose;
 addEventListener('pagehide', () => {

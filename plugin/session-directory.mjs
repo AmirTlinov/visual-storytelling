@@ -50,6 +50,8 @@ export class SessionDirectory {
       lastPollAt: null,
       pending: new Map(),
       receipts: new Map(),
+      authoringSequence: 0,
+      appliedAuthor: undefined,
       queue: [],
       wake: null,
       attaching: null,
@@ -77,6 +79,7 @@ export class SessionDirectory {
       buildRevision: session.build.revision,
       projectId: session.build.projectId,
       sourceRevision: session.build.sourceRevision,
+      shownSourceRevision: session.shownSourceRevision,
       title: session.build.title,
       returnAvailable: Boolean(session.returnTo?.length),
       generation: session.generation,
@@ -135,6 +138,7 @@ export class SessionDirectory {
             this.get(id);
             this.rejectPending(s, 'Renderer changed. Inspect before issuing another command.');
             s.generation++;
+            s.appliedAuthor = undefined;
             s.renderer = renderer;
             s.ready = false;
             s.lastPollAt = Date.now();
@@ -147,6 +151,13 @@ export class SessionDirectory {
           ...this.describe(s),
           checkpoint: s.checkpoint,
           html: s.build.html,
+          ...(s.build.live && { authoredDocument: s.build.live.document }),
+          authoring: s.appliedAuthor && {
+            requestId: s.appliedAuthor.requestId,
+            commandId: s.appliedAuthor.id,
+            buildRevision: s.appliedAuthor.build.revision,
+            sourceRevision: s.appliedAuthor.build.sourceRevision,
+          },
           // Expiry recovers the last observation, not proof of the former renderer's final frame.
           restoration: {
             reason,
@@ -233,6 +244,7 @@ export class SessionDirectory {
       s.replacement = undefined;
       s.handoff = false;
       s.generation++;
+      s.appliedAuthor = undefined;
       s.ready = false;
       s.state = null;
       s.wake?.();
@@ -293,6 +305,16 @@ export class SessionDirectory {
   async exchange({ sessionId, renderer, generation, report, acknowledgements = [], wait = true }) {
     const s = this.get(sessionId);
     this.validate(s, renderer, generation);
+    this.expirePending(s);
+    const authoredObservation = (pending, ack) =>
+      report &&
+      s.appliedAuthor?.id === ack.id &&
+      report.authoring?.commandId === ack.id &&
+      report.stateRevision > pending.stateRevision &&
+      ack.result?.buildRevision === pending.authoredBuild.revision &&
+      ack.result?.sourceRevision === pending.authoredBuild.sourceRevision &&
+      report.renderStatus !== 'failed';
+    let acceptedReport = false;
     if (report) {
       if (
         !Number.isSafeInteger(report.stateRevision) ||
@@ -305,18 +327,48 @@ export class SessionDirectory {
           (typeof report.checkpoint !== 'object' || Array.isArray(report.checkpoint)))
       )
         throw new Error('Invalid scene report.');
-      if (report.stateRevision >= s.stateRevision) {
+      const receipt = report.authoring && s.receipts.get(report.authoring.requestId);
+      const attempt = receipt?.attempts?.get(report.authoring.commandId);
+      const identifiedAuthor =
+        attempt &&
+        attempt.id === report.authoring.commandId &&
+        attempt.generation === generation &&
+        attempt.build.revision === report.authoring.buildRevision &&
+        attempt.build.sourceRevision === report.authoring.sourceRevision &&
+        attempt.order >= (s.appliedAuthor?.order ?? 0) &&
+        (attempt.id === s.appliedAuthor?.id || attempt.baseBuild === s.build.revision);
+      const currentFrame = report.authoring
+        ? identifiedAuthor
+        : !s.appliedAuthor &&
+          (!acknowledgements.length || acknowledgements.some((ack) => s.pending.has(ack.id)));
+      if (currentFrame && report.stateRevision >= s.stateRevision) {
+        acceptedReport = true;
+        if (identifiedAuthor) {
+          s.build = attempt.build;
+          s.appliedAuthor = attempt;
+          if (s.nextBuild?.revision === attempt.build.revision) s.nextBuild = null;
+        }
         s.state = report.state;
         if (report.checkpoint) s.checkpoint = report.checkpoint;
         s.stateRevision = report.stateRevision;
         s.renderStatus = report.renderStatus ?? 'rendered';
+        if (s.renderStatus === 'rendered') s.shownSourceRevision = s.build.sourceRevision;
         s.observationError = report.observationError;
         s.observedAt = new Date().toISOString();
         s.ready = true;
         s.wake?.();
+        if (
+          identifiedAuthor &&
+          s.renderStatus !== 'failed' &&
+          receipt.observed?.acknowledgement !== 'rendered'
+        )
+          receipt.observed = {
+            ...this.describe(s),
+            result: { buildRevision: s.build.revision, sourceRevision: s.build.sourceRevision },
+            acknowledgement: s.renderStatus,
+          };
       }
     }
-    this.expirePending(s);
     for (const ack of acknowledgements) {
       const pending = s.pending.get(ack.id);
       if (!pending || pending.generation !== generation) continue;
@@ -335,12 +387,30 @@ export class SessionDirectory {
             },
           ),
         );
-      else
-        pending.resolve({
-          ...this.describe(s),
-          result: ack.result,
-          acknowledgement: s.renderStatus,
-        });
+      else {
+        if (pending.authoredBuild) {
+          if (
+            !acceptedReport ||
+            !authoredObservation(pending, ack) ||
+            report.stateRevision !== s.stateRevision ||
+            s.renderStatus === 'failed'
+          ) {
+            pending.reject(
+              new Error('The view did not confirm the authored revision. Inspect before retrying.'),
+            );
+            continue;
+          }
+        }
+        pending.resolve(
+          pending.authoredBuild
+            ? s.receipts.get(pending.requestId).observed
+            : {
+                ...this.describe(s),
+                result: ack.result,
+                acknowledgement: s.renderStatus,
+              },
+        );
+      }
     }
     // Reports and acknowledgements must never consume the poll channel's commands.
     if (!wait) return { commands: [], ...this.describe(s) };
@@ -362,14 +432,14 @@ export class SessionDirectory {
     return { commands: s.ready ? s.queue.splice(0) : [], ...this.describe(s) };
   }
 
-  request(id, request) {
+  request(id, request, { authoredBuild } = {}) {
     const s = this.get(id);
     const pauseOnly =
       request.op === 'control' &&
       request.commands?.length &&
       request.commands.every((c) => c.type === 'pause');
     if (
-      request.op === 'control' &&
+      ['control', 'author', 'author-validate'].includes(request.op) &&
       !pauseOnly &&
       (!request.buildRevision || request.stateRevision === undefined)
     )
@@ -379,12 +449,20 @@ export class SessionDirectory {
         }),
       );
     const key = request.requestId ?? randomUUID();
-    const identity = request.requestId ? digest(request) : undefined;
+    const identity = request.requestId
+      ? digest(
+          authoredBuild
+            ? { ...request, buildRevision: undefined, stateRevision: undefined }
+            : request,
+        )
+      : undefined;
     const previous = s.receipts.get(key);
-    if (previous)
-      return previous.digest === identity
-        ? previous.promise
-        : Promise.reject(new Error('requestId already belongs to a different command.'));
+    if (previous) {
+      if (previous.digest !== identity)
+        return Promise.reject(new Error('requestId already belongs to a different command.'));
+      if (previous.observed) return Promise.resolve(previous.observed);
+      if (!authoredBuild || !previous.rejected) return previous.promise;
+    }
     if (!s.renderer || this.expired(s))
       return Promise.reject(
         failure('view_closed', 'Open the scene before controlling it.', { action: 'story_open' }),
@@ -425,15 +503,51 @@ export class SessionDirectory {
     if (s.pending.size >= 32)
       return Promise.reject(new Error('Too many pending commands. Wait for the current action.'));
     const expiresAt = Date.now() + this.timeout;
+    // A saved authoring operation may need another delivery. Its old acknowledgement
+    // must never settle the new attempt; ordinary viewer commands retain their receipt.
+    const commandId = authoredBuild ? randomUUID() : key;
+    const attempt = authoredBuild && {
+      id: commandId,
+      requestId: key,
+      generation: s.generation,
+      baseBuild: request.buildRevision,
+      build: authoredBuild,
+      order: ++s.authoringSequence,
+    };
     const promise = new Promise((resolve, reject) => {
       const timer = setTimeout(() => this.expirePending(s), this.timeout);
-      s.pending.set(key, { resolve, reject, timer, generation: s.generation, expiresAt });
-      s.queue.push({ ...request, id: key, generation: s.generation, expiresAt });
+      s.pending.set(commandId, {
+        resolve,
+        reject,
+        timer,
+        generation: s.generation,
+        expiresAt,
+        authoredBuild,
+        requestId: key,
+        buildRevision: request.buildRevision,
+        stateRevision: request.stateRevision,
+      });
+      s.queue.push({
+        ...request,
+        ...(authoredBuild && { requestId: key }),
+        id: commandId,
+        generation: s.generation,
+        expiresAt,
+      });
       s.wake?.();
     });
-    // Explicit IDs remain idempotent for the session, including after handoff and timeouts.
-    // Reads and internal lifecycle requests need no historical receipt.
-    if (request.requestId) s.receipts.set(key, { digest: identity, promise });
+    // Only whole-document authoring delivery is safe to retry after a refusal.
+    // Uncertain viewer commands remain idempotent across handoff and timeouts.
+    if (request.requestId || authoredBuild) {
+      const attempts = previous?.attempts ?? new Map();
+      if (attempt) attempts.set(commandId, attempt);
+      const receipt = { digest: identity, promise, rejected: false, attempts };
+      s.receipts.set(key, receipt);
+      if (authoredBuild)
+        promise.catch(() => {
+          receipt.rejected = true;
+        });
+    }
     return promise;
   }
 

@@ -17,7 +17,7 @@ import { adapterVoiceStatus, validateAdapterSettings } from '../../tools/voice/a
 import { narrationProvider, voiceSettingsForDisplay } from '../../tools/voice/settings.mjs';
 import { requireVoiceSupport } from '../../tools/environment/voice.mjs';
 import { collectCache } from '../cache.mjs';
-import { errorData } from '../errors.mjs';
+import { errorData, failure } from '../errors.mjs';
 import { runtimeBuild, installedRuntime, requireSelectedRuntime } from './identity.mjs';
 import { acquireDirectoryLock } from '../../tools/file-lock.mjs';
 import { revisionInput } from '../revision-input.mjs';
@@ -25,6 +25,9 @@ import { selectExamples } from '../../tools/catalog-query.mjs';
 import { exampleDetails } from '../../tools/catalog.mjs';
 import { readPinnedRuntime } from '../../tools/runtime-package.mjs';
 import { videoDimensions } from '../../tools/video-dimensions.mjs';
+import { createScene } from '../../tools/create-scene.mjs';
+import { prepareLiveProject } from '../live-project.mjs';
+import { validateExplanation } from '../../dist/explanation/document.js';
 
 const [socketPath, data] = process.argv.slice(2),
   directory = await realpath(dirname(process.argv[1]));
@@ -51,6 +54,7 @@ const watched = new ProjectWatch(async (id) => {
   if (
     updating ||
     projects.queues.has(id) ||
+    projects.queues.has('delivery:' + id) ||
     jobs
       .list(id)
       .some(
@@ -219,6 +223,63 @@ async function prepareProject(project, requestId = randomUUID()) {
   }
 }
 
+async function publishLiveProject(project) {
+  return jobs.preserveInputs(async () => {
+    const prepared = await prepareLiveProject(data, project);
+    if ((await projects.inspect(project.id)).sourceRevision !== project.sourceRevision)
+      throw failure('source_conflict', 'Source changed while preparing its delivery.', {
+        action: 'story_inspect',
+      });
+    await projects.remember({ ...projects.get(project.id), buildRevision: prepared.revision });
+    watched.open(projects.get(project.id));
+    return prepared;
+  });
+}
+
+async function createLiveProject(project, input, requestId) {
+  const existing = await readJSON(join(project.path, 'package.json'));
+  const created = existing
+    ? undefined
+    : await createScene(project.path, {
+        root: resolve(directory, '../..'),
+        title: input.title,
+        explanation: input.explanation,
+        example: input.example,
+      });
+  const authored = {
+    ...(await projects.inspect(project.id)),
+    runtime: created?.runtime ?? (await readPinnedRuntime(project.path)).runtime,
+  };
+  const prepared = await publishLiveProject(authored);
+  const pendingSession = projects.get(project.id).creation?.sessionId ?? randomUUID();
+  // Choose the durable identity before opening an in-memory scene. A failed registry
+  // write must not leave an unregistered session which a retry could duplicate.
+  await projects.remember({
+    ...projects.get(project.id),
+    creation: { requestId, input, sessionId: pendingSession },
+  });
+  let session;
+  if (
+    sessions.sessions.has(pendingSession) ||
+    (await readJSON(join(data, 'sessions', pendingSession + '.json')))
+  )
+    session = await load(pendingSession);
+  else {
+    session = sessions.open(prepared);
+    sessions.sessions.delete(session.id);
+    session.id = pendingSession;
+    sessions.sessions.set(session.id, session);
+  }
+  await save(session);
+  const receipt = { ...decorate(session), project: authored, authoring: 'ready' };
+  await projects.remember({
+    ...projects.get(project.id),
+    lastSessionId: session.id,
+    creation: { requestId, input, sessionId: session.id, receipt },
+  });
+  return receipt;
+}
+
 async function queueRevision(kind, { target, requestId, options = {} }) {
   if (kind === 'produce' && options.formats?.includes('mp4')) videoDimensions(options);
   return projects.serial('revision:' + requestId, async () => {
@@ -361,13 +422,34 @@ const operations = {
     await save(s);
     return decorate(s);
   },
-  async create({ path, title = 'Новое объяснение', example, requestId }) {
+  async create({ path, title = 'Новое объяснение', example, explanation, requestId }) {
+    if (explanation !== undefined) {
+      if (example !== undefined)
+        throw new Error('Choose an explanation document or a copied example.');
+      explanation = validateExplanation(explanation);
+    }
     return projects.serial('create:' + requestId, async () => {
+      const requestedPath = path;
       if (path && !isAbsolute(path)) throw new Error('Choose an absolute project path.');
+      const previousLive = projects.creation(requestId);
+      if (previousLive) {
+        const requested = {
+          title,
+          ...(example !== undefined ? { example } : {}),
+          explanation,
+          ...(path ? { path: await realpath(path) } : {}),
+        };
+        if (!isDeepStrictEqual(previousLive.creation.input, requested))
+          throw new Error('requestId already belongs to another project creation.');
+        return (
+          previousLive.creation.receipt ?? createLiveProject(previousLive, requested, requestId)
+        );
+      }
       const previous = jobs.forRequest(requestId);
       if (previous) {
         if (
           previous.kind !== 'create' ||
+          explanation !== undefined ||
           previous.input.title !== title ||
           previous.input.example !== example ||
           (path && previous.input.projectPath !== (await realpath(path)))
@@ -385,6 +467,19 @@ const operations = {
           'Unknown example. Omit example for an empty project or use story_help to inspect the exemplar.',
         );
       const project = await projects.create(path, { title, example });
+      if (explanation !== undefined) {
+        const input = {
+          title,
+          ...(example !== undefined ? { example } : {}),
+          explanation,
+          ...(requestedPath ? { path: project.path } : {}),
+        };
+        await projects.remember({
+          ...projects.get(project.id),
+          creation: { requestId, input },
+        });
+        return createLiveProject(project, input, requestId);
+      }
       const job = await jobs.enqueue(
         'create',
         {
@@ -670,14 +765,120 @@ const operations = {
     return api;
   },
   async edit(args) {
-    const project = await projects.edit(args);
-    const previous = project.repeated && jobs.forRequest(args.requestId + '-build');
-    return {
-      project,
-      job: previous
-        ? jobs.describe(previous)
-        : await prepareProject(project, args.requestId + '-build'),
-    };
+    return projects.serial('delivery:' + args.projectId, async () => {
+      const proposed = await projects.prepareSemanticEdit(args);
+      if (proposed) {
+        const views = [...sessions.sessions.values()].filter(
+          (session) =>
+            session.build.projectId === args.projectId &&
+            session.build.live &&
+            session.renderer &&
+            session.ready &&
+            !sessions.expired(session),
+        );
+        if (!views.length)
+          throw failure(
+            'view_closed',
+            'Open this project with story_open(projectId) and wait for its ready frame before a semantic edit.',
+            { action: 'story_open' },
+          );
+        for (const session of views)
+          await sessions.request(session.id, {
+            op: 'author-validate',
+            buildRevision: session.build.revision,
+            stateRevision: session.stateRevision,
+            document: proposed.document,
+            authoredInputs: proposed.authoredInputs,
+          });
+      }
+      const project = await projects.edit(args);
+      const priorDelivery =
+        project.repeated && (await projects.editDelivery(args.projectId, args.requestId));
+      if (project.semantic) {
+        if (
+          priorDelivery?.shown?.length &&
+          priorDelivery.shown.every(
+            (view) =>
+              !view.error &&
+              view.acknowledgement === 'rendered' &&
+              view.shownSourceRevision === project.sourceRevision,
+          )
+        )
+          return priorDelivery;
+        if ((await projects.inspect(project.id)).sourceRevision !== project.sourceRevision)
+          return {
+            project,
+            shown: [],
+            delivery: 'superseded',
+            message:
+              'This operation was saved before a newer edit. Its interrupted delivery is not replayed.',
+          };
+        let prepared;
+        const shown = [];
+        try {
+          prepared = await publishLiveProject(project);
+        } catch (error) {
+          const result = { project, shown, delivery: 'failed', error: errorData(error) };
+          await projects.editDelivery(args.projectId, args.requestId, result);
+          return result;
+        }
+        for (const session of sessions.sessions.values()) {
+          if (session.build.projectId !== project.id || !session.build.live) continue;
+          if (!session.renderer || !session.ready || sessions.expired(session)) continue;
+          try {
+            const deliveredHere = priorDelivery?.shown?.some(
+              (view) =>
+                !view.error &&
+                view.sessionId === session.id &&
+                view.buildRevision === prepared.revision &&
+                ['rendered', 'prepared', 'failed'].includes(view.acknowledgement),
+            );
+            const observed =
+              deliveredHere && session.build.revision === prepared.revision
+                ? await sessions.request(session.id, { op: 'inspect' })
+                : await sessions.request(
+                    session.id,
+                    {
+                      op: 'author',
+                      requestId: args.requestId,
+                      buildRevision: session.build.revision,
+                      stateRevision: session.stateRevision,
+                      nextBuildRevision: prepared.revision,
+                      sourceRevision: project.sourceRevision,
+                      document: prepared.live.document,
+                      authoredInputs: project.authoredInputs,
+                    },
+                    { authoredBuild: prepared },
+                  );
+            shown.push(observed);
+            await save(session);
+          } catch (error) {
+            shown.push({
+              sessionId: session.id,
+              error: errorData(error),
+              shownSourceRevision: sessions.describe(session).shownSourceRevision,
+            });
+          }
+        }
+        const delivery = !shown.length
+          ? 'pending'
+          : shown.every((view) => !view.error && view.acknowledgement === 'rendered')
+            ? 'shown'
+            : shown.some((view) => view.error || view.acknowledgement === 'failed')
+              ? 'failed'
+              : 'prepared';
+        const result = { project, buildRevision: prepared.revision, shown, delivery };
+        await projects.editDelivery(args.projectId, args.requestId, result);
+        return result;
+      }
+      const previous = project.repeated && jobs.forRequest(args.requestId + '-build');
+      return {
+        project,
+        job: previous
+          ? jobs.describe(previous)
+          : await prepareProject(project, args.requestId + '-build'),
+      };
+    });
   },
   produce: (args) => queueRevision('produce', args),
   review: (args) => queueRevision('review', args),

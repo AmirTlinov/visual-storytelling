@@ -23,7 +23,15 @@ import { writeJSON, readJSON } from '../tools/storage.mjs';
 import { prepareEnvironment } from '../tools/environment.mjs';
 import { buildNarration } from '../tools/narration.mjs';
 import { narrationProvider } from '../tools/voice/settings.mjs';
-import { updateSceneRuntime, readPinnedRuntime } from '../tools/runtime-package.mjs';
+import {
+  updateSceneRuntime,
+  readPinnedRuntime,
+  linkPreparedRuntime,
+  readPreparedRuntime,
+  preparedRuntimeFile,
+  assertPreparedExplanation,
+  explanationAPI,
+} from '../tools/runtime-package.mjs';
 import { contentDigest } from '../tools/build-info.mjs';
 import { captureWorkingInput } from './revision-input.mjs';
 import { prepareProjectChanges, writeProjectChange } from './projects.mjs';
@@ -32,6 +40,8 @@ const execute = promisify(execFile);
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 async function dependencies(source, data, { signal, progress }) {
+  if (await linkPreparedRuntime(source)) return;
+  const preparedPin = await readPreparedRuntime(source);
   const pkg = JSON.parse(await readFile(join(source, 'package.json'), 'utf8'));
   const inputs = await projectFiles(source);
   if (!inputs.files['package-lock.json'])
@@ -40,7 +50,11 @@ async function dependencies(source, data, { signal, progress }) {
     );
   const dependencyFiles = Object.fromEntries(
     Object.entries(inputs.files).filter(
-      ([name]) => name === 'package.json' || name === 'package-lock.json' || name.endsWith('.tgz'),
+      ([name]) =>
+        name === 'package.json' ||
+        name === 'package-lock.json' ||
+        name === preparedRuntimeFile ||
+        name.endsWith('.tgz'),
     ),
   );
   const key = digest(
@@ -76,6 +90,7 @@ async function dependencies(source, data, { signal, progress }) {
           if (
             typeof value === 'string' &&
             value.startsWith('file:') &&
+            value !== preparedPin?.dependency &&
             (!value.endsWith('.tgz') ||
               value.includes('\\') ||
               value.slice(5).split('/').includes('..') ||
@@ -179,17 +194,23 @@ async function prepare(input, task) {
   const buildRevision = input.buildRevision ?? (reusable && receipt.buildRevision);
   if (buildRevision) {
     prepared = await readJSON(join(data, 'builds', buildRevision + '.json'));
-    if (
-      !prepared ||
-      prepared.sourceRevision !== source.revision ||
-      !prepared.outputDigest ||
-      !reusable ||
-      (await contentDigest(join(original, 'dist'), ['.'])) !== prepared.outputDigest
-    )
-      throw new Error(
-        'The selected prepared build is unavailable or changed. Prepare a new revision.',
-      );
-    await cp(join(original, 'dist'), join(snapshot, 'dist'), { recursive: true });
+    // A live receipt identifies the same immutable sources. Produce compiles their
+    // ordinary entry for the first time; there is no per-operation dist archive.
+    if (prepared?.live && prepared.sourceRevision === source.revision && reusable) {
+      prepared = undefined;
+    } else {
+      if (
+        !prepared ||
+        prepared.sourceRevision !== source.revision ||
+        !prepared.outputDigest ||
+        !reusable ||
+        (await contentDigest(join(original, 'dist'), ['.'])) !== prepared.outputDigest
+      )
+        throw new Error(
+          'The selected prepared build is unavailable or changed. Prepare a new revision.',
+        );
+      await cp(join(original, 'dist'), join(snapshot, 'dist'), { recursive: true });
+    }
   }
   await writeJSON(join(snapshot, '.vstory-input.json'), {
     ...source,
@@ -252,6 +273,20 @@ async function prepareBuild(input, task) {
     snapshot,
     outputDigest,
   };
+  const preparedPin = await readPreparedRuntime(snapshot);
+  if (preparedPin) {
+    const recipe = await assertPreparedExplanation(snapshot).catch((error) => {
+      if (error.code !== 'custom_scene_entry') throw error;
+      return null;
+    });
+    if (recipe)
+      prepared.live = {
+        runtimeBuild: recipe.build,
+        document: (await explanationAPI(snapshot)).validateExplanation(
+          await readJSON(join(snapshot, 'explanation.json')),
+        ),
+      };
+  }
   await writeJSON(join(input.data, 'builds', revision + '.json'), prepared);
   await writeJSON(join(snapshot, '.vstory-input.json'), {
     ...source,
@@ -266,12 +301,12 @@ export const workflows = {
   async migrate(input, task) {
     const snapshot = join(input.data, 'snapshots', task.jobId);
     const changes = input.changes ?? [];
-    if (
-      new Set(['package.json', 'package-lock.json', ...changes.map((change) => change.path)]).size >
-      64
-    )
+    const metadata = ['package.json', 'package-lock.json'];
+    if (await readJSON(join(input.projectPath, preparedRuntimeFile)))
+      metadata.push(preparedRuntimeFile);
+    if (new Set([...metadata, ...changes.map((change) => change.path)]).size > 64)
       throw new Error(
-        'Runtime migration supports 62 source files plus package.json and package-lock.json.',
+        `Runtime migration supports ${64 - metadata.length} source files plus its runtime metadata.`,
       );
     // Validate against working paths first: snapshots deliberately flatten internal links.
     const edits = changes.length ? await prepareProjectChanges(input.projectPath, changes) : [];
@@ -294,8 +329,8 @@ export const workflows = {
     });
     await unchangedInputs(snapshot, preparedRevision);
     task.signal.throwIfAborted();
-    const path = updated.dependency.replace(/^file:(?:\.\/)?/, '');
-    const bytes = await readFile(join(snapshot, path));
+    const path = updated.prepared ? undefined : updated.dependency.replace(/^file:(?:\.\/)?/, '');
+    const bytes = path ? await readFile(join(snapshot, path)) : undefined;
     return {
       migration: {
         changes: [
@@ -303,15 +338,18 @@ export const workflows = {
             [
               ...changes,
               ...(await Promise.all(
-                ['package.json', 'package-lock.json'].map(async (name) => ({
+                metadata.map(async (name) => ({
                   path: name,
-                  content: await readFile(join(snapshot, name), 'utf8'),
+                  content: await readFile(join(snapshot, name), 'utf8').catch((error) => {
+                    if (error.code !== 'ENOENT') throw error;
+                    return null;
+                  }),
                 })),
               )),
             ].map((change) => [change.path, change]),
           ).values(),
         ],
-        assets: [{ path, source: join(snapshot, path), hash: digest(bytes) }],
+        assets: path ? [{ path, source: join(snapshot, path), hash: digest(bytes) }] : [],
       },
     };
   },
