@@ -51,25 +51,92 @@ const starts = {
   model: 0,
 };
 const segments = [
-  ['overview', 0, 10, 'От фразы к следующему слову'],
-  ['embedding', 10, 22, 'Токен и его позиция'],
-  ['block', 22, 32, 'Путь через два блока'],
-  ['attention', 32, 42, 'Откуда берётся контекст'],
-  ['calculation', 42, 56, 'Сходство запросов и ключей'],
-  ['residual', 56, 65, 'Прибавка к residual stream'],
-  ['mlp', 65, 74, 'Нелинейное преобразование'],
-  ['prediction', 74, 82, 'Предскажите продолжение'],
-  ['output', 82, 94, 'Вероятности и новый токен'],
+  {
+    id: 'overview',
+    start: 0,
+    end: 10,
+    title: 'Продолжить фразу',
+    text: 'У фразы пока нет продолжения. Проследим, как эта маленькая модель получает из слов числа и выбирает следующий токен.',
+    hold: 'Проследить путь выбранной фразы через два блока к месту следующего слова.',
+  },
+  {
+    id: 'embedding',
+    start: 10,
+    end: 22,
+    title: 'Токен и позиция',
+    text: 'Для каждого слова возьмём восемь чисел из обученной таблицы. Добавим числа его позиции: теперь вектор зависит и от слова, и от его места.',
+    action: 'Появляются вектор выбранного токена, вектор его позиции и их покоординатная сумма.',
+  },
+  {
+    id: 'block',
+    start: 22,
+    end: 32,
+    title: 'Внутри блока',
+    text: 'Этот вектор проходит через блок. Сначала к нему добавляются сведения из контекста, затем — результат преобразования самого вектора.',
+    action:
+      'На сквозном пути вектора последовательно раскрываются ветви attention и MLP с местами сложения.',
+  },
+  {
+    id: 'attention',
+    start: 32,
+    end: 42,
+    title: 'Собрать контекст',
+    text: 'Посмотрим на первую прибавку. Выбранный токен получает взвешенную смесь значений доступных ему токенов. У каждой связи здесь свой вес.',
+    hold: 'Сопоставить доступные токены, проценты на связях и место взвешенной суммы; будущие токены закрыты.',
+  },
+  {
+    id: 'calculation',
+    start: 42,
+    end: 56,
+    title: 'Посчитать сходство',
+    text: 'Сначала посчитаем оценку одной связи. Перемножим парные координаты запроса и ключа, сложим вклады и разделим сумму на корень из размерности.',
+    action:
+      'Пары координат выбранных Q и K дают произведения, их сумма и масштабирование дают оценку связи.',
+  },
+  {
+    id: 'residual',
+    start: 56,
+    end: 65,
+    title: 'Прибавка к вектору',
+    text: 'Собранный контекст вернётся в общий поток. Сравните три строки: исходный вектор, прибавку и их сумму.',
+    hold: 'Сравнить согласованные координаты исходного вектора, результата attention и суммы.',
+  },
+  {
+    id: 'mlp',
+    start: 65,
+    end: 74,
+    title: 'Преобразовать вектор',
+    text: 'Теперь каждый вектор преобразуется отдельно. Из восьми координат получаются тридцать две, нелинейная функция меняет их, и обратно возвращается прибавка из восьми чисел.',
+    hold: 'Проследить размеры 8 → 32 → 8 и место нелинейного преобразования перед новой прибавкой.',
+  },
+  {
+    id: 'prediction',
+    start: 74,
+    end: 82,
+    title: 'Ваш прогноз',
+    text: 'После двух блоков модель оценит возможные продолжения. Какое слово вы ожидаете увидеть? Выберите его и сравните с результатом.',
+    hold: 'Выбрать продолжение показанного префикса до открытия вероятностей.',
+    awaitInput: true,
+  },
+  {
+    id: 'output',
+    start: 82,
+    end: 94,
+    title: 'Следующий токен',
+    text: 'Вот вероятности продолжений. Можно добавить самый вероятный токен к фразе: модель пройдёт тот же путь ещё раз, уже с новым контекстом.',
+    action:
+      'Открываются вероятности; по нажатию «Добавить» выбранный моделью токен возвращает изменённую фразу на общую схему.',
+  },
 ];
 const script = {
   duration: 94,
   cues: Object.fromEntries(
-    segments.map(([id, start, end, title]) => [
+    segments.map(({ id, start, end, action, hold, awaitInput }) => [
       id,
-      { start, end, action: title, ...(id === 'prediction' ? { awaitInput: true } : {}) },
+      { start, end, ...(action ? { action } : { hold }), ...(awaitInput ? { awaitInput } : {}) },
     ]),
   ),
-  segments: segments.map(([id, start, end, title]) => ({ id, start, end, title, text: title })),
+  segments: segments.map(({ id, start, end, title, text }) => ({ id, start, end, title, text })),
 };
 const defaults = {
   preset: 'cat-place',
@@ -255,8 +322,8 @@ window.galleryReady = (async () => {
   const stateAt = (frame) => {
     const kept = controller?.requested.values ?? defaults;
     const segment =
-      segments.find(([, start, end]) => frame.time >= start && frame.time < end) ?? segments.at(-1);
-    const id = segment[0];
+      segments.find(({ start, end }) => frame.time >= start && frame.time < end) ?? segments.at(-1);
+    const id = segment.id;
     return {
       ...kept,
       view: id === 'calculation' ? 'attention' : id === 'prediction' ? 'output' : id,
@@ -1762,21 +1829,32 @@ window.galleryReady = (async () => {
       d.text('18 открытых учебных фраз', d.width / 2, 451, { anchor: 'middle' });
       return;
     }
-    d.text('Настоящее вычисление маленькой GPT', 70, 193, { size: 40, handwriting: 'heading' });
-    d.note(
-      '1960 обученных параметров. Два pre-LN блока, две головы attention, восемь каналов и 32 нейрона в MLP. Все веса и 18 учебных фраз включены в исходники.',
-      70,
-      263,
-      710,
-      { size: 29, pigment: 'ink' },
-    );
-    d.note(
-      'Токенизатор здесь делит по словам. В больших GPT используются части слов; размеры и данные обучения значительно больше. Высокая вероятность на знакомой фразе не означает знание мира.',
-      70,
-      427,
-      1000,
-      { size: 28 },
-    );
-    d.button('model-back', 'Исследовать модель →', 805, 563, 380, () => enter('overview'));
+    d.text(`${MODEL.training.corpus.length} учебных фраз`, 65, 170, { size: 34 });
+    MODEL.training.corpus
+      .slice(0, 3)
+      .forEach((phrase, i) =>
+        d.text(phrase.replace(/ \.$/, ''), 65, 246 + i * 62, { size: 29, pigment: 'muted' }),
+      );
+    d.line([560, 306], [749, 306], 'orange', true, 3);
+    d.text('обучение', 654, 269, { anchor: 'middle', size: 26, pigment: 'orange' });
+    d.text(`${CONFIG.layers} блока · ${CONFIG.modelWidth} каналов`, 760, 170, {
+      size: 30,
+      pigment: 'purple',
+    });
+    for (let i = 0; i < CONFIG.layers; i++) {
+      const x = 770 + i * 208;
+      d.box(`model-block-${i}`, x, 240, 168, 132, 'purple', 'marker');
+      d.text(`Блок ${i + 1}`, x + 84, 295, { anchor: 'middle', size: 30, pigment: 'purple' });
+      d.text(`${CONFIG.heads} головы`, x + 84, 345, { anchor: 'middle', size: 25 });
+      if (i) d.line([x - 31, 306], [x - 9, 306], 'purple', true);
+    }
+    d.text(`${MODEL.training.parameterCount} обученных параметров`, 960, 425, {
+      anchor: 'middle',
+      size: 27,
+      pigment: 'purple',
+    });
+    d.text('Здесь токеном служит целое слово.', 65, 489, { size: 28 });
+    d.text('Знакомая фраза ещё не проверяет знание мира.', 65, 541, { size: 28, pigment: 'muted' });
+    d.button('model-back', 'Исследовать модель →', 805, 591, 380, () => enter('overview'));
   }
 })();

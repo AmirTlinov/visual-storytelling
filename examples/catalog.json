@@ -7,7 +7,11 @@
     "checkpoints": [0, 15, 25, 36, 47, 56, 68, 74, 85],
     "group": "explanations",
     "tags": ["GPT", "трансформер", "языковая модель", "токены", "внимание", "вероятность"],
-    "guides": ["docs/explanations.md", "skills/visual-explainer/references/scene-template.md"],
+    "guides": [
+      "skills/visual-explainer/references/visual-storytelling.md",
+      "docs/explanations.md",
+      "skills/visual-explainer/references/scene-template.md"
+    ],
     "recommended": true,
     "reference": true,
     "useFor": "Разобрать путь от контекста до выбора следующего слова",
