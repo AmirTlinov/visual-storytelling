@@ -249,7 +249,7 @@ export async function reviewMotion({
   const episodes = buildEpisodes(samples, { context, telemetry, timeline });
   const selected = selectDetail(samples, {
     count: frames,
-    from: at === undefined ? undefined : Math.max(samples[0].time, at - radius / 2),
+    at,
     timeline,
     telemetry,
     runtime,
@@ -271,7 +271,13 @@ export async function reviewMotion({
     parent,
   });
   const report = {
-    ...(await analyzeMotionFrames(detail, { crop, threshold, maxSize })),
+    ...(await analyzeMotionFrames(detail, {
+      crop,
+      threshold,
+      maxSize,
+      at,
+      radius: at === undefined ? undefined : radius,
+    })),
     title: source.title || source.app || basename(source.path ?? input),
     source,
     sampling: source.kind === 'scene-seek' ? 'model-checkpoints' : 'captured-window',

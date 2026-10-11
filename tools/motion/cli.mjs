@@ -30,6 +30,8 @@ SOURCE: scene, URL, local HTML (--capture), video, frame manifest or saved sessi
 A cue selects its entire action with context before/after; --frames controls detail density.
 Start with session and index.html: complete episode map, playback, objects and observations.
 image is the overview PNG; framesImage and photometryImage contain detailed measurements.
+onionImage overlays past/present/future in one PNG: present 50%, fading to zero at ±radius.
+The saved player has an onion-skin toggle and time-window control; all views share its time.
 inspect returns existing evidence without repeating an interaction. --search filters episode text; --offset/--limit page the index.
 Use --out on inspect to render a focused report; raw capture is reused.
 Capture commands print a compact JSON receipt; --verbose includes detailed measurements.
@@ -291,6 +293,7 @@ function compactReview(result) {
       'session',
       'image',
       'framesImage',
+      'onionImage',
       'photometryImage',
       'framesDirectory',
       'captureManifest',
@@ -305,6 +308,7 @@ function compactReview(result) {
     ...paths,
     source: { ...source, ...(assets ? { assetCount: assets.length } : {}) },
     focus: result.focus,
+    onion: result.onion,
     comparison: result.comparison,
     previews: result.previews,
     coverage: result.coverage,

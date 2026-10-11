@@ -81,6 +81,9 @@ export function motionMarkup(
   const map = (image, label, className = 'motion-map') =>
     `<svg class="${className}" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}" role="img" aria-label="${label}"><image href="${image}" width="${report.width}" height="${report.height}"/></svg>`;
   const overlay = `<figure><h3>Выбранное окно · наложение контуров</h3>${map(report.overlay, 'Наложение изменяющихся контуров')}<div class="motion-legend"><span style="color:${color(0, frames.length)}">${seconds(frames[0].time)} с · раньше</span><span>цвет → порядок</span><span style="color:${color(frames.length - 1, frames.length)}">${seconds(frames.at(-1).time)} с · позже</span></div></figure>`;
+  const onion = report.onion
+    ? `<figure><h3>Наложение во времени</h3>${map(report.onion.image, 'Прошлые и будущие кадры вокруг выбранного момента')}<figcaption>Текущий ${timeControl(report.onion.time, playerId)} · 50%<br>Затухание к краям окна ±${seconds(report.onion.radius)} с · кадров: ${report.onion.layers.length}</figcaption></figure>`
+    : overlay;
   const sourceLabels = {
     'scene-seek': 'Сцена · время модели',
     'browser-capture': 'Браузер · выполнение',
@@ -118,7 +121,7 @@ export function motionMarkup(
   const overview = `<section class="motion-summary"><div class="motion-eyebrow">Проверка движения</div><header class="motion-header"><div><h2>${escape(report.title ?? 'Соседние кадры')}</h2><small>${escape(sourceLabels[report.source.kind] ?? report.source.kind)} · интервал ${seconds(total.from)}–${seconds(total.to)} с · кадров: ${total.frames}</small><small>Выбранное окно ${windowLabel}</small></div></header>
     <p class="motion-scope">${escape(focus.coverage)}</p>
     <div class="motion-focus-layout"><div>${focusList}${focus.additionalCount ? `<p class="motion-focus-more">Других групп наблюдений: ${focus.additionalCount}. Полный список и исходные поля — ниже.</p>` : ''}</div>${contextMarkup(report)}</div>
-    <div class="motion-panels">${overlay}${photo?.status === 'available' ? kymographMarkup(photo) : `<figure><h3>Выбранное окно · разность соседних кадров</h3>${map(report.difference, 'Карта межкадровых изменений')}<figcaption>Максимальная разность · порог ${report.threshold}/255</figcaption></figure>`}</div>
+    <div class="motion-panels">${onion}${photo?.status === 'available' ? kymographMarkup(photo) : `<figure><h3>Выбранное окно · разность соседних кадров</h3>${map(report.difference, 'Карта межкадровых изменений')}<figcaption>Максимальная разность · порог ${report.threshold}/255</figcaption></figure>`}</div>
     <nav class="motion-nav" aria-label="Разделы проверки">${sections.map(([key, label]) => link(key, label)).join('')}</nav></section>`;
   const frameEvidence = `<div class="motion-detail-body motion-frame-evidence"><h3>Кадры и дельты · ${windowLabel}</h3><div class="motion-panels">${overlay}<figure><h3>Максимальная разность соседних кадров</h3>${map(report.difference, 'Карта межкадровых изменений')}<figcaption>${report.motionBounds ? 'Общая область изменений приближена' : 'Вся область'} · порог ${report.threshold}/255</figcaption></figure><figure><h3>Изменившиеся пиксели, % области</h3>${bars(intervals, 'changedPercent', 'Доля изменившихся пикселей', '%')}</figure><figure><h3>${report.source.sparse ? 'Интервал меток захвата' : 'Интервал между кадрами'}, мс</h3>${bars(intervals, 'dtMs', 'Интервал временных меток', ' ms')}</figure></div>
     <p>Повторов соседнего кадра: ${intervals.filter((v) => v.duplicate).length}. Фиолетовые столбцы отмечают повторы. Разность зависит от движения, формы и цвета.</p>

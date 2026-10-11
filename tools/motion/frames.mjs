@@ -1,5 +1,6 @@
 import sharp from 'sharp';
 import { frameInput } from './session.mjs';
+import { onionLayers } from './onion.mjs';
 
 export function frameColor(index, count) {
   const t = count > 1 ? index / (count - 1) : 0;
@@ -36,7 +37,10 @@ const imageURL = async ({ data, width, height }) =>
   ).toString('base64')}`;
 
 /** Compare one fixed coordinate system. Never deduplicate or retime. */
-export async function analyzeMotionFrames(samples, { crop, threshold = 8, maxSize = 960 } = {}) {
+export async function analyzeMotionFrames(
+  samples,
+  { crop, threshold = 8, maxSize = 960, at, radius } = {},
+) {
   if (samples.length < 2 || samples.length > 32) throw new Error('Motion review needs 2–32 frames');
   if (!Number.isFinite(threshold) || threshold < 0 || threshold > 255)
     throw new Error('Pixel threshold must be between 0 and 255');
@@ -220,6 +224,23 @@ export async function analyzeMotionFrames(samples, { crop, threshold = 8, maxSiz
     )
   )
     suggestedCrop = null;
+  const onion = onionLayers(samples, { at, radius });
+  const composite = Buffer.alloc(pixels * 4);
+  // Source RGB is already premultiplied. Paint distant states first and the present last.
+  for (const layer of onion.layers) {
+    const data = frames[layer.index].data;
+    for (let p = 0; p < composite.length; p += 4) {
+      const alpha = (data[p + 3] / 255) * layer.opacity;
+      const retained = (composite[p + 3] / 255) * (1 - alpha);
+      const combined = alpha + retained;
+      if (!combined) continue;
+      for (let c = 0; c < 3; c++)
+        composite[p + c] = Math.round(
+          (data[p + c] * layer.opacity + composite[p + c] * retained) / combined,
+        );
+      composite[p + 3] = Math.round(combined * 255);
+    }
+  }
   return {
     width,
     height,
@@ -231,6 +252,7 @@ export async function analyzeMotionFrames(samples, { crop, threshold = 8, maxSiz
     hasTransparency,
     motionBounds,
     suggestedCrop,
+    onion: { ...onion, image: await imageURL({ data: composite, width, height }) },
     sizeChanged: sizes.some((s) => s.width !== sizes[0].width || s.height !== sizes[0].height),
     frames: samples.map((sample, i) => ({
       time: sample.time,

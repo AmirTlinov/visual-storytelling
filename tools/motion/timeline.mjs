@@ -135,7 +135,7 @@ export async function scanTimeline(samples, threshold = 8, options = {}) {
   };
 }
 
-export function selectDetail(samples, { count = 12, from, timeline, telemetry, runtime } = {}) {
+export function selectDetail(samples, { count = 12, from, at, timeline, telemetry, runtime } = {}) {
   let center = timeline?.signals[0]?.frame ?? timeline?.peakFrame ?? 0;
   const longFrame = telemetry?.longFrames?.reduce(
     (a, b) => (b.duration > (a?.duration ?? -1) ? b : a),
@@ -147,6 +147,12 @@ export function selectDetail(samples, { count = 12, from, timeline, telemetry, r
     );
   const blink = runtime?.insights.find((item) => item.kind === 'brief-disappearance');
   if (blink) center = samples.findIndex((sample) => sample.time >= blink.time);
+  if (at !== undefined)
+    center = samples.reduce(
+      (best, sample, i) =>
+        Math.abs(sample.time - at) < Math.abs(samples[best].time - at) ? i : best,
+      0,
+    );
   let start =
     from === undefined
       ? Math.max(0, Math.min(samples.length - count, center - Math.floor(count / 2)))

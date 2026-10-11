@@ -63,6 +63,7 @@ export async function captureWriter(out, { reference = false } = {}) {
         'motion.json',
         'motion.png',
         'frames.png',
+        'onion.png',
         'photometry.png',
       ])
         await rm(join(out, file), { force: true });

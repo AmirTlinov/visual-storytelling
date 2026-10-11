@@ -1,4 +1,5 @@
 import { observationTitle, observationDetail } from './focus.mjs';
+import { onionLayers, installOnionPlayer } from './onion.mjs';
 
 export const escapeText = (value) =>
   String(value).replace(
@@ -150,13 +151,15 @@ export function timeControl(time, playerId, clock = 'recording') {
 
 export function playbackMarkup(
   frames,
-  { id = 'motion-playback', unsynchronized = false, audio, open = false } = {},
+  { id = 'motion-playback', unsynchronized = false, audio, open = false, onionRadius } = {},
 ) {
   if (!frames?.length) return '';
   const data = JSON.stringify(frames).replace(/</g, '\\u003c');
+  onionRadius ??= onionLayers(frames).radius;
   return `<details class="motion-play" id="${escapeText(id)}" ${open ? 'open' : ''}><summary>Сохранённая запись · кадров: ${frames.length} · ${frames[0].time.toFixed(3)}–${frames.at(-1).time.toFixed(3)} с</summary>
-  ${audio ? `<audio src="${escapeText(audio)}" preload="metadata"></audio>` : ''}<img class="motion-playback" alt="Запись">
-  <div class="motion-play-controls"><button type="button" data-play>Воспроизвести</button><button type="button" data-previous aria-label="Предыдущий кадр">← кадр</button><button type="button" data-next aria-label="Следующий кадр">кадр →</button><label>Время, с <input type="number" step="any" aria-label="Перейти ко времени, секунды" min="${frames[0].time}" max="${frames.at(-1).time}"></label></div>
+  ${audio ? `<audio src="${escapeText(audio)}" preload="metadata"></audio>` : ''}<img class="motion-playback" alt="Запись"><canvas class="motion-playback" data-onion-canvas hidden aria-label="Наложение кадров во времени"></canvas>
+  <div class="motion-play-controls"><button type="button" data-play>Воспроизвести</button><button type="button" data-previous aria-label="Предыдущий кадр">← кадр</button><button type="button" data-next aria-label="Следующий кадр">кадр →</button><label>Время, с <input type="number" step="any" aria-label="Перейти ко времени, секунды" min="${frames[0].time}" max="${frames.at(-1).time}"></label><button type="button" data-onion aria-pressed="false">Наложение во времени</button><label data-onion-window hidden>Окно ±, с <input type="number" step="any" min="0.001" aria-label="Радиус наложения, секунды"></label></div>
+  <p data-onion-status hidden role="status"></p>
   <p><input type="range" aria-label="Время записи" min="${frames[0].time}" max="${frames.at(-1).time}" step="any" value="${frames[0].time}"><output></output></p>
   <p class="motion-frame-position"></p><p class="motion-seek-note" role="status"></p>
   </details><script>(()=>{
@@ -173,6 +176,7 @@ export function playbackMarkup(
   for(const [control,delta] of [[previous,-1],[next,1]])control.onclick=()=>{stop();note.textContent='';show(frames[Math.max(0,Math.min(frames.length-1,index+delta))].time)};
   root.addEventListener('motionseek',e=>{const requested=Number(e.detail.time);if(!Number.isFinite(requested))return;stop();const nearest=frames.reduce((best,f)=>Math.abs(f.time-requested)<Math.abs(best.time-requested)?f:best);show(nearest.time);note.textContent='Запрошено '+requested.toFixed(6)+' с; ближайшая метка записи '+nearest.time.toFixed(6)+' с.'+(e.detail.clock==='browser'&&${Boolean(unsynchronized)}?' Синхронизация DOM и пикселей не подтверждена.':'');time.focus({preventScroll:true})});
   root.addEventListener('motionrange',e=>{stop();rangeStart=clamp(e.detail.from);rangeEnd=clamp(e.detail.to);show(rangeStart);button.click()});
+  (${installOnionPlayer.toString()})(root,frames,${onionLayers.toString()},${JSON.stringify(onionRadius)},stop);
   root.ontoggle=()=>{if(!root.open)stop()};show(frames[0].time);
   })();</script>`;
 }

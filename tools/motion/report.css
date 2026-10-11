@@ -371,6 +371,14 @@
   margin-top: 18px;
   background: #f4f6f7;
 }
+.motion-playback[hidden],
+.motion-play [hidden] {
+  display: none;
+}
+.motion-play [data-onion][aria-pressed='true'] {
+  border-color: #2367b0;
+  background: #edf4fa;
+}
 .motion-play p {
   display: flex;
   align-items: center;

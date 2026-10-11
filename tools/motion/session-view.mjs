@@ -86,7 +86,7 @@ export function sessionMarkup(report, out, player, evidence) {
       if(link){const d=document.getElementById(decodeURIComponent(link.hash.slice(1)));if(d)d.open=true}
       const player=document.getElementById('motion-playback');
       if(f||r){player.open=true;const range=r?.dataset.evidenceRange.split(',').map(Number);player.dispatchEvent(new CustomEvent(range?'motionrange':'motionseek',{detail:range?{from:range[0],to:range[1]}:{time:Number(f.dataset.evidenceTime)}}));player.scrollIntoView({block:'start'})}
-      if(e.target.matches('.motion-playback')){const img=e.target,b=img.getBoundingClientRect(),scale=Math.min(b.width/img.naturalWidth,b.height/img.naturalHeight),x=(e.clientX-b.left-(b.width-img.naturalWidth*scale)/2)/scale,y=(e.clientY-b.top-(b.height-img.naturalHeight*scale)/2)/scale;if(x<0||y<0||x>img.naturalWidth||y>img.naturalHeight)return;point=[x,y];object='';inspect();inspector.scrollIntoView({block:'nearest'})}
+      if(e.target.matches('.motion-playback')){const img=e.target,w=img.naturalWidth??img.width,h=img.naturalHeight??img.height,b=img.getBoundingClientRect(),scale=Math.min(b.width/w,b.height/h),x=(e.clientX-b.left-(b.width-w*scale)/2)/scale,y=(e.clientY-b.top-(b.height-h*scale)/2)/scale;if(x<0||y<0||x>w||y>h)return;point=[x,y];object='';inspect();inspector.scrollIntoView({block:'nearest'})}
     });
     select.onchange=()=>{object=select.value;point=undefined;inspect()};
     document.querySelector('.session-filter').oninput=e=>{const q=e.target.value.toLocaleLowerCase();for(const row of document.querySelectorAll('.session-episode'))row.hidden=!row.textContent.toLocaleLowerCase().includes(q)};

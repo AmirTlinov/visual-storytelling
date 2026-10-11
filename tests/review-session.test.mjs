@@ -144,7 +144,14 @@ test('replacing a review recovers only the new run, with its source, cues and un
     samples: old.frames,
     episodes: [],
   });
-  for (const file of ['index.html', 'motion.json', 'motion.png', 'frames.png', 'photometry.png'])
+  for (const file of [
+    'index.html',
+    'motion.json',
+    'motion.png',
+    'onion.png',
+    'frames.png',
+    'photometry.png',
+  ])
     await writeFile(join(directory, file), 'old report');
   await writeFile(join(directory, 'notes.txt'), 'keep my notes');
   await writeFile(join(directory, 'capture', 'diagram.png'), oldPNG);
@@ -170,6 +177,7 @@ test('replacing a review recovers only the new run, with its source, cues and un
     'index.html',
     'motion.json',
     'motion.png',
+    'onion.png',
     'frames.png',
     'photometry.png',
   ])
