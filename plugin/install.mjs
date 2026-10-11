@@ -189,6 +189,8 @@ export async function installRelease(
       await cp(source, temporary, { recursive: true, verbatimSymlinks: true });
       if ((await releaseDigest(temporary)) !== digest)
         throw new Error('Release changed while copying. Finish building and retry installation.');
+      // An installed source includes a read-only receipt. Only our staging copy is writable.
+      await permissions(temporary, false);
       await writeFile(
         join(temporary, receiptFile),
         JSON.stringify({ version: manifest.version, digest }, null, 2) + '\n',

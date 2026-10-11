@@ -171,6 +171,45 @@ test('stable launcher survives source removal; upgrades preserve late imports in
   );
 });
 
+test('an immutable installed release can be installed elsewhere without changing its source', async (t) => {
+  const f = await fixture(t),
+    first = await installRelease(f.source, { directory: f.directory, register: false }),
+    directory = join(f.root, 'relocated-installation');
+  async function modes(root, relative = '') {
+    const path = join(root, relative),
+      entries = [[relative, (await stat(path)).mode & 0o777]];
+    for (const item of (await readdir(path, { withFileTypes: true })).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    )) {
+      const name = join(relative, item.name);
+      if (item.isDirectory()) entries.push(...(await modes(root, name)));
+      else entries.push([name, (await stat(join(root, name))).mode & 0o777]);
+    }
+    return entries;
+  }
+  const before = await modes(first.release),
+    receipt = await readFile(join(first.release, '.installation.json'), 'utf8');
+  assert(
+    before.every(([, mode]) => (mode & 0o222) === 0),
+    'the source is read-only',
+  );
+  const copied = await installRelease(first.release, { directory, register: false });
+  assert.notEqual(copied.release, first.release);
+  assert.equal(copied.digest, first.digest);
+  assert.equal(await releaseDigest(copied.release), first.digest);
+  assert.equal(await releaseDigest(first.release), first.digest, 'source bytes are unchanged');
+  assert.deepEqual(await modes(first.release), before, 'source permissions are unchanged');
+  assert.deepEqual(await modes(copied.release), before, 'the new release is immutable too');
+  assert.equal(await readFile(join(first.release, '.installation.json'), 'utf8'), receipt);
+  assert.equal(await readFile(join(copied.release, '.installation.json'), 'utf8'), receipt);
+  assert.equal(await realpath(join(f.directory, 'current')), first.release);
+  const current = start(directory);
+  t.after(() => current.child.kill());
+  assert.equal((await current.next()).entry, join(copied.release, 'plugin/dist/server.mjs'));
+  current.end();
+  assert.equal(await current.next(), 'first');
+});
+
 test('invalid or unregistered updates preserve the selected runtime and marketplace', async (t) => {
   const f = await fixture(t),
     first = await installRelease(f.source, { directory: f.directory, register: false });
