@@ -24,12 +24,11 @@ function mount(
   const abort = new AbortController(),
     listen = { signal: abort.signal };
   const view = PlayerControls.mount(root.querySelector<HTMLElement>('[data-player]')!, {
-    chapters: true,
     max: count - 1,
     step: 1,
     label: 'Шаг объяснения',
   });
-  const { play, back, next, seek } = view;
+  const { play, seek } = view;
   let index = Math.max(0, Math.min(count - 1, initial)),
     playing = false,
     timer: ReturnType<typeof setTimeout> | undefined;
@@ -41,8 +40,6 @@ function mount(
       ended: !playing && index === count - 1,
       stamp: `${index + 1} / ${count}`,
       valueText: `Шаг ${index + 1} из ${count}`,
-      canBack: index > 0,
-      canNext: index < count - 1,
     });
   }
   function stop() {
@@ -100,22 +97,6 @@ function mount(
             new CustomEvent('scene-playback-error', { bubbles: true, detail: error }),
           ),
         );
-    },
-    listen,
-  );
-  back!.addEventListener(
-    'click',
-    () => {
-      stop();
-      go(index - 1);
-    },
-    listen,
-  );
-  next!.addEventListener(
-    'click',
-    () => {
-      stop();
-      go(index + 1);
     },
     listen,
   );

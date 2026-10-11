@@ -36,7 +36,7 @@ test('the same complete frame follows native surface sizes without changing stat
                 chrome = root.getBoundingClientRect().height - frame.height,
                 availableHeight =
                   innerHeight -
-                  frame.top -
+                  root.getBoundingClientRect().top -
                   chrome -
                   (parseFloat(body.marginBottom) || 0) -
                   (parseFloat(body.paddingBottom) || 0),

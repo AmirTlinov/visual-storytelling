@@ -16,7 +16,7 @@ test(
       page.on('pageerror', (error) => errors.push(error.message));
       await page.goto(host.url);
       const app = page.frameLocator('iframe[title="MCP App"]');
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('html[data-connection="connected"]').waitFor();
       const sessions = async () =>
         (await host.client.callTool({ name: 'story_inspect', arguments: {} })).structuredContent
           .sessions;
@@ -56,7 +56,7 @@ test(
       });
       await choice.focus();
       await choice.press('Enter');
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('html[data-connection="connected"]').waitFor();
       assert.equal(await app.locator('#catalog').isVisible(), false);
       assert.equal(await app.locator('#scene').isVisible(), true);
       const live = await sessions();

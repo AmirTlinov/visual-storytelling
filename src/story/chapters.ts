@@ -1,20 +1,19 @@
-import { SketchControls } from '../controls/fields.js';
+import { selectControl } from '../controls/fields.js';
 import type { Chapter } from './cues.js';
 
-/** Compact chapter navigation shares the story clock and keeps the lesson heading intact. */
+/** The current chapter is the heading and opens its menu on the same story clock. */
 export function chapterNavigation(
   heading: HTMLHeadingElement,
   chapters: readonly Chapter[],
   seek: (time: number) => void,
-  toolbar?: HTMLElement,
   enabled = !heading.hidden,
 ) {
   const named = chapters.filter((chapter) => chapter.title).sort((a, b) => a.start - b.start);
   if (!named.length || !enabled) return { update(_id: string | undefined) {}, dispose() {} };
-  const navigation = document.createElement('nav');
-  navigation.className = 've-chapter-navigation';
-  navigation.setAttribute('aria-label', 'Главы рассказа');
-  const field = SketchControls.field(
+  const original = [...heading.childNodes],
+    originalTitle = heading.title,
+    abort = new AbortController();
+  const control = selectControl(
     {
       label: 'Глава',
       type: 'select',
@@ -22,21 +21,30 @@ export function chapterNavigation(
       options: named.map((chapter, i) => ({ value: i, label: chapter.title! })),
     },
     (index) => seek(named[Number(index)]!.start),
+    { signal: abort.signal },
   );
-  navigation.append(field.element);
-  if (toolbar) toolbar.prepend(navigation);
-  else heading.after(navigation);
+  heading.classList.add('ve-chapter-navigation');
+  heading.replaceChildren(control.trigger);
+  control.menu.classList.add('ve-chapter-menu');
+  heading.after(control.menu);
+  let selected = -1;
   return {
     update(id: string | undefined) {
       const index = Math.max(
         0,
         named.findIndex((chapter) => chapter.id === id),
       );
-      if (field.value !== index) field.setValue(index);
+      if (selected === index) return;
+      selected = index;
+      control.setValue(index);
+      heading.title = named[index]!.title!;
     },
     dispose() {
-      field.dispose();
-      navigation.remove();
+      abort.abort();
+      control.menu.remove();
+      heading.replaceChildren(...original);
+      heading.title = originalTitle;
+      heading.classList.remove('ve-chapter-navigation');
     },
   };
 }

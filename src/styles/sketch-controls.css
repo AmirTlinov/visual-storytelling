@@ -56,10 +56,6 @@
 .ve-scene .ve-field:has([aria-invalid='true'])::after {
   background: var(--ve-orange);
 }
-.ve-scene .ve-field:has(:focus-visible)::after {
-  bottom: calc(-3 * var(--ve-control-unit, 1px));
-  filter: drop-shadow(0 calc(-4 * var(--ve-control-unit, 1px)) var(--ve-pencil));
-}
 .ve-scene .ve-control .ve-select-trigger {
   padding-right: calc(26 * var(--ve-control-unit, 1px));
   text-align: left;
@@ -163,19 +159,6 @@
 }
 .ve-scene .ve-control-title {
   position: relative;
-}
-.ve-scene
-  :is(.ve-control-toggle, .ve-control-checkbox):has(input:focus-visible)
-  .ve-control-title::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: calc(-3 * var(--ve-control-unit, 1px));
-  height: calc(5 * var(--ve-control-unit, 1px));
-  background: var(--ve-pencil);
-  mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%20200%208'%20preserveAspectRatio%3D'none'%3E%3Cpath%20d%3D'M2%204%20Q48%205.4%2097%204.2%20T198%203.1'%20fill%3D'none'%20stroke%3D'black'%20stroke-width%3D'1.3'%20stroke-linecap%3D'round'%20vector-effect%3D'non-scaling-stroke'%2F%3E%3C%2Fsvg%3E")
-    center/100% 100% no-repeat;
 }
 .ve-scene .ve-stepper {
   display: flex;
@@ -301,8 +284,7 @@
   position: relative;
   pointer-events: none;
 }
-.ve-scene .ve-choices input:checked + span::after,
-.ve-scene .ve-choices input:focus-visible + span::after {
+.ve-scene .ve-choices input:checked + span::after {
   content: '';
   position: absolute;
   left: 0;
@@ -312,9 +294,6 @@
   background: currentColor;
   mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%20200%208'%20preserveAspectRatio%3D'none'%3E%3Cpath%20d%3D'M2%204%20Q48%205.4%2097%204.2%20T198%203.1'%20fill%3D'none'%20stroke%3D'black'%20stroke-width%3D'1.3'%20stroke-linecap%3D'round'%20vector-effect%3D'non-scaling-stroke'%2F%3E%3C%2Fsvg%3E")
     center/100% 100% no-repeat;
-}
-.ve-scene .ve-choices input:focus-visible + span::after {
-  filter: drop-shadow(0 calc(4 * var(--ve-control-unit, 1px)) var(--ve-pencil));
 }
 .ve-scene .ve-control:has(input:disabled) {
   opacity: 0.45;

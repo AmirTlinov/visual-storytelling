@@ -16,7 +16,7 @@ test('paper remains visible in small frames in both themes while measuring grids
       await page.evaluate(() => window.galleryReady);
       await expect
         .poll(() =>
-          page.locator('.ve-scene-content').evaluate((content) => {
+          page.locator('.ve-scene-paper').evaluate((content) => {
             const scale = content.getBoundingClientRect().width / content.offsetWidth;
             const sizes = getComputedStyle(content).backgroundSize.split(',').map(parseFloat);
             return Math.max(Math.abs(sizes[0] * scale - 100), Math.abs(sizes[2] * scale - 20));
@@ -31,14 +31,14 @@ test('paper remains visible in small frames in both themes while measuring grids
       await expect
         .poll(
           async () => {
-            const clip = await page.locator('.ve-scene-content').evaluate((content) => {
+            const clip = await page.locator('.ve-scene-paper').evaluate((content) => {
               const box = content.getBoundingClientRect();
               const scale = box.width / content.offsetWidth;
               return {
                 x: Math.round(box.x + 800 * scale),
-                y: Math.round(box.y + 560 * scale),
+                y: Math.round(box.bottom - 150 * scale),
                 width: Math.floor(430 * scale),
-                height: Math.floor(130 * scale),
+                height: Math.floor(100 * scale),
               };
             });
             const png = PNG.sync.read(await page.screenshot({ clip }));
@@ -70,7 +70,7 @@ test('paper remains visible in small frames in both themes while measuring grids
 
       await openFixture(page, 'scene-shell', 'camera.html');
       await page.evaluate(() => window.galleryReady);
-      await expect(page.locator('.ve-scene-content')).toHaveCSS('background-image', 'none');
+      await expect(page.locator('.ve-scene-paper')).toHaveCSS('background-image', 'none');
       await expect(page.locator('.vs-grid > path').first()).toBeVisible();
     }
   }

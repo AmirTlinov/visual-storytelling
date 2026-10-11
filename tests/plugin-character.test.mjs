@@ -30,7 +30,7 @@ test(
       assert.match(policy, /connect-src data: blob:(?:;|$)/);
       const app = page.frameLocator('iframe[title="MCP App"]');
       await page.goto(host.url);
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('html[data-connection="connected"]').waitFor();
       const sessionId = (await page.evaluate(() => window.pluginTest.session)).sessionId;
       const call = async (name, arguments_ = {}) => {
         const result = await host.client.callTool({

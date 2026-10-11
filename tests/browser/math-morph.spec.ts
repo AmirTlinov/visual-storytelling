@@ -73,20 +73,37 @@ test('the largest authored power remains a visible measured area after changing 
   await page.getByRole('slider', { name: 'Второе число', exact: true }).fill('4');
   await page.getByRole('slider', { name: 'Переход', exact: true }).fill('1');
   await expect(page.locator('[data-projection="3d"]')).toContainText('6^4 = 1296');
-  // Read displayed pixels: a formula alone cannot satisfy this visible-area regression.
-  const { data, info } = await sharp(
-    await page.locator('[data-projection="3d"] canvas').screenshot(),
-  )
+  // Measure the canvas contribution against the same paper and HTML labels. This
+  // stays valid for neutral ink; neither the grid nor the formula counts as area.
+  const canvas = page.locator('[data-projection="3d"] canvas'),
+    clip = (await canvas.boundingBox())!;
+  const { data, info } = await sharp(await page.screenshot({ clip }))
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
+  const opacity = await canvas.evaluate((node) => {
+    const before = node.style.opacity;
+    node.style.opacity = '0';
+    return before;
+  });
+  let background: Buffer;
+  try {
+    background = await sharp(await page.screenshot({ clip }))
+      .ensureAlpha()
+      .raw()
+      .toBuffer();
+  } finally {
+    await canvas.evaluate((node, value) => (node.style.opacity = value), opacity);
+  }
   let area = 0,
     top = info.height,
     bottom = 0;
   for (let y = 0; y < info.height; y++)
     for (let x = 0; x < info.width; x++) {
       const i = (y * info.width + x) * 4;
-      if (data[i + 2]! - data[i]! > 20 && data[i + 1]! > data[i]!) {
+      if (
+        [0, 1, 2].some((channel) => Math.abs(data[i + channel]! - background[i + channel]!) > 20)
+      ) {
         area++;
         top = Math.min(top, y);
         bottom = Math.max(bottom, y);

@@ -211,6 +211,7 @@ function mount(
   const completeFrame = frame.scope === 'scene';
   const showHistory = parameters.length > 0 && retainHistory && showNavigation;
   const sheet = completeFrame ? node('div') : root;
+  const drawing = completeFrame ? node('div', { class: 've-scene-paper' }) : sheet;
   const composition = sceneFrame(completeFrame ? sheet : stage, frame);
   const conditionsId = `ve-conditions-${++shellSerial}`,
     conditions = node('div', {
@@ -248,21 +249,19 @@ function mount(
     ),
   );
   conditions.append(conditionsTitle);
-  header.append(heading, conditionsButton);
+  header.append(heading, toolbar, conditionsButton);
   heading.title = title;
   let subjectWidth = frame.width,
     subjectHeight = frame.height;
   cleanups.add(composition.dispose);
   if (completeFrame) toolbar.append(modes, actions);
-  sheet.append(
-    completeFrame ? header : heading,
-    ...(completeFrame ? [toolbar] : [modes, actions]),
-    fields,
-    completeFrame ? stage : composition.element,
-  );
+  if (completeFrame) {
+    sheet.append(header, drawing);
+    drawing.append(fields, stage);
+  } else sheet.append(heading, modes, actions, fields, composition.element);
   if (captions && !completeFrame && (captions === true || captions.placement !== 'below'))
     stage.append(caption);
-  else sheet.append(caption);
+  else drawing.append(caption);
   if (completeFrame) root.append(composition.element);
   root.append(controls, status);
   if (completeFrame) root.append(conditions);
@@ -297,21 +296,26 @@ function mount(
     if (toolbar.hidden === toolbarVisible) toolbar.hidden = !toolbarVisible;
     const focused = document.activeElement,
       ownedFocus =
-        focused instanceof HTMLElement && (toolbar.contains(focused) || fields.contains(focused)),
+        focused instanceof HTMLElement &&
+        (header.contains(focused) || toolbar.contains(focused) || fields.contains(focused)),
       compact = composition.element.getBoundingClientRect().width < 640,
       hasUI = toolbarVisible || visibleContent(fields),
-      popup = shownPresentation === 'explanation' && compact && hasUI,
+      popup = compact && hasUI,
       hasConditions = popup || showHistory;
     sheet.dataset.compactChrome = String(compact);
     conditionsButton.hidden = !hasConditions;
-    header.hidden = heading.hidden && !hasConditions;
-    if (shownPresentation === 'stage') {
-      if (header.parentElement !== root) controls.before(header);
-    } else if (header.parentElement !== sheet) sheet.prepend(header);
-    const parent = shownPresentation === 'stage' ? root : popup ? conditions : sheet;
-    const moved = toolbar.parentElement !== parent || fields.parentElement !== parent;
+    header.hidden = heading.hidden && !hasConditions && !toolbarVisible;
+    const headerParent = shownPresentation === 'stage' ? root : sheet,
+      toolbarParent = popup ? conditions : header,
+      fieldsParent = popup ? conditions : shownPresentation === 'stage' ? root : drawing;
+    const moved =
+      header.parentElement !== headerParent ||
+      toolbar.parentElement !== toolbarParent ||
+      fields.parentElement !== fieldsParent;
     const leavingConditions =
-      moved && parent !== conditions && toolbar.parentElement === conditions;
+      moved &&
+      !popup &&
+      (toolbar.parentElement === conditions || fields.parentElement === conditions);
     const keepEdit = moved && preserveFocus && ownedFocus,
       restoreFocus = keepEdit && document.hasFocus();
     if (keepEdit)
@@ -319,18 +323,26 @@ function mount(
     try {
       if ((!hasConditions || leavingConditions) && conditions.matches(':popover-open'))
         conditions.hidePopover();
+      if (header.parentElement !== headerParent) {
+        if (headerParent === root) root.insertBefore(header, composition.element);
+        else sheet.prepend(header);
+      }
       if (moved) {
-        if (parent === conditions) {
+        if (popup) {
           const historyBar = conditions.querySelector(':scope > .ve-experiment-history');
           conditions.insertBefore(toolbar, historyBar);
           conditions.insertBefore(fields, historyBar);
-        } else if (parent === root) controls.before(toolbar, fields);
-        else stage.before(toolbar, fields);
+        } else {
+          if (toolbar.parentElement !== header) conditionsButton.before(toolbar);
+          if (fieldsParent === root) controls.before(fields);
+          else if (fields.parentElement !== drawing) stage.before(fields);
+        }
       }
       // Reparenting a native field emits blur/focus. Its draft and history gesture
       // still belong to the same edit; only an actual departure commits them.
       if (restoreFocus) {
-        if (popup && !conditions.matches(':popover-open')) conditions.showPopover();
+        if (popup && conditions.contains(focused) && !conditions.matches(':popover-open'))
+          conditions.showPopover();
         if (focused.checkVisibility() && document.activeElement !== focused)
           focused.focus({ preventScroll: true });
       }
@@ -382,7 +394,7 @@ function mount(
     shownPresentation = next;
     root.dataset.presentation = next;
     root.dataset.paper = String(next === 'stage' ? false : (paper ?? appearance === 'sketch'));
-    heading.hidden = !showHeading || next === 'stage';
+    heading.hidden = !showHeading;
     if (completeFrame) {
       if (next === 'stage') controls.before(caption);
       else stage.after(caption);
@@ -651,7 +663,6 @@ function mount(
     };
     const ui = statePlayer(controls, {
       transport: controller.player,
-      stops: controller.sheet.script.segments?.map((s) => s.start),
       captions: { element: caption, track },
       onSeek: controller.seek,
       onPlay: preparePlayback,
@@ -665,7 +676,6 @@ function mount(
       heading,
       controller.sheet.script.segments ?? [],
       controller.seek,
-      completeFrame ? toolbar : undefined,
       showHeading && showNavigation,
     );
     let resetAfterSeek = false;

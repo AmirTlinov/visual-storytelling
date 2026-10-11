@@ -27,9 +27,27 @@ test('selectable artwork has no control decoration and retains its own keyboard 
       .evaluate((element) => getComputedStyle(element, '::after').content),
   ).toBe('""');
   await art.focus();
-  await expect.poll(async () => (await decoration()).outline).toBe('dashed');
+  await expect
+    .poll(() =>
+      art.evaluate((node) => {
+        const path = node.nextElementSibling?.querySelector('[data-interaction-focus]');
+        return node.matches(':focus-visible') && path && getComputedStyle(path).visibility;
+      }),
+    )
+    .toBe('visible');
+  expect((await decoration()).outline).toBe('none');
   await art.press('Enter');
   await expect(art).toHaveAttribute('data-selected');
+  await expect(art).toHaveAttribute('data-selection-highlight');
+  expect(
+    await art.evaluate((node) => {
+      const contour = node.nextElementSibling!;
+      return (
+        contour.hasAttribute('data-contour-selected') &&
+        getComputedStyle(contour.querySelector('[data-selection-contour]')!).visibility
+      );
+    }),
+  ).toBe('visible');
   expect((await decoration()).after).toBe('none');
   await page.getByRole('button', { name: 'Исследовать', exact: true }).click();
   await art.evaluate((node) => {
@@ -96,6 +114,10 @@ test('one visible representation carries selection while keyboard focus follows 
         highlighted: node.hasAttribute('data-selection-highlight'),
         outline: getComputedStyle(node).outlineStyle,
         filter: getComputedStyle(node).filter,
+        contour:
+          getComputedStyle(node, '::after').content === '""' &&
+          getComputedStyle(node, '::after').maskImage !== 'none' &&
+          getComputedStyle(node, '::after').display !== 'none',
       })),
     );
   const expectSelection = async (id: string | null) => {
@@ -105,9 +127,12 @@ test('one visible representation carries selection while keyboard focus follows 
         const selected = items.filter((item) => item.highlighted);
         return (
           selected.length === Number(id !== null) &&
-          selected.every((item) => item.id === id && item.outline === 'solid') &&
+          selected.every((item) => item.id === id && item.contour) &&
           items.every(
-            (item) => item.filter === 'none' && (item.highlighted || item.outline === 'none'),
+            (item) =>
+              item.filter === 'none' &&
+              item.outline === 'none' &&
+              (item.highlighted || !item.contour),
           )
         );
       })
@@ -137,8 +162,17 @@ test('one visible representation carries selection while keyboard focus follows 
   await page.keyboard.press('Tab');
   await result.focus();
   await expect
-    .poll(() => result.evaluate((node) => getComputedStyle(node).outlineStyle))
-    .toBe('dashed');
+    .poll(() =>
+      result.evaluate(
+        (node) =>
+          node.matches(':focus-visible') &&
+          getComputedStyle(node).outlineStyle === 'none' &&
+          getComputedStyle(node, '::after').content === '""' &&
+          getComputedStyle(node, '::after').maskImage !== 'none',
+      ),
+    )
+    .toBe(true);
+  await expect(result).not.toHaveAttribute('data-selected');
   await expect(result.locator('span')).toBeVisible();
   await result.press('Enter');
   await expect(result).toHaveAttribute('data-selected');

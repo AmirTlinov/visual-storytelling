@@ -4,7 +4,6 @@ export interface PlayerState {
   ended?: boolean;
   stamp: string;
   valueText?: string;
-  canBack?: boolean;
   canNext?: boolean;
   muted?: boolean;
   rate?: number;
@@ -18,7 +17,6 @@ const icons = {
     pause: 'M8 5.7L8.2 18.2M15.8 5.9L15.6 18',
     replay: 'M19 9C17 3 7 3 4.5 10C2 17 11 23 17.7 18M19 3.8L19 9.2L13.7 9',
   },
-  back: { arrow: 'M19 12.2Q12 11.3 5 12M11 6.8L4.8 12L11.2 17.3' },
   next: { arrow: 'M5 11.8Q12 12.7 19 12M12.8 6.7L19.2 12L13 17.2' },
   mute: {
     speaker: 'M4 9.2L7.5 9.1L13 4.8L12.8 19.1L7.3 14.9L4.1 15Z',
@@ -29,7 +27,6 @@ const icons = {
 function mount(
   element: HTMLElement,
   {
-    chapters = false,
     sound = false,
     speed = false,
     forwardOnly = false,
@@ -38,7 +35,6 @@ function mount(
     step = 0.01,
     label = 'Позиция воспроизведения',
   }: {
-    chapters?: boolean;
     sound?: boolean;
     speed?: boolean;
     forwardOnly?: boolean;
@@ -72,8 +68,7 @@ function mount(
     return node;
   };
   const play = button('play', 'Воспроизвести');
-  const back = chapters ? button('back', 'Предыдущий шаг') : null;
-  const next = chapters || forwardOnly ? button('next', 'Следующий шаг') : null;
+  const next = forwardOnly ? button('next', 'Следующий шаг') : null;
   const seek = document.createElement('input');
   Object.assign(seek, { type: 'range', min: 0, max, step, value: 0 });
   seek.dataset.seek = '';
@@ -104,7 +99,6 @@ function mount(
     ended = false,
     stamp,
     valueText,
-    canBack,
     canNext,
     muted = false,
     rate: playbackRate = 1,
@@ -116,7 +110,6 @@ function mount(
     const label = ended ? 'Повторить' : paused ? 'Воспроизвести' : 'Пауза';
     play.setAttribute('aria-label', label);
     play.title = label;
-    if (back) back.disabled = !canBack;
     if (next) next.disabled = !canNext;
     if (rate) rate.value = String(playbackRate);
     if (mute) {
@@ -130,7 +123,6 @@ function mount(
   return {
     element,
     play,
-    back,
     next,
     seek,
     time,

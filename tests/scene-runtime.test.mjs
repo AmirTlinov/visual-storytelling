@@ -198,7 +198,7 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
       );
     }
     await page.emulateMedia({ colorScheme: 'light' });
-    assert.equal(await page.locator('h1').innerText(), 'Detail');
+    assert.equal(await page.locator('h1').innerText(), 'First question');
     for (const result of await page.evaluate(() => window.echoTrial())) {
       assert.equal(result.ownEchoes, 0);
       assert.deepEqual(result.read, result.latest);
@@ -207,7 +207,7 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
     await page.locator('[data-mode="story"]').click();
     assert(await page.getByRole('combobox', { name: 'Глава', exact: true }).isVisible());
     await page.locator('[data-mode="explore"]').click();
-    assert.equal(await page.locator('h1').innerText(), 'Detail');
+    assert.equal(await page.locator('h1').innerText(), 'First question');
     await page.getByRole('slider', { name: 'X', exact: true }).fill('4');
     assert.equal(await page.evaluate(() => lab.story.requested.values.x), 4);
     assert.deepEqual(await page.evaluate(() => lab.events), ['explore', 'story', 'explore']);

@@ -127,14 +127,6 @@ html:has(> body.ve-standalone > .ve-scene[data-theme='dark']) {
 .ve-scene input:focus:not(:focus-visible) {
   outline: none;
 }
-.ve-scene button:not(:where(.ve-frame *, [data-object])):focus-visible {
-  outline: 1px dashed var(--ve-pencil);
-  outline-offset: 3px;
-}
-.ve-scene input:focus-visible {
-  outline: 1px solid var(--ve-pencil);
-  outline-offset: 3px;
-}
 /* A short lower pen edge distinguishes a command key from a labelled object. */
 .ve-scene:not([data-appearance='interface'])
   button:not(
@@ -212,11 +204,6 @@ html:has(> body.ve-standalone > .ve-scene[data-theme='dark']) {
 .ve-svg-button[aria-disabled='true'] {
   cursor: default;
 }
-.ve-svg-button:focus-visible {
-  outline: 1px solid var(--ve-pencil);
-  outline-offset: 3px;
-}
-.ve-scene .ve-player [data-back],
 .ve-scene .ve-player [data-next] {
   width: 44px;
   padding: 6px;
@@ -303,14 +290,15 @@ html:has(> body.ve-standalone > .ve-scene[data-theme='dark']) {
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Cpath d='M13 2 C5 1 2 6 2 13 C2 21 7 24 14 24 C22 24 25 18 24 11 C24 5 19 2 13 2' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E")
     center/contain no-repeat;
 }
-/* Playback stays in screen pixels; a narrow surface puts seeking on its own row. */
+/* Playback remains a compact row with full-size targets in screen pixels. */
 .ve-scene .ve-player {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 4px;
   width: 100%;
-  margin-top: 8px;
+  margin-top: 0;
+  padding: 2px 8px;
   container: ve-playbar / inline-size;
 }
 .ve-scene .ve-player button {
@@ -354,13 +342,6 @@ html:has(> body.ve-standalone > .ve-scene[data-theme='dark']) {
 .ve-scene [data-mute][aria-pressed='true'] [data-icon='muted'],
 .ve-scene [data-mute][aria-pressed='false'] [data-icon='sound'] {
   display: none;
-}
-@container ve-playbar (max-width:520px) {
-  .ve-scene .ve-player input[type='range'] {
-    order: 10;
-    flex: 1 0 100%;
-    width: 100%;
-  }
 }
 
 .ve-scene .caption:not(.sr-only):not(:where(.ve-frame *)) {
@@ -457,7 +438,7 @@ html:has(> body.ve-standalone > .ve-scene[data-theme='dark']) {
   font-size: 16px;
   color: var(--ve-ink);
   background: transparent;
-  border: 1px solid var(--ve-line);
+  border: 1px solid color-mix(in srgb, var(--ve-pencil) 55%, transparent);
   border-radius: 8px;
 }
 .ve-experiment-history {

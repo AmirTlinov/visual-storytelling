@@ -57,10 +57,46 @@ test('authoring: reload keeps the selected time, failed edits keep the scene, fa
       .getByRole('combobox', { name: 'Глава', includeHidden: true })
       .filter({ hasText: 'Revision two' })
       .waitFor({ state: 'attached' });
-    await page.getByRole('button', { name: 'Условия', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('main').scene.currentTime === 7);
     const heading = page.getByRole('combobox', { name: 'Глава' });
-    assert(await heading.evaluate((element) => element.scrollHeight <= element.clientHeight + 1));
+    const inspectHeading = async (revision) => {
+      const title = `${revision}: подробный разбор изменения формы и поведения предмета`;
+      assert.equal(await heading.textContent(), title);
+      const geometry = await heading.evaluate((element) => {
+        const box = element.getBoundingClientRect(),
+          sheet = element.closest('.ve-scene-content'),
+          scale = sheet.getBoundingClientRect().width / sheet.offsetWidth,
+          header = element.closest('.ve-scene-header'),
+          conditions = header.querySelector('.ve-conditions-trigger').getBoundingClientRect(),
+          style = getComputedStyle(element);
+        return {
+          height: box.height,
+          line: parseFloat(style.lineHeight) * scale,
+          clamp: style.webkitLineClamp,
+          overflow: style.overflow,
+          right: box.right,
+          conditionsLeft: conditions.left,
+          headerHeight: header.getBoundingClientRect().height,
+          insideHeader: box.bottom <= header.getBoundingClientRect().bottom,
+        };
+      });
+      assert.equal(geometry.clamp, '2');
+      assert.equal(geometry.overflow, 'hidden');
+      assert(geometry.height >= 43.9 && geometry.height <= geometry.line * 2 + 0.5);
+      assert(geometry.headerHeight <= geometry.height + 8 && geometry.insideHeader);
+      assert(geometry.right <= geometry.conditionsLeft);
+      await heading.focus();
+      await heading.press('ArrowDown');
+      const option = page.getByRole('option', { name: title, exact: true });
+      await option.waitFor({ state: 'visible' });
+      assert(await option.evaluate((node) => node.scrollHeight <= node.clientHeight + 1));
+      assert(await heading.evaluate((node) => node === document.activeElement));
+      await heading.press('Escape');
+      await option.waitFor({ state: 'hidden' });
+      assert(await heading.evaluate((node) => node === document.activeElement));
+      assert.equal(await page.evaluate(() => document.querySelector('main').scene.currentTime), 7);
+    };
+    await inspectHeading('Revision two');
     await writeFile(join(source, 'scene.js'), 'const broken = ;');
     await page.locator('#visual-story-build-error').waitFor();
     assert.equal(await page.evaluate(() => document.querySelector('main').scene.currentTime), 7);
@@ -69,9 +105,9 @@ test('authoring: reload keeps the selected time, failed edits keep the scene, fa
       .getByRole('combobox', { name: 'Глава', includeHidden: true })
       .filter({ hasText: 'Revision three' })
       .waitFor({ state: 'attached' });
-    await page.getByRole('button', { name: 'Условия', exact: true }).click();
     await page.getByRole('combobox', { name: 'Глава' }).waitFor();
     await page.waitForFunction(() => document.querySelector('main').scene.currentTime === 7);
+    await inspectHeading('Revision three');
     await page.evaluate(() => {
       lab.setValue('123456789.987');
       lab.far();

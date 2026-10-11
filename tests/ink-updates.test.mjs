@@ -8,6 +8,60 @@ import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 
+test('arrowheads reach the shaft endpoint in every direction and after moving back', async () => {
+  const bundle = await build({
+    stdin: {
+      resolveDir: process.cwd(),
+      contents: `import { pen } from './src/ink/pen.ts'; window.drawPen = pen;`,
+    },
+    bundle: true,
+    format: 'iife',
+    write: false,
+  });
+  const browser = await chromium.launch(chromiumLaunchOptions());
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<svg width="400" height="400"></svg>');
+    await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    const result = await page.evaluate(() => {
+      const canvas = document.querySelector('svg');
+      const from = [200, 200],
+        to = [200, 30];
+      const arrow = window.drawPen(canvas).arrow(canvas, 'axis', from, to, { width: 1.5 });
+      const path = arrow.element.querySelector('path');
+      const original = path.getAttribute('d');
+      const gaps = [];
+      for (const target of [to, [370, 200], [310, 70], [30, 200], [90, 330], [200, 370]]) {
+        arrow.between(from, target);
+        const ink = path.getAttribute('d');
+        const head = document.createElementNS(canvas.namespaceURI, 'path');
+        // Inspect the painted head independently from the preceding shaft.
+        head.setAttribute('d', ink.slice(ink.indexOf('M', 1)));
+        canvas.append(head);
+        const length = head.getTotalLength();
+        let gap = Infinity;
+        for (let sample = 0; sample <= 400; sample++) {
+          const point = head.getPointAtLength((sample / 400) * length);
+          gap = Math.min(gap, Math.hypot(point.x - target[0], point.y - target[1]));
+        }
+        gaps.push(gap);
+        head.remove();
+      }
+      arrow.between(from, to);
+      return {
+        gaps,
+        restored: path.getAttribute('d') === original,
+        retained: path === arrow.element.querySelector('path'),
+      };
+    });
+    for (const gap of result.gaps) assert.ok(gap < 1, `Arrowhead stops ${gap}px before its tip`);
+    assert.equal(result.restored, true);
+    assert.equal(result.retained, true);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('unchanged SVG state is quiet; text, geometry, grid and reverse seek still update', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'story-ink-'));
   let browser;

@@ -94,7 +94,7 @@ export async function exportSVG(
   });
   originals.forEach((node, i) => snapshotRaster(node, copies[i]!));
   clone
-    .querySelectorAll('animate,animateTransform,animateMotion,set,script')
+    .querySelectorAll('animate,animateTransform,animateMotion,set,script,[data-interaction-focus]')
     .forEach((node) => node.remove());
   const definitions = svg('defs');
   clone.prepend(definitions);
@@ -102,7 +102,9 @@ export async function exportSVG(
   clone.setAttribute('width', String(viewBox.width));
   clone.setAttribute('height', String(viewBox.height));
   const backgroundOwner = paper
-    ? source.closest<HTMLElement>('.ve-frame-content, .ve-scene-content, .ve-scene')
+    ? source.closest<HTMLElement>(
+        '.ve-frame-content, .ve-scene-paper, .ve-scene-content, .ve-scene',
+      )
     : null;
   if (backgroundOwner)
     appendPaper(clone, definitions, backgroundOwner, viewBox, source.getBoundingClientRect());

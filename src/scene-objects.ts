@@ -1,3 +1,4 @@
+import { svgInteractionContour } from './controls/svg-contour.js';
 import { containingSource, sourceAt, sourceOf, type SourceSpan } from './scene-source.js';
 
 export interface ObjectMeaning {
@@ -62,6 +63,10 @@ export function sceneObjects(root: Element) {
     'button, input, select, textarea, label, summary, a[href], [contenteditable]:not([contenteditable="false"]), [role="button"], [role="slider"], [tabindex]:not(canvas, svg, [role="img"])';
   let selected: string[] = [];
   const highlighted = new Set<HTMLElement | SVGElement>();
+  const contours = new Map<SVGGraphicsElement, ReturnType<typeof svgInteractionContour>>();
+  const resizeObserver = new ResizeObserver(() => {
+    if (!abort.signal.aborted) refreshSelection();
+  });
   const nodes = () => {
     if (abort.signal.aborted) throw new Error('Scene objects have been disposed.');
     return [...root.querySelectorAll<HTMLElement | SVGElement>('[data-object]')].filter((node) =>
@@ -119,16 +124,68 @@ export function sceneObjects(root: Element) {
       node.toggleAttribute('data-selection-highlight', true);
       highlighted.add(node);
     }
+    const activeContours = new Set<SVGGraphicsElement>();
+    for (const node of elements) {
+      if (
+        !(node instanceof SVGGraphicsElement) ||
+        node.getAttribute('aria-disabled') === 'true' ||
+        (!highlighted.has(node) && !node.matches(':focus-visible')) ||
+        !isRendered(node)
+      )
+        continue;
+      activeContours.add(node);
+      let contour = contours.get(node);
+      if (!contour) {
+        contour = svgInteractionContour(node, `subject:${node.dataset.object}`);
+        contours.set(node, contour);
+        resizeObserver.observe(node);
+      }
+      contour.selected(highlighted.has(node));
+      contour.update();
+    }
+    for (const [node, contour] of contours) {
+      if (activeContours.has(node)) continue;
+      resizeObserver.unobserve(node);
+      contour.dispose();
+      contours.delete(node);
+    }
   };
-  const observer = new MutationObserver(() => {
-    if (selected.length && !abort.signal.aborted) refreshSelection();
+  const observer = new MutationObserver((records) => {
+    if (
+      records.every((record) => (record.target as Element).closest?.('[data-interaction-contour]'))
+    )
+      return;
+    if ((selected.length || contours.size) && !abort.signal.aborted) refreshSelection();
   });
   observer.observe(root, {
     subtree: true,
     childList: true,
     attributes: true,
-    attributeFilter: ['data-object', 'hidden', 'style', 'class', 'aria-hidden', 'tabindex'],
+    attributeFilter: [
+      'data-object',
+      'hidden',
+      'style',
+      'class',
+      'aria-hidden',
+      'aria-disabled',
+      'tabindex',
+      'transform',
+      'd',
+      'points',
+      'x',
+      'y',
+      'width',
+      'height',
+      'r',
+      'cx',
+      'cy',
+      'color',
+      'opacity',
+      'viewBox',
+    ],
   });
+  for (const type of ['focusin', 'focusout'] as const)
+    root.addEventListener(type, () => refreshSelection(), { signal: abort.signal });
   const select = (ids: readonly string[]) => {
     const elements = nodes(),
       known = new Set(elements.map((node) => node.dataset.object!));
@@ -202,6 +259,7 @@ export function sceneObjects(root: Element) {
     (event) => {
       const e = event as KeyboardEvent,
         node = target(e);
+      if (node instanceof SVGGraphicsElement) refreshSelection();
       if (e.defaultPrevented) return;
       if (node && interactive(node) && !node.matches('button') && ['Enter', ' '].includes(e.key)) {
         e.preventDefault();
@@ -220,6 +278,9 @@ export function sceneObjects(root: Element) {
     dispose() {
       if (abort.signal.aborted) return;
       observer.disconnect();
+      resizeObserver.disconnect();
+      for (const contour of contours.values()) contour.dispose();
+      contours.clear();
       for (const node of highlighted) node.removeAttribute('data-selection-highlight');
       highlighted.clear();
       for (const node of nodes()) {

@@ -1,3 +1,5 @@
+import { svgInteractionContour } from './svg-contour.js';
+
 /* Build-time SVG parts. Native HTML owns slider behavior; range.css owns its ink. */
 export function svgRange({
   id,
@@ -54,6 +56,8 @@ export function svgButton(
   element.classList.add('ve-svg-button');
   element.setAttribute('fill', 'transparent');
   element.setAttribute('role', 'button');
+  parent.append(element);
+  const contour = svgInteractionContour(element, `button:${options.label}`);
   let disabled = false,
     spaceDown = false,
     enterDown = false,
@@ -73,6 +77,7 @@ export function svgButton(
   const bounds = (value: SvgButtonBounds) => {
     if (abort.signal.aborted) return;
     for (const name of ['x', 'y', 'width', 'height'] as const) attribute(name, value[name]);
+    contour.update(value);
   };
   const update = (value: SvgButtonState) => {
     if (abort.signal.aborted) return;
@@ -149,10 +154,10 @@ export function svgButton(
     { signal: abort.signal },
   );
   element.addEventListener('blur', cancel, { signal: abort.signal });
+  element.addEventListener('focus', () => contour.update(), { signal: abort.signal });
   parent.ownerDocument.defaultView?.addEventListener('blur', cancel, { signal: abort.signal });
   bounds(options);
   update(options);
-  parent.append(element);
   return {
     element,
     update,
@@ -160,6 +165,7 @@ export function svgButton(
     dispose() {
       cancel();
       abort.abort();
+      contour.dispose();
       element.remove();
     },
   };

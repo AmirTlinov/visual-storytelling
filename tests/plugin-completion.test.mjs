@@ -21,7 +21,7 @@ test(
     try {
       await page.goto(host.url);
       const app = page.frameLocator('iframe[title="MCP App"]');
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('html[data-connection="connected"]').waitFor();
       const first = (await call('story_inspect')).structuredContent.sessions[0];
       await call('story_control', {
         ...Object.fromEntries(
@@ -53,7 +53,7 @@ test(
       const other = await browser.newPage();
       await other.goto(host.url);
       const otherApp = other.frameLocator('iframe[title="MCP App"]');
-      await otherApp.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await otherApp.locator('html[data-connection="connected"]').waitFor();
       const otherId = (await call('story_inspect')).structuredContent.sessions.find(
         (s) => s.sessionId !== first.sessionId && s.sessionId !== visitedState.sessionId,
       ).sessionId;

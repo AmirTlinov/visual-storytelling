@@ -6,6 +6,7 @@
 @import './styles/morph.css';
 @import './styles/characters.css';
 @import './styles/prediction.css';
+@import './styles/selection.css';
 .vs-notebook {
   max-width: 900px;
   margin: auto;

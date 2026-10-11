@@ -28,8 +28,8 @@
   --ve-soft: color-mix(in srgb, var(--ve-accent) 34%, transparent);
   --ve-wash: color-mix(in srgb, var(--ve-accent) 18%, transparent);
   --ve-wash-alt: color-mix(in srgb, var(--ve-accent) 24%, transparent);
-  --ve-grid-ink: light-dark(#537bad26, #8faad928);
-  --ve-grid-major-ink: light-dark(#537bad38, #8faad93c);
+  --ve-grid-ink: light-dark(#77777726, #aaaaaa28);
+  --ve-grid-major-ink: light-dark(#77777738, #aaaaaa3c);
   --ve-grid-step: 20px;
   --ve-grid-x: 0px;
   --ve-grid-y: 0px;
@@ -49,7 +49,7 @@
 /* Inherited gradients retain their parent's resolved variables. Compute the
    paper material on its painted surface, where the frame scale is known. */
 .ve-scene,
-.ve-scene :where(.ve-scene-content, .ve-frame-content) {
+.ve-scene :where(.ve-scene-content, .ve-scene-paper, .ve-frame-content) {
   --ve-grid-paper-step: calc(var(--ve-grid-step) / var(--ve-frame-scale, 1));
   --ve-grid-major-step: calc(var(--ve-grid-paper-step) * 5);
   --ve-grid-line: max(1px, calc(0.6px / var(--ve-frame-scale, 1)));

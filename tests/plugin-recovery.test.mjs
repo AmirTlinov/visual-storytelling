@@ -53,11 +53,11 @@ test(
     try {
       await page.goto(host.url);
       const app = page.frameLocator('iframe[title="MCP App"]');
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('html[data-connection="connected"]').waitFor();
       const opened = await original({ name: 'story_open', arguments: { example: 'gpt-model' } });
       assert.equal(opened.isError, undefined, JSON.stringify(opened));
       await page.evaluate((result) => window.pluginTest.openResult(result), opened);
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('html[data-connection="connected"]').waitFor();
       const sessionId = opened.structuredContent.sessionId;
       const inspect = async () => {
         const result = await original({ name: 'story_inspect', arguments: { sessionId } });
@@ -77,8 +77,8 @@ test(
         },
       });
       failExchange = true;
-      await app.locator('#connection').filter({ hasText: 'Восстанавливаю связь…' }).waitFor();
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('html[data-connection="recovering"]').waitFor();
+      await app.locator('html[data-connection="connected"]').waitFor();
       const after = await inspect();
       assert.equal(recoveries, 1);
       assert.equal(after.generation, before.generation);
@@ -96,10 +96,10 @@ test(
         'automatic recovery stops within its 15 second window plus the pending poll',
       );
       assert.ok(recoveries <= 11, 'exponential backoff bounds the number of transport attempts');
-      assert.equal(await app.locator('#connection').innerText(), 'Сцена на паузе');
+      assert.equal(await app.locator('html').getAttribute('data-connection'), 'unavailable');
       offline = false;
       await app.locator('#reconnect').click();
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('html[data-connection="connected"]').waitFor();
       assert.equal((await inspect()).generation, before.generation);
       assert.ok(page.frames().includes(frame));
       const navigation = await original({
@@ -109,11 +109,11 @@ test(
       assert.equal(navigation.isError, undefined, JSON.stringify(navigation));
       assert.notEqual(navigation.structuredContent.sessionId, sessionId);
       await app.locator('#back').waitFor();
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('html[data-connection="connected"]').waitFor();
       await app.locator('#back').click();
       await app.frameLocator('#scene').locator('[data-scene-frame]').waitFor();
       await app.locator('#back').waitFor({ state: 'hidden' });
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('html[data-connection="connected"]').waitFor();
       assert.equal(await app.locator('#error').isVisible(), false);
       const recoveriesBeforeUpdate = recoveries,
         frameBeforeUpdate = page.frames().find((value) => value.url() === 'about:srcdoc');
@@ -122,7 +122,7 @@ test(
         .locator('#error')
         .filter({ hasText: 'Установлена новая версия' })
         .waitFor({ timeout: 3000 });
-      assert.equal(await app.locator('#connection').innerText(), 'Сцена на паузе');
+      assert.equal(await app.locator('html').getAttribute('data-connection'), 'unavailable');
       assert.equal(await app.locator('#reconnect').isVisible(), false);
       assert.equal(
         recoveries,

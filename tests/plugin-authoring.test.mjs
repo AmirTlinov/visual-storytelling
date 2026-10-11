@@ -45,10 +45,11 @@ test(
     try {
       await page.goto(host.url);
       const app = page.frameLocator('iframe[title="MCP App"]');
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('html[data-connection="connected"]').waitFor();
       const connectHelp = await call('story_help', { query: 'connect' });
       assert.match(connectHelp.structuredContent.text, /function connect/);
-      await app.locator('#settings').click();
+      const preferences = await call('story_preferences', {});
+      await page.evaluate((result) => window.pluginTest.openResult(result), preferences);
       await app.locator('input[name="cacheLimitMB"]').fill('1024');
       await app.locator('#preferences button[type="submit"]').click();
       await app.locator('#preferences').waitFor({ state: 'hidden' });
@@ -60,7 +61,7 @@ test(
       await finish(created.job.id);
       const opened = await call('story_open', { projectId: created.project.id });
       await page.evaluate((result) => window.pluginTest.openResult(result), opened);
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('html[data-connection="connected"]').waitFor();
       const project = created.project,
         { sessionId } = opened.structuredContent;
       const { structuredContent: before } = await call('story_inspect', { projectId: project.id });
@@ -279,7 +280,7 @@ test(
         copied.id,
         { timeout: 60000 },
       );
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('html[data-connection="connected"]').waitFor();
       await app
         .frameLocator('#scene')
         .getByText('Одна клетка — один шаг', { exact: true })

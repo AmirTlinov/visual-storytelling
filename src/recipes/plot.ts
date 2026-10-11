@@ -51,16 +51,18 @@ export function plot(view: Surface, id: string, options: PlotOptions) {
     Math.max(o.xDomain[0], Math.min(o.xDomain[1], 0)),
     Math.max(o.yDomain[0], Math.min(o.yDomain[1], 0)),
   );
-  view.pen.arrow(axes.content, `${id}:x`, [o.x, zero[1]], [o.x + o.width + 7, zero[1]], {
+  // Leave clear paper between the terminal tick and the nine-pixel arrowhead.
+  const axisEnd = { x: o.x + o.width + 12, y: o.y - 12 };
+  view.pen.arrow(axes.content, `${id}:x`, [o.x, zero[1]], [axisEnd.x, zero[1]], {
     width: 1.5,
   });
-  view.pen.arrow(axes.content, `${id}:y`, [zero[0], o.y + o.height], [zero[0], o.y - 7], {
+  view.pen.arrow(axes.content, `${id}:y`, [zero[0], o.y + o.height], [zero[0], axisEnd.y], {
     width: 1.5,
   });
   labels.geometry(() => ({
     segments: [
-      { from: [o.x, zero[1]], to: [o.x + o.width + 7, zero[1]], width: 4 },
-      { from: [zero[0], o.y + o.height], to: [zero[0], o.y - 7], width: 4 },
+      { from: [o.x, zero[1]], to: [axisEnd.x, zero[1]], width: 4 },
+      { from: [zero[0], o.y + o.height], to: [zero[0], axisEnd.y], width: 4 },
     ],
   }));
   const xTicks: ReturnType<typeof lettering>[] = [];
@@ -125,7 +127,7 @@ export function plot(view: Surface, id: string, options: PlotOptions) {
     label.element.dataset.plotLabel = 'x-title';
     cleanups.add(() => label.dispose());
     labels.add(label, (ink) => {
-      const end: Point = [o.x + o.width + 7, zero[1]];
+      const end: Point = [axisEnd.x, zero[1]];
       const right = besidePoint(ink, end, 'right', 14);
       const paper = view.element.viewBox.baseVal;
       const below = zero[1] + 13 + Math.max(0, ...xTicks.map((tick) => tick.bounds.height)) + 14;
@@ -146,12 +148,12 @@ export function plot(view: Surface, id: string, options: PlotOptions) {
     label.element.dataset.plotLabel = 'y-title';
     cleanups.add(() => label.dispose());
     labels.add(label, (ink) => ({
-      anchor: [zero[0], o.y - 7],
+      anchor: [zero[0], axisEnd.y],
       preferred: {
         ...ink,
         x: Math.max(view.element.viewBox.baseVal.x + 4, zero[0] - ink.width / 2),
         y:
-          Math.min(o.y - 7, ...yTicks.map(({ label, y }) => y - label.bounds.height / 2)) -
+          Math.min(axisEnd.y, ...yTicks.map(({ label, y }) => y - label.bounds.height / 2)) -
           10 -
           ink.height,
       },

@@ -64,6 +64,19 @@ test('plots share surface ink, independent of update order, and release overflow
         yLabel: 's',
       });
       const other = second.label('other', 'Другое измерение', { at: [0, 50], side: 'left' });
+      const arrowInk = second.content
+        .querySelector('[data-stroke="second:y"] path')
+        .getAttribute('d');
+      const head = document.createElementNS(sheet.element.namespaceURI, 'path');
+      head.setAttribute('d', arrowInk.slice(arrowInk.indexOf('M', 1)));
+      second.content.append(head);
+      const headBox = head.getBBox();
+      const terminalTick = second.content
+        .querySelector('[data-stroke="second:ytick:100"]')
+        .getBBox();
+      if (headBox.y + headBox.height >= terminalTick.y - 2)
+        throw new Error('The terminal tick collides with the arrowhead');
+      head.remove();
       // A label is checked in its local ink coordinates against each neighboring axis,
       // so rotation cannot be mistaken for a rectangular obstacle in the wrong space.
       function checkAxes(node, chart, x) {
@@ -92,11 +105,11 @@ test('plots share surface ink, independent of update order, and release overflow
         for (const segment of [
           [
             [x, 330],
-            [x, 73],
+            [x, 68],
           ],
           [
             [x, 330],
-            [x + 327, 330],
+            [x + 332, 330],
           ],
         ])
           if (crosses(segment.map(map)))

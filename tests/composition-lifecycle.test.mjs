@@ -255,8 +255,9 @@ test('chapter frame presentation is published with its drawing, including prepar
           paper: root.dataset.paper,
           shown: lab.scene.snapshot().chapter,
           heading: root.querySelector('.ve-heading').checkVisibility(),
+          headingInside: sheet.contains(root.querySelector('.ve-heading')),
           toolbarInside: sheet.contains(root.querySelector('.ve-scene-toolbar')),
-          grid: getComputedStyle(sheet).backgroundImage !== 'none',
+          grid: getComputedStyle(sheet.querySelector('.ve-scene-paper')).backgroundImage !== 'none',
           players: root.querySelectorAll('.ve-player').length,
         };
       });
@@ -266,6 +267,7 @@ test('chapter frame presentation is published with its drawing, including prepar
       paper: 'true',
       shown: 'paper',
       heading: true,
+      headingInside: true,
       toolbarInside: true,
       grid: true,
       players: 1,
@@ -288,7 +290,8 @@ test('chapter frame presentation is published with its drawing, including prepar
       presentation: 'stage',
       paper: 'false',
       shown: 'stage',
-      heading: false,
+      heading: true,
+      headingInside: false,
       toolbarInside: false,
       grid: false,
       players: 1,

@@ -250,7 +250,15 @@ test('selection chooses one visible representation per object and follows visibi
     assert.equal(await page.locator('[data-selected][aria-pressed="true"]').count(), 3);
     assert.equal(
       await page.locator('#proxy').evaluate((n) => getComputedStyle(n).outlineStyle),
-      'solid',
+      'none',
+    );
+    assert.equal(
+      await page.locator('#proxy').evaluate((n) => getComputedStyle(n, '::after').content),
+      '""',
+    );
+    assert.notEqual(
+      await page.locator('#proxy').evaluate((n) => getComputedStyle(n, '::after').maskImage),
+      'none',
     );
     assert.equal(
       await page.locator('#annotation').evaluate((n) => getComputedStyle(n).outlineStyle),
@@ -275,12 +283,46 @@ test('selection chooses one visible representation per object and follows visibi
     await page.locator('#sum').focus();
     assert.equal(
       await page.locator('#sum').evaluate((n) => getComputedStyle(n).outlineStyle),
-      'dashed',
+      'none',
+    );
+    assert.equal(
+      await page
+        .locator('#sum')
+        .evaluate(
+          (n) =>
+            getComputedStyle(n.nextElementSibling.querySelector('[data-interaction-focus]'))
+              .visibility,
+        ),
+      'visible',
+    );
+    const stroke = await page
+      .locator('#sum')
+      .evaluate((n) => n.nextElementSibling.querySelector('path').getAttribute('d'));
+    const stable = await page.evaluate(async () => {
+      const target = document.querySelector('#sum'),
+        contour = target.nextElementSibling,
+        changes = [];
+      const observer = new MutationObserver((records) => changes.push(...records));
+      observer.observe(contour, { attributes: true, childList: true, subtree: true });
+      for (let index = 0; index < 8; index++) owner.select(['number', 'sum']);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      observer.disconnect();
+      return {
+        sameNode: target.nextElementSibling === contour,
+        changes: changes.length,
+        stroke: contour.querySelector('path').getAttribute('d'),
+      };
+    });
+    assert.deepEqual(
+      stable,
+      { sameNode: true, changes: 0, stroke },
+      'repeated selection retains the same contour without repaints or geometry changes',
     );
     assert.deepEqual(await highlights(), ['proxy', 'sum']);
     await page.evaluate(() => owner.dispose());
     assert.deepEqual(await highlights(), []);
     assert.equal(await page.locator('[data-selected]').count(), 0);
+    assert.equal(await page.locator('[data-interaction-contour]').count(), 0);
   } finally {
     await browser.close();
   }

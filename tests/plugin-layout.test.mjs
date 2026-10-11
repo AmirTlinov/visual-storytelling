@@ -17,7 +17,7 @@ test(
     try {
       await page.goto(host.url);
       const app = page.frameLocator('iframe[title="MCP App"]');
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('html[data-connection="connected"]').waitFor();
       const scene = page.frames().find((frame) => frame.url() === 'about:srcdoc');
       const panel = scene.parentFrame();
       const fits = async () => {
@@ -36,9 +36,8 @@ test(
         );
         await panel.waitForFunction(
           () =>
-            Math.abs(
-              document.querySelector('footer').getBoundingClientRect().bottom - innerHeight,
-            ) <= 1 && document.documentElement.scrollHeight <= innerHeight + 1,
+            Math.abs(document.querySelector('main').getBoundingClientRect().bottom - innerHeight) <=
+              1 && document.documentElement.scrollHeight <= innerHeight + 1,
           undefined,
           { timeout: 5000 },
         );
@@ -161,7 +160,6 @@ test(
         }),
       );
       await app.locator('#error').filter({ hasText: 'Переподключите плагин' }).waitFor();
-      assert.equal(await app.locator('#connection').textContent(), 'Не удалось открыть');
     } finally {
       await browser.close();
       await host.close();

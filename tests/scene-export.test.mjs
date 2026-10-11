@@ -238,6 +238,121 @@ test('a pure SVG frame retains its geometry and text through fallback export', a
   }
 });
 
+test('the shared header separator and paper region retain their bounds in vector export', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'story-paper-region-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const entry = join(directory, 'index.html');
+  await writeFile(
+    entry,
+    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <body class="ve-standalone"><main class="ve-scene"></main><script type="module">
+    import { SceneShell, surface } from '@visual-storytelling/core';
+    import '@visual-storytelling/core/style.css';
+    window.galleryReady = (async () => {
+      await SceneShell.ready();
+      const shell = SceneShell.mount(document.querySelector('main'), {title:'Один рисунок'});
+      const drawing = surface(shell.stage, {width:1280,height:720,grid:false});
+      drawing.pen.line(drawing.layer, 'subject', [200,200], [500,400]);
+      shell.onDispose(() => drawing.dispose());
+      window.shell = shell;
+    })();
+    </script>`,
+  );
+  const output = join(directory, 'dist');
+  await buildPage(entry, output, { sourcePackage: true });
+  for (const width of [1280, 390])
+    for (const theme of ['light', 'dark']) {
+      const render = await renderer({ directory: output, width, height: 900, theme });
+      try {
+        const expected = await render.page.evaluate(() => {
+          const sheet = document.querySelector('.ve-scene-content'),
+            frame = sheet.getBoundingClientRect(),
+            scale = frame.width / sheet.clientWidth,
+            paper = sheet.querySelector('.ve-scene-paper').getBoundingClientRect(),
+            header = sheet.querySelector('.ve-scene-header'),
+            head = header.getBoundingClientRect(),
+            weight = parseFloat(getComputedStyle(header).borderBottomWidth);
+          return {
+            x: (paper.x - frame.x) / scale,
+            y: (paper.y - frame.y) / scale,
+            width: paper.width / scale,
+            height: paper.height / scale,
+            separator: (head.bottom - frame.top) / scale - weight / 2,
+            weight,
+          };
+        });
+        const exported = await render.page.evaluate(
+          (source) => {
+            const svg = new DOMParser().parseFromString(source, 'image/svg+xml');
+            const papers = [...svg.querySelectorAll('[data-export-paper] > rect[fill^="url("]')];
+            const paper = papers[0];
+            return {
+              papers: papers.length,
+              bounds: Object.fromEntries(
+                ['x', 'y', 'width', 'height'].map((key) => [key, Number(paper.getAttribute(key))]),
+              ),
+              lines: [...svg.querySelectorAll('line')].map((line) =>
+                Object.fromEntries(
+                  ['x1', 'y1', 'x2', 'y2', 'stroke-width'].map((key) => [
+                    key,
+                    Number(line.getAttribute(key)),
+                  ]),
+                ),
+              ),
+              text: [...svg.querySelectorAll('text')].map((node) => node.textContent),
+            };
+          },
+          await render.svg(),
+        );
+        assert.equal(exported.papers, 1, 'only the paper region carries the notebook grid');
+        assert.ok(expected.y > 0, 'the header is outside the paper material');
+        for (const key of ['x', 'y', 'width', 'height'])
+          assert.ok(
+            Math.abs(exported.bounds[key] - expected[key]) < 0.01,
+            `${theme}/${width}: ${key}`,
+          );
+        assert.ok(exported.text.includes('Один рисунок'), 'the heading remains in the composition');
+        assert.ok(
+          exported.lines.some(
+            (line) =>
+              line.x1 === 0 &&
+              line.x2 === 1280 &&
+              Math.abs(line.y1 - expected.separator) < 0.01 &&
+              line.y1 === line.y2 &&
+              line['stroke-width'] === expected.weight,
+          ),
+          `the separator matches the visible bottom border: ${JSON.stringify({ expected, lines: exported.lines })}`,
+        );
+        await render.page.evaluate(() => window.shell.setPresentation('stage'));
+        const staged = await render.svg();
+        assert.doesNotMatch(staged, /id="export-paper|Один рисунок/);
+        await render.page.evaluate(() => window.shell.setPresentation('explanation'));
+        assert.match(await render.svg(), /id="export-paper/);
+        await render.page.locator('.ve-scene-header').evaluate((header) => {
+          header.style.borderBottomStyle = 'dashed';
+        });
+        await assert.rejects(
+          render.svg(),
+          completeFrameError,
+          'unencoded header borders still fail',
+        );
+        await render.page.locator('.ve-scene-header').evaluate((header) => {
+          header.style.borderBottomStyle = '';
+          const arbitrary = document.createElement('div');
+          arbitrary.style.cssText = 'height:10px;border-bottom:1px solid black';
+          header.after(arbitrary);
+        });
+        await assert.rejects(
+          render.svg(),
+          completeFrameError,
+          'arbitrary borders are not accepted',
+        );
+      } finally {
+        await render.close();
+      }
+    }
+});
+
 test('the shared shell exports the complete vector composition, current conditions and shared ink', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'story-vector-export-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -371,28 +486,30 @@ test('the shared shell exports the complete vector composition, current conditio
       await render.control([{ type: 'select', ids: ['horizontal'] }]);
       const selected = await render.page.evaluate(async () => {
         const selected = document.querySelector('[data-object="horizontal"]');
-        const style = getComputedStyle(selected);
+        const contour = selected.nextElementSibling.querySelector('[data-selection-contour]');
+        const style = getComputedStyle(contour);
         const parsed = new DOMParser().parseFromString(
           await document.querySelector('.ve-scene').scene.exportSVG(),
           'image/svg+xml',
         );
-        const exported = parsed.querySelector('[data-object="horizontal"]');
+        const exported = parsed
+          .querySelector('[data-object="horizontal"]')
+          .nextElementSibling.querySelector('[data-selection-contour]');
         return {
-          before: [style.outlineColor, style.outlineWidth, style.outlineStyle, style.outlineOffset],
-          after: [
-            exported.style.outlineColor,
-            exported.style.outlineWidth,
-            exported.style.outlineStyle,
-            exported.style.outlineOffset,
-          ],
+          visible: style.visibility,
+          before: contour.getAttribute('d'),
+          after: exported.getAttribute('d'),
+          focus: parsed.querySelectorAll('[data-interaction-focus]').length,
         };
       });
-      assert.equal(selected.before[1], '2px', 'the selected subject has its semantic outline');
+      assert.equal(selected.visible, 'visible', 'the selected subject has its semantic contour');
+      assert.ok(selected.before.length > 0);
       assert.deepEqual(
         selected.after,
         selected.before,
         'subject selection remains in the exported drawing',
       );
+      assert.equal(selected.focus, 0, 'temporary keyboard focus is not part of the drawing');
       const longTitle =
         'Почему направление и величина перемещения сохраняются при изменении системы координат';
       await render.page.locator('.ve-select-trigger').evaluate((element, value) => {
@@ -401,16 +518,16 @@ test('the shared shell exports the complete vector composition, current conditio
       const reading = await render.svg();
       const read = await render.page.evaluate((source) => {
         const parsed = new DOMParser().parseFromString(source, 'image/svg+xml');
-        const ellipsis = [...parsed.querySelectorAll('text')].find((node) =>
-          node.textContent.endsWith('…'),
-        );
         return {
           size: [
             parsed.documentElement.getAttribute('width'),
             parsed.documentElement.getAttribute('height'),
           ],
-          full: [...parsed.querySelectorAll('title')].map((node) => node.textContent),
-          shortened: ellipsis?.textContent,
+          text: [...parsed.querySelectorAll('text')]
+            .map((node) => node.textContent)
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim(),
         };
       }, reading);
       assert.deepEqual(
@@ -418,10 +535,9 @@ test('the shared shell exports the complete vector composition, current conditio
         ['1280', '720'],
         'the composition keeps its authored logical frame',
       );
-      assert.ok(read.full.includes(longTitle));
       assert.ok(
-        read.shortened && read.shortened.length < longTitle.length,
-        'the shared chapter select keeps its visible ellipsis',
+        read.text.includes(longTitle),
+        'the current chapter heading keeps its wrapped text in the complete frame',
       );
       await writeFile(
         resolve(repository, `artifacts/frame-consistency/export-composition-${theme}-long.svg`),
@@ -429,15 +545,73 @@ test('the shared shell exports the complete vector composition, current conditio
       );
       await render.page.setViewportSize({ width: 390, height: 844 });
       await render.page
-        .locator('.ve-scene-conditions .ve-select-trigger')
+        .locator('.ve-scene-header .ve-select-trigger')
         .waitFor({ state: 'attached' });
       const compact = await render.svg();
       assert.match(compact, /viewBox="0 0 1280 720"/);
-      assert.equal(
-        compact.includes(longTitle),
-        false,
-        'chapter navigation in Conditions stays outside the compact composition',
+      const compactText = await render.page.evaluate((source) => {
+        const parsed = new DOMParser().parseFromString(source, 'image/svg+xml');
+        return [...parsed.querySelectorAll('text')]
+          .map((node) => node.textContent)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }, compact);
+      assert.ok(compactText.includes(longTitle), 'the chapter heading stays in the compact frame');
+      const chapter = render.page.getByRole('combobox', { name: 'Глава', exact: true });
+      await chapter.evaluate((node, value) => (node.textContent = value), expected.heading);
+      await chapter.click();
+      const menu = render.page.getByRole('listbox', { name: 'Глава', exact: true });
+      await menu.waitFor({ state: 'visible' });
+      const menuFont = await menu
+        .getByRole('option')
+        .first()
+        .evaluate((node) => parseFloat(getComputedStyle(node).fontSize));
+      const openMenuPNG = PNG.sync.read(await render.png());
+      const menuVector = await render.page.evaluate(
+        async ({ source, width, height }) => {
+          const parsed = new DOMParser().parseFromString(source, 'image/svg+xml');
+          const host = document.createElement('div');
+          host.style.cssText = 'position:fixed;left:-5000px;top:0';
+          host.append(document.importNode(parsed.documentElement, true));
+          document.body.append(host);
+          const svg = host.firstElementChild;
+          svg.style.width = width + 'px';
+          svg.style.height = height + 'px';
+          const first = svg.querySelector('[data-export-chapter-menu] text'),
+            matrix = first.getScreenCTM(),
+            font = parseFloat(getComputedStyle(first).fontSize) * Math.hypot(matrix.c, matrix.d);
+          host.remove();
+          const image = new Image(),
+            url = URL.createObjectURL(new Blob([source], { type: 'image/svg+xml' }));
+          try {
+            image.src = url;
+            await image.decode();
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            canvas.getContext('2d').drawImage(image, 0, 0, width, height);
+            return { font, pixels: canvas.toDataURL('image/png').split(',')[1] };
+          } finally {
+            URL.revokeObjectURL(url);
+          }
+        },
+        { source: await render.svg(), width: openMenuPNG.width, height: openMenuPNG.height },
       );
+      assert.ok(
+        Math.abs(menuVector.font - menuFont) < 0.2,
+        'native chapter menu keeps its physical font size',
+      );
+      const menuImage = PNG.sync.read(Buffer.from(menuVector.pixels, 'base64'));
+      let menuDelta = 0;
+      for (let i = 0; i < openMenuPNG.data.length; i++)
+        menuDelta += Math.abs(openMenuPNG.data[i] - menuImage.data[i]);
+      assert.ok(
+        menuDelta / openMenuPNG.data.length < 6,
+        'the open chapter menu has the same top-layer geometry in SVG and PNG',
+      );
+      assert.equal(await menu.evaluate((node) => node.matches(':popover-open')), true);
+      await chapter.press('Escape');
       await render.page.setViewportSize({ width: 1280, height: 900 });
       const expanded = await render.svg();
       assert.match(expanded, /viewBox="0 0 1280 720"/);

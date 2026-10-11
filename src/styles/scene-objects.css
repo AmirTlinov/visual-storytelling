@@ -2,6 +2,9 @@
   cursor: pointer;
   outline: none;
 }
+.ve-scene [data-object]:not(svg *, .ve-viewport-object) {
+  position: relative;
+}
 .ve-viewport-object {
   outline: none;
 }
@@ -11,19 +14,37 @@
 .ve-viewport-object:focus-visible > span {
   display: block;
 }
-.ve-scene [data-object][data-selection-highlight] {
-  outline: 2px solid var(--ve-blue, #2670a8);
-  outline-offset: 3px;
+.ve-scene [data-object]:not(svg *)::after {
+  content: none;
+  position: absolute;
+  inset: -4px;
+  pointer-events: none;
+  background: currentColor;
+  mask: var(--ve-selection-outline) center / 100% 100% no-repeat;
 }
-:is(.ve-scene svg, svg.ve-scene) [data-object][data-selection-highlight] {
-  /* Logical SVG targets can reach the viewport edge; keep their ring inside the clip. */
-  outline-offset: -3px;
+.ve-scene [data-object]:not(svg *)[data-selection-highlight]:not([aria-disabled='true'])::after,
+.ve-scene [data-object]:not(svg *)[role='button']:focus-visible:not([aria-disabled='true'])::after {
+  content: '';
 }
-.ve-scene [data-object][role='button']:focus-visible,
-.ve-viewport-object:focus-visible {
-  outline: 1px dashed var(--ve-pencil, #68747b);
-  outline-offset: 6px;
+.ve-scene [data-object]:not(svg *)[role='button']:focus-visible::after {
+  mask-image: var(--ve-focus-outline, var(--ve-selection-outline));
 }
-:is(.ve-scene svg, svg.ve-scene) [data-object][role='button']:focus-visible {
-  outline-offset: -6px;
+[data-interaction-contour] {
+  pointer-events: none;
+}
+[data-interaction-contour] path {
+  visibility: hidden;
+  stroke-width: 1.35;
+}
+[data-interaction-contour][data-contour-selected] [data-selection-contour] {
+  visibility: visible;
+}
+:is(.ve-svg-button, [data-object][role='button']):focus-visible:not([aria-disabled='true'])
+  + [data-interaction-contour]
+  [data-interaction-focus] {
+  visibility: visible;
+  stroke-width: 1.8;
+}
+[aria-disabled='true'] + [data-interaction-contour] path {
+  visibility: hidden;
 }

@@ -40,14 +40,12 @@ const inkField = (input: HTMLInputElement | HTMLTextAreaElement) => {
   wrapper.append(input);
   return wrapper;
 };
-function selectControl(
+export function selectControl(
   p: ControlParameter,
-  title: HTMLElement,
   emit: (value: ControlValue) => void,
   listen: AddEventListenerOptions,
 ) {
-  const id = `ve-select-${++serial}`,
-    wrapper = make('div', { class: 've-field ve-field-select' });
+  const id = `ve-select-${++serial}`;
   const trigger = make('button', {
     type: 'button',
     id,
@@ -56,20 +54,18 @@ function selectControl(
     'aria-haspopup': 'listbox',
     'aria-expanded': 'false',
     'aria-controls': `${id}-options`,
-    'aria-labelledby': `${id}-label`,
+    'aria-label': p.label,
     popovertarget: `${id}-options`,
   });
   const menu = make('div', {
     id: `${id}-options`,
     class: 've-select-list',
     role: 'listbox',
-    'aria-labelledby': `${id}-label`,
+    'aria-label': p.label,
     popover: 'auto',
   });
   const scroll = make('div', { class: 've-select-scroll' });
   menu.append(scroll);
-  title.id = `${id}-label`;
-  title.setAttribute('for', id);
   const rows = (p.options ?? []).map((option, index) => {
     const row = make('div', {
       id: `${id}-${index}`,
@@ -244,15 +240,17 @@ function selectControl(
     },
     { ...listen, capture: true },
   );
-  wrapper.append(trigger, menu);
   return {
-    element: wrapper,
+    trigger,
+    menu,
     setValue(value: ControlValue) {
       selected = Math.max(
         0,
         (p.options ?? []).findIndex((option) => option.value === value),
       );
       trigger.textContent = (p.options ?? [])[selected]?.label || 'Нет вариантов';
+      trigger.setAttribute('aria-label', p.label);
+      menu.setAttribute('aria-label', p.label);
       trigger.disabled = Boolean(p.disabled) || !rows.length;
       if (trigger.disabled) close();
       rows.forEach((row, i) => row.setAttribute('aria-selected', String(i === selected)));
@@ -305,8 +303,11 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
     element.prepend(input);
     input.addEventListener('change', () => emit(input.checked), listen);
   } else if (type === 'select') {
-    select = selectControl(p, title, emit, listen);
-    element.append(select.element);
+    select = selectControl(p, emit, listen);
+    title.setAttribute('for', select.trigger.id);
+    const wrapper = make('div', { class: 've-field ve-field-select' });
+    wrapper.append(select.trigger, select.menu);
+    element.append(wrapper);
   } else if (type === 'textarea') {
     textarea = make('textarea', { rows: 3, 'aria-label': p.label, spellcheck: 'false' });
     textarea.addEventListener('input', () => emit(textarea!.value), listen);

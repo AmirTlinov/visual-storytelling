@@ -402,7 +402,7 @@ export function pen(canvas: SVGSVGElement) {
         const angle = Math.atan2(to[1] - from[1], to[0] - from[0]);
         const wing = (delta: number) =>
           `${to[0] - 9 * Math.cos(angle + delta)} ${to[1] - 9 * Math.sin(angle + delta)}`;
-        return `M${from.join(' ')} L${to.join(' ')} M${wing(0.48)} Q${to.join(' ')} ${wing(-0.48)}`;
+        return `M${from.join(' ')} L${to.join(' ')} M${wing(0.48)} L${to.join(' ')} L${wing(-0.48)}`;
       };
       const mark = draw(parent, id, path(from, to), style);
       return { ...mark, between: (from: Point, to: Point) => mark.update(path(from, to)) };

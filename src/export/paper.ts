@@ -10,7 +10,7 @@ export const paint = (value: string) =>
 
 /** Freeze the existing paper material in the coordinate system of the exported drawing. */
 export function appendPaper(
-  target: SVGSVGElement,
+  target: SVGSVGElement | SVGGElement,
   definitions: SVGDefsElement,
   owner: HTMLElement,
   view: { x: number; y: number; width: number; height: number },
@@ -67,7 +67,7 @@ export function appendPaper(
       probe.remove();
     }
     let id = 'export-paper';
-    while (target.querySelector(`#${id}`)) id += '-';
+    while (definitions.querySelector(`#${id}`)) id += '-';
     const pattern = svg('pattern', { id, x, y, width, height, patternUnits: 'userSpaceOnUse' });
     for (let column = 0; column < width - 0.01; column += minor[0]! * paperScaleX * sx)
       pattern.append(
@@ -84,5 +84,6 @@ export function appendPaper(
     definitions.append(pattern);
     background.append(svg('rect', { ...area, fill: `url(#${id})` }));
   }
-  definitions.after(background);
+  if (definitions.parentNode === target) definitions.after(background);
+  else target.prepend(background);
 }

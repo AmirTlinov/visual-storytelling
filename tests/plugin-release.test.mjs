@@ -57,7 +57,7 @@ test(
     try {
       await page.goto(host.url);
       const app = page.frameLocator('iframe[title="MCP App"]');
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('html[data-connection="connected"]').waitFor();
       const created = await createProjectFixture(host.client, {
         title: 'Выбранная редакция',
         path: join(directory, 'project'),
@@ -65,7 +65,7 @@ test(
       await finish(created.job.id);
       const opened = await call('story_open', { projectId: created.project.id });
       await page.evaluate((result) => window.pluginTest.openResult(result), opened);
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('html[data-connection="connected"]').waitFor();
       const project = created.project,
         { sessionId } = opened.structuredContent;
       assert.equal(await app.locator('#voice, #release').count(), 0);

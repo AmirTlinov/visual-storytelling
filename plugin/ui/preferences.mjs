@@ -2,7 +2,6 @@
 export function preferencesUI(app, error) {
   const panel = document.getElementById('preferences'),
     form = panel.querySelector('form');
-  const button = document.getElementById('settings');
   let previousFocus;
   async function open(value) {
     previousFocus = document.activeElement;
@@ -20,7 +19,6 @@ export function preferencesUI(app, error) {
     panel.hidden = true;
     previousFocus?.focus();
   }
-  button.onclick = () => void open().catch((e) => error(e.message));
   document.getElementById('preferences-close').onclick = close;
   form.onsubmit = async (event) => {
     event.preventDefault();

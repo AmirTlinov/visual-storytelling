@@ -124,28 +124,6 @@
 .ve-scene .ve-status:empty {
   display: none;
 }
-.ve-scene .ve-chapter-navigation {
-  width: max-content;
-  min-width: 0;
-  max-width: min(100%, 320px);
-  margin: 0 0 12px;
-  font-size: 16px;
-}
-.ve-scene .ve-chapter-navigation .ve-control-title {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-}
-.ve-scene .ve-chapter-navigation .ve-select-trigger {
-  font-size: calc(16 * var(--ve-control-unit, 1px));
-  padding-left: 2px;
-}
-.ve-scene .ve-chapter-navigation .ve-select-list {
-  font-size: 17px;
-  text-align: left;
-}
 @media (max-width: 480px) {
   .ve-scene .ve-parameters {
     grid-template-columns: 1fr;
@@ -221,17 +199,26 @@
   inset: 0;
   display: flex;
   flex-direction: column;
-  padding: 20px 32px 12px;
+  padding: 0;
   overflow: hidden;
   box-sizing: border-box;
   background: transparent;
 }
 .ve-scene:not([data-paper='false'])
   > .ve-scene-frame
-  > .ve-scene-content:not(:has(.vs-grid:not([hidden] *, [data-chapter-pending] *) > path)) {
+  > .ve-scene-content
+  > .ve-scene-paper:not(:has(.vs-grid:not([hidden] *, [data-chapter-pending] *) > path)) {
   background-image: var(--ve-grid);
   background-size: var(--ve-grid-size);
   background-position: var(--ve-grid-x) var(--ve-grid-y);
+}
+.ve-scene .ve-scene-paper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
 }
 .ve-scene .ve-scene-header {
   display: flex;
@@ -239,15 +226,19 @@
   gap: calc(12 * var(--ve-control-unit, 1px));
   flex: 0 0 auto;
   min-width: 0;
-  margin: 0 0 8px;
+  margin: 0;
+  padding: calc(2 * var(--ve-control-unit, 1px)) calc(8 * var(--ve-control-unit, 1px));
+  background: color-mix(in srgb, var(--ve-ink) 3%, var(--ve-surface));
+  border-bottom: 1px solid color-mix(in srgb, var(--ve-pencil) 55%, transparent);
 }
-.ve-scene .ve-scene-content > :is(.ve-scene-header, .ve-scene-toolbar, .ve-parameters) {
+.ve-scene .ve-scene-content > .ve-scene-header,
+.ve-scene .ve-scene-paper > .ve-parameters {
   --ve-control-unit: max(1px, calc(1px / var(--ve-frame-scale, 1)));
 }
 .ve-scene .ve-scene-header > .ve-heading {
   flex: 1 1 0;
   min-width: 0;
-  font-size: max(32px, calc(20 * var(--ve-control-unit, 1px)));
+  font-size: max(26px, calc(20 * var(--ve-control-unit, 1px)));
   line-height: 1.2;
   margin: 0;
   overflow-wrap: anywhere;
@@ -262,25 +253,60 @@
   font-size: calc(17 * var(--ve-control-unit, 1px));
   padding: calc(8 * var(--ve-control-unit, 1px)) calc(12 * var(--ve-control-unit, 1px));
 }
+.ve-scene .ve-scene-header > .ve-heading {
+  text-align: left;
+}
+.ve-scene .ve-heading > button.ve-select-trigger {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.ve-scene .ve-chapter-menu {
+  font-size: 19px;
+  text-align: left;
+}
 .ve-scene .ve-parameters :is(label, .ve-choices) {
   font-size: calc(16 * var(--ve-control-unit, 1px));
 }
-.ve-scene .ve-scene-content[data-compact-chrome='true']:has(> .ve-scene-header:not([hidden])) {
-  padding: calc(8px / var(--ve-frame-scale, 1));
-}
-.ve-scene .ve-scene-content[data-compact-chrome='true'] > .ve-scene-header {
+.ve-scene .ve-scene-content[data-compact-chrome='true'] > .ve-scene-header,
+.ve-scene:has(.ve-scene-content[data-compact-chrome='true']) > .ve-scene-header {
   gap: calc(8 * var(--ve-control-unit, 1px));
-  margin: 0 0 calc(4 * var(--ve-control-unit, 1px));
+  margin: 0;
 }
-.ve-scene .ve-scene-content[data-compact-chrome='true'] > .ve-scene-header > .ve-heading {
+.ve-scene .ve-scene-content[data-compact-chrome='true'] > .ve-scene-header > .ve-heading,
+.ve-scene:has(.ve-scene-content[data-compact-chrome='true']) > .ve-scene-header > .ve-heading {
+  font-size: calc(20 * var(--ve-control-unit, 1px));
+  line-height: 1.1;
+  text-align: left;
+}
+/* Clamp the text-owning element; a block button does not inherit its parent's clamp. */
+.ve-scene
+  .ve-scene-content[data-compact-chrome='true']
+  > .ve-scene-header
+  > .ve-heading:not(:has(> button.ve-select-trigger)),
+.ve-scene
+  .ve-scene-content[data-compact-chrome='true']
+  > .ve-scene-header
+  > .ve-heading
+  > button.ve-select-trigger,
+.ve-scene:has(.ve-scene-content[data-compact-chrome='true'])
+  > .ve-scene-header
+  > .ve-heading:not(:has(> button.ve-select-trigger)),
+.ve-scene:has(.ve-scene-content[data-compact-chrome='true'])
+  > .ve-scene-header
+  > .ve-heading
+  > button.ve-select-trigger {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
   overflow: hidden;
-  font-size: calc(20 * var(--ve-control-unit, 1px));
-  line-height: 1.1;
-  text-align: left;
 }
 .ve-scene .ve-scene-conditions {
   --ve-control-unit: 1px;
@@ -320,10 +346,7 @@
   gap: 8px;
   margin: 0 0 12px;
 }
-.ve-scene
-  .ve-scene-conditions
-  > .ve-scene-toolbar
-  > :is(.ve-chapter-navigation, .modes, .ve-view-actions) {
+.ve-scene .ve-scene-conditions > .ve-scene-toolbar > :is(.modes, .ve-view-actions) {
   flex: 1 1 100%;
   max-width: none;
   flex-wrap: wrap;
@@ -343,12 +366,10 @@
   flex-wrap: wrap;
   gap: calc(8 * var(--ve-control-unit, 1px)) calc(24 * var(--ve-control-unit, 1px));
   min-width: 0;
-  margin: 0 0 8px;
-}
-.ve-scene .ve-scene-toolbar > .ve-chapter-navigation {
-  flex: 1 1 calc(220 * var(--ve-control-unit, 1px));
-  max-width: 360px;
   margin: 0;
+}
+.ve-scene .ve-scene-header > .ve-scene-toolbar {
+  flex-wrap: nowrap;
 }
 .ve-scene .ve-scene-toolbar > .modes {
   flex: 0 0 auto;
@@ -370,24 +391,24 @@
   font-size: calc(16 * var(--ve-control-unit, 1px));
   overflow-wrap: anywhere;
 }
-.ve-scene .ve-scene-content > .ve-parameters {
+.ve-scene .ve-scene-paper > .ve-parameters {
   flex: 0 0 auto;
   margin: 0 0 8px;
   gap: calc(12 * var(--ve-control-unit, 1px)) calc(24 * var(--ve-control-unit, 1px));
   grid-template-columns: repeat(var(--ve-parameter-columns), minmax(0, 1fr));
 }
-.ve-scene .ve-scene-content > .ve-parameters[hidden]:has(> :not([hidden])) {
+.ve-scene .ve-scene-paper > .ve-parameters[hidden]:has(> :not([hidden])) {
   display: grid !important;
   visibility: hidden;
   pointer-events: none;
 }
-.ve-scene .ve-scene-frame .ve-scene-content > .ve-stage {
+.ve-scene .ve-scene-frame .ve-scene-paper > .ve-stage {
   flex: 1 1 0;
   min-height: 0;
   height: auto;
   overflow: hidden;
 }
-.ve-scene .ve-scene-content > .ve-stage > svg.vs-canvas {
+.ve-scene .ve-scene-paper > .ve-stage > svg.vs-canvas {
   height: 100%;
 }
 /* A staged performance is a separate complete frame, not a picture on notebook paper. */
@@ -395,18 +416,9 @@
   padding: 0;
   background-image: none;
 }
-.ve-scene[data-presentation='stage'] > .ve-scene-toolbar {
-  flex-wrap: wrap;
-  gap: 8px 24px;
-  margin: 4px 8px;
-}
-.ve-scene[data-presentation='stage'] > .ve-scene-toolbar > .ve-chapter-navigation {
-  flex: 1 1 220px;
-  max-width: 360px;
-}
-.ve-scene[data-presentation='stage'] > .ve-scene-toolbar > .ve-view-actions {
-  flex-wrap: wrap;
-  white-space: normal;
+/* Stage controls sit outside the complete composition. */
+.ve-scene[data-presentation='stage'] > .ve-scene-header {
+  --ve-control-unit: 1px;
 }
 .ve-scene[data-presentation='stage'] > .ve-parameters {
   margin: 8px;
@@ -416,14 +428,14 @@
   visibility: hidden;
   pointer-events: none;
 }
-.ve-scene .ve-scene-content > .ve-stage:has(> .ve-frame) {
+.ve-scene .ve-scene-paper > .ve-stage:has(> .ve-frame) {
   display: grid;
   place-items: center;
 }
 .ve-scene .ve-scene-content .ve-label {
   font-size: 18px;
 }
-.ve-scene .ve-scene-content > .ve-captions {
+.ve-scene .ve-scene-paper > .ve-captions {
   flex: 0 0 2.8em;
   height: 2.8em;
   max-width: none;
@@ -438,7 +450,9 @@
 }
 .ve-scene > [data-player] {
   margin: 0 auto;
-  padding: 4px 8px 8px;
+  padding: 0;
+  background: color-mix(in srgb, var(--ve-ink) 3%, var(--ve-surface));
+  border-top: 1px solid color-mix(in srgb, var(--ve-pencil) 55%, transparent);
 }
 /* A mounted story keeps its playback space when the subject enters exploration. */
 .ve-scene > [data-player][hidden]:has(.ve-player) {
@@ -486,7 +500,8 @@
 .ve-scene [data-story-pressed='true'] {
   filter: brightness(0.85);
 }
-.ve-scene .ve-frame [aria-selected='true']:not(.ve-select-option) {
+/* A filmed interface keeps its authored selection; registered drawing subjects own their ink. */
+.ve-scene .ve-frame [aria-selected='true']:not(.ve-select-option, [data-object]) {
   outline: 2px solid var(--ve-ink);
   outline-offset: 3px;
 }

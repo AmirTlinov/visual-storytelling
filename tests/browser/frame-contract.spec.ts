@@ -34,7 +34,7 @@ test('notebook paper keeps a calm physical grid through scaling, themes and vect
   await page.evaluate(() => {
     (window as any).paperContract = (window as any).PaperContract.mount();
   });
-  const content = page.locator('.ve-scene-content');
+  const content = page.locator('.ve-scene-paper');
   const frame = page.locator('[data-scene-frame]');
   await mkdir(resolve('artifacts/frame-consistency'), { recursive: true });
   for (const width of [375, 1440]) {
@@ -54,7 +54,7 @@ test('notebook paper keeps a calm physical grid through scaling, themes and vect
         .toBeLessThan(0.01);
       const exported = await page.evaluate(async () => {
         const { root } = (window as any).paperContract;
-        const content = root.querySelector('.ve-scene-content');
+        const content = root.querySelector('.ve-scene-paper');
         const scale = content.getBoundingClientRect().width / content.offsetWidth;
         const xml = new DOMParser().parseFromString(await root.scene.exportSVG(), 'image/svg+xml');
         const pattern = xml.querySelector('pattern[id^="export-paper"]')!;
@@ -269,7 +269,8 @@ test('wrapper geometry always fits after wide, narrow and short surface transiti
     expect(await frame.evaluate((node) => [node.scrollLeft, node.scrollTop])).toEqual([0, 0]);
     expect(await frame.evaluate((node) => getComputedStyle(node).overflow)).toBe('clip');
     const bounds = await frame.boundingBox();
-    expect(bounds!.width / bounds!.height).toBeCloseTo(16 / 9, 5);
+    // CSS layout rounds each dimension to 1/64px. Bound the physical edge error.
+    expect(Math.abs(bounds!.width - (bounds!.height * 16) / 9)).toBeLessThan(0.04);
     expect(bounds!.width).toBeLessThanOrEqual(viewport.width);
     expect(bounds!.height).toBeLessThanOrEqual(viewport.height);
   }
@@ -372,7 +373,8 @@ test('a long chapter title fits the standalone stage controls on a narrow surfac
     await page.emulateMedia({ colorScheme });
     await openFixture(page, 'chapters');
     await page.evaluate(() => window.galleryReady);
-    const chapter = page.getByRole('combobox', { name: 'Глава' });
+    const chapter = page.locator('.ve-heading').getByRole('combobox', { name: 'Глава' });
+    await expect(chapter).toHaveText('Проследим цепь.');
     const bounds = await chapter.boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(375);

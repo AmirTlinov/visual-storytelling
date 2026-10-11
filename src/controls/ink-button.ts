@@ -35,13 +35,6 @@ export function inkButton(view: Surface, id: string, initial: string, options: I
   const edge = view.pen.path(key.content, `${id}:edge`, edgePath(), { width: 1.65 });
   edge.element.classList.add('ve-ink-button-edge');
   key.content.insertBefore(edge.element, face.element);
-  const focusPath = () => {
-    const x = face.width * 0.25,
-      y = face.height / 2 + 10;
-    return `M${-x} ${y}Q0 ${y + 1.5} ${x} ${y - 0.5}`;
-  };
-  const focus = view.pen.path(key.content, `${id}:focus`, focusPath(), { width: 1.3 });
-  focus.element.classList.add('ve-ink-button-focus');
   const bounds = () => ({
     x: -face.width / 2 - 3,
     y: -face.height / 2 - 3,
@@ -55,7 +48,6 @@ export function inkButton(view: Surface, id: string, initial: string, options: I
     disposed = true;
     unregister();
     control.dispose();
-    focus.dispose();
     edge.dispose();
     face.dispose();
     key.dispose();
@@ -69,7 +61,6 @@ export function inkButton(view: Surface, id: string, initial: string, options: I
       if (disposed) return;
       face.text(value);
       edge.update(edgePath());
-      focus.update(focusPath());
       control.bounds(bounds());
     },
     update: control.update,

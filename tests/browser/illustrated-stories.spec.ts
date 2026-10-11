@@ -58,7 +58,7 @@ for (const [name, values] of [['chapters', { closed: false }]] as const)
       await expect(root).toHaveAttribute('data-paper', 'true');
       await expect(sheet.locator('.ve-heading')).toBeVisible();
       const explanationControls = variant
-        ? root.getByRole('dialog', { name: 'Условия объяснения' })
+        ? root.getByRole('dialog', { name: 'Условия объяснения', includeHidden: true })
         : sheet;
       await expect(explanationControls.locator('.ve-scene-toolbar')).toHaveCount(1);
       await expect(explanationControls.locator('.ve-parameters')).toHaveCount(1);

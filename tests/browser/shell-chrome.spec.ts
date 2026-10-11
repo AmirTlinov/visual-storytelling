@@ -57,7 +57,9 @@ async function mount(page: Page | Frame, amountType = 'range') {
   await page.evaluate(() => {
     (window as any).chromeContract = (window as any).ChromeContract.mount();
   });
-  await expect(page.locator('.ve-heading')).toContainText('изменение одного условия');
+  await expect(page.locator('.ve-heading > .ve-select-trigger')).toHaveText(
+    'Сначала заметим исходные значения',
+  );
 }
 
 async function metrics(page: Page) {
@@ -148,6 +150,33 @@ test('shared heading and controls remain physically readable while the complete 
       }
     }
   }
+});
+
+test('the current chapter heading opens one native menu and follows its story clock', async ({
+  page,
+}) => {
+  await mount(page);
+  const heading = page.locator('.ve-heading'),
+    chapter = heading.getByRole('combobox', { name: 'Глава', exact: true }),
+    menu = page.getByRole('listbox', { name: 'Глава', exact: true });
+  await expect(chapter).toHaveCount(1);
+  await chapter.click();
+  await expect(menu).toBeVisible();
+  await expect(menu).toHaveClass(/ve-chapter-menu/);
+  for (const option of await menu.getByRole('option').all()) {
+    expect((await option.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  }
+  await chapter.press('End');
+  await chapter.press('Enter');
+  await expect(menu).toBeHidden();
+  await expect(chapter).toBeFocused();
+  await expect(chapter).toHaveText('Затем сравним результат вычисления');
+  expect(await page.evaluate(() => (window as any).chromeContract.root.scene.capture().time)).toBe(
+    10,
+  );
+  await page.evaluate(() => (window as any).chromeContract.root.scene.seek(0));
+  await expect(chapter).toHaveText('Сначала заметим исходные значения');
+  await expect(chapter).toBeFocused();
 });
 
 test('compact conditions retain the same field, value, history and clock across reflow', async ({

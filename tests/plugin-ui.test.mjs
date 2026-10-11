@@ -19,7 +19,7 @@ test(
       await page.goto(host.url);
       const app = page.frameLocator('iframe[title="MCP App"]'),
         scene = app.frameLocator('#scene');
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('html[data-connection="connected"]').waitFor();
       const session = await page.evaluate(() => window.pluginTest.session);
       const call = (name, args = {}) =>
         host.client.callTool({ name, arguments: { sessionId: session.sessionId, ...args } });
@@ -69,7 +69,14 @@ test(
         };
       });
       assert.deepEqual(isolation, { parentAccess: false, hostSDK: false, fonts: true });
-      assert.equal(await app.locator('header, #browse, #voice, #release, #expand').count(), 0);
+      assert.equal(
+        await app
+          .locator(
+            'header, footer, #browse, #voice, #release, #expand, #artifacts, #connection, #settings',
+          )
+          .count(),
+        0,
+      );
       assert.equal(await app.locator('#scene-actions').isVisible(), false);
       assert.equal(
         await app.locator('#scene').evaluate((frame) => frame.getBoundingClientRect().top),
@@ -129,7 +136,7 @@ test(
       const changed = await inspect();
       assert.equal(changed.state.parameters.find((p) => p.key === 'x').value, -2);
       await page.evaluate(() => window.pluginTest.remount());
-      await app.locator('#connection').filter({ hasText: 'Готово' }).waitFor();
+      await app.locator('html[data-connection="connected"]').waitFor();
       const restored = await inspect();
       assert.equal(restored.state.mode, 'explore');
       assert.equal(restored.state.parameters.find((p) => p.key === 'x').value, -2);

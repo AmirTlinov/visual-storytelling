@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { build } from 'esbuild';
+import { assetURLs } from '../tools/asset-urls.mjs';
 
 test('drawn SVG controls own pointer, keyboard, disabled state and disposal inside scene objects', async () => {
   const bundle = await build({
@@ -15,6 +16,7 @@ test('drawn SVG controls own pointer, keyboard, disabled state and disposal insi
         import { surface } from './src/ink/surface.ts';
         import { loadFonts } from './src/ink/fonts.ts';
         import { describeObject, sceneObjects } from './src/scene-objects.ts';
+        import { exportSVG } from './src/export/index.ts';
         import './src/style.css';
         const parent = document.querySelector('g');
         describeObject(parent, {label: 'Circuit'});
@@ -24,7 +26,7 @@ test('drawn SVG controls own pointer, keyboard, disabled state and disposal insi
           x: 40, y: 40, width: 100, height: 60, label: 'Switch', pressed: false,
           onPress() { count++; button.update({pressed: count % 2 === 1}); }
         });
-        window.lab = {button, objects, count: () => count};
+        window.lab = {button, objects, count: () => count, export: () => exportSVG(parent.ownerSVGElement)};
         window.mountKey = async () => {
           await loadFonts();
           const host = document.createElement('main');
@@ -42,6 +44,7 @@ test('drawn SVG controls own pointer, keyboard, disabled state and disposal insi
     format: 'iife',
     outdir: resolve('artifacts/test-svg-button'),
     loader: { '.woff2': 'dataurl' },
+    plugins: [assetURLs()],
   });
   const browser = await chromium.launch(chromiumLaunchOptions());
   try {
@@ -76,6 +79,22 @@ test('drawn SVG controls own pointer, keyboard, disabled state and disposal insi
       [],
       'the control keeps scene selection',
     );
+    assert.equal(
+      await control.evaluate((node) =>
+        node.nextElementSibling.hasAttribute('data-contour-selected'),
+      ),
+      false,
+      'a pressed command does not acquire a persistent selection ring',
+    );
+    assert.equal(
+      await control.evaluate((node) =>
+        [...node.nextElementSibling.querySelectorAll('path')].every(
+          (path) => getComputedStyle(path).visibility === 'hidden',
+        ),
+      ),
+      true,
+      'pointer activation leaves both focus and selection contours hidden',
+    );
     await control.focus();
     await page.keyboard.down('Enter');
     await page.keyboard.down('Enter');
@@ -90,7 +109,51 @@ test('drawn SVG controls own pointer, keyboard, disabled state and disposal insi
     await page.keyboard.up('Space');
     assert.equal(await control.getAttribute('data-pressing'), 'false');
     assert.equal(await count(), 3);
-    assert.equal(await control.evaluate((node) => getComputedStyle(node).outlineStyle), 'solid');
+    assert.equal(await control.evaluate((node) => getComputedStyle(node).outlineStyle), 'none');
+    assert.equal(
+      await control.evaluate(
+        (node) =>
+          getComputedStyle(node.nextElementSibling.querySelector('[data-interaction-focus]'))
+            .visibility,
+      ),
+      'visible',
+    );
+    const contour = await control.evaluate((node) => {
+      const ring = node.nextElementSibling;
+      return {
+        path: ring.querySelector('path').getAttribute('d'),
+        events: getComputedStyle(ring).pointerEvents,
+        color: getComputedStyle(ring).color,
+      };
+    });
+    assert.ok(
+      contour.path.endsWith('Z'),
+      'focus surrounds the complete hit region with a closed pen stroke',
+    );
+    assert.equal(contour.events, 'none');
+    assert.equal(contour.color, await control.evaluate((node) => getComputedStyle(node).color));
+    const exported = await page.evaluate(async () => {
+      lab.objects.select(['circuit']);
+      const copy = new DOMParser().parseFromString(await lab.export(), 'image/svg+xml');
+      lab.objects.select([]);
+      return {
+        focus: copy.querySelectorAll('[data-interaction-focus]').length,
+        selection: copy.querySelector('[data-contour-selected] [data-selection-contour]').style
+          .visibility,
+      };
+    });
+    assert.deepEqual(
+      exported,
+      { focus: 0, selection: 'visible' },
+      'authored SVG retains selection and omits keyboard focus',
+    );
+    await page.locator('svg > g').evaluate((node) => node.setAttribute('color', 'var(--ve-red)'));
+    assert.equal(
+      await control.evaluate((node) => getComputedStyle(node.nextElementSibling).color),
+      await control.evaluate((node) => getComputedStyle(node).color),
+      'the contour follows the subject pigment without another bounds update',
+    );
+
     assert.deepEqual(await page.evaluate(() => lab.objects.selected), []);
     await page.keyboard.down('Space');
     await page.locator('svg > g').focus();
@@ -129,6 +192,8 @@ test('drawn SVG controls own pointer, keyboard, disabled state and disposal insi
         element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
         element.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
         element.dispatchEvent(new KeyboardEvent('keyup', { key: ' ' }));
+        if (document.querySelector('svg > g > [data-interaction-contour]'))
+          throw new Error('Disposed contour remained in the drawing');
         return element.isConnected;
       }),
       false,
@@ -144,7 +209,7 @@ test('drawn SVG controls own pointer, keyboard, disabled state and disposal insi
         return {
           wash: getComputedStyle(root).getPropertyValue('--ve-wash-strength').trim(),
           translation: getComputedStyle(face).translate,
-          focus: getComputedStyle(root.querySelector('.ve-ink-button-focus')).visibility,
+          focus: getComputedStyle(root.querySelector('[data-interaction-focus]')).visibility,
           edge: edge.getBBox().y + edge.getBBox().height > face.getBBox().y + face.getBBox().height,
           opacity: getComputedStyle(root).opacity,
         };
@@ -178,7 +243,13 @@ test('drawn SVG controls own pointer, keyboard, disabled state and disposal insi
     const resized = await page.evaluate(() => {
       keyLab.key.text('A longer command');
       const width = keyLab.key.width,
-        target = keyLab.key.control.getBBox();
+        target = keyLab.key.control.getBBox(),
+        ring = keyLab.key.control.nextElementSibling.querySelector('[data-selection-contour]'),
+        outline = ring.getAttribute('d');
+      keyLab.key.text('A longer command');
+      if (ring.getAttribute('d') !== outline) throw new Error('Repeated bounds changed the ink');
+      if (ring.getBBox().width < width - 2)
+        throw new Error('Selection contour did not follow the resized face');
       keyLab.drawing.dispose();
       return { width, targetWidth: target.width, connected: keyLab.key.element.isConnected };
     });

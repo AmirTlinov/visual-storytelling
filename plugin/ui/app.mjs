@@ -29,6 +29,11 @@ let connectionState = 'opening',
   recovery,
   recoveryEpoch = 0,
   recoveryAck;
+function setConnectionState(value) {
+  connectionState = value;
+  document.documentElement.dataset.connection = value;
+}
+setConnectionState(connectionState);
 function sync(acknowledgement) {
   const current = report,
     owner = session;
@@ -93,8 +98,7 @@ function recoverView(cause) {
   const owner = session?.sessionId,
     epoch = ++recoveryEpoch;
   if (!owner || closed) return Promise.resolve(false);
-  connectionState = 'recovering';
-  $('connection').textContent = 'Восстанавливаю связь…';
+  setConnectionState('recovering');
   $('reconnect').hidden = true;
   send({
     type: 'command',
@@ -142,8 +146,7 @@ function recoverView(cause) {
         recoveryAck = undefined;
         await beforeDeadline(call('exchange', { report, wait: false }), deadline);
         if (closed || epoch !== recoveryEpoch) return false;
-        connectionState = 'connected';
-        $('connection').textContent = 'Готово';
+        setConnectionState('connected');
         error('');
         publishContext();
         return true;
@@ -156,8 +159,7 @@ function recoverView(cause) {
       }
     }
     if (!closed && epoch === recoveryEpoch) {
-      connectionState = 'unavailable';
-      $('connection').textContent = 'Сцена на паузе';
+      setConnectionState('unavailable');
       const updateRequired = failure?.code === 'RUNTIME_UPDATE_REQUIRED';
       error(connectionErrorMessage(failure));
       $('reconnect').textContent =
@@ -240,7 +242,6 @@ async function mount(result) {
   if (result.structuredContent?.status === 'choose-example') {
     frame.hidden = true;
     $('catalog').hidden = false;
-    $('connection').textContent = 'Выберите основу';
     const list = $('catalog-examples');
     list.replaceChildren();
     let opening = false;
@@ -257,7 +258,6 @@ async function mount(result) {
         if (opening) return;
         opening = true;
         for (const choice of list.querySelectorAll('button')) choice.disabled = true;
-        $('connection').textContent = 'Открываю сцену…';
         try {
           const selected = await app.callServerTool({
             name: 'story_open',
@@ -267,7 +267,6 @@ async function mount(result) {
           if (!closed) await mount(selected);
         } catch (e) {
           error(e.message);
-          $('connection').textContent = 'Выберите основу';
         } finally {
           opening = false;
           for (const choice of list.querySelectorAll('button')) choice.disabled = false;
@@ -283,8 +282,7 @@ async function mount(result) {
   frame.hidden = false;
   error('');
   session = result.structuredContent;
-  connectionState = 'opening';
-  $('connection').textContent = 'Открываю сцену…';
+  setConnectionState('opening');
   const attached = await call('attach');
   session = attached.structuredContent;
   $('back').hidden = !session.returnAvailable;
@@ -451,30 +449,6 @@ async function applyUpdate() {
     void poll();
   }
 }
-let artifactsKey;
-function showArtifacts(files) {
-  const key = JSON.stringify(files);
-  if (artifactsKey === key) return;
-  artifactsKey = key;
-  const output = $('artifacts');
-  output.replaceChildren();
-  output.hidden = false;
-  const label = document.createElement('span');
-  label.textContent = 'Готово: ';
-  output.append(label);
-  for (const file of files) {
-    if (extensions.files) {
-      const button = document.createElement('button');
-      button.textContent = file.split('/').at(-1);
-      button.onclick = () => void extensions.files.open(file).catch((e) => error(e.message));
-      output.append(button);
-    } else {
-      const path = document.createElement('span');
-      path.textContent = file;
-      output.append(path);
-    }
-  }
-}
 function updateJobs(jobs) {
   const active = jobs.find((j) => ['queued', 'running', 'cancelling'].includes(j.status));
   $('job').hidden = !active;
@@ -512,9 +486,6 @@ function updateJobs(jobs) {
     }
   };
   if (last?.status === 'failed') error(last.error);
-  if (last?.status === 'succeeded' && last.result?.files) {
-    showArtifacts(last.result.files);
-  }
 }
 $('update').onclick = () => void applyUpdate();
 addEventListener('message', (event) => {
@@ -580,8 +551,7 @@ addEventListener('message', (event) => {
     return;
   }
   if (data.type === 'ready') {
-    connectionState = 'connected';
-    $('connection').textContent = 'Готово';
+    setConnectionState('connected');
     clearTimeout(loadTimer);
     const notices = report.state.restoreNotices?.map((notice) => notice.message) ?? [];
     if (report.state.compatibility?.message) notices.push(report.state.compatibility.message);
@@ -601,7 +571,6 @@ addEventListener('message', (event) => {
   }
   if (data.type === 'error' || data.type === 'expired') {
     error(data.message);
-    $('connection').textContent = 'Сцена остановлена';
     if (data.type === 'expired')
       void recoverView(new Error(data.message)).then((ok) => {
         if (ok) void poll();
@@ -626,7 +595,7 @@ function host(context) {
 }
 async function dispose() {
   closed = true;
-  connectionState = 'closed';
+  setConnectionState('closed');
   recoveryEpoch++;
   recoveryAck?.reject(new Error('Представление закрыто.'));
   recoveryAck = undefined;
@@ -652,8 +621,6 @@ async function open(result) {
   candidate = undefined;
   failedRevision = undefined;
   modelContext = frameContext(app, extensions);
-  artifactsKey = undefined;
-  $('artifacts').hidden = true;
   $('update').hidden = true;
   $('back').hidden = true;
   error('');
@@ -678,7 +645,6 @@ $('back').onclick = async () => {
 };
 app.ontoolresult = (result) => {
   if (result.isError) {
-    $('connection').textContent = 'Не удалось открыть';
     error(result.content?.find((c) => c.type === 'text')?.text ?? 'Не удалось открыть объяснение.');
     return;
   }
@@ -694,17 +660,13 @@ addEventListener('pagehide', () => {
   void dispose();
 });
 const connectionTimer = setTimeout(() => {
-  $('connection').textContent = 'Нет связи с Codex';
   error('Codex не ответил на подключение. Закройте и откройте плагин снова.');
 }, 10000);
 try {
   await app.connect();
   clearTimeout(connectionTimer);
-  if (!session && $('catalog').hidden && $('error').hidden)
-    $('connection').textContent = 'Выберите объяснение';
   host(app.getHostContext() ?? {});
 } catch (e) {
   clearTimeout(connectionTimer);
-  $('connection').textContent = 'Нет связи с Codex';
   error('Не удалось подключиться к Codex: ' + e.message);
 }

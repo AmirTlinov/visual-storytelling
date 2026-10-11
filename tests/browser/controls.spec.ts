@@ -1,6 +1,35 @@
 import { test, expect } from '@playwright/test';
 import { build } from 'esbuild';
 
+test('bare fields and authored frame controls retain their own keyboard focus', async ({
+  page,
+}) => {
+  const styles = await build({
+    entryPoints: ['dist/style.css'],
+    bundle: true,
+    write: false,
+    loader: { '.woff2': 'dataurl', '.svg': 'dataurl' },
+  });
+  await page.setContent(
+    '<main class="ve-scene"><input aria-label="Bare field"><textarea aria-label="Bare text"></textarea><div class="ve-frame"><button>Authored control</button></div></main>',
+  );
+  await page.addStyleTag({ content: styles.outputFiles[0]!.text });
+  const field = page.getByRole('textbox', { name: 'Bare field', exact: true });
+  await field.focus();
+  for (const control of [
+    field,
+    page.getByRole('textbox', { name: 'Bare text', exact: true }),
+    page.getByRole('button', { name: 'Authored control', exact: true }),
+  ]) {
+    await expect(control).toBeFocused();
+    expect(await control.evaluate((node) => getComputedStyle(node).outlineStyle)).not.toBe('none');
+    expect(await control.evaluate((node) => getComputedStyle(node, '::after').content)).toBe(
+      'none',
+    );
+    await page.keyboard.press('Tab');
+  }
+});
+
 test('numeric controls preserve a typed negative fraction and recover incomplete input on blur', async ({
   page,
 }) => {

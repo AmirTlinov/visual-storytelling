@@ -376,8 +376,8 @@ test('3D hit testing, labels, keyboard and provenance share stable semantic obje
       assert.deepEqual(await page.evaluate(() => lab.root.scene.selected), ['amount']);
       await page.waitForFunction(
         () =>
-          getComputedStyle(document.querySelector('button[data-object="amount"]')).outlineStyle ===
-          'dashed',
+          getComputedStyle(document.querySelector('button[data-object="amount"]'), '::after')
+            .content === '""',
       );
       assert.equal(
         await page.locator('[data-selection-highlight][data-object="amount"]').count(),
@@ -538,7 +538,14 @@ test('SVG math parts share inspect, find, pointer, keyboard and provenance throu
       await page.keyboard.press('Tab');
       await target.focus();
       assert.equal(await target.evaluate((node) => node.matches(':focus-visible')), true);
-      assert.equal(await target.evaluate((node) => getComputedStyle(node).outlineStyle), 'dashed');
+      assert.equal(
+        await target.evaluate(
+          (node) =>
+            getComputedStyle(node.nextElementSibling.querySelector('[data-interaction-focus]'))
+              .visibility,
+        ),
+        'visible',
+      );
       assert.equal(await page.locator('[data-selection-highlight]').count(), 1);
       assert.equal(await target.getAttribute('data-selection-highlight'), '');
       await page.keyboard.press('Enter');

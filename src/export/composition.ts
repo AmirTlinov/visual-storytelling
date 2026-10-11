@@ -230,6 +230,27 @@ export async function exportCompositionSVG(content: HTMLElement): Promise<string
   };
   const walk = (element: Element, parent: SVGElement, sharedOverflow = false) => {
     if (!visible(element)) return;
+    if (
+      element.matches('.ve-chapter-menu[popover]:popover-open') &&
+      !parent.hasAttribute('data-export-chapter-menu')
+    ) {
+      // Native chapter choices leave the scaled sheet for the top layer. Their
+      // physical text and geometry must enter the exported frame at the same scale.
+      const bounds = element.getBoundingClientRect(),
+        previous = coordinates,
+        overlay = svg('g', {
+          'data-export-chapter-menu': '',
+          transform: `translate(${(bounds.x - rect.x) / scale} ${(bounds.y - rect.y) / scale}) scale(${1 / scale})`,
+        });
+      coordinates = { x: bounds.x, y: bounds.y, scaleX: 1, scaleY: 1 };
+      try {
+        walk(element, overlay);
+        popovers.push(overlay);
+      } finally {
+        coordinates = previous;
+      }
+      return;
+    }
     if (element instanceof SVGSVGElement) {
       const htmlLayers = [...element.querySelectorAll('foreignObject')].map((node) =>
         visible(node) ? overflowInk(node) : undefined,
@@ -323,22 +344,33 @@ export async function exportCompositionSVG(content: HTMLElement): Promise<string
       throw unsupported();
     const sides = ['top', 'right', 'bottom', 'left'];
     const border = number(style.borderTopWidth);
+    const separator =
+      element.parentElement === content &&
+      element.matches('.ve-scene-header') &&
+      number(style.borderBottomWidth) > 0 &&
+      style.borderBottomStyle === 'solid' &&
+      ['top', 'right', 'left'].every(
+        (side) => number(style.getPropertyValue(`border-${side}-width`)) === 0,
+      );
     if (sides.some((side) => number(style.getPropertyValue(`border-${side}-width`)))) {
       if (
-        !overflowPanel ||
-        sides.some(
-          (side) =>
-            number(style.getPropertyValue(`border-${side}-width`)) !== border ||
-            style.getPropertyValue(`border-${side}-style`) !== 'solid' ||
-            style.getPropertyValue(`border-${side}-color`) !== style.borderTopColor,
-        )
+        !separator &&
+        (!overflowPanel ||
+          sides.some(
+            (side) =>
+              number(style.getPropertyValue(`border-${side}-width`)) !== border ||
+              style.getPropertyValue(`border-${side}-style`) !== 'solid' ||
+              style.getPropertyValue(`border-${side}-color`) !== style.borderTopColor,
+          ))
       )
         throw unsupported();
     }
     // Native ellipsis owns hidden text which Range still measures. Never publish that tail.
     const ellipsis = style.textOverflow === 'ellipsis' && element.scrollWidth > element.clientWidth;
     if (ellipsis && !element.matches('.ve-select-trigger')) throw unsupported();
-    if (style.backgroundImage !== 'none' && element !== content) throw unsupported();
+    const paperRegion = element.matches('.ve-scene-paper');
+    if (style.backgroundImage !== 'none' && element !== content && !paperRegion)
+      throw unsupported();
     if (style.clipPath !== 'none' || style.maskImage !== 'none') throw unsupported();
     const group = svg('g', { opacity: style.opacity });
     parent.append(group);
@@ -353,7 +385,23 @@ export async function exportCompositionSVG(content: HTMLElement): Promise<string
       definitions.append(clip);
       group.setAttribute('clip-path', `url(#${id})`);
     }
-    fill(group, bounds, style.backgroundColor);
+    if (paperRegion)
+      appendPaper(group, definitions, element, bounds, element.getBoundingClientRect());
+    else fill(group, bounds, style.backgroundColor);
+    if (separator) {
+      const weight = number(style.borderBottomWidth),
+        y = bounds.y + bounds.height - weight / 2;
+      group.append(
+        svg('line', {
+          x1: bounds.x,
+          y1: y,
+          x2: bounds.x + bounds.width,
+          y2: y,
+          stroke: paint(style.borderBottomColor),
+          'stroke-width': weight,
+        }),
+      );
+    }
     if (border)
       group.append(
         svg('rect', {
