@@ -192,6 +192,11 @@ test(
       const editedProject = (await finish(edited.structuredContent.job.id)).project;
       await app.locator('#update').waitFor();
       assert.equal((await inspect()).buildRevision, before.buildRevision);
+      const boundWorking = (await call('story_open', { context: editedProject.context, sessionId })).structuredContent;
+      assert.equal(boundWorking.buildRevision, before.buildRevision, 'working B remains separate from playing A');
+      const controlledWorking = (await call('story_control', {
+        context: boundWorking.context, requestId: randomUUID(), commands: [{ type: 'rate', value: 0.25 }],
+      })).structuredContent;
       const shown = await produce(shownTarget);
       assert.equal(shown.sourceRevision, before.sourceRevision);
       assert.equal(
@@ -213,7 +218,7 @@ test(
       assert.equal(archivedScene.includes('Latest working revision'), false);
       const working = await produce({
         kind: 'working',
-        context: editedProject.context,
+        context: controlledWorking.context,
       });
       assert.equal(working.sourceRevision, editedProject.sourceRevision);
       assert.equal(

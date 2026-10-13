@@ -455,6 +455,9 @@ export class SessionDirectory {
             ? s.receipts.get(pending.requestId).observed
             : {
                 ...this.describe(s),
+                ...(pending.authoringSourceRevision !== undefined && {
+                  authoringSourceRevision: pending.authoringSourceRevision,
+                }),
                 result: ack.result,
                 acknowledgement: s.renderStatus,
               },
@@ -592,6 +595,7 @@ export class SessionDirectory {
         requestId: key,
         buildRevision: request.buildRevision,
         stateRevision: request.stateRevision,
+        authoringSourceRevision: request.authoringSourceRevision,
       });
       s.queue.push({
         ...request,

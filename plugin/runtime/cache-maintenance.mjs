@@ -9,12 +9,13 @@ export function runtimeCache({ data, preferences, projects, sessions, jobs }) {
     },
     schedule() {
       jobs.requestMaintenance(async () => {
+        const projectSnapshot = await projects.cacheSnapshot();
         const result = await collectCache(data, {
           limitMB: (await preferences.read()).cacheLimitMB,
-          projects: await projects.list(),
+          projects: projectSnapshot.projects,
           sessions: [...sessions.sessions.values()],
           snapshotLeases: jobs.snapshotLeases(),
-          buildLeases: [...sessions.buildLeases(), ...(await projects.preparedBuildLeases())],
+          buildLeases: [...sessions.buildLeases(), ...projectSnapshot.buildLeases],
         });
         report = { ...result, collectedAt: new Date().toISOString() };
       });

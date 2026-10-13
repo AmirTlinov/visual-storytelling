@@ -50,19 +50,20 @@ export class ProjectStore {
     });
   }
   async #publish(id, update) {
-    let item;
-    this.registrySave = (this.registrySave ?? Promise.resolve())
-      .catch(() => {})
-      .then(async () => {
-        item = update();
-        if (item.id !== id) throw new Error('A registry update cannot change project identity.');
-        if (item === this.projects.get(id)) return;
-        const next = new Map(this.projects).set(id, item);
-        await writeJSON(join(this.data, 'projects.json'), [...next.values()]);
-        this.projects.set(item.id, item);
-      });
-    await this.registrySave;
-    return item;
+    return this.#registry(async () => {
+      const item = update();
+      if (item.id !== id) throw new Error('A registry update cannot change project identity.');
+      if (item === this.projects.get(id)) return item;
+      const next = new Map(this.projects).set(id, item);
+      await writeJSON(join(this.data, 'projects.json'), [...next.values()]);
+      this.projects.set(item.id, item);
+      return item;
+    });
+  }
+  #registry(operation) {
+    const next = (this.registrySave ?? Promise.resolve()).catch(() => {}).then(operation);
+    this.registrySave = next;
+    return next;
   }
   async create(path, options) {
     path = await this.canonicalPath(path);
@@ -250,13 +251,22 @@ export class ProjectStore {
     return delivery ?? journal.delivery;
   }
   /** Unfinished source journals lease their verified artifact before registry publication. */
-  async preparedBuildLeases() {
-    const leases = [];
-    for (const project of this.projects.values()) {
-      const journal = await readJSON(join(project.path, '.vstory/transaction.json'));
-      if (journal?.delivery?.buildRevision) leases.push(journal.delivery.buildRevision);
-    }
-    return leases;
+  cacheSnapshot() {
+    return this.#registry(async () => {
+      const projects = [...this.projects.values()].map(({ id, path, buildRevision }) => ({
+        id,
+        path,
+        buildRevision,
+      }));
+      const buildLeases = [];
+      for (const project of projects) {
+        const journal = await readJSON(join(project.path, '.vstory/transaction.json'));
+        if (journal?.delivery?.buildRevision) buildLeases.push(journal.delivery.buildRevision);
+      }
+      // Recovery publishes its registry reference before removing the journal.
+      // Its update cannot cross this read, so neither side of that handoff is lost.
+      return { projects, buildLeases };
+    });
   }
   async historyDirectory(project) {
     const directory = join(project.path, '.vstory');
@@ -329,7 +339,10 @@ export class ProjectStore {
     };
     if (journal.delivery) {
       if (journal.delivery.sourceRevision !== receipt.sourceRevision)
-        throw failure('prepared_conflict', 'The transaction source does not match its prepared artifact.');
+        throw failure(
+          'prepared_conflict',
+          'The transaction source does not match its prepared artifact.',
+        );
       // The prepared build is part of accepted source ownership, including its cache lease.
       await this.update(project.id, { buildRevision: journal.delivery.buildRevision });
       receipt.buildRevision = journal.delivery.buildRevision;

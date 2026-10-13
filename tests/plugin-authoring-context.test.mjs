@@ -78,7 +78,7 @@ test('the transport keeps working source, displayed build and observed generatio
   assert.equal(calls[3].args.request.expectedInstance, 'owner');
   assert.deepEqual(codec.decode(observed.context).slice(0, 7), [
     'project',
-    'source-A',
+    'working-B',
     'scene',
     'shown-A',
     4,

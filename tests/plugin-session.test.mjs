@@ -557,6 +557,7 @@ test('request IDs survive many later commands and detach; reordered JSON is the 
     buildRevision: build.revision,
     stateRevision: 0,
     requestId: 'first-action',
+    authoringSourceRevision: 'working-B',
     commands: [{ type: 'seek', time: 4 }],
   };
   const pending = request(directory, session.id, first);
@@ -564,6 +565,7 @@ test('request IDs survive many later commands and detach; reordered JSON is the 
     directory.request(session.id, {
       commands: [{ time: 4, type: 'seek' }],
       requestId: 'first-action',
+      authoringSourceRevision: 'working-B',
       stateRevision: 0,
       buildRevision: build.revision,
       op: 'control',
@@ -573,6 +575,8 @@ test('request IDs survive many later commands and detach; reordered JSON is the 
   await directory.exchange(view);
   await acknowledge(directory, view, 'first-action');
   const result = await pending;
+  assert.equal(result.authoringSourceRevision, 'working-B');
+  await assert.rejects(directory.request(session.id, { ...first, authoringSourceRevision: 'working-C' }), /different command/);
   await assert.rejects(
     directory.request(session.id, { ...first, commands: [{ type: 'pause' }] }),
     /different command/,

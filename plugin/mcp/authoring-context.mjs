@@ -96,9 +96,13 @@ export function contextualRuntime(runtime, codec) {
       project.projectId ??
       (project.path && project.files ? project.id : undefined) ??
       scene?.projectId;
-    const source = project.sourceRevision ?? scene?.sourceRevision;
-    if (!source && !scene?.buildRevision) return;
     const retained = projectId && projectId === previous?.[0] ? previous : [];
+    const source =
+      value.project?.sourceRevision ??
+      value.result?.project?.sourceRevision ??
+      value.authoringSourceRevision ??
+      (scene && retained[0] ? retained[1] : (project.sourceRevision ?? scene?.sourceRevision));
+    if (!source && !scene?.buildRevision) return;
     return [
       projectId ?? null,
       source ?? null,
@@ -133,7 +137,8 @@ export function contextualRuntime(runtime, codec) {
         else if (method === 'request') {
           const { sessionId, ...scene } = sceneFields(previous);
           args.sessionId = sessionId;
-          if (args.request.op === 'control') args.request = { ...args.request, ...scene };
+          if (args.request.op === 'control')
+            args.request = { ...args.request, ...scene, authoringSourceRevision: previous[1] };
         } else if (method === 'inspect') {
           if (previous[2] && args.scope !== 'working') {
             args.sessionId = previous[2];
@@ -172,7 +177,7 @@ export function contextualRuntime(runtime, codec) {
       try {
         raw = await runtime.call(method, args);
       } catch (error) {
-        if (error.current) error.current = present(error.current);
+        if (error.current) error.current = present(error.current, previous);
         throw error;
       }
       const value = present(raw, previous);

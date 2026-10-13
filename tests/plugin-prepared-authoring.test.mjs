@@ -48,10 +48,16 @@ await writeFile(join(process.env.VISUAL_STORY_OUTPUT, 'index.html'), '<main>' + 
   const sessions = new SessionDirectory();
   let owner,
     publicationFailures = 0;
-  const runner = () => new JobRunner(data, join(root, 'plugin/dist/worker.mjs'), (job, result) =>
-    result.creation ? owner.acceptCreationJob(job, result)
-      : result.migration ? owner.acceptMigration(job, result)
-        : job.input.authoring ? owner.acceptCandidate(job, result) : result);
+  const runner = () =>
+    new JobRunner(data, join(root, 'plugin/dist/worker.mjs'), (job, result) =>
+      result.creation
+        ? owner.acceptCreationJob(job, result)
+        : result.migration
+          ? owner.acceptMigration(job, result)
+          : job.input.authoring
+            ? owner.acceptCandidate(job, result)
+            : result,
+    );
   let jobs = runner();
   await jobs.start();
   owner = projectAuthoring({
@@ -107,8 +113,14 @@ await writeFile(join(process.env.VISUAL_STORY_OUTPUT, 'index.html'), '<main>' + 
       await projects.start();
       jobs = runner();
       await jobs.start();
-      owner = projectAuthoring({ data, directory: join(root, 'plugin/dist'), projects, sessions,
-        jobs, watched: { open() {} } });
+      owner = projectAuthoring({
+        data,
+        directory: join(root, 'plugin/dist'),
+        projects,
+        sessions,
+        jobs,
+        watched: { open() {} },
+      });
       return { projects, jobs, owner };
     },
     text: () => readFile(join(path, 'value.txt'), 'utf8'),
@@ -116,104 +128,208 @@ await writeFile(join(process.env.VISUAL_STORY_OUTPUT, 'index.html'), '<main>' + 
   };
 }
 
-test('an ordinary working rebuild cannot supersede an authored candidate', { timeout: 30000 }, async (t) => {
-  const f = await fixture(t, (temporary) => `
+test(
+  'an ordinary working rebuild cannot supersede an authored candidate',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(
+      t,
+      (temporary) => `
 if (value === 'candidate') {
   await writeFile(${JSON.stringify(join(temporary, 'ready'))}, 'ready');
   while (!(await access(${JSON.stringify(join(temporary, 'continue'))}).then(() => true, () => false)))
     await new Promise(resolve => setTimeout(resolve, 10));
-}`);
-  const authored = await f.edit('candidate');
-  while (!(await access(join(f.temporary, 'ready')).then(() => true, () => false))) await delay(10);
-  const working = await revisionInput(f.data, f.projects, { kind: 'working', projectId: f.project.id,
-    sourceRevision: f.project.sourceRevision });
-  const rebuild = await f.jobs.enqueue('build', { data: f.data, ...working }, randomUUID());
-  assert.equal(f.jobs.get(authored.result.job.id).status, 'running');
-  assert.equal(f.jobs.get(authored.result.job.id).supersededBy, undefined);
-  await writeFile(join(f.temporary, 'continue'), 'continue');
-  assert.equal((await f.finish(authored.result.job.id)).status, 'succeeded');
-  assert.equal((await f.finish(rebuild.id)).status, 'succeeded');
-  assert.equal(await f.text(), 'candidate');
-});
+}`,
+    );
+    const authored = await f.edit('candidate');
+    while (
+      !(await access(join(f.temporary, 'ready')).then(
+        () => true,
+        () => false,
+      ))
+    )
+      await delay(10);
+    const working = await revisionInput(f.data, f.projects, {
+      kind: 'working',
+      projectId: f.project.id,
+      sourceRevision: f.project.sourceRevision,
+    });
+    const rebuild = await f.jobs.enqueue('build', { data: f.data, ...working }, randomUUID());
+    assert.equal(f.jobs.get(authored.result.job.id).status, 'running');
+    assert.equal(f.jobs.get(authored.result.job.id).supersededBy, undefined);
+    await writeFile(join(f.temporary, 'continue'), 'continue');
+    assert.equal((await f.finish(authored.result.job.id)).status, 'succeeded');
+    assert.equal((await f.finish(rebuild.id)).status, 'succeeded');
+    assert.equal(await f.text(), 'candidate');
+  },
+);
 
-test('restart resumes an accepted source transaction whose job lost its result after commit', { timeout: 30000 }, async (t) => {
-  const f = await fixture(t);
-  const commit = f.projects.commitPreparedEdit.bind(f.projects);
-  f.projects.commitPreparedEdit = async (proposal) => {
-    await commit(proposal);
-    throw Error('process interrupted after the durable source commit');
-  };
-  const authored = await f.edit('candidate');
-  const interrupted = await f.finish(authored.result.job.id);
-  assert.equal(interrupted.status, 'failed');
-  assert.equal(interrupted.result, undefined);
-  assert.equal(await f.text(), 'candidate');
-  const receipt = await f.projects.editDelivery(f.project.id, authored.args.requestId);
-  assert.ok(receipt.buildRevision);
-  assert.equal(receipt.project.sourceRevision, receipt.sourceRevision);
-  const restarted = await f.restart();
-  const resumed = await restarted.owner.edit(authored.args);
-  assert.equal(resumed.job.status, 'succeeded');
-  assert.equal(resumed.project.sourceRevision, receipt.sourceRevision);
-  assert.equal(resumed.job.result.buildRevision, receipt.buildRevision);
-  assert.equal(await f.builds(), 'candidate\n', 'the accepted artifact is published without a second build');
-  const undo = await restarted.owner.edit({ projectId: f.project.id, sourceRevision: resumed.project.sourceRevision,
-    requestId: randomUUID(), undo: true });
-  assert.equal((await f.finish(undo.job.id)).status, 'succeeded');
-  assert.equal(await f.text(), 'original');
-});
+test(
+  'restart resumes an accepted source transaction whose job lost its result after commit',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const commit = f.projects.commitPreparedEdit.bind(f.projects);
+    f.projects.commitPreparedEdit = async (proposal) => {
+      await commit(proposal);
+      throw Error('process interrupted after the durable source commit');
+    };
+    const authored = await f.edit('candidate');
+    const interrupted = await f.finish(authored.result.job.id);
+    assert.equal(interrupted.status, 'failed');
+    assert.equal(interrupted.result, undefined);
+    assert.equal(await f.text(), 'candidate');
+    const receipt = await f.projects.editDelivery(f.project.id, authored.args.requestId);
+    assert.ok(receipt.buildRevision);
+    assert.equal(receipt.project.sourceRevision, receipt.sourceRevision);
+    const restarted = await f.restart();
+    const resumed = await restarted.owner.edit(authored.args);
+    assert.equal(resumed.job.status, 'succeeded');
+    assert.equal(resumed.project.sourceRevision, receipt.sourceRevision);
+    assert.equal(resumed.job.result.buildRevision, receipt.buildRevision);
+    assert.equal(
+      await f.builds(),
+      'candidate\n',
+      'the accepted artifact is published without a second build',
+    );
+    const undo = await restarted.owner.edit({
+      projectId: f.project.id,
+      sourceRevision: resumed.project.sourceRevision,
+      requestId: randomUUID(),
+      undo: true,
+    });
+    assert.equal((await f.finish(undo.job.id)).status, 'succeeded');
+    assert.equal(await f.text(), 'original');
+  },
+);
 
-test('an unfinished source journal protects its prepared frame from cache eviction across restart', { timeout: 30000 }, async (t) => {
-  const f = await fixture(t);
-  const update = f.projects.update.bind(f.projects);
-  f.projects.update = async (id, patch) => {
-    if (patch.buildRevision) throw Error('registry unavailable after source publication');
-    return update(id, patch);
-  };
-  const authored = await f.edit('candidate');
-  assert.equal((await f.finish(authored.result.job.id)).status, 'failed');
-  assert.equal(await f.text(), 'candidate');
-  const leases = await f.projects.preparedBuildLeases();
-  assert.equal(leases.length, 1);
-  await collectCache(f.data, { limitMB: 0, projects: await f.projects.list(), sessions: [],
-    snapshotLeases: [], buildLeases: leases });
-  await access(join(f.data, 'builds', leases[0] + '.json'));
-  const restarted = await f.restart();
-  const resumed = await restarted.owner.edit(authored.args);
-  assert.equal(resumed.job.status, 'succeeded');
-  assert.equal(resumed.job.result.buildRevision, leases[0]);
-  assert.equal(await f.builds(), 'candidate\n');
-  assert.deepEqual(await restarted.projects.preparedBuildLeases(), []);
-});
+test(
+  'an unfinished source journal protects its prepared frame from cache eviction across restart',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const update = f.projects.update.bind(f.projects);
+    f.projects.update = async (id, patch) => {
+      if (patch.buildRevision) throw Error('registry unavailable after source publication');
+      return update(id, patch);
+    };
+    const authored = await f.edit('candidate');
+    assert.equal((await f.finish(authored.result.job.id)).status, 'failed');
+    assert.equal(await f.text(), 'candidate');
+    const leases = (await f.projects.cacheSnapshot()).buildLeases;
+    assert.equal(leases.length, 1);
+    await collectCache(f.data, {
+      limitMB: 0,
+      projects: await f.projects.list(),
+      sessions: [],
+      snapshotLeases: [],
+      buildLeases: leases,
+    });
+    await access(join(f.data, 'builds', leases[0] + '.json'));
+    const restarted = await f.restart();
+    const resumed = await restarted.owner.edit(authored.args);
+    assert.equal(resumed.job.status, 'succeeded');
+    assert.equal(resumed.job.result.buildRevision, leases[0]);
+    assert.equal(await f.builds(), 'candidate\n');
+    assert.deepEqual((await restarted.projects.cacheSnapshot()).buildLeases, []);
+  },
+);
 
-test('source creation and migration resume accepted journals after losing the worker result', { timeout: 60000 }, async (t) => {
-  const f = await fixture(t);
-  const commit = f.projects.commitPreparedEdit.bind(f.projects);
-  let interrupt = true;
-  f.projects.commitPreparedEdit = async (proposal) => {
-    const result = await commit(proposal);
-    if (interrupt) { interrupt = false; throw Error('publication interrupted after commit'); }
-    return result;
-  };
-  const input = { title: 'Recover source creation', path: join(f.temporary, 'created'), requestId: randomUUID() };
-  const created = await f.owner.create(input);
-  assert.equal(created.authoring, 'ready');
-  assert.equal(created.job.status, 'succeeded');
-  assert.equal(created.job.result.project.id, created.project.id);
-  assert.equal((await f.owner.create(input)).job.id, created.job.id);
-  assert.equal(f.jobs.list(created.project.id).length, 1, 'creation resumes its single preparation');
-  interrupt = true;
-  const migrationInput = { projectId: created.project.id, sourceRevision: created.project.sourceRevision, requestId: randomUUID() };
-  const migrating = await f.owner.migrate(migrationInput);
-  const failed = await f.finish(migrating.id);
-  assert.equal(failed.status, 'failed');
-  const durable = await f.projects.editDelivery(created.project.id, migrating.id + '-migration');
-  assert.ok(durable.buildRevision);
-  const recovered = await f.owner.migrate(migrationInput);
-  assert.equal(recovered.status, 'succeeded');
-  assert.equal(recovered.result.buildRevision, durable.buildRevision);
-  assert.equal(f.jobs.list(created.project.id).length, 2, 'migration resumes without a second preparation');
-});
+test(
+  'a cache snapshot keeps the accepted artifact while recovery hands its lease to the registry',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t);
+    const update = f.projects.update.bind(f.projects);
+    let resume, entered;
+    const atPublication = new Promise((resolve) => {
+      entered = resolve;
+    });
+    const publication = new Promise((resolve) => {
+      resume = resolve;
+    });
+    t.after(() => resume());
+    f.projects.update = async (id, patch) => {
+      if (patch.buildRevision) {
+        entered();
+        await publication;
+      }
+      return update(id, patch);
+    };
+    const authored = await f.edit('candidate');
+    await atPublication;
+    const capturing = f.projects.cacheSnapshot();
+    resume();
+    const [snapshot, accepted] = await Promise.all([capturing, f.finish(authored.result.job.id)]);
+    assert.equal(accepted.status, 'succeeded');
+    const revision = accepted.result.buildRevision;
+    assert.ok(
+      [...snapshot.buildLeases, ...snapshot.projects.map((p) => p.buildRevision)].includes(
+        revision,
+      ),
+    );
+    await assert.rejects(access(join(f.path, '.vstory/transaction.json')), { code: 'ENOENT' });
+    await collectCache(f.data, { limitMB: 0, ...snapshot, sessions: [], snapshotLeases: [] });
+    await access(join(f.data, 'builds', revision + '.json'));
+    assert.equal(await f.text(), 'candidate');
+  },
+);
+
+test(
+  'source creation and migration resume accepted journals after losing the worker result',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t);
+    const commit = f.projects.commitPreparedEdit.bind(f.projects);
+    let interrupt = true;
+    f.projects.commitPreparedEdit = async (proposal) => {
+      const result = await commit(proposal);
+      if (interrupt) {
+        interrupt = false;
+        throw Error('publication interrupted after commit');
+      }
+      return result;
+    };
+    const input = {
+      title: 'Recover source creation',
+      path: join(f.temporary, 'created'),
+      requestId: randomUUID(),
+    };
+    let created = await f.owner.create(input);
+    if (created.authoring === 'preparing') {
+      await f.finish(created.job.id);
+      created = await f.owner.create(input);
+    }
+    assert.equal(created.authoring, 'ready');
+    assert.equal(created.job.status, 'succeeded');
+    assert.equal(created.job.result.project.id, created.project.id);
+    assert.equal((await f.owner.create(input)).job.id, created.job.id);
+    assert.equal(
+      f.jobs.list(created.project.id).length,
+      1,
+      'creation resumes its single preparation',
+    );
+    interrupt = true;
+    const migrationInput = {
+      projectId: created.project.id,
+      sourceRevision: created.project.sourceRevision,
+      requestId: randomUUID(),
+    };
+    const migrating = await f.owner.migrate(migrationInput);
+    const failed = await f.finish(migrating.id);
+    assert.equal(failed.status, 'failed');
+    const durable = await f.projects.editDelivery(created.project.id, migrating.id + '-migration');
+    assert.ok(durable.buildRevision);
+    const recovered = await f.owner.migrate(migrationInput);
+    assert.equal(recovered.status, 'succeeded');
+    assert.equal(recovered.result.buildRevision, durable.buildRevision);
+    assert.equal(
+      f.jobs.list(created.project.id).length,
+      2,
+      'migration resumes without a second preparation',
+    );
+  },
+);
 
 test(
   'failed source candidate preserves the accepted source, dependency pin and history',

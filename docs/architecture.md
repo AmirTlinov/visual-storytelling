@@ -162,6 +162,8 @@ cache — `cache-maintenance.mjs`, voice adapter — `plugin/voice.mjs`; пол�
 JobRunner сохраняют свои состояния. `stageEdit` разрешает операцию один раз;
 `commitPreparedEdit` повторно проверяет source/path/history fences перед journal.
 Journal/recover публикует source, pin, историю, receipt и immutable assets.
+Cache читает registry и leases журнала одной операцией той же очереди
+ProjectStore; публикация registry не может пересечь этот снимок.
 MCP `authoring-context.mjs` связывает ссылки в подписанный контекст; состояние
 остаётся у существующих владельцев. ProjectStore проверяет source,
 SessionDirectory — build/state/generation. Исторический receipt разрешается
