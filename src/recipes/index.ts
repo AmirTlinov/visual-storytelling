@@ -50,3 +50,10 @@ export type { FractionState } from './fractions-model.js';
 export { fractionsStory } from './fractions-story.js';
 export type { FractionsStoryInput } from './fractions-story.js';
 export { divisionParts } from './division-parts.js';
+
+export { leverModel } from './lever-model.js';
+export { leverSubject } from './lever.js';
+export { comparisonModel } from './comparison-model.js';
+export { comparisonSubject } from './comparison-subject.js';
+export { comparisonStory } from './comparison-story.js';
+export type { ComparisonStoryInput } from './comparison-story.js';

@@ -74,6 +74,7 @@ function previewInput({ arguments: args } = {}) {
     frame.srcdoc = sceneDocument(
       preparedLiveHTML.replace('</head>', () => setup + '</head>'),
       {
+        displayMode,
         sessionId: provisional.id,
         generation: provisional.generation,
         preview: true,
@@ -153,6 +154,12 @@ const send = (value) =>
     { channel, sessionId: session?.sessionId, generation: session?.generation, ...value },
     '*',
   );
+function sendSizing(target, sessionId, generation) {
+  target.contentWindow?.postMessage(
+    { channel, sessionId, generation, type: 'host-layout', displayMode },
+    '*',
+  );
+}
 async function call(action, args = {}) {
   const metrics = creationMetrics;
   if (action === 'attach') metrics.attachStartedAt ??= performance.now();
@@ -228,6 +235,7 @@ function recoverView(cause) {
         });
         if (result._meta?.sceneHTML) {
           frame.srcdoc = sceneDocument(result._meta.sceneHTML, {
+            displayMode,
             theme: app.getHostContext()?.theme,
             sessionId: session.sessionId,
             generation: session.generation,
@@ -385,6 +393,7 @@ async function mount(result) {
   document.title = session.title;
   updateJobs(session.jobs ?? []);
   const config = {
+    displayMode,
     theme: app.getHostContext()?.theme,
     sessionId: session.sessionId,
     generation: session.generation,
@@ -445,6 +454,7 @@ async function prepareUpdate(update) {
       15000,
     );
     preview.srcdoc = sceneDocument(result._meta.sceneHTML, {
+      displayMode,
       theme: app.getHostContext()?.theme,
       sessionId: session.sessionId,
       preview: true,
@@ -611,6 +621,7 @@ addEventListener('message', (event) => {
     data.generation === provisional.generation
   ) {
     if (data.type === 'ready') {
+      sendSizing(frame, data.sessionId, data.generation);
       provisional.ready = true;
       observeContent(data.report?.renderStatus);
       if (provisional.confirmation) sendPreview('confirm-preview', provisional.confirmation);
@@ -632,6 +643,7 @@ addEventListener('message', (event) => {
       candidate.restoration.reject(new Error(data.message));
     if (data.type === 'error') failCandidate(data.message);
     if (data.type === 'ready') {
+      sendSizing(candidate.frame, data.sessionId, data.generation);
       clearTimeout(candidate.timer);
       candidate.ready = true;
       $('update').hidden = false;
@@ -647,6 +659,7 @@ addEventListener('message', (event) => {
     data.generation !== session?.generation
   )
     return;
+  if (data.type === 'ready') sendSizing(frame, data.sessionId, data.generation);
   if (data.type === 'layout') {
     if (
       document.documentElement.dataset.mode !== 'fullscreen' &&
@@ -729,6 +742,9 @@ function host(context) {
   modelContext.host(context);
   displayMode = context.displayMode ?? displayMode;
   document.documentElement.dataset.mode = displayMode;
+  if (provisional) sendSizing(frame, provisional.id, provisional.generation);
+  else sendSizing(frame, session?.sessionId, session?.generation);
+  if (candidate && session) sendSizing(candidate.frame, session.sessionId, candidate.generation);
 }
 async function dispose() {
   closed = true;

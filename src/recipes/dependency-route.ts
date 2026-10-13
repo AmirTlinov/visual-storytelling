@@ -10,6 +10,7 @@ import type { Point } from '../ink/pen.js';
 import type { DependencyGraph, DependencyTrace } from './dependency-route-model.js';
 
 export interface DependencyRouteDiagramOptions {
+  modelId: string;
   width: number;
   height: number;
   scale: number;
@@ -22,7 +23,7 @@ export interface DependencyRouteDiagramOptions {
 }
 
 /** Nodes and arrows provide context; the existing computed trace alone moves the persistent order. */
-export function dependencyRouteDiagram(view: Surface, modelId: string) {
+export function dependencyRouteDiagram(view: Surface) {
   let current: ReturnType<typeof prepare> | undefined;
   let key = '';
   let disposed = false;
@@ -32,7 +33,7 @@ export function dependencyRouteDiagram(view: Surface, modelId: string) {
     options: DependencyRouteDiagramOptions,
   ) {
     if (disposed) throw new Error('Dependency drawing has been disposed.');
-    const { width, height, scale, positions } = options;
+    const { width, height, scale, positions, modelId } = options;
     if (![width, height, scale].every(Number.isFinite) || width <= 0 || height <= 0 || scale <= 0)
       throw new Error('Dependency drawing needs a positive viewport.');
     const canvas = svg('svg', {
@@ -162,6 +163,7 @@ export function dependencyRouteDiagram(view: Surface, modelId: string) {
     if (!Number.isFinite(options.progress) || options.progress < 0 || options.progress > 1)
       throw new Error('Dependency drawing progress must lie in [0, 1].');
     const nextKey = JSON.stringify([
+      options.modelId,
       graph,
       trace.orderId,
       trace.status,

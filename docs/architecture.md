@@ -39,21 +39,21 @@ Checkpoint переносит сами условия; повторное отк
 `MathMorph` вычисляет результат и сохраняет адреса в `MathOrigin.source`.
 Подписи, камера, доставка и семантика используют существующих владельцев.
 
-| Область                      | Владелец                                                                                                        |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Палитра, почерк, сетка, поля | `styles/`, `ink/`, `assets/`                                                                                    |
-| SVG и письмо                 | `SketchInk`, `SketchMotion`; измеряемые границы — `pen.contour`                                                 |
-| Слияние чернил               | `ink/fusion/`: штрихи, маски, сопоставление, контактные перемычки                                               |
-| Морфинг                      | `morph/objects.ts`, `material.ts`, `timing.ts`; `MathMorph` / `InkMorph` ведут представление                    |
-| Морфологический рассказ      | `MorphStory` связывает операции, подготовку, главы и поля с Story                                               |
-| Композиция объяснения        | `scene-frame.ts`: целый рисунок 16:9 и адаптация к размеру; `scene.ts`: композиция и плеер вне её масштаба      |
-| Размер текста                | `layout/content.ts`, `morph/ink-layout.ts`                                                                      |
-| Объёмные тела                | `viewport/morph/`: поле материала, геометрия и согласованный отклик                                             |
-| 3D и камера                  | `Viewport3D`, `viewport/shots.ts`; SVG-камера — `ViewportSVG`, `SvgOrbit`                                       |
-| Вложенный SVG                | `explorer/`: Surface, Camera, Highlight, Gestures, ScenePath                                                    |
-| Параметры и история          | `SketchControls`, `SceneHistory`; предметные ограничения — в модели                                             |
-| Физика                       | `physics/`: Rapier; `PhysicsReplay` ведёт перемотку, `PhysicsPlayer` использует SimulationPlayer                |
-| Состояние хоста              | MCP-оболочка владеет displayMode; `SceneHost.widgetState` переносит `SceneCheckpoint`; модель владеет `subject` |
+| Область                      | Владелец                                                                                                                                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Палитра, почерк, сетка, поля | `styles/`, `ink/`, `assets/`                                                                                                                                                                |
+| SVG и письмо                 | `SketchInk`, `SketchMotion`; измеряемые границы — `pen.contour`                                                                                                                             |
+| Слияние чернил               | `ink/fusion/`: штрихи, маски, сопоставление, контактные перемычки                                                                                                                           |
+| Морфинг                      | `morph/objects.ts`, `material.ts`, `timing.ts`; `MathMorph` / `InkMorph` ведут представление                                                                                                |
+| Морфологический рассказ      | `MorphStory` связывает операции, подготовку, главы и поля с Story                                                                                                                           |
+| Композиция объяснения        | `scene-frame.ts`: целый рисунок 16:9 и адаптация к размеру; `scene.ts`: композиция и плеер вне её масштаба                                                                                  |
+| Размер текста                | `layout/content.ts`, `morph/ink-layout.ts`                                                                                                                                                  |
+| Объёмные тела                | `viewport/morph/`: поле материала, геометрия и согласованный отклик                                                                                                                         |
+| 3D и камера                  | `Viewport3D`, `viewport/shots.ts`; SVG-камера — `ViewportSVG`, `SvgOrbit`                                                                                                                   |
+| Вложенный SVG                | `explorer/`: Surface, Camera, Highlight, Gestures, ScenePath                                                                                                                                |
+| Параметры и история          | `SketchControls`, `SceneHistory`; предметные ограничения — в модели                                                                                                                         |
+| Физика                       | `physics/`: Rapier; `PhysicsReplay` ведёт перемотку, `PhysicsPlayer` использует SimulationPlayer                                                                                            |
+| Состояние хоста              | MCP-оболочка владеет displayMode; `SceneHost.frameSizing` задаёт content/viewport, fit остаётся в sceneFrame; `SceneHost.widgetState` переносит `SceneCheckpoint`; модель владеет `subject` |
 
 `SceneStory` соединяет главы через Story. `SceneChapter.presentation` выбирает
 тетрадный разбор (`explanation`) или полноформатную постановку (`stage`);

@@ -1,3 +1,5 @@
+import { sceneHost, watchSceneHost } from './host/adapter.js';
+
 export interface SceneFrameOptions {
   width: number;
   height: number;
@@ -54,7 +56,11 @@ export function sceneFrame(
     if (root.closest('[data-scene-frame]')) {
       availableHeight =
         root.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
-    } else if (standalone && standalone.querySelectorAll(':scope > .ve-scene').length === 1) {
+    } else if (
+      sceneHost()?.frameSizing?.height !== 'content' &&
+      standalone &&
+      standalone.querySelectorAll(':scope > .ve-scene').length === 1
+    ) {
       const box = root.getBoundingClientRect();
       const chrome = Math.max(0, box.height - element.getBoundingClientRect().height);
       const top = Math.max(0, box.top + scrollY);
@@ -82,12 +88,22 @@ export function sceneFrame(
       });
   };
   const observer = new ResizeObserver(schedule);
+  let releaseSizing: (() => void) | undefined;
+  const bindSizing = () => {
+    releaseSizing?.();
+    releaseSizing = sceneHost()?.frameSizing?.subscribe?.(schedule);
+    schedule();
+  };
+  const releaseHost = watchSceneHost(bindSizing);
+  bindSizing();
   observer.observe(element);
   window.addEventListener('resize', resize);
   return {
     element,
     resize,
     dispose() {
+      releaseHost();
+      releaseSizing?.();
       observer.disconnect();
       cancelAnimationFrame(pending);
       window.removeEventListener('resize', resize);

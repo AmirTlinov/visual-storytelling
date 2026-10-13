@@ -50,7 +50,7 @@ export function dependencyRouteSubject(
         value: model.inputs[`disabled-${item.id}`]!,
       })),
     ],
-    create(shell, model) {
+    create(shell) {
       const drawing = surface(shell.stage, {
         id: `route-${++serial}`,
         title: 'Маршрут одного заказа',
@@ -59,7 +59,7 @@ export function dependencyRouteSubject(
         height: shell.layout.height,
         grid: false,
       });
-      const diagram = dependencyRouteDiagram(drawing, model.id);
+      const diagram = dependencyRouteDiagram(drawing);
       const options = (
         views: Parameters<ReturnType<StorySubjectRecipe['create']>['render']>[1],
       ) => ({
@@ -72,22 +72,28 @@ export function dependencyRouteSubject(
       });
       const trace = (state: ModelState) => state.trace as DependencyTrace;
       return {
-        validate(_model, views, values, beats) {
+        validate(model, views, values, beats) {
           let state = modelOwner.staticState!(values);
-          diagram.validate(graph, trace(state), { ...options(views), progress: 1 });
+          diagram.validate(graph, trace(state), {
+            ...options(views),
+            modelId: model.id,
+            progress: 1,
+          });
           for (const beat of beats) {
             if (beat.operation) state = modelOwner.operations[beat.operation.name]!(state, 1);
             diagram.validate(graph, trace(state), {
               ...options(views),
+              modelId: model.id,
               progress: 1,
               text: beat.text,
             });
           }
         },
-        render(_model, views, state, beat) {
+        render(model, views, state, beat) {
           drawing.resize(shell.layout.width, shell.layout.height, false);
           diagram.render(graph, trace(state), {
             ...options(views),
+            modelId: model.id,
             progress: Number(state.progress),
             text: beat?.text,
           });

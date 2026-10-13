@@ -17,7 +17,7 @@ export function vector(view: Surface, id: string, pigment: Pigment, width = 2) {
       mark.at(from[0], from[1], (Math.atan2(to[1] - from[1], to[0] - from[0]) * 180) / Math.PI);
       stem.element.setAttribute('transform', `scale(${length / 100} 1)`);
       head.element.setAttribute('transform', `translate(${length} 0)`);
-      mark.show(length > 1);
+      mark.show(length > 0);
     },
   };
 }

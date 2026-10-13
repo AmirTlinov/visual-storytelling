@@ -1,3 +1,5 @@
+import * as lever from '../math/lever.js';
+import { compareModelSnapshots } from './comparison.js';
 import * as ink from '../ink/index.js';
 import * as recipes from '../recipes/index.js';
 import { SceneShell, mountScene } from '../scene.js';
@@ -15,6 +17,8 @@ export const documentRuntime = {
   ...document,
   ...rational,
   ...quantities,
+  ...lever,
+  compareModelSnapshots,
   TensorData,
   tensorOriginId,
   SceneShell,

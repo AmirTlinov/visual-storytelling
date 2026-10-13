@@ -1,6 +1,6 @@
 {
   "name": "@visual-storytelling/core",
-  "version": "0.34.0",
+  "version": "0.35.1",
   "private": true,
   "license": "0BSD",
   "type": "module",

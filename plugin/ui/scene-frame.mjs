@@ -21,6 +21,7 @@ let scene,
 const gestures = new Set();
 const hostRequests = new Map();
 const widgetListeners = new Map();
+const sizingListeners = new Set();
 let preparedReplacement;
 // Absent until an authored transition: the mounted build is identified by generation.
 let appliedAuthor = config.authoring;
@@ -231,6 +232,11 @@ addEventListener('message', (event) => {
     hostRequests.get(event.data.id)?.(event.data.error ? new Error(event.data.error) : undefined);
     return;
   }
+  if (event.data.type === 'host-layout') {
+    config.displayMode = event.data.displayMode;
+    for (const listener of sizingListeners) listener();
+    return;
+  }
   if (['author-preview', 'confirm-preview'].includes(event.data.type)) {
     if (!config.provisional || !scene?.authoring) return;
     const request = event.data;
@@ -257,6 +263,7 @@ addEventListener('message', (event) => {
           stateRevision = request.stateRevision;
           document.body.inert = false;
           renew();
+          scheduleLayout();
           send({ type: 'ready', report: report('ready') });
         } else send({ type: 'preview-content', renderStatus });
       })
@@ -502,6 +509,15 @@ async function ready() {
     scene.pause?.();
     scene.connectHost?.({
       beforePlay,
+      frameSizing: {
+        get height() {
+          return config.displayMode === 'fullscreen' ? 'viewport' : 'content';
+        },
+        subscribe(listener) {
+          sizingListeners.add(listener);
+          return () => sizingListeners.delete(listener);
+        },
+      },
       widgetState: {
         read: (id) => config.widgetState?.[id],
         save: (id, snapshot) => {

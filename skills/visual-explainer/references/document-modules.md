@@ -15,7 +15,7 @@
 `model.ts` экспортирует default `StoryModelModule`: проверку scalar inputs,
 чистое состояние и операции, допустимые views и focus targets. Вычисляемый
 `ModelState` может содержать trace, граф и другие предметные данные.
-`drawing.ts` экспортирует default `StorySubjectRecipe`; рисунок читает модель.
+`drawing.ts` экспортирует default `StorySubjectRecipe`; рисунок читает модель. `create` получает `DrawingViewport` (`stage`, `layout`); управление, история и время принадлежат внешнему SceneShell.
 ID модуля уникален и не заменяет встроенного владельца. В `story.json` укажи
 тот же ID в `models[].module`; остальные ссылки и главы имеют общий формат v2.
 
@@ -28,7 +28,7 @@ manifest, модули, ресурсы и полный `story.json`. Подго�
 создаётся без manifest через обычный исходный каркас.
 
 Подготовленный 2D runtime предоставляет существующие exports ink/recipes/story,
-`SceneShell`, `mountScene`, точную рациональную арифметику, QuantityPart и TensorData. Компилируется авторский JS/TS; imports и ресурсы
+`SceneShell`, `mountScene`, точную рациональную арифметику, QuantityPart, TensorData, `leverState` и `compareModelSnapshots`. Компилируется авторский JS/TS; imports и ресурсы
 остаются внутри immutable snapshot. Используй обычный
 `new URL('../assets/parcel.svg', import.meta.url)`: общий asset owner замыкает SVG.
 Другие движки подключаются через обычную исходную сцену.

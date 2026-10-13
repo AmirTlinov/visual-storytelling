@@ -456,3 +456,53 @@ storyDocument, DOM document остаётся владельцем querySelector.
 | Копия арифметики в prepared author modules     | documentRuntime existing math exports | JS/TS manifest modules           | prepared consumer test                |
 
 Milestone и финальные gates5/20/native остаются открыты. Следующий срез—GUI-564.
+
+## Срез06: контролируемое сравнение
+
+`compareModelSnapshots` вычисляет две ветви одним domain owner. `comparisonModel`
+владеет раскрытием, `comparisonSubject` — атомарной парой рисунков,
+`comparisonViewports` — двумя равными слотами внутри существующего SceneShell.
+Вход, история, Story и fit остаются единственными. Рычага и маршрута достаточно
+для проверки общего приёма на разных предметных механизмах.
+
+Рычаг вычисляет точные Н·м для горизонтальной невесомой балки, сил вниз и плеч в м.
+Нулевые силы/плечи и небольшой дисбаланс сохраняют смысл. Рисунок подписывает Н/см,
+общую калибровку задают оба снимка. Сумма сил — требуемая статическая реакция,
+движение/угол этим законом не вычисляются. Маршрут сохраняет тот же заказ,
+выбранный резерв и все остальные отказы; отказ банка блокирует обе ветви.
+
+Независимое ревью нашло ошибки domain module и cleanup boundary; исправлены.
+`comparison-lifecycle` проверяет отказ recipe/render и throwing dispose:
+принятый кадр сохраняется, оба children/meaning/container освобождаются,
+ошибка очистки после committed swap не объявляет неуспех новой публикации.
+`comparison-delivery` проверяет 960light/375dark, reduced motion, keyboard,
+checkpoint, undo, длинный future text, provisional ID и resize.
+
+| Заменённый путь                                        | Владелец                           | Потребители            | Доказательство                             |
+| ------------------------------------------------------ | ---------------------------------- | ---------------------- | ------------------------------------------ |
+| Отдельная раскладка двух опытов и независимые масштабы | comparisonViewports + recipe(pair) | рычаг, маршрут         | равные слоты wide/narrow, общая калибровка |
+| Замкнутый исходный model ID маршрута                   | актуальный model в validate/render | маршрут и сравнение    | provisional scope regression               |
+| Рисунок с доступом к полному shell                     | DrawingViewport stage/layout       | все StorySubjectRecipe | build/check, existing consumers            |
+| Короткий ненулевой vector скрывался как нулевой        | vector.length > 0                  | силы и связи           | small moment + counterexamples             |
+
+Приёмка установленного выпуска и итоговые версии добавляются после публикации.
+Milestone и финальные gates5/20/native остаются открыты.
+
+Установленный0.23.0/core0.35.0 прошёл13/13 проверок и API/manifest/HTML/MP4,
+но browser375→960 выявил замыкание iframeautoheight на viewportfit. Этот выпуск
+не принят. Исправление передаёт content/viewport через existing SceneHost.frameSizing;
+sceneFrame остаётся владельцем fit. Resize/fullscreen/inline и неизменённое
+previewpromotion покрыты regressions; ready синхронизирует mode всех frame kinds.
+Независимое ревью этих границ завершено без существенного остатка.
+
+Срез06 принят на физически установленном plugin0.23.1/core0.35.1:
+`0.23.1-acb8ea7ea2b9ae90`, build
+`26b5c6109ce08605fca527291707d8dc185ecf935a0f0bb697ddf8c463e06b8a`.
+17/17 PASS; SDK-host подтвердил API, ручноймомент−1/5Н·м, undo, reload(time6/story),
+375dark/reduced и960light, расширение после узкогокадра. Обычный manifest из
+установленногоdist иportableHTML принят длярычага и маршрута. HTML/PNG/6сMP4
+выпущены;72кадра полностьюдекодированы, middle/finalpixels просмотрены.
+Доказательства: `artifacts/architecture/2026-10-13/slice06-acceptance.json`,
+`installed-final-0.23.1/`, `installed-dist-0.23.1/`, `artifacts/comparison/`.
+NativeCodexcontainer иauthoring5/20 входят в открытые финальныеgates.
+Следующийсрез—GUI-565.

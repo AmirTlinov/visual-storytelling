@@ -5,6 +5,11 @@ export interface WidgetSnapshot {
 
 /** Host services are optional. The scene remains a normal offline document. */
 export interface SceneHost {
+  /** Inline cards grow with the composition; fullscreen provides a bounded viewport. */
+  frameSizing?: {
+    readonly height: 'content' | 'viewport';
+    subscribe?(listener: () => void): () => void;
+  };
   beforePlay?(request: {
     muted: boolean;
     hasAudio: boolean;

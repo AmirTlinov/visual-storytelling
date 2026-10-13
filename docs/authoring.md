@@ -158,3 +158,13 @@ checkpoint сохраняет размеры показанной сцены п�
 У него нет собственных часов. Точные вклады остаются в QuantityPart; плавающие
 числа используются только для геометрии. Термы `formula` могут задать
 `objectId` и `meaning` для того же предмета в рисунке и записи.
+
+`compareModelSnapshots(owner, model, changes)` сохраняет исходные условия,
+проверяет изменённые входы тем же владельцем и возвращает независимые снимки
+`before`/`after`, фактические `changes` и `controlled`. Рисунки получают реальные
+domain module и ID `<model>:before/after`. `comparisonModel` задаёт последовательность
+раскрытия; `comparisonSubject` размещает два обычных рисунка в одном shell.
+`DrawingViewport` содержит только stage/layout, второй плеер или history не создаётся.
+Калибровку рецепта вычисляй по обоим снимкам до рисунка. Рабочие примеры:
+[рычаг](../tools/document-modules/lever-comparison/story.json) и
+[маршрут](../tools/document-modules/route-comparison/story.json).

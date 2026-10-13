@@ -24,6 +24,8 @@ export interface StorySubjectRecipe {
   title: string;
   parameters(model: StoryModel): NonNullable<SceneOptions['parameters']>;
   inputTime?(document: StoryDocument, script: Script): number | undefined;
-  create(shell: SceneMount, model: StoryModel): StorySubjectDrawing;
+  create(viewport: DrawingViewport, model: StoryModel): StorySubjectDrawing;
 }
+/** Drawings receive geometry; SceneShell alone owns input, history and playback. */
+export type DrawingViewport = Pick<SceneMount, 'stage' | 'layout'>;
 export type StorySubjects = Readonly<Record<string, StorySubjectRecipe>>;

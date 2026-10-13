@@ -48,3 +48,6 @@ export type { StorySubjectRecipe, StorySubjectDrawing, StorySubjects } from './s
 export { IllustratedStory } from './illustrated.js';
 export type { IllustratedStoryOptions } from './illustrated.js';
 export { documentRuntime } from './runtime.js';
+
+export * from './comparison.js';
+export type { DrawingViewport } from './subject.js';
