@@ -49,6 +49,10 @@ class CaptionAliases(unittest.TestCase):
             speaker = SimpleNamespace(voice=loaded['voice'], identity={'model': 'fixture'},
                                       synthesize=lambda segment: ([0] * 100, 'fixture', {'cached': True}))
             aligner = SimpleNamespace(device='fixture', align=lambda audio, spoken, key: (aligned, {'cached': True}))
+            def publish(staging, output, names):
+                for name in names:
+                    if (staging / name).exists():
+                        (staging / name).replace(output / name)
             modules = {
                 'numpy': SimpleNamespace(float32=float, zeros=lambda length, dtype: [0] * length,
                                          concatenate=lambda chunks: [value for chunk in chunks for value in chunk]),
@@ -56,6 +60,8 @@ class CaptionAliases(unittest.TestCase):
                 'speech': SimpleNamespace(Speaker=None, SAMPLE_RATE=100),
                 'mixing': SimpleNamespace(mix=lambda voice, music, staging: {'music': None}),
                 'listening': SimpleNamespace(write_listening_page=lambda *args, **kwargs: None),
+                'remaster': SimpleNamespace(reuse_audio=lambda *args, **kwargs: None,
+                                            audio_hashes=lambda *args: None, publish=publish),
             }
             spec = importlib.util.spec_from_file_location('caption_alias_assembly', ROOT / 'tools/audio/assembly.py')
             assembly = importlib.util.module_from_spec(spec)

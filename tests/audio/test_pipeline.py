@@ -98,7 +98,10 @@ class AudioChecks(unittest.TestCase):
                 self.assertNotIn("passages", timeline["segments"][0])
                 self.assertEqual(timeline["duration"], 2)
                 self.assertTrue(timeline["build"]["segments"][0]["synthesis"]["cached"])
-                self.assertTrue(np.array_equal(sf.read(output / "voice.wav", dtype="int16")[0], expected))
+                self.assertTrue(np.array_equal(sf.read(path, dtype="int16")[0], expected), "Mastering must not mutate the accepted take cache")
+                mastered = sf.read(output / "voice.wav", dtype="float64")[0]
+                gain = 10 ** (timeline["mix"]["mastering"]["gain_db"] / 20)
+                self.assertTrue(np.allclose(mastered, expected / 32768 * gain, atol=2 / 32768), "Only a static gain may change the accepted waveform")
                 self.assertEqual([w["text"] for w in timeline["segments"][0]["words"]], words(text))
                 check_timeline(script, output / "timeline.json")
 
@@ -246,13 +249,14 @@ class AudioChecks(unittest.TestCase):
             chosen = json.loads((root / "takes/seed-43/timeline.json").read_text())
 
             def clip(output, record):
-                data, rate = sf.read(output / "voice.wav", dtype="int16")
-                return data[round(record["audio_start"] * rate):round(record["audio_end"] * rate)]
+                data, rate = sf.read(output / "voice.wav", dtype="float64")
+                gain = 10 ** (json.loads((output / "timeline.json").read_text())["mix"]["mastering"]["gain_db"] / 20)
+                return data[round(record["audio_start"] * rate):round(record["audio_end"] * rate)] / gain
 
-            self.assertTrue(np.array_equal(clip(root / "takes/seed-43", chosen["segments"][0]),
-                                           clip(root / "second", second["segments"][0])))
-            self.assertTrue(np.array_equal(clip(root / "first", first["segments"][1]),
-                                           clip(root / "second", second["segments"][1])))
+            self.assertTrue(np.allclose(clip(root / "takes/seed-43", chosen["segments"][0]),
+                                       clip(root / "second", second["segments"][0]), atol=2 / 32768))
+            self.assertTrue(np.allclose(clip(root / "first", first["segments"][1]),
+                                       clip(root / "second", second["segments"][1]), atol=2 / 32768))
             self.assertEqual([s["seed"] for s in second["segments"]], [43, 42])
             self.assertTrue(all(s["synthesis"]["cached"] for s in second["build"]["segments"]))
             self.assertEqual(set(second["cues"]), {"question", "think", "answer", "total"})

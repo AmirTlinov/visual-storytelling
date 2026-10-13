@@ -17,8 +17,11 @@ async function size(path) {
 }
 
 /** Evict only disposable preparation. Authored projects, history and released artifacts are outside this owner. */
-export async function collectCache(data, { limitMB, projects, sessions, snapshotLeases }) {
-  const keepBuilds = new Set(),
+export async function collectCache(
+  data,
+  { limitMB, projects, sessions, snapshotLeases, buildLeases = [] },
+) {
+  const keepBuilds = new Set(buildLeases),
     keepSnapshots = new Set(),
     keepDependencies = new Set();
   for (const project of projects) if (project.buildRevision) keepBuilds.add(project.buildRevision);

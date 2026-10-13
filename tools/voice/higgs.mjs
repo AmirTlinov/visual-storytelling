@@ -55,6 +55,24 @@ async function inspect(args, { signal } = {}) {
 
 export const higgsVoice = {
   id: 'higgs',
+  async reuse(source, directory, { signal } = {}) {
+    if (!(await available(join(directory, 'timeline.json')))) return false;
+    const { command, prefix, env } = await installation();
+    const { stdout } = await execute(
+      command,
+      [
+        ...prefix,
+        'remaster',
+        source.file,
+        '--source-directory',
+        source.directory,
+        '--out',
+        directory,
+      ],
+      { signal, env },
+    );
+    return JSON.parse(stdout).reused === true;
+  },
   async doctor(task = {}) {
     const capability = voiceSupport();
     if (!capability.supported)
@@ -92,13 +110,16 @@ export const higgsVoice = {
       };
     }
   },
-  async prepare(settings, task = {}) {
+  validate(settings) {
     if (settings.voice && settings.voice !== 'higgs')
       throw new Error(
         'Голос Higgs задаётся образцом в narration.json. Для другой модели выберите provider: "local" или "api" и подключите её адаптер.',
       );
     if (settings.language && settings.language.split('-')[0] !== 'ru')
       throw new Error('Локальный Higgs настроен на русскую речь и русское выравнивание слов.');
+  },
+  async prepare(settings, task = {}) {
+    this.validate(settings);
     const status = await this.doctor(task);
     if (!status.ready) throw new Error(status.reason);
   },

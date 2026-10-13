@@ -8,6 +8,7 @@ import { chromium } from 'playwright';
 import { build } from 'esbuild';
 import { buildScene } from '../tools/build-pages.mjs';
 import { serve } from '../tools/site.mjs';
+import { assetURLs } from '../tools/asset-urls.mjs';
 
 test('readonly meanings retain provenance and selection without becoming pointer or keyboard controls', async () => {
   const bundle = await build({
@@ -324,6 +325,105 @@ test('attached presentation resources dispose once even when a subject fails to 
       error: 'Release failed',
       published: false,
     });
+  } finally {
+    await browser.close();
+  }
+});
+
+test('shell disposal releases every resource once after cleanup, controller and view failures', async () => {
+  const bundle = await build({
+    stdin: {
+      contents: "import {SceneShell} from './src/scene.ts'; window.SceneShell=SceneShell;",
+      resolveDir: resolve('.'),
+      loader: 'ts',
+    },
+    bundle: true,
+    write: false,
+    format: 'iife',
+    platform: 'browser',
+    loader: { '.woff2': 'dataurl' },
+    plugins: [assetURLs()],
+  });
+  const browser = await chromium.launch(chromiumLaunchOptions());
+  try {
+    const page = await browser.newPage();
+    const uncaught = [];
+    page.on('pageerror', (error) => uncaught.push(error.message));
+    await page.setContent('<main style="width:1000px"></main>');
+    await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    const result = await page.evaluate(async () => {
+      const root = document.querySelector('main');
+      const shell = SceneShell.mount(root, {
+        title: 'Release every owner',
+        parameters: [{ key: 'x', label: 'Value', value: 1, min: 0, max: 5 }],
+      });
+      const calls = [];
+      let draws = 0;
+      const controller = shell.attachStory({
+        script: { duration: 10, cues: {} },
+        stateAt: () => ({ x: 1 }),
+        render: () => draws++,
+      });
+      const releaseController = controller.dispose;
+      controller.dispose = () => {
+        calls.push('controller');
+        releaseController();
+        throw new Error('Controller release failed');
+      };
+      shell.attachView({
+        reset() {},
+        dispose() {
+          calls.push('view');
+          throw new Error('View release failed');
+        },
+      });
+      shell.onDispose(() => {
+        calls.push('first');
+        throw new Error('Subject release failed');
+      });
+      shell.onDispose(() => calls.push('last'));
+      shell.onDispose(() => calls.push('removed'))();
+      root.scene.onDispose(() => calls.push('host'));
+      const field = shell.fields.querySelector('input');
+      await controller.player.play();
+      let error;
+      try {
+        shell.dispose();
+      } catch (cause) {
+        const messages = (value) =>
+          value instanceof AggregateError ? value.errors.flatMap(messages) : [value.message];
+        error = { aggregate: cause instanceof AggregateError, messages: messages(cause) };
+      }
+      shell.dispose();
+      const before = draws;
+      field.value = '3';
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      return {
+        error,
+        calls,
+        playing: controller.player.state.playing,
+        published: Boolean(root.scene),
+        children: root.childElementCount,
+        drawingStopped: draws === before,
+      };
+    });
+    assert.deepEqual(result, {
+      error: {
+        aggregate: true,
+        messages: ['Subject release failed', 'Controller release failed', 'View release failed'],
+      },
+      calls: ['first', 'last', 'controller', 'view', 'host'],
+      playing: false,
+      published: false,
+      children: 0,
+      drawingStopped: true,
+    });
+    assert.deepEqual(
+      uncaught,
+      [],
+      'released field and animation callbacks cannot reach a disposed owner',
+    );
   } finally {
     await browser.close();
   }

@@ -140,14 +140,27 @@ test(
       });
       assert.equal((await sceneState()).parameters.divisor, 4);
       const before = await call('story_inspect', { projectId });
-      const migration = await call('story_migrate', {
+      const migrationRequest = {
         projectId,
         sourceRevision: before.sourceRevision,
         requestId: randomUUID(),
-      });
+      };
+      const migration = await call('story_migrate', migrationRequest);
       const migrated = await finishFixtureJob(host.client, migration.id);
       assert.ok(migrated.result.project, 'migration committed a real project edit');
       assert.notEqual(migrated.result.project.sourceRevision, before.sourceRevision);
+      assert.deepEqual(
+        await call('story_migrate', migrationRequest),
+        migrated,
+        'retry returns the original job after migration changed the working revision',
+      );
+      await assert.rejects(
+        call('story_migrate', {
+          ...migrationRequest,
+          changes: [{ path: 'different.txt', content: 'new intent' }],
+        }),
+        /requestId already belongs/,
+      );
       const rebuilt = await finishFixtureJob(host.client, migrated.result.job.id);
       inspected = await until(async () => {
         const result = await host.client.callTool({

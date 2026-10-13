@@ -139,6 +139,7 @@ test(
     let view, appliedAuthor;
     const attach = async (stateRevision, count) => {
       const attached = await runtime.call('attach', { sessionId: created.sessionId, renderer });
+      assert.match(attached.html, /<html/, 'view loading hydrates the saved render payload');
       view = { sessionId: created.sessionId, renderer, generation: attached.generation };
       appliedAuthor = undefined;
       await runtime.call('exchange', {
@@ -148,6 +149,8 @@ test(
       });
     };
     await attach(0, 11);
+    // The kernel accepts an internal zero-budget fixture without changing the public preferences schema.
+    await runtime.call('preferences', { patch: { cacheLimitMB: 0 } });
     const poll = async (op) => {
       const response = await runtime.call('exchange', view);
       assert.equal(response.commands.length, 1, JSON.stringify(response));
@@ -333,6 +336,18 @@ test(
     );
     assert.equal(saved.buildRevision, identity.buildRevision);
     assert.equal(saved.checkpoint.values.count, 23);
+    let retainedBuilds;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      retainedBuilds = await readdir(join(data, 'builds'));
+      if (retainedBuilds.length === 1) break;
+      await delay(10);
+    }
+    assert.deepEqual(retainedBuilds, [identity.buildRevision + '.json']);
+    assert.deepEqual(
+      await runtime.call('edit', firstArgs),
+      delivered,
+      'collection preserves historical edit receipts',
+    );
     process.kill(pid, 'SIGKILL');
     runtime.close();
     for (let attempt = 0; attempt < 100; attempt++) {
@@ -346,10 +361,12 @@ test(
     }
     pid = undefined;
     await connect();
+    const restoredRenderer = randomUUID();
     const restored = await runtime.call('attach', {
       sessionId: created.sessionId,
-      renderer: randomUUID(),
+      renderer: restoredRenderer,
     });
+    assert.match(restored.html, /<html/, 'restart hydrates the retained build');
     assert.equal(restored.buildRevision, identity.buildRevision);
     assert.equal(restored.authoredDocument.model.count, 22);
     assert.equal(restored.checkpoint.values.count, 23);
@@ -357,6 +374,26 @@ test(
       restored.authoring,
       undefined,
       'a restart mounts the saved build in a fresh generation',
+    );
+    view = {
+      sessionId: created.sessionId,
+      renderer: restoredRenderer,
+      generation: restored.generation,
+    };
+    appliedAuthor = undefined;
+    await runtime.call('exchange', { ...view, wait: false, report: report(9, 23) });
+    const undo = await start({
+      projectId: project.id,
+      sourceRevision: reconciled.project.sourceRevision,
+      requestId: randomUUID(),
+      undo: true,
+    });
+    await ack(undo.command, { report: report(10, 21) });
+    assert.equal((await undo.result).delivery, 'shown');
+    assert.equal(
+      JSON.parse(await readFile(sourceFile, 'utf8')).model.count,
+      21,
+      'undo reconstructs the previous source after its build was collected',
     );
   },
 );

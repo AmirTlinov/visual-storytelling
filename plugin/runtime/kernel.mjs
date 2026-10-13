@@ -4,7 +4,7 @@ import { dirname, join, resolve, isAbsolute, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { pathToFileURL } from 'node:url';
-import { SessionDirectory } from '../session-directory.mjs';
+import { SessionDirectory, buildReference } from '../session-directory.mjs';
 import { readJSON, writeJSON } from '../../tools/storage.mjs';
 import { ProjectStore } from '../projects.mjs';
 import { readProjectFile } from '../../tools/project-files.mjs';
@@ -99,21 +99,12 @@ const jobs = new JobRunner(
       watched.open(projects.get(job.projectId));
       for (const session of sessions.sessions.values())
         if (session.build.projectId === job.projectId) {
-          session.nextBuild = prepared;
+          session.nextBuild = buildReference(prepared);
           session.wake?.();
         }
     }
     setTimeout(scheduleClose, 0);
-    await jobs
-      .preserveInputs(async () =>
-        collectCache(data, {
-          limitMB: (await preferences.read()).cacheLimitMB,
-          projects: await projects.list(),
-          sessions: [...sessions.sessions.values()],
-          snapshotLeases: jobs.snapshotLeases(),
-        }),
-      )
-      .catch((error) => console.error('Cache: ' + error.message));
+    scheduleCache();
     return result;
   },
   { toolchainRoot: resolve(directory, '../..') },
@@ -130,6 +121,25 @@ let closing = false,
   idleTimer,
   socketIdentity;
 let playbackClaim = Promise.resolve();
+
+function scheduleCache() {
+  jobs.requestMaintenance(async () =>
+    collectCache(data, {
+      limitMB: (await preferences.read()).cacheLimitMB,
+      projects: await projects.list(),
+      sessions: [...sessions.sessions.values()],
+      snapshotLeases: jobs.snapshotLeases(),
+      buildLeases: sessions.buildLeases(),
+    }),
+  );
+}
+
+async function viewBuild(revision) {
+  const build = await readJSON(join(data, 'builds', revision + '.json'));
+  if (!build || build.revision !== revision || typeof build.html !== 'string')
+    throw new Error('The saved build is unavailable. Rebuild the project.');
+  return build;
+}
 
 function load(id) {
   if (closing) return Promise.reject(new Error('Runtime shutting down.'));
@@ -276,6 +286,7 @@ async function createLiveProject(project, input, requestId) {
     lastSessionId: session.id,
     creation: { requestId, input, sessionId: session.id, receipt },
   });
+  scheduleCache();
   return receipt;
 }
 
@@ -439,47 +450,53 @@ async function queueRevision(kind, { target, requestId, options = {} }) {
   });
 }
 async function openProject(project, { prepare = true, session } = {}) {
-  watched.open(project);
-  const prepared =
-    project.buildRevision &&
-    (await readJSON(join(data, 'builds', project.buildRevision + '.json')));
-  if (!session) {
-    session = sessions.open(
-      prepared || {
-        projectId: project.id,
-        title: project.title,
-        revision: 'preparing-' + project.id,
-        html: '',
-      },
-    );
-    if (project.lastSessionId) {
-      const previous = await load(project.lastSessionId).catch(() => null);
-      if (previous?.build.projectId === project.id) {
-        session.checkpoint = structuredClone(previous.checkpoint);
-        session.widgetState = structuredClone(previous.widgetState ?? {});
+  await jobs.preserveInputs(async () => {
+    watched.open(project);
+    const prepared =
+      project.buildRevision &&
+      (await readJSON(join(data, 'builds', project.buildRevision + '.json')));
+    if (!session) {
+      session = sessions.open(
+        prepared || {
+          projectId: project.id,
+          title: project.title,
+          revision: 'preparing-' + project.id,
+          html: '',
+        },
+      );
+      if (project.lastSessionId) {
+        const previous = await load(project.lastSessionId).catch(() => null);
+        if (previous?.build.projectId === project.id) {
+          session.checkpoint = structuredClone(previous.checkpoint);
+          session.widgetState = structuredClone(previous.widgetState ?? {});
+        }
       }
+      // Publish the placeholder and its persisted card under the same lease lock.
+      if (!prepared)
+        await writeJSON(join(data, 'builds', session.build.revision + '.json'), {
+          ...session.build,
+          html: '',
+        });
     }
-    // Persist the placeholder as well so interrupted creation can be reopened.
-    if (!prepared)
-      await writeJSON(join(data, 'builds', session.build.revision + '.json'), session.build);
-  }
-  if (session.build.projectId !== project.id)
-    throw new Error('The saved session belongs to another project.');
-  if (
-    prepared &&
-    prepared.revision !== session.build.revision &&
-    prepared.sourceRevision === project.sourceRevision
-  )
-    session.nextBuild = prepared;
+    if (session.build.projectId !== project.id)
+      throw new Error('The saved session belongs to another project.');
+    if (
+      prepared &&
+      prepared.revision !== session.build.revision &&
+      prepared.sourceRevision === project.sourceRevision
+    )
+      session.nextBuild = buildReference(prepared);
+    await save(session);
+    if (project.lastSessionId !== session.id)
+      await projects.update(project.id, { lastSessionId: session.id });
+  });
+  // Preparation captures its own inputs; never acquire that lock recursively.
   if (
     prepare &&
     session.build.sourceRevision !== project.sourceRevision &&
     session.nextBuild?.sourceRevision !== project.sourceRevision
   )
     await prepareProject(project);
-  await save(session);
-  if (project.lastSessionId !== session.id)
-    await projects.update(project.id, { lastSessionId: session.id });
   return { ...decorate(session), project };
 }
 async function createdProject(job) {
@@ -500,7 +517,16 @@ const operations = {
     updating = true;
     watched.close();
     scheduleClose();
-    return { updating: true, busy: jobs.busy };
+    // A terminal job is already observable while its receipt is still being saved.
+    // The successor can wait on the existing bounded owner-lock handoff for that drain;
+    // only an unfinished preparation requires the caller to retry later.
+    return {
+      updating: true,
+      busy: Boolean(
+        jobs.queue.length ||
+          (jobs.active && ['queued', 'running', 'cancelling'].includes(jobs.active.job.status)),
+      ),
+    };
   },
   async open({ sessionId, projectId, path, example: exampleId } = {}) {
     if (sessionId) {
@@ -526,10 +552,12 @@ const operations = {
     const prepared = await readJSON(join(directory, 'examples', exampleId + '.json'));
     if (!prepared)
       throw new Error('This example has no prepared preview. Create a project from it.');
-    await writeJSON(join(data, 'builds', prepared.revision + '.json'), prepared);
-    const s = sessions.open(prepared);
-    await save(s);
-    return decorate(s);
+    return jobs.preserveInputs(async () => {
+      await writeJSON(join(data, 'builds', prepared.revision + '.json'), prepared);
+      const s = sessions.open(prepared);
+      await save(s);
+      return decorate(s);
+    });
   },
   async create({ path, title = 'Новое объяснение', example, explanation, requestId, sessionId }) {
     if (sessionId !== undefined && explanation === undefined)
@@ -646,7 +674,9 @@ const operations = {
     };
   },
   async preferences({ patch } = {}) {
-    return patch ? preferences.update(patch) : preferences.read();
+    const value = patch ? await preferences.update(patch) : await preferences.read();
+    if (patch?.cacheLimitMB !== undefined) scheduleCache();
+    return value;
   },
   async voice({
     projectId,
@@ -987,6 +1017,7 @@ const operations = {
               : 'prepared';
         const result = { project, buildRevision: prepared.revision, shown, delivery };
         await projects.editDelivery(args.projectId, args.requestId, result);
+        scheduleCache();
         return result;
       }
       const previous = project.repeated && jobs.forRequest(args.requestId + '-build');
@@ -1001,14 +1032,27 @@ const operations = {
   produce: (args) => queueRevision('produce', args),
   review: (args) => queueRevision('review', args),
   async migrate({ projectId, sourceRevision, requestId, changes }) {
-    const project = await projects.inspect(projectId);
-    if (sourceRevision !== project.sourceRevision)
-      throw new Error('Project changed. Inspect its source before migrating.');
-    return jobs.enqueue(
-      'migrate',
-      { data, projectId, projectPath: project.path, sourceRevision, changes },
-      requestId,
-    );
+    return projects.serial('revision:' + requestId, async () => {
+      const previous = jobs.forRequest(requestId);
+      if (previous) {
+        if (
+          previous.kind !== 'migrate' ||
+          previous.projectId !== projectId ||
+          previous.sourceRevision !== sourceRevision ||
+          !isDeepStrictEqual(previous.input.changes, changes)
+        )
+          throw new Error('requestId already belongs to another preparation.');
+        return jobs.describe(previous);
+      }
+      const project = await projects.inspect(projectId);
+      if (sourceRevision !== project.sourceRevision)
+        throw new Error('Project changed. Inspect its source before migrating.');
+      return jobs.enqueue(
+        'migrate',
+        { data, projectId, projectPath: project.path, sourceRevision, changes },
+        requestId,
+      );
+    });
   },
   async job({ jobId, waitMs = 0 }) {
     return jobs.wait(jobId, { timeout: waitMs });
@@ -1024,7 +1068,7 @@ const operations = {
     sessions.validate(session, renderer, generation);
     if (!session.nextBuild) throw new Error('No prepared update.');
     return {
-      ...session.nextBuild,
+      ...(await viewBuild(session.nextBuild.revision)),
       checkpoint: session.checkpoint,
       stateRevision: session.stateRevision,
       widgetState: session.widgetState ?? {},
@@ -1033,6 +1077,7 @@ const operations = {
   async replace(args) {
     const result = await sessions.replace(args);
     await save(sessions.get(args.sessionId));
+    scheduleCache();
     return result;
   },
   async request({ sessionId, request }) {
@@ -1045,6 +1090,7 @@ const operations = {
     await save(s);
     return {
       ...attached,
+      html: (await viewBuild(attached.buildRevision)).html,
       widgetState: s.widgetState ?? {},
       jobs: jobs.list(s.build.projectId).filter((j) => j.projectId === s.build.projectId),
     };
@@ -1055,6 +1101,7 @@ const operations = {
     await save(s);
     return {
       ...result,
+      ...(result.recovery === 'reload' && { html: (await viewBuild(result.buildRevision)).html }),
       widgetState: s.widgetState ?? {},
       jobs: jobs.list(s.build.projectId).filter((j) => j.projectId === s.build.projectId),
     };
@@ -1076,7 +1123,11 @@ const operations = {
   },
   async detach(params) {
     const detached = sessions.detach(params);
-    if (detached) delete sessions.get(params.sessionId).navigation;
+    if (detached) {
+      delete sessions.get(params.sessionId).navigation;
+      await save(sessions.get(params.sessionId));
+      scheduleCache();
+    }
     return { detached };
   },
   async list() {
@@ -1215,6 +1266,7 @@ await new Promise((resolve, reject) => {
 socketIdentity = await lstat(socketPath);
 await chmod(socketPath, 0o600);
 scheduleClose();
+scheduleCache();
 for (const signal of ['SIGINT', 'SIGTERM'])
   process.once(signal, () => {
     for (const socket of connections) socket.destroy();

@@ -189,8 +189,11 @@ export async function buildNarration(
   const provider = narrationProvider(settings);
   let result;
   if (provider === 'higgs') {
-    await higgsVoice.prepare(settings ?? {}, { signal });
-    await higgsVoice.build(source, directory, { signal, progress });
+    higgsVoice.validate(settings ?? {});
+    if (!(await higgsVoice.reuse(source, directory, { signal }))) {
+      await higgsVoice.prepare(settings ?? {}, { signal });
+      await higgsVoice.build(source, directory, { signal, progress });
+    }
     signal?.throwIfAborted();
     settings = { ...settings, enabled: true, provider };
     await writeFile(settingsFile, JSON.stringify(settings, null, 2) + '\n');

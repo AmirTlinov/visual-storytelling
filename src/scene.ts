@@ -114,6 +114,17 @@ const node = <K extends keyof HTMLElementTagNameMap>(
   return element;
 };
 let shellSerial = 0;
+function releaseResources(resources: readonly (() => void)[], message: string) {
+  const errors: unknown[] = [];
+  for (const cleanup of resources) {
+    try {
+      cleanup();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length) throw new AggregateError(errors, message);
+}
 function mount(
   root: HTMLElement,
   {
@@ -751,14 +762,19 @@ function mount(
         chapters.update(controller.presented?.chapter);
       },
       dispose() {
-        layout.disconnect();
-        root.removeEventListener('scene-frame-resize', requestLayout);
-        cancelAnimationFrame(layoutFrame);
-        unsubscribe();
-        ui.dispose();
-        chapters.dispose();
-        stopSeeking();
-        controller.dispose();
+        releaseResources(
+          [
+            () => layout.disconnect(),
+            () => root.removeEventListener('scene-frame-resize', requestLayout),
+            () => cancelAnimationFrame(layoutFrame),
+            unsubscribe,
+            () => ui.dispose(),
+            () => chapters.dispose(),
+            stopSeeking,
+            () => controller.dispose(),
+          ],
+          `Scene "${title}" player disposal failed.`,
+        );
       },
     };
     storyButton.hidden = false;
@@ -882,14 +898,20 @@ function mount(
   function dispose() {
     if (abort.signal.aborted) return;
     abort.abort();
-    for (const cleanup of cleanups) cleanup();
+    const resources = [
+      ...cleanups,
+      () => player?.dispose(),
+      () => view?.dispose(),
+      ...[...inputs.values()].map((control) => () => control.dispose()),
+      () => root.replaceChildren(),
+    ];
     cleanups.clear();
-    player?.dispose();
-    view?.dispose();
-    for (const control of inputs.values()) control.dispose();
-    root.replaceChildren();
     inputStory = undefined;
-    Reflect.deleteProperty(root, 'scene');
+    try {
+      releaseResources(resources, `Scene "${title}" disposal failed.`);
+    } finally {
+      Reflect.deleteProperty(root, 'scene');
+    }
   }
 }
 export const SceneShell = { mount, ready: loadFonts, frame: sceneFrame };

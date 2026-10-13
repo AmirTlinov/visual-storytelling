@@ -93,6 +93,7 @@ test(
       kernels = new Set();
     await mkdir(data);
     t.after(async () => {
+      await writeFile(join(data, 'terminal-save-release'), 'release').catch(() => {});
       await Promise.allSettled([...clients].map((c) => c.close()));
       for (const pid of kernels)
         try {
@@ -122,6 +123,38 @@ test(
           platform: 'node',
           target: 'node22',
           format: 'esm',
+          plugins:
+            name === 'kernel'
+              ? [
+                  {
+                    name: 'hold-terminal-job-publication',
+                    setup(builder) {
+                      builder.onLoad({ filter: /tools\/storage\.mjs$/ }, async ({ path }) => {
+                        const source = await readFile(path, 'utf8');
+                        const entry = 'export async function writeJSON(file, value) {';
+                        assert.ok(source.includes(entry));
+                        return {
+                          loader: 'js',
+                          contents:
+                            "import {writeFile as markTerminal} from 'node:fs/promises';\n" +
+                            source.replace(
+                              entry,
+                              entry +
+                                `
+                    if (file.includes('/jobs/') && value.status === 'succeeded') {
+                      const data = dirname(dirname(file));
+                      await markTerminal(join(data, 'terminal-save-started'), 'started');
+                      while (!(await readFile(join(data, 'terminal-save-release')).then(() => true, () => false)))
+                        await new Promise(resolve => setTimeout(resolve, 5));
+                    }
+                  `,
+                            ),
+                        };
+                      });
+                    },
+                  },
+                ]
+              : [],
           ...(name === 'server'
             ? {
                 banner: {
@@ -283,12 +316,21 @@ process.on('message',async(message)=>{
       return update.busy === false;
     });
     let updated = false;
-    const currentHelp = tool(b, 'story_help', { query: 'Fixture' }).finally(() => {
-      updated = true;
-    });
+    await wait(() =>
+      readFile(join(data, 'terminal-save-started')).then(
+        () => true,
+        () => false,
+      ),
+    );
+    const currentHelp = b
+      .callTool({ name: 'story_help', arguments: { query: 'Fixture' } })
+      .finally(() => {
+        updated = true;
+      });
     await delay(150);
     process.kill(hello.pid, 0); // An already issued command still awaits its renderer's ACK.
     assert.equal(updated, false, 'the successor cannot serve until the previous owner finishes');
+    await writeFile(join(data, 'terminal-save-release'), 'release');
     await runtime.call('exchange', {
       sessionId: opened.sessionId,
       renderer,
@@ -326,8 +368,10 @@ process.on('message',async(message)=>{
     );
     const stale = await a.callTool({ name: 'story_help', arguments: { query: 'Fixture' } });
     assert.equal(stale.structuredContent.error.code, 'RUNTIME_UPDATE_REQUIRED');
+    const help = await currentHelp;
+    assert.equal(help.isError, undefined, JSON.stringify(help));
     assert.equal(
-      (await currentHelp).text,
+      help.structuredContent.text,
       next.release,
       'the same new MCP connection can retry after the previous owner exits',
     );

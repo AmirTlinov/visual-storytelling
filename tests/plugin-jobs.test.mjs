@@ -58,6 +58,62 @@ const terminal = (runner, id) =>
     return !['queued', 'running', 'cancelling'].includes(job.status) && job;
   });
 
+test('idle maintenance coalesces requests and fences source capture plus direct worker enqueues', async (t) => {
+  const { runner } = await fixture(t);
+  let releaseMaintenance;
+  const gate = new Promise((resolve) => {
+    releaseMaintenance = resolve;
+  });
+  t.after(() => releaseMaintenance());
+  let runs = 0,
+    captured = false;
+  const work = async () => {
+    assert.equal(runner.busy, false);
+    runs++;
+    await gate;
+    assert.equal(runner.busy, false, 'new worker cannot start during collection');
+  };
+  const first = await runner.enqueue('build', { value: 1 }, randomUUID());
+  for (let i = 0; i < 20; i++) runner.requestMaintenance(work);
+  assert.equal(runs, 0, 'a running worker owns its staging files');
+  await terminal(runner, first.id);
+  await wait(() => runs === 1);
+  const capture = runner.preserveInputs(() => {
+    captured = true;
+  });
+  const next = runner.enqueue('migrate', { value: 2 }, randomUUID());
+  await delay(20);
+  assert.equal(captured, false);
+  assert.equal(runner.jobs.size, 1);
+  releaseMaintenance();
+  await capture;
+  const queued = await next;
+  assert.equal((await terminal(runner, queued.id)).result.value, 2);
+  await wait(() => runs === 2 && !runner.maintenanceRun);
+});
+
+test('maintenance rechecks idle after waiting for an input capture and a direct enqueue', async (t) => {
+  const { runner } = await fixture(t);
+  let releaseCapture;
+  const gate = new Promise((resolve) => {
+    releaseCapture = resolve;
+  });
+  t.after(() => releaseCapture());
+  const capture = runner.preserveInputs(() => gate);
+  let collected = false;
+  runner.requestMaintenance(async () => {
+    assert.equal(runner.busy, false);
+    collected = true;
+  });
+  const job = await runner.enqueue('review', { value: 3 }, randomUUID());
+  releaseCapture();
+  await capture;
+  await delay(20);
+  assert.equal(collected, false);
+  assert.equal((await terminal(runner, job.id)).status, 'succeeded');
+  await wait(() => collected);
+});
+
 test('concurrent repeated preparation shares one worker and persists every request identity', async (t) => {
   const { runner, directory, entry } = await fixture(t),
     requestId = randomUUID(),

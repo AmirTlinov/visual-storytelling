@@ -4,6 +4,61 @@ import { story } from '../dist/story/story.js';
 import { mediaTimeline } from '../dist/story/clock.js';
 import { transport } from '../dist/story/transport.js';
 
+function playbackHarness(t) {
+  const callbacks = new Map();
+  const resources = [];
+  const preferences = Object.assign(new EventTarget(), { matches: false });
+  let serial = 0;
+  const descriptors = new Map();
+  for (const [key, value] of Object.entries({
+    matchMedia: () => preferences,
+    requestAnimationFrame: (callback) => {
+      callbacks.set(++serial, callback);
+      return serial;
+    },
+    cancelAnimationFrame: (id) => callbacks.delete(id),
+    HTMLAudioElement: class {},
+  })) {
+    descriptors.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+    Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
+  t.after(() => {
+    for (const resource of resources) resource.dispose();
+    for (const [key, descriptor] of descriptors)
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else Reflect.deleteProperty(globalThis, key);
+  });
+  const audio = Object.assign(new EventTarget(), {
+    currentTime: 0,
+    paused: true,
+    ended: false,
+    muted: true,
+    playbackRate: 1,
+    pauses: 0,
+    async play() {
+      this.paused = false;
+      this.dispatchEvent(new Event('play'));
+    },
+    pause() {
+      this.pauses++;
+      this.paused = true;
+      this.dispatchEvent(new Event('pause'));
+    },
+  });
+  return {
+    audio,
+    callbacks,
+    preferences,
+    own: (resource) => resources.push(resource),
+    tick(time) {
+      audio.currentTime = time;
+      const frames = [...callbacks.values()];
+      callbacks.clear();
+      for (const callback of frames) callback(performance.now());
+    },
+  };
+}
+
 test('native seek quantization retains a cue boundary until media time advances', (t) => {
   const previous = globalThis.cancelAnimationFrame;
   let clock;
@@ -452,4 +507,196 @@ test('interactive cue catches skipped media frames, preserves an attempt on Play
   controller.seek(3);
   controller.setReduced(true);
   assert.equal(controller.waiting, 'question');
+});
+
+for (const stage of ['stateAt', 'derive', 'canContinue'])
+  test(`an awaited cue ${stage} failure pauses a skipped media frame and can be retried`, async (t) => {
+    const { audio, callbacks, tick, own } = playbackHarness(t);
+    let broken = true,
+      accepted = false;
+    const frames = [],
+      cause = new Error(`Awaited ${stage} failed`);
+    const controller = story({
+      script: { duration: 10, cues: { question: { start: 3, end: 5, awaitInput: true } } },
+      audio,
+      stateAt(frame) {
+        if (broken && stage === 'stateAt' && frame.time === 3) throw cause;
+        return { time: frame.time };
+      },
+      derive(values) {
+        if (broken && stage === 'derive' && values.time === 3) throw cause;
+        return values;
+      },
+      canContinue() {
+        if (broken && stage === 'canContinue') throw cause;
+        return accepted;
+      },
+      render: (_, frame) => frames.push(frame.time),
+    });
+    own(controller);
+    await controller.player.play();
+    assert.equal(callbacks.size, 1);
+    assert.doesNotThrow(
+      () => tick(8),
+      'native clock callbacks report model failures through status',
+    );
+    assert.equal(controller.phase, 'failed');
+    assert.equal(controller.error.stage, stage);
+    assert.equal(controller.error.cause, cause);
+    assert.equal(controller.requested.time, 0);
+    assert.equal(controller.presented.time, 0);
+    assert.deepEqual(frames, [0]);
+    assert.equal(audio.paused, true);
+    assert.equal(controller.player.state.playing, false);
+    assert.equal(controller.player.state.error, cause.message);
+    assert.equal(callbacks.size, 0, 'a failed cue must not leave a media RAF running');
+    await assert.rejects(controller.ready(), (error) => error === cause);
+
+    const pauses = audio.pauses;
+    await controller.player.play();
+    assert.equal(controller.phase, 'failed', 'a repeated failure remains retryable');
+    assert.equal(audio.pauses, pauses + 1, 'failure notifications must not recurse');
+    assert.equal(callbacks.size, 0);
+    broken = false;
+    await controller.player.play();
+    await controller.ready();
+    assert.equal(controller.currentTime, 3, 'retry checks the missed cue before advancing');
+    assert.equal(controller.presented.time, 3);
+    assert.equal(controller.phase, 'ready');
+    assert.equal(controller.error, undefined);
+    assert.equal(controller.waiting, 'question');
+    assert.equal(audio.paused, true, 'a valid but unchecked attempt still stops playback');
+
+    accepted = true;
+    await controller.player.play();
+    assert.equal(callbacks.size, 1, 'a recovered clock schedules frames again');
+    tick(3.25);
+    assert.equal(controller.presented.time, 3.25);
+    assert.equal(controller.player.state.playing, true);
+    assert.equal(controller.player.state.error, null);
+  });
+
+for (const access of ['waiting', 'resume', 'playback'])
+  test(`an awaited check failing through ${access} retains the frame and recovers inside its cue`, async (t) => {
+    const { audio, own } = playbackHarness(t);
+    let broken = false,
+      checks = 0;
+    const cause = new Error('Attempt validation failed');
+    const controller = story({
+      script: { duration: 10, cues: { question: { start: 3, end: 5, awaitInput: true } } },
+      audio,
+      stateAt: (frame) => frame.time,
+      canContinue() {
+        checks++;
+        if (broken) throw cause;
+        return true;
+      },
+      render() {},
+    });
+    own(controller);
+    controller.seek(4);
+    const presented = controller.presented;
+    controller.subscribe((state) => {
+      if (state.error)
+        assert.equal(
+          controller.waiting,
+          undefined,
+          'an error observer must not repeat the failed check',
+        );
+    });
+    broken = true;
+    if (access === 'waiting')
+      assert.throws(
+        () => controller.waiting,
+        (error) => error === cause,
+      );
+    else if (access === 'resume')
+      assert.throws(
+        () => controller.resume(),
+        (error) => error === cause,
+      );
+    else await controller.player.play();
+    assert.equal(checks, 1);
+    assert.equal(controller.error.stage, 'canContinue');
+    assert.equal(controller.presented, presented);
+    assert.equal(controller.player.state.playing, false);
+    assert.equal(audio.paused, true);
+    await assert.rejects(controller.ready(), (error) => error === cause);
+    broken = false;
+    await controller.player.play();
+    await controller.ready();
+    assert.equal(controller.presented.time, 4);
+    assert.equal(controller.phase, 'ready');
+    assert.equal(controller.player.state.playing, true);
+  });
+
+test('an awaited check cancels pending preparation and ignores its late completion before retry', async (t) => {
+  const { audio, own } = playbackHarness(t);
+  let broken = false;
+  const preparations = [],
+    frames = [];
+  const controller = story({
+    script: { duration: 10, cues: { question: { start: 3, end: 5, awaitInput: true } } },
+    audio,
+    stateAt: (frame) => frame.time,
+    canContinue() {
+      if (broken) throw new Error('Pending attempt failed');
+      return false;
+    },
+    prepare(value, _frame, _mode, signal) {
+      if (value === 4) return new Promise((resolve) => preparations.push({ signal, resolve }));
+    },
+    render: (value) => frames.push(value),
+  });
+  own(controller);
+  controller.seek(4);
+  const ready = assert.rejects(controller.ready(), /Pending attempt failed/);
+  broken = true;
+  assert.throws(() => controller.waiting, /Pending attempt failed/);
+  await ready;
+  assert.equal(preparations[0].signal.aborted, true);
+  assert.equal(controller.presented.time, 0);
+  broken = false;
+  await controller.player.play();
+  assert.equal(preparations.length, 2, 'retry prepares the accepted condition again');
+  preparations[0].resolve();
+  await Promise.resolve();
+  assert.deepEqual(frames, [0], 'the cancelled preparation cannot overwrite the pending retry');
+  preparations[1].resolve();
+  await controller.ready();
+  assert.deepEqual(frames, [0, 4]);
+  assert.equal(controller.phase, 'ready');
+  assert.equal(controller.player.state.playing, false);
+  assert.equal(controller.waiting, 'question');
+});
+
+test('a motion preference event reports an awaited failure without an uncaught DOM exception', async (t) => {
+  const { audio, preferences, own } = playbackHarness(t);
+  let broken = true;
+  const controller = story({
+    script: { duration: 10, cues: { question: { start: 3, end: 5, awaitInput: true } } },
+    audio,
+    stateAt: (frame) => frame.time,
+    canContinue() {
+      if (broken) throw new Error('Motion preference encountered an invalid attempt');
+      return true;
+    },
+    render() {},
+  });
+  own(controller);
+  await controller.player.play();
+  audio.currentTime = 8;
+  preferences.matches = true;
+  preferences.dispatchEvent(new Event('change'));
+  // Node reports uncaught EventTarget failures on the next turn, as browsers report
+  // them through window.error. A managed model failure must stay within Story.
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(controller.error.stage, 'canContinue');
+  assert.equal(controller.presented.time, 0);
+  assert.equal(controller.player.state.playing, false);
+  broken = false;
+  await controller.player.play();
+  await controller.ready();
+  assert.equal(controller.presented.time, 8);
+  assert.equal(controller.player.state.playing, true);
 });

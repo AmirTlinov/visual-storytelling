@@ -20,6 +20,19 @@ const digest = (value) =>
 const commandExpired =
   'The view did not confirm this command before its deadline. Inspect before retrying.';
 
+/** Render payloads live in immutable build files, not in session or request history. */
+export function buildReference({ html: _html, ...build }) {
+  return build;
+}
+
+const observableAuthor = (session, attempt) =>
+  Boolean(
+    session.renderer &&
+      attempt.generation === session.generation &&
+      attempt.order >= (session.appliedAuthor?.order ?? 0) &&
+      (attempt.id === session.appliedAuthor?.id || attempt.baseBuild === session.build.revision),
+  );
+
 /** Routes commands to the displayed runtime. Never advances time or evaluates a scene. */
 export class SessionDirectory {
   instance = randomUUID();
@@ -40,7 +53,7 @@ export class SessionDirectory {
     if (id) return this.get(id);
     const session = {
       id: randomUUID(),
-      build,
+      build: buildReference(build),
       generation: 0,
       renderer: null,
       ready: false,
@@ -71,6 +84,25 @@ export class SessionDirectory {
 
   expired(session) {
     return session.renderer && Date.now() - session.lastPollAt >= this.rendererTimeout;
+  }
+
+  /** A timed-out command may still report its applied frame until its generation is fenced. */
+  pruneAttempts(session) {
+    for (const receipt of session.receipts.values())
+      for (const [id, attempt] of receipt.attempts ?? [])
+        if (!observableAuthor(session, attempt)) receipt.attempts.delete(id);
+  }
+
+  buildLeases() {
+    const revisions = new Set();
+    for (const session of this.sessions.values()) {
+      for (const build of [session.build, session.nextBuild, session.replacement?.build])
+        if (build) revisions.add(build.revision);
+      for (const receipt of session.receipts.values())
+        for (const attempt of receipt.attempts?.values() ?? [])
+          if (observableAuthor(session, attempt)) revisions.add(attempt.build.revision);
+    }
+    return [...revisions];
   }
 
   describe(session) {
@@ -142,6 +174,7 @@ export class SessionDirectory {
             s.generation++;
             s.appliedAuthor = undefined;
             s.renderer = renderer;
+            this.pruneAttempts(s);
             s.ready = false;
             s.lastPollAt = Date.now();
             s.wake?.();
@@ -152,7 +185,6 @@ export class SessionDirectory {
         return {
           ...this.describe(s),
           checkpoint: s.checkpoint,
-          html: s.build.html,
           ...(s.build.live && { authoredDocument: s.build.live.document }),
           authoring: s.appliedAuthor && {
             requestId: s.appliedAuthor.requestId,
@@ -247,6 +279,7 @@ export class SessionDirectory {
       s.handoff = false;
       s.generation++;
       s.appliedAuthor = undefined;
+      this.pruneAttempts(s);
       s.ready = false;
       s.state = null;
       s.wake?.();
@@ -255,6 +288,7 @@ export class SessionDirectory {
     if (s.handoff) throw new Error('The view is already changing.');
     if (s.nextBuild?.revision !== buildRevision)
       throw new Error('A newer preparation is available. Load its candidate first.');
+    s.nextBuild = buildReference(s.nextBuild);
     s.handoff = true;
     const pending = (s.replacement = {
       id: randomUUID(),
@@ -335,11 +369,9 @@ export class SessionDirectory {
       const identifiedAuthor =
         attempt &&
         attempt.id === report.authoring.commandId &&
-        attempt.generation === generation &&
+        observableAuthor(s, attempt) &&
         attempt.build.revision === report.authoring.buildRevision &&
-        attempt.build.sourceRevision === report.authoring.sourceRevision &&
-        attempt.order >= (s.appliedAuthor?.order ?? 0) &&
-        (attempt.id === s.appliedAuthor?.id || attempt.baseBuild === s.build.revision);
+        attempt.build.sourceRevision === report.authoring.sourceRevision;
       const currentFrame = report.authoring
         ? identifiedAuthor
         : !s.appliedAuthor &&
@@ -429,6 +461,7 @@ export class SessionDirectory {
         );
       }
     }
+    this.pruneAttempts(s);
     // Reports and acknowledgements must never consume the poll channel's commands.
     if (!wait) return { commands: [], ...this.describe(s) };
     if (!s.ready || !s.queue.length) {
@@ -451,6 +484,7 @@ export class SessionDirectory {
 
   request(id, request, { authoredBuild } = {}) {
     const s = this.get(id);
+    if (authoredBuild) authoredBuild = buildReference(authoredBuild);
     const pauseOnly =
       request.op === 'control' &&
       request.commands?.length &&
@@ -586,6 +620,8 @@ export class SessionDirectory {
     s.replacement = undefined;
     s.handoff = false;
     s.renderer = null;
+    s.appliedAuthor = undefined;
+    this.pruneAttempts(s);
     s.ready = false;
     this.rejectPending(s, 'View closed before confirming the command.');
     s.wake?.();

@@ -180,7 +180,7 @@ async function prepare(input, task) {
     await prepareEnvironment(data, {
       ...task,
       voice: localHiggs,
-      encoder: localHiggs,
+      encoder: true,
     });
     await buildNarration(snapshot, {
       ...task,
