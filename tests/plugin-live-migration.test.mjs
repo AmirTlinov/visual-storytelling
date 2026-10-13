@@ -130,17 +130,14 @@ test(
       assert.equal(initial.authoring, true);
       let inspected = await call('story_inspect', { sessionId });
       await call('story_control', {
-        sessionId,
-        buildRevision: inspected.buildRevision,
-        stateRevision: inspected.stateRevision,
+        context: inspected.context,
         commands: [{ type: 'parameters', values: { divisor: 4 } }],
         requestId: randomUUID(),
       });
       assert.equal((await sceneState()).parameters.divisor, 4);
       const before = await call('story_inspect', { projectId });
       const migrationRequest = {
-        projectId,
-        sourceRevision: before.sourceRevision,
+        context: before.context,
         requestId: randomUUID(),
       };
       const migration = await call('story_migrate', migrationRequest);
@@ -201,8 +198,7 @@ test(
       assert.equal(afterMigration.authoring, true);
 
       const edited = await call('story_edit', {
-        projectId,
-        sourceRevision: migrated.result.project.sourceRevision,
+        context: migrated.result.project.context,
         requestId: randomUUID(),
         operations: [{ op: 'set-inputs', modelId: 'apples', values: { count: 17 } }],
       });
@@ -214,8 +210,7 @@ test(
       assert.equal(changed.parameters.count, 17);
       assert.equal(changed.parameters.divisor, 4);
       const undone = await call('story_edit', {
-        projectId,
-        sourceRevision: edited.project.sourceRevision,
+        context: edited.project.context,
         requestId: randomUUID(),
         undo: true,
       });

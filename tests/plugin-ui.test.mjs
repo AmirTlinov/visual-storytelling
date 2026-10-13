@@ -22,7 +22,10 @@ test(
       await app.locator('html[data-connection="connected"]').waitFor();
       const session = await page.evaluate(() => window.pluginTest.session);
       const call = (name, args = {}) =>
-        host.client.callTool({ name, arguments: { sessionId: session.sessionId, ...args } });
+        host.client.callTool({
+          name,
+          arguments: name === 'story_inspect' ? { sessionId: session.sessionId, ...args } : args,
+        });
       const inspect = async () => {
         const result = await call('story_inspect');
         assert.equal(result.isError, undefined, JSON.stringify(result));
@@ -31,8 +34,7 @@ test(
       const start = await inspect();
       const action = {
         requestId: randomUUID(),
-        buildRevision: start.buildRevision,
-        stateRevision: start.stateRevision,
+        context: start.context,
         commands: [{ type: 'cue', id: 'move_x', progress: 0.5 }],
       };
       const before = performance.now();
@@ -127,8 +129,7 @@ test(
       ]);
       await call('story_control', {
         requestId: randomUUID(),
-        buildRevision: selected.buildRevision,
-        stateRevision: selected.stateRevision,
+        context: selected.context,
         commands: [{ type: 'rate', value: 0.5 }],
       });
       const stale = await call('story_control', { ...action, requestId: randomUUID() });

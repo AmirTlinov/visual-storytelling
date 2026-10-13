@@ -154,12 +154,12 @@ test(
         assert.equal(result.isError, undefined, JSON.stringify(result));
         return result.structuredContent.status === 'connected';
       });
-    const create = (title, count, sessionId) => ({
+    const create = (title, count, context) => ({
       title,
       path: join(temporary, title),
       requestId: randomUUID(),
       document: { recipe: 'division', inputs: { count, divisor: 3 } },
-      ...(sessionId && { sessionId }),
+      ...(context && { context }),
     });
     try {
       const page = await browser.newPage();
@@ -172,9 +172,7 @@ test(
       await waitConnected(originalId);
       let before = await inspect(originalId);
       await call('story_control', {
-        sessionId: originalId,
-        buildRevision: before.buildRevision,
-        stateRevision: before.stateRevision,
+        context: before.context,
         requestId: randomUUID(),
         commands: [{ type: 'pause' }, { type: 'seek', time: 6 }, { type: 'rate', value: 0.75 }],
       });
@@ -183,7 +181,7 @@ test(
       await app.locator('body').evaluate(() => {
         window.hotCardIdentity = 'original-app';
       });
-      const request = create('Next', 17, originalId);
+      const request = create('Next', 17, before.context);
       const next = await call('story_create', request);
       const nextId = next.structuredContent.sessionId;
       assert.equal(next.structuredContent.presentation.kind, 'existing-card');
@@ -214,13 +212,12 @@ test(
       );
       const wrongTarget = await host.client.callTool({
         name: 'story_create',
-        arguments: { ...request, sessionId: nextId },
+        arguments: { ...request, context: current.context },
       });
       assert.equal(wrongTarget.isError, true);
       // A ready destination remains authorable through its own existing revision path.
       await call('story_edit', {
-        projectId: next.structuredContent.project.id,
-        sourceRevision: next.structuredContent.sourceRevision,
+        context: next.structuredContent.context,
         requestId: randomUUID(),
         operations: [{ op: 'set-inputs', modelId: 'division', values: { count: 18 } }],
       });
@@ -228,7 +225,7 @@ test(
         (await inspect(nextId)).state.parameters.find((item) => item.key === 'count').value,
         18,
       );
-      const failedRequest = create('Closed-target', 21, originalId);
+      const failedRequest = create('Closed-target', 21, before.context);
       const failed = await call('story_create', failedRequest);
       assert.equal(failed.structuredContent.delivery, 'failed');
       assert.equal(failed.structuredContent.error.code, 'view_closed');
@@ -239,7 +236,7 @@ test(
         ).generation,
         0,
       );
-      await call('story_navigate', { sessionId: nextId, back: true });
+      await call('story_navigate', { context: current.context, back: true });
       await waitConnected(originalId);
       const returned = await inspect(originalId);
       assert.equal(returned.state.time, before.state.time);
@@ -270,7 +267,7 @@ test(
             title: 'Unsupported',
             path: join(temporary, 'unsupported'),
             requestId: randomUUID(),
-            sessionId: failedId,
+            context: resumed.structuredContent.context,
             ...(example && { example }),
           },
         });
@@ -370,7 +367,7 @@ test(
         title: 'Prepared destination',
         path: join(temporary, 'destination'),
         requestId: randomUUID(),
-        sessionId: originalId,
+        context: (await call('story_inspect', { sessionId: originalId })).context,
         document: { recipe: 'division', inputs: { count: 17, divisor: 3 } },
       };
       const nextResult = await host.client.callTool({ name: 'story_create', arguments: request });
@@ -432,7 +429,7 @@ test(
       const completed = await call('story_create', request);
       assert.equal(completed.delivery, 'shown');
       assert.equal(completed.shown[0].generation, remounted.generation);
-      await call('story_navigate', { sessionId: nextId, back: true });
+      await call('story_navigate', { context: remounted.context, back: true });
       await waitConnected(originalId);
       assert.deepEqual(await call('story_create', request), completed);
       assert.equal((await session(originalId)).status, 'connected');

@@ -6,18 +6,8 @@ const id = z
   .refine((value) => Boolean(value.trim()), 'An ID must not be blank.');
 const values = z.record(id, z.union([z.number().finite(), z.string().max(4096), z.boolean()]));
 const revision = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/);
-export const revisionTarget = z.discriminatedUnion('kind', [
-  z.strictObject({
-    kind: z.literal('build'),
-    projectId: z.string().uuid(),
-    buildRevision: revision,
-  }),
-  z.strictObject({
-    kind: z.literal('working'),
-    projectId: z.string().uuid(),
-    sourceRevision: revision,
-  }),
-]);
+export const context = z.string().min(40).max(4096);
+export const contextTarget = z.strictObject({ kind: z.enum(['build', 'working']), context });
 export const command = z.discriminatedUnion('type', [
   z.strictObject({ type: z.enum(['play', 'pause', 'undoExperiment', 'redoExperiment']) }),
   z.strictObject({ type: z.literal('mute'), value: z.boolean() }),

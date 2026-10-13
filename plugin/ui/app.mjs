@@ -49,7 +49,7 @@ function discardProvisional() {
   $('notice').hidden = true;
 }
 function previewInput({ arguments: args } = {}) {
-  if (args?.sessionId) {
+  if (args?.context) {
     if (!session) discardProvisional();
     return;
   }
@@ -124,8 +124,15 @@ function sync(acknowledgement) {
         wait: false,
       });
       if (session === owner && exchanged.structuredContent.generation === owner.generation) {
-        for (const key of ['buildRevision', 'sourceRevision', 'shownSourceRevision'])
+        for (const key of [
+          'buildRevision',
+          'sourceRevision',
+          'shownSourceRevision',
+          'stateRevision',
+          'context',
+        ])
           owner[key] = exchanged.structuredContent[key];
+        publishContext();
       }
     })
     .catch((e) => {
@@ -763,7 +770,7 @@ $('back').onclick = async () => {
     await ensureConnected();
     const result = await app.callServerTool({
       name: 'story_navigate',
-      arguments: { sessionId: session.sessionId, back: true },
+      arguments: { context: session.context, back: true },
     });
     if (result.isError) throw new Error(result.content[0].text);
   } catch (e) {

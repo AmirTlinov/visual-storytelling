@@ -71,15 +71,12 @@ test(
       });
       const initial = (await call('story_inspect', { sessionId })).structuredContent;
       await call('story_control', {
-        sessionId,
-        buildRevision: initial.buildRevision,
-        stateRevision: initial.stateRevision,
+        context: initial.context,
         requestId: randomUUID(),
         commands: [{ type: 'rate', value: 0.25 }, { type: 'play' }],
       });
       const edited = await call('story_edit', {
-        projectId: project.id,
-        sourceRevision: before.sourceRevision,
+        context: before.context,
         requestId: randomUUID(),
         changes: [
           {
@@ -109,16 +106,14 @@ test(
       const conflict = await host.client.callTool({
         name: 'story_edit',
         arguments: {
-          projectId: project.id,
-          sourceRevision: before.sourceRevision,
+          context: before.context,
           requestId: randomUUID(),
           changes: [{ path: 'scene.js', content: file.content }],
         },
       });
       assert.equal(conflict.isError, true);
       const undone = await call('story_edit', {
-        projectId: project.id,
-        sourceRevision: editedProject.sourceRevision,
+        context: editedProject.context,
         requestId: randomUUID(),
         undo: true,
       });
@@ -129,7 +124,8 @@ test(
         .waitFor();
       const help = await call('story_help', { projectId: project.id, query: 'SceneHandle' });
       assert.match(JSON.stringify(help.structuredContent), /SceneHandle/);
-      const voiceList = (await call('story_voice', { projectId: project.id })).structuredContent;
+      const voiceList = (await call('story_voice', { context: undoneProject.context }))
+        .structuredContent;
       assert.equal(voiceList.provider, 'higgs');
       assert.equal(voiceList.settings.provider, 'higgs');
       assert.deepEqual(
@@ -151,8 +147,7 @@ test(
       const unsupportedVoice = await host.client.callTool({
         name: 'story_voice',
         arguments: {
-          projectId: project.id,
-          sourceRevision: undoneProject.sourceRevision,
+          context: undoneProject.context,
           requestId: randomUUID(),
           enabled: true,
           provider: 'macos',
@@ -166,8 +161,7 @@ test(
       );
       assert.deepEqual(await readdir(join(directory, 'data/jobs')), jobsBeforeUnsupportedVoice);
       const adapterAdded = await call('story_edit', {
-        projectId: project.id,
-        sourceRevision: undoneProject.sourceRevision,
+        context: undoneProject.context,
         requestId: randomUUID(),
         changes: [
           {
@@ -182,8 +176,7 @@ test(
       const adapterAddedProject = (await finish(adapterAdded.structuredContent.job.id)).result
         .project;
       const voiceDisabled = await call('story_voice', {
-        projectId: project.id,
-        sourceRevision: adapterAddedProject.sourceRevision,
+        context: adapterAddedProject.context,
         requestId: randomUUID(),
         enabled: false,
         provider: 'local',
@@ -196,14 +189,13 @@ test(
         .project;
       await call('story_preferences', { patch: { language: 'en' } });
       const narrated = await call('story_voice', {
-        projectId: project.id,
-        sourceRevision: voiceDisabledProject.sourceRevision,
+        context: voiceDisabledProject.context,
         requestId: randomUUID(),
         enabled: true,
       });
       const narratedProject = (await finish(narrated.structuredContent.job.id)).result.project;
-      const voiceSettings = (await call('story_voice', { projectId: project.id })).structuredContent
-        .settings;
+      const voiceSettings = (await call('story_voice', { context: narratedProject.context }))
+        .structuredContent.settings;
       assert.equal(voiceSettings.voice, 'fixture');
       assert.equal(voiceSettings.provider, 'local');
       assert.equal(voiceSettings.model, 'fixture');
@@ -228,8 +220,7 @@ test(
       const script = JSON.parse(narration.content);
       script.segments.at(-1).text += ' Теперь проверьте свой вариант.';
       const spokenEdit = await call('story_edit', {
-        projectId: project.id,
-        sourceRevision: narratedProject.sourceRevision,
+        context: narratedProject.context,
         requestId: randomUUID(),
         changes: [{ path: 'narration.json', content: JSON.stringify(script, null, 2) }],
       });
@@ -242,8 +233,7 @@ test(
       const produced = await call('story_produce', {
         target: {
           kind: 'working',
-          projectId: project.id,
-          sourceRevision: spokenEditProject.sourceRevision,
+          context: spokenEditProject.context,
         },
         requestId: randomUUID(),
         options: {

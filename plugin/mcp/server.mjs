@@ -11,7 +11,17 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { runtimeClient } from '../runtime/client.mjs';
-import { command, sessionId, read, changeView, viewReport, acknowledgement } from './schema.mjs';
+import {
+  command,
+  context,
+  sessionId,
+  read,
+  changeView,
+  viewReport,
+  acknowledgement,
+} from './schema.mjs';
+import { authoringContext, contextualRuntime } from './authoring-context.mjs';
+import { dataDirectory } from '../../tools/storage.mjs';
 import { presentSession, toolResult } from './presentation.mjs';
 import { authoringTools } from './authoring-tools.mjs';
 import manifest from '../../plugin.json' with { type: 'json' };
@@ -20,7 +30,10 @@ import { errorData } from '../errors.mjs';
 const directory = dirname(process.argv[1]);
 process.env.PATH = join(directory, '../../runtime/bin') + ':' + process.env.PATH;
 const html = await readFile(join(directory, 'app.html'), 'utf8');
-const runtime = runtimeClient(directory);
+const runtime = contextualRuntime(
+  runtimeClient(directory),
+  await authoringContext(dataDirectory()),
+);
 const request = (sessionId, request) => runtime.call('request', { sessionId, request });
 const server = new McpServer({
   name: 'visual-storytelling',
@@ -77,6 +90,7 @@ registerAppTool(
     description:
       'Open a saved Visual Storytelling project or the gpt-model exemplar in chat. story_create(document) arranges presentation; check its delivery and acknowledgement before treating the scene as shown. Reuse its sessionId to move that scene between views. Source-code scenes use edit and review before showing. With no arguments returns the exemplar catalog. Commands continue the existing view.',
     inputSchema: {
+      context: context.optional(),
       sessionId: sessionId.optional(),
       projectId: z.string().uuid().optional(),
       path: z
@@ -121,10 +135,11 @@ server.registerTool(
     description:
       'Visit an additional explanation in the existing panel, preserving a return point. Back returns to the paused lesson. Use story_open only for a new card or to explicitly reuse a session.',
     inputSchema: {
-      sessionId,
+      context,
       back: z.boolean().optional(),
       target: z
         .object({
+          context: context.optional(),
           sessionId: sessionId.optional(),
           projectId: z.string().uuid().optional(),
           path: z.string().optional(),
@@ -143,19 +158,27 @@ server.registerTool(
     description:
       'Read the displayed scene, working project or persistent job. jobId + waitMs (0–15000) waits for completion without repeated polling. No IDs lists active sessions. sessionId + file reads the shown build source with shown and working revisions; projectId + file reads working UTF-8 source. A project returns sourceRevision and file hashes. A session returns compact state and capabilities. Request model for object values and causal inputs, timeline for all cues, or presentation for geometry.',
     inputSchema: {
+      context: context.optional(),
       sessionId: sessionId.optional(),
       projectId: z.string().uuid().optional(),
       file: z.string().optional(),
       jobId: z.string().uuid().optional(),
       waitMs: z.number().int().min(0).max(15000).optional(),
       detail: z.enum(['state', 'model', 'timeline', 'presentation']).default('state'),
+      scope: z.enum(['scene', 'working']).optional(),
     },
     annotations: read,
   },
-  safely(async ({ sessionId, projectId, file, jobId, detail, waitMs }) => {
+  safely(async ({ context, sessionId, projectId, file, jobId, detail, waitMs, scope }) => {
     if (jobId) return result(await runtime.call('job', { jobId, waitMs }));
     if (sessionId && file) return result(await runtime.call('shownSource', { sessionId, file }));
-    if (projectId) return result(await runtime.call('project', { projectId, file }));
+    if (projectId) return result(await runtime.call('project', { projectId, file, context }));
+    if (context) {
+      const inspected = await runtime.call('inspect', { context, file, detail, scope });
+      return inspected.sessionId && !file
+        ? toolResult(presentSession(inspected, detail))
+        : result(inspected);
+    }
     return sessionId
       ? toolResult(presentSession(await request(sessionId, { op: 'inspect', detail }), detail))
       : result({ sessions: (await runtime.call('list')).map((s) => presentSession(s)) });
@@ -166,30 +189,35 @@ server.registerTool(
   {
     description:
       'Find live cues, chapters or semantic objects by narration, action, title, label or ID. Ranked results identify their type. Use cue control for cues, seek for chapter start, select/focus for objects.',
-    inputSchema: { sessionId, query: z.string().min(1).max(500) },
+    inputSchema: { context, query: z.string().min(1).max(500) },
     annotations: read,
   },
-  safely(async ({ sessionId, query }) =>
-    toolResult(presentSession(await request(sessionId, { op: 'find', query }))),
+  safely(async ({ context, query }) =>
+    toolResult(
+      presentSession(await runtime.call('request', { context, request: { op: 'find', query } })),
+    ),
   ),
 );
 server.registerTool(
   'story_control',
   {
     description:
-      'Control the existing live scene through its SceneHandle. Supply the inspected buildRevision and stateRevision, plus a unique requestId. Use detail:"model" to check computed values in the same response, without a separate inspect call. Pause alone needs no prior inspection. Retries reuse the result. Acknowledgement is rendered after preparation and two frame opportunities, or prepared if the host defers repaint. Neither confirms screenshot pixels or a camera transition ending.',
+      'Control the existing live scene through its SceneHandle. Pass context from the preceding result or live card, plus a unique requestId. The context binds the observed build, state and renderer generation; a stale new operation returns an addressed conflict. Retries reuse their historical observation before freshness checks. Use detail:"model" to check computed values and continue with the returned context. Acknowledgement reports frame opportunities; verify pixels separately.',
     inputSchema: {
-      sessionId,
-      buildRevision: z.string().optional(),
-      stateRevision: z.number().int().nonnegative().optional(),
+      context,
       requestId: z.string().min(8).max(100),
       commands: z.array(command).min(1).max(32),
       detail: z.enum(['state', 'model', 'timeline', 'presentation']).optional(),
     },
     annotations: changeView,
   },
-  safely(async ({ sessionId, ...args }) =>
-    toolResult(presentSession(await request(sessionId, { op: 'control', ...args }), args.detail)),
+  safely(async ({ context, ...args }) =>
+    toolResult(
+      presentSession(
+        await runtime.call('request', { context, request: { op: 'control', ...args } }),
+        args.detail,
+      ),
+    ),
   ),
 );
 

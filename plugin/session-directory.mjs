@@ -514,6 +514,21 @@ export class SessionDirectory {
       if (previous.observed) return Promise.resolve(previous.observed);
       if (!authoredBuild || !previous.rejected) return previous.promise;
     }
+    if (
+      (request.expectedInstance !== undefined && request.expectedInstance !== this.instance) ||
+      (request.expectedGeneration !== undefined && request.expectedGeneration !== s.generation)
+    )
+      return Promise.reject(
+        failure(
+          'scene_context_conflict',
+          'The scene renderer changed. Read its observed context before a new command.',
+          {
+            field: 'context',
+            current: this.describe(s),
+            action: 'story_inspect',
+          },
+        ),
+      );
     if (!s.renderer || this.expired(s))
       return Promise.reject(
         failure('view_closed', 'Open the scene before controlling it.', { action: 'story_open' }),

@@ -48,13 +48,12 @@ test(
         const { structuredContent: current } = await call('story_inspect', { projectId });
         // Keep the hand-edited broken configuration quiet while testing the recovery tool.
         const { structuredContent: edited } = await call('story_edit', {
-          projectId,
-          sourceRevision: current.sourceRevision,
+          context: current.context,
           requestId: randomUUID(),
           changes: [{ path: 'voice.json', content: JSON.stringify(settings, null, 2) + '\n' }],
         });
         const editedProject = (await finishFixtureJob(host.client, edited.job.id)).result.project;
-        const inspected = await call('story_voice', { projectId });
+        const inspected = await call('story_voice', { context: editedProject.context });
         assert.equal(inspected.structuredContent.ready, false);
         assert.equal(inspected.structuredContent.provider, settings.provider);
         assert.equal(
@@ -73,8 +72,7 @@ test(
           assert.equal(inspected.structuredContent.readiness, 'configuration-required');
         }
         const request = {
-          projectId,
-          sourceRevision: editedProject.sourceRevision,
+          context: editedProject.context,
           requestId: randomUUID(),
           enabled: false,
         };
@@ -83,7 +81,7 @@ test(
         assert.equal(JSON.stringify(disabled).includes(secret), false);
         assert.equal(
           disabled.structuredContent.project.sourceRevision,
-          request.sourceRevision,
+          editedProject.sourceRevision,
           'the accepted source remains unchanged while its candidate prepares',
         );
         const completed = await finishFixtureJob(host.client, disabled.structuredContent.job.id);
@@ -91,7 +89,7 @@ test(
         assert.equal(disabledProject.requestId, request.requestId);
         assert.notEqual(
           disabledProject.sourceRevision,
-          request.sourceRevision,
+          editedProject.sourceRevision,
           'saving the default language commits one real authoring revision',
         );
         assert.equal(completed.result.sourceRevision, disabledProject.sourceRevision);

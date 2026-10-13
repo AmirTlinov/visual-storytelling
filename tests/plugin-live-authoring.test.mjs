@@ -114,8 +114,7 @@ test(
       const closedEdit = await host.client.callTool({
         name: 'story_edit',
         arguments: {
-          projectId: project.id,
-          sourceRevision: project.sourceRevision,
+          context: project.context,
           requestId: randomUUID(),
           operations: [{ op: 'set-inputs', modelId: 'division', values: { count: 12 } }],
         },
@@ -138,8 +137,7 @@ test(
       const latencies = [];
       const edit = async (count) => {
         const args = {
-          projectId: project.id,
-          sourceRevision: current.sourceRevision,
+          context: current.context,
           requestId: randomUUID(),
           operations: [{ op: 'set-inputs', modelId: 'division', values: { count } }],
         };
@@ -201,8 +199,7 @@ test(
       const invalid = await host.client.callTool({
         name: 'story_edit',
         arguments: {
-          projectId: project.id,
-          sourceRevision: current.sourceRevision,
+          context: current.context,
           requestId: randomUUID(),
           operations: [{ op: 'set-inputs', modelId: 'missing', values: { count: 9 } }],
         },
@@ -220,8 +217,7 @@ test(
       const invalidLayout = await host.client.callTool({
         name: 'story_edit',
         arguments: {
-          projectId: project.id,
-          sourceRevision: current.sourceRevision,
+          context: current.context,
           requestId: randomUUID(),
           operations: [
             {
@@ -256,8 +252,7 @@ test(
       );
       const undone = (
         await call('story_edit', {
-          projectId: project.id,
-          sourceRevision: current.sourceRevision,
+          context: current.context,
           requestId: randomUUID(),
           undo: true,
         })
@@ -283,8 +278,7 @@ test(
         await call('story_produce', {
           target: {
             kind: 'build',
-            projectId: project.id,
-            buildRevision: reopened.structuredContent.buildRevision,
+            context: reopened.structuredContent.context,
           },
           requestId: randomUUID(),
           options: { formats: ['html', 'source'], conditions: 'authored' },

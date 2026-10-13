@@ -162,6 +162,10 @@ cache — `cache-maintenance.mjs`, voice adapter — `plugin/voice.mjs`; пол�
 JobRunner сохраняют свои состояния. `stageEdit` разрешает операцию один раз;
 `commitPreparedEdit` повторно проверяет source/path/history fences перед journal.
 Journal/recover публикует source, pin, историю, receipt и immutable assets.
+MCP `authoring-context.mjs` связывает ссылки в подписанный контекст; состояние
+остаётся у существующих владельцев. ProjectStore проверяет source,
+SessionDirectory — build/state/generation. Исторический receipt разрешается
+до свежести новой операции. Карточка прикрепляет подтверждённый context.
 
 Legacy `ExplanationDocument` и `mountExplanation`, неиспользуемые фасады notebook
 и composition, неявный `globalThis.openai` и отдельная сборка prepared explanation

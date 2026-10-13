@@ -69,14 +69,12 @@ test(
       assert.ok(help.examples[0].editing.some(({ file }) => file === 'scene.js'));
       assert.match(help.text, /PlotIntervalOptions/);
       const first = await call('story_edit', {
-        projectId: created.project.id,
-        sourceRevision: created.project.sourceRevision,
+        context: created.project.context,
         requestId: randomUUID(),
         changes: [{ path: 'note.txt', content: 'first' }],
       });
       const second = await call('story_edit', {
-        projectId: created.project.id,
-        sourceRevision: first.project.sourceRevision,
+        context: first.project.context,
         requestId: randomUUID(),
         changes: [{ path: 'note.txt', content: 'accepted' }],
       });
