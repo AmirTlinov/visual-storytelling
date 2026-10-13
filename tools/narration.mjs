@@ -3,7 +3,6 @@ import { join, resolve, dirname } from 'node:path';
 import { narrationSource } from './story-document.mjs';
 import { parse } from 'parse5';
 import { higgsVoice } from './voice/higgs.mjs';
-import { buildAdapterNarration, checkAdapterNarration } from './voice/adapter.mjs';
 import { narrationProvider } from './voice/settings.mjs';
 
 function editAudioTags(html, edit) {
@@ -198,6 +197,7 @@ export async function buildNarration(
     settings = { ...settings, enabled: true, provider };
     await writeFile(settingsFile, JSON.stringify(settings, null, 2) + '\n');
   } else {
+    const { buildAdapterNarration } = await import('./voice/adapter.mjs');
     settings = { ...settings, enabled: true, provider };
     result = await buildAdapterNarration(directory, source.file, settings, {
       signal,
@@ -277,6 +277,7 @@ export async function checkNarration(html, directory, { signal } = {}) {
       if (provider !== selected)
         throw new Error('Narration provider changed. Prepare the selected voice before building.');
       if (selected !== 'higgs') {
+        const { checkAdapterNarration } = await import('./voice/adapter.mjs');
         await checkAdapterNarration(directory, script, receipt, settings, audio);
         break;
       }

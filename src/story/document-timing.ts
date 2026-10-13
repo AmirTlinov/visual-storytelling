@@ -1,4 +1,5 @@
 import { cueSheet, type Script, type CueTiming } from './cues.js';
+import { spokenWords } from './spoken-words.js';
 import {
   validateStoryDocument,
   type StoryDocument,
@@ -42,11 +43,6 @@ function timingFor(chapter: AuthoredChapter, beat: AuthoredBeat) {
     ? { ...timing, until: `${chapter.id}.${timing.until}` }
     : timing;
 }
-// Match the speech aligner's Russian word contract, including ё and non-breaking hyphens.
-const spokenWords = (text: string) =>
-  (text.match(/[А-Яа-яЁё]+(?:[-‑][А-Яа-яЁё]+)*/g) ?? []).map((word) =>
-    word.toLowerCase().replaceAll('ё', 'е').replaceAll('‑', '-'),
-  );
 /** Contiguous spoken runs share synthesis; silent beats use the assembler's existing pauses. */
 function spokenRuns(chapter: AuthoredChapter) {
   const runs: AuthoredBeat[][] = [];

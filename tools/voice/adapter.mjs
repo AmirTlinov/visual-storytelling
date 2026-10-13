@@ -15,15 +15,10 @@ import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { dataDirectory } from '../storage.mjs';
 import { voiceDigest } from './receipt.mjs';
 import { masterAdapterAudio, currentMastering } from './mastering.mjs';
+import { spokenWords as tokens } from '../../dist/story/spoken-words.js';
 
 const format = 'voice-adapter-v1';
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
-const tokens = (text) =>
-  text
-    .toLowerCase()
-    .replaceAll('ё', 'е')
-    .replaceAll('‑', '-')
-    .match(/[\p{L}\p{N}]+(?:[-][\p{L}\p{N}]+)*/gu) ?? [];
 const spoken = (text) => text.replace(/<\|[a-z]+:[a-z_]+\|>/g, '').trim();
 const ignored = new Set(['node_modules', 'dist', 'site', 'artifacts', 'review', '__pycache__']);
 const outputs = new Set([

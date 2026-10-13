@@ -14,6 +14,7 @@ import {
 } from '../tools/voice/adapter.mjs';
 import { voiceDigest } from '../tools/voice/receipt.mjs';
 import { masteringProfileHash } from '../tools/voice/mastering.mjs';
+import { documentNarration } from '../dist/story/document.js';
 
 // Protocol/ownership fixture: tone intervals have measured phrase timestamps.
 // It is deliberately not a TTS model or a listening-quality acceptance test.
@@ -133,6 +134,59 @@ const exists = (path) =>
       return false;
     },
   );
+
+test('document occurrences bind repeated Unicode and numeric speech to distinct measured words', async (t) => {
+  const f = await fixture(t);
+  const sayings = [
+    'First step.',
+    'STEP!',
+    'Step.',
+    'Шаг 1.',
+    'Шаг 2.',
+    'Шаг 1!',
+    'Élan 2.',
+    'ÉLAN 2!',
+  ];
+  f.spec = documentNarration({
+    version: 2,
+    title: 'Repeated speech',
+    models: [],
+    views: [],
+    chapters: [
+      {
+        id: 'lesson',
+        title: 'Words',
+        beats: sayings.map((say, i) => ({ id: `word${i}`, say })),
+      },
+    ],
+  });
+  assert.deepEqual(
+    f.spec.segments[0].cues.map((cue) => cue.occurrence),
+    [1, 2, 3, 1, 1, 2, 1, 2],
+  );
+  // Each fixture word has an actual separate interval in the generated two-second waveform.
+  await writeFile(
+    f.entry,
+    adapter.replace(
+      'let words=[{text:request.text,start:.1,end:1.9}];',
+      'let words=request.text.match(/[\\p{L}\\p{N}]+/gu).map((text,i)=>({text,start:.1+i*.1,end:.19+i*.1}));',
+    ),
+  );
+  f.settings.language = 'en-US';
+  // The fixture's save/build closures keep their original spec reference.
+  await writeFile(f.source, JSON.stringify(f.spec));
+  await writeFile(join(f.directory, 'voice.json'), JSON.stringify(f.settings));
+  await f.build();
+  const receipt = await f.receipt();
+  await checkAdapterNarration(f.directory, f.source, receipt, f.settings);
+  const starts = f.spec.segments[0].cues.map((cue) => receipt.cues[cue.id].start);
+  assert.equal(
+    new Set(starts).size,
+    sayings.length,
+    'repeated cues must not collapse to the first phrase',
+  );
+  assert.ok(starts.every((start, i) => !i || start > starts[i - 1]));
+});
 
 test('local and API selection share verified assembly, precise phrase anchors and reusable takes', async (t) => {
   const f = await fixture(t, { two: true });
