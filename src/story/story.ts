@@ -19,7 +19,7 @@ export interface StoryMoment<P, S = P> {
   readonly chapter?: string;
 }
 export interface StoryError {
-  readonly stage: 'stateAt' | 'derive' | 'prepare' | 'render';
+  readonly stage: 'stateAt' | 'derive' | 'canContinue' | 'prepare' | 'render';
   readonly cause: unknown;
 }
 export interface StoryStatus<P, S = P> {
@@ -43,7 +43,8 @@ export type StoryOptions<P, K extends string, S = P> = {
   /** Resolve a selected chapter at a shared time boundary from the accepted condition. */
   chapterAt?(moment: StoryMoment<P, NoInfer<S>>): string | undefined;
   checkpoint?: StoryCheckpoint<P>;
-  /** The subject owns the attempt. Returning true releases an awaitInput cue, including a wrong but checked answer. */
+  /** The subject owns the attempt. True releases an awaitInput cue, including a wrong but checked answer.
+   * A thrown error pauses playback and retains the last completed frame; Play retries the check. */
   canContinue?(cue: K, moment: StoryMoment<P, NoInfer<S>>): boolean;
   /** Prepare resources without changing the visible frame. Honour cancellation before effects. */
   prepare?(
@@ -135,8 +136,42 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
     error = { stage, cause };
     // An arbitrary renderer may have changed part of the DOM before throwing.
     if (stage === 'render') presented = undefined;
-    player.fail(cause);
+    const previous = changing;
+    changing = true;
+    try {
+      cancelPreparation();
+      player.fail(cause);
+    } finally {
+      changing = previous;
+    }
     if (requested) notify();
+  }
+  function evaluate<T>(stage: StoryError['stage'], work: () => T): T {
+    try {
+      return work();
+    } catch (cause) {
+      fail(stage, cause);
+      throw cause;
+    }
+  }
+  function requestAt(frame: Frame<K>, mode: StoryMode): Request {
+    const values =
+      mode === 'story'
+        ? evaluate('stateAt', () => options.stateAt(frame))
+        : requested.moment.values;
+    return evaluate('derive', () => compute(values, frame, mode));
+  }
+  function canContinue(id: K, moment: StoryMoment<P, S>) {
+    return evaluate('canContinue', () => options.canContinue?.(id, moment) ?? false);
+  }
+  function pauseForInput() {
+    const previous = changing;
+    changing = true;
+    try {
+      player.pause();
+    } finally {
+      changing = previous;
+    }
   }
   function draw(next: Request) {
     if (disposed || requested !== next) return;
@@ -220,9 +255,7 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
         .sort((a, b) => a.cue.start - b.cue.start)
         .find(({ id, cue }) => {
           const at = sheet.at(cue.start, forcedReduced ?? media.matches);
-          const values =
-            requested.moment.mode === 'story' ? options.stateAt(at) : requested.moment.values;
-          return !options.canContinue?.(id, compute(values, at, requested.moment.mode).moment);
+          return !canContinue(id, requestAt(at, requested.moment.mode).moment);
         });
       if (stop) {
         time = stop.cue.start;
@@ -244,17 +277,7 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
       requested.frame.reduced === frame.reduced
     )
       return;
-    let stage: StoryError['stage'] = 'stateAt';
-    let next: Request;
-    try {
-      const values = mode === 'story' ? options.stateAt(frame) : requested.moment.values;
-      stage = 'derive';
-      next = compute(values, frame, mode);
-    } catch (cause) {
-      fail(stage, cause);
-      throw cause;
-    }
-    publish(next);
+    publish(requestAt(frame, mode));
   }
   // Media commands can synchronously emit several events. Accept one complete request.
   function change(command: () => void, next: Request) {
@@ -276,41 +299,57 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
   }
   let unsubscribe: () => void;
   function waiting() {
-    if (!requested) return undefined;
+    // A failed check is retried by Play, not by error/status observers reading this getter.
+    if (!requested || error) return undefined;
     return (Object.keys(sheet.script.cues) as K[]).find((id) => {
       const cue = sheet.script.cues[id];
       return (
         cue.awaitInput &&
         requested.moment.time >= cue.start &&
         requested.moment.time < cue.end &&
-        !options.canContinue?.(id, requested.moment)
+        !canContinue(id, requested.moment)
       );
     });
   }
   try {
     unsubscribe = player.subscribe((playback, mediaFrame) => {
-      if (!changing && playback.playing && waiting()) {
-        changing = true;
-        try {
-          player.pause();
-        } finally {
-          changing = false;
+      if (disposed || changing) return;
+      try {
+        if (error && playback.playing) {
+          const stage = error.stage;
+          error = undefined;
+          if (waiting()) {
+            pauseForInput();
+            publish(requested);
+          } else if (stage === 'prepare' || stage === 'render') publish(requested);
+          else update();
+          return;
         }
-        return;
+        if (playback.playing && waiting()) {
+          pauseForInput();
+          return;
+        }
+        if (mediaFrame) update();
+      } catch (cause) {
+        // Model failures already paused the clock and published their error. Native
+        // media events and RAF callbacks must not leak them as uncaught exceptions.
+        // Construction still rejects when there is no accepted initial condition.
+        if (!unsubscribe || error?.cause !== cause) throw cause;
       }
-      if (error && playback.playing) {
-        const stage = error.stage;
-        error = undefined;
-        if (stage === 'prepare' || stage === 'render') publish(requested);
-        else update();
-      } else if (mediaFrame) update();
     });
   } catch (cause) {
     cancelPreparation();
     player.dispose();
     throw cause;
   }
-  media.addEventListener('change', update);
+  const updateMotionPreference = () => {
+    try {
+      update();
+    } catch (cause) {
+      if (error?.cause !== cause) throw cause;
+    }
+  };
+  media.addEventListener('change', updateMotionPreference);
   return {
     player,
     sheet,
@@ -381,15 +420,9 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
       const resolved = options.resolveInput
         ? options.resolveInput(patch, compute(authored, frame, 'story').moment, frame)
         : { values: { ...authored, ...patch } };
-      const target = resolved.time ?? time;
-      if (!Number.isFinite(target)) throw new Error('Story time must be finite');
-      restorePosition(
-        compute(
-          resolved.values,
-          sheet.at(Math.max(0, Math.min(options.script.duration, target)), frame.reduced),
-          'explore',
-        ),
-      );
+      // A restored position is already an accepted observation. Input resolution
+      // still normalizes its values, but a new-input transition cannot move it.
+      restorePosition(compute(resolved.values, frame, 'explore'));
     },
     /** Apply only the supplied fields; the subject resolves transitions before publication. */
     input(patch: Partial<P>) {
@@ -472,7 +505,7 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
       cancelPreparation();
       unsubscribe();
       player.dispose();
-      media.removeEventListener('change', update);
+      media.removeEventListener('change', updateMotionPreference);
       listeners.clear();
       seeks.clear();
     },

@@ -21,3 +21,5 @@ export { comparisonDiagram } from './comparison.js';
 export type { ComparisonOptions } from './comparison.js';
 
 export { circuitDiagram } from './circuit.js';
+export { divisionDiagram, DIVISION_MAX_COUNT } from './division.js';
+export type { DivisionDiagramOptions, DivisionFocus, DivisionFocusTarget } from './division.js';

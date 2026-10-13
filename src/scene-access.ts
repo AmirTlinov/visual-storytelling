@@ -2,6 +2,7 @@ import type { SceneHandle } from './scene-handle.js';
 import type { ControlParameter, ControlValue } from './controls/fields.js';
 import type { SceneView, SceneRestoreNotice } from './scene-checkpoint.js';
 import type { CueReview } from './story/cues.js';
+import type { StoryError } from './story/story.js';
 
 export type SceneSearchResult =
   | ({ type: 'cue' } & CueReview['cues'][number])
@@ -35,7 +36,7 @@ export interface SceneRendering {
   phase: 'preparing' | 'ready' | 'failed';
   requested: SceneRenderMoment;
   presented: SceneRenderMoment | undefined;
-  error?: { stage: 'stateAt' | 'derive' | 'prepare' | 'render'; message: string };
+  error?: { stage: StoryError['stage']; message: string };
 }
 export interface SceneInspection {
   restoreNotices?: readonly SceneRestoreNotice[];

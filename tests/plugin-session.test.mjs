@@ -11,6 +11,66 @@ const report = (stateRevision = 0, time = 0) => ({
   checkpoint: { time, progress: 0, mode: 'story', values: {} },
 });
 const connection = (sessionId, renderer, generation) => ({ sessionId, renderer, generation });
+const authoring = (command) => ({
+  requestId: command.requestId,
+  commandId: command.id,
+  buildRevision: command.nextBuildRevision,
+  sourceRevision: command.sourceRevision,
+});
+
+test('semantic delivery advances the shown source only after the same renderer confirms its revision', async (t) => {
+  const { directory, session, view } = await fixture(t);
+  const next = {
+    ...build,
+    revision: 'build-authored',
+    sourceRevision: 'source-authored',
+    live: { document: {} },
+  };
+  const input = {
+    op: 'author',
+    requestId: 'semantic-accepted',
+    buildRevision: build.revision,
+    stateRevision: 0,
+    nextBuildRevision: next.revision,
+    sourceRevision: next.sourceRevision,
+    document: {},
+  };
+  const pending = directory.request(session.id, input, { authoredBuild: next });
+  assert.equal(session.build.revision, build.revision);
+  const [delivery] = (await directory.exchange(view)).commands;
+  assert.equal(delivery.op, 'author');
+  await directory.exchange({
+    ...view,
+    report: { ...report(1), renderStatus: 'rendered', authoring: authoring(delivery) },
+    acknowledgements: [
+      {
+        id: delivery.id,
+        result: { buildRevision: next.revision, sourceRevision: next.sourceRevision },
+      },
+    ],
+    wait: false,
+  });
+  const accepted = await pending;
+  assert.equal(accepted.shownSourceRevision, next.sourceRevision);
+  assert.equal(accepted.acknowledgement, 'rendered');
+  assert.equal(accepted.generation, view.generation);
+  assert.strictEqual(await directory.request(session.id, input, { authoredBuild: next }), accepted);
+  const refused = directory.request(
+    session.id,
+    { ...input, requestId: 'semantic-refused', buildRevision: next.revision, stateRevision: 1 },
+    { authoredBuild: { ...next, revision: 'unconfirmed' } },
+  );
+  const rejection = assert.rejects(refused, /did not confirm/);
+  const [refusedDelivery] = (await directory.exchange(view)).commands;
+  await directory.exchange({
+    ...view,
+    report: report(2),
+    acknowledgements: [{ id: refusedDelivery.id, result: { buildRevision: 'wrong' } }],
+    wait: false,
+  });
+  await rejection;
+  assert.equal(session.build.revision, next.revision);
+});
 
 async function fixture(t, options = {}) {
   const directory = new SessionDirectory({
@@ -27,6 +87,360 @@ async function fixture(t, options = {}) {
   await directory.exchange({ ...view, report: report(), wait: false });
   return { directory, session, view };
 }
+
+test('a refused author delivery retries with a fresh wire ID and ignores its late acknowledgement', async (t) => {
+  const { directory, session, view } = await fixture(t);
+  const next = {
+    ...build,
+    revision: 'next',
+    sourceRevision: 'next-source',
+    live: { document: {} },
+  };
+  const input = {
+    op: 'author',
+    requestId: 'retry-author',
+    buildRevision: build.revision,
+    stateRevision: 0,
+    nextBuildRevision: next.revision,
+    sourceRevision: next.sourceRevision,
+    document: {},
+  };
+  const first = directory.request(session.id, input, { authoredBuild: next });
+  const rejected = assert.rejects(first, /render refused/);
+  const [firstCommand] = (await directory.exchange(view)).commands;
+  await directory.exchange({
+    ...view,
+    wait: false,
+    report: report(1),
+    acknowledgements: [{ id: firstCommand.id, error: 'render refused' }],
+  });
+  await rejected;
+  assert.equal(
+    session.checkpoint.time,
+    0,
+    'failed author does not save a new frame under the old build',
+  );
+  assert.equal(session.stateRevision, 1, 'its observed concurrency fence remains current');
+  const second = directory.request(
+    session.id,
+    { ...input, stateRevision: 1 },
+    { authoredBuild: next },
+  );
+  const [secondCommand] = (await directory.exchange(view)).commands;
+  assert.notEqual(firstCommand.id, secondCommand.id);
+  const result = { buildRevision: next.revision, sourceRevision: next.sourceRevision };
+  await directory.exchange({
+    ...view,
+    wait: false,
+    report: report(99, 99),
+    acknowledgements: [{ id: firstCommand.id, result }],
+  });
+  assert.equal(session.stateRevision, 1);
+  assert.equal(session.build.revision, build.revision);
+  assert.equal(session.pending.size, 1);
+  session.nextBuild = { ...next, revision: 'newer-candidate', sourceRevision: 'newer-source' };
+  await directory.exchange({
+    ...view,
+    wait: false,
+    report: { ...report(2, 4), authoring: authoring(secondCommand) },
+    acknowledgements: [{ id: secondCommand.id, result }],
+  });
+  assert.equal((await second).shownSourceRevision, next.sourceRevision);
+  assert.equal(session.checkpoint.time, 4);
+  assert.equal(session.nextBuild.revision, 'newer-candidate');
+  await assert.rejects(
+    directory.request(
+      session.id,
+      { ...input, document: { different: true } },
+      { authoredBuild: next },
+    ),
+    /different command/,
+  );
+});
+
+test('an expired or superseded author acknowledgement cannot replace a newer build or its checkpoint', async (t) => {
+  let now = 10000;
+  t.mock.method(Date, 'now', () => now);
+  const { directory, session, view } = await fixture(t, { timeout: 100, rendererTimeout: 10000 });
+  const oldBuild = { ...build, revision: 'old-author', sourceRevision: 'old-source' };
+  const newBuild = { ...build, revision: 'new-author', sourceRevision: 'new-source' };
+  const input = (target, requestId) => ({
+    op: 'author',
+    requestId,
+    buildRevision: build.revision,
+    stateRevision: 0,
+    nextBuildRevision: target.revision,
+    sourceRevision: target.sourceRevision,
+    document: {},
+  });
+  const expired = directory.request(session.id, input(oldBuild, 'expired-author'), {
+    authoredBuild: oldBuild,
+  });
+  const expiry = assert.rejects(expired, /deadline/);
+  const [oldCommand] = (await directory.exchange(view)).commands;
+  now += 101;
+  await directory.exchange({
+    ...view,
+    wait: false,
+    report: report(50, 99),
+    acknowledgements: [
+      {
+        id: oldCommand.id,
+        result: { buildRevision: oldBuild.revision, sourceRevision: oldBuild.sourceRevision },
+      },
+    ],
+  });
+  await expiry;
+  assert.equal(session.stateRevision, 0);
+  const stale = directory.request(session.id, input(oldBuild, 'stale-author'), {
+    authoredBuild: oldBuild,
+  });
+  const staleRejection = assert.rejects(stale, /did not confirm/);
+  const current = directory.request(session.id, input(newBuild, 'new-author'), {
+    authoredBuild: newBuild,
+  });
+  const [staleCommand, newCommand] = (await directory.exchange(view)).commands;
+  await directory.exchange({
+    ...view,
+    wait: false,
+    report: { ...report(1, 7), authoring: authoring(newCommand) },
+    acknowledgements: [
+      {
+        id: newCommand.id,
+        result: { buildRevision: newBuild.revision, sourceRevision: newBuild.sourceRevision },
+      },
+    ],
+  });
+  await current;
+  const accepted = directory.describe(session),
+    checkpoint = session.checkpoint;
+  await directory.exchange({
+    ...view,
+    wait: false,
+    report: { ...report(99, 99), authoring: authoring(staleCommand) },
+    acknowledgements: [
+      {
+        id: staleCommand.id,
+        result: { buildRevision: oldBuild.revision, sourceRevision: oldBuild.sourceRevision },
+      },
+    ],
+  });
+  await staleRejection;
+  assert.deepEqual(directory.describe(session), accepted);
+  assert.deepEqual(session.checkpoint, checkpoint);
+});
+
+test('semantic preflight requires observed revisions and rejects without replacing the frame', async (t) => {
+  const { directory, session, view } = await fixture(t);
+  await assert.rejects(
+    directory.request(session.id, { op: 'author-validate', document: {} }),
+    /Inspect/,
+  );
+  const before = directory.describe(session);
+  const pending = directory.request(session.id, {
+    op: 'author-validate',
+    buildRevision: build.revision,
+    stateRevision: 0,
+    document: {},
+  });
+  const rejected = assert.rejects(pending, /caption/);
+  const [command] = (await directory.exchange(view)).commands;
+  await directory.exchange({
+    ...view,
+    wait: false,
+    acknowledgements: [{ id: command.id, error: 'A future caption does not fit.' }],
+  });
+  await rejected;
+  assert.deepEqual(directory.describe(session), before);
+});
+
+test('ordinary reports reconcile the actually applied author after abort or expiry without replaying its intent', async (t) => {
+  let now = 10000;
+  t.mock.method(Date, 'now', () => now);
+  const { directory, session, view } = await fixture(t, { timeout: 100, rendererTimeout: 10000 });
+  for (const mode of ['abort', 'expiry']) {
+    const base = session.build,
+      revision = session.stateRevision;
+    const next = { ...base, revision: 'build-' + mode, sourceRevision: 'source-' + mode };
+    const input = {
+      op: 'author',
+      requestId: 'author-' + mode,
+      buildRevision: base.revision,
+      stateRevision: revision,
+      nextBuildRevision: next.revision,
+      sourceRevision: next.sourceRevision,
+      document: {},
+    };
+    const pending = directory.request(session.id, input, { authoredBuild: next });
+    const rejection = assert.rejects(pending, mode === 'abort' ? /cancelled/ : /deadline/);
+    const [command] = (await directory.exchange(view)).commands;
+    if (mode === 'expiry') now += 101;
+    const identity = authoring(command);
+    await directory.exchange({
+      ...view,
+      wait: false,
+      report: { ...report(revision + 1, 17), authoring: identity, renderStatus: 'failed' },
+      acknowledgements: [{ id: command.id, error: 'cancelled after replacement' }],
+    });
+    await rejection;
+    assert.equal(
+      session.build.revision,
+      next.revision,
+      'applied owner is known even while observation failed',
+    );
+    assert.notEqual(directory.describe(session).shownSourceRevision, next.sourceRevision);
+    assert.equal(
+      session.receipts.get(input.requestId).observed,
+      undefined,
+      'failure alone is not a successful receipt',
+    );
+    await directory.exchange({
+      ...view,
+      wait: false,
+      report: { ...report(revision + 2, 18), authoring: identity, renderStatus: 'rendered' },
+    });
+    assert.equal(session.checkpoint.time, 18);
+    assert.equal(directory.describe(session).shownSourceRevision, next.sourceRevision);
+    const recovered = await directory.request(
+      session.id,
+      { ...input, buildRevision: next.revision, stateRevision: session.stateRevision },
+      { authoredBuild: next },
+    );
+    assert.equal(recovered.acknowledgement, 'rendered');
+    assert.equal(recovered.state.time, 18);
+    assert.deepEqual(
+      (await directory.exchange(view)).commands,
+      [],
+      'the applied operation is not replayed over viewer input',
+    );
+    const before = directory.describe(session);
+    await directory.exchange({ ...view, wait: false, report: report(revision + 99, 99) });
+    assert.deepEqual(
+      directory.describe(session),
+      before,
+      'a report without the current author identity cannot relabel its frame',
+    );
+  }
+});
+
+test('a current authored report settles its ACK alongside stale ACKs and rejects an older same-build identity', async (t) => {
+  const { directory, session, view } = await fixture(t);
+  const next = { ...build, sourceRevision: 'same-source' };
+  let oldIdentity;
+  for (let index = 0; index < 2; index++) {
+    const input = {
+      op: 'author',
+      requestId: 'same-build-' + index,
+      buildRevision: build.revision,
+      stateRevision: index,
+      nextBuildRevision: next.revision,
+      sourceRevision: next.sourceRevision,
+      document: {},
+    };
+    const pending = directory.request(session.id, input, { authoredBuild: next });
+    const [command] = (await directory.exchange(view)).commands;
+    const identity = authoring(command);
+    await directory.exchange({
+      ...view,
+      wait: false,
+      report: { ...report(index + 1, index), authoring: identity },
+      acknowledgements: [
+        { id: 'stale-wire' },
+        {
+          id: command.id,
+          result: { buildRevision: next.revision, sourceRevision: next.sourceRevision },
+        },
+      ],
+    });
+    await pending;
+    oldIdentity ??= identity;
+  }
+  const accepted = directory.describe(session);
+  await directory.exchange({
+    ...view,
+    wait: false,
+    report: { ...report(99, 99), authoring: oldIdentity },
+  });
+  assert.deepEqual(directory.describe(session), accepted);
+  const remounted = await directory.attach(session.id, view.renderer);
+  assert.equal(remounted.generation, view.generation);
+  assert.equal(remounted.authoring.requestId, 'same-build-1');
+  await directory.exchange({
+    ...view,
+    wait: false,
+    report: { ...report(3, 3), authoring: remounted.authoring, reason: 'ready' },
+  });
+  assert.equal(
+    session.checkpoint.time,
+    3,
+    'a fresh same-renderer iframe receives its accepted author identity',
+  );
+  directory.detach(view);
+  const attachment = await directory.attach(session.id, randomUUID());
+  const current = {
+    sessionId: session.id,
+    renderer: session.renderer,
+    generation: attachment.generation,
+  };
+  await directory.exchange({
+    ...current,
+    wait: false,
+    report: { ...report(99, 99), authoring: oldIdentity },
+  });
+  assert.equal(session.stateRevision, 3, 'even a forwarded old identity cannot cross generation');
+});
+
+test('a delayed applied attempt survives a newer issued retry until reconciliation', async (t) => {
+  let now = 10000;
+  t.mock.method(Date, 'now', () => now);
+  const { directory, session, view } = await fixture(t, { timeout: 100, rendererTimeout: 10000 });
+  const next = { ...build, revision: 'late-applied', sourceRevision: 'late-source' };
+  const input = {
+    op: 'author',
+    requestId: 'late-operation',
+    buildRevision: build.revision,
+    stateRevision: 0,
+    nextBuildRevision: next.revision,
+    sourceRevision: next.sourceRevision,
+    document: {},
+  };
+  const first = directory.request(session.id, input, { authoredBuild: next });
+  const firstRejected = assert.rejects(first, /deadline/);
+  const [firstCommand] = (await directory.exchange(view)).commands;
+  now += 101;
+  directory.expirePending(session);
+  await firstRejected;
+  const retry = directory.request(session.id, input, { authoredBuild: next });
+  const retryRejected = assert.rejects(retry, /state conflict/);
+  const [retryCommand] = (await directory.exchange(view)).commands;
+  await directory.exchange({
+    ...view,
+    wait: false,
+    report: { ...report(1, 17), authoring: authoring(firstCommand) },
+  });
+  assert.equal(session.build.revision, next.revision);
+  assert.equal(session.stateRevision, 1);
+  assert.equal(
+    session.pending.has(retryCommand.id),
+    true,
+    'the old observation does not settle the new command',
+  );
+  await directory.exchange({
+    ...view,
+    wait: false,
+    report: { ...report(2, 18), authoring: authoring(firstCommand) },
+    acknowledgements: [{ id: retryCommand.id, error: 'state conflict' }],
+  });
+  await retryRejected;
+  const recovered = await directory.request(
+    session.id,
+    { ...input, buildRevision: next.revision, stateRevision: 2 },
+    { authoredBuild: next },
+  );
+  assert.equal(recovered.acknowledgement, 'rendered');
+  assert.equal(session.checkpoint.time, 18);
+  assert.deepEqual((await directory.exchange(view)).commands, []);
+});
 
 function request(directory, id, args) {
   const promise = directory.request(id, args);

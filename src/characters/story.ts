@@ -19,7 +19,7 @@ async function mount(root: HTMLElement, options: CharacterStoryOptions) {
               label: 'Действие',
               type: 'select' as const,
               value: options.beats[0]!.id,
-              options: options.beats.map((b) => ({ value: b.id, label: b.title ?? b.text })),
+              options: options.beats.map((b) => ({ value: b.id, label: b.title ?? b.text ?? b.action ?? b.hold ?? b.id })),
             },
             {
               key: 'progress',

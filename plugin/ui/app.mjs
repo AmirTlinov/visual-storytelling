@@ -5,6 +5,8 @@ import { sceneDocument } from './scene-document.mjs';
 import { frameContext } from './frame-context.mjs';
 import { preferencesUI } from './preferences.mjs';
 import { fileEntrypoint } from './file-entrypoint.mjs';
+import preparedLiveHTML from 'visual-story:prepared-live-scene';
+import { validateExplanation } from '../../src/explanation/document.ts';
 
 const app = new App({ name: 'Visual Storytelling', version: manifest.version });
 const extensions = new OpenAIExtensions(app);
@@ -22,6 +24,82 @@ let session,
   closed = false,
   polling = false,
   loadTimer;
+let provisional;
+// Time when this app module starts executing; this excludes host resource fetch time.
+const resourceMountedAt = performance.now();
+let creationMetrics = { timeOrigin: performance.timeOrigin, resourceMountedAt };
+window.__visualStoryCreationMetrics = creationMetrics;
+function observeContent(renderStatus, confirmed = false) {
+  if (!['prepared', 'rendered'].includes(renderStatus)) return;
+  const now = performance.now();
+  creationMetrics.firstPreparedAt ??= now;
+  if (confirmed) creationMetrics.confirmedPreparedAt ??= now;
+  // The scene's rendered acknowledgement reports frame opportunities, not pixels.
+  if (renderStatus === 'rendered') {
+    creationMetrics.firstContentAt ??= now;
+    if (confirmed) creationMetrics.confirmedAt ??= now;
+  }
+}
+function discardProvisional() {
+  if (!provisional) return;
+  provisional = undefined;
+  frame.srcdoc = '';
+  frame.hidden = true;
+  delete frame.dataset.provisional;
+  $('notice').hidden = true;
+}
+function previewInput({ arguments: args } = {}) {
+  if (args?.sessionId) {
+    if (!session) discardProvisional();
+    return;
+  }
+  if (session || !args?.explanation) return;
+  creationMetrics.inputAt ??= performance.now();
+  let document;
+  try {
+    document = validateExplanation(args.explanation);
+  } catch {
+    return;
+  } // An incomplete operation leaves the last coherent preview visible.
+  const identity = JSON.stringify(document);
+  if (provisional?.identity === identity) return;
+  if (!provisional) {
+    provisional = { id: crypto.randomUUID(), generation: -1, identity, document, ready: false };
+    const setup = `<script>window.__visualStoryExplanation=${identity.replaceAll('<', '\\u003c')}</script>`;
+    frame.hidden = false;
+    $('catalog').hidden = true;
+    frame.dataset.provisional = 'true';
+    $('notice').textContent = 'Предварительный показ';
+    $('notice').hidden = false;
+    frame.srcdoc = sceneDocument(
+      preparedLiveHTML.replace('</head>', () => setup + '</head>'),
+      {
+        sessionId: provisional.id,
+        generation: provisional.generation,
+        preview: true,
+        provisional: true,
+        stateRevision: 0,
+        theme: app.getHostContext()?.theme,
+      },
+    );
+  } else {
+    provisional.document = document;
+    provisional.identity = identity;
+    if (provisional.ready) sendPreview('author-preview', { document });
+  }
+}
+function sendPreview(type, values) {
+  frame.contentWindow?.postMessage(
+    {
+      channel,
+      sessionId: provisional.id,
+      generation: provisional.generation,
+      type,
+      ...values,
+    },
+    '*',
+  );
+}
 let pollingDone = Promise.resolve();
 let updates = Promise.resolve();
 let displayMode = 'inline';
@@ -40,11 +118,15 @@ function sync(acknowledgement) {
   updates = updates
     .then(async () => {
       if (closed || session !== owner) return;
-      await call('exchange', {
+      const exchanged = await call('exchange', {
         report: current,
         acknowledgements: acknowledgement ? [acknowledgement] : [],
         wait: false,
       });
+      if (session === owner && exchanged.structuredContent.generation === owner.generation) {
+        for (const key of ['buildRevision', 'sourceRevision', 'shownSourceRevision'])
+          owner[key] = exchanged.structuredContent[key];
+      }
     })
     .catch((e) => {
       if (!closed && session === owner) error(connectionErrorMessage(e));
@@ -65,6 +147,9 @@ const send = (value) =>
     '*',
   );
 async function call(action, args = {}) {
+  const metrics = creationMetrics;
+  if (action === 'attach') metrics.attachStartedAt ??= performance.now();
+  if (args.report) metrics.firstReportStartedAt ??= performance.now();
   const result = await app.callServerTool({
     name: 'story_view',
     arguments: {
@@ -73,8 +158,10 @@ async function call(action, args = {}) {
       renderer,
       generation: session?.generation,
       ...args,
+      ...(args.report && { report: { ...args.report, metrics: { ...metrics } } }),
     },
   });
+  if (action === 'attach') metrics.attachCompletedAt ??= performance.now();
   if (result.isError)
     throw Object.assign(
       new Error(result.content?.find((c) => c.type === 'text')?.text ?? 'Connection failed'),
@@ -278,6 +365,7 @@ async function mount(result) {
     return;
   }
   if (!result.structuredContent?.sessionId) return;
+  creationMetrics.toolResultAt ??= performance.now();
   $('catalog').hidden = true;
   frame.hidden = false;
   error('');
@@ -295,9 +383,24 @@ async function mount(result) {
     checkpoint: session.checkpoint,
     stateRevision: session.stateRevision,
     widgetState: session.widgetState,
+    authoring: session.authoring,
   };
   if (attached._meta.sceneHTML) {
-    frame.srcdoc = sceneDocument(attached._meta.sceneHTML, config);
+    if (provisional && session.authoredDocument) {
+      provisional.confirmation = {
+        document: session.authoredDocument,
+        nextSessionId: session.sessionId,
+        nextGeneration: session.generation,
+        stateRevision: session.stateRevision,
+        checkpoint: session.checkpoint,
+        authoring: session.authoring,
+      };
+      if (provisional.ready) sendPreview('confirm-preview', provisional.confirmation);
+    } else {
+      provisional = undefined;
+      delete frame.dataset.provisional;
+      frame.srcdoc = sceneDocument(attached._meta.sceneHTML, config);
+    }
     loadTimer = setTimeout(
       () => error('Сцена не загрузилась. Закройте и откройте её снова.'),
       10000,
@@ -491,6 +594,23 @@ $('update').onclick = () => void applyUpdate();
 addEventListener('message', (event) => {
   const data = event.data;
   if (
+    provisional &&
+    event.source === frame.contentWindow &&
+    data?.channel === channel &&
+    data.sessionId === provisional.id &&
+    data.generation === provisional.generation
+  ) {
+    if (data.type === 'ready') {
+      provisional.ready = true;
+      observeContent(data.report?.renderStatus);
+      if (provisional.confirmation) sendPreview('confirm-preview', provisional.confirmation);
+      else sendPreview('author-preview', { document: provisional.document });
+    }
+    if (data.type === 'preview-content') observeContent(data.renderStatus);
+    if (data.type === 'error') error(data.message);
+    return;
+  }
+  if (
     event.source === candidate?.frame.contentWindow &&
     data?.channel === channel &&
     data.sessionId === session?.sessionId &&
@@ -526,7 +646,10 @@ addEventListener('message', (event) => {
       frame.style.setProperty('--scene-height', `${Math.ceil(data.height)}px`);
     return;
   }
-  if (data.report) report = data.report;
+  if (data.report) {
+    report = data.report;
+    observeContent(data.report.renderStatus, true);
+  }
   if (
     recoveryAck &&
     ((data.type === 'ready' && recoveryAck.id === undefined) ||
@@ -551,6 +674,10 @@ addEventListener('message', (event) => {
     return;
   }
   if (data.type === 'ready') {
+    if (provisional) {
+      provisional = undefined;
+      delete frame.dataset.provisional;
+    }
     setConnectionState('connected');
     clearTimeout(loadTimer);
     const notices = report.state.restoreNotices?.map((notice) => notice.message) ?? [];
@@ -621,6 +748,8 @@ async function open(result) {
   candidate = undefined;
   failedRevision = undefined;
   modelContext = frameContext(app, extensions);
+  creationMetrics = { timeOrigin: performance.timeOrigin, resourceMountedAt };
+  window.__visualStoryCreationMetrics = creationMetrics;
   $('update').hidden = true;
   $('back').hidden = true;
   error('');
@@ -644,6 +773,15 @@ $('back').onclick = async () => {
   }
 };
 app.ontoolresult = (result) => {
+  if (result.structuredContent?.presentation?.kind === 'existing-card') {
+    // Navigation belongs to the mounted card. A host may create a redundant resource
+    // from the tool's static UI metadata; it must never attach the destination too.
+    if (!session) {
+      discardProvisional();
+      void app.requestTeardown().catch((e) => error(e.message));
+    }
+    return;
+  }
   if (result.isError) {
     error(result.content?.find((c) => c.type === 'text')?.text ?? 'Не удалось открыть объяснение.');
     return;
@@ -654,6 +792,8 @@ app.ontoolresult = (result) => {
   }
   void mount(result).catch((e) => error(e.message));
 };
+app.ontoolinputpartial = previewInput;
+app.ontoolinput = previewInput;
 app.onhostcontextchanged = host;
 app.onteardown = dispose;
 addEventListener('pagehide', () => {

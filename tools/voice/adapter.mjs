@@ -14,6 +14,7 @@ import {
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { dataDirectory } from '../storage.mjs';
 import { voiceDigest } from './receipt.mjs';
+import { masterAdapterAudio, currentMastering } from './mastering.mjs';
 
 const format = 'voice-adapter-v1';
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -583,6 +584,62 @@ export async function buildAdapterNarration(
   signal?.throwIfAborted();
   const initial = await inputs(directory, sourceFile, config),
     { spec, backend } = initial;
+  const accepted = await maybeJSON(join(directory, 'timeline.json'));
+  if (accepted?.digest_format === format) {
+    let reusable = false;
+    try {
+      await checkAdapterNarration(directory, sourceFile, accepted, config, undefined, {
+        requireMastering: false,
+      });
+      reusable = true;
+    } catch (error) {
+      // Only changed performance inputs permit another provider call. A corrupt accepted
+      // recording or failed remaster must not silently spend a new paid request.
+      if (!error.message.includes('Narration, selected model or voice adapter changed'))
+        throw error;
+    }
+    if (reusable) {
+      if (!currentMastering(accepted)) {
+        const previous = await readFile(join(directory, 'audio.wav'));
+        const { audio, mastering } = await masterAdapterAudio(previous, readWav(previous), {
+          signal,
+        });
+        const next = {
+          ...accepted,
+          audio_sha256: hash(audio),
+          mix: { ...accepted.mix, mastering },
+        };
+        const staging = await mkdtemp(join(dirname(resolve(directory)), '.voice-remaster-'));
+        let preserve = false;
+        try {
+          if (
+            hash(await readFile(join(directory, 'audio.wav'))) !== hash(previous) ||
+            voiceDigest(await maybeJSON(join(directory, 'timeline.json'))) !==
+              voiceDigest(accepted) ||
+            voiceDigest((await inputs(directory, sourceFile, config)).identity) !==
+              voiceDigest(initial.identity)
+          )
+            throw new Error(
+              'Accepted narration changed during remastering. Retry after edits finish.',
+            );
+          await writeFile(join(staging, 'audio.wav'), audio);
+          await writeFile(join(staging, 'timeline.json'), JSON.stringify(next, null, 2) + '\n');
+          await publish(directory, staging, signal);
+        } catch (error) {
+          preserve = error.preserveNarrationStaging === true;
+          throw error;
+        } finally {
+          if (!preserve) await rm(staging, { recursive: true, force: true });
+        }
+      }
+      return {
+        duration: accepted.duration,
+        cached: spec.segments.length,
+        segments: spec.segments.length,
+        voice: config.voice ?? config.model,
+      };
+    }
+  }
   cache ??= join(dataDirectory(), 'speech');
   const pieces = [],
     segments = [],
@@ -629,7 +686,8 @@ export async function buildAdapterNarration(
     silence(segment.pause_after ?? 0);
   }
   silence(spec.outro ?? 0.4);
-  const bytes = wav(pieces, sampleRate);
+  const raw = wav(pieces, sampleRate);
+  const { audio: bytes, mastering } = await masterAdapterAudio(raw, readWav(raw), { signal });
   const timeline = {
     version: 1,
     digest_format: format,
@@ -641,6 +699,7 @@ export async function buildAdapterNarration(
     voice: 'audio.wav',
     music: null,
     audio_sha256: hash(bytes),
+    mix: { mastering },
     voice_settings: selection(config),
     synthesis: { provider: config.provider, model: config.model, adapter_sha256: backend.identity },
     alignment: { method: 'adapter-timestamps', segments: alignments },
@@ -679,7 +738,14 @@ export async function buildAdapterNarration(
 }
 
 /** Receipt verification is local and read-only; it never invokes a model or an API. */
-export async function checkAdapterNarration(directory, script, receipt, settings, audio) {
+export async function checkAdapterNarration(
+  directory,
+  script,
+  receipt,
+  settings,
+  audio,
+  { requireMastering = true } = {},
+) {
   const config = validateAdapterSettings(settings);
   const sourceFile = typeof script === 'string' ? script : script.file;
   const sourceDirectory = typeof script === 'string' ? directory : (script.directory ?? directory);
@@ -699,6 +765,8 @@ export async function checkAdapterNarration(directory, script, receipt, settings
     );
   const bytes = await readFile(audio ?? join(directory, 'audio.wav'));
   const wave = readWav(bytes);
+  if (!wave.pcm.some((value) => value !== 0))
+    throw new Error('Accepted narration audio is silent.');
   if (
     receipt.audio_sha256 !== hash(bytes) ||
     receipt.sample_rate !== wave.sampleRate ||
@@ -751,4 +819,6 @@ export async function checkAdapterNarration(directory, script, receipt, settings
     throw new Error('Narration cues or pauses differ from the current source.');
   const { cueSheet } = await import('../../dist/story/cues.js');
   cueSheet(receipt);
+  if (requireMastering && !currentMastering(receipt))
+    throw new Error('Narration mastering changed. Prepare the current narration.');
 }

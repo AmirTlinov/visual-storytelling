@@ -17,8 +17,11 @@ async function size(path) {
 }
 
 /** Evict only disposable preparation. Authored projects, history and released artifacts are outside this owner. */
-export async function collectCache(data, { limitMB, projects, sessions, snapshotLeases }) {
-  const keepBuilds = new Set(),
+export async function collectCache(
+  data,
+  { limitMB, projects, sessions, snapshotLeases, buildLeases = [] },
+) {
+  const keepBuilds = new Set(buildLeases),
     keepSnapshots = new Set(),
     keepDependencies = new Set();
   for (const project of projects) if (project.buildRevision) keepBuilds.add(project.buildRevision);
@@ -73,9 +76,15 @@ export async function collectCache(data, { limitMB, projects, sessions, snapshot
   const before = bytes,
     limit = limitMB * 1024 * 1024;
   for (const item of candidates.sort((a, b) => a.used - b.used)) {
-    if (bytes <= limit) break;
+    if (bytes - protectedBytes <= limit) break;
     await rm(item.path, { recursive: true, force: true });
     bytes -= item.bytes;
   }
-  return { bytes, protectedBytes, removedBytes: before - bytes, limitBytes: limit };
+  return {
+    totalBytes: bytes,
+    disposableBytes: bytes - protectedBytes,
+    protectedBytes,
+    removedBytes: before - bytes,
+    limitBytes: limit,
+  };
 }

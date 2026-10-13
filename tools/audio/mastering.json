@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "integrated_lufs": -16,
+  "true_peak_dbtp": -1.5,
+  "short_rms_dbfs": -20,
+  "active_peak_ratio": 0.01,
+  "sidechain_rms_dbfs": -20
+}

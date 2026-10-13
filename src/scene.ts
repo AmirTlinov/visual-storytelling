@@ -68,6 +68,8 @@ export interface SceneMount {
   setMode(mode: 'story' | 'explore'): void;
   /** Publish the current subject's frame without changing its clock, inputs or player. */
   setPresentation(presentation: SceneFramePresentation): void;
+  /** Update the shell's heading through the existing chapter navigation owner. */
+  setTitle(title: string, options?: { visible?: boolean }): void;
   /** Reflect subject-owned edits in an editable shell; story edits use story.input(). */
   syncParameters(values: Record<string, ControlValue>): void;
   /** Commit a subject-owned user action through the existing controls and undo history. */
@@ -112,6 +114,17 @@ const node = <K extends keyof HTMLElementTagNameMap>(
   return element;
 };
 let shellSerial = 0;
+function releaseResources(resources: readonly (() => void)[], message: string) {
+  const errors: unknown[] = [];
+  for (const cleanup of resources) {
+    try {
+      cleanup();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length) throw new AggregateError(errors, message);
+}
 function mount(
   root: HTMLElement,
   {
@@ -408,7 +421,13 @@ function mount(
   }
   setPresentation(presentation);
   let transition: ((mode: 'story' | 'explore') => void) | undefined;
-  let player: { dispose(): void } | undefined;
+  let player:
+    | {
+        dispose(): void;
+        playback(): { rate: number; playing: boolean };
+        refreshHeading(): void;
+      }
+    | undefined;
   let acceptedCondition = {};
   function refresh() {
     for (const [key, control] of inputs)
@@ -577,6 +596,21 @@ function mount(
     },
     setMode,
     setPresentation,
+    setTitle(next: string, options: { visible?: boolean } = {}) {
+      assertLive();
+      if (typeof next !== 'string') throw new Error('Scene title must be a string');
+      title = next;
+      showHeading = options.visible ?? showHeading;
+      heading.hidden = !showHeading;
+      if (player) player.refreshHeading();
+      else {
+        heading.textContent = title;
+        heading.title = title;
+      }
+      updateChrome(true);
+      composition.resize();
+      updateChrome(true);
+    },
     input: changeValues,
     syncParameters(next: Record<string, ControlValue>) {
       assertLive();
@@ -656,6 +690,10 @@ function mount(
       },
       captions === true ? {} : captions,
     );
+    const previousPlayback = player?.playback();
+    if (previousPlayback && previousPlayback.rate !== controller.player.state.rate)
+      controller.player.rate(previousPlayback.rate);
+    if (previousPlayback && !previousPlayback.playing) controller.player.pause();
     player?.dispose();
     transition = (next) => {
       if (exploration === 'model' && controller.requested.mode !== next) {
@@ -674,7 +712,7 @@ function mount(
       else controller.input(next as Partial<P>);
     };
     playback = () => controller.player.state.playing;
-    const chapters = chapterNavigation(
+    let chapters = chapterNavigation(
       heading,
       controller.sheet.script.segments ?? [],
       (time) => controller.seek(time, { mode: 'story' }),
@@ -710,15 +748,33 @@ function mount(
     root.addEventListener('scene-frame-resize', requestLayout);
     let unsubscribe = () => {};
     player = {
-      dispose() {
-        layout.disconnect();
-        root.removeEventListener('scene-frame-resize', requestLayout);
-        cancelAnimationFrame(layoutFrame);
-        unsubscribe();
-        ui.dispose();
+      playback: () => controller.player.state,
+      refreshHeading() {
         chapters.dispose();
-        stopSeeking();
-        controller.dispose();
+        heading.textContent = title;
+        heading.title = title;
+        chapters = chapterNavigation(
+          heading,
+          controller.sheet.script.segments ?? [],
+          (time) => controller.seek(time, { mode: 'story' }),
+          showHeading && showNavigation,
+        );
+        chapters.update(controller.presented?.chapter);
+      },
+      dispose() {
+        releaseResources(
+          [
+            () => layout.disconnect(),
+            () => root.removeEventListener('scene-frame-resize', requestLayout),
+            () => cancelAnimationFrame(layoutFrame),
+            unsubscribe,
+            () => ui.dispose(),
+            () => chapters.dispose(),
+            stopSeeking,
+            () => controller.dispose(),
+          ],
+          `Scene "${title}" player disposal failed.`,
+        );
       },
     };
     storyButton.hidden = false;
@@ -746,7 +802,14 @@ function mount(
       if (presented) chapters.update(presented.chapter);
     }
     unsubscribe = controller.subscribe(reflectState);
-    setMode('story');
+    // Attaching an already prepared experiment must not become a new mode command.
+    // View-only shells retain their current view on replacement; their first story
+    // still starts with the authored view as before.
+    if (exploration === 'view' && !previousPlayback) setMode('story');
+    controls.hidden = false;
+    controls.inert = false;
+    caption.hidden = exploration === 'model' && mode !== 'story';
+    updateChrome();
     handle.extend({
       play: () => {
         assertLive();
@@ -810,6 +873,18 @@ function mount(
       },
       setReduced: controller.setReduced,
     });
+    if (
+      previousPlayback?.playing &&
+      !controller.waiting &&
+      controller.currentTime < controller.duration
+    )
+      void controller.player
+        .play()
+        .catch((error) =>
+          root.dispatchEvent(
+            new CustomEvent('scene-playback-error', { bubbles: true, detail: error }),
+          ),
+        );
     return handle;
     function preparePlayback() {
       if (controller.waiting) return;
@@ -823,14 +898,20 @@ function mount(
   function dispose() {
     if (abort.signal.aborted) return;
     abort.abort();
-    for (const cleanup of cleanups) cleanup();
+    const resources = [
+      ...cleanups,
+      () => player?.dispose(),
+      () => view?.dispose(),
+      ...[...inputs.values()].map((control) => () => control.dispose()),
+      () => root.replaceChildren(),
+    ];
     cleanups.clear();
-    player?.dispose();
-    view?.dispose();
-    for (const control of inputs.values()) control.dispose();
-    root.replaceChildren();
     inputStory = undefined;
-    Reflect.deleteProperty(root, 'scene');
+    try {
+      releaseResources(resources, `Scene "${title}" disposal failed.`);
+    } finally {
+      Reflect.deleteProperty(root, 'scene');
+    }
   }
 }
 export const SceneShell = { mount, ready: loadFonts, frame: sceneFrame };

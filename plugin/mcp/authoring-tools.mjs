@@ -13,21 +13,71 @@ const fileChanges = z
   )
   .min(1)
   .max(64);
+const view = z.strictObject({
+  id: z.string().min(1).max(80),
+  kind: z.enum(['groups', 'equation']),
+  model: z.string().min(1).max(80),
+});
+const beat = z.strictObject({
+  id: z.string().min(1).max(80),
+  action: z.enum(['gather', 'group', 'remainder']).optional(),
+  focus: z
+    .array(z.enum(['groups', 'remainder', 'equation']))
+    .min(1)
+    .max(3)
+    .optional(),
+  hold: z.boolean().optional(),
+  seconds: z.number().min(0.2).max(30).optional(),
+  text: z.string().min(1).max(90).optional(),
+});
+const explanationInput = z.strictObject({
+  version: z.literal(1).optional(),
+  title: z.string().min(1).max(160).optional(),
+  model: z.strictObject({
+    id: z.string().min(1).max(80).optional(),
+    kind: z.literal('division'),
+    count: z.number().int().min(0).max(36),
+    divisor: z.number().int().min(1).max(12),
+  }),
+  views: z.array(view).min(1).max(2).optional(),
+  score: z.array(beat).min(1).max(16).optional(),
+});
+const semanticOperations = z
+  .array(
+    z.discriminatedUnion('op', [
+      z.strictObject({
+        op: z.literal('set-inputs'),
+        modelId: z.string().min(1).max(80),
+        values: z.strictObject({
+          count: z.number().int().min(0).max(36).optional(),
+          divisor: z.number().int().min(1).max(12).optional(),
+        }),
+      }),
+      z.strictObject({ op: z.literal('set-views'), views: z.array(view).min(1).max(2) }),
+      z.strictObject({ op: z.literal('set-score'), score: z.array(beat).min(1).max(16) }),
+    ]),
+  )
+  .min(1)
+  .max(16);
 export function authoringTools(server, runtime, uri, safely) {
   const result = (value, text) => ({ content: [{ type: 'text', text }], structuredContent: value });
-  server.registerTool(
+  registerAppTool(
+    server,
     'story_create',
     {
       title: 'Создать визуальное объяснение',
       description:
-        'Create an editable local project without opening a card or session. Omit example for a neutral technical scaffold; example="gpt-model" copies the complete exemplar. Waits up to 15 seconds for authoring=ready with project.files, entry, pinned runtime and sourceRevision while dependencies and build continue in JobRunner. If authoring=preparing, story_inspect(jobId,waitMs) continues the bounded wait. Edit through story_edit, review the result, then show it with story_open(projectId). No voice model is required.',
+        'Create from explanation:{model:{kind:"division",count,divisor}}. Supply sessionId to show the new explanation in that already open card, preserving a Back destination. The sessionId is bound to requestId; repeat the same request to resume unconfirmed delivery. Creation alone is not a shown frame: delivery is pending, prepared, shown or failed. The standard staging shows objects, full groups, remainder and equation; supply both inputs, then continue the same card with story_edit operations. Version 1, model ID "division" and groups/equation views are filled by the document validator. Explicit IDs, views and title are optional; add score only to choose a specific order of actions, focus or holds. The saved document is always complete. Runtime is pinned immediately; no per-request npm, archive or compilation. The existing Story owns time and controls. Omit explanation for a source-code scaffold, or supply example="gpt-model" for the exemplar; those prepare through JobRunner and do not accept sessionId. Voice and portable archives are optional production work.',
       inputSchema: {
         title: z.string().min(1).max(160),
         example: z.string().min(1).optional(),
+        explanation: explanationInput.optional(),
+        sessionId: z.string().uuid().optional(),
         path: z.string().optional(),
         requestId,
       },
       annotations: changeView,
+      _meta: { ui: { resourceUri: uri, visibility: ['model', 'app'] } },
     },
     safely(async (args) =>
       result(await runtime.call('create', args), 'Редактируемый проект создан.'),
@@ -37,18 +87,24 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_edit',
     {
       description:
-        'Apply one undoable authoring edit to a working project, then prepare its changed scene. Read sourceRevision and files through story_inspect first. Each change replaces a UTF-8 file; null deletes it. Undo checks for external edits. The current viewer remains usable while preparing.',
+        'Apply one complete undoable authoring operation. For a live explanation use operations: set-inputs(modelId,values), set-views(views), or set-score(score). Each payload and the final document are validated before writing; related views/references can change atomically. Explicit input keys override viewer values even when unchanged in the source; other viewer inputs survive. Delivery is shown, prepared, pending or failed: saved source alone is not a rendered result. Retry the same requestId to resume unconfirmed delivery without rewriting; a completed receipt stays historical. sourceRevision fences external edits. For source-code extensions use changes (UTF-8 replacement, null deletion); those retain the existing build/candidate path. Choose operations, changes or undo.',
       inputSchema: {
         projectId,
         sourceRevision: z.string(),
         requestId,
         undo: z.boolean().optional(),
         changes: fileChanges.optional(),
+        operations: semanticOperations.optional(),
       },
       annotations: changeView,
     },
     safely(async (args) =>
-      result(await runtime.call('edit', args), 'Правка сохранена; новая версия готовится.'),
+      result(
+        await runtime.call('edit', args),
+        args.operations
+          ? 'Смысловая операция принята; результат показа указан в receipt.'
+          : 'Правка сохранена; новая версия готовится.',
+      ),
     ),
   );
   server.registerTool(
@@ -186,7 +242,7 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_help',
     {
       description:
-        'Read public APIs, existing projects and the complete gpt-model exemplar, including its preview, source and editing points. Start a new subject with story_create without example; copy gpt-model only when its subject is wanted. The authoring route is help → create → edit → review → open → produce. queries accepts up to 12 public API names; projectId reads the pinned archive before a successful build or dependency installation.',
+        'Read public APIs, existing projects and the complete gpt-model exemplar. For grouping and remainder start with story_create(explanation), then story_edit(operations) in the same live card. Read ExplanationDocument or mountExplanation for its compact contract. For new source-code behavior create a scaffold, edit, review and open it. queries accepts up to 12 public API names; projectId reads the exact pinned runtime before dependency installation.',
       inputSchema: {
         query: z.string().max(300).optional(),
         queries: z.array(z.string().min(1).max(300)).min(1).max(12).optional(),

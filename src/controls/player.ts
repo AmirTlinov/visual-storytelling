@@ -19,6 +19,7 @@ export function player(parent: HTMLElement, options: PlayerOptions) {
   const view = PlayerControls.mount(element, {
     sound: clock.state.hasAudio,
     speed: true,
+    onRate: (value) => clock.rate(value),
     max: clock.state.duration,
     label: 'Позиция рассказа',
   });
@@ -44,7 +45,6 @@ export function player(parent: HTMLElement, options: PlayerOptions) {
     },
     listen,
   );
-  view.rate?.addEventListener('change', () => clock.rate(Number(view.rate!.value)), listen);
   const unsubscribe = clock.subscribe((state) => {
     const stamp = `${formatTime(state.time)} / ${formatTime(state.duration)}`;
     view.update({

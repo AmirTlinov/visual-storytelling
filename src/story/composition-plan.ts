@@ -160,7 +160,11 @@ export function composeChapters(
   }
   for (const [index, chapter] of chapters.entries()) {
     const span = timings[index]!;
-    cues[chapter.id] = { start: span.start, end: span.end, action: chapter.text };
+    cues[chapter.id] = {
+      start: span.start,
+      end: span.end,
+      ...(chapter.text.trim() ? { action: chapter.text } : {}),
+    };
     if (chapter.script) {
       const map = (time: number, edge: 'start' | 'end') =>
         interpolate(span.clock, (time * chapter.seconds) / chapter.script!.duration, 'local', edge);
@@ -186,7 +190,7 @@ export function composeChapters(
           words: s.words?.map((w) => ({ ...w, ...range(w) })),
         });
     }
-    if (!chapter.script?.segments?.length)
+    if (!chapter.script?.segments?.length && chapter.text.trim())
       segments.push({
         id: chapter.id,
         ...cues[chapter.id]!,

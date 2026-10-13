@@ -22,8 +22,10 @@ test(
       recursive: true,
       filter: (file) => {
         const name = relative(join(library, 'tools'), file);
+        // The shared mastering recipe is data for every provider; exclude the
+        // bundled Python implementation while retaining that common profile.
+        if (name.startsWith('audio/')) return name === 'audio/mastering.json';
         return (
-          name !== 'audio' &&
           name !== 'sketch-audio' &&
           !name.split('/').some((part) => part.startsWith('.') || part === 'node_modules')
         );
@@ -62,6 +64,10 @@ const path = require('node:path');
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + '\\n');
 if (args[0] === 'doctor') console.log(JSON.stringify({speech_ready:true,verified:true,reference_ready:true,aligner:true,ffmpeg:'/ffmpeg'}));
+else if (args[0] === 'remaster') {
+  if (process.env.FAIL_HIGGS) { console.error('Higgs remaster failed'); process.exit(1); }
+  console.log(JSON.stringify({reused:true}));
+}
 else if (args[0] === 'build') {
   if (process.env.FAIL_HIGGS) process.exit(1);
   const out = args[args.indexOf('--out') + 1];
@@ -116,6 +122,14 @@ else if (args[0] === 'build') {
     await audio();
     assert.deepEqual(JSON.parse(await readFile(join(scene, 'voice.json'), 'utf8')), settings);
     assert.deepEqual(await readFile(join(scene, 'audio.wav')), waveform);
+    const acceptedCalls = await readFile(calls, 'utf8');
+    for (const invalid of [{ voice: 'other' }, { language: 'en-US' }]) {
+      await writeFile(join(scene, 'voice.json'), JSON.stringify({ ...settings, ...invalid }));
+      await assert.rejects(audio(), (error) => /Higgs/.test(error.stderr));
+      assert.equal(await readFile(calls, 'utf8'), acceptedCalls);
+      assert.deepEqual(await readFile(join(scene, 'audio.wav')), waveform);
+    }
+    await writeFile(join(scene, 'voice.json'), JSON.stringify(settings));
     for (const env of [{ SKETCH_AUDIO_BIN: join(directory, 'missing-higgs') }, { FAIL_HIGGS: '1' }])
       await assert.rejects(audio(env), (error) => /Higgs/.test(error.stderr));
     assert.equal(JSON.parse(await readFile(join(scene, 'voice.json'), 'utf8')).provider, 'higgs');

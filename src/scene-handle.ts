@@ -35,6 +35,21 @@ declare global {
 
 /** Capabilities supplied by the actual subject, player and drawing owners. */
 export interface SceneRuntime {
+  /** A compiled subject accepts whole validated authored documents; ProjectStore owns their revisions. */
+  readonly authoring?: {
+    readonly document: unknown;
+    validate(document: unknown, options?: { authoredInputs?: readonly string[] }): void;
+    replace(
+      document: unknown,
+      options?: {
+        signal?: AbortSignal;
+        /** Explicitly addressed inputs override viewer experiments, even at the same authored value. */
+        authoredInputs?: readonly string[];
+        /** A streaming creation may still supply its identity before the host confirms it. */
+        provisional?: boolean;
+      },
+    ): Promise<void>;
+  };
   /** Opaque owner identity of the full accepted condition; never a visible parameter projection. */
   readonly condition?: object;
   readonly subject?: SceneSubject;

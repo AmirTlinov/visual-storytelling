@@ -10,12 +10,14 @@ import {
   copyFile,
 } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { join, dirname, basename } from 'node:path';
+import { join, dirname, basename, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { readJSON, writeJSON } from '../tools/storage.mjs';
 import { projectFiles, projectFile, readProjectFile, digest } from '../tools/project-files.mjs';
 import { failure } from './errors.mjs';
 import { sceneEntry } from '../tools/scene-entry.mjs';
+import { explanationAPI, assertPreparedExplanation } from '../tools/runtime-package.mjs';
 
 const readOptional = (file) =>
   readFile(file).catch((error) => {
@@ -104,24 +106,94 @@ export class ProjectStore {
     for (const item of (await readJSON(join(this.data, 'projects.json'))) ?? [])
       this.projects.set(item.id, item);
   }
-  async remember(item) {
-    this.projects.set(item.id, item);
+  remember(item) {
+    return this.#publish(item.id, () => item);
+  }
+  /** Derive metadata from the last committed record inside the single registry queue. */
+  update(id, patch) {
+    return this.#publish(id, () => {
+      const current = this.get(id);
+      const changes = typeof patch === 'function' ? patch(current) : patch;
+      return changes === undefined ? current : { ...current, ...changes };
+    });
+  }
+  async #publish(id, update) {
+    let item;
     this.registrySave = (this.registrySave ?? Promise.resolve())
       .catch(() => {})
-      .then(() => writeJSON(join(this.data, 'projects.json'), [...this.projects.values()]));
+      .then(async () => {
+        item = update();
+        if (item.id !== id) throw new Error('A registry update cannot change project identity.');
+        if (item === this.projects.get(id)) return;
+        const next = new Map(this.projects).set(id, item);
+        await writeJSON(join(this.data, 'projects.json'), [...next.values()]);
+        this.projects.set(item.id, item);
+      });
     await this.registrySave;
     return item;
   }
   async create(path, options) {
-    await mkdir(path, { recursive: true });
-    path = await realpath(path);
+    path = await this.canonicalPath(path);
     return this.serial('path:' + path, async () => {
-      if ((await readdir(path)).length)
+      const creation = options?.creation && {
+        requestId: options.creation.requestId,
+        input: {
+          ...options.creation.input,
+          ...(options.creation.input.path !== undefined ? { path } : {}),
+        },
+      };
+      const reserved = creation && this.creation(creation.requestId);
+      if (
+        [...this.projects.values()].some(
+          (project) => project.path === path && project.id !== reserved?.id,
+        )
+      )
+        throw new Error(
+          'Choose an empty directory. This directory already belongs to another project.',
+        );
+      if (
+        reserved &&
+        (reserved.path !== path || !isDeepStrictEqual(reserved.creation.input, creation.input))
+      )
+        throw new Error('requestId already belongs to another project creation.');
+      const manifest = reserved && (await readJSON(join(path, 'story.vstory')));
+      if (manifest && manifest.id !== reserved.id)
+        throw new Error('The reserved project directory contains another story.vstory.');
+      const names = await readdir(path).catch((error) => {
+        if (error.code === 'ENOENT') return [];
+        throw error;
+      });
+      if (!manifest && names.length)
         throw new Error(
           'Choose an empty directory for a new project. Open an existing project by its path.',
         );
+      if (creation && !reserved) {
+        // Commit identity and request together before publishing any project files.
+        // A retry can recover the exact path even if manifest creation is interrupted.
+        await this.remember({
+          format: 1,
+          id: randomUUID(),
+          title: options.title ?? basename(path),
+          example: options.example,
+          path,
+          openedAt: new Date().toISOString(),
+          creation,
+        });
+      }
+      await mkdir(path, { recursive: true });
+      if ((await realpath(path)) !== path)
+        throw new Error('The project directory changed while reserving its creation.');
       return this.registerPath(path, options);
     });
+  }
+  async canonicalPath(path) {
+    path = resolve(path);
+    try {
+      return await realpath(path);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      return join(await this.canonicalPath(dirname(path)), basename(path));
+    }
   }
   async register(path, options) {
     path = await realpath(path);
@@ -131,11 +203,23 @@ export class ProjectStore {
       );
     return this.serial('path:' + path, () => this.registerPath(path, options));
   }
-  async registerPath(path, { title, example } = {}) {
+  async registerPath(path, { title, example, creation } = {}) {
     const manifestFile = join(path, 'story.vstory');
+    const reserved = creation
+      ? this.creation(creation.requestId)
+      : [...this.projects.values()].find(
+          (project) => project.path === path && project.creation && !project.creation.receipt,
+        );
     let manifest = await readJSON(manifestFile);
     if (!manifest) {
-      manifest = { format: 1, id: randomUUID(), title: title ?? basename(path), example };
+      if (reserved && (await readdir(path)).length)
+        throw new Error('The reserved project directory changed before its manifest was created.');
+      manifest = {
+        format: 1,
+        id: reserved?.id ?? randomUUID(),
+        title: reserved?.title ?? title ?? basename(path),
+        example: reserved?.example ?? example,
+      };
       try {
         await writeFile(manifestFile, JSON.stringify(manifest), { flag: 'wx' });
       } catch (error) {
@@ -145,6 +229,8 @@ export class ProjectStore {
     }
     if (manifest?.format !== 1 || !/^[a-f0-9-]{36}$/.test(manifest.id))
       throw new Error('Unsupported story.vstory manifest.');
+    if (reserved && (reserved.id !== manifest.id || reserved.path !== path))
+      throw new Error('The reserved project directory contains another story.vstory.');
     const known = this.projects.get(manifest.id);
     if (known && known.path !== path) {
       const previous = await realpath(known.path).catch((error) => {
@@ -156,12 +242,16 @@ export class ProjectStore {
         await writeJSON(manifestFile, manifest);
       }
     }
-    const item = await this.remember({
-      ...this.projects.get(manifest.id),
+    const registration = {
       ...manifest,
       path,
       openedAt: new Date().toISOString(),
-    });
+    };
+    const item =
+      reserved ??
+      (await (this.projects.has(manifest.id)
+        ? this.update(manifest.id, registration)
+        : this.remember(registration)));
     return this.serial(item.id, async () => {
       await this.recover(item);
       return this.inspect(item.id);
@@ -173,7 +263,7 @@ export class ProjectStore {
     return p;
   }
   async inspect(id) {
-    const p = this.get(id),
+    const { creation: _creation, ...p } = this.get(id),
       source = await projectFiles(p.path);
     return {
       ...p,
@@ -187,7 +277,12 @@ export class ProjectStore {
     };
   }
   async list() {
-    return [...this.projects.values()].sort((a, b) => b.openedAt.localeCompare(a.openedAt));
+    return [...this.projects.values()]
+      .map(({ creation: _creation, ...project }) => project)
+      .sort((a, b) => b.openedAt.localeCompare(a.openedAt));
+  }
+  creation(requestId) {
+    return [...this.projects.values()].find((item) => item.creation?.requestId === requestId);
   }
   serial(id, work) {
     const next = (this.queues.get(id) ?? Promise.resolve()).catch(() => {}).then(work);
@@ -201,6 +296,15 @@ export class ProjectStore {
   }
   async read(id, name) {
     return readProjectFile(this.get(id).path, name);
+  }
+  async editDelivery(id, requestId, delivery) {
+    if (!validRequest(requestId)) throw new Error('Invalid authoring request ID.');
+    const directory = await this.historyDirectory(this.get(id));
+    const file = join(directory, 'history', requestId + '.json');
+    const journal = await readJSON(file);
+    if (!journal) throw new Error('The authoring transaction has no receipt.');
+    if (delivery !== undefined) await writeJSON(file, { ...journal, delivery });
+    return delivery ?? journal.delivery;
   }
   async historyDirectory(project) {
     const directory = join(project.path, '.vstory');
@@ -249,46 +353,140 @@ export class ProjectStore {
       );
       if (!matches(current, entry.after)) throw conflict(entry.path);
     }
-    await writeJSON(join(directory, 'history', journal.requestId + '.json'), journal);
+    const receipt = {
+      ...(await this.inspect(project.id)),
+      ...(journal.semantic ? { semantic: true, authoredInputs: journal.authoredInputs ?? [] } : {}),
+    };
+    await writeJSON(join(directory, 'history', journal.requestId + '.json'), {
+      ...journal,
+      receipt,
+    });
     await writeJSON(join(directory, 'history.json'), { cursor: journal.history.after });
     await rm(file);
   }
   write(root, entry) {
     return writeProjectChange(root, entry);
   }
-  edit({ projectId, sourceRevision, requestId, changes, undo, assets = [] }) {
+  async resolveEdit(p, state, { requestId, changes, operations, undo, assets = [] }, directory) {
+    const cursor = (await readJSON(join(directory, 'history.json')))?.cursor ?? null;
+    if (!validCursor(cursor))
+      throw new Error('Invalid authoring history cursor. Resolve .vstory/history.json first.');
+    let next = requestId;
+    let semantic = operations !== undefined;
+    let authoredInputs = [];
+    if (undo) {
+      const last = cursor && (await readJSON(join(directory, 'history', cursor + '.json')));
+      if (!last) throw new Error('No authored edit to undo.');
+      changes = last.changes.map((entry) => ({ path: entry.path, content: entry.before }));
+      next = last.history.before;
+      semantic = last.semantic === true;
+      if (semantic) authoredInputs = last.authoredInputs ?? [];
+      for (const entry of last.changes) {
+        const current = state.files[entry.path] ?? null,
+          expected = entry.after === null ? null : digest(entry.after);
+        if (current !== expected)
+          throw failure(
+            'undo_conflict',
+            `Undo would replace an external change in ${entry.path}. Read it first.`,
+            { field: entry.path, action: 'story_inspect' },
+          );
+      }
+    }
+    if (operations !== undefined) {
+      if (changes !== undefined || undo || assets.length)
+        throw new Error('Choose semantic operations, file changes, or undo.');
+      const { editExplanation } = await explanationAPI(p.path);
+      const document = await readJSON(join(p.path, 'explanation.json'));
+      changes = [
+        {
+          path: 'explanation.json',
+          content: JSON.stringify(editExplanation(document, operations), null, 2) + '\n',
+        },
+      ];
+      authoredInputs = [
+        ...new Set(
+          operations.flatMap((operation) =>
+            operation.op === 'set-inputs' ? Object.keys(operation.values) : [],
+          ),
+        ),
+      ];
+    }
+    if (semantic) await assertPreparedExplanation(p.path);
+    const document = semantic
+      ? (await explanationAPI(p.path)).validateExplanation(
+          JSON.parse(changes.find((change) => change.path === 'explanation.json').content),
+        )
+      : undefined;
+    return { cursor, next, semantic, changes, document, authoredInputs };
+  }
+  async editState({
+    projectId,
+    sourceRevision,
+    requestId,
+    changes,
+    operations,
+    undo,
+    assets = [],
+  }) {
     if (!validRequest(requestId))
       throw new Error('requestId must contain 8–100 letters, digits, underscores or hyphens.');
-    return this.serial(projectId, async () => {
-      const p = this.get(projectId);
-      await this.recover(p);
-      const directory = await this.historyDirectory(p),
-        journalPath = join(directory, 'transaction.json');
-      const signature = digest(
-        JSON.stringify({
-          sourceRevision,
-          changes,
-          undo,
-          assets: assets.map(({ path, hash }) => ({ path, hash })),
-        }),
+    const p = this.get(projectId);
+    await this.recover(p);
+    const directory = await this.historyDirectory(p);
+    const signature = digest(
+      JSON.stringify({
+        sourceRevision,
+        changes,
+        operations,
+        undo,
+        assets: assets.map(({ path, hash }) => ({ path, hash })),
+      }),
+    );
+    const prior = await readJSON(join(directory, 'history', requestId + '.json'));
+    if (prior) {
+      if (prior.signature !== signature)
+        throw new Error('requestId already belongs to a different edit.');
+      return {
+        prior: { ...(prior.receipt ?? (await this.inspect(projectId))), requestId, repeated: true },
+      };
+    }
+    const state = await this.inspect(projectId);
+    if (state.sourceRevision !== sourceRevision)
+      throw failure(
+        'source_conflict',
+        `Source conflict. Expected ${sourceRevision}; current ${state.sourceRevision}. Read the changed files before retrying.`,
+        {
+          field: 'sourceRevision',
+          current: { sourceRevision: state.sourceRevision },
+          action: 'story_inspect',
+        },
       );
-      const prior = await readJSON(join(directory, 'history', requestId + '.json'));
-      if (prior) {
-        if (prior.signature !== signature)
-          throw new Error('requestId already belongs to a different edit.');
-        return { ...(await this.inspect(projectId)), requestId, repeated: true };
-      }
-      const state = await this.inspect(projectId);
-      if (state.sourceRevision !== sourceRevision)
-        throw failure(
-          'source_conflict',
-          `Source conflict. Expected ${sourceRevision}; current ${state.sourceRevision}. Read the changed files before retrying.`,
-          {
-            field: 'sourceRevision',
-            current: { sourceRevision: state.sourceRevision },
-            action: 'story_inspect',
-          },
-        );
+    return { p, directory, signature, state };
+  }
+  prepareSemanticEdit(args) {
+    return this.serial(args.projectId, async () => {
+      const input = await this.editState(args);
+      if (input.prior) return undefined;
+      const resolved = await this.resolveEdit(input.p, input.state, args, input.directory);
+      return resolved.semantic
+        ? { document: resolved.document, authoredInputs: resolved.authoredInputs }
+        : undefined;
+    });
+  }
+  edit({ projectId, sourceRevision, requestId, changes, operations, undo, assets = [] }) {
+    return this.serial(projectId, async () => {
+      const input = await this.editState({
+        projectId,
+        sourceRevision,
+        requestId,
+        changes,
+        operations,
+        undo,
+        assets,
+      });
+      if (input.prior) return input.prior;
+      const { p, directory, signature, state } = input;
+      const journalPath = join(directory, 'transaction.json');
       // Migration adds immutable packages; undo retains the previous package and restores its lockfile.
       for (const asset of assets) {
         if (!/^dependencies\/visual-storytelling-core-[a-f0-9]{64}\.tgz$/.test(asset.path))
@@ -316,39 +514,36 @@ export class ProjectStore {
           });
         state.sourceRevision = current.revision;
       }
-      const cursor = (await readJSON(join(directory, 'history.json')))?.cursor ?? null;
-      if (!validCursor(cursor))
-        throw new Error('Invalid authoring history cursor. Resolve .vstory/history.json first.');
-      let next = requestId;
-      if (undo) {
-        const last = cursor && (await readJSON(join(directory, 'history', cursor + '.json')));
-        if (!last) throw new Error('No authored edit to undo.');
-        changes = last.changes.map((entry) => ({ path: entry.path, content: entry.before }));
-        next = last.history.before;
-        for (const entry of last.changes) {
-          const current = state.files[entry.path] ?? null,
-            expected = entry.after === null ? null : digest(entry.after);
-          if (current !== expected)
-            throw failure(
-              'undo_conflict',
-              `Undo would replace an external change in ${entry.path}. Read it first.`,
-              { field: entry.path, action: 'story_inspect' },
-            );
-        }
-      }
-      const edits = await prepareProjectChanges(p.path, changes);
+      const {
+        cursor,
+        next,
+        semantic,
+        authoredInputs,
+        changes: resolvedChanges,
+      } = await this.resolveEdit(
+        p,
+        state,
+        { requestId, changes, operations, undo, assets },
+        directory,
+      );
+      const edits = await prepareProjectChanges(p.path, resolvedChanges);
       if ((await projectFiles(p.path)).revision !== state.sourceRevision)
         throw new Error('Source changed while preparing this edit. Inspect before retrying.');
       const journal = {
         requestId,
         signature,
         createdAt: new Date().toISOString(),
+        ...(semantic ? { semantic: true, authoredInputs } : {}),
         changes: edits,
         history: { before: cursor, after: edits.length ? next : cursor },
       };
       await writeJSON(journalPath, journal);
       await this.recover(p);
-      return { ...(await this.inspect(projectId)), requestId };
+      return {
+        ...(await this.inspect(projectId)),
+        requestId,
+        ...(semantic ? { semantic: true, authoredInputs } : {}),
+      };
     });
   }
 }

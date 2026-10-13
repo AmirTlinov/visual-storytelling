@@ -1,5 +1,21 @@
 # Контракт автора
 
+Для короткого опыта из готового приёма начни с [живого описания модели](../skills/visual-explainer/references/live-explanation.md).
+`story_create(explanation)` сохраняет `explanation.json`, закрепляет установленную
+библиотеку и открывает карточку. `story_edit(operations)` принимает цельную
+операцию с актуальной `sourceRevision` и новым `requestId`; повтор использует тот
+же ID. Запись исходника и подтверждённый показ имеют отдельные ревизии в ответе.
+Предварительный кадр при потоковом вводе ещё не является принятой правкой.
+
+`mountExplanation(root, document)` доступен и из JS/TS. Чистые
+`validateExplanation` и `editExplanation` владеют схемой; `root.scene.authoring`
+даёт принятый `document` и `replace(document)` на существующей сцене. Доступные
+предметные ограничения описаны рядом с приёмом. Новый механизм создавай обычным
+JS/TS-кодом через `story_create` без `explanation` или CLI `new`: библиотека,
+проекты, история, review и выпуск остаются общими. Файловые изменения используют
+обычную сборку. Переносимые исходники, голос и видео готовятся по необходимости
+через `story_produce`.
+
 Для рассказа из готовых морфов начни с [MorphStory](morph-stories.md): он связывает
 операции и параметры с главами, полями и временем без собственного `stateAt` / `render`.
 Правила ниже описывают также смешанные и предметные сцены.
@@ -55,7 +71,13 @@ SHA-256 и диапазон исходного текста (`start/end`, кон
 которая освобождает представление один раз.
 
 `SceneShell.mount` сразу регистрирует `root.scene`; `attachStory` сохраняет этот
-handle. Для собственного интерфейса используй `mountScene(root, runtime, owner)`:
+handle. Меню глав, условий и скорости создаёт общий `selectControl`.
+Начиная с 0.31.0 собственный плеер подключает выбор скорости через
+`PlayerControls.mount(element, {speed: true, onRate: value => transport.rate(value)})`.
+`view.update({value, paused, stamp, rate})` отражает состояние транспорта;
+`view.rate` предоставляет `trigger`, `menu`, `setValue`, а не DOM select.
+Фокус задаётся через `view.rate?.trigger.focus()`, очистка — `view.dispose()`.
+Для собственного интерфейса используй `mountScene(root, runtime, owner)`:
 runtime предоставляет существующие команды и снимок, owner — параметры и их ввод.
 Перед управлением прочитай `inspect().capabilities`: доступность seek, play, focus
 зависит от модели и главы. В статической сцене изменяй параметры; номер шага
