@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "models": [{ "id": "sample", "module": "counter", "inputs": { "count": 0 } }],
+  "views": [{ "id": "number", "kind": "counter", "model": "sample" }],
+  "chapters": [
+    {
+      "id": "step",
+      "title": "Прибавляем один",
+      "beats": [
+        { "id": "add", "operation": { "model": "sample", "name": "increment" }, "seconds": 1 }
+      ]
+    }
+  ]
+}

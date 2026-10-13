@@ -34,6 +34,7 @@ export async function collectCache(
     if (!name.endsWith('.json')) continue;
     const saved = await readJSON(join(data, 'sessions', name));
     if (saved?.buildRevision) keepBuilds.add(saved.buildRevision);
+    if (saved?.nextBuildRevision) keepBuilds.add(saved.nextBuildRevision);
   }
   for (const id of snapshotLeases) {
     const snapshot = join(data, 'snapshots', id);

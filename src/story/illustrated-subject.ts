@@ -7,6 +7,8 @@ import type { StoryDocument } from './document-schema.js';
 import type { ModelValues } from './model.js';
 import type { IllustratedStoryOptions } from './illustrated.js';
 import type { Script } from './cues.js';
+import { editStoryDocument, authoredInputKeys, type StoryDocumentOperation } from './document.js';
+import { modelInputValues } from './model.js';
 
 type SubjectMoment = ReturnType<typeof documentModelsAt>;
 /** Compile a prepared drawing to the same shell and Story used by handwritten JS scenes. */
@@ -131,12 +133,22 @@ export async function mountIllustratedSubject(
         script,
         audio: options.audio,
         exploreTimeline: true,
-        stateAt() {
-          return { ...nextModel.inputs };
+        stateAt(frame) {
+          return modelInputValues(
+            nextModel,
+            documentModelsAt(next, frame, {}, options.modules).models[nextModel.id]!,
+            module,
+          );
         },
-        derive(values, frame) {
+        derive(values, frame, mode) {
           const valid = module.validateInputs(values);
-          return documentModelsAt(next, frame, { [nextModel.id]: valid }, options.modules);
+          return documentModelsAt(
+            next,
+            frame,
+            mode === 'story' ? {} : { [nextModel.id]: valid },
+            options.modules,
+            { mode },
+          );
         },
         resolveInput(patch, current) {
           return {
@@ -206,6 +218,19 @@ export async function mountIllustratedSubject(
       authoring: {
         get document() {
           return structuredClone(document);
+        },
+        prepare(source: unknown, operations?: readonly unknown[]) {
+          const next = operations
+            ? editStoryDocument(source, operations as readonly StoryDocumentOperation[], options)
+            : source;
+          const keys =
+            operations?.flatMap((operation) => {
+              const item = operation as StoryDocumentOperation;
+              return item.op === 'set-inputs'
+                ? authoredInputKeys(document, item.modelId, item.values)
+                : [];
+            }) ?? [];
+          return prepare(next, false, keys).next;
         },
         validate(source: unknown, settings) {
           prepare(source, false, settings?.authoredInputs);

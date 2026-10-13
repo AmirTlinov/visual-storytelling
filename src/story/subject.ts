@@ -1,6 +1,6 @@
 import type { SceneMount, SceneOptions } from '../scene.js';
 import type { Script } from './cues.js';
-import type { StoryModel, StoryView, ModelValues } from './model.js';
+import type { StoryModel, StoryView, ModelValues, ModelState } from './model.js';
 import type { AuthoredBeat, StoryDocument } from './document.js';
 
 /** A prepared drawing provides subject facts; the shell and Story retain all interaction state. */
@@ -14,10 +14,10 @@ export interface StorySubjectDrawing {
   render(
     model: StoryModel,
     views: readonly StoryView[],
-    state: ModelValues,
+    state: ModelState,
     beat?: AuthoredBeat,
   ): void;
-  snapshot(state: ModelValues): unknown;
+  snapshot(state: ModelState): unknown;
   dispose(): void;
 }
 export interface StorySubjectRecipe {

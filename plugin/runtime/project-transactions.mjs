@@ -7,6 +7,18 @@ import { authoredCandidate } from '../authored-candidate.mjs';
 import { buildReference } from '../session-directory.mjs';
 import { failure, errorData } from '../errors.mjs';
 
+/** A hot edit retains the mounted model subjects; other identities need a candidate frame. */
+export function samePreparedOwner(view, prepared) {
+  return (
+    view.build.live?.runtimeBuild === prepared.live?.runtimeBuild &&
+    view.build.live?.moduleRevision === prepared.live?.moduleRevision &&
+    isDeepStrictEqual(
+      view.build.live?.document.models.map(({ id, module }) => ({ id, module })),
+      prepared.live?.document.models.map(({ id, module }) => ({ id, module })),
+    )
+  );
+}
+
 /** One proposal/commit/delivery lifecycle; ProjectStore owns its source and receipt. */
 export function projectTransactions({
   data,
@@ -28,8 +40,13 @@ export function projectTransactions({
       for (const session of sessions.sessions.values()) {
         if (session.build.projectId !== project.id || session.build.revision === prepared.revision)
           continue;
-        session.nextBuild = buildReference(prepared);
+        if (session.nextBuild?.revision !== prepared.revision)
+          session.nextBuild = {
+            ...buildReference(prepared),
+            ...(project.semantic && { authoredInputs: project.authoredInputs }),
+          };
         session.wake?.();
+        await save(session);
       }
     return true;
   }
@@ -61,7 +78,8 @@ export function projectTransactions({
       throw new Error('Prepared artifact does not match the authored proposal.');
     const { creation, migration, ...artifact } = result;
     const project = await projects.commitPreparedEdit({
-      ...proposal, delivery: { ...artifact, delivery: 'pending' },
+      ...proposal,
+      delivery: { ...artifact, delivery: 'pending' },
     });
     return deliverPrepared(project, proposal.args.requestId, prepared, result, queueCandidate);
   }
@@ -88,7 +106,10 @@ export function projectTransactions({
       return superseded;
     }
     const prepared = await readJSON(join(data, 'builds', receipt.buildRevision + '.json'));
-    if (prepared?.projectId !== projectId || prepared.sourceRevision !== receipt.project.sourceRevision)
+    if (
+      prepared?.projectId !== projectId ||
+      prepared.sourceRevision !== receipt.project.sourceRevision
+    )
       throw new Error('The accepted transaction has no matching prepared artifact.');
     return deliverPrepared(receipt.project, requestId, prepared, receipt, queueCandidate);
   }
@@ -134,12 +155,16 @@ export function projectTransactions({
           if (previousBuild?.input.authoring) {
             if (!isDeepStrictEqual(previousBuild.input.authoring.args, args))
               throw new Error('requestId already belongs to a different edit.');
-            if (!['queued', 'running', 'cancelling'].includes(previousBuild.status) &&
-                (!previousBuild.result || previousBuild.result.delivery === 'failed')) {
+            if (
+              !['queued', 'running', 'cancelling'].includes(previousBuild.status) &&
+              (!previousBuild.result || previousBuild.result.delivery === 'failed')
+            ) {
               const resumed = await resumeCommitted(args.projectId, args.requestId);
-              if (resumed) return { ...resumed,
-                job: await jobs.acceptPreparedResult(previousBuild.id, resumed),
-              };
+              if (resumed)
+                return {
+                  ...resumed,
+                  job: await jobs.acceptPreparedResult(previousBuild.id, resumed),
+                };
             }
             return {
               project: {
@@ -149,7 +174,36 @@ export function projectTransactions({
               job: jobs.describe(previousBuild),
             };
           }
-          const proposed = await projects.stageEdit(args);
+          const proposed = await projects.stageEdit(
+            args,
+            async ({ project, sourceRevision, document, operations }) => {
+              const view = [...sessions.sessions.values()].find(
+                (session) =>
+                  session.build.projectId === project.id &&
+                  session.build.sourceRevision === sourceRevision &&
+                  session.build.live &&
+                  session.renderer &&
+                  session.ready &&
+                  !sessions.expired(session),
+              );
+              if (!view)
+                throw failure(
+                  'view_closed',
+                  'Open the current working revision before editing its authored modules.',
+                  { action: 'story_open' },
+                );
+              const response = await sessions.request(view.id, {
+                op: 'author-prepare',
+                buildRevision: view.build.revision,
+                stateRevision: view.stateRevision,
+                document,
+                operations,
+              });
+              if (!response.result?.document)
+                throw new Error('The module owner did not prepare a document.');
+              return response.result.document;
+            },
+          );
           if (!proposed.prior && !proposed.semantic) {
             const project = await projects.inspect(args.projectId);
             const candidate = await authoredCandidate(data, project, proposed);
@@ -192,7 +246,9 @@ export function projectTransactions({
             } finally {
               await rm(candidate.snapshot, { recursive: true, force: true });
             }
-            for (const session of views)
+            for (const session of views.filter((view) =>
+              samePreparedOwner(view, preparedCandidate),
+            ))
               await sessions.request(session.id, {
                 op: 'author-validate',
                 buildRevision: session.build.revision,
@@ -248,6 +304,16 @@ export function projectTransactions({
             for (const session of sessions.sessions.values()) {
               if (session.build.projectId !== project.id || !session.build.live) continue;
               if (!session.renderer || !session.ready || sessions.expired(session)) continue;
+              if (!samePreparedOwner(session, prepared)) {
+                session.nextBuild = {
+                  ...buildReference(prepared),
+                  authoredInputs: project.authoredInputs,
+                };
+                session.wake?.();
+                await save(session);
+                shown.push({ ...sessions.describe(session), acknowledgement: 'pending' });
+                continue;
+              }
               try {
                 const deliveredHere = priorDelivery?.shown?.some(
                   (view) =>
@@ -290,7 +356,9 @@ export function projectTransactions({
                 ? 'shown'
                 : shown.some((view) => view.error || view.acknowledgement === 'failed')
                   ? 'failed'
-                  : 'prepared';
+                  : shown.some((view) => view.acknowledgement === 'pending')
+                    ? 'pending'
+                    : 'prepared';
             const result = { project, buildRevision: prepared.revision, shown, delivery };
             await projects.editDelivery(args.projectId, args.requestId, result);
             scheduleCache();
@@ -318,10 +386,13 @@ export function projectTransactions({
             !isDeepStrictEqual(previous.input.changes, changes)
           )
             throw new Error('requestId already belongs to another preparation.');
-          if (!['queued', 'running', 'cancelling'].includes(previous.status) &&
-              (!previous.result || previous.result.delivery === 'failed')) {
+          if (
+            !['queued', 'running', 'cancelling'].includes(previous.status) &&
+            (!previous.result || previous.result.delivery === 'failed')
+          ) {
             const resumed = await projects.serial('delivery:' + projectId, () =>
-              resumeCommitted(projectId, previous.id + '-migration'));
+              resumeCommitted(projectId, previous.id + '-migration'),
+            );
             if (resumed) return jobs.acceptPreparedResult(previous.id, resumed);
           }
           return jobs.describe(previous);

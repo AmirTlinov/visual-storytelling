@@ -17,6 +17,8 @@ import {
   storyDocumentAPI,
 } from '../tools/runtime-package.mjs';
 import { contentDigest } from '../tools/build-info.mjs';
+import { readStoryProject, storyProjectOwner } from '../tools/story-project.mjs';
+import { renderer } from '../tools/render.mjs';
 const execute = promisify(execFile);
 
 async function dependencies(source, data, { signal, progress }) {
@@ -227,6 +229,26 @@ export async function buildPreparedSnapshot(input, task, result) {
     signal: task.signal,
     silent,
   });
+  const documentProject = await readStoryProject(snapshot);
+  let preparedDocument;
+  if (documentProject) {
+    // Authored modules execute in the existing Chromium renderer, never in the MCP/store process.
+    const render = await renderer({
+      directory: output,
+      width: 960,
+      controls: true,
+      signal: task.signal,
+    });
+    try {
+      preparedDocument = await render.page.evaluate(
+        () => document.querySelector('main').scene.authoring.document,
+      );
+      const diagnostics = await render.capture.evaluate((scene) => scene.diagnostics());
+      if (diagnostics.length) throw new Error(diagnostics.join('\n'));
+    } finally {
+      await render.close();
+    }
+  }
   task.signal.throwIfAborted();
   const html = await packDirectory(output, 'index.html', {
     audio: 'original',
@@ -263,9 +285,13 @@ export async function buildPreparedSnapshot(input, task, result) {
     if (recipe)
       prepared.live = {
         runtimeBuild: recipe.build,
-        document: (await storyDocumentAPI(snapshot)).prepareIllustratedDocument(
-          await readJSON(join(snapshot, 'story.json')),
-        ).document,
+        moduleRevision: recipe.manifest ? await storyProjectOwner(snapshot) : undefined,
+        document:
+          preparedDocument ??
+          (await storyDocumentAPI(snapshot)).prepareIllustratedDocument(
+            await readJSON(join(snapshot, 'story.json')),
+          ).document,
+        ...(recipe.manifest?.modules.length && { modules: recipe.manifest.modules }),
       };
   }
   await writeJSON(join(input.data, 'builds', revision + '.json'), prepared);

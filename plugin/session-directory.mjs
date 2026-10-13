@@ -112,6 +112,7 @@ export class SessionDirectory {
       buildRevision: session.build.revision,
       projectId: session.build.projectId,
       sourceRevision: session.build.sourceRevision,
+      authoredInputs: session.build.authoredInputs,
       shownSourceRevision: session.shownSourceRevision,
       title: session.build.title,
       returnAvailable: Boolean(session.returnTo?.length),
@@ -399,6 +400,7 @@ export class SessionDirectory {
         }
         s.state = report.state;
         if (report.checkpoint) s.checkpoint = report.checkpoint;
+        if (report.checkpoint && report.renderStatus === 'rendered') delete s.build.authoredInputs;
         s.stateRevision = report.stateRevision;
         s.renderStatus = report.renderStatus ?? 'rendered';
         if (s.renderStatus === 'rendered') s.shownSourceRevision = s.build.sourceRevision;
@@ -493,7 +495,7 @@ export class SessionDirectory {
       request.commands?.length &&
       request.commands.every((c) => c.type === 'pause');
     if (
-      ['control', 'author', 'author-validate'].includes(request.op) &&
+      ['control', 'author', 'author-validate', 'author-prepare'].includes(request.op) &&
       !pauseOnly &&
       (!request.buildRevision || request.stateRevision === undefined)
     )

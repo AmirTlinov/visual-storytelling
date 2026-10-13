@@ -118,6 +118,7 @@ const {
 
 const decorate = (session) => ({
   ...sessions.describe(session),
+  authoredInputs: session.build.authoredInputs,
   jobs: jobs.list(session.build.projectId).filter((j) => j.projectId === session.build.projectId),
 });
 async function prepareProject(project, requestId = randomUUID()) {
@@ -207,6 +208,11 @@ async function openProject(project, { prepare = true, session } = {}) {
         if (previous?.build.projectId === project.id) {
           session.checkpoint = structuredClone(previous.checkpoint);
           session.widgetState = structuredClone(previous.widgetState ?? {});
+          const intent = [previous.nextBuild, previous.build].find(
+            (build) => build?.revision === session.build.revision,
+          );
+          if (intent?.authoredInputs)
+            session.build.authoredInputs = structuredClone(intent.authoredInputs);
         }
       }
       // Publish the placeholder and its persisted card under the same lease lock.
@@ -221,7 +227,8 @@ async function openProject(project, { prepare = true, session } = {}) {
     if (
       prepared &&
       prepared.revision !== session.build.revision &&
-      prepared.sourceRevision === project.sourceRevision
+      prepared.sourceRevision === project.sourceRevision &&
+      session.nextBuild?.revision !== prepared.revision
     )
       session.nextBuild = buildReference(prepared);
     await save(session);
@@ -480,6 +487,7 @@ const operations = {
     if (!session.nextBuild) throw new Error('No prepared update.');
     return {
       ...(await viewBuild(session.nextBuild.revision)),
+      authoredInputs: session.nextBuild.authoredInputs,
       checkpoint: session.checkpoint,
       stateRevision: session.stateRevision,
       widgetState: session.widgetState ?? {},

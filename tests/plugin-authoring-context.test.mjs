@@ -125,6 +125,40 @@ test('completed preparation binds its accepted project rather than the job ident
   ]);
 });
 
+test('completed release retains its exact working target for the next release', async (t) => {
+  const path = await mkdtemp(join(tmpdir(), 'release-context-'));
+  t.after(() => rm(path, { recursive: true, force: true }));
+  const codec = await authoringContext(path);
+  const calls = [];
+  const runtime = contextualRuntime(
+    {
+      call: async (method, args) => {
+        calls.push({ method, args });
+        return {
+          id: 'release-job',
+          status: 'succeeded',
+          result: {
+            target: { kind: 'working', projectId: 'project', sourceRevision: 'source' },
+            files: { html: '/release/story.html' },
+          },
+        };
+      },
+    },
+    codec,
+  );
+  const job = await runtime.call('job', { jobId: 'release-job' });
+  assert.deepEqual(codec.decode(job.result.context).slice(0, 2), ['project', 'source']);
+  await runtime.call('produce', {
+    target: { kind: 'working', context: job.result.context },
+    format: 'html',
+  });
+  assert.deepEqual(calls[1].args.target, {
+    kind: 'working',
+    projectId: 'project',
+    sourceRevision: 'source',
+  });
+});
+
 test('an accepted file candidate retains the independently displayed build in the next context', async (t) => {
   const path = await mkdtemp(join(tmpdir(), 'authoring-context-'));
   t.after(() => rm(path, { recursive: true, force: true }));
@@ -165,17 +199,48 @@ test('creation context and state use its acknowledged destination instead of the
   const path = await mkdtemp(join(tmpdir(), 'authoring-context-'));
   t.after(() => rm(path, { recursive: true, force: true }));
   const codec = await authoringContext(path);
-  const context = codec.encode(['old-project', 'old-source', 'old-scene', 'old-build', 3, 2, 'owner', null]);
-  const scene = { sessionId: 'new-scene', projectId: 'new-project', sourceRevision: 'new-source',
-    buildRevision: 'new-build', generation: 1, serverInstance: 'owner', stateRevision: 0,
-    status: 'connected', state: { snapshot: { count: 23, divisor: 5 } }, acknowledgement: 'rendered' };
-  const runtime = contextualRuntime({ call: async () => ({
-    ...scene, generation: 0, status: 'closed', state: null,
-    project: { id: 'new-project', path: '/project', files: {}, sourceRevision: 'new-source' },
-    delivery: 'shown', shown: [scene],
-  }) }, codec);
-  const created = await runtime.call('create', { context, title: 'Group', requestId: 'create-request',
-    document: { recipe: 'division', inputs: { count: 23, divisor: 5 } } });
+  const context = codec.encode([
+    'old-project',
+    'old-source',
+    'old-scene',
+    'old-build',
+    3,
+    2,
+    'owner',
+    null,
+  ]);
+  const scene = {
+    sessionId: 'new-scene',
+    projectId: 'new-project',
+    sourceRevision: 'new-source',
+    buildRevision: 'new-build',
+    generation: 1,
+    serverInstance: 'owner',
+    stateRevision: 0,
+    status: 'connected',
+    state: { snapshot: { count: 23, divisor: 5 } },
+    acknowledgement: 'rendered',
+  };
+  const runtime = contextualRuntime(
+    {
+      call: async () => ({
+        ...scene,
+        generation: 0,
+        status: 'closed',
+        state: null,
+        project: { id: 'new-project', path: '/project', files: {}, sourceRevision: 'new-source' },
+        delivery: 'shown',
+        shown: [scene],
+      }),
+    },
+    codec,
+  );
+  const created = await runtime.call('create', {
+    context,
+    title: 'Group',
+    requestId: 'create-request',
+    document: { recipe: 'division', inputs: { count: 23, divisor: 5 } },
+  });
   assert.equal(created.status, 'connected');
   assert.deepEqual(created.state, scene.state);
   assert.equal(codec.decode(created.context)[5], 1);

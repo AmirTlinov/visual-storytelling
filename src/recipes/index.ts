@@ -23,3 +23,24 @@ export type { ComparisonOptions } from './comparison.js';
 export { circuitDiagram } from './circuit.js';
 export { divisionDiagram, DIVISION_MAX_COUNT } from './division.js';
 export type { DivisionDiagramOptions, DivisionFocus, DivisionFocusTarget } from './division.js';
+export {
+  dependencyRoute,
+  dependencyRouteModel,
+  instructionalDependencyGraph,
+  instructionalRouteModel,
+} from './dependency-route-model.js';
+export type {
+  DependencyNode,
+  DependencyEdge,
+  DependencyGraph,
+  DependencyTrace,
+} from './dependency-route-model.js';
+export { dependencyRouteStory } from './dependency-route-story.js';
+export type { DependencyRouteStoryInput } from './dependency-route-story.js';
+export { dependencyRouteDiagram } from './dependency-route.js';
+export type { DependencyRouteDiagramOptions } from './dependency-route.js';
+export {
+  dependencyRouteSubject,
+  instructionalDependencyPositions,
+} from './dependency-route-subject.js';
+export { tracePath } from './trace-path.js';

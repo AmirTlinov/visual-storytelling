@@ -58,7 +58,7 @@ export type StoryOptions<P, K extends string, S = P> = {
 } & (
   | {
       /** Validate and derive the model before accepting input or changing narrative time. */
-      derive(values: P, frame: Frame<K>): S;
+      derive(values: P, frame: Frame<K>, mode: StoryMode): S;
     }
   | ([P] extends [S] ? { derive?: undefined } : never)
 );
@@ -124,7 +124,7 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
     if (error) throw error.cause;
   }
   function compute(values: P, frame: Frame<K>, mode: StoryMode): Request {
-    const state = options.derive ? options.derive(values, frame) : (values as unknown as S);
+    const state = options.derive ? options.derive(values, frame, mode) : (values as unknown as S);
     const moment: StoryMoment<P, S> = { values, state, time: frame.time, mode };
     const chapter =
       options.chapterAt?.(moment) ??

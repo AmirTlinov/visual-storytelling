@@ -299,8 +299,9 @@ function mount(
   function updateChrome(preserveFocus = false) {
     if (!completeFrame || abort.signal.aborted) return;
     const compact = composition.element.getBoundingClientRect().width < 640;
+    const denseConditions = parameters.length > 3;
     // Opening Conditions exposes the inputs; only editing them enters an experiment.
-    fields.hidden = !fields.childElementCount || (mode === 'story' && !compact);
+    fields.hidden = !fields.childElementCount || (mode === 'story' && !compact && !denseConditions);
     const toolbarVisible = [...toolbar.children].some(visibleContent);
     if (toolbar.hidden === toolbarVisible) toolbar.hidden = !toolbarVisible;
     const focused = document.activeElement,
@@ -309,21 +310,22 @@ function mount(
         (header.contains(focused) || toolbar.contains(focused) || fields.contains(focused)),
       hasUI = toolbarVisible || visibleContent(fields),
       popup = compact && hasUI,
-      hasConditions = popup || showHistory;
+      popupFields = (compact || denseConditions) && hasUI,
+      hasConditions = popupFields || showHistory;
     sheet.dataset.compactChrome = String(compact);
     conditionsButton.hidden = !hasConditions;
     header.hidden = heading.hidden && !hasConditions && !toolbarVisible;
     const headerParent = shownPresentation === 'stage' ? root : sheet,
       toolbarParent = popup ? conditions : header,
-      fieldsParent = popup ? conditions : shownPresentation === 'stage' ? root : drawing;
+      fieldsParent = popupFields ? conditions : shownPresentation === 'stage' ? root : drawing;
     const moved =
       header.parentElement !== headerParent ||
       toolbar.parentElement !== toolbarParent ||
       fields.parentElement !== fieldsParent;
     const leavingConditions =
       moved &&
-      !popup &&
-      (toolbar.parentElement === conditions || fields.parentElement === conditions);
+      ((toolbar.parentElement === conditions && toolbarParent !== conditions) ||
+        (fields.parentElement === conditions && fieldsParent !== conditions));
     const keepEdit = moved && preserveFocus && ownedFocus,
       restoreFocus = keepEdit && document.hasFocus();
     if (keepEdit)
@@ -336,20 +338,17 @@ function mount(
         else sheet.prepend(header);
       }
       if (moved) {
-        if (popup) {
-          const historyBar = conditions.querySelector(':scope > .ve-experiment-history');
-          conditions.insertBefore(toolbar, historyBar);
-          conditions.insertBefore(fields, historyBar);
-        } else {
-          if (toolbar.parentElement !== header) conditionsButton.before(toolbar);
-          if (fieldsParent === root) controls.before(fields);
-          else if (fields.parentElement !== drawing) stage.before(fields);
-        }
+        const historyBar = conditions.querySelector(':scope > .ve-experiment-history');
+        if (toolbarParent === conditions) conditions.insertBefore(toolbar, historyBar);
+        else if (toolbar.parentElement !== header) conditionsButton.before(toolbar);
+        if (fieldsParent === conditions) conditions.insertBefore(fields, historyBar);
+        else if (fieldsParent === root) controls.before(fields);
+        else if (fields.parentElement !== drawing) stage.before(fields);
       }
       // Reparenting a native field emits blur/focus. Its draft and history gesture
       // still belong to the same edit; only an actual departure commits them.
       if (restoreFocus) {
-        if (popup && conditions.contains(focused) && !conditions.matches(':popover-open'))
+        if (conditions.contains(focused) && !conditions.matches(':popover-open'))
           conditions.showPopover();
         if (focused.checkVisibility() && document.activeElement !== focused)
           focused.focus({ preventScroll: true });

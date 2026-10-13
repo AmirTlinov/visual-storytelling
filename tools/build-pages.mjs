@@ -16,6 +16,13 @@ import { writeBundleNotices } from './bundle-notices.mjs';
 import { sourceAnnotations, writeSourceReferences } from './build-sources.mjs';
 import { sceneEntry, scenePage, svgPage } from './scene-entry.mjs';
 import { copySceneInput } from './copy-scene-input.mjs';
+import {
+  readStoryProject,
+  storyProjectFile,
+  storyProjectPage,
+  storyProjectSource,
+} from './story-project.mjs';
+import { preparedStoryHTML } from './prepare-story-project.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 export async function buildPage(
@@ -175,6 +182,7 @@ export async function buildScene(source, target, options = {}) {
   source = resolve(source);
   target = resolve(target);
   const { page: authoredPage } = await sceneEntry(source);
+  const storyProject = await readStoryProject(source);
   if (
     authoredPage !== scenePage &&
     (await access(resolve(source, scenePage)).then(
@@ -198,6 +206,7 @@ export async function buildScene(source, target, options = {}) {
     'package-lock.json',
     'scene.json',
     'scene-runtime.json',
+    storyProjectFile,
   ]);
   async function visit(directory, output) {
     options.signal?.throwIfAborted();
@@ -234,6 +243,20 @@ export async function buildScene(source, target, options = {}) {
   }
   await buildOutput(source, target, async (output) => {
     await visit(source, output);
+    if (storyProject) {
+      const prepared = options.sourcePackage
+        ? null
+        : await preparedStoryHTML(source, { silent: options.silent });
+      if (prepared) {
+        await checkNarration(prepared.html, source);
+        await writeFile(resolve(output, scenePage), prepared.html);
+      } else
+        await buildPage(resolve(source, scenePage), output, {
+          ...options,
+          html: storyProjectPage(storyProjectSource(storyProject, source)),
+          outputName: scenePage,
+        });
+    }
     if (authoredPage.endsWith('.svg'))
       await buildPage(resolve(source, authoredPage), output, {
         ...options,

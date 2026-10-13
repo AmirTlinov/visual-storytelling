@@ -1,6 +1,6 @@
 import type { CueTiming } from './cues.js';
 import type { Beat } from '../characters/types.js';
-import { storyModels, storyRecipes } from '../recipes/story-models.js';
+import { storyModelOwners, storyRecipes } from '../recipes/story-models.js';
 import type { StoryModel, StoryModules, StoryView } from './model.js';
 export type {
   StoryModel,
@@ -8,6 +8,7 @@ export type {
   StoryModules,
   StoryView,
   ModelValues,
+  ModelState,
 } from './model.js';
 
 /** One authored beat owns its action, staging and optional speech. */
@@ -99,7 +100,7 @@ function validate(
   keys(source, ['version', 'title', 'models', 'views', 'chapters', 'narration'], 'document');
   if (source.version !== 2)
     throw new Error('document.version: expected 2; migrate older documents explicitly.');
-  const modules = { ...storyModels, ...options.modules };
+  const modules = storyModelOwners(options.modules);
   const unique = new Set<string>();
   const identity = (value: unknown, path: string) => {
     const name = id(value, path);
@@ -285,7 +286,7 @@ export function editStoryDocument(
       if (!model) throw new Error(`${path}.modelId: unknown model.`);
       const values = record(operation.values, `${path}.values`);
       if (!Object.keys(values).length) throw new Error(`${path}.values: supply an input.`);
-      model.inputs = { ...storyModels, ...options.modules }[model.module]!.validateInputs({
+      model.inputs = storyModelOwners(options.modules)[model.module]!.validateInputs({
         ...model.inputs,
         ...values,
       });

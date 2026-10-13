@@ -106,7 +106,10 @@ async function fixture(t, document = legacy) {
   await mkdir(original);
   await writeFile(join(original, 'explanation.json'), JSON.stringify(document));
   await writeFile(join(original, 'scene.js'), legacyEntry);
-  await cp(join(root, 'tools/document-scene/index.html'), join(original, 'index.html'));
+  await writeFile(
+    join(original, 'index.html'),
+    '<!doctype html><main></main><script type="module" src="scene.js"></script>',
+  );
   await writeFile(join(original, 'scene-runtime.json'), 'accepted old pin\n');
   await writeFile(join(original, 'audio.wav'), Buffer.from([0, 1, 2, 3]));
   await cp(original, snapshot, { recursive: true });
@@ -115,20 +118,34 @@ async function fixture(t, document = legacy) {
 
 test('prepared legacy conversion changes only its candidate, removes old input and preserves accepted audio and pin', async (t) => {
   const { original, snapshot } = await fixture(t);
-  const changes = await migrateStoryDocument(snapshot, { root });
+  const supplied = [
+    { path: 'scene.js', content: null },
+    { path: 'index.html', content: null },
+    {
+      path: 'story-project.json',
+      content: JSON.stringify({ version: 1, modules: [], resources: [] }),
+    },
+  ];
+  for (const change of supplied) {
+    if (change.content === null) await rm(join(snapshot, change.path));
+    else await writeFile(join(snapshot, change.path), change.content);
+  }
+  const changes = await migrateStoryDocument(snapshot, { root, changes: supplied });
   assert.deepEqual(
     changes.map((change) => change.path),
-    ['scene.js', 'story.json', 'explanation.json'],
+    ['story.json', 'explanation.json'],
   );
   assert.equal(changes.at(-1).content, null);
   const converted = validateStoryDocument(
     JSON.parse(await readFile(join(snapshot, 'story.json'), 'utf8')),
   );
   assert.equal(converted.models[0].inputs.count, 17);
-  assert.equal(
-    await readFile(join(snapshot, 'scene.js'), 'utf8'),
-    await readFile(join(root, 'tools/document-scene/scene.js'), 'utf8'),
-  );
+  await assert.rejects(access(join(snapshot, 'scene.js')), { code: 'ENOENT' });
+  assert.deepEqual(JSON.parse(await readFile(join(snapshot, 'story-project.json'), 'utf8')), {
+    version: 1,
+    modules: [],
+    resources: [],
+  });
   await assert.rejects(access(join(snapshot, 'explanation.json')), { code: 'ENOENT' });
   assert.deepEqual(JSON.parse(await readFile(join(original, 'explanation.json'), 'utf8')), legacy);
   for (const name of ['audio.wav', 'scene-runtime.json'])

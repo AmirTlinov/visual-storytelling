@@ -18,6 +18,7 @@ import { mountIllustratedSubject } from './illustrated-subject.js';
 import { documentModelsAt, documentTimeline } from './document-model.js';
 import { cueSheet } from './cues.js';
 import type { StorySubjects } from './subject.js';
+import { storyModelOwners } from '../recipes/story-models.js';
 
 export interface IllustratedStoryOptions extends Omit<SceneStoryOptions, 'title' | 'chapters'> {
   document: StoryDocument | unknown;
@@ -76,9 +77,15 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
         const state = documentModelsAt(document, sheet.at(start + frame.time), {}, modules).models;
         return Object.fromEntries(
           document.models.flatMap((model) =>
-            Object.keys(model.inputs).map((key) => [
+            Object.entries(
+              storyModelOwners(modules)[model.module]!.validateInputs(
+                Object.fromEntries(
+                  Object.keys(model.inputs).map((key) => [key, state[model.id]![key]]),
+                ),
+              ),
+            ).map(([key, value]) => [
               authoredInputKeys(document, model.id, { [key]: model.inputs[key] })[0]!,
-              state[model.id]![key]!,
+              value,
             ]),
           ),
         );

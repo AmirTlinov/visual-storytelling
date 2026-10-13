@@ -74,7 +74,7 @@ export async function createScene(
         signal,
       });
     }
-    if (!example) {
+    if (!example && document === undefined) {
       const page = join(destination, 'index.html');
       const escaped = title
         .replaceAll('&', '&amp;')

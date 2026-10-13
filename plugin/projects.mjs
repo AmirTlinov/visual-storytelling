@@ -6,6 +6,7 @@ import { readJSON, writeJSON } from '../tools/storage.mjs';
 import { projectFiles, projectFile, readProjectFile, digest } from '../tools/project-files.mjs';
 import { failure } from './errors.mjs';
 import { sceneEntry } from '../tools/scene-entry.mjs';
+import { readStoryProject } from '../tools/story-project.mjs';
 import {
   readOptional,
   matches,
@@ -380,13 +381,22 @@ export class ProjectStore {
   write(root, entry) {
     return writeProjectChange(root, entry);
   }
-  async resolveEdit(p, state, { requestId, changes, operations, undo, assets = [] }, directory) {
+  async resolveEdit(
+    p,
+    state,
+    { requestId, changes, operations, undo, assets = [] },
+    directory,
+    resolveDocument,
+  ) {
     const cursor = (await readJSON(join(directory, 'history.json')))?.cursor ?? null;
     if (!validCursor(cursor))
       throw new Error('Invalid authoring history cursor. Resolve .vstory/history.json first.');
     let next = requestId;
     let semantic = operations !== undefined;
     let authoredInputs = [];
+    const manifest = operations !== undefined || undo ? await readStoryProject(p.path) : null;
+    const custom = Boolean(manifest?.modules.length);
+    let resolvedDocument;
     if (undo) {
       const last = cursor && (await readJSON(join(directory, 'history', cursor + '.json')));
       if (!last) throw new Error('No authored edit to undo.');
@@ -410,10 +420,20 @@ export class ProjectStore {
         throw new Error('Choose semantic operations, file changes, or undo.');
       const { editStoryDocument, authoredInputKeys } = await storyDocumentAPI(p.path);
       const document = await readJSON(join(p.path, 'story.json'));
+      resolvedDocument = custom
+        ? await resolveDocument?.({
+            project: p,
+            sourceRevision: state.sourceRevision,
+            document,
+            operations,
+          })
+        : editStoryDocument(document, operations);
+      if (!resolvedDocument)
+        throw new Error('Open the current authored-module frame before semantic authoring.');
       changes = [
         {
           path: 'story.json',
-          content: JSON.stringify(editStoryDocument(document, operations), null, 2) + '\n',
+          content: JSON.stringify(resolvedDocument, null, 2) + '\n',
         },
       ];
       authoredInputs = [
@@ -428,10 +448,19 @@ export class ProjectStore {
     }
     if (semantic) await assertPreparedDocument(p.path);
     const document = semantic
-      ? (await storyDocumentAPI(p.path)).prepareIllustratedDocument(
-          JSON.parse(changes.find((change) => change.path === 'story.json').content),
-        ).document
+      ? (resolvedDocument ??
+        (custom
+          ? await resolveDocument?.({
+              project: p,
+              sourceRevision: state.sourceRevision,
+              document: JSON.parse(changes.find((change) => change.path === 'story.json').content),
+            })
+          : (await storyDocumentAPI(p.path)).prepareIllustratedDocument(
+              JSON.parse(changes.find((change) => change.path === 'story.json').content),
+            ).document))
       : undefined;
+    if (semantic && !document)
+      throw new Error('Open the current authored-module frame before semantic authoring.');
     return { cursor, next, semantic, changes, document, authoredInputs };
   }
   async editState({
@@ -499,13 +528,13 @@ export class ProjectStore {
     }
     return proposed;
   }
-  stageEdit(args) {
+  stageEdit(args, resolveDocument) {
     args = structuredClone(args);
     return this.serial(args.projectId, async () => {
       const input = await this.editState(args);
       if (input.prior) return { args, prior: input.prior };
       const { p, state, directory, signature } = input;
-      const resolved = await this.resolveEdit(p, state, args, directory);
+      const resolved = await this.resolveEdit(p, state, args, directory, resolveDocument);
       const edits = await prepareProjectChanges(p.path, resolved.changes);
       const assets = args.assets ?? [];
       if (

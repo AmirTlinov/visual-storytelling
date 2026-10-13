@@ -234,6 +234,7 @@ function recoverView(cause) {
             checkpoint: session.checkpoint,
             stateRevision: session.stateRevision,
             widgetState: session.widgetState,
+            authoredInputs: session.authoredInputs,
           });
         } else send({ type: 'command', command: { op: 'resume', id, expiresAt: deadline } });
         report = await beforeDeadline(restored, deadline);
@@ -391,6 +392,7 @@ async function mount(result) {
     stateRevision: session.stateRevision,
     widgetState: session.widgetState,
     authoring: session.authoring,
+    authoredInputs: session.authoredInputs,
   };
   if (attached._meta.sceneHTML) {
     if (provisional && session.authoredDocument) {
@@ -448,6 +450,7 @@ async function prepareUpdate(update) {
       preview: true,
       generation: candidate.generation,
       checkpoint: next.checkpoint,
+      authoredInputs: next.authoredInputs,
       stateRevision: next.stateRevision,
       widgetState: next.widgetState,
     });

@@ -87,6 +87,7 @@ const sceneFields = ([
 export function contextualRuntime(runtime, codec) {
   function reference(value, previous) {
     const project = value.project ?? value.result?.project ?? value;
+    const target = value.target;
     const wantedScene = value.sessionId ?? previous?.[2];
     const scene =
       value.shown?.find(
@@ -94,6 +95,7 @@ export function contextualRuntime(runtime, codec) {
       ) ?? (value.sessionId ? value : undefined);
     const projectId =
       project.projectId ??
+      target?.projectId ??
       (project.path && project.files ? project.id : undefined) ??
       scene?.projectId;
     const retained = projectId && projectId === previous?.[0] ? previous : [];
@@ -101,6 +103,7 @@ export function contextualRuntime(runtime, codec) {
       value.project?.sourceRevision ??
       value.result?.project?.sourceRevision ??
       value.authoringSourceRevision ??
+      (target?.kind === 'working' ? target.sourceRevision : undefined) ??
       (scene && retained[0] ? retained[1] : (project.sourceRevision ?? scene?.sourceRevision));
     if (!source && !scene?.buildRevision) return;
     return [

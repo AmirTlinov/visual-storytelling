@@ -1,4 +1,4 @@
-import { storyModels } from '../recipes/story-models.js';
+import { storyModelOwners } from '../recipes/story-models.js';
 import { documentChapter, documentScript } from './document-timing.js';
 import {
   validateStoryDocument,
@@ -8,7 +8,9 @@ import {
 } from './document-schema.js';
 import { composeChapters } from './composition-plan.js';
 import type { Frame, Script } from './cues.js';
-import type { ModelValues, StoryModules } from './model.js';
+import type { ModelValues, ModelState, StoryModules } from './model.js';
+import { modelInputValues } from './model.js';
+import { cueSheet } from './cues.js';
 
 /** Publication and mounting prepare the same normalized candidate and its optional clock. */
 export function prepareStoryDocument(
@@ -17,7 +19,16 @@ export function prepareStoryDocument(
   aligned?: Script,
 ) {
   const document = validateStoryDocument(source, options);
-  return { document, script: documentTimeline(document, aligned, options) };
+  const script = documentTimeline(document, aligned, options);
+  if (script) {
+    const sheet = cueSheet(script);
+    const boundaries = new Set([
+      0,
+      ...Object.values(script.cues).flatMap((cue) => [cue.start, cue.end]),
+    ]);
+    for (const time of boundaries) documentModelsAt(document, sheet.at(time), {}, options.modules);
+  }
+  return { document, script };
 }
 
 /** Project authored chapters through the existing composition and acoustic timing owners. */
@@ -39,12 +50,15 @@ export function documentModelsAt(
   frame?: Frame,
   inputs: Readonly<Record<string, ModelValues>> = {},
   modules: StoryModules = {},
+  options: { mode?: 'story' | 'explore' } = {},
 ) {
-  const owners = { ...storyModels, ...modules };
-  const models = Object.fromEntries(
+  const owners = storyModelOwners(modules);
+  const models: Record<string, ModelState> = Object.fromEntries(
     document.models.map((model) => {
       const owner = owners[model.module]!;
-      const values = owner.validateInputs(inputs[model.id] ?? model.inputs);
+      const values = owner.validateInputs(
+        options.mode === 'explore' ? model.inputs : (inputs[model.id] ?? model.inputs),
+      );
       return [
         model.id,
         !frame && owner.staticState ? owner.staticState(values) : owner.state(values),
@@ -65,8 +79,19 @@ export function documentModelsAt(
             models[modelId]!,
             frame.reveal(id),
           );
+          modelInputValues(model, models[modelId]!, owners[model.module]!);
         }
         for (const view of document.views) frame.target(id, view.id);
       }
+  if (options.mode === 'explore')
+    for (const model of document.models) {
+      const owner = owners[model.module]!;
+      const values = owner.validateInputs(inputs[model.id] ?? model.inputs);
+      models[model.id] = owner.experimentState
+        ? owner.experimentState(values, models[model.id]!)
+        : owner.staticState
+          ? owner.staticState(values)
+          : owner.state(values);
+    }
   return { models, beat };
 }

@@ -39,6 +39,8 @@ export interface SceneRuntime {
   /** A compiled subject accepts whole validated authored documents; ProjectStore owns their revisions. */
   readonly authoring?: {
     readonly document: unknown;
+    /** Prepare a complete document with this subject's modules; leaves source and displayed state intact. */
+    prepare(document: unknown, operations?: readonly unknown[]): unknown;
     validate(document: unknown, options?: { authoredInputs?: readonly string[] }): void;
     replace(
       document: unknown,

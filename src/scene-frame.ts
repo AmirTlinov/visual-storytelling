@@ -47,7 +47,9 @@ export function sceneFrame(
       standalone = root.closest('.ve-standalone');
     const availableWidth =
       root.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-    if (!availableWidth) return;
+    // A collapsed host can expose padding with zero viewport or a negative aperture.
+    // Retain the last composition until it can actually be fitted again.
+    if (availableWidth <= 0 || innerWidth <= 0 || innerHeight <= 0) return;
     let availableHeight = Infinity;
     if (root.closest('[data-scene-frame]')) {
       availableHeight =
@@ -58,8 +60,9 @@ export function sceneFrame(
       const top = Math.max(0, box.top + scrollY);
       const body = getComputedStyle(document.body);
       const bottom = (parseFloat(body.marginBottom) || 0) + (parseFloat(body.paddingBottom) || 0);
-      availableHeight = Math.max(1, innerHeight - top - chrome - bottom);
+      availableHeight = innerHeight - top - chrome - bottom;
     }
+    if (availableHeight <= 0) return;
     const fit = fitFrame(width, height, availableWidth, availableHeight);
     const changed = element.dataset.frameScale !== String(fit.scale);
     element.dataset.frameLayout = 'fixed';

@@ -1,6 +1,6 @@
 {
   "name": "@visual-storytelling/core",
-  "version": "0.32.3",
+  "version": "0.33.2",
   "private": true,
   "license": "0BSD",
   "type": "module",
@@ -75,7 +75,8 @@
     "./plugin/ui/live-scene.mjs",
     "./tools/document-scene/**",
     "./examples/**",
-    "./tests/fixtures/**"
+    "./tests/fixtures/**",
+    "./tools/document-modules/**"
   ],
   "scripts": {
     "dev": "node tools/dev-gallery.mjs",

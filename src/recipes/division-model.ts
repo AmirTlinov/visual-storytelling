@@ -16,6 +16,7 @@ export const divisionModel: StoryModelModule = {
   },
   state: (inputs) => ({ ...inputs, progress: 0 }),
   staticState: (inputs) => ({ ...inputs, progress: 1 }),
+  experimentState: (inputs, authored) => ({ ...inputs, progress: authored.progress }),
   operations: {
     gather: (state) => ({ ...state, progress: 0 }),
     group: (state, progress) => ({ ...state, progress }),

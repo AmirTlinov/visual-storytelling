@@ -241,3 +241,56 @@ test('a native host without RAF keeps prepared observations, reversible suspensi
     await browser.close();
   }
 });
+
+test('a restarted candidate restores explicit authored conditions and preserves other viewer inputs', async () => {
+  const adapter = await build({
+    entryPoints: ['plugin/ui/scene-frame.mjs'],
+    bundle: true,
+    write: false,
+    format: 'iife',
+  });
+  const { readFile } = await import('node:fs/promises');
+  const html = await readFile('.plugin-release/plugin/dist/live.html', 'utf8');
+  const browser = await chromium.launch(chromiumLaunchOptions());
+  try {
+    const page = await browser.newPage();
+    await page.setContent(
+      '<iframe title="Scene" sandbox="allow-scripts" style="width:800px;height:600px"></iframe>',
+    );
+    await page.evaluate(
+      ({ html, adapter }) => {
+        window.messages = [];
+        addEventListener('message', (event) => {
+          if (event.data?.channel === 'visual-story-scene-v1') messages.push(event.data);
+        });
+        const config = {
+          generation: 1,
+          stateRevision: 0,
+          authoredInputs: ['count'],
+          checkpoint: { mode: 'explore', time: 0, progress: 0, values: { count: 19, divisor: 5 } },
+        };
+        document.querySelector('iframe').srcdoc = html
+          .replace(
+            '</head>',
+            '<script>window.__visualStoryDocument={recipe:"division",inputs:{count:22,divisor:3},chapters:[]}</script></head>',
+          )
+          .replace(
+            '</body>',
+            `<script>window.__visualStorySession=${JSON.stringify(config)}</script><script>${adapter}</script></body>`,
+          );
+      },
+      { html, adapter: adapter.outputFiles[0].text },
+    );
+    await page.waitForFunction(() => messages.some((m) => ['ready', 'error'].includes(m.type)));
+    const errors = await page.evaluate(() => messages.filter((m) => m.type === 'error'));
+    assert.deepEqual(errors, []);
+    const actual = await page.evaluate(
+      () => messages.find((m) => m.type === 'ready').report.checkpoint.values,
+    );
+    assert.equal(actual.count, 22, 'accepted authored intent survives the old checkpoint');
+    assert.equal(actual.divisor, 5, 'unmodified viewer condition survives');
+    assert.equal((await page.frameLocator('iframe').locator('svg').count()) > 0, true);
+  } finally {
+    await browser.close();
+  }
+});

@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { readJSON, writeJSON } from '../../tools/storage.mjs';
+import { buildReference } from '../session-directory.mjs';
 
 /** Persist checkpoints around the single in-memory SessionDirectory. */
 export function sessionStorage(data, sessions, isClosing) {
@@ -26,7 +27,16 @@ export function sessionStorage(data, sessions, isClosing) {
         !Number.isSafeInteger(saved.stateRevision) ||
         saved.stateRevision < 0 ||
         !Number.isSafeInteger(saved.generation) ||
-        saved.generation < 0
+        saved.generation < 0 ||
+        (saved.nextBuildRevision !== undefined &&
+          !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(saved.nextBuildRevision)) ||
+        [saved.authoredInputs, saved.nextAuthoredInputs].some(
+          (keys) =>
+            keys !== undefined &&
+            (!Array.isArray(keys) ||
+              keys.length > 64 ||
+              keys.some((key) => typeof key !== 'string' || !key || key.length > 200)),
+        )
       )
         throw new Error('The saved session is invalid.');
       const source = await readJSON(join(data, 'builds', saved.buildRevision + '.json'));
@@ -34,6 +44,11 @@ export function sessionStorage(data, sessions, isClosing) {
         throw new Error('The saved build is unavailable. Rebuild the project.');
       if (isClosing()) throw new Error('Runtime shutting down.');
       const session = sessions.open(source);
+      session.build.authoredInputs = saved.authoredInputs;
+      if (saved.nextBuildRevision) {
+        const next = await viewBuild(saved.nextBuildRevision);
+        session.nextBuild = { ...buildReference(next), authoredInputs: saved.nextAuthoredInputs };
+      }
       sessions.sessions.delete(session.id);
       Object.assign(session, {
         id,
@@ -60,6 +75,9 @@ export function sessionStorage(data, sessions, isClosing) {
     const snapshot = {
       id: s.id,
       buildRevision: s.build.revision,
+      authoredInputs: s.build.authoredInputs,
+      nextBuildRevision: s.nextBuild?.revision,
+      nextAuthoredInputs: s.nextBuild?.authoredInputs,
       checkpoint: s.checkpoint,
       generation: s.generation,
       stateRevision: s.stateRevision,

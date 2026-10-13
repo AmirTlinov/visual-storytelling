@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { packageInfo, resolvePackage } from './build-info.mjs';
 import { assertPreparedRuntimeRoot } from './prepared-runtime-trust.mjs';
+import { readStoryProject } from './story-project.mjs';
 
 const execute = promisify(execFile);
 const library = fileURLToPath(new URL('../', import.meta.url));
@@ -317,27 +318,22 @@ export async function storyDocumentAPI(directory) {
   return api;
 }
 
-/** A modified source entry must keep using the source build path, never lose authored code. */
+/** The manifest owns document/module/resources; arbitrary source entries use the ordinary builder. */
 export async function assertPreparedDocument(directory) {
   const pin = await readPreparedRuntime(directory);
   if (!pin) throw new Error('Document authoring requires a prepared StoryDocument project.');
+  const owner=pathToFileURL(join(pin.root,'tools/runtime-package.mjs')).href;
+  if(owner!==import.meta.url)return (await import(owner)).assertPreparedDocument(directory);
   await storyDocumentAPI(directory);
-  const [entry, template, page, templatePage, config] = await Promise.all([
-    readFile(join(directory, 'scene.js'), 'utf8'),
-    readFile(join(pin.root, 'tools/document-scene/scene.js'), 'utf8'),
-    readFile(join(directory, 'index.html'), 'utf8'),
-    readFile(join(pin.root, 'tools/document-scene/index.html'), 'utf8'),
-    readOptional(join(directory, 'scene.json')),
-  ]);
-  const withoutTitle = (html) => html.replace(/<title>.*?<\/title>/s, '<title></title>');
-  if (entry !== template || withoutTitle(page) !== withoutTitle(templatePage) || config)
+  const manifest = await readStoryProject(directory);
+  if (!manifest)
     throw Object.assign(
       new Error(
-        'This project has a custom source entry. Continue through file edits and the existing build.',
+        'This project owns a source entry. Continue through file edits and the existing build, or explicitly adopt story-project.json.',
       ),
       { code: 'custom_scene_entry' },
     );
-  return pin;
+  return { ...pin, manifest };
 }
 
 const localFile = (spec, directory) =>

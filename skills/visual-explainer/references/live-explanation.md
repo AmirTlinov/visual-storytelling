@@ -1,5 +1,24 @@
 # Короткий живой опыт
 
+Для маршрута заказа:
+
+```json
+{
+  "recipe": "dependency-route",
+  "inputs": { "orderId": "417", "reserve": "shared", "disabled-provider": true }
+}
+```
+
+Модель `route` связывает `dependency-network` и `order-status`. Заказ останавливается
+у провайдера А; `reserve:"independent"` ведёт через Б. `none` выключает резерв.
+`disabled-<nodeId>` задаёт отказ; ID узлов: shop, gateway, backup, provider,
+independent, bank. Это учебная топология, а не инфраструктура реальной компании.
+Приём даёт шестисекундный проход с сохранением ID заказа; `chapters:[]` — статический опыт.
+Операции `disable-<nodeId>`, `enable-<nodeId>`, `reconnect-none/shared/independent`,
+`reset`, `trace`, `finish` принадлежат обычной модели. Перемотка чисто повторяет
+операции от авторских входов. В исследовании условия зрителя задают новый trace.
+Для иной сети используй [авторский модуль](document-modules.md).
+
 Используй один `StoryDocument` v2 для статического опыта и рассказа. Для целых
 групп с остатком передай в `story_create.document` компактный вход:
 

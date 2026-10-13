@@ -1,6 +1,7 @@
 import { readFile, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { readPreparedRuntime, assertPreparedDocument } from './runtime-package.mjs';
 import { divisionStory } from '../dist/recipes/division-story.js';
 
 const readOptional = (file) =>
@@ -73,15 +74,6 @@ export function convertLegacyStoryDocument(source, { explanation = false } = {})
   return { ...base, ...(chapters !== undefined && { chapters }) };
 }
 
-const legacyPreparedEntry = `import { mountExplanation } from '@visual-storytelling/core';
-import '@visual-storytelling/core/style.css';
-import explanation from './explanation.json';
-
-window.galleryReady = Promise.resolve().then(() =>
-  mountExplanation(document.querySelector('main'), explanation),
-);
-`;
-const withoutTitle = (html) => html.replace(/<title>.*?<\/title>/s, '<title></title>');
 const manualRepair = () =>
   Object.assign(
     new Error(
@@ -96,7 +88,8 @@ export async function migrateStoryDocument(directory, { root, changes = [] } = {
     readOptional(join(directory, 'story.json')),
     readOptional(join(directory, 'explanation.json')),
   ]);
-  if (!explanation && (!story || JSON.parse(story).version === 2)) return [];
+  if (!explanation && !story) return [];
+  if (!explanation && JSON.parse(story).version === 2) return migratePreparedEntry(directory);
   if (story && explanation) throw new Error('Choose one authored document before migration.');
   const source = JSON.parse(explanation ?? story);
   const { prepareStoryDocument } = await import(
@@ -109,25 +102,11 @@ export async function migrateStoryDocument(directory, { root, changes = [] } = {
     (change) => /^scene\.(?:js|mjs|ts)$/.test(change.path) && change.content !== null,
   );
   const result = [];
-  if (!entryChanged) {
-    if (!explanation) throw manualRepair();
-    const [entry, page, templatePage, config] = await Promise.all([
-      readOptional(join(directory, 'scene.js')),
-      readOptional(join(directory, 'index.html')),
-      readFile(join(root, 'tools/document-scene/index.html'), 'utf8'),
-      readOptional(join(directory, 'scene.json')),
-    ]);
-    if (
-      entry !== legacyPreparedEntry ||
-      !page ||
-      withoutTitle(page) !== withoutTitle(templatePage) ||
-      config
-    )
-      throw manualRepair();
-    const content = await readFile(join(root, 'tools/document-scene/scene.js'), 'utf8');
-    await writeFile(join(directory, 'scene.js'), content);
-    result.push({ path: 'scene.js', content });
-  }
+  if (
+    !entryChanged &&
+    !changes.some((change) => change.path === 'story-project.json' && change.content !== null)
+  )
+    throw manualRepair();
   const content = JSON.stringify(document, null, 2) + '\n';
   await writeFile(join(directory, 'story.json'), content);
   result.push({ path: 'story.json', content });
@@ -136,4 +115,26 @@ export async function migrateStoryDocument(directory, { root, changes = [] } = {
     result.push({ path: 'explanation.json', content: null });
   }
   return result;
+}
+
+/** Explicit pin migration transfers a historically verified runtime-owned entry to the new manifest. */
+async function migratePreparedEntry(directory) {
+  if (!(await readPreparedRuntime(directory))) return [];
+  let previous;
+  try {
+    previous = await assertPreparedDocument(directory);
+  } catch (error) {
+    if (['custom_scene_entry', 'runtime_migration_required'].includes(error.code)) return [];
+    throw error;
+  }
+  if (previous.manifest) return [];
+  const content = JSON.stringify({ version: 1, modules: [], resources: [] }, null, 2) + '\n';
+  await writeFile(join(directory, 'story-project.json'), content);
+  await rm(join(directory, 'scene.js'));
+  await rm(join(directory, 'index.html'));
+  return [
+    { path: 'story-project.json', content },
+    { path: 'scene.js', content: null },
+    { path: 'index.html', content: null },
+  ];
 }

@@ -14,6 +14,7 @@ export const circuitModel: StoryModelModule = {
     return { closed: (value as { closed: boolean }).closed };
   },
   state: (inputs) => ({ ...inputs }),
+  experimentState: (inputs) => ({ ...inputs }),
   operations: {
     open: (state) => ({ ...state, closed: false }),
     close: (state) => ({ ...state, closed: true }),
