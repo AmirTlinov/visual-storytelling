@@ -130,6 +130,9 @@ test(
             doc.chapters[0].beats[0].say = 'Соберём';
             doc.chapters[0].beats[1].say = 'предметы. Разделим на группы.';
           },
+          (doc) => (doc.narration = { ...doc.narration, intro: 1 }),
+          (doc) => (doc.narration = { ...doc.narration, outro: 2 }),
+          (doc) => (doc.narration = { ...doc.narration, pause: 1.5 }),
         ]) {
           const next = structuredClone(lab.scene.authoring.document);
           change(next);

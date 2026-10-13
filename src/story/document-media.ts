@@ -22,10 +22,16 @@ export function validateStoryNarration(
       .replace(/<\|[a-z]+:[a-z_]+\|>/g, '')
       .replace(/\s+/g, ' ')
       .trim();
-  const signature = (document: StoryDocument) =>
-    JSON.stringify({
-      voice: document.narration?.voice,
-      music: document.narration?.music,
+  const signature = (document: StoryDocument) => {
+    const recording = documentNarration(document, options);
+    return JSON.stringify({
+      voice: recording.voice,
+      music: recording.music,
+      intro: recording.intro,
+      outro: recording.outro,
+      // These gaps also include silent actions and reserved observation time.
+      // Matching words alone cannot validate the accepted waveform's layout.
+      pauses: recording.segments.map((segment) => [segment.id, segment.pause_after]),
       beats: document.chapters.flatMap((chapter) =>
         chapter.beats
           .filter((beat) => (beat.say ?? beat.text ?? '').trim())
@@ -35,6 +41,7 @@ export function validateStoryNarration(
           ]),
       ),
     });
+  };
   if (
     (prepared && signature(document) !== signature(prepared)) ||
     actual.length !== expected.length ||
