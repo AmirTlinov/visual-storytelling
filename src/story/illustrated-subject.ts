@@ -28,6 +28,7 @@ export async function mountIllustratedSubject(
     title: initial.title ?? recipe.title,
     heading: initial.title !== undefined,
     parameters: recipe.parameters(model),
+    resources: initial.resources,
     frame: options.frame,
     captions: options.captions,
     onInput(values) {
@@ -191,6 +192,7 @@ export async function mountIllustratedSubject(
       }
     }
     mounted = true;
+    shell.setResources(next.resources ?? []);
     shell.setTitle(next.title ?? recipe.title, { visible: next.title !== undefined });
     handle.extend({
       snapshot: () => latest && drawing.snapshot(latest.models[document.models[0]!.id]!),

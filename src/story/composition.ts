@@ -76,6 +76,7 @@ export interface SceneStoryOptions {
   title: string;
   chapters: readonly SceneChapter[];
   parameters?: SceneOptions['parameters'];
+  resources?: SceneOptions['resources'];
   frame?: SceneOptions['frame'];
   captions?: SceneOptions['captions'];
   script?: Script;
@@ -124,6 +125,7 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
     title: options.title,
     presentation: options.chapters[0]?.presentation,
     parameters,
+    resources: options.resources,
     frame: options.frame,
     captions: options.captions,
   });

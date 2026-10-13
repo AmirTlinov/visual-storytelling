@@ -1274,8 +1274,18 @@ window.galleryReady = (async () => {
         d.text('ваш выбор', d.compact ? 60 : 40, y + (d.compact ? 65 : 32), { pigment: 'muted' });
       const x = d.compact ? 500 : 390,
         w = d.compact ? 380 : 500;
-      d.box(`prob-${i}`, x, y - 36, Math.max(3, w * probability), 38, 'green', 'marker');
-      d.text(percent(probability), x + w + 35, y, { size: d.compact ? d.size : 30 });
+      d.probability(`prob-${item.id}`, probability, x, y - 30, w, 38, {
+        label: `Вероятность токена ${tokenName(token)}`,
+        value: () => probability,
+        unit: '1',
+        provenance: () => ({
+          token: s.token,
+          candidate: item.id,
+          logit: item.logit,
+          model: MODEL.format,
+        }),
+        interactive: false,
+      });
     });
     if (d.compact)
       d.button(
@@ -1332,11 +1342,8 @@ window.galleryReady = (async () => {
       word = tokenName(MODEL.vocab[candidate]);
     const vectorRow = s.trace.finalNorm.output[s.token],
       embedding = MODEL.weights.tokenEmbedding[candidate];
-    const logits = s.trace.logits[s.token],
-      score = logits[candidate],
-      max = Math.max(...logits);
-    const numerator = Math.exp(score - max),
-      total = logits.reduce((sum, v) => sum + Math.exp(v - max), 0);
+    const normalized = s.trace.normalization[s.token],
+      score = normalized.scores[candidate];
     if (d.compact) {
       d.text(`Вектор · веса слова «${word}»`, d.width / 2, 177, { anchor: 'middle' });
       d.text(`оценка = ${fmt(score, 3)}`, d.width / 2, 283, { anchor: 'middle', pigment: 'green' });
@@ -1360,9 +1367,14 @@ window.galleryReady = (async () => {
     });
     d.text('·', 166, 318, { size: 72 });
     d.text(`оценка = ${fmt(score, 3)}`, 78, 491, { size: 32, pigment: 'green' });
-    d.text(`exp(${fmt(score, 2)} − max) / Σexp = ${percent(numerator / total)}`, 455, 491, {
-      size: 28,
-    });
+    d.text(
+      `exp(${fmt(score, 2)} − max) / Σexp = ${percent(normalized.probabilities[candidate])}`,
+      455,
+      491,
+      {
+        size: 28,
+      },
+    );
     d.text('Те же веса, что при входе слова. Нормируем оценки всех 17 слов.', 78, 546, {
       pigment: 'muted',
       size: 25,
@@ -1514,9 +1526,9 @@ window.galleryReady = (async () => {
   function drawScores(d, s) {
     const scores = s.head.scaledScores[s.token],
       probs = s.head.probabilities[s.token];
-    const max = Math.max(...scores.slice(0, s.token + 1));
-    const exp = scores.map((v, i) => (i <= s.token ? Math.exp(v - max) : 0)),
-      total = exp.reduce((a, b) => a + b, 0);
+    const normalized = s.head.normalization[s.token],
+      exp = normalized.weights,
+      total = normalized.totalWeight;
     if (d.compact) {
       const i = s.source;
       d.text(

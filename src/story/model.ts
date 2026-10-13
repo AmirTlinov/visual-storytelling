@@ -8,6 +8,8 @@ export interface StoryModel {
   /** Registered ordinary JavaScript module; the document contains no executable expressions. */
   module: string;
   inputs: ModelValues;
+  /** Source and interpretation metadata lives once in the document resources. */
+  resources?: readonly string[];
 }
 export interface StoryView {
   id: string;

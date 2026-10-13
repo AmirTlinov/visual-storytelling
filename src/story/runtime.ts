@@ -1,3 +1,5 @@
+import * as probability from '../math/probability.js';
+import * as binomial from '../math/binomial.js';
 import * as lever from '../math/lever.js';
 import { compareModelSnapshots } from './comparison.js';
 import * as ink from '../ink/index.js';
@@ -16,6 +18,8 @@ export const documentRuntime = {
   ...recipes,
   ...document,
   ...rational,
+  ...probability,
+  ...binomial,
   ...quantities,
   ...lever,
   compareModelSnapshots,

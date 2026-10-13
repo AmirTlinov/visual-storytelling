@@ -1,3 +1,6 @@
+import { record, keys, id, text, array, seconds } from './document-fields.js';
+import { validateStoryResources, type StoryResource } from './resources.js';
+export type { StoryResource } from './resources.js';
 import type { CueTiming } from './cues.js';
 import type { Beat } from '../characters/types.js';
 import { storyModelOwners, storyRecipes } from '../recipes/story-models.js';
@@ -26,6 +29,7 @@ export interface AuthoredChapter {
 }
 export interface StoryDocument {
   version: 2;
+  resources?: readonly StoryResource[];
   title?: string;
   models: readonly StoryModel[];
   views: readonly StoryView[];
@@ -42,40 +46,12 @@ export interface StoryDocument {
 }
 export type StoryDocumentOperation =
   | { op: 'set-inputs'; modelId: string; values: Record<string, unknown> }
+  | { op: 'set-resources'; resources: readonly StoryResource[] }
   | { op: 'set-views'; views: readonly StoryView[] }
   | { op: 'set-chapters'; chapters: readonly AuthoredChapter[] };
 export interface StoryDocumentOptions {
   modules?: StoryModules;
 }
-const record = (value: unknown, path: string): Record<string, unknown> => {
-  if (!value || typeof value !== 'object' || Array.isArray(value))
-    throw new Error(`${path}: expected an object.`);
-  return value as Record<string, unknown>;
-};
-const keys = (value: Record<string, unknown>, allowed: readonly string[], path: string) => {
-  const extra = Object.keys(value).find((key) => !allowed.includes(key));
-  if (extra) throw new Error(`${path}.${extra}: unknown field.`);
-};
-const id = (value: unknown, path: string): string => {
-  if (typeof value !== 'string' || !/^[a-z][a-z0-9_.-]{0,79}$/.test(value))
-    throw new Error(`${path}: use a stable ID starting with a lowercase letter.`);
-  return value;
-};
-const text = (value: unknown, path: string, empty = false): string => {
-  if (typeof value !== 'string' || (!empty && !value.trim()) || value.length > 4000)
-    throw new Error(`${path}: expected ${empty ? '' : 'non-empty '}text.`);
-  return value;
-};
-const array = (value: unknown, path: string): unknown[] => {
-  if (!Array.isArray(value)) throw new Error(`${path}: expected a list.`);
-  return value;
-};
-const seconds = (value: unknown, path: string, minimum = 0) => {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum)
-    throw new Error(`${path}: expected finite seconds of at least ${minimum}.`);
-  return value;
-};
-
 /** Complete authoring sugar once, then validate the one normalized document. */
 export function validateStoryDocument(
   value: unknown,
@@ -97,7 +73,11 @@ function validate(
     if (!recipe) throw new Error('document.recipe: unknown prepared recipe.');
     source = recipe(source) as unknown as Record<string, unknown>;
   }
-  keys(source, ['version', 'title', 'models', 'views', 'chapters', 'narration'], 'document');
+  keys(
+    source,
+    ['version', 'title', 'models', 'views', 'chapters', 'narration', 'resources'],
+    'document',
+  );
   if (source.version !== 2)
     throw new Error('document.version: expected 2; migrate older documents explicitly.');
   const modules = storyModelOwners(options.modules);
@@ -108,13 +88,23 @@ function validate(
     unique.add(name);
     return name;
   };
+  const resources = validateStoryResources(source.resources, identity);
+  const resourceIds = new Set(resources.map((resource) => resource.id));
   const models: StoryModel[] = array(
     source.models === undefined ? [] : source.models,
     'models',
   ).map((raw, index) => {
     const path = `models[${index}]`,
       model = record(raw, path);
-    keys(model, ['id', 'module', 'inputs'], path);
+    keys(model, ['id', 'module', 'inputs', 'resources'], path);
+    const refs =
+      model.resources === undefined
+        ? undefined
+        : array(model.resources, `${path}.resources`).map((value) =>
+            id(value, `${path}.resources`),
+          );
+    if (refs && (new Set(refs).size !== refs.length || refs.some((ref) => !resourceIds.has(ref))))
+      throw new Error(`${path}.resources: reference a unique declared resource.`);
     const name = text(model.module, `${path}.module`);
     const module = Object.hasOwn(modules, name) ? modules[name] : undefined;
     if (!module) throw new Error(`${path}.module: unregistered model module ${name}.`);
@@ -122,6 +112,7 @@ function validate(
       id: identity(model.id, `${path}.id`),
       module: name,
       inputs: module.validateInputs(model.inputs),
+      ...(refs && { resources: refs }),
     };
   });
   const views: StoryView[] = array(source.views === undefined ? [] : source.views, 'views').map(
@@ -260,6 +251,7 @@ function validate(
     models,
     views,
     chapters,
+    ...(source.resources !== undefined && { resources }),
     ...(source.narration !== undefined && {
       narration: structuredClone(source.narration) as StoryDocument['narration'],
     }),
@@ -290,6 +282,9 @@ export function editStoryDocument(
         ...model.inputs,
         ...values,
       });
+    } else if (operation.op === 'set-resources') {
+      keys(operation, ['op', 'resources'], path);
+      next = { ...next, resources: validateStoryResources(operation.resources) };
     } else if (operation.op === 'set-views') {
       keys(operation, ['op', 'views'], path);
       const views = array(operation.views, `${path}.views`) as StoryView[];

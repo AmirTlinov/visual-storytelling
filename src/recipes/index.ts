@@ -57,3 +57,12 @@ export { comparisonModel } from './comparison-model.js';
 export { comparisonSubject } from './comparison-subject.js';
 export { comparisonStory } from './comparison-story.js';
 export type { ComparisonStoryInput } from './comparison-story.js';
+
+export { probabilityBar } from './probability-bar.js';
+export { probabilityModel } from './probability-model.js';
+export { samplingModel } from './sampling-model.js';
+export { probabilitySubject } from './probability-subject.js';
+export { probabilityStory } from './probability-story.js';
+export type { ProbabilityStoryInput } from './probability-story.js';
+
+export { samplingSubject } from './sampling-subject.js';

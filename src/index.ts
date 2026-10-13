@@ -102,3 +102,7 @@ export * from './math/rational.js';
 export * from './math/quantity-parts.js';
 
 export * from './math/lever.js';
+
+export { normalizeLogits, softmax, probabilityRows, rankProbabilities } from './math/probability.js';
+export type { ProbabilityTrace, ProbabilityRow } from './math/probability.js';
+export { sampleBernoulli, wilsonInterval, binomialPrefix } from './math/binomial.js';

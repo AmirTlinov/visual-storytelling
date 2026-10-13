@@ -17,17 +17,46 @@ import { handwritingTransform, handwritingProfiles, type Handwriting } from './h
 
 const paths = new WeakMap<SVGPathElement, PathInk>(),
   lettering = new WeakMap<SVGTextElement, TextInk>();
+// Glyph centerlines are fixed in local coordinates. Instance transforms and theme
+// change their placement/paint, not their length. The shipped alphabet bounds this cache.
+const glyphPaths = new Set(Object.values(SketchPencil).flat()),
+  glyphLengths = new Map<string, number>(),
+  glyphCSS = new Map<string, string>(),
+  ownedGlyphs = new WeakMap<SVGPathElement, { d: string; css: string }>();
+function registerGlyph(path: SVGPathElement, d: string) {
+  if (!glyphPaths.has(d)) return;
+  let css = glyphCSS.get(d);
+  if (css === undefined) {
+    const declaration = document.createElement('span').style;
+    declaration.setProperty('d', `path(${JSON.stringify(d)})`);
+    css = declaration.getPropertyValue('d');
+    glyphCSS.set(d, css);
+  }
+  ownedGlyphs.set(path, { d, css });
+}
+function pathLength(path: SVGPathElement, signature: string) {
+  const glyph = ownedGlyphs.get(path);
+  if (!glyph || path.getAttribute('d') !== glyph.d || signature !== glyph.css)
+    return path.getTotalLength();
+  const cached = glyphLengths.get(glyph.d);
+  if (cached !== undefined) return cached;
+  const length = path.getTotalLength();
+  glyphLengths.set(glyph.d, length);
+  return length;
+}
 function geometry(path: SVGPathElement) {
-  const signature = path.getAttribute('d');
+  // CSS d can override the presentation attribute, including on an owned glyph.
+  const style = getComputedStyle(path),
+    css = style.getPropertyValue('d'),
+    signature = JSON.stringify([path.getAttribute('d'), css]);
   if (paths.has(path) && paths.get(path)!.signature !== signature) {
-    paths.get(path)!.length = path.getTotalLength();
+    paths.get(path)!.length = pathLength(path, css);
     paths.get(path)!.signature = signature;
   }
   if (!paths.has(path)) {
-    const length = path.getTotalLength(),
+    const length = pathLength(path, css),
       tip = document.createElementNS(NS, 'circle');
-    const style = getComputedStyle(path),
-      width = parseFloat(style.strokeWidth) || 2;
+    const width = parseFloat(style.strokeWidth) || 2;
     tip.setAttribute('r', String(width > 8 ? 0 : Math.max(0.22, width * 0.7)));
     tip.setAttribute('fill', path.style.stroke || path.getAttribute('stroke') || 'currentColor');
     tip.setAttribute('stroke', 'none');
@@ -120,6 +149,7 @@ function prepareText(text: SVGTextElement) {
         path.setAttribute('stroke-width', String(profile.stroke));
         path.setAttribute('stroke-linecap', 'round');
         path.setAttribute('stroke-linejoin', 'round');
+        registerGlyph(path, d);
         letter.append(path);
         strokes.push(path);
       });

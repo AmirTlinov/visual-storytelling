@@ -546,3 +546,20 @@
     min-width: 0;
   }
 }
+
+.ve-scene-resources {
+  margin-top: 16px;
+  font-size: 18px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.ve-scene-resources article {
+  margin-top: 16px;
+}
+.ve-scene-resources p {
+  margin: 8px 0;
+}
+.ve-scene-resources ul {
+  margin: 8px 0;
+  padding-left: 24px;
+}

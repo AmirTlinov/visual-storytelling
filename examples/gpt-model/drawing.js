@@ -6,6 +6,7 @@ import {
   placeLabels,
   SvgLayout,
   describeObject,
+  probabilityBar,
 } from '@visual-storytelling/core';
 
 // Subject geometry uses the public pen, lettering, hit-target and label owners.
@@ -71,6 +72,20 @@ export function drawing(view, { width, height, scale, compact }, input) {
     animate((amount) => mark.reveal(amount));
     obstacles.push({ x, y, width: w, height: h });
     return g;
+  };
+  const probability = (name, value, x, y, w, h, meaning) => {
+    const g = group(`${name}-group`);
+    const bar = probabilityBar({ ...view, layer: g.content }, name, value, {
+      x,
+      y,
+      width: w,
+      height: h,
+      size: compact ? size : Math.max(size, 30),
+      meaning,
+    });
+    disposers.push(bar.dispose);
+    obstacles.push({ x, y, width: w, height: h });
+    return bar;
   };
   const buttonDimensions = (bounds, w = 0, h = hit) => ({
     width: Math.max(w, hit, Math.ceil(bounds.width + 12)),
@@ -184,6 +199,7 @@ export function drawing(view, { width, height, scale, compact }, input) {
     note,
     line,
     box,
+    probability,
     group,
     button,
     buttonSize,

@@ -94,6 +94,7 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
   });
   return SceneStory.mount(parent, {
     ...presentation,
+    resources: document.resources,
     title: document.title ?? 'Рассказ',
     chapters,
     script: aligned,

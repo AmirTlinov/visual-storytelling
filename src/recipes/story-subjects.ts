@@ -1,3 +1,5 @@
+import { samplingSubject } from './sampling-subject.js';
+import { probabilitySubject } from './probability-subject.js';
 import { leverSubject } from './lever.js';
 import { leverComparisonSubject, routeComparisonSubject } from './comparison-owners.js';
 import { fractionsSubject } from './fractions-subject.js';
@@ -5,6 +7,8 @@ import { divisionSubject } from './division-subject.js';
 import { instructionalRouteSubject } from './dependency-route-subject.js';
 import type { StorySubjects } from '../story/subject.js';
 export const storySubjects: StorySubjects = {
+  probability: probabilitySubject,
+  sampling: samplingSubject,
   division: divisionSubject,
   lever: leverSubject(),
   'lever-comparison': leverComparisonSubject,

@@ -1,3 +1,5 @@
+import { conditionsPanel } from './scene/conditions.js';
+import type { StoryResource } from './story/resources.js';
 import { releaseResources } from './lifecycle.js';
 import { mountScene } from './scene-handle.js';
 import {
@@ -49,6 +51,7 @@ export interface SceneOptions {
         /** Below a stage frame, text keeps its screen size. Whole-scene frames include it. */
         placement?: 'overlay' | 'below';
       });
+  resources?: readonly StoryResource[];
   parameters?: (ControlParameter & { key: string })[];
   onInput?: (values: Record<string, ControlValue>) => void;
   onMode?: (mode: 'story' | 'explore') => void;
@@ -69,6 +72,8 @@ export interface SceneMount {
   setMode(mode: 'story' | 'explore'): void;
   /** Publish the current subject's frame without changing its clock, inputs or player. */
   setPresentation(presentation: SceneFramePresentation): void;
+  /** Replace the source disclosure through the same conditions owner. */
+  setResources(resources: readonly StoryResource[]): void;
   /** Update the shell's heading through the existing chapter navigation owner. */
   setTitle(title: string, options?: { visible?: boolean }): void;
   /** Reflect subject-owned edits in an editable shell; story edits use story.input(). */
@@ -116,7 +121,6 @@ const node = <K extends keyof HTMLElementTagNameMap>(
   if (text !== undefined) element.textContent = text;
   return element;
 };
-let shellSerial = 0;
 function mount(
   root: HTMLElement,
   {
@@ -125,6 +129,7 @@ function mount(
     presentation = 'explanation',
     appearance = 'sketch',
     parameters = [],
+    resources = [],
     onInput = () => {},
     onMode = () => {},
     exploration = 'model',
@@ -219,42 +224,15 @@ function mount(
   const sheet = completeFrame ? node('div') : root;
   const drawing = completeFrame ? node('div', { class: 've-scene-paper' }) : sheet;
   const composition = sceneFrame(completeFrame ? sheet : stage, frame);
-  const conditionsId = `ve-conditions-${++shellSerial}`,
-    conditions = node('div', {
-      id: conditionsId,
-      class: 've-scene-conditions',
-      popover: 'auto',
-      role: 'dialog',
-      'aria-label': 'Условия объяснения',
-    }),
-    conditionsButton = node(
-      'button',
-      {
-        type: 'button',
-        class: 've-conditions-trigger',
-        popovertarget: conditionsId,
-        'aria-expanded': 'false',
-        'aria-controls': conditionsId,
-        hidden: '',
-      },
-      'Условия',
+  const panel = conditionsPanel(
+      title,
+      () => composition.element.getBoundingClientRect().width,
+      abort.signal,
     ),
-    header = node('div', { class: 've-scene-header' }),
-    conditionsTitle = node('div', { class: 've-conditions-heading' });
-  conditionsTitle.append(
-    node('h2', {}, title),
-    node(
-      'button',
-      {
-        type: 'button',
-        popovertarget: conditionsId,
-        popovertargetaction: 'hide',
-        'aria-label': 'Закрыть условия',
-      },
-      '×',
-    ),
-  );
-  conditions.append(conditionsTitle);
+    conditions = panel.element,
+    conditionsButton = panel.button,
+    header = node('div', { class: 've-scene-header' });
+  panel.setResources(resources);
   header.append(heading, toolbar, conditionsButton);
   heading.title = title;
   let subjectWidth = frame.width,
@@ -270,7 +248,8 @@ function mount(
   else drawing.append(caption);
   if (completeFrame) root.append(composition.element);
   root.append(controls, status);
-  if (completeFrame) root.append(conditions);
+  root.append(conditions);
+  if (!completeFrame) composition.element.before(conditionsButton);
   let shownPresentation: SceneFramePresentation | undefined;
   const visibleContent = (element: Element): boolean => {
     if (element.hasAttribute('hidden') || getComputedStyle(element).display === 'none')
@@ -282,22 +261,14 @@ function mount(
       )
     );
   };
-  function placeConditions() {
-    if (!conditions.matches(':popover-open')) return;
-    const viewport = window.visualViewport,
-      left = viewport?.offsetLeft || 0,
-      top = viewport?.offsetTop || 0,
-      width = viewport?.width || innerWidth,
-      height = viewport?.height || innerHeight,
-      button = conditionsButton.getBoundingClientRect(),
-      panelWidth = Math.min(520, width - 16, composition.element.getBoundingClientRect().width);
-    conditions.style.width = `${Math.max(0, panelWidth)}px`;
-    conditions.style.maxHeight = `${Math.max(0, height - 16)}px`;
-    conditions.style.left = `${Math.max(left + 8, Math.min(button.right - panelWidth, left + width - panelWidth - 8))}px`;
-    conditions.style.top = `${Math.max(top + 8, Math.min(button.bottom + 6, top + height - conditions.getBoundingClientRect().height - 8))}px`;
-  }
+  const placeConditions = panel.place;
   function updateChrome(preserveFocus = false) {
-    if (!completeFrame || abort.signal.aborted) return;
+    if (abort.signal.aborted) return;
+    if (!completeFrame) {
+      conditionsButton.hidden = !panel.hasResources;
+      placeConditions();
+      return;
+    }
     const compact = composition.element.getBoundingClientRect().width < 640;
     const denseConditions = parameters.length > 3;
     // Opening Conditions exposes the inputs; only editing them enters an experiment.
@@ -311,7 +282,7 @@ function mount(
       hasUI = toolbarVisible || visibleContent(fields),
       popup = compact && hasUI,
       popupFields = (compact || denseConditions) && hasUI,
-      hasConditions = popupFields || showHistory;
+      hasConditions = popupFields || showHistory || panel.hasResources;
     sheet.dataset.compactChrome = String(compact);
     conditionsButton.hidden = !hasConditions;
     header.hidden = heading.hidden && !hasConditions && !toolbarVisible;
@@ -338,7 +309,8 @@ function mount(
         else sheet.prepend(header);
       }
       if (moved) {
-        const historyBar = conditions.querySelector(':scope > .ve-experiment-history');
+        const historyBar =
+          conditions.querySelector(':scope > .ve-experiment-history') ?? panel.resources;
         if (toolbarParent === conditions) conditions.insertBefore(toolbar, historyBar);
         else if (toolbar.parentElement !== header) conditionsButton.before(toolbar);
         if (fieldsParent === conditions) conditions.insertBefore(fields, historyBar);
@@ -359,28 +331,6 @@ function mount(
     }
     placeConditions();
   }
-  conditions.addEventListener(
-    'toggle',
-    () => {
-      conditionsButton.setAttribute('aria-expanded', String(conditions.matches(':popover-open')));
-      placeConditions();
-    },
-    options,
-  );
-  const dismissConditions = (event: Event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (conditions.matches(':popover-open')) conditions.hidePopover();
-    conditionsButton.focus({ preventScroll: true });
-  };
-  conditionsTitle.querySelector('button')!.addEventListener('click', dismissConditions, options);
-  conditions.addEventListener(
-    'keydown',
-    (event) => {
-      if (event.key === 'Escape' && !event.defaultPrevented) dismissConditions(event);
-    },
-    options,
-  );
   root.addEventListener('scene-frame-resize', () => updateChrome(true), options);
   // Actions/chapter navigation are public extension points of this shell.
   const chromeObserver = new MutationObserver(() => updateChrome());
@@ -587,10 +537,16 @@ function mount(
     },
     setMode,
     setPresentation,
+    setResources(resources: readonly StoryResource[]) {
+      assertLive();
+      panel.setResources(resources);
+      updateChrome(true);
+    },
     setTitle(next: string, options: { visible?: boolean } = {}) {
       assertLive();
       if (typeof next !== 'string') throw new Error('Scene title must be a string');
       title = next;
+      panel.setTitle(next);
       showHeading = options.visible ?? showHeading;
       heading.hidden = !showHeading;
       if (player) player.refreshHeading();
