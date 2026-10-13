@@ -512,9 +512,11 @@ test('the shared shell exports the complete vector composition, current conditio
       assert.equal(selected.focus, 0, 'temporary keyboard focus is not part of the drawing');
       const longTitle =
         'Почему направление и величина перемещения сохраняются при изменении системы координат';
-      await render.page.locator('.ve-select-trigger').evaluate((element, value) => {
-        element.textContent = value;
-      }, longTitle);
+      await render.page
+        .getByRole('combobox', { name: 'Глава', exact: true })
+        .evaluate((element, value) => {
+          element.textContent = value;
+        }, longTitle);
       const reading = await render.svg();
       const read = await render.page.evaluate((source) => {
         const parsed = new DOMParser().parseFromString(source, 'image/svg+xml');

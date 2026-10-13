@@ -1,3 +1,5 @@
+import { selectControl } from './fields.js';
+
 export interface PlayerState {
   value: number;
   paused: boolean;
@@ -29,6 +31,7 @@ function mount(
   {
     sound = false,
     speed = false,
+    onRate,
     forwardOnly = false,
     seekable = true,
     max = 1,
@@ -37,6 +40,7 @@ function mount(
   }: {
     sound?: boolean;
     speed?: boolean;
+    onRate?: (value: number) => void;
     forwardOnly?: boolean;
     seekable?: boolean;
     max?: number;
@@ -48,6 +52,7 @@ function mount(
   element.setAttribute('role', 'group');
   element.setAttribute('aria-label', 'Плеер');
   element.replaceChildren();
+  const abort = new AbortController();
   const button = (key: keyof typeof icons, label: string) => {
     const node = document.createElement('button');
     node.type = 'button';
@@ -81,17 +86,24 @@ function mount(
   time.setAttribute('aria-live', 'off');
   element.append(seek, time);
   const mute = sound ? button('mute', 'Выключить звук') : null;
-  const rate = speed ? document.createElement('select') : null;
+  const rate = speed
+    ? selectControl(
+        {
+          label: 'Скорость рассказа',
+          value: 1,
+          format: (value) => `${value}×`,
+          options: [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3].map((value) => ({
+            value,
+            label: `${value}×`,
+          })),
+        },
+        (value) => onRate?.(Number(value)),
+        { signal: abort.signal },
+      )
+    : null;
   if (rate) {
-    rate.setAttribute('aria-label', 'Скорость рассказа');
-    rate.className = 've-playback-rate';
-    for (const value of [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3]) {
-      const option = document.createElement('option');
-      option.value = String(value);
-      option.textContent = `${value}×`;
-      rate.append(option);
-    }
-    element.append(rate);
+    rate.trigger.classList.add('ve-playback-rate');
+    element.append(rate.trigger, rate.menu);
   }
   function update({
     value,
@@ -111,7 +123,7 @@ function mount(
     play.setAttribute('aria-label', label);
     play.title = label;
     if (next) next.disabled = !canNext;
-    if (rate) rate.value = String(playbackRate);
+    rate?.setValue(playbackRate);
     if (mute) {
       const label = muted ? 'Включить звук' : 'Выключить звук';
       mute.setAttribute('aria-label', label);
@@ -130,6 +142,7 @@ function mount(
     rate,
     update,
     dispose() {
+      abort.abort();
       element.replaceChildren();
       element.classList.remove('ve-player');
       for (const attribute of ['role', 'aria-label', 'data-seekable'])

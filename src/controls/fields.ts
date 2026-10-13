@@ -244,11 +244,10 @@ export function selectControl(
     trigger,
     menu,
     setValue(value: ControlValue) {
-      selected = Math.max(
-        0,
-        (p.options ?? []).findIndex((option) => option.value === value),
-      );
-      trigger.textContent = (p.options ?? [])[selected]?.label || 'Нет вариантов';
+      selected = (p.options ?? []).findIndex((option) => option.value === value);
+      trigger.textContent =
+        (p.options ?? [])[selected]?.label ??
+        (rows.length ? (p.format?.(value) ?? String(value)) : 'Нет вариантов');
       trigger.setAttribute('aria-label', p.label);
       menu.setAttribute('aria-label', p.label);
       trigger.disabled = Boolean(p.disabled) || !rows.length;

@@ -95,10 +95,10 @@ async function acknowledge(request, reason) {
   );
   try {
     await rendered(controller.signal);
-    if (!disposed) send({ type: 'ack', id: request.id, report: report(reason) });
+    if (!disposed) send({ type: 'ack', id: request.id, report: report(reason, request.detail) });
   } catch (error) {
     // Pausing already succeeded. A broken preparation must not make stop unavailable.
-    send({ type: 'ack', id: request.id, report: failedReport(error, reason) });
+    send({ type: 'ack', id: request.id, report: failedReport(error, reason, request.detail) });
   } finally {
     clearTimeout(timer);
   }

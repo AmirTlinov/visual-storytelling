@@ -105,11 +105,26 @@ export class ProjectStore {
     for (const item of (await readJSON(join(this.data, 'projects.json'))) ?? [])
       this.projects.set(item.id, item);
   }
-  async remember(item) {
+  remember(item) {
+    return this.#publish(item.id, () => item);
+  }
+  /** Derive metadata from the last committed record inside the single registry queue. */
+  update(id, patch) {
+    return this.#publish(id, () => {
+      const current = this.get(id);
+      const changes = typeof patch === 'function' ? patch(current) : patch;
+      return changes === undefined ? current : { ...current, ...changes };
+    });
+  }
+  async #publish(id, update) {
+    let item;
     this.registrySave = (this.registrySave ?? Promise.resolve())
       .catch(() => {})
       .then(async () => {
-        const next = new Map(this.projects).set(item.id, item);
+        item = update();
+        if (item.id !== id) throw new Error('A registry update cannot change project identity.');
+        if (item === this.projects.get(id)) return;
+        const next = new Map(this.projects).set(id, item);
         await writeJSON(join(this.data, 'projects.json'), [...next.values()]);
         this.projects.set(item.id, item);
       });
@@ -160,12 +175,14 @@ export class ProjectStore {
         await writeJSON(manifestFile, manifest);
       }
     }
-    const item = await this.remember({
-      ...this.projects.get(manifest.id),
+    const registration = {
       ...manifest,
       path,
       openedAt: new Date().toISOString(),
-    });
+    };
+    const item = await (this.projects.has(manifest.id)
+      ? this.update(manifest.id, registration)
+      : this.remember(registration));
     return this.serial(item.id, async () => {
       await this.recover(item);
       return this.inspect(item.id);

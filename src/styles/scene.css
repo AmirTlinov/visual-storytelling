@@ -436,10 +436,7 @@ html:has(> body.ve-standalone > .ve-scene[data-theme='dark']) {
   padding: 4px;
   font: inherit;
   font-size: 16px;
-  color: var(--ve-ink);
-  background: transparent;
-  border: 1px solid color-mix(in srgb, var(--ve-pencil) 55%, transparent);
-  border-radius: 8px;
+  white-space: nowrap;
 }
 .ve-experiment-history {
   display: flex;

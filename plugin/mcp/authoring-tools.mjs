@@ -67,11 +67,12 @@ export function authoringTools(server, runtime, uri, safely) {
     {
       title: 'Создать визуальное объяснение',
       description:
-        'Create from explanation:{model:{kind:"division",count,divisor}}. The standard staging shows objects, full groups, remainder and equation; supply both inputs, then continue the same card with story_edit operations. Version 1, model ID "division" and groups/equation views are filled by the document validator. Explicit IDs, views and title are optional; add score only to choose a specific order of actions, focus or holds. The saved document is always complete. Runtime is pinned immediately; no per-request npm, archive or compilation. The existing Story owns time and controls. Omit explanation for a source-code scaffold, or supply example="gpt-model" for the exemplar; those prepare through JobRunner. Voice and portable archives are optional production work.',
+        'Create from explanation:{model:{kind:"division",count,divisor}}. Supply sessionId to show the new explanation in that already open card, preserving a Back destination. The sessionId is bound to requestId; repeat the same request to resume unconfirmed delivery. Creation alone is not a shown frame: delivery is pending, prepared, shown or failed. The standard staging shows objects, full groups, remainder and equation; supply both inputs, then continue the same card with story_edit operations. Version 1, model ID "division" and groups/equation views are filled by the document validator. Explicit IDs, views and title are optional; add score only to choose a specific order of actions, focus or holds. The saved document is always complete. Runtime is pinned immediately; no per-request npm, archive or compilation. The existing Story owns time and controls. Omit explanation for a source-code scaffold, or supply example="gpt-model" for the exemplar; those prepare through JobRunner and do not accept sessionId. Voice and portable archives are optional production work.',
       inputSchema: {
         title: z.string().min(1).max(160),
         example: z.string().min(1).optional(),
         explanation: explanationInput.optional(),
+        sessionId: z.string().uuid().optional(),
         path: z.string().optional(),
         requestId,
       },

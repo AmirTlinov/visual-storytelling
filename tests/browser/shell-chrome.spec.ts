@@ -175,7 +175,7 @@ test('shared heading and controls remain physically readable while the complete 
   }
 });
 
-test('the current chapter heading opens one native menu and follows its story clock', async ({
+test('the current chapter heading opens the shared menu and follows its story clock', async ({
   page,
 }) => {
   await mount(page);
@@ -200,6 +200,116 @@ test('the current chapter heading opens one native menu and follows its story cl
   await page.evaluate(() => (window as any).chromeContract.root.scene.seek(0));
   await expect(chapter).toHaveText('Сначала заметим исходные значения');
   await expect(chapter).toBeFocused();
+});
+
+test('playback speed shares chapter selection, keyboard, dismissal and disposal', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await mount(page);
+  const speed = page.getByRole('combobox', { name: 'Скорость рассказа', exact: true });
+  const menu = page.getByRole('listbox', { name: 'Скорость рассказа', exact: true });
+  const chapter = page.getByRole('combobox', { name: 'Глава', exact: true });
+  const rate = () => page.evaluate(() => (window as any).chromeContract.story.player.state.rate);
+  await expect(speed).toHaveClass(/ve-select-trigger/);
+  await expect(page.locator('.ve-player select')).toHaveCount(0);
+  await expect(speed).toHaveText('1×');
+  await speed.focus();
+  await speed.press('ArrowDown');
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('option', { name: '1×', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await speed.press('ArrowDown');
+  await speed.press('Enter');
+  await expect(menu).toBeHidden();
+  await expect(speed).toBeFocused();
+  await expect(speed).toHaveText('1.25×');
+  expect(await rate()).toBe(1.25);
+  await page.evaluate(() => (window as any).chromeContract.story.player.rate(1.7));
+  await expect(speed).toHaveText('1.7×');
+  await speed.press('Enter');
+  await expect(menu.locator('[aria-selected="true"]')).toHaveCount(0);
+  await speed.press('Escape');
+  expect(await rate()).toBe(1.7);
+  // Playback updates the same selected value without moving focus or recreating the menu.
+  await page.evaluate(() => (window as any).chromeContract.story.player.rate(0.5));
+  await expect(speed).toHaveText('0.5×');
+  await expect(speed).toBeFocused();
+  await speed.press('Enter');
+  await speed.press('End');
+  await speed.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(speed).toBeFocused();
+  expect(await rate()).toBe(0.5);
+  await speed.click();
+  await menu.getByRole('option', { name: '2×', exact: true }).click();
+  await expect(speed).toHaveText('2×');
+  await expect(speed).toBeFocused();
+  expect(await rate()).toBe(2);
+  await speed.click();
+  await chapter.click();
+  await expect(menu).toBeHidden();
+  await expect(page.getByRole('listbox', { name: 'Глава', exact: true })).toBeVisible();
+  await expect(page.locator('.ve-select-list:popover-open')).toHaveCount(1);
+  await chapter.press('Escape');
+  await speed.click();
+  await page.locator('.ve-stage').click();
+  await expect(menu).toBeHidden();
+  expect(await rate()).toBe(2);
+  await speed.click();
+  const disposed = await page.evaluate(() => {
+    const trigger = document.querySelector('.ve-playback-rate') as HTMLElement;
+    const options = document.getElementById(trigger.getAttribute('aria-controls')!)!;
+    const oldOption = options.querySelector('[role="option"]') as HTMLElement;
+    (window as any).chromeContract.shell.dispose();
+    oldOption.click();
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return { connected: options.isConnected, open: options.matches(':popover-open') };
+  });
+  expect(disposed).toEqual({ connected: false, open: false });
+  await expect(page.locator('.ve-select-list:popover-open')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('shared playback menu fits narrow light and dark surfaces with full-size choices', async ({
+  page,
+}) => {
+  await mkdir(resolve('artifacts/frame-consistency'), { recursive: true });
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    for (const width of [320, 390, 960]) {
+      await page.setViewportSize({ width, height: 844 });
+      await mount(page);
+      const speed = page.getByRole('combobox', { name: 'Скорость рассказа', exact: true });
+      await speed.click();
+      const menu = page.getByRole('listbox', { name: 'Скорость рассказа', exact: true });
+      await expect(menu).toBeVisible();
+      const bounds = (await menu.boundingBox())!;
+      expect(bounds.x).toBeGreaterThanOrEqual(7.5);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(width - 7.5);
+      expect(bounds.y).toBeGreaterThanOrEqual(7.5);
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(844 - 7.5);
+      for (const option of await menu.getByRole('option').all()) {
+        expect((await option.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+        expect(
+          await option.evaluate((node) => parseFloat(getComputedStyle(node).fontSize)),
+        ).toBeGreaterThanOrEqual(16);
+      }
+      const triggerBounds = (await speed.boundingBox())!;
+      expect(triggerBounds.width).toBeGreaterThanOrEqual(44);
+      expect(triggerBounds.height).toBeGreaterThanOrEqual(44);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
+        false,
+      );
+      await page.screenshot({
+        path: resolve('artifacts/frame-consistency', `speed-${width}-${colorScheme}.png`),
+      });
+      await speed.press('Escape');
+    }
+  }
 });
 
 test('compact conditions retain the same field, value, history and clock across reflow', async ({

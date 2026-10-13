@@ -25,9 +25,34 @@ let session,
   polling = false,
   loadTimer;
 let provisional;
-const creationMetrics = { inputAt: undefined, firstContentAt: undefined, confirmedAt: undefined };
+// Time when this app module starts executing; this excludes host resource fetch time.
+const resourceMountedAt = performance.now();
+let creationMetrics = { timeOrigin: performance.timeOrigin, resourceMountedAt };
 window.__visualStoryCreationMetrics = creationMetrics;
+function observeContent(renderStatus, confirmed = false) {
+  if (!['prepared', 'rendered'].includes(renderStatus)) return;
+  const now = performance.now();
+  creationMetrics.firstPreparedAt ??= now;
+  if (confirmed) creationMetrics.confirmedPreparedAt ??= now;
+  // The scene's rendered acknowledgement reports frame opportunities, not pixels.
+  if (renderStatus === 'rendered') {
+    creationMetrics.firstContentAt ??= now;
+    if (confirmed) creationMetrics.confirmedAt ??= now;
+  }
+}
+function discardProvisional() {
+  if (!provisional) return;
+  provisional = undefined;
+  frame.srcdoc = '';
+  frame.hidden = true;
+  delete frame.dataset.provisional;
+  $('notice').hidden = true;
+}
 function previewInput({ arguments: args } = {}) {
+  if (args?.sessionId) {
+    if (!session) discardProvisional();
+    return;
+  }
   if (session || !args?.explanation) return;
   creationMetrics.inputAt ??= performance.now();
   let document;
@@ -122,6 +147,9 @@ const send = (value) =>
     '*',
   );
 async function call(action, args = {}) {
+  const metrics = creationMetrics;
+  if (action === 'attach') metrics.attachStartedAt ??= performance.now();
+  if (args.report) metrics.firstReportStartedAt ??= performance.now();
   const result = await app.callServerTool({
     name: 'story_view',
     arguments: {
@@ -130,8 +158,10 @@ async function call(action, args = {}) {
       renderer,
       generation: session?.generation,
       ...args,
+      ...(args.report && { report: { ...args.report, metrics: { ...metrics } } }),
     },
   });
+  if (action === 'attach') metrics.attachCompletedAt ??= performance.now();
   if (result.isError)
     throw Object.assign(
       new Error(result.content?.find((c) => c.type === 'text')?.text ?? 'Connection failed'),
@@ -335,6 +365,7 @@ async function mount(result) {
     return;
   }
   if (!result.structuredContent?.sessionId) return;
+  creationMetrics.toolResultAt ??= performance.now();
   $('catalog').hidden = true;
   frame.hidden = false;
   error('');
@@ -571,13 +602,11 @@ addEventListener('message', (event) => {
   ) {
     if (data.type === 'ready') {
       provisional.ready = true;
-      if (data.report?.renderStatus === 'rendered')
-        creationMetrics.firstContentAt ??= performance.now();
+      observeContent(data.report?.renderStatus);
       if (provisional.confirmation) sendPreview('confirm-preview', provisional.confirmation);
       else sendPreview('author-preview', { document: provisional.document });
     }
-    if (data.type === 'preview-content' && data.renderStatus === 'rendered')
-      creationMetrics.firstContentAt ??= performance.now();
+    if (data.type === 'preview-content') observeContent(data.renderStatus);
     if (data.type === 'error') error(data.message);
     return;
   }
@@ -617,7 +646,10 @@ addEventListener('message', (event) => {
       frame.style.setProperty('--scene-height', `${Math.ceil(data.height)}px`);
     return;
   }
-  if (data.report) report = data.report;
+  if (data.report) {
+    report = data.report;
+    observeContent(data.report.renderStatus, true);
+  }
   if (
     recoveryAck &&
     ((data.type === 'ready' && recoveryAck.id === undefined) ||
@@ -645,10 +677,6 @@ addEventListener('message', (event) => {
     if (provisional) {
       provisional = undefined;
       delete frame.dataset.provisional;
-    }
-    if (data.report?.renderStatus === 'rendered') {
-      creationMetrics.firstContentAt ??= performance.now();
-      creationMetrics.confirmedAt ??= performance.now();
     }
     setConnectionState('connected');
     clearTimeout(loadTimer);
@@ -720,6 +748,8 @@ async function open(result) {
   candidate = undefined;
   failedRevision = undefined;
   modelContext = frameContext(app, extensions);
+  creationMetrics = { timeOrigin: performance.timeOrigin, resourceMountedAt };
+  window.__visualStoryCreationMetrics = creationMetrics;
   $('update').hidden = true;
   $('back').hidden = true;
   error('');
@@ -743,6 +773,15 @@ $('back').onclick = async () => {
   }
 };
 app.ontoolresult = (result) => {
+  if (result.structuredContent?.presentation?.kind === 'existing-card') {
+    // Navigation belongs to the mounted card. A host may create a redundant resource
+    // from the tool's static UI metadata; it must never attach the destination too.
+    if (!session) {
+      discardProvisional();
+      void app.requestTeardown().catch((e) => error(e.message));
+    }
+    return;
+  }
   if (result.isError) {
     error(result.content?.find((c) => c.type === 'text')?.text ?? 'Не удалось открыть объяснение.');
     return;

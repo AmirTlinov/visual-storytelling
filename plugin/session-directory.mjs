@@ -1,6 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { failure } from './errors.mjs';
 import { presentSession } from './mcp/presentation.mjs';
+import { viewMetrics } from './mcp/schema.mjs';
 
 const digest = (value) =>
   createHash('sha256')
@@ -94,6 +95,7 @@ export class SessionDirectory {
             : 'opening'
         : 'closed',
       observedAt: session.observedAt,
+      presentationMetrics: session.presentationMetrics,
       state: session.state,
       update: session.nextBuild
         ? {
@@ -316,6 +318,7 @@ export class SessionDirectory {
       report.renderStatus !== 'failed';
     let acceptedReport = false;
     if (report) {
+      const metrics = report.metrics === undefined ? undefined : viewMetrics.parse(report.metrics);
       if (
         !Number.isSafeInteger(report.stateRevision) ||
         report.stateRevision < 0 ||
@@ -343,6 +346,20 @@ export class SessionDirectory {
           (!acknowledgements.length || acknowledgements.some((ack) => s.pending.has(ack.id)));
       if (currentFrame && report.stateRevision >= s.stateRevision) {
         acceptedReport = true;
+        if (metrics) {
+          const current = { ...metrics, renderer, generation };
+          const first = s.presentationMetrics?.first;
+          s.presentationMetrics = {
+            first: !first
+              ? current
+              : first.renderer === renderer &&
+                  first.generation === generation &&
+                  first.timeOrigin === metrics.timeOrigin
+                ? { ...first, ...metrics }
+                : first,
+            current,
+          };
+        }
         if (identifiedAuthor) {
           s.build = attempt.build;
           s.appliedAuthor = attempt;
