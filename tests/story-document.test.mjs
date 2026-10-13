@@ -20,6 +20,9 @@ const { documentNarration, documentScript, documentChapter, authoredChapter } = 
   'data:text/javascript;base64,' + Buffer.from(source.outputFiles[0].text).toString('base64')
 );
 const document = {
+  version: 1,
+  models: [],
+  views: [],
   title: 'Путь света',
   chapters: [
     {
@@ -55,7 +58,7 @@ test('speech projection follows the scene consumer inherited from its workspace'
     );
     await writeFile(
       join(consumer, 'dist/story/document.js'),
-      'export const documentNarration = document => ({ owner: "scene-consumer-7", title: document.title, intro: .75 });',
+      'export const documentNarration = document => ({ owner: "scene-consumer-7", title: document.title, intro: .75, segments: [{ id: "fixture", text: "Речь." }] });',
     );
     await writeFile(join(scene, 'story.json'), JSON.stringify(document));
     projection = await narrationSource(scene);
@@ -64,6 +67,7 @@ test('speech projection follows the scene consumer inherited from its workspace'
       owner: 'scene-consumer-7',
       title: document.title,
       intro: 0.75,
+      segments: [{ id: 'fixture', text: 'Речь.' }],
     });
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -112,6 +116,9 @@ test('one authored document feeds action IDs, speech and exact aligned chapter b
 
 test('local chapters start immediately while optional narration reserves the final action tail', () => {
   const quiet = {
+    version: 1,
+    models: [],
+    views: [],
     title: 'Проверка площади',
     chapters: [
       {
@@ -182,6 +189,9 @@ test('aligned chapter local time preserves spoken words and the final action tai
 
 test('document action timing survives speech projection and uses existing time after its phrase', () => {
   const story = {
+    version: 1,
+    models: [],
+    views: [],
     title: 'Действие',
     chapters: [
       {
@@ -223,19 +233,8 @@ test('document action timing survives speech projection and uses existing time a
   assert.equal(script.segments, aligned.segments);
 
   story.chapters[0].beats[0].timing.duration = 2;
-  const malformed = documentNarration(story).segments[0].cues[0].timing;
-  assert.equal(malformed.duration, 2, 'projection preserves invalid JSON for the cue validator');
-  assert.throws(
-    () =>
-      documentScript(story, {
-        ...aligned,
-        cues: {
-          ...aligned.cues,
-          'lesson.start': { ...aligned.cues['lesson.start'], timing: malformed },
-        },
-      }),
-    /exactly one of duration or until/,
-  );
+  assert.throws(() => documentNarration(story), /provide duration or until/);
+  assert.throws(() => documentScript(story, aligned), /provide duration or until/);
 });
 
 test('repeated thoughts bind to their own spoken words, including a quote inside an earlier thought', async () => {
@@ -247,6 +246,9 @@ test('repeated thoughts bind to their own spoken words, including a quote inside
     'Ток идет!',
   ];
   const spec = documentNarration({
+    version: 1,
+    models: [],
+    views: [],
     title: 'Повтор',
     chapters: [
       {
@@ -287,9 +289,12 @@ test('repeated thoughts bind to their own spoken words, including a quote inside
   assert.throws(
     () =>
       documentNarration({
+        version: 1,
+        models: [],
+        views: [],
         title: 'Invalid',
         chapters: [{ id: 'room', title: 'Room', beats: [{ say: 'Речь.', text: 'Действие' }] }],
       }),
-    /unique ID/,
+    /stable ID/,
   );
 });

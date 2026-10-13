@@ -1,3 +1,4 @@
+import { normalizeStoryDocument } from '../dist/story/document.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -21,11 +22,12 @@ test(
         stdin: {
           resolveDir: process.cwd(),
           contents: `
-          import {mountExplanation} from './src/explanation/mount.ts';
+          import {mountStoryDocument} from './src/story/mount.ts';
+          import {normalizeStoryDocument} from './src/story/document.ts';
           import './src/style.css';
-          window.galleryReady = mountExplanation(document.querySelector('main'), {
+          window.galleryReady = mountStoryDocument(document.querySelector('main'), normalizeStoryDocument({
             model:{kind:'division',count:11,divisor:3}
-          }).then(scene => {window.initialScene = scene});
+          })).then(scene => {window.initialScene = scene});
         `,
         },
         bundle: true,
@@ -66,7 +68,7 @@ test(
             (element) => element.dataset.object,
           ),
         }));
-      assert.equal((await observe()).document.model.id, 'division');
+      assert.equal((await observe()).document.models[0].id, 'division');
       const send = (request, sessionId = 'preview', generation = -1) =>
         page.evaluate(
           ({ request, sessionId, generation }) => {
@@ -81,13 +83,15 @@ test(
         );
       await send({
         type: 'author-preview',
-        document: { model: { id: 'apples', kind: 'division', count: 11, divisor: 3 } },
+        document: normalizeStoryDocument({
+          model: { id: 'apples', kind: 'division', count: 11, divisor: 3 },
+        }),
       });
       await page.waitForFunction(() =>
         messages.some((message) => message.type === 'preview-content'),
       );
       const preview = await observe();
-      assert.equal(preview.document.model.id, 'apples');
+      assert.equal(preview.document.models[0].id, 'apples');
       assert.equal(preview.state.id, 'apples');
       assert.ok(preview.ids.every((id) => id.startsWith('apples:')));
       assert.ok(preview.sameHandle);
@@ -100,7 +104,7 @@ test(
         const replace = owner.replace;
         owner.replace = async (document, options) => {
           authoringCalls.push({
-            id: document.model.id,
+            id: document.models[0].id,
             provisional: options?.provisional === true,
           });
           if (document.title === 'Confirmed') {
@@ -112,7 +116,7 @@ test(
           return replace(document, options);
         };
         addEventListener('message', (event) => {
-          if (event.data?.document?.model?.id === 'stale') window.staleReceived = true;
+          if (event.data?.document?.models?.[0]?.id === 'stale') window.staleReceived = true;
         });
       });
       await send({
@@ -125,7 +129,9 @@ test(
       await frame.waitForFunction(() => window.confirmationEntered);
       await send({
         type: 'author-preview',
-        document: { model: { id: 'stale', kind: 'division', count: 30, divisor: 6 } },
+        document: normalizeStoryDocument({
+          model: { id: 'stale', kind: 'division', count: 30, divisor: 6 },
+        }),
       });
       await frame.waitForFunction(() => window.staleReceived);
       await frame.evaluate(() => window.releaseConfirmation());
@@ -157,7 +163,11 @@ test(
       ]);
       assert.ok(page.frames().includes(frame), 'confirmation preserves the iframe');
       assert.ok((await observe()).sameHandle);
-      const edited = { ...canonical, title: 'Edited', model: { ...canonical.model, count: 17 } };
+      const edited = {
+        ...canonical,
+        title: 'Edited',
+        models: [{ ...canonical.models[0], inputs: { ...canonical.models[0].inputs, count: 17 } }],
+      };
       const accepted = await command({
         op: 'author',
         stateRevision: 7,
@@ -173,7 +183,14 @@ test(
       assert.equal(beforeRename.state.count, 17);
       const rename = {
         ...edited,
-        model: { ...edited.model, id: 'oranges' },
+        models: [{ ...edited.models[0], id: 'oranges' }],
+        chapters: edited.chapters.map((chapter) => ({
+          ...chapter,
+          beats: chapter.beats.map((beat) => ({
+            ...beat,
+            ...(beat.staging && { staging: { ...beat.staging, model: 'oranges' } }),
+          })),
+        })),
         views: edited.views.map((view) => ({ ...view, model: 'oranges' })),
       };
       const invalid = await command({

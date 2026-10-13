@@ -27,7 +27,7 @@ import { readPinnedRuntime } from '../../tools/runtime-package.mjs';
 import { videoDimensions } from '../../tools/video-dimensions.mjs';
 import { createScene } from '../../tools/create-scene.mjs';
 import { prepareLiveProject } from '../live-project.mjs';
-import { validateExplanation } from '../../dist/explanation/document.js';
+import { normalizeStoryDocument } from '../../dist/story/document.js';
 
 const [socketPath, data] = process.argv.slice(2),
   directory = await realpath(dirname(process.argv[1]));
@@ -256,7 +256,7 @@ async function createLiveProject(project, input, requestId) {
     : await createScene(project.path, {
         root: resolve(directory, '../..'),
         title: input.title,
-        explanation: input.explanation,
+        document: input.document,
         example: input.example,
       });
   const authored = {
@@ -346,7 +346,7 @@ async function observeCreationDelivery(session) {
   });
 }
 
-async function deliverCreatedExplanation(receipt, fromSessionId) {
+async function deliverCreatedDocument(receipt, fromSessionId) {
   if (!fromSessionId) return receipt;
   const projectId = receipt.project.id;
   const response = () => ({
@@ -378,7 +378,7 @@ async function deliverCreatedExplanation(receipt, fromSessionId) {
     if (source.navigation && source.navigation.sessionId !== receipt.sessionId)
       throw failure(
         'navigation_conflict',
-        'The original card is already opening another explanation.',
+        'The original card is already opening another document.',
       );
     await rememberCreationDelivery(projectId, {
       renderer: source.renderer,
@@ -389,7 +389,7 @@ async function deliverCreatedExplanation(receipt, fromSessionId) {
       target: { sessionId: receipt.sessionId },
     });
     if (destinationResult.sessionId !== receipt.sessionId)
-      throw failure('navigation_conflict', 'The original card opened another explanation.');
+      throw failure('navigation_conflict', 'The original card opened another document.');
     return response();
   } catch (error) {
     const current = projects.get(projectId).creation.delivery;
@@ -567,15 +567,18 @@ const operations = {
       return decorate(s);
     });
   },
-  async create({ path, title = 'Новое объяснение', example, explanation, requestId, sessionId }) {
-    if (sessionId !== undefined && explanation === undefined)
+  async create({ path, title = 'Новое объяснение', example, document, requestId, sessionId }) {
+    if (sessionId !== undefined && document === undefined)
       throw new Error(
-        'sessionId requires a prepared explanation; source-code scaffolds and examples open after preparation.',
+        'sessionId requires a prepared document; source-code scaffolds and examples open after preparation.',
       );
-    if (explanation !== undefined) {
-      if (example !== undefined)
-        throw new Error('Choose an explanation document or a copied example.');
-      explanation = validateExplanation(explanation);
+    if (document !== undefined) {
+      if (example !== undefined) throw new Error('Choose a story document or a copied example.');
+      document = normalizeStoryDocument(document);
+      if (!document.models.length)
+        throw new Error(
+          'Prepared creation requires a model. Create a source scaffold for custom chapter presentation factories.',
+        );
     }
     return projects.serial('create:' + requestId, async () => {
       const requestedPath = path;
@@ -585,7 +588,7 @@ const operations = {
         const requested = {
           title,
           ...(example !== undefined ? { example } : {}),
-          explanation,
+          document,
           ...(sessionId !== undefined ? { sessionId } : {}),
           ...(path ? { path: await projects.canonicalPath(path) } : {}),
         };
@@ -600,13 +603,13 @@ const operations = {
         const receipt =
           previousLive.creation.receipt ??
           (await createLiveProject(previousLive, requested, requestId));
-        return deliverCreatedExplanation(receipt, sessionId);
+        return deliverCreatedDocument(receipt, sessionId);
       }
       const previous = jobs.forRequest(requestId);
       if (previous) {
         if (
           previous.kind !== 'create' ||
-          explanation !== undefined ||
+          document !== undefined ||
           previous.input.title !== title ||
           previous.input.example !== example ||
           (path && previous.input.projectPath !== (await realpath(path)))
@@ -626,18 +629,18 @@ const operations = {
       const input = {
         title,
         ...(example !== undefined ? { example } : {}),
-        explanation,
+        document,
         ...(sessionId !== undefined ? { sessionId } : {}),
         ...(requestedPath ? { path } : {}),
       };
       const project = await projects.create(path, {
         title,
         example,
-        ...(explanation !== undefined ? { creation: { requestId, input } } : {}),
+        ...(document !== undefined ? { creation: { requestId, input } } : {}),
       });
-      if (explanation !== undefined) {
+      if (document !== undefined) {
         const input = projects.get(project.id).creation.input;
-        return deliverCreatedExplanation(
+        return deliverCreatedDocument(
           await createLiveProject(project, input, requestId),
           sessionId,
         );
@@ -869,7 +872,7 @@ const operations = {
       let destination;
       if (back) {
         const id = source.returnTo?.at(-1);
-        if (!id) throw new Error('No earlier explanation to return to.');
+        if (!id) throw new Error('No earlier document to return to.');
         destination = await operations.open({ sessionId: id });
       } else {
         destination = await operations.open(target ?? {});

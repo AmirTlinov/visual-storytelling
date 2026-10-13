@@ -1,5 +1,8 @@
 {
+  "version": 1,
   "title": "Chapter owner fixture",
+  "models": [],
+  "views": [],
   "chapters": [
     {
       "id": "workshop",

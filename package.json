@@ -73,7 +73,7 @@
   "sideEffects": [
     "**/*.css",
     "./plugin/ui/live-scene.mjs",
-    "./tools/explanation/**",
+    "./tools/story/**",
     "./examples/**",
     "./tests/fixtures/**"
   ],

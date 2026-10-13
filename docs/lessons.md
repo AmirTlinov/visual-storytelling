@@ -1,7 +1,8 @@
 # Рассказ и подробный урок
 
-`StoryDocument` из `@visual-storytelling/core/story` хранит главы и действия.
-Видимый `text` обязателен; `say` задаёт отличающуюся реплику. Без озвучки работают
+Версионируемый `StoryDocument` из `@visual-storytelling/core/story` хранит предметные
+модели, представления и необязательные главы с действиями. `text` и `say` необязательны;
+`say` задаёт отличающуюся реплику. Без озвучки работают
 тихие метки: `seconds` или длительность чтения. `timing` растягивает действие до
 следующей метки либо на заданное число секунд. Голос добавляет выровненные слова
 к тому же документу; вводных пауз и переходов по умолчанию нет.
@@ -15,6 +16,9 @@ import { areaDiagram } from '@visual-storytelling/core/recipes';
 
 await IllustratedStory.mount(root, {
   document: {
+    version: 1,
+    models: [],
+    views: [],
     title: 'Площадь прямоугольника',
     chapters: [
       {
@@ -84,6 +88,9 @@ review; эта строка сама не появляется в кадре и 
 
 ```js
 const document = {
+  version: 1,
+  models: [],
+  views: [],
   title: 'Остаток',
   chapters: [
     {

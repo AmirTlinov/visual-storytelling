@@ -22,7 +22,6 @@ export { default as rough } from 'roughjs';
 export { gsap } from 'gsap';
 export * from './explorer/index.js';
 export * from './host/widget-state.js';
-export * from './explanation/index.js';
 export {
   divisionState,
   divisionProgress,

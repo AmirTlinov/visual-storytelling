@@ -43,7 +43,26 @@ export type { ChapterIntroduction } from './composition-plan.js';
 
 export { inkChapter } from './ink-chapter.js';
 export type { InkDrawing, InkViewport } from './ink-chapter.js';
-export { authoredChapter, documentNarration, documentScript, documentChapter } from './document.js';
-export type { StoryDocument, AuthoredBeat } from './document.js';
+export {
+  authoredChapter,
+  documentNarration,
+  documentScript,
+  documentChapter,
+  validateStoryDocument,
+  normalizeStoryDocument,
+  editStoryDocument,
+} from './document.js';
+export type {
+  StoryDocument,
+  AuthoredBeat,
+  AuthoredChapter,
+  StoryModel,
+  StoryView,
+  StoryOperation,
+  BeatStaging,
+} from './document.js';
+export { compileStoryDocument } from './compiler.js';
+export { mountStoryDocument } from './mount.js';
+export type { StoryDocumentMountOptions } from './mount.js';
 export { IllustratedStory } from './illustrated.js';
 export type { IllustratedStoryOptions } from './illustrated.js';

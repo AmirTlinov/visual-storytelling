@@ -9,7 +9,7 @@ import { chromium } from 'playwright';
 import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { pluginHost } from './plugin/host.mjs';
 import { ProjectStore } from '../plugin/projects.mjs';
-import { validateExplanation } from '../dist/explanation/document.js';
+import { normalizeStoryDocument } from '../dist/story/document.js';
 
 test(
   'MCP reconnect resumes a reserved creation before its manifest without a second project',
@@ -20,17 +20,17 @@ test(
         const temporary = await mkdtemp(join(tmpdir(), 'story-hot-reservation-'));
         const dataDirectory = join(temporary, 'data');
         const path = join(temporary, 'reserved');
-        const explanation = { model: { kind: 'division', count: 13, divisor: 3 } };
+        const document = { model: { kind: 'division', count: 13, divisor: 3 } };
         const request = {
           title: 'Reserved creation',
           requestId: randomUUID(),
-          explanation,
+          document,
           ...(explicit ? { path } : {}),
         };
         const store = new ProjectStore(dataDirectory);
         const input = {
           title: request.title,
-          explanation: validateExplanation(explanation),
+          document: normalizeStoryDocument(document),
           ...(explicit ? { path } : {}),
         };
         const remember = store.remember.bind(store);
@@ -158,7 +158,7 @@ test(
       title,
       path: join(temporary, title),
       requestId: randomUUID(),
-      explanation: { model: { kind: 'division', count, divisor: 3 } },
+      document: { model: { kind: 'division', count, divisor: 3 } },
       ...(sessionId && { sessionId }),
     });
     try {
@@ -293,8 +293,8 @@ test(
       assert.equal(await duplicateApp.locator('#scene[data-provisional]').count(), 0);
       // Streaming may deliver a complete model before the optional target field.
       await duplicate.evaluate(
-        (explanation) => window.pluginTest.partial({ explanation }),
-        failedRequest.explanation,
+        (document) => window.pluginTest.partial({ document }),
+        failedRequest.document,
       );
       await duplicateApp.locator('#scene[data-provisional="true"]').waitFor();
       await duplicate.evaluate((args) => window.pluginTest.partial(args), failedRequest);
@@ -302,8 +302,8 @@ test(
       assert.equal(await duplicateApp.locator('#scene').getAttribute('srcdoc'), '');
       // The result must independently clear a preview, even if no later partial arrives.
       await duplicate.evaluate(
-        (explanation) => window.pluginTest.partial({ explanation }),
-        failedRequest.explanation,
+        (document) => window.pluginTest.partial({ document }),
+        failedRequest.document,
       );
       await duplicateApp.locator('#scene[data-provisional="true"]').waitFor();
       await duplicate.evaluate((result) => window.pluginTest.result(result), resumed);
@@ -359,7 +359,7 @@ test(
           title: 'Prepared original',
           path: join(temporary, 'original'),
           requestId: randomUUID(),
-          explanation: { model: { kind: 'division', count: 13, divisor: 3 } },
+          document: { model: { kind: 'division', count: 13, divisor: 3 } },
         },
       });
       assert.equal(originalResult.isError, undefined);
@@ -371,7 +371,7 @@ test(
         path: join(temporary, 'destination'),
         requestId: randomUUID(),
         sessionId: originalId,
-        explanation: { model: { kind: 'division', count: 17, divisor: 3 } },
+        document: { model: { kind: 'division', count: 17, divisor: 3 } },
       };
       const nextResult = await host.client.callTool({ name: 'story_create', arguments: request });
       assert.equal(nextResult.isError, undefined);

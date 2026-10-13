@@ -26,6 +26,9 @@ const { composeChapters } = await sourceModule('src/story/composition-plan.ts');
 const { compileScore } = await sourceModule('src/characters/score.ts');
 
 const quiet = {
+  version: 1,
+  models: [],
+  views: [],
   title: 'Группы',
   chapters: [
     {
@@ -37,7 +40,7 @@ const quiet = {
           action: 'Собрать предметы в группы',
           seconds: 2,
           timing: { duration: 1.5, delay: 0.25 },
-          focus: ['objects'],
+          actors: { hero: 'point' },
         },
         {
           id: 'inspect',
@@ -55,7 +58,7 @@ test('visual actions and holds need no title, text, captions or invented speech 
   const chapter = documentChapter(quiet, 'groups');
   assert.equal(chapter.seconds, 6);
   assert.equal(chapter.text, '');
-  assert.deepEqual(chapter.beats[0].focus, ['objects']);
+  assert.deepEqual(chapter.beats[0].actors, { hero: 'point' });
   assert.equal(chapter.beats[0].text, undefined);
   assert.equal(chapter.beats[0].timing, undefined);
   assert.deepEqual(chapter.script.cues.gather, {
@@ -80,6 +83,9 @@ test('visual actions and holds need no title, text, captions or invented speech 
 
 test('explicit silence retains a visible caption as authored metadata without speaking it', () => {
   const document = {
+    version: 1,
+    models: [],
+    views: [],
     title: 'Пауза',
     chapters: [
       {
@@ -110,6 +116,9 @@ test('explicit silence retains a visible caption as authored metadata without sp
 
 test('an explicit silent action duration supplies local timing while a longer authored hold remains intact', () => {
   const document = {
+    version: 1,
+    models: [],
+    views: [],
     title: 'Движение',
     chapters: [
       {
@@ -137,6 +146,9 @@ test('an explicit silent action duration supplies local timing while a longer au
 });
 
 const mixed = {
+  version: 1,
+  models: [],
+  views: [],
   title: 'Сначала посмотреть, затем услышать',
   chapters: [
     { id: 'opening', title: 'Начало', beats: [{ id: 'show', seconds: 1.5 }] },
@@ -268,6 +280,9 @@ test('a stale narration gap cannot silently discard or overlap an authored silen
 
 test('a spoken action reserves its tail before the following silent hold', () => {
   const document = {
+    version: 1,
+    models: [],
+    views: [],
     title: 'Движение',
     chapters: [
       {
@@ -312,6 +327,9 @@ test('a spoken action reserves its tail before the following silent hold', () =>
 
 test('fractional silent chapter boundaries survive acoustic sample rounding and composition', () => {
   const document = {
+    version: 1,
+    models: [],
+    views: [],
     title: 'Граница',
     chapters: [
       {
@@ -397,6 +415,9 @@ function alignRequestedNarration(projection) {
 for (const following of ['spoken', 'silent', 'end']) {
   test(`a final spoken action reserves its tail before ${following === 'end' ? 'story end' : `the next ${following} chapter`}`, () => {
     const document = {
+      version: 1,
+      models: [],
+      views: [],
       title: 'Завершить движение',
       narration: { intro: 0.2, pause: 0.6, outro: 0.3 },
       chapters: [
@@ -439,6 +460,9 @@ for (const following of ['spoken', 'silent', 'end']) {
 
 test('a spoken tail already reserved before a silent beat is not added again at chapter end', () => {
   const document = {
+    version: 1,
+    models: [],
+    views: [],
     title: 'Пауза',
     narration: { pause: 0.6, outro: 0.3 },
     chapters: [

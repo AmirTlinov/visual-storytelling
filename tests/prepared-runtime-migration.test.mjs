@@ -37,8 +37,8 @@ async function permissions(directory, immutable) {
 async function release(installation, value) {
   const staging = join(installation, 'releases', 'staging-' + value);
   await mkdir(join(staging, 'dist'), { recursive: true });
-  await mkdir(join(staging, 'dist/explanation'), { recursive: true });
-  await mkdir(join(staging, 'tools/explanation'), { recursive: true });
+  await mkdir(join(staging, 'dist/story'), { recursive: true });
+  await mkdir(join(staging, 'tools/story'), { recursive: true });
   await mkdir(join(staging, 'plugin/dist'), { recursive: true });
   await writeFile(
     join(staging, 'package.json'),
@@ -51,10 +51,10 @@ async function release(installation, value) {
     }),
   );
   await writeFile(join(staging, 'dist/index.js'), `export const value = ${value};\n`);
-  await writeFile(join(staging, 'dist/explanation/document.js'), 'export {};\n');
+  await writeFile(join(staging, 'dist/story/document.js'), 'export {};\n');
   await writeFile(join(staging, 'dist/api.json'), JSON.stringify({ modules: {} }));
-  await writeFile(join(staging, 'tools/explanation/scene.js'), 'export {};\n');
-  await writeFile(join(staging, 'tools/explanation/index.html'), '<main></main>');
+  await writeFile(join(staging, 'tools/story/scene.js'), 'export {};\n');
+  await writeFile(join(staging, 'tools/story/index.html'), '<main></main>');
   await writeFile(join(staging, 'plugin/dist/live.html'), '<main>Prepared fixture</main>');
   const receipt = await writeBuildInfo(staging, join(staging, 'dist'));
   await writeFile(

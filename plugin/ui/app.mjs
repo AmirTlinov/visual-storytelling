@@ -6,7 +6,7 @@ import { frameContext } from './frame-context.mjs';
 import { preferencesUI } from './preferences.mjs';
 import { fileEntrypoint } from './file-entrypoint.mjs';
 import preparedLiveHTML from 'visual-story:prepared-live-scene';
-import { validateExplanation } from '../../src/explanation/document.ts';
+import { normalizeStoryDocument } from '../../src/story/document.ts';
 
 const app = new App({ name: 'Visual Storytelling', version: manifest.version });
 const extensions = new OpenAIExtensions(app);
@@ -53,11 +53,11 @@ function previewInput({ arguments: args } = {}) {
     if (!session) discardProvisional();
     return;
   }
-  if (session || !args?.explanation) return;
+  if (session || !args?.document) return;
   creationMetrics.inputAt ??= performance.now();
   let document;
   try {
-    document = validateExplanation(args.explanation);
+    document = normalizeStoryDocument(args.document);
   } catch {
     return;
   } // An incomplete operation leaves the last coherent preview visible.
@@ -65,7 +65,7 @@ function previewInput({ arguments: args } = {}) {
   if (provisional?.identity === identity) return;
   if (!provisional) {
     provisional = { id: crypto.randomUUID(), generation: -1, identity, document, ready: false };
-    const setup = `<script>window.__visualStoryExplanation=${identity.replaceAll('<', '\\u003c')}</script>`;
+    const setup = `<script>window.__visualStoryDocument=${identity.replaceAll('<', '\\u003c')}</script>`;
     frame.hidden = false;
     $('catalog').hidden = true;
     frame.dataset.provisional = 'true';

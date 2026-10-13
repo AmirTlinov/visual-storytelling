@@ -18,30 +18,67 @@ const view = z.strictObject({
   kind: z.enum(['groups', 'equation']),
   model: z.string().min(1).max(80),
 });
-const beat = z.strictObject({
-  id: z.string().min(1).max(80),
-  action: z.enum(['gather', 'group', 'remainder']).optional(),
-  focus: z
-    .array(z.enum(['groups', 'remainder', 'equation']))
-    .min(1)
-    .max(3)
-    .optional(),
-  hold: z.boolean().optional(),
-  seconds: z.number().min(0.2).max(30).optional(),
-  text: z.string().min(1).max(90).optional(),
+const beat = z
+  .object({
+    id: z.string().min(1).max(80),
+    text: z.string().max(20000).optional(),
+    say: z.string().optional(),
+    title: z.string().max(160).optional(),
+    action: z.string().min(1).optional(),
+    hold: z.string().min(1).optional(),
+    seconds: z.number().finite().positive().optional(),
+    timing: z.record(z.string(), z.unknown()).optional(),
+    staging: z
+      .strictObject({
+        model: z.string().min(1).max(80),
+        operation: z.enum(['gather', 'group', 'remainder']).optional(),
+        focus: z
+          .array(z.enum(['groups', 'remainder', 'equation']))
+          .min(1)
+          .max(3)
+          .optional(),
+      })
+      .optional(),
+  })
+  .passthrough();
+const chapters = z.array(
+  z
+    .object({
+      id: z.string().min(1).max(80),
+      title: z.string().min(1).max(160),
+      beats: z.array(beat).min(1),
+    })
+    .passthrough(),
+);
+const divisionInputs = z.strictObject({
+  count: z.number().int().min(0).max(36),
+  divisor: z.number().int().min(1).max(12),
 });
-const explanationInput = z.strictObject({
-  version: z.literal(1).optional(),
-  title: z.string().min(1).max(160).optional(),
-  model: z.strictObject({
-    id: z.string().min(1).max(80).optional(),
-    kind: z.literal('division'),
-    count: z.number().int().min(0).max(36),
-    divisor: z.number().int().min(1).max(12),
+const documentInput = z.union([
+  z.strictObject({
+    title: z.string().min(1).max(160).optional(),
+    model: z.strictObject({
+      id: z.string().min(1).max(80).optional(),
+      kind: z.literal('division'),
+      ...divisionInputs.shape,
+    }),
+    chapters: chapters.optional(),
   }),
-  views: z.array(view).min(1).max(2).optional(),
-  score: z.array(beat).min(1).max(16).optional(),
-});
+  z.strictObject({
+    version: z.literal(1),
+    title: z.string().min(1).max(160).optional(),
+    models: z.array(
+      z.strictObject({
+        id: z.string().min(1).max(80),
+        kind: z.literal('division'),
+        inputs: divisionInputs,
+      }),
+    ),
+    views: z.array(view),
+    chapters,
+    narration: z.record(z.string(), z.unknown()).optional(),
+  }),
+]);
 const semanticOperations = z
   .array(
     z.discriminatedUnion('op', [
@@ -54,7 +91,7 @@ const semanticOperations = z
         }),
       }),
       z.strictObject({ op: z.literal('set-views'), views: z.array(view).min(1).max(2) }),
-      z.strictObject({ op: z.literal('set-score'), score: z.array(beat).min(1).max(16) }),
+      z.strictObject({ op: z.literal('set-chapters'), chapters }),
     ]),
   )
   .min(1)
@@ -67,15 +104,15 @@ export function authoringTools(server, runtime, uri, safely) {
     {
       title: 'Создать визуальное объяснение',
       description:
-        'Create from explanation:{model:{kind:"division",count,divisor}}. Supply sessionId to show the new explanation in that already open card, preserving a Back destination. The sessionId is bound to requestId; repeat the same request to resume unconfirmed delivery. Creation alone is not a shown frame: delivery is pending, prepared, shown or failed. The standard staging shows objects, full groups, remainder and equation; supply both inputs, then continue the same card with story_edit operations. Version 1, model ID "division" and groups/equation views are filled by the document validator. Explicit IDs, views and title are optional; add score only to choose a specific order of actions, focus or holds. The saved document is always complete. Runtime is pinned immediately; no per-request npm, archive or compilation. The existing Story owns time and controls. Omit explanation for a source-code scaffold, or supply example="gpt-model" for the exemplar; those prepare through JobRunner and do not accept sessionId. Voice and portable archives are optional production work.',
-      inputSchema: {
+        'Create from document:{model:{kind:"division",count,divisor}}. Supply sessionId to show the new explanation in that already open card, preserving a Back destination. The sessionId is bound to requestId; repeat the same request to resume unconfirmed delivery. Creation alone is not a shown frame: delivery is pending, prepared, shown or failed. The standard staging shows objects, full groups, remainder and equation; supply both inputs, then continue the same card with story_edit operations. Version 1, model ID "division" and groups/equation views are filled by the document validator. Explicit model ID and title are optional; supply chapters for authored visual actions, narration or holds; chapters:[] creates a static interactive scene. The saved document is always complete. Runtime is pinned immediately; no per-request npm, archive or compilation. The existing Story owns time and controls. Omit document for a source-code scaffold, or supply example="gpt-model" for the exemplar; those prepare through JobRunner and do not accept sessionId. Voice and portable archives are optional production work.',
+      inputSchema: z.strictObject({
         title: z.string().min(1).max(160),
         example: z.string().min(1).optional(),
-        explanation: explanationInput.optional(),
+        document: documentInput.optional(),
         sessionId: z.string().uuid().optional(),
         path: z.string().optional(),
         requestId,
-      },
+      }),
       annotations: changeView,
       _meta: { ui: { resourceUri: uri, visibility: ['model', 'app'] } },
     },
@@ -87,7 +124,7 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_edit',
     {
       description:
-        'Apply one complete undoable authoring operation. For a live explanation use operations: set-inputs(modelId,values), set-views(views), or set-score(score). Each payload and the final document are validated before writing; related views/references can change atomically. Explicit input keys override viewer values even when unchanged in the source; other viewer inputs survive. Delivery is shown, prepared, pending or failed: saved source alone is not a rendered result. Retry the same requestId to resume unconfirmed delivery without rewriting; a completed receipt stays historical. sourceRevision fences external edits. For source-code extensions use changes (UTF-8 replacement, null deletion); those retain the existing build/candidate path. Choose operations, changes or undo.',
+        'Apply one complete undoable authoring operation. For a live explanation use operations: set-inputs(modelId,values), set-views(views), or set-chapters(chapters). Each payload and the final document are validated before writing; related views/references can change atomically. Explicit input keys override viewer values even when unchanged in the source; other viewer inputs survive. Delivery is shown, prepared, pending or failed: saved source alone is not a rendered result. Retry the same requestId to resume unconfirmed delivery without rewriting; a completed receipt stays historical. sourceRevision fences external edits. For source-code extensions use changes (UTF-8 replacement, null deletion); those retain the existing build/candidate path. Choose operations, changes or undo.',
       inputSchema: {
         projectId,
         sourceRevision: z.string(),
@@ -242,7 +279,7 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_help',
     {
       description:
-        'Read public APIs, existing projects and the complete gpt-model exemplar. For grouping and remainder start with story_create(explanation), then story_edit(operations) in the same live card. Read ExplanationDocument or mountExplanation for its compact contract. For new source-code behavior create a scaffold, edit, review and open it. queries accepts up to 12 public API names; projectId reads the exact pinned runtime before dependency installation.',
+        'Read public APIs, existing projects and the complete gpt-model exemplar. For grouping and remainder start with story_create(document), then story_edit(operations) in the same live card. Read StoryDocument, normalizeStoryDocument or mountStoryDocument for its compact contract. For new source-code behavior create a scaffold, edit, review and open it. queries accepts up to 12 public API names; projectId reads the exact pinned runtime before dependency installation.',
       inputSchema: {
         query: z.string().max(300).optional(),
         queries: z.array(z.string().min(1).max(300)).min(1).max(12).optional(),
@@ -271,7 +308,7 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_migrate',
     {
       description:
-        'Explicitly upgrade a project to this plugin’s core. Optional changes use the same UTF-8 replacement/deletion contract as story_edit, so removed APIs can be migrated in the same operation. Applies changes to a separate candidate before building; only a successful candidate publishes sources, package and lockfile as one undoable edit. Supply at most 62 source files plus package.json and package-lock.json. A changed sourceRevision prevents publication. Runtime archives remain available for story_edit undo. Existing views remain visible during preparation.',
+        'Explicitly upgrade a project to this plugin’s core. Legacy explanation projects and unversioned story.json convert to version 1 StoryDocument only within this candidate transaction. Optional changes use the same UTF-8 replacement/deletion contract as story_edit, so removed APIs can be migrated in the same operation. Applies changes to a separate candidate before building; only a successful candidate publishes sources, package and lockfile as one undoable edit. Supply at most 62 source files plus package.json and package-lock.json. A changed sourceRevision prevents publication. Runtime archives remain available for story_edit undo. Existing views remain visible during preparation.',
       inputSchema: {
         projectId,
         sourceRevision: z.string(),

@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { packageInfo, resolvePackage } from './build-info.mjs';
 import { assertPreparedRuntimeRoot } from './prepared-runtime-trust.mjs';
+import { withoutGeneratedNarration } from './narration.mjs';
 
 const execute = promisify(execFile);
 const library = fileURLToPath(new URL('../', import.meta.url));
@@ -288,25 +289,35 @@ async function updatePreparedSceneRuntime(destination, options, metadata) {
   return { scene: destination, changed: true, prepared: true, build: pin.build, dependency };
 }
 
-export async function explanationAPI(directory) {
+export async function storyDocumentAPI(directory) {
   const pinned = await readPinnedRuntime(directory);
   if (pinned.archive)
     throw new Error('Install this project’s pinned dependencies before semantic authoring.');
-  return import(pathToFileURL(join(pinned.root, 'dist/explanation/document.js')).href);
+  await assertPreparedRuntimeRoot(pinned.root, { modules: ['dist/story/document.js'] });
+  return import(pathToFileURL(join(pinned.root, 'dist/story/document.js')).href);
 }
 
 /** A modified source entry must keep using the source build path, never lose authored code. */
-export async function assertPreparedExplanation(directory) {
+export async function assertPreparedStory(directory) {
   const pin = await readPreparedRuntime(directory);
-  if (!pin) throw new Error('Semantic live authoring requires a prepared explanation project.');
+  if (!pin) throw new Error('Semantic live authoring requires a prepared story project.');
+  if (
+    !(await readOptional(join(directory, 'story.json'))) ||
+    !(await readOptional(join(pin.root, 'tools/story/scene.js')))
+  )
+    throw Object.assign(
+      new Error('This project needs an explicit story_migrate before StoryDocument authoring.'),
+      { code: 'custom_scene_entry' },
+    );
   const [entry, template, page, templatePage, config] = await Promise.all([
     readFile(join(directory, 'scene.js'), 'utf8'),
-    readFile(join(pin.root, 'tools/explanation/scene.js'), 'utf8'),
+    readFile(join(pin.root, 'tools/story/scene.js'), 'utf8'),
     readFile(join(directory, 'index.html'), 'utf8'),
-    readFile(join(pin.root, 'tools/explanation/index.html'), 'utf8'),
+    readFile(join(pin.root, 'tools/story/index.html'), 'utf8'),
     readOptional(join(directory, 'scene.json')),
   ]);
-  const withoutTitle = (html) => html.replace(/<title>.*?<\/title>/s, '<title></title>');
+  const withoutTitle = (html) =>
+    withoutGeneratedNarration(html).replace(/<title>.*?<\/title>/s, '<title></title>');
   if (entry !== template || withoutTitle(page) !== withoutTitle(templatePage) || config)
     throw Object.assign(
       new Error(

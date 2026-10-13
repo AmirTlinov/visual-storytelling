@@ -17,7 +17,7 @@ import { readJSON, writeJSON } from '../tools/storage.mjs';
 import { projectFiles, projectFile, readProjectFile, digest } from '../tools/project-files.mjs';
 import { failure } from './errors.mjs';
 import { sceneEntry } from '../tools/scene-entry.mjs';
-import { explanationAPI, assertPreparedExplanation } from '../tools/runtime-package.mjs';
+import { storyDocumentAPI, assertPreparedStory } from '../tools/runtime-package.mjs';
 
 const readOptional = (file) =>
   readFile(file).catch((error) => {
@@ -379,7 +379,7 @@ export class ProjectStore {
       if (!last) throw new Error('No authored edit to undo.');
       changes = last.changes.map((entry) => ({ path: entry.path, content: entry.before }));
       next = last.history.before;
-      semantic = last.semantic === true;
+      semantic = last.semantic === true && changes.some((change) => change.path === 'story.json');
       if (semantic) authoredInputs = last.authoredInputs ?? [];
       for (const entry of last.changes) {
         const current = state.files[entry.path] ?? null,
@@ -392,15 +392,16 @@ export class ProjectStore {
           );
       }
     }
+    if (semantic) await assertPreparedStory(p.path);
     if (operations !== undefined) {
       if (changes !== undefined || undo || assets.length)
         throw new Error('Choose semantic operations, file changes, or undo.');
-      const { editExplanation } = await explanationAPI(p.path);
-      const document = await readJSON(join(p.path, 'explanation.json'));
+      const { editStoryDocument } = await storyDocumentAPI(p.path);
+      const document = await readJSON(join(p.path, 'story.json'));
       changes = [
         {
-          path: 'explanation.json',
-          content: JSON.stringify(editExplanation(document, operations), null, 2) + '\n',
+          path: 'story.json',
+          content: JSON.stringify(editStoryDocument(document, operations), null, 2) + '\n',
         },
       ];
       authoredInputs = [
@@ -411,10 +412,9 @@ export class ProjectStore {
         ),
       ];
     }
-    if (semantic) await assertPreparedExplanation(p.path);
     const document = semantic
-      ? (await explanationAPI(p.path)).validateExplanation(
-          JSON.parse(changes.find((change) => change.path === 'explanation.json').content),
+      ? (await storyDocumentAPI(p.path)).validateStoryDocument(
+          JSON.parse(changes.find((change) => change.path === 'story.json').content),
         )
       : undefined;
     return { cursor, next, semantic, changes, document, authoredInputs };

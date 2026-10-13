@@ -1,17 +1,17 @@
 # Контракт автора
 
 Для короткого опыта из готового приёма начни с [живого описания модели](../skills/visual-explainer/references/live-explanation.md).
-`story_create(explanation)` сохраняет `explanation.json`, закрепляет установленную
+`story_create(document)` сохраняет `story.json`, закрепляет установленную
 библиотеку и открывает карточку. `story_edit(operations)` принимает цельную
 операцию с актуальной `sourceRevision` и новым `requestId`; повтор использует тот
 же ID. Запись исходника и подтверждённый показ имеют отдельные ревизии в ответе.
 Предварительный кадр при потоковом вводе ещё не является принятой правкой.
 
-`mountExplanation(root, document)` доступен и из JS/TS. Чистые
-`validateExplanation` и `editExplanation` владеют схемой; `root.scene.authoring`
+`mountStoryDocument(root, document)` доступен и из JS/TS. Чистые
+`normalizeStoryDocument`, `validateStoryDocument` и `editStoryDocument` владеют схемой; `root.scene.authoring`
 даёт принятый `document` и `replace(document)` на существующей сцене. Доступные
 предметные ограничения описаны рядом с приёмом. Новый механизм создавай обычным
-JS/TS-кодом через `story_create` без `explanation` или CLI `new`: библиотека,
+JS/TS-кодом через `story_create` без `document` или CLI `new`: библиотека,
 проекты, история, review и выпуск остаются общими. Файловые изменения используют
 обычную сборку. Переносимые исходники, голос и видео готовятся по необходимости
 через `story_produce`.

@@ -65,3 +65,14 @@ export function resolveMedia(audio: import('./clock.js').MediaClock | null, dura
     audio.src = audio.dataset.src;
   return audio;
 }
+
+/** Prepare the same immutable clip without pausing or seeking its current owner. */
+export function cloneAudio(source: HTMLAudioElement) {
+  const audio = source.cloneNode(true) as HTMLAudioElement;
+  audio.autoplay = false;
+  audio.muted = source.muted;
+  audio.volume = source.volume;
+  audio.playbackRate = source.playbackRate;
+  if (source.currentSrc) audio.src = source.currentSrc;
+  return audio;
+}

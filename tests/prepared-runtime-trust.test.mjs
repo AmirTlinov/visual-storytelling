@@ -15,7 +15,8 @@ test('prepared runtime authority comes from the executable and installer, never 
     '.installation.json',
     'package.json',
     'dist/build-info.json',
-    'dist/explanation/document.js',
+    'dist/index.js',
+    'dist/story/document.js',
   ];
   let installed;
   try {
@@ -56,9 +57,19 @@ test('prepared runtime authority comes from the executable and installer, never 
     await assert.rejects(assertPreparedRuntimeRoot(installed), /installed immutable/);
     await chmod(installed, 0o555);
     assert.equal(await assertPreparedRuntimeRoot(installed), await realpath(installed));
-    await chmod(join(installed, 'dist/explanation/document.js'), 0o644);
+    await chmod(join(installed, 'dist/index.js'), 0o644);
     await assert.rejects(assertPreparedRuntimeRoot(installed), /installed immutable/);
-    await chmod(join(installed, 'dist/explanation/document.js'), 0o444);
+    await chmod(join(installed, 'dist/index.js'), 0o444);
+    await chmod(join(installed, 'dist/story/document.js'), 0o644);
+    await assert.rejects(
+      assertPreparedRuntimeRoot(installed, { modules: ['dist/story/document.js'] }),
+      /installed immutable/,
+    );
+    await chmod(join(installed, 'dist/story/document.js'), 0o444);
+    assert.equal(
+      await assertPreparedRuntimeRoot(installed, { modules: ['dist/story/document.js'] }),
+      await realpath(installed),
+    );
     const linked = join(process.env.VISUAL_STORY_INSTALL_DIR, 'releases', 'linked');
     await symlink(outside, linked);
     await assert.rejects(assertPreparedRuntimeRoot(linked), /installed immutable/);

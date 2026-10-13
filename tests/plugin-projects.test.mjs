@@ -73,7 +73,7 @@ test('creation reserves its request before files and resumes only its own manife
       const store = new ProjectStore(data);
       const input = {
         title: 'Reserved',
-        explanation: { model: { kind: 'division', count: 13, divisor: 3 } },
+        document: { model: { kind: 'division', count: 13, divisor: 3 } },
         ...(explicit ? { path } : {}),
       };
       const options = { title: input.title, creation: { requestId: randomUUID(), input } };
@@ -149,7 +149,7 @@ test('a failed first creation commit leaves no candidate directory or unbound pr
   const path = join(directory, 'implicit-candidate');
   const options = {
     title: 'Reserved',
-    creation: { requestId: randomUUID(), input: { title: 'Reserved', explanation: { model: {} } } },
+    creation: { requestId: randomUUID(), input: { title: 'Reserved', document: { model: {} } } },
   };
   await assert.rejects(store.create(path, options));
   assert.equal(store.projects.size, 0);

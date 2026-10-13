@@ -36,7 +36,7 @@ test(
         title: 'Проверить полную группу',
         path: join(temporary, 'project'),
         requestId: randomUUID(),
-        explanation: { model: { kind: 'division', count: 13, divisor: 3 } },
+        document: { model: { kind: 'division', count: 13, divisor: 3 } },
       });
       await page.evaluate((result) => window.pluginTest.result(result), created);
       await app.locator('html[data-connection="connected"]').waitFor();

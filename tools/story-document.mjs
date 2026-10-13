@@ -13,13 +13,14 @@ export async function narrationSource(directory) {
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  if (document) {
+  if (document !== undefined) {
     const runtime = await resolvePackage('@visual-storytelling/core', directory);
     const projection = runtime
       ? pathToFileURL(join(runtime, 'dist/story/document.js'))
       : new URL('../dist/story/document.js', import.meta.url);
     const { documentNarration } = await import(projection.href);
     const spec = documentNarration(document);
+    if (!spec.segments.length) return;
     const text = JSON.stringify(spec, null, 2) + '\n';
     const file = join(
       tmpdir(),

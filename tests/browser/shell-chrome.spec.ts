@@ -113,6 +113,42 @@ async function metrics(page: Page) {
   });
 }
 
+test('a timed scene becomes a static experiment without retaining playback capabilities', async ({ page }) => {
+  await mount(page);
+  const result = await page.evaluate(async () => {
+    const { shell, root } = (window as any).chromeContract;
+    const handle = root.scene;
+    await handle.control([{ type: 'parameters', values: { amount: 7 } }]);
+    await handle.play();
+    shell.detachController();
+    shell.detachController();
+    const before = handle.inspect({ presentation: false });
+    shell.input({ amount: 9 });
+    const after = handle.inspect({ presentation: false });
+    return {
+      sameHandle: root.scene === handle,
+      before,
+      after,
+      snapshot: handle.snapshot(),
+      play: typeof handle.play,
+      seek: typeof handle.seek,
+      ready: typeof handle.ready,
+      muted: handle.muted,
+      playerHidden: root.querySelector('[data-player]').hidden,
+    };
+  });
+  expect(result.sameHandle).toBe(true);
+  expect(result.before.mode).toBe('explore');
+  expect(result.snapshot.amount).toBe(9);
+  expect(result.after.duration).toBe(0);
+  expect(result.play).toBe('undefined');
+  expect(result.seek).toBe('undefined');
+  expect(result.ready).toBe('undefined');
+  expect(result.muted).toBeUndefined();
+  expect(result.playerHidden).toBe(true);
+  await expect(page.getByRole('button', { name: 'Воспроизвести', exact: true })).toHaveCount(0);
+});
+
 test('compact Conditions exposes story inputs directly and only an edit enters exploration', async ({
   page,
 }) => {

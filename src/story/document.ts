@@ -1,44 +1,29 @@
 import { cueSheet, type CueTiming, type Script } from './cues.js';
 
-/** One authored beat owns its visual action and optional spoken words. */
-export interface AuthoredBeat {
-  id: string;
-  /** Optional visible wording; an action can be entirely visual. */
-  text?: string;
-  title?: string;
-  seconds?: number;
-  /** Spoken wording defaults to text. An empty string explicitly keeps a beat silent. */
-  say?: string;
-  /** Review descriptions do not become visible text or narration. */
-  action?: string;
-  hold?: string;
-  /** Action window; until accepts a local beat ID or a fully qualified chapter.beat ID. */
-  timing?: CueTiming;
-}
-export interface StoryDocument {
-  title: string;
-  chapters: readonly {
-    id: string;
-    title: string;
-    beats: readonly AuthoredBeat[];
-  }[];
-  narration?: {
-    voice?: Record<string, unknown>;
-    intro?: number;
-    outro?: number;
-    pause?: number;
-    music?: unknown;
-    captionAliases?: Record<string, string>;
-  };
-}
-type AuthoredChapter = StoryDocument['chapters'][number];
+import {
+  validateStoryDocument,
+  type StoryDocument,
+  type AuthoredBeat,
+  type AuthoredChapter,
+} from './authored.js';
+export { validateStoryDocument, normalizeStoryDocument, editStoryDocument } from './authored.js';
+export type {
+  StoryDocument,
+  AuthoredBeat,
+  AuthoredChapter,
+  StoryModel,
+  StoryView,
+  StoryOperation,
+  BeatStaging,
+} from './authored.js';
+
 const timeTolerance = 1e-6;
 const spoken = (beat: AuthoredBeat) => (beat.say ?? beat.text ?? '').trim();
 const intention = (beat: AuthoredBeat) => ({
   ...(beat.action !== undefined
     ? { action: beat.action }
-    : beat.hold === undefined && beat.text?.trim()
-      ? { action: beat.text }
+    : beat.hold === undefined && (beat.text?.trim() || beat.staging?.operation)
+      ? { action: beat.text?.trim() || beat.staging!.operation! }
       : {}),
   ...(beat.hold !== undefined ? { hold: beat.hold } : {}),
 });
@@ -69,40 +54,13 @@ function timingFor(chapter: AuthoredChapter, beat: AuthoredBeat) {
     : timing;
 }
 function validate(document: StoryDocument) {
-  if (!document.title?.trim() || !document.chapters?.length)
-    throw new Error('Story document needs a title and chapters');
-  const ids = new Set<string>();
-  for (const chapter of document.chapters) {
-    if (
-      !/^[a-z][a-z0-9_-]*$/.test(chapter.id) ||
-      ids.has(chapter.id) ||
-      !chapter.title?.trim() ||
-      !chapter.beats.length
-    )
-      throw new Error(`Invalid chapter: ${chapter.id}`);
-    ids.add(chapter.id);
-    for (const beat of chapter.beats) {
-      const id = `${chapter.id}.${beat.id}`;
-      if (typeof beat.id !== 'string' || !/^[a-z][a-z0-9_.-]*$/.test(beat.id) || ids.has(id))
-        throw new Error(`Beat ${id} needs a unique ID`);
-      if (
-        [beat.text, beat.say, beat.title].some(
-          (value) => value !== undefined && typeof value !== 'string',
-        )
-      )
-        throw new Error(`Beat ${id}: text, say and title must be strings`);
-      if (
-        (beat.action !== undefined && beat.hold !== undefined) ||
-        [beat.action, beat.hold].some(
-          (value) => value !== undefined && (typeof value !== 'string' || !value.trim()),
-        )
-      )
-        throw new Error(`Beat ${id}: provide either a non-empty action or hold`);
-      duration(beat, id);
-      ids.add(id);
-    }
-  }
-  return ids;
+  validateStoryDocument(document);
+  return new Set(
+    document.chapters.flatMap((chapter) => [
+      chapter.id,
+      ...chapter.beats.map((beat) => `${chapter.id}.${beat.id}`),
+    ]),
+  );
 }
 // Match the speech aligner's Russian word contract, including ё and non-breaking hyphens.
 const spokenWords = (text: string) =>
@@ -126,6 +84,7 @@ function spokenRuns(chapter: AuthoredChapter) {
   }));
 }
 export function authoredChapter(document: StoryDocument, id: string) {
+  validateStoryDocument(document);
   const chapter = document.chapters.find((c) => c.id === id);
   if (!chapter) throw new Error(`Unknown authored chapter: ${id}`);
   return {
