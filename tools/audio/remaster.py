@@ -1,6 +1,8 @@
 """Refresh only the mix of a still-current accepted performance; never invoke a model."""
 import json
+from contextlib import contextmanager
 from pathlib import Path
+import shutil
 import tempfile
 
 import soundfile as sf
@@ -16,6 +18,31 @@ def audio_hashes(directory, timeline):
     timeline["audio_sha256"] = file_digest(directory / "audio.wav")
     timeline["stem_sha256"] = {name: file_digest(directory / name)
                                for name in ("voice.wav", "music.wav") if (directory / name).is_file()}
+
+
+class PublicationRecoveryError(RuntimeError):
+    """Keep the accepted recording available for manual recovery after filesystem failures."""
+    def __init__(self, staging, publication_error, recovery_errors):
+        self.staging = staging
+        self.publication_error = publication_error
+        self.recovery_errors = tuple(recovery_errors)
+        details = "; ".join(f"{action}: {error}" for action, error in recovery_errors)
+        super().__init__(f"Narration could not be fully restored. Recovery files remain at {staging}. {details}")
+
+
+@contextmanager
+def staging_directory(parent, prefix):
+    """Remove temporary audio unless failed recovery still needs its accepted-file backups."""
+    staging = Path(tempfile.mkdtemp(prefix=prefix, dir=parent))
+    preserve = False
+    try:
+        yield staging
+    except PublicationRecoveryError as error:
+        preserve = error.staging == staging
+        raise
+    finally:
+        if not preserve:
+            shutil.rmtree(staging)
 
 
 def publish(staging, output, names):
@@ -35,11 +62,20 @@ def publish(staging, output, names):
             if (staging / name).exists():
                 (staging / name).replace(output / name)
                 installed.append(name)
-    except BaseException:
+    except BaseException as error:
+        recovery = []
         for name in installed:
-            (output / name).unlink(missing_ok=True)
+            try:
+                (output / name).unlink(missing_ok=True)
+            except BaseException as failure:
+                recovery.append((f"removing new {name}", failure))
         for name in moved:
-            (previous / name).replace(output / name)
+            try:
+                (previous / name).replace(output / name)
+            except BaseException as failure:
+                recovery.append((f"restoring {name}", failure))
+        if recovery:
+            raise PublicationRecoveryError(staging, error, recovery) from error
         raise
 
 
@@ -69,8 +105,7 @@ def reuse_audio(script_path, output, *, source_directory=None):
     if rate != SAMPLE_RATE or len(voice) != round(timeline["duration"] * rate):
         raise ValueError("Accepted voice stem does not match its timeline")
     before = {name: file_digest(output / name) for name in ("timeline.json", "audio.wav", "voice.wav")}
-    with tempfile.TemporaryDirectory(prefix=".sketch-remaster-", dir=output.parent) as directory:
-        staging = Path(directory)
+    with staging_directory(output.parent, ".sketch-remaster-") as staging:
         timeline["mix"] = mix(voice, spec.get("music"), staging)
         audio_hashes(staging, timeline)
         (staging / "timeline.json").write_text(json.dumps(timeline, ensure_ascii=False, indent=2, allow_nan=False) + "\n")

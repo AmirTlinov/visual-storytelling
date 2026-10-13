@@ -1,7 +1,6 @@
 """Own the single timeline: clips, pauses, word cues and final audio."""
 import json
 from pathlib import Path
-import tempfile
 import time
 
 import numpy as np
@@ -14,7 +13,7 @@ from resources import ALIGN_REPO, ALIGN_REVISION, digest, prepare_music
 from script import read_script, timed_cues, check_action_windows, speech_passages, dependency_digests
 from speech import SAMPLE_RATE, Speaker
 from quality import complete_take
-from remaster import reuse_audio, audio_hashes, publish
+from remaster import reuse_audio, audio_hashes, publish, staging_directory
 
 
 def prepared_take(speaker, aligner, segment, passages):
@@ -101,7 +100,7 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
     check_action_windows(cues, len(voice) / SAMPLE_RATE)
     output.parent.mkdir(parents=True, exist_ok=True)
     # Assemble to a temporary sibling. Failed builds never replace a working mix.
-    with tempfile.TemporaryDirectory(prefix=".sketch-audio-", dir=output.parent) as temporary:
+    with staging_directory(output.parent, ".sketch-audio-") as temporary:
         staging = Path(temporary)
         print("Mixing the shared timeline", flush=True)
         mix_info = mix(voice, spec.get("music"), staging)

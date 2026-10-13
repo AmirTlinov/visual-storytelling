@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/audio"))
 from assembly import build_audio
 from mastering import PROFILE, PROFILE_SHA256, measure, master
 from mixing import mix
-from remaster import reuse_audio
+from remaster import PublicationRecoveryError, reuse_audio
 from resources import file_digest
 from script import read_script, words, check_timeline
 from speech import SAMPLE_RATE
@@ -149,6 +149,70 @@ class MasteringChecks(unittest.TestCase):
             sf.write(root / "out/audio.wav", data * .5, rate)
             with self.assertRaisesRegex(ValueError, "differs from its accepted receipt"):
                 reuse_audio(root / "narration.json", root / "out")
+
+    def publication_failure(self, mode, recovery_faults):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            timeline = self.build(root, tone())
+            output = root / "out"
+            if mode == "remaster":
+                timeline["mix"].pop("mastering")
+                (output / "timeline.json").write_text(json.dumps(timeline))
+            original = {p.name: p.read_bytes() for p in output.iterdir()}
+            replace, unlink = Path.replace, Path.unlink
+            attempted, observed = [], {}
+
+            def replace_with_fault(path, target):
+                if path.name == "voice.wav" and path.parent.name.startswith(".sketch-"):
+                    observed["staging"] = path.parent
+                    raise OSError("injected voice installation failure")
+                if path.parent.name == ".previous":
+                    attempted.append(path.name)
+                    if path.name == "audio.wav" and "restore" in recovery_faults:
+                        raise OSError("injected audio restoration failure")
+                return replace(path, target)
+
+            def unlink_with_fault(path, *args, **kwargs):
+                if path == output / "audio.wav" and "unlink" in recovery_faults:
+                    raise OSError("injected audio removal failure")
+                return unlink(path, *args, **kwargs)
+
+            error_type = PublicationRecoveryError if recovery_faults else OSError
+            with patch.object(Path, "replace", replace_with_fault), patch.object(Path, "unlink", unlink_with_fault):
+                with patch("assembly.Speaker", side_effect=AssertionError("No TTS")), patch("assembly.Aligner", side_effect=AssertionError("No alignment")):
+                    with self.assertRaises(error_type) as caught:
+                        if mode == "remaster":
+                            reuse_audio(root / "narration.json", output)
+                        else:
+                            self.build(root, tone(.02), text="Другой шаг вперёд.")
+            staging = observed["staging"]
+            self.assertIn("voice.wav", attempted)
+            self.assertIn("timeline.json", attempted)
+            for name, data in original.items():
+                if name == "audio.wav" and "restore" in recovery_faults:
+                    self.assertEqual((staging / ".previous" / name).read_bytes(), data)
+                else:
+                    self.assertEqual((output / name).read_bytes(), data)
+            if recovery_faults:
+                failure = caught.exception
+                self.assertEqual(failure.staging, staging)
+                self.assertIn(str(staging), str(failure))
+                self.assertIn("voice installation", str(failure.publication_error))
+                self.assertEqual(len(failure.recovery_errors), len(recovery_faults))
+                self.assertTrue(staging.is_dir())
+            else:
+                self.assertFalse(staging.exists())
+
+    def test_assembly_and_remaster_restore_every_file_after_publication_failure(self):
+        for mode in ("assembly", "remaster"):
+            with self.subTest(mode=mode):
+                self.publication_failure(mode, ())
+
+    def test_assembly_and_remaster_preserve_backups_and_collect_all_recovery_failures(self):
+        for mode in ("assembly", "remaster"):
+            for faults in (("restore",), ("unlink", "restore")):
+                with self.subTest(mode=mode, faults=faults):
+                    self.publication_failure(mode, faults)
 
 
 if __name__ == "__main__":

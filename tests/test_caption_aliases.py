@@ -61,7 +61,8 @@ class CaptionAliases(unittest.TestCase):
                 'mixing': SimpleNamespace(mix=lambda voice, music, staging: {'music': None}),
                 'listening': SimpleNamespace(write_listening_page=lambda *args, **kwargs: None),
                 'remaster': SimpleNamespace(reuse_audio=lambda *args, **kwargs: None,
-                                            audio_hashes=lambda *args: None, publish=publish),
+                                            audio_hashes=lambda *args: None, publish=publish,
+                                            staging_directory=lambda parent, prefix: tempfile.TemporaryDirectory(dir=parent, prefix=prefix)),
             }
             spec = importlib.util.spec_from_file_location('caption_alias_assembly', ROOT / 'tools/audio/assembly.py')
             assembly = importlib.util.module_from_spec(spec)
