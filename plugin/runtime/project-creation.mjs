@@ -2,6 +2,7 @@ import { realpath, rm } from 'node:fs/promises';
 import { join, resolve, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
+import { setTimeout as delay } from 'node:timers/promises';
 import { readJSON } from '../../tools/storage.mjs';
 import { creationCandidate } from '../authored-candidate.mjs';
 import { prepareLiveProject } from '../live-project.mjs';
@@ -162,6 +163,15 @@ export function projectCreation({
     });
     const previous = projects.get(projectId).creation.delivery;
     if (previous?.result.delivery === 'shown') return response();
+    const awaitDelivery = async () => {
+      const deadline = Date.now() + 750;
+      while (
+        projects.get(projectId).creation.delivery?.result.delivery === 'pending' &&
+        Date.now() < deadline
+      )
+        await delay(15);
+      return response();
+    };
     try {
       const destination = await load(receipt.sessionId);
       await observeCreationDelivery(destination);
@@ -173,7 +183,7 @@ export function projectCreation({
         !sessions.expired(destination) &&
         destination.build.sourceRevision === receipt.sourceRevision
       )
-        return response();
+        return await awaitDelivery();
       const source = await load(fromSessionId);
       if (!source.renderer || !source.ready || sessions.expired(source))
         throw failure(
@@ -196,7 +206,7 @@ export function projectCreation({
       });
       if (destinationResult.sessionId !== receipt.sessionId)
         throw failure('navigation_conflict', 'The original card opened another document.');
-      return response();
+      return await awaitDelivery();
     } catch (error) {
       const current = projects.get(projectId).creation.delivery;
       if (current?.result.delivery !== 'shown')
@@ -210,16 +220,22 @@ export function projectCreation({
 
   async function createdProject(job) {
     let prepared = await jobs.wait(job.id, { timeout: 15000 });
-    if (!['queued', 'running', 'cancelling'].includes(prepared.status) &&
-        (!prepared.result || prepared.result.delivery === 'failed')) {
+    if (
+      !['queued', 'running', 'cancelling'].includes(prepared.status) &&
+      (!prepared.result || prepared.result.delivery === 'failed')
+    ) {
       const resumed = await projects.serial('delivery:' + job.projectId, () =>
-        resumeCommitted(job.projectId, projects.get(job.projectId).creation.requestId));
+        resumeCommitted(job.projectId, projects.get(job.projectId).creation.requestId),
+      );
       if (resumed) {
         prepared = await jobs.acceptPreparedResult(job.id, resumed);
         const creation = projects.get(job.projectId).creation;
-        await projects.update(job.projectId, { creation: { ...creation,
-          receipt: { project: resumed.project, authoring: 'ready', jobId: job.id },
-        }});
+        await projects.update(job.projectId, {
+          creation: {
+            ...creation,
+            receipt: { project: resumed.project, authoring: 'ready', jobId: job.id },
+          },
+        });
       }
     }
     return {

@@ -184,6 +184,11 @@ test(
       const request = create('Next', 17, before.context);
       const next = await call('story_create', request);
       const nextId = next.structuredContent.sessionId;
+      if (next.structuredContent.publication === 'shown') {
+        const continued = await call('story_control', { context: next.structuredContent.context,
+          requestId: randomUUID(), commands: [{ type: 'pause' }] });
+        assert.equal(continued.structuredContent.publication, 'shown');
+      }
       assert.equal(next.structuredContent.presentation.kind, 'existing-card');
       assert.ok(['pending', 'prepared', 'shown'].includes(next.structuredContent.delivery));
       // Native hosts can also deliver the result to the original resource; its poll owns navigation.

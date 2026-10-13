@@ -87,11 +87,11 @@ const sceneFields = ([
 export function contextualRuntime(runtime, codec) {
   function reference(value, previous) {
     const project = value.project ?? value.result?.project ?? value;
-    const scene = value.sessionId
-      ? value
-      : value.shown?.find(
-          (view) => !view.error && (!previous?.[2] || view.sessionId === previous[2]),
-        );
+    const wantedScene = value.sessionId ?? previous?.[2];
+    const scene =
+      value.shown?.find(
+        (view) => !view.error && (!wantedScene || view.sessionId === wantedScene),
+      ) ?? (value.sessionId ? value : undefined);
     const projectId =
       project.projectId ??
       (project.path && project.files ? project.id : undefined) ??
@@ -118,6 +118,21 @@ export function contextualRuntime(runtime, codec) {
     if (Array.isArray(value)) return value.map((entry) => present(entry));
     if (!value || typeof value !== 'object') return value;
     const next = { ...value };
+    const observed =
+      value.sessionId &&
+      value.shown?.find((view) => !view.error && view.sessionId === value.sessionId);
+    if (observed)
+      for (const field of [
+        'generation',
+        'serverInstance',
+        'stateRevision',
+        'renderStatus',
+        'status',
+        'state',
+        'checkpoint',
+        'observedAt',
+      ])
+        if (observed[field] !== undefined) next[field] = observed[field];
     for (const field of ['project', 'result']) if (next[field]) next[field] = present(next[field]);
     for (const field of ['sessions', 'shown'])
       if (Array.isArray(next[field])) next[field] = next[field].map((entry) => present(entry));
@@ -202,6 +217,16 @@ export function contextualRuntime(runtime, codec) {
         const observed =
           value.state?.snapshot ?? value.shown?.find((view) => !view.error)?.state?.snapshot;
         value.difference = {
+          ...(method === 'create' &&
+            args.document && {
+              created: {
+                ...(args.document.recipe && {
+                  recipe: args.document.recipe,
+                  inputs: args.document.inputs,
+                }),
+                ...(args.document.models && { models: args.document.models.map(({ id }) => id) }),
+              },
+            }),
           ...(args.undo && { undo: true }),
           ...(args.changes && { files: args.changes.map(({ path }) => path) }),
           ...(operations.length && {
