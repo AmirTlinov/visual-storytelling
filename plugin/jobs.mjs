@@ -301,6 +301,7 @@ export class JobRunner {
           previous !== job &&
           previous.projectId === job.projectId &&
           previous.kind === 'build' &&
+          Boolean(previous.input.authoring) === Boolean(job.input.authoring) &&
           previous.sourceRevision !== job.sourceRevision &&
           ['queued', 'running'].includes(previous.status)
         ) {
@@ -308,6 +309,19 @@ export class JobRunner {
           await this.cancel(previous.id);
         }
     this.pump();
+    return this.describe(job);
+  }
+  /** Finish delivery of a durably accepted candidate without starting its worker again. */
+  async acceptPreparedResult(id, result) {
+    const job = this.jobs.get(id);
+    if (!job || ['queued', 'running', 'cancelling'].includes(job.status))
+      throw new Error('A running preparation cannot be replaced by a publication receipt.');
+    job.result = result;
+    job.status = 'succeeded';
+    job.stage = 'Готово';
+    job.finishedAt ??= new Date().toISOString();
+    delete job.error;
+    await this.save(job);
     return this.describe(job);
   }
   async cancel(id) {

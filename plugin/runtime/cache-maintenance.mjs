@@ -14,7 +14,7 @@ export function runtimeCache({ data, preferences, projects, sessions, jobs }) {
           projects: await projects.list(),
           sessions: [...sessions.sessions.values()],
           snapshotLeases: jobs.snapshotLeases(),
-          buildLeases: sessions.buildLeases(),
+          buildLeases: [...sessions.buildLeases(), ...(await projects.preparedBuildLeases())],
         });
         report = { ...result, collectedAt: new Date().toISOString() };
       });

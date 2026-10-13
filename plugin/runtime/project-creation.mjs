@@ -22,6 +22,7 @@ export function projectCreation({
   scheduleCache,
   navigate,
   commitPrepared,
+  resumeCommitted,
 }) {
   async function createLiveProject(project, input, requestId) {
     return projects.serial('delivery:' + project.id, () =>
@@ -208,7 +209,19 @@ export function projectCreation({
   }
 
   async function createdProject(job) {
-    const prepared = await jobs.wait(job.id, { timeout: 15000 });
+    let prepared = await jobs.wait(job.id, { timeout: 15000 });
+    if (!['queued', 'running', 'cancelling'].includes(prepared.status) &&
+        (!prepared.result || prepared.result.delivery === 'failed')) {
+      const resumed = await projects.serial('delivery:' + job.projectId, () =>
+        resumeCommitted(job.projectId, projects.get(job.projectId).creation.requestId));
+      if (resumed) {
+        prepared = await jobs.acceptPreparedResult(job.id, resumed);
+        const creation = projects.get(job.projectId).creation;
+        await projects.update(job.projectId, { creation: { ...creation,
+          receipt: { project: resumed.project, authoring: 'ready', jobId: job.id },
+        }});
+      }
+    }
     return {
       project: prepared.result?.project ?? (await projects.inspect(job.projectId)),
       job: prepared,

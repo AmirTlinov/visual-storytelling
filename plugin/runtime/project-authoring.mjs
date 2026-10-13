@@ -7,6 +7,7 @@ export function projectAuthoring(options) {
   const creation = projectCreation({
     ...options,
     commitPrepared: transactions.commitPrepared,
+    resumeCommitted: transactions.resumeCommitted,
   });
   return { ...transactions, ...creation };
 }

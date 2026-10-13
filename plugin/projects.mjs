@@ -237,12 +237,26 @@ export class ProjectStore {
   }
   async editDelivery(id, requestId, delivery) {
     if (!validRequest(requestId)) throw new Error('Invalid authoring request ID.');
-    const directory = await this.historyDirectory(this.get(id));
+    const project = this.get(id);
+    await this.recover(project);
+    const directory = await this.historyDirectory(project);
     const file = join(directory, 'history', requestId + '.json');
     const journal = await readJSON(file);
-    if (!journal) throw new Error('The authoring transaction has no receipt.');
+    if (!journal) {
+      if (delivery === undefined) return;
+      throw new Error('The authoring transaction has no receipt.');
+    }
     if (delivery !== undefined) await writeJSON(file, { ...journal, delivery });
     return delivery ?? journal.delivery;
+  }
+  /** Unfinished source journals lease their verified artifact before registry publication. */
+  async preparedBuildLeases() {
+    const leases = [];
+    for (const project of this.projects.values()) {
+      const journal = await readJSON(join(project.path, '.vstory/transaction.json'));
+      if (journal?.delivery?.buildRevision) leases.push(journal.delivery.buildRevision);
+    }
+    return leases;
   }
   async historyDirectory(project) {
     const directory = join(project.path, '.vstory');
@@ -310,11 +324,20 @@ export class ProjectStore {
     await this.assertIdentity(project);
     const receipt = {
       ...(await this.inspect(project.id)),
+      requestId: journal.requestId,
       ...(journal.semantic ? { semantic: true, authoredInputs: journal.authoredInputs ?? [] } : {}),
     };
+    if (journal.delivery) {
+      if (journal.delivery.sourceRevision !== receipt.sourceRevision)
+        throw failure('prepared_conflict', 'The transaction source does not match its prepared artifact.');
+      // The prepared build is part of accepted source ownership, including its cache lease.
+      await this.update(project.id, { buildRevision: journal.delivery.buildRevision });
+      receipt.buildRevision = journal.delivery.buildRevision;
+    }
     await writeJSON(join(directory, 'history', journal.requestId + '.json'), {
       ...journal,
       receipt,
+      ...(journal.delivery && { delivery: { ...journal.delivery, project: receipt } }),
     });
     await writeJSON(join(directory, 'history.json'), { cursor: journal.history.after });
     await rm(file);
@@ -526,6 +549,7 @@ export class ProjectStore {
         signature: prepared.signature,
         createdAt: new Date().toISOString(),
         ...(semantic ? { semantic: true, authoredInputs } : {}),
+        ...(prepared.delivery && { delivery: prepared.delivery }),
         ...(prepared.assets.length
           ? { assets: prepared.assets.map(({ path, hash }) => ({ path, hash })) }
           : {}),

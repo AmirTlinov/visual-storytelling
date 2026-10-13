@@ -59,19 +59,38 @@ export function projectTransactions({
       prepared.sourceRevision !== result.sourceRevision
     )
       throw new Error('Prepared artifact does not match the authored proposal.');
-    const project = await projects.commitPreparedEdit(proposal);
-    const stagedDelivery = { ...result, project, delivery: 'pending' };
-    await projects.editDelivery(project.id, proposal.args.requestId, stagedDelivery);
+    const { creation, migration, ...artifact } = result;
+    const project = await projects.commitPreparedEdit({
+      ...proposal, delivery: { ...artifact, delivery: 'pending' },
+    });
+    return deliverPrepared(project, proposal.args.requestId, prepared, result, queueCandidate);
+  }
+  async function deliverPrepared(project, requestId, prepared, result, queueCandidate = true) {
+    const { error: previousError, ...artifact } = result;
     let response;
     try {
       const published = await publishBuild(project, prepared, queueCandidate);
-      response = { ...result, project, delivery: published ? 'pending' : 'superseded' };
+      response = { ...artifact, project, delivery: published ? 'pending' : 'superseded' };
     } catch (error) {
       // Source is accepted. Keep the prepared artifact so a repeat resumes delivery.
-      response = { ...result, project, delivery: 'failed', error: errorData(error) };
+      response = { ...artifact, project, delivery: 'failed', error: errorData(error) };
     }
-    await projects.editDelivery(project.id, proposal.args.requestId, response);
+    await projects.editDelivery(project.id, requestId, response);
     return response;
+  }
+  async function resumeCommitted(projectId, requestId, queueCandidate = true) {
+    const receipt = await projects.editDelivery(projectId, requestId);
+    if (!receipt?.buildRevision) return;
+    if (['shown', 'prepared', 'superseded'].includes(receipt.delivery)) return receipt;
+    if ((await projects.inspect(projectId)).sourceRevision !== receipt.project.sourceRevision) {
+      const superseded = { ...receipt, delivery: 'superseded' };
+      await projects.editDelivery(projectId, requestId, superseded);
+      return superseded;
+    }
+    const prepared = await readJSON(join(data, 'builds', receipt.buildRevision + '.json'));
+    if (prepared?.projectId !== projectId || prepared.sourceRevision !== receipt.project.sourceRevision)
+      throw new Error('The accepted transaction has no matching prepared artifact.');
+    return deliverPrepared(receipt.project, requestId, prepared, receipt, queueCandidate);
   }
   async function acceptMigration(job, result) {
     const proposal = await projects.stageEdit({
@@ -103,6 +122,7 @@ export function projectTransactions({
   return {
     publishBuild,
     commitPrepared,
+    resumeCommitted,
     acceptCandidate: (job, result) =>
       projects.serial('delivery:' + job.projectId, () => acceptCandidate(job, result)),
     acceptMigration: (job, result) =>
@@ -114,11 +134,13 @@ export function projectTransactions({
           if (previousBuild?.input.authoring) {
             if (!isDeepStrictEqual(previousBuild.input.authoring.args, args))
               throw new Error('requestId already belongs to a different edit.');
-            if (previousBuild.result?.delivery === 'failed')
-              return {
-                ...(await acceptCandidate(previousBuild, previousBuild.result)),
-                job: jobs.describe(previousBuild),
+            if (!['queued', 'running', 'cancelling'].includes(previousBuild.status) &&
+                (!previousBuild.result || previousBuild.result.delivery === 'failed')) {
+              const resumed = await resumeCommitted(args.projectId, args.requestId);
+              if (resumed) return { ...resumed,
+                job: await jobs.acceptPreparedResult(previousBuild.id, resumed),
               };
+            }
             return {
               project: {
                 ...(previousBuild.result?.project ?? previousBuild.input.baseProject),
@@ -241,6 +263,7 @@ export function projectTransactions({
                         session.id,
                         {
                           op: 'author',
+                          detail: 'model',
                           requestId: args.requestId,
                           buildRevision: session.build.revision,
                           stateRevision: session.stateRevision,
@@ -295,13 +318,12 @@ export function projectTransactions({
             !isDeepStrictEqual(previous.input.changes, changes)
           )
             throw new Error('requestId already belongs to another preparation.');
-          if (previous.result?.delivery === 'failed')
-            return {
-              ...jobs.describe(previous),
-              result: await projects.serial('delivery:' + projectId, () =>
-                acceptMigration(previous, previous.result),
-              ),
-            };
+          if (!['queued', 'running', 'cancelling'].includes(previous.status) &&
+              (!previous.result || previous.result.delivery === 'failed')) {
+            const resumed = await projects.serial('delivery:' + projectId, () =>
+              resumeCommitted(projectId, previous.id + '-migration'));
+            if (resumed) return jobs.acceptPreparedResult(previous.id, resumed);
+          }
           return jobs.describe(previous);
         }
         const project = await projects.inspect(projectId);
