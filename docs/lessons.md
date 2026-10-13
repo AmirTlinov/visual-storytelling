@@ -88,6 +88,9 @@ review; эта строка сама не появляется в кадре и 
 
 ```js
 const document = {
+  version: 2,
+  models: [],
+  views: [],
   title: 'Остаток',
   chapters: [
     {
