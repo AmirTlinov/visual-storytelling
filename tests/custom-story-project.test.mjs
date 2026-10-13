@@ -125,3 +125,76 @@ test('manifest rejects competing entries, outside resources and duplicate module
   );
   await assert.rejects(readStoryProject(temporary), /unique IDs/);
 });
+
+test(
+  'a manifest without a prepared pin builds ordinary TS modules and a standalone working DOM',
+  { timeout: 60000 },
+  async (t) => {
+    const temporary = await mkdtemp(join(tmpdir(), 'source-manifest-'));
+    t.after(() => rm(temporary, { recursive: true, force: true }));
+    const source = join(temporary, 'source'),
+      built = join(temporary, 'built');
+    await cp('tools/document-modules/route', source, { recursive: true });
+    await buildScene(source, built, { sourcePackage: true, silent: true });
+    const r = await renderer({ directory: built, width: 960, controls: true });
+    try {
+      assert.equal((await r.capture.evaluate((scene) => scene.snapshot())).blocked, 'warehouse');
+      await r.control([{ type: 'parameters', values: { reserve: 'independent' } }]);
+      assert.equal((await r.capture.evaluate((scene) => scene.snapshot())).status, 'delivered');
+      assert.deepEqual(
+        r.messages.filter((message) => message.type === 'error'),
+        [],
+      );
+    } finally {
+      await r.close();
+    }
+  },
+);
+
+test(
+  'prepared author modules reuse the public exact quantity and tensor owners',
+  { timeout: 60000 },
+  async (t) => {
+    const temporary = await mkdtemp(join(tmpdir(), 'measured-story-'));
+    t.after(() => rm(temporary, { recursive: true, force: true }));
+    const source = join(temporary, 'source'),
+      built = join(temporary, 'built');
+    await cp('tools/document-modules/counter', source, { recursive: true });
+    await writeFile(
+      join(source, 'model.js'),
+      `
+    import {rational, quantityPart, quantityTotal, splitQuantity, TensorData} from '@visual-storytelling/core';
+    function measured(inputs, model) {
+      const parts = splitQuantity([quantityPart(model.id + ':half', rational(1,2), 'whole', 'source'),
+        quantityPart(model.id + ':third', rational(1,3), 'whole', 'source')], model.id + ':half', 3);
+      const tensor = new TensorData({id:model.id + ':roots', shape:[2], values:[.5,1/3]});
+      return {...inputs, parts, total:quantityTotal(parts,'whole'), address:tensor.origin(1)};
+    }
+    export default {validateInputs: value => ({count:value.count}), state:measured, staticState:measured,
+      operations:{}, validateViews: views => {if(views.length !== 1 || views[0].kind !== "counter") throw Error("counter view required");}, focusTargets: (_model,views) => views.map(view => view.id)};
+  `,
+    );
+    await writeFile(
+      join(source, 'story.json'),
+      JSON.stringify({
+        version: 2,
+        models: [{ id: 'material', module: 'counter', inputs: { count: 2 } }],
+        views: [{ id: 'objects', kind: 'counter', model: 'material' }],
+        chapters: [],
+      }),
+    );
+    await pinSceneProject(source, { root: release, prepared: true });
+    await buildScene(source, built);
+    const r = await renderer({ directory: built, width: 960, controls: true });
+    try {
+      const state = await r.capture.evaluate((scene) => scene.snapshot());
+      assert.deepEqual(state.total, { numerator: 5, denominator: 6 });
+      assert.deepEqual(state.address.address, [1]);
+      assert.equal(state.address.tensor, 'material:roots');
+      assert.equal(state.parts.length, 4);
+      assert.ok(state.parts.every((part) => part.id.startsWith('material:')));
+    } finally {
+      await r.close();
+    }
+  },
+);

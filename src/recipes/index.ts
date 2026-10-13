@@ -44,3 +44,9 @@ export {
   instructionalDependencyPositions,
 } from './dependency-route-subject.js';
 export { tracePath } from './trace-path.js';
+
+export { fractionsModel, fractionInputs, fractionState } from './fractions-model.js';
+export type { FractionState } from './fractions-model.js';
+export { fractionsStory } from './fractions-story.js';
+export type { FractionsStoryInput } from './fractions-story.js';
+export { divisionParts } from './division-parts.js';

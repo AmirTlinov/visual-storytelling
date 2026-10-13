@@ -1,3 +1,4 @@
+import { DIVISION_MAX_COUNT, DIVISION_MAX_DIVISOR } from './division-capacity.js';
 import { surface } from '../ink/surface.js';
 import { divisionState } from '../math/division.js';
 import { divisionDiagram, type DivisionFocusTarget } from './division.js';
@@ -17,7 +18,7 @@ export const divisionSubject: StorySubjectRecipe = {
       type: 'stepper',
       value: model.inputs.count!,
       min: 0,
-      max: 36,
+      max: DIVISION_MAX_COUNT,
       step: 1,
     },
     {
@@ -26,7 +27,7 @@ export const divisionSubject: StorySubjectRecipe = {
       type: 'stepper',
       value: model.inputs.divisor!,
       min: 1,
-      max: 12,
+      max: DIVISION_MAX_DIVISOR,
       step: 1,
     },
   ],
@@ -41,8 +42,10 @@ export const divisionSubject: StorySubjectRecipe = {
     });
     const diagram = divisionDiagram(drawing, model.id);
     let latestModel = model;
-    const snapshot = (state: Record<string, unknown>) =>
-      divisionState(Number(state.count), Number(state.divisor), { id: latestModel.id });
+    const snapshot = (state: Record<string, unknown>) => ({
+      ...divisionState(Number(state.count), Number(state.divisor), { id: latestModel.id }),
+      parts: state.parts,
+    });
     const options = (views: Parameters<ReturnType<StorySubjectRecipe['create']>['render']>[1]) => ({
       width: shell.layout.width,
       height: shell.layout.height,

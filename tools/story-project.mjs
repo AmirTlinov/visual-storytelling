@@ -112,13 +112,13 @@ export const subjects={${manifest.modules.map((module, index) => `${JSON.stringi
 export function storyProjectSource(manifest, directory) {
   return `import {IllustratedStory} from '@visual-storytelling/core';
 import '@visual-storytelling/core/style.css';
-import document from ${JSON.stringify(join(directory, 'story.json'))};
+import storyDocument from ${JSON.stringify(join(directory, 'story.json'))};
 ${manifest.resources
   .filter((file) => file.endsWith('.css'))
   .map((file) => `import ${JSON.stringify(join(directory, file))};`)
   .join('\n')}
 ${storyModuleSource(manifest, directory)}
-window.galleryReady=IllustratedStory.mount(document.querySelector('main'),{document,modules,subjects});`;
+window.galleryReady=IllustratedStory.mount(document.querySelector('main'),{document:storyDocument,modules,subjects});`;
 }
 export function storyProjectPage(source, title = 'Визуальное объяснение') {
   const escaped = title.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');

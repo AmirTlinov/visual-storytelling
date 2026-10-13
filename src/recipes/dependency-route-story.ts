@@ -19,8 +19,8 @@ export function dependencyRouteStory(input: DependencyRouteStoryInput): StoryDoc
   if (extra) throw new Error(`dependency-route.${extra}: unknown field.`);
   const id = input.id ?? 'route';
   const views = input.views ?? [
-    { id: 'network', kind: 'dependency-network', model: id },
-    { id: 'status', kind: 'order-status', model: id },
+    { id: id === 'network' ? 'network.view' : 'network', kind: 'dependency-network', model: id },
+    { id: id === 'status' ? 'status.view' : 'status', kind: 'order-status', model: id },
   ];
   let chapterId = 'journey';
   while ([id, ...views.map((view) => view.id)].includes(chapterId)) chapterId += '.story';

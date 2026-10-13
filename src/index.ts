@@ -97,3 +97,6 @@ export type {
   SceneRendering,
   SceneRenderMoment,
 } from './scene-access.js';
+
+export * from './math/rational.js';
+export * from './math/quantity-parts.js';

@@ -61,7 +61,7 @@ export function documentModelsAt(
       );
       return [
         model.id,
-        !frame && owner.staticState ? owner.staticState(values) : owner.state(values),
+        !frame && owner.staticState ? owner.staticState(values, model) : owner.state(values, model),
       ];
     }),
   );
@@ -78,6 +78,7 @@ export function documentModelsAt(
           models[modelId] = owners[model.module]!.operations[name]!(
             models[modelId]!,
             frame.reveal(id),
+            model,
           );
           modelInputValues(model, models[modelId]!, owners[model.module]!);
         }
@@ -88,10 +89,10 @@ export function documentModelsAt(
       const owner = owners[model.module]!;
       const values = owner.validateInputs(inputs[model.id] ?? model.inputs);
       models[model.id] = owner.experimentState
-        ? owner.experimentState(values, models[model.id]!)
+        ? owner.experimentState(values, models[model.id]!, model)
         : owner.staticState
-          ? owner.staticState(values)
-          : owner.state(values);
+          ? owner.staticState(values, model)
+          : owner.state(values, model);
     }
   return { models, beat };
 }

@@ -418,3 +418,41 @@ SHA-256 и mtime голоса, музыки и timeline сохранены бе�
 При collapsed host общий SceneFrame сохраняет прежнюю композицию, пока ширина
 и высота снова не станут положительными. Проверен переход1×1→обычная ширина
 на маршруте с сохранением заказа и условий.
+
+### Слайс05: точные измеримые части
+
+Принят browser SDK-host физически установленного plugin 0.22.0 / core 0.34.0:
+`0.22.0-40acfd61eeaced52`, build
+`318ec1de1c8b6983acd52ecb213208f37c67ba61c1039d56173222d5dd90f785`.
+QuantityPart владеет величиной, единицей, единичным целым и происхождением;
+BigInt sum сокращается после полной суммы. Перенос сохраняет материал;
+копия оставляет оригинал, получает новый ID и явный прирост. Деление и дроби
+используют того же владельца. MathMorph plan/TensorData описывают геометрию
+и исходные адреса, Story остаётся единственными часами.
+
+Проверены 960/light и 375/dark, reduced motion, настоящий 1× промежуточный кадр,
+клавиатурное копирование/выбор, авторская правка/undo, seek/checkpoint и reload.
+После reload сохранились time6, copy4/3 и `fractions:left:part:0:copy`.
+Current HTML/PNG выпущены; авторский MP4 —6с,72кадра,960×540—полностью декодирован;
+промежуточные/финальные пиксели просмотрены. Голос в этом срезе не добавлялся.
+
+Матрица:28/29 PASS; тестовый модуль пропустил обязательный validateViews.
+Исправленный consumer/browser набор6/6 PASS; финальная exact матрица11/11 PASS.
+Независимое ревью завершено; существенные замечания устранены. Доказательства:
+`artifacts/architecture/2026-10-13/slice05-acceptance.json`,
+`installed-final-0.22.0/`, `installed-dist-0.22.0/`, `artifacts/fractions/`.
+
+Срез04 повторно принят: обычный manifest builder из установленного пакета
+успешно собрал TS/SVG и переносимый HTML. Generated entry теперь использует
+storyDocument, DOM document остаётся владельцем querySelector. Prepared и
+обычный пути продолжают общий manifest и compiler.
+
+| Заменённый путь                                | Владелец                              | Потребители                      | Доказательство                        |
+| ---------------------------------------------- | ------------------------------------- | -------------------------------- | ------------------------------------- |
+| Локальное происхождение предметов деления      | quantity-parts / division-parts       | модель, рисунок, inspect         | division-parts, document tests        |
+| Повторные ограничения рисунка 36/12            | division-capacity                     | division model/subject/drawing   | bounded/unbounded regression          |
+| Численная сумма частей по промежуточным Number | rational.sumRational                  | total, origins, merge, fractions | все24перестановки exact sum           |
+| Замкнутый provisional ID рисунка               | актуальный model в render/validate    | fractions subject/formula/parts  | zero/nonzero scope browser regression |
+| Копия арифметики в prepared author modules     | documentRuntime existing math exports | JS/TS manifest modules           | prepared consumer test                |
+
+Milestone и финальные gates5/20/native остаются открыты. Следующий срез—GUI-564.

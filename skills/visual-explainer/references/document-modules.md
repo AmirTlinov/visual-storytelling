@@ -28,16 +28,16 @@ manifest, модули, ресурсы и полный `story.json`. Подго�
 создаётся без manifest через обычный исходный каркас.
 
 Подготовленный 2D runtime предоставляет существующие exports ink/recipes/story,
-`SceneShell` и `mountScene`. Компилируется авторский JS/TS; imports и ресурсы
+`SceneShell`, `mountScene`, точную рациональную арифметику, QuantityPart и TensorData. Компилируется авторский JS/TS; imports и ресурсы
 остаются внутри immutable snapshot. Используй обычный
 `new URL('../assets/parcel.svg', import.meta.url)`: общий asset owner замыкает SVG.
 Другие движки подключаются через обычную исходную сцену.
 
 В story операции выполняются один раз от authored baseline. При переходе в
 explore сохраняются вычисленные scalar inputs; ручной ввод не повторяет авторское
-преобразование. `experimentState(inputs, authoredState)` нужен, когда опыт должен
+преобразование. `experimentState(inputs, authoredState, model)` нужен, когда опыт должен
 сохранить визуальную фазу эпизода; иначе модель получает обычный state/staticState
-новых условий. Проверяй неидемпотентную операцию, обратный seek и смену режима.
+новых условий. State/staticState и операции также получают model с актуальным ID; рисунок использует ID переданного model каждого render/validate, включая предварительное создание. Проверяй неидемпотентную операцию, обратный seek и смену режима.
 
 Рабочие исходники: `tools/document-modules/route/` (иная сеть, TS и SVG),
 `tools/document-modules/counter/` (операция «прибавить один»). Проверки:

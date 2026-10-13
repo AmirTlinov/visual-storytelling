@@ -1,3 +1,5 @@
+import { DIVISION_MAX_COUNT } from './division-capacity.js';
+import { divisionParts } from './division-parts.js';
 import type { Surface } from '../ink/surface.js';
 import { object } from '../ink/object.js';
 import { lettering } from '../ink/lettering.js';
@@ -14,7 +16,7 @@ import {
 } from '../math/division.js';
 
 /** Drawing capacity, separate from the unbounded safe-integer arithmetic model. */
-export const DIVISION_MAX_COUNT = 36;
+export { DIVISION_MAX_COUNT } from './division-capacity.js';
 export type DivisionFocusTarget = 'groups' | 'remainder' | 'equation';
 export type DivisionFocus = 'all' | readonly DivisionFocusTarget[];
 export interface DivisionDiagramOptions {
@@ -177,7 +179,12 @@ export function divisionDiagram(surface: Surface, id: string) {
       interactive: false,
     });
     const scope = { ...surface, layer: picture.content, pen: drawingPen };
-    const observed = { completedGroups: 0, ungrouped: state.count, complete: false };
+    const observed = {
+      completedGroups: 0,
+      ungrouped: state.count,
+      complete: false,
+      parts: divisionParts(state, options.progress),
+    };
     try {
       const items = from.map((_, i) => {
         const itemId = divisionItemId(state, i);
@@ -186,6 +193,7 @@ export function divisionDiagram(surface: Surface, id: string) {
           label: `Предмет ${i + 1}`,
           value: () => 1,
           unit: 'предмет',
+          provenance: () => observed.parts[i],
           interactive: false,
         });
         cleanups.push(() => {
@@ -376,7 +384,7 @@ export function divisionDiagram(surface: Surface, id: string) {
       return regroup([start], [next.to[i]!], amount)[0]!;
     });
     // After preparation, rendering only applies already validated positions and captions.
-    Object.assign(next.observed, moment);
+    Object.assign(next.observed, moment, { parts: divisionParts(state, options.progress) });
     next.items.forEach((mark, i) => {
       const [x, y] = locations[i]!;
       mark.element.setAttribute(

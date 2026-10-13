@@ -1,5 +1,16 @@
+import { divisionParts } from './division-parts.js';
+import { DIVISION_MAX_COUNT, DIVISION_MAX_DIVISOR } from './division-capacity.js';
+import type { ModelValues, StoryModel } from '../story/model.js';
 import { divisionState } from '../math/division.js';
 import type { StoryModelModule } from '../story/model.js';
+
+function measuredState(inputs: ModelValues, progress: number, model?: StoryModel) {
+  const values = divisionModel.validateInputs(inputs);
+  const result = divisionState(Number(values.count), Number(values.divisor), {
+    id: model?.id ?? 'division',
+  });
+  return { ...values, progress, parts: divisionParts(result, progress) };
+}
 
 /** The finite individual-object drawing owns these limits; integer arithmetic remains unbounded. */
 export const divisionModel: StoryModelModule = {
@@ -10,17 +21,25 @@ export const divisionModel: StoryModelModule = {
     if (Object.keys(input).some((key) => !['count', 'divisor'].includes(key)))
       throw new Error('division.inputs: choose count or divisor.');
     const state = divisionState(input.count as number, input.divisor as number);
-    if (state.count > 36 || state.divisor > 12)
+    if (state.count > DIVISION_MAX_COUNT || state.divisor > DIVISION_MAX_DIVISOR)
       throw new Error('groups: this drawing supports count ≤ 36 and divisor ≤ 12.');
     return { count: state.count, divisor: state.divisor };
   },
-  state: (inputs) => ({ ...inputs, progress: 0 }),
-  staticState: (inputs) => ({ ...inputs, progress: 1 }),
-  experimentState: (inputs, authored) => ({ ...inputs, progress: authored.progress }),
+  state: (inputs, model) => measuredState(inputs, 0, model),
+  staticState: (inputs, model) => measuredState(inputs, 1, model),
+  experimentState: (inputs, authored, model) =>
+    measuredState(inputs, Number(authored.progress), model),
   operations: {
-    gather: (state) => ({ ...state, progress: 0 }),
-    group: (state, progress) => ({ ...state, progress }),
-    remainder: (state) => ({ ...state, progress: 1 }),
+    gather: (state, _progress, model) =>
+      measuredState({ count: state.count as number, divisor: state.divisor as number }, 0, model),
+    group: (state, progress, model) =>
+      measuredState(
+        { count: state.count as number, divisor: state.divisor as number },
+        progress,
+        model,
+      ),
+    remainder: (state, _progress, model) =>
+      measuredState({ count: state.count as number, divisor: state.divisor as number }, 1, model),
   },
   validateViews(views) {
     if (

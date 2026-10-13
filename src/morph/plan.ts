@@ -95,6 +95,9 @@ function resize(from: MorphPoint, to: MorphPoint, formula: string, preserve = fa
   };
 }
 export function mathPlan(operation: ConstructionPlan): ConstructionPlan;
+export function mathPlan<Result extends MathValue>(
+  operation: MathMorphPlan<Result>,
+): MathMorphPlan<Result>;
 export function mathPlan<O extends MathOperation>(
   operation: O,
 ): MathMorphPlan<

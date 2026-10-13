@@ -67,7 +67,10 @@ test('compact division normalizes once to v2 with stable IDs and the accepted ei
 test('static documents have no timeline and preserve exact division through the same model', () => {
   const doc = validateStoryDocument({ ...input, chapters: [] });
   assert.equal(documentTimeline(doc), undefined);
-  assert.deepEqual(documentModelsAt(doc).models.division, { count: 17, divisor: 5, progress: 1 });
+  const { parts, ...values } = documentModelsAt(doc).models.division;
+  assert.deepEqual(values, { count: 17, divisor: 5, progress: 1 });
+  assert.equal(parts.length, 17);
+  assert.equal(new Set(parts.map((part) => part.id)).size, 17);
   for (const inputs of [
     { count: 0, divisor: 12 },
     { count: 36, divisor: 1 },

@@ -17,11 +17,13 @@ export interface StoryView {
 /** Subject validation and pure operations belong to the model's ordinary JS owner. */
 export interface StoryModelModule {
   validateInputs(value: unknown): ModelValues;
-  state(inputs: ModelValues): ModelState;
-  staticState?(inputs: ModelValues): ModelState;
+  state(inputs: ModelValues, model?: StoryModel): ModelState;
+  staticState?(inputs: ModelValues, model?: StoryModel): ModelState;
   /** Viewer conditions remain authoritative while the authored episode supplies its visual progress. */
-  experimentState?(inputs: ModelValues, authored: ModelState): ModelState;
-  operations: Readonly<Record<string, (state: ModelState, progress: number) => ModelState>>;
+  experimentState?(inputs: ModelValues, authored: ModelState, model?: StoryModel): ModelState;
+  operations: Readonly<
+    Record<string, (state: ModelState, progress: number, model?: StoryModel) => ModelState>
+  >;
   validateViews(views: readonly StoryView[]): void;
   validateSequence?(operations: readonly string[]): void;
   focusTargets(model: StoryModel, views: readonly StoryView[]): readonly string[];
