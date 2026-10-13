@@ -348,6 +348,7 @@ test('visual document edits reuse accepted narration without cached takes or an 
   await rm(f.cache, { recursive: true, force: true });
   document.models[0].inputs.count = 14;
   document.chapters[0].title = 'Новая подпись той же главы';
+  document.narration = { captionAliases: { 'Один шаг': 'Первый шаг' } };
   await save(document);
   const previousPath = process.env.PATH;
   try {
@@ -358,6 +359,16 @@ test('visual document edits reuse accepted narration without cached takes or an 
     process.env.PATH = previousPath;
   }
   assert.deepEqual(await f.pair(), accepted, 'accepted WAV and provenance stay byte-identical');
+  delete document.narration.captionAliases;
+  await save(document);
+  try {
+    process.env.PATH = '/nonexistent-no-ffmpeg-or-node';
+    await buildNarration(f.directory, { cache: f.cache });
+    await checkNarration(await readFile(join(f.directory, 'index.html'), 'utf8'), f.directory);
+  } finally {
+    process.env.PATH = previousPath;
+  }
+  assert.deepEqual(await f.pair(), accepted, 'removing display aliases also reuses the recording');
   for (const change of [
     (source) => {
       source.chapters[0].beats[0].say = 'Другой шаг вправо.';

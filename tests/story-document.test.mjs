@@ -336,3 +336,30 @@ test('Unicode repeated phrases keep their occurrence and reused audio receives c
   assert.equal(documentChapter(doc, 'lesson', script).script.segments[0].title, 'Current title');
   assert.equal(aligned.segments[0].title, 'Old title');
 });
+
+test('caption edits project current aliases without changing accepted speech or acoustic marks', () => {
+  const doc = {
+    version: 2, models: [], views: [],
+    chapters: [{ id: 'lesson', title: 'Title', beats: [{ id: 'one', say: 'Look 17.' }] }],
+    narration: { captionAliases: { Look: 'Смотри' } },
+  };
+  const aligned = {
+    duration: 2,
+    cues: { 'lesson.one': { start: 0, end: 2 } },
+    captionAliases: { Look: 'Old' },
+    segments: [{ id: 'lesson', title: 'Title', text: 'Look 17.', start: 0, end: 2 }],
+  };
+  const original = structuredClone(aligned);
+  const projected = documentScript(doc, aligned);
+  assert.deepEqual(projected.captionAliases, { Look: 'Смотри' });
+  assert.deepEqual(documentChapter(doc, 'lesson', projected).script.captionAliases, { Look: 'Смотри' });
+  assert.deepEqual(documentChapter(doc, 'lesson').script.captionAliases, { Look: 'Смотри' });
+  projected.captionAliases.Look = 'Changed copy';
+  assert.equal(doc.narration.captionAliases.Look, 'Смотри');
+  delete doc.narration.captionAliases;
+  const cleared = documentScript(doc, aligned);
+  assert.equal(cleared.captionAliases, undefined);
+  assert.equal(documentChapter(doc, 'lesson', cleared).script.captionAliases, undefined);
+  assert.deepEqual(aligned, original);
+  assert.deepEqual(cleared.segments, original.segments);
+});

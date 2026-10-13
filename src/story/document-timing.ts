@@ -277,6 +277,9 @@ export function documentScript(
   const script = resolve(
     {
       ...aligned,
+      captionAliases: document.narration?.captionAliases
+        ? { ...document.narration.captionAliases }
+        : undefined,
       cues,
       segments: aligned.segments
         ?.filter((segment) => titles.has(segment.id))
@@ -348,11 +351,17 @@ export function documentChapter(
   const authored = authoredChapter(document, id, options);
   const span = aligned?.cues[id];
   if (aligned && !span) throw new Error(`Missing aligned chapter: ${id}`);
-  const script: Script = { duration: 0, cues: {}, segments: [] };
+  const script: Script = {
+    duration: 0,
+    cues: {},
+    segments: [],
+    ...(document.narration?.captionAliases && {
+      captionAliases: { ...document.narration.captionAliases },
+    }),
+  };
   const silent = new Set(chapter.beats.filter((beat) => !spoken(beat)).map((beat) => beat.id));
   if (span) {
     script.duration = span.end - span.start;
-    script.captionAliases = aligned!.captionAliases;
     for (const beat of chapter.beats) {
       const cue = aligned!.cues[`${id}.${beat.id}`];
       if (!cue) throw new Error(`Missing authored action ${id}.${beat.id}`);

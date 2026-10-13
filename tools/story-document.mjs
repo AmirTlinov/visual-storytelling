@@ -42,6 +42,19 @@ export async function narrationSource(directory) {
       )
         segment.title = previous.title;
     }
+    // Display aliases are projected by the current document at playback/export.
+    // Keep the recorded source identity so a caption edit needs no TTS or remix.
+    if (
+      retained?.segments?.length === spec.segments.length &&
+      spec.segments.every((segment, index) =>
+        segment.id === retained.segments[index].id &&
+        typeof retained.segments[index].text === 'string' &&
+        spoken(segment.text) === spoken(retained.segments[index].text),
+      )
+    ) {
+      if (retained.captionAliases === undefined) delete spec.captionAliases;
+      else spec.captionAliases = structuredClone(retained.captionAliases);
+    }
     const text = JSON.stringify(spec, null, 2) + '\n';
     const file = join(
       tmpdir(),

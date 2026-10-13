@@ -117,6 +117,7 @@ test(
           commands: window.commands,
           maxRunning: window.maxRunning,
           source: lab.audio.outerHTML,
+          caption: document.querySelector('[data-caption]')?.textContent,
         }));
       const before = await observe();
       assert.equal(before.snapshot.count, 18);
@@ -203,12 +204,14 @@ test(
       await page.evaluate(async () => {
         const next = structuredClone(lab.scene.authoring.document);
         next.title = 'Accepted revision';
+        next.narration = { ...next.narration, captionAliases: { Разделим: 'Разбиваем' } };
         await lab.scene.authoring.replace(next);
         window.acceptedAudio = window.media.at(-1);
       });
       await page.waitForFunction(() => !window.acceptedAudio.paused);
       after = await observe();
       assert.equal(after.document.title, 'Accepted revision');
+      assert.match(after.caption, /Разбиваем на\s+группы/);
       assert.equal(after.playing, true);
       assert.equal(after.rate, 1.25);
       assert.equal(after.muted, false);
@@ -227,11 +230,13 @@ test(
       await page.evaluate(async () => {
         const next = structuredClone(lab.scene.authoring.document);
         next.title = 'Another revision';
+        delete next.narration.captionAliases;
         await lab.scene.authoring.replace(next);
         window.acceptedAudio = window.media.at(-1);
       });
       await page.waitForFunction(() => !window.acceptedAudio.paused);
       after = await observe();
+      assert.match(after.caption, /Разделим на\s+группы/);
       assert.equal(after.rate, 1.75);
       assert.equal(after.muted, true);
       assert.equal(
