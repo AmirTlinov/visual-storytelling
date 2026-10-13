@@ -47,7 +47,14 @@ export const workflows = {
     )
       throw new Error('Runtime and document migration exceed the 64-file transaction limit.');
     task.progress('Подготавливаю новую библиотеку…');
-    const updated = await updateSceneRuntime(snapshot, { root, build: false, signal: task.signal });
+    // ProjectStore history still references the previous pin. Keep its immutable archive
+    // in both candidate and working sources so publication and a later undo agree.
+    const updated = await updateSceneRuntime(snapshot, {
+      root,
+      build: false,
+      signal: task.signal,
+      retainPreviousArchive: true,
+    });
     if (!updated.changed && !changes.length && !documentChanges.length) return { upToDate: true };
     const source = await projectFiles(snapshot);
     const voice = await readJSON(join(snapshot, 'voice.json'));

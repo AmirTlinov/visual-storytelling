@@ -536,7 +536,12 @@ export async function updateSceneRuntime(destination, options = {}) {
   }
   // A legacy root archive may be hand-authored. Only this owner's path is eligible,
   // and aliases in another dependency field still keep its file alive.
-  if (typeof previous === 'string' && managed.test(previous) && previous !== receipt.dependency) {
+  if (
+    !options.retainPreviousArchive &&
+    typeof previous === 'string' &&
+    managed.test(previous) &&
+    previous !== receipt.dependency
+  ) {
     const old = localFile(previous, destination);
     if (!referenced(manifest, old, destination)) {
       let owned = false;
