@@ -13,13 +13,63 @@ export async function narrationSource(directory) {
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  if (document) {
+  if (document !== undefined) {
     const runtime = await resolvePackage('@visual-storytelling/core', directory);
     const projection = runtime
       ? pathToFileURL(join(runtime, 'dist/story/document.js'))
       : new URL('../dist/story/document.js', import.meta.url);
     const { documentNarration } = await import(projection.href);
-    const spec = documentNarration(document);
+    let spec = documentNarration(document);
+    if (!spec.segments.length) return;
+    const retained = await readFile(join(directory, 'timeline.json'), 'utf8')
+      .then(JSON.parse)
+      .catch((error) => {
+        if (error.code !== 'ENOENT') throw error;
+      });
+    // Titles are display metadata. Keep the accepted recording's source identity;
+    // the compiled document supplies current chapter titles to every presentation.
+    const spoken = (text) =>
+      text
+        .replace(/<\|[a-z]+:[a-z_]+\|>/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    for (const segment of spec.segments) {
+      const previous = retained?.segments?.find((item) => item.id === segment.id);
+      if (
+        typeof previous?.title === 'string' &&
+        typeof previous.text === 'string' &&
+        spoken(previous.text) === spoken(segment.text)
+      )
+        segment.title = previous.title;
+    }
+    // Display aliases are projected by the current document at playback/export.
+    // Keep the recorded source identity so a caption edit needs no TTS or remix.
+    if (
+      retained?.segments?.length === spec.segments.length &&
+      spec.segments.every((segment, index) =>
+        segment.id === retained.segments[index].id &&
+        typeof retained.segments[index].text === 'string' &&
+        spoken(segment.text) === spoken(retained.segments[index].text),
+      )
+    ) {
+      const { captionAliases: _aliases, segments, ...recording } = spec;
+      spec = {
+        ...recording,
+        ...(retained.captionAliases !== undefined && {
+          captionAliases: structuredClone(retained.captionAliases),
+        }),
+        segments,
+      };
+      for (const segment of spec.segments)
+        for (const cue of segment.cues ?? []) {
+          const accepted = retained.cues?.[cue.id];
+          if (!accepted) continue;
+          for (const field of ['action', 'hold', 'timing']) delete cue[field];
+          for (const field of ['action', 'hold', 'timing']) {
+            if (accepted[field] !== undefined) cue[field] = structuredClone(accepted[field]);
+          }
+        }
+    }
     const text = JSON.stringify(spec, null, 2) + '\n';
     const file = join(
       tmpdir(),

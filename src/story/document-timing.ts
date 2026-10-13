@@ -42,11 +42,13 @@ function timingFor(chapter: AuthoredChapter, beat: AuthoredBeat) {
     ? { ...timing, until: `${chapter.id}.${timing.until}` }
     : timing;
 }
-// Match the speech aligner's Russian word contract, including ё and non-breaking hyphens.
+// Match the adapter's Unicode word contract, retaining Russian normalization.
 const spokenWords = (text: string) =>
-  (text.match(/[А-Яа-яЁё]+(?:[-‑][А-Яа-яЁё]+)*/g) ?? []).map((word) =>
-    word.toLowerCase().replaceAll('ё', 'е').replaceAll('‑', '-'),
-  );
+  text
+    .toLowerCase()
+    .replaceAll('ё', 'е')
+    .replaceAll('‑', '-')
+    .match(/[\p{L}\p{N}]+(?:[-][\p{L}\p{N}]+)*/gu) ?? [];
 /** Contiguous spoken runs share synthesis; silent beats use the assembler's existing pauses. */
 function spokenRuns(chapter: AuthoredChapter) {
   const runs: AuthoredBeat[][] = [];
@@ -236,11 +238,14 @@ export function documentScript(
           throw new Error(
             `Silent action before ${id} does not fit aligned narration; regenerate narration with its authored pauses`,
           );
+        const { action: _action, hold: _hold, timing: _timing, ...acoustic } = cue;
+        const anchor = cue.speech ?? cue;
         cues[id] = {
-          ...cue,
+          ...acoustic,
+          start: anchor.start,
+          end: anchor.end,
+          ...intention(beat),
           ...(timing ? { timing } : {}),
-          ...(beat.action !== undefined ? { action: beat.action } : {}),
-          ...(beat.hold !== undefined ? { hold: beat.hold } : {}),
         };
       } else {
         silent.add(id);
@@ -267,7 +272,26 @@ export function documentScript(
     previousEnd = Math.max(cursor, ...segments.map((segment) => segment.end));
     return { chapter, start, finish: previousEnd };
   });
-  const script = resolve({ ...aligned, cues }, silent);
+  const titles = new Map(
+    document.chapters.flatMap((chapter) =>
+      spokenRuns(chapter).map((run) => [run.id, chapter.title] as const),
+    ),
+  );
+  const script = resolve(
+    {
+      ...aligned,
+      captionAliases: document.narration?.captionAliases
+        ? { ...document.narration.captionAliases }
+        : undefined,
+      cues,
+      segments: aligned.segments
+        ?.filter((segment) => titles.has(segment.id))
+        .map((segment) =>
+          titles.has(segment.id) ? { ...segment, title: titles.get(segment.id)! } : segment,
+        ),
+    },
+    silent,
+  );
   // Computed silent durations may exceed an adjacent acoustic boundary by a
   // floating-point residue. Snap only those action ends; keep speech anchors intact.
   const closeEnd = (id: string, boundary: number) => {
@@ -330,11 +354,17 @@ export function documentChapter(
   const authored = authoredChapter(document, id, options);
   const span = aligned?.cues[id];
   if (aligned && !span) throw new Error(`Missing aligned chapter: ${id}`);
-  const script: Script = { duration: 0, cues: {}, segments: [] };
+  const script: Script = {
+    duration: 0,
+    cues: {},
+    segments: [],
+    ...(document.narration?.captionAliases && {
+      captionAliases: { ...document.narration.captionAliases },
+    }),
+  };
   const silent = new Set(chapter.beats.filter((beat) => !spoken(beat)).map((beat) => beat.id));
   if (span) {
     script.duration = span.end - span.start;
-    script.captionAliases = aligned!.captionAliases;
     for (const beat of chapter.beats) {
       const cue = aligned!.cues[`${id}.${beat.id}`];
       if (!cue) throw new Error(`Missing authored action ${id}.${beat.id}`);
@@ -352,6 +382,7 @@ export function documentChapter(
       ?.filter((segment) => segment.id === id || runs.some((run) => run.id === segment.id))
       .map((segment) => ({
         ...segment,
+        title: chapter.title,
         start: segment.start - span.start,
         end: segment.end - span.start,
         words: segment.words?.map((word) => ({

@@ -21,6 +21,57 @@ function editAudioTags(html, edit) {
   return html;
 }
 
+function generatedNarrationLocation(html) {
+  const required = {
+    'data-story-audio': '',
+    'data-story-timeline': 'timeline.json',
+    src: 'audio.wav',
+    preload: 'auto',
+  };
+  let found;
+  editAudioTags(html, (location, _edits, node) => {
+    if (
+      !location?.endTag ||
+      node.parentNode?.tagName !== 'body' ||
+      location.endOffset !== node.parentNode.sourceCodeLocation?.endTag?.startOffset ||
+      node.childNodes.length
+    )
+      return;
+    const attrs = Object.fromEntries(node.attrs.map(({ name, value }) => [name, value]));
+    if (
+      Object.entries(required).some(([name, value]) => attrs[name] !== value) ||
+      Object.entries(attrs).some(([name, value]) =>
+        name === 'data-silent' ? value !== 'true' : required[name] !== value,
+      )
+    )
+      return;
+    found = location;
+  });
+  return found;
+}
+
+/** The complete media hook owned by setNarrationMode, including its selected silent mode. */
+export function generatedNarrationHook(html) {
+  const location = generatedNarrationLocation(html);
+  if (location) return html.slice(location.startOffset, location.endOffset);
+}
+
+/** Compare a prepared source without the exact media hook inserted at its body boundary. */
+export function withoutGeneratedNarration(html) {
+  const location = generatedNarrationLocation(html);
+  return location ? html.slice(0, location.startOffset) + html.slice(location.endOffset) : html;
+}
+
+/** A quiet canonical revision does not need the previous recording's owned hook. */
+export async function withoutUnusedNarration(html, directory) {
+  if (!generatedNarrationHook(html)) return html;
+  const document = await readFile(join(directory, 'story.json'), 'utf8').catch((error) => {
+    if (error.code !== 'ENOENT') throw error;
+  });
+  if (document === undefined || (await narrationSource(directory))) return html;
+  return withoutGeneratedNarration(html);
+}
+
 /** Change actual audio tags without touching scripts, styles or quoted examples. */
 export function setNarrationMode(html, silent) {
   let found = false;
@@ -181,7 +232,10 @@ export async function buildNarration(
 ) {
   signal?.throwIfAborted();
   const source = await narrationSource(directory);
-  if (!source) throw new Error('Provide story.json or narration.json for speech');
+  if (!source)
+    throw new Error(
+      'This scene has no authored speech. Add spoken beats to story.json or provide narration.json.',
+    );
   const settingsFile = join(directory, 'voice.json');
   let settings = await readFile(settingsFile, 'utf8').then(JSON.parse, (error) => {
     if (error.code !== 'ENOENT') throw error;
@@ -304,6 +358,7 @@ export async function prepareNarration(directory, { audible = false, signal } = 
     },
   );
   if (settings?.enabled === false) return deferNarration(directory);
+  if (!(await narrationSource(directory))) return;
   let rebuilt = false;
   for (const name of await readdir(directory)) {
     signal?.throwIfAborted();

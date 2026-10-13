@@ -61,7 +61,7 @@ test('speech projection follows the scene consumer inherited from its workspace'
     );
     await writeFile(
       join(consumer, 'dist/story/document.js'),
-      'export const documentNarration = document => ({ owner: "scene-consumer-7", title: document.title, intro: .75 });',
+      'export const documentNarration = document => ({ owner: "scene-consumer-7", title: document.title, intro: .75, segments: [{id:"parent", text:"Parent runtime"}] });',
     );
     await writeFile(join(scene, 'story.json'), JSON.stringify(document));
     projection = await narrationSource(scene);
@@ -70,6 +70,7 @@ test('speech projection follows the scene consumer inherited from its workspace'
       owner: 'scene-consumer-7',
       title: document.title,
       intro: 0.75,
+      segments: [{ id: 'parent', text: 'Parent runtime' }],
     });
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -93,7 +94,10 @@ test('one authored document feeds action IDs, speech and exact aligned chapter b
     ],
   };
   const script = documentScript(document, aligned);
-  assert.deepEqual(script.cues['paper.try'], aligned.cues['paper.try']);
+  assert.deepEqual(script.cues['paper.try'], {
+    ...aligned.cues['paper.try'],
+    action: 'Переключатель доступен.',
+  });
   assert.equal(script.cues.paper.start, 10);
   assert.throws(
     () =>
@@ -164,7 +168,9 @@ test('local chapters start immediately while optional narration reserves the fin
 });
 
 test('aligned chapter local time preserves spoken words and the final action tail', () => {
-  const aligned = documentScript(document, {
+  const authored = structuredClone(document);
+  authored.chapters[0].beats[0].timing = { duration: 7 - 4.4 };
+  const aligned = documentScript(authored, {
     duration: 13,
     cues: {
       'room.switch': { start: 4.4, end: 7, speech: { start: 4.4, end: 5 } },
@@ -181,7 +187,7 @@ test('aligned chapter local time preserves spoken words and the final action tai
       { id: 'paper', start: 10, end: 12, text: 'Проверьте сами.' },
     ],
   });
-  const chapter = documentChapter(document, 'room', aligned);
+  const chapter = documentChapter(authored, 'room', aligned);
   assert.equal(chapter.seconds, 7 - 4.4);
   assert.equal(chapter.script.cues.switch.start, 0);
   assert.deepEqual(chapter.script.cues.switch.speech, { start: 0, end: 5 - 4.4 });
@@ -232,7 +238,10 @@ test('document action timing survives speech projection and uses existing time a
   assert.equal(script.cues['lesson.start'].end, 6);
   assert.equal(script.cues.lesson.end, 10, 'the final action can finish during an existing outro');
   assert.deepEqual(script.cues['lesson.finish'].speech, { start: 6, end: 6.8 });
-  assert.equal(script.segments, aligned.segments);
+  assert.deepEqual(
+    script.segments,
+    aligned.segments.map((segment) => ({ ...segment, title: story.chapters[0].title })),
+  );
 
   story.chapters[0].beats[0].timing.duration = 2;
   assert.throws(() => documentNarration(story), /choose duration or until/);
@@ -298,4 +307,92 @@ test('repeated thoughts bind to their own spoken words, including a quote inside
       }),
     /stable ID/,
   );
+});
+
+test('Unicode repeated phrases keep their occurrence and reused audio receives current chapter titles', () => {
+  const doc = {
+    version: 2,
+    models: [],
+    views: [],
+    chapters: [
+      {
+        id: 'lesson',
+        title: 'Old title',
+        beats: [
+          { id: 'one', say: 'Look 17.' },
+          { id: 'two', say: 'Look 17.' },
+        ],
+      },
+    ],
+  };
+  const spec = documentNarration(doc);
+  assert.deepEqual(
+    spec.segments[0].cues.map((cue) => cue.occurrence),
+    [1, 2],
+  );
+  const aligned = {
+    duration: 2,
+    cues: { 'lesson.one': { start: 0, end: 1 }, 'lesson.two': { start: 1, end: 2 } },
+    segments: [{ id: 'lesson', title: 'Old title', text: 'Look 17. Look 17.', start: 0, end: 2 }],
+  };
+  doc.chapters[0].title = 'Current title';
+  const script = documentScript(doc, aligned);
+  assert.equal(script.segments[0].title, 'Current title');
+  assert.equal(documentChapter(doc, 'lesson', script).script.segments[0].title, 'Current title');
+  assert.equal(aligned.segments[0].title, 'Old title');
+});
+
+test('caption edits project current aliases without changing accepted speech or acoustic marks', () => {
+  const doc = {
+    version: 2, models: [], views: [],
+    chapters: [{ id: 'lesson', title: 'Title', beats: [{ id: 'one', say: 'Look 17.' }] }],
+    narration: { captionAliases: { Look: 'Смотри' } },
+  };
+  const aligned = {
+    duration: 2,
+    cues: { 'lesson.one': { start: 0, end: 2 } },
+    captionAliases: { Look: 'Old' },
+    segments: [{ id: 'lesson', title: 'Title', text: 'Look 17.', start: 0, end: 2 }],
+  };
+  const original = structuredClone(aligned);
+  const projected = documentScript(doc, aligned);
+  assert.deepEqual(projected.captionAliases, { Look: 'Смотри' });
+  assert.deepEqual(documentChapter(doc, 'lesson', projected).script.captionAliases, { Look: 'Смотри' });
+  assert.deepEqual(documentChapter(doc, 'lesson').script.captionAliases, { Look: 'Смотри' });
+  projected.captionAliases.Look = 'Changed copy';
+  assert.equal(doc.narration.captionAliases.Look, 'Смотри');
+  delete doc.narration.captionAliases;
+  const cleared = documentScript(doc, aligned);
+  assert.equal(cleared.captionAliases, undefined);
+  assert.equal(documentChapter(doc, 'lesson', cleared).script.captionAliases, undefined);
+  assert.deepEqual(aligned, original);
+  assert.deepEqual(cleared.segments, original.segments);
+});
+
+test('a reused recording retains acoustic anchors while the document replaces or removes intentions', () => {
+  const doc = {
+    version: 2, models: [], views: [],
+    chapters: [{ id: 'lesson', title: 'Title', beats: [{ id: 'one', say: 'Смотри.', hold: 'Наблюдаем' }] }],
+  };
+  const aligned = {
+    duration: 4,
+    cues: { 'lesson.one': { start: 1.5, end: 3, speech: { start: 1, end: 2 }, action: 'Old', timing: { duration: 1.5, delay: .5 } } },
+    segments: [{ id: 'lesson', text: 'Смотри.', start: 1, end: 2 }],
+  };
+  const original = structuredClone(aligned);
+  let cue = documentScript(doc, aligned).cues['lesson.one'];
+  assert.equal(cue.hold, 'Наблюдаем');
+  assert.equal(cue.action, undefined);
+  assert.equal(cue.timing, undefined);
+  assert.deepEqual([cue.start, cue.end], [1, 2]);
+  delete doc.chapters[0].beats[0].hold;
+  doc.chapters[0].beats[0].action = 'Current';
+  cue = documentScript(doc, aligned).cues['lesson.one'];
+  assert.equal(cue.hold, undefined);
+  assert.equal(cue.action, 'Current');
+  delete doc.chapters[0].beats[0].action;
+  cue = documentScript(doc, aligned).cues['lesson.one'];
+  assert.equal(cue.hold, undefined);
+  assert.equal(cue.action, undefined);
+  assert.deepEqual(aligned, original);
 });

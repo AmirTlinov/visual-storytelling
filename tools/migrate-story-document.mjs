@@ -96,7 +96,14 @@ export async function migrateStoryDocument(directory, { root, changes = [] } = {
     readOptional(join(directory, 'story.json')),
     readOptional(join(directory, 'explanation.json')),
   ]);
-  if (!explanation && (!story || JSON.parse(story).version === 2)) return [];
+  if (!explanation && !story) return [];
+  if (!explanation && JSON.parse(story).version === 2) {
+    const { prepareStoryDocument } = await import(
+      pathToFileURL(join(root, 'dist/story/document.js')).href
+    );
+    prepareStoryDocument(JSON.parse(story));
+    return [];
+  }
   if (story && explanation) throw new Error('Choose one authored document before migration.');
   const source = JSON.parse(explanation ?? story);
   const { prepareStoryDocument } = await import(

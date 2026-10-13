@@ -22,6 +22,7 @@ import { snapshotProject, projectFiles, projectFile, digest } from '../tools/pro
 import { writeJSON, readJSON } from '../tools/storage.mjs';
 import { prepareEnvironment } from '../tools/environment.mjs';
 import { buildNarration } from '../tools/narration.mjs';
+import { narrationSource } from '../tools/story-document.mjs';
 import { narrationProvider } from '../tools/voice/settings.mjs';
 import {
   updateSceneRuntime,
@@ -176,7 +177,12 @@ async function prepare(input, task) {
   await writeJSON(join(snapshot, '.vstory-input.json'), { ...source, preparation });
   await dependencies(snapshot, data, task);
   const voice = await readJSON(join(snapshot, 'voice.json'));
-  if (voice?.enabled && !preparation.silent && !(reusable && receipt.preparedRevision)) {
+  const narrated =
+    voice?.enabled &&
+    !preparation.silent &&
+    !(reusable && receipt.preparedRevision) &&
+    (await narrationSource(snapshot));
+  if (narrated) {
     const localHiggs = narrationProvider(voice) === 'higgs';
     await prepareEnvironment(data, {
       ...task,

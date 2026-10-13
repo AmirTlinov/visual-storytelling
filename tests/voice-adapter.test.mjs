@@ -14,6 +14,8 @@ import {
 } from '../tools/voice/adapter.mjs';
 import { voiceDigest } from '../tools/voice/receipt.mjs';
 import { masteringProfileHash } from '../tools/voice/mastering.mjs';
+import { buildNarration, checkNarration } from '../tools/narration.mjs';
+import { narrationSource } from '../tools/story-document.mjs';
 
 // Protocol/ownership fixture: tone intervals have measured phrase timestamps.
 // It is deliberately not a TTS model or a listening-quality acceptance test.
@@ -316,6 +318,89 @@ test('unsupported music/controls and invalid cue quotes fail before a paid API c
   );
 });
 
+test('visual document edits reuse accepted narration without cached takes or an encoder', async (t) => {
+  const f = await fixture(t);
+  const document = {
+    version: 2,
+    models: [{ id: 'division', module: 'division', inputs: { count: 11, divisor: 3 } }],
+    views: [{ id: 'objects', kind: 'groups', model: 'division' }],
+    chapters: [
+      {
+        id: 'experience',
+        title: 'Группы',
+        beats: [
+          {
+            id: 'group',
+            say: 'Один шаг вправо.',
+            action: 'Исходная подпись действия',
+            timing: { duration: 1.1 },
+            operation: { model: 'division', name: 'group' },
+          },
+        ],
+      },
+    ],
+    narration: { captionAliases: { Один: '1' } },
+  };
+  const save = (source) => writeFile(join(f.directory, 'story.json'), JSON.stringify(source));
+  await save(document);
+  await writeFile(join(f.directory, 'index.html'), '<html><body><main></main></body></html>');
+  await buildNarration(f.directory, { cache: f.cache });
+  const accepted = await f.pair();
+  const receipt = await f.receipt();
+  await rm(f.cache, { recursive: true, force: true });
+  document.models[0].inputs.count = 14;
+  document.chapters[0].title = 'Новая подпись той же главы';
+  document.narration = { captionAliases: { 'Один шаг': 'Первый шаг' } };
+  document.chapters[0].beats[0].action = 'Новая подпись действия';
+  await save(document);
+  const previousPath = process.env.PATH;
+  try {
+    process.env.PATH = '/nonexistent-no-ffmpeg-or-node';
+    await buildNarration(f.directory, { cache: f.cache });
+    await checkNarration(await readFile(join(f.directory, 'index.html'), 'utf8'), f.directory);
+  } finally {
+    process.env.PATH = previousPath;
+  }
+  assert.deepEqual(await f.pair(), accepted, 'accepted WAV and provenance stay byte-identical');
+  delete document.narration.captionAliases;
+  delete document.chapters[0].beats[0].action;
+  document.chapters[0].beats[0].hold = 'Наблюдаем тот же опыт';
+  await save(document);
+  try {
+    process.env.PATH = '/nonexistent-no-ffmpeg-or-node';
+    await buildNarration(f.directory, { cache: f.cache });
+    await checkNarration(await readFile(join(f.directory, 'index.html'), 'utf8'), f.directory);
+  } finally {
+    process.env.PATH = previousPath;
+  }
+  assert.deepEqual(await f.pair(), accepted, 'removing display aliases also reuses the recording');
+  for (const change of [
+    (source) => {
+      source.chapters[0].beats[0].say = 'Другой шаг вправо.';
+    },
+    (source) => {
+      source.chapters[0].beats[0].timing.duration = 0.9;
+    },
+  ]) {
+    const changed = structuredClone(document);
+    change(changed);
+    await save(changed);
+    await assert.rejects(
+      checkAdapterNarration(f.directory, await narrationSource(f.directory), receipt, f.settings),
+      /changed/,
+    );
+  }
+  await save(document);
+  await assert.rejects(
+    checkAdapterNarration(f.directory, await narrationSource(f.directory), receipt, {
+      ...f.settings,
+      voice: 'different',
+    }),
+    /changed/,
+  );
+  assert.equal((await f.calls()).length, 1);
+});
+
 test('receipts bind source, selected model, adapter dependencies, exact audio and action timing without another invocation', async (t) => {
   const f = await fixture(t);
   await f.build();
@@ -375,12 +460,19 @@ test('source changes during synthesis preserve the accepted pair, including proj
   await f.build();
   const original = await f.pair();
   // sourceFile can be an immutable speech projection while its authored story changes.
-  await writeFile(join(f.directory, 'story.json'), '{"version":1,"title":"before"}');
+  const authored = {
+    version: 2,
+    title: 'before',
+    models: [],
+    views: [],
+    chapters: [{ id: 'chapter', title: 'Chapter', beats: [{ id: 'line', say: 'Одна строка.' }] }],
+  };
+  await writeFile(join(f.directory, 'story.json'), JSON.stringify(authored));
   f.settings.model = 'wait';
   await f.save();
   const building = f.build();
   await until(() => exists(join(f.directory, '.voice-started')));
-  await writeFile(join(f.directory, 'story.json'), '{"version":1,"title":"after"}');
+  await writeFile(join(f.directory, 'story.json'), JSON.stringify({ ...authored, title: 'after' }));
   await assert.rejects(building, /changed during synthesis/);
   assert.deepEqual(await f.pair(), original);
 });

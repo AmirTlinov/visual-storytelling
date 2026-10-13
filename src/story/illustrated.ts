@@ -4,7 +4,6 @@ import {
   type SceneStoryOptions,
   type ChapterFrame,
 } from './composition.js';
-import type { Script } from './cues.js';
 import {
   documentChapter,
   documentNarration,
@@ -18,6 +17,7 @@ import { mountIllustratedSubject } from './illustrated-subject.js';
 import { documentModelsAt, documentTimeline } from './document-model.js';
 import { cueSheet } from './cues.js';
 import type { StorySubjects } from './subject.js';
+import { hasStorySpeech, storyNarrationScript, validateStoryNarration } from './document-media.js';
 
 export interface IllustratedStoryOptions extends Omit<SceneStoryOptions, 'title' | 'chapters'> {
   document: StoryDocument | unknown;
@@ -31,17 +31,6 @@ export interface IllustratedStoryOptions extends Omit<SceneStoryOptions, 'title'
   >;
 }
 
-async function narrationScript(
-  audio: HTMLAudioElement | null | undefined,
-): Promise<Script | undefined> {
-  if (!audio || audio.dataset.silent === 'true') return;
-  const resource = audio.dataset.storyTimeline;
-  if (!resource) return;
-  const response = await fetch(new URL(resource, audio.baseURI));
-  if (!response.ok) throw new Error(`Could not load narration timing: ${response.status}`);
-  return response.json();
-}
-
 /** One document supplies narration and quiet timing to ordinary SceneStory chapters. */
 async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
   const {
@@ -53,7 +42,10 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
   } = options;
   const document = validateStoryDocument(source, { modules });
   documentNarration(document, { modules });
-  const script = options.script ?? (await narrationScript(options.audio));
+  const speech = hasStorySpeech(document);
+  const script = options.script ?? (speech ? await storyNarrationScript(options.audio) : undefined);
+  if (speech && options.audio && options.audio.dataset.silent !== 'true' && script)
+    validateStoryNarration(document, script, undefined, { modules });
   if (!factories) return mountIllustratedSubject(parent, document, options, script);
   if (!document.chapters.length)
     throw new Error('A static prepared subject does not need chapter factories.');
@@ -87,6 +79,7 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
   });
   return SceneStory.mount(parent, {
     ...presentation,
+    audio: speech ? options.audio : undefined,
     title: document.title ?? 'Рассказ',
     chapters,
     script: aligned,

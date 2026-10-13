@@ -3,10 +3,12 @@ import { SceneShell } from '../scene.js';
 import { story, type Story } from './story.js';
 import { documentModelsAt } from './document-model.js';
 import { prepareIllustratedDocument } from './document-subject.js';
-import type { StoryDocument } from './document-schema.js';
+import { validateStoryDocument, type StoryDocument } from './document-schema.js';
 import type { ModelValues } from './model.js';
 import type { IllustratedStoryOptions } from './illustrated.js';
 import type { Script } from './cues.js';
+import { cloneAudio } from './media.js';
+import { hasStorySpeech, storyNarrationScript, validateStoryNarration } from './document-media.js';
 
 type SubjectMoment = ReturnType<typeof documentModelsAt>;
 /** Compile a prepared drawing to the same shell and Story used by handwritten JS scenes. */
@@ -19,6 +21,9 @@ export async function mountIllustratedSubject(
   const { model, recipe, module } = prepareIllustratedDocument(initial, options, aligned);
   let document = initial;
   let mounted = false;
+  let narrationLoaded = Boolean(aligned);
+  let acceptedAudio = options.audio;
+  let preparedNarration: StoryDocument | undefined;
   await SceneShell.ready();
   let controller: Story<ModelValues, string, SubjectMoment> | undefined;
   let latest: SubjectMoment | undefined;
@@ -60,11 +65,12 @@ export async function mountIllustratedSubject(
   }
   shell.onDispose(drawing.dispose);
   function prepare(source: unknown, provisional = false, authoredInputs: readonly string[] = []) {
-    const { document: next, script } = prepareIllustratedDocument(
-      source,
-      options,
-      !mounted ? aligned : undefined,
-    );
+    const canonical = validateStoryDocument(source, { modules: options.modules });
+    const timing = options.script ?? (hasStorySpeech(canonical) ? aligned : undefined);
+    const { document: next, script } = prepareIllustratedDocument(canonical, options, timing);
+    const narrated =
+      hasStorySpeech(next) && options.audio && options.audio.dataset.silent !== 'true' && timing;
+    if (narrated) validateStoryNarration(next, timing!, preparedNarration, options);
     const nextModel = next.models[0];
     if (
       next.models.length !== 1 ||
@@ -96,7 +102,7 @@ export async function mountIllustratedSubject(
       values,
       next.chapters.flatMap((chapter) => chapter.beats),
     );
-    return { next, values, previous, script };
+    return { next, values, previous, script, narrated };
   }
   async function replace(
     source: unknown,
@@ -111,8 +117,19 @@ export async function mountIllustratedSubject(
     } = {},
   ) {
     signal?.throwIfAborted();
-    const { next, values, previous, script } = prepare(source, provisional, authoredInputs);
+    const canonical = prepareIllustratedDocument(source, options).document;
+    if (hasStorySpeech(canonical) && !narrationLoaded) {
+      aligned = await storyNarrationScript(options.audio);
+      narrationLoaded = true;
+      signal?.throwIfAborted();
+    }
+    const { next, values, previous, script, narrated } = prepare(
+      canonical,
+      provisional,
+      authoredInputs,
+    );
     const nextModel = next.models[0]!;
+    let cleanupError: unknown;
     const render = (moment: SubjectMoment) => {
       drawing.render(nextModel, next.views, moment.models[nextModel.id]!, moment.beat);
       latest = moment;
@@ -120,16 +137,25 @@ export async function mountIllustratedSubject(
     if (!script) {
       const moment = documentModelsAt(next, undefined, { [nextModel.id]: values }, options.modules);
       render(moment);
-      shell.detachController();
+      try {
+        shell.detachController();
+      } catch (error) {
+        cleanupError = error;
+      }
       controller = undefined;
       shell.syncParameters(values);
       document = next;
     } else {
       let active = false,
         prepared: SubjectMoment | undefined;
+      const audioSource = hasStorySpeech(next) ? acceptedAudio : undefined;
+      const ownedAudio =
+        mounted && audioSource && audioSource.dataset.silent !== 'true'
+          ? cloneAudio(audioSource)
+          : undefined;
       const candidate = story<ModelValues, string, SubjectMoment>({
         script,
-        audio: options.audio,
+        audio: ownedAudio ?? audioSource,
         exploreTimeline: true,
         stateAt() {
           return { ...nextModel.inputs };
@@ -156,13 +182,29 @@ export async function mountIllustratedSubject(
             mode: previous.mode,
           });
         else if (controller === undefined && document !== initial)
-          candidate.restoreInputs(values, { time: 0, mode: 'explore' });
+          candidate.restoreInputs(values, {
+            time: recipe.inputTime?.(next, script) ?? 0,
+            mode: 'explore',
+          });
         await candidate.ready();
         signal?.throwIfAborted();
+        if (previous) {
+          const latest = prepare(next, provisional, authoredInputs);
+          candidate.restoreInputs(latest.values, {
+            time: Math.min(controller!.currentTime, script.duration),
+            mode: latest.previous!.mode,
+          });
+        }
+        if (ownedAudio && audioSource) {
+          ownedAudio.muted = audioSource.muted;
+          ownedAudio.volume = audioSource.volume;
+          ownedAudio.playbackRate = audioSource.playbackRate;
+        }
         if (!prepared) throw new Error('Document has no prepared model frame.');
         render(prepared);
         shell.attachController(candidate);
         controller = candidate;
+        if (ownedAudio) acceptedAudio = ownedAudio;
         document = next;
         active = true;
       } catch (error) {
@@ -179,10 +221,15 @@ export async function mountIllustratedSubject(
       }
     }
     mounted = true;
+    if (narrated && !preparedNarration) preparedNarration = next;
     shell.setTitle(next.title ?? recipe.title, { visible: next.title !== undefined });
     handle.extend({
       snapshot: () => latest && drawing.snapshot(latest.models[document.models[0]!.id]!),
     });
+    if (cleanupError)
+      root.dispatchEvent(
+        new CustomEvent('scene-playback-error', { bubbles: true, detail: cleanupError }),
+      );
   }
   const resize = () => {
     if (controller || !latest) return;

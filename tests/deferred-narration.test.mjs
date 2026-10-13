@@ -4,10 +4,80 @@ import { randomUUID } from 'node:crypto';
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { workflows } from '../plugin/workflows.mjs';
 import { projectFiles } from '../tools/project-files.mjs';
 import { buildNarration, checkNarration, prepareNarration } from '../tools/narration.mjs';
 import { narrationSource } from '../tools/story-document.mjs';
+import { createScene } from '../tools/create-scene.mjs';
+
+test(
+  'static and silent canonical documents skip voice preparation even with an enabled saved voice',
+  { timeout: 90000 },
+  async (t) => {
+    const directory = await mkdtemp(join(tmpdir(), 'static-document-voice-'));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const projectPath = join(directory, 'division');
+    const data = join(directory, 'data');
+    const document = {
+      version: 2,
+      models: [{ id: 'division', module: 'division', inputs: { count: 23, divisor: 3 } }],
+      views: [{ id: 'groups', kind: 'groups', model: 'division' }],
+      chapters: [],
+    };
+    await createScene(projectPath, {
+      document,
+      root: fileURLToPath(new URL('../.plugin-release/', import.meta.url)),
+    });
+    const voice = JSON.stringify({ enabled: true, provider: 'higgs', language: 'ru-RU' });
+    await writeFile(join(projectPath, 'voice.json'), voice);
+    const stages = [];
+    const previousFetch = globalThis.fetch;
+    let downloads = 0;
+    globalThis.fetch = async () => {
+      downloads++;
+      throw new Error('A silent canonical document must not prepare a voice environment');
+    };
+    try {
+      for (const chapters of [
+        [],
+        [
+          {
+            id: 'look',
+            title: 'Рассмотрите группы',
+            beats: [{ id: 'hold', say: '', seconds: 2, hold: 'Рассмотрите остаток' }],
+          },
+        ],
+      ]) {
+        const authored = JSON.stringify({ ...document, chapters });
+        await writeFile(join(projectPath, 'story.json'), authored);
+        const result = await workflows.build(
+          {
+            data,
+            projectPath,
+            projectId: randomUUID(),
+            sourceRevision: (await projectFiles(projectPath)).revision,
+          },
+          {
+            jobId: randomUUID(),
+            signal: new AbortController().signal,
+            progress: (stage) => stages.push(stage),
+          },
+        );
+        assert.ok(result.buildRevision);
+        assert.equal(await readFile(join(projectPath, 'story.json'), 'utf8'), authored);
+        assert.equal(await readFile(join(projectPath, 'voice.json'), 'utf8'), voice);
+        assert.equal(await narrationSource(projectPath), undefined);
+        await assert.rejects(readFile(join(result.snapshot, 'audio.wav')), { code: 'ENOENT' });
+      }
+      assert.equal(downloads, 0);
+      assert.ok(stages.every((stage) => !/Higgs|кодировщик|нейросетевую озвучку/.test(stage)));
+      await assert.rejects(readdir(join(data, 'environment')), { code: 'ENOENT' });
+    } finally {
+      globalThis.fetch = previousFetch;
+    }
+  },
+);
 
 test(
   'a deferred voiced template stays quiet through source edits until voice is explicitly enabled',

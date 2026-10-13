@@ -1,7 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { basename, dirname, extname, resolve } from 'node:path';
 import { parse } from 'parse5';
-import { build } from 'esbuild';
 import { mediaType } from './assets.mjs';
 import { playbackTimeline } from './narration.mjs';
 
@@ -36,7 +35,7 @@ async function srcset(value, embed) {
 }
 
 /** One resource resolver for HTML, SVG, stylesheets and nested images. Preserve authored markup. */
-export function inlineResources(directory) {
+export function inlineResources(directory, { audio = false } = {}) {
   const root = resolve(directory);
   function local(url, base = root) {
     if (/^(?:[a-z][\w+.-]*:|\/\/)/i.test(url))
@@ -60,6 +59,7 @@ export function inlineResources(directory) {
   }
   async function css(source, base, parents) {
     if (!/(?:url\s*\(|@import\b)/i.test(source)) return source;
+    const { build } = await import('esbuild');
     const output = await build({
       stdin: { contents: source, loader: 'css', resolveDir: base, sourcefile: 'inline.css' },
       bundle: true,
@@ -124,8 +124,9 @@ export function inlineResources(directory) {
           value = result.slice(result.indexOf('{') + 1, result.lastIndexOf('}'));
         } else if (
           (['img', 'source', 'video', 'embed'].includes(name) &&
-            !(name === 'source' && node.parentNode?.tagName === 'audio') &&
+            !(name === 'source' && node.parentNode?.tagName === 'audio' && !audio) &&
             ['src', 'poster'].includes(attr.name)) ||
+          (audio && name === 'audio' && ['src', 'data-src'].includes(attr.name)) ||
           (name === 'image' && attr.name === 'href') ||
           (name === 'link' && attr.name === 'href' && /icon/i.test(attrs.rel ?? ''))
         )

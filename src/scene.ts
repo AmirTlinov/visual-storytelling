@@ -667,7 +667,12 @@ function mount(
   }
   function detachController() {
     assertLive();
-    player?.dispose();
+    let cleanupError: unknown;
+    try {
+      player?.dispose();
+    } catch (error) {
+      cleanupError = error;
+    }
     player = undefined;
     inputStory = undefined;
     playback = undefined;
@@ -707,6 +712,7 @@ function mount(
     heading.textContent = title;
     heading.title = title;
     updateChrome(true);
+    if (cleanupError) throw cleanupError;
   }
   function attachController<P, K extends string, S>(controller: Story<P, K, S>) {
     assertLive();
@@ -730,7 +736,12 @@ function mount(
     if (previousPlayback && previousPlayback.rate !== controller.player.state.rate)
       controller.player.rate(previousPlayback.rate);
     if (previousPlayback && !previousPlayback.playing) controller.player.pause();
-    player?.dispose();
+    let cleanupError: unknown;
+    try {
+      player?.dispose();
+    } catch (error) {
+      cleanupError = error;
+    }
     transition = (next) => {
       if (exploration === 'model' && controller.requested.mode !== next) {
         if (next === 'explore') controller.explore(controller.requested.values);
@@ -921,6 +932,12 @@ function mount(
             new CustomEvent('scene-playback-error', { bubbles: true, detail: error }),
           ),
         );
+    if (cleanupError)
+      queueMicrotask(() =>
+        root.dispatchEvent(
+          new CustomEvent('scene-playback-error', { bubbles: true, detail: cleanupError }),
+        ),
+      );
     return handle;
     function preparePlayback() {
       if (controller.waiting) return;

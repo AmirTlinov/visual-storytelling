@@ -8,7 +8,7 @@ import { parse } from 'parse5';
 import { inlineResources } from './inline-resources.mjs';
 import { readCatalog } from './catalog.mjs';
 import { standaloneAssetURLs } from './asset-urls.mjs';
-import { playbackHTML } from './narration.mjs';
+import { playbackHTML, withoutUnusedNarration } from './narration.mjs';
 
 const execute = promisify(execFile);
 const attribute = (node, name) => node.attrs?.find((attr) => attr.name === name)?.value;
@@ -80,7 +80,7 @@ export async function packDirectory(
   const base = dirname(resolve(root, page));
   const local = (url) => resources.local(url, base);
   const data = (url) => resources.data(url, base);
-  let html = playbackHTML(await readFile(join(root, page), 'utf8'));
+  let html = playbackHTML(await withoutUnusedNarration(await readFile(join(root, page), 'utf8'), root));
   if (page.endsWith('.svg'))
     html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}body>svg{display:block;width:100%;height:auto}</style></head><body>${html.replace(/<\?xml[^>]*>/, '')}</body></html>`;
   html = await resources.markup(html, base);

@@ -754,7 +754,6 @@ export async function checkAdapterNarration(
   if (
     receipt.digest_format !== format ||
     receipt.source_sha256 !== current.identity.source ||
-    receipt.authored_source_sha256 !== current.identity.authored ||
     voiceDigest(receipt.voice_settings) !== voiceDigest(selection(config)) ||
     receipt.synthesis?.provider !== config.provider ||
     receipt.synthesis?.model !== config.model ||
@@ -763,6 +762,8 @@ export async function checkAdapterNarration(
     throw new Error(
       'Narration, selected model or voice adapter changed. Prepare the current narration.',
     );
+  // The complete document hash records provenance and fences concurrent synthesis.
+  // Reuse follows the narration projection: a visual edit must retain its accepted take.
   const bytes = await readFile(audio ?? join(directory, 'audio.wav'));
   const wave = readWav(bytes);
   if (!wave.pcm.some((value) => value !== 0))

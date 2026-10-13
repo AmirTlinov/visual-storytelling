@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { packageInfo, resolvePackage } from './build-info.mjs';
 import { assertPreparedRuntimeRoot } from './prepared-runtime-trust.mjs';
+import { withoutGeneratedNarration } from './narration.mjs';
 
 const execute = promisify(execFile);
 const library = fileURLToPath(new URL('../', import.meta.url));
@@ -329,7 +330,8 @@ export async function assertPreparedDocument(directory) {
     readFile(join(pin.root, 'tools/document-scene/index.html'), 'utf8'),
     readOptional(join(directory, 'scene.json')),
   ]);
-  const withoutTitle = (html) => html.replace(/<title>.*?<\/title>/s, '<title></title>');
+  const withoutTitle = (html) =>
+    withoutGeneratedNarration(html).replace(/<title>.*?<\/title>/s, '<title></title>');
   if (entry !== template || withoutTitle(page) !== withoutTitle(templatePage) || config)
     throw Object.assign(
       new Error(

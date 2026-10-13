@@ -150,3 +150,20 @@ test('invalid legacy input and unknown custom entry fail before candidate docume
   await migrateStoryDocument(snapshot, { root, changes });
   assert.equal(await readFile(join(snapshot, 'scene.js'), 'utf8'), changes[0].content);
 });
+
+test('already canonical migration still validates authored inputs without publishing a new pin', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'canonical-migration-invalid-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const document = {
+    version: 2,
+    models: [{ id: 'division', module: 'division', inputs: { count: -1, divisor: 5 } }],
+    views: [{ id: 'groups', kind: 'groups', model: 'division' }],
+    chapters: [],
+  };
+  const bytes = JSON.stringify(document);
+  await writeFile(join(directory, 'story.json'), bytes);
+  await writeFile(join(directory, 'scene-runtime.json'), 'accepted pin');
+  await assert.rejects(migrateStoryDocument(directory, { root }), /count|Count/);
+  assert.equal(await readFile(join(directory, 'story.json'), 'utf8'), bytes);
+  assert.equal(await readFile(join(directory, 'scene-runtime.json'), 'utf8'), 'accepted pin');
+});
