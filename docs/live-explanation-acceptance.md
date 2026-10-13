@@ -7,7 +7,7 @@
 ## GUI-561: группы и остаток
 
 Кандидат: плагин 0.18.2, библиотека 0.31.2, ветка `codex/live-explanation`.
-Модель `division`, `ExplanationDocument` и `mountExplanation` используют действующие
+В зафиксированном выпуске 0.18.2 модель `division`, прежний документ и его mount использовали действующие
 Story, SceneShell, ProjectStore и SessionDirectory. Начальное создание и содержательные
 правки работают с заранее собранным представлением; runtime закрепляется сразу.
 Сборка переносимого архива остаётся операцией выпуска.
@@ -232,3 +232,30 @@ GUI-561 остаётся In Progress. Нужны нативный проход �
 Codex, непрерывная оценка движения и новый замер первого кадра ≤5 с / готового
 опыта ≤20 с **с работой агента**. SDK-host и скорость одной операции не закрывают
 эти требования. Остальные слайсы и milestone остаются открытыми.
+
+
+## Общий документ и владельцы библиотеки
+
+Кандидат: core 0.32.0 / plugin 0.19.0, `codex/library-owners`.
+Одна схема `StoryDocument` v2, один compiler в SceneShell/Story/SceneStory,
+статический опыт без playback. MCP, CLI, навык и примеры используют `story.json`.
+Заменённые Explanation API и неиспользуемые фасады удалены. Явная миграция
+проверяет копию и сохраняет source/pin до принятия кандидата.
+
+Проверены:
+
+- lifecycle/morph/characters: 46/46;
+- внешние потребители, edit/undo/reopen/static transitions: 28/28;
+- core document/composition после review: 31/31;
+- ProjectStore fences/recovery: 21/21;
+- runtime graph: циклов нет; shared menu/palette используют один owner;
+- полный Node: 705/708 на первом прогоне; три оставшихся old-shape fixtures
+  переведены на v2, адресные повторные проверки прошли.
+
+Независимое review исправило late physics registration, потерю исходной ошибки
+при cleanup, timing после commit, двойной replay и гонку project identity.
+Установка и приёмка текущего кандидата ещё открыты.
+
+GUI-562 не закрыт: file edits пока собираются после commit, migration повторно
+собирается; непрозрачный контекст и первый полный gate 5/20 остаются в работе.
+Native pixels/motion GUI-561 и окончательная приёмка milestone остаются открыты.

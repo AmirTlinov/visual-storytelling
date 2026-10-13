@@ -1,5 +1,4 @@
-import { createServer } from 'node:net';
-import { readFile, chmod, rm, lstat, realpath } from 'node:fs/promises';
+import { chmod, rm, lstat, realpath } from 'node:fs/promises';
 import { dirname, join, resolve, isAbsolute, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
@@ -11,12 +10,11 @@ import { readProjectFile } from '../../tools/project-files.mjs';
 import { JobRunner } from '../jobs.mjs';
 import { ProjectWatch } from '../project-watch.mjs';
 import { Preferences } from '../preferences.mjs';
+import { projectVoice } from '../voice.mjs';
 import { environmentStatus, configureEnvironment } from '../../tools/environment.mjs';
-import { higgsVoice } from '../../tools/voice/higgs.mjs';
-import { adapterVoiceStatus, validateAdapterSettings } from '../../tools/voice/adapter.mjs';
-import { narrationProvider, voiceSettingsForDisplay } from '../../tools/voice/settings.mjs';
-import { requireVoiceSupport } from '../../tools/environment/voice.mjs';
-import { collectCache } from '../cache.mjs';
+import { runtimeCache } from './cache-maintenance.mjs';
+import { sessionStorage } from './session-storage.mjs';
+import { runtimeSocketServer } from './socket-server.mjs';
 import { errorData, failure } from '../errors.mjs';
 import { runtimeBuild, installedRuntime, requireSelectedRuntime } from './identity.mjs';
 import { acquireDirectoryLock } from '../../tools/file-lock.mjs';
@@ -27,7 +25,7 @@ import { readPinnedRuntime } from '../../tools/runtime-package.mjs';
 import { videoDimensions } from '../../tools/video-dimensions.mjs';
 import { createScene } from '../../tools/create-scene.mjs';
 import { prepareLiveProject } from '../live-project.mjs';
-import { validateExplanation } from '../../dist/explanation/document.js';
+import { prepareIllustratedDocument } from '../../dist/story/document.js';
 
 const [socketPath, data] = process.argv.slice(2),
   directory = await realpath(dirname(process.argv[1]));
@@ -110,109 +108,22 @@ const jobs = new JobRunner(
   { toolchainRoot: resolve(directory, '../..') },
 );
 await jobs.start();
-const connections = new Set(),
-  saves = new Map(),
-  loads = new Map(),
-  active = new Set(),
-  work = new Set();
+const work = new Set();
 let closing = false,
   updating = false,
   shutdown,
   idleTimer,
   socketIdentity;
 let playbackClaim = Promise.resolve();
-let cacheReport = null;
+const cache = runtimeCache({ data, preferences, projects, sessions, jobs });
+const scheduleCache = () => cache.schedule();
 
-function scheduleCache() {
-  jobs.requestMaintenance(async () => {
-    const result = await collectCache(data, {
-      limitMB: (await preferences.read()).cacheLimitMB,
-      projects: await projects.list(),
-      sessions: [...sessions.sessions.values()],
-      snapshotLeases: jobs.snapshotLeases(),
-      buildLeases: sessions.buildLeases(),
-    });
-    cacheReport = { ...result, collectedAt: new Date().toISOString() };
-  });
-}
-
-async function viewBuild(revision) {
-  const build = await readJSON(join(data, 'builds', revision + '.json'));
-  if (!build || build.revision !== revision || typeof build.html !== 'string')
-    throw new Error('The saved build is unavailable. Rebuild the project.');
-  return build;
-}
-
-function load(id) {
-  if (closing) return Promise.reject(new Error('Runtime shutting down.'));
-  if (sessions.sessions.has(id)) return Promise.resolve(sessions.get(id));
-  if (!/^[a-f0-9-]{36}$/.test(id)) return Promise.reject(new Error('Invalid session ID.'));
-  if (loads.has(id)) return loads.get(id);
-  const loading = (async () => {
-    const saved = await readJSON(join(data, 'sessions', id + '.json'));
-    if (!saved) throw new Error('Session is unavailable. Open the project again.');
-    if (
-      saved.id !== id ||
-      !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(saved.buildRevision) ||
-      !Number.isSafeInteger(saved.stateRevision) ||
-      saved.stateRevision < 0 ||
-      !Number.isSafeInteger(saved.generation) ||
-      saved.generation < 0
-    )
-      throw new Error('The saved session is invalid.');
-    const source = await readJSON(join(data, 'builds', saved.buildRevision + '.json'));
-    if (!source || source.revision !== saved.buildRevision)
-      throw new Error('The saved build is unavailable. Rebuild the project.');
-    if (closing) throw new Error('Runtime shutting down.');
-    const session = sessions.open(source);
-    sessions.sessions.delete(session.id);
-    Object.assign(session, {
-      id,
-      checkpoint: saved.checkpoint,
-      generation: saved.generation,
-      stateRevision: saved.stateRevision,
-      observedAt: saved.observedAt,
-      presentationMetrics: saved.presentationMetrics,
-      returnTo: saved.returnTo ?? [],
-      widgetState: saved.widgetState ?? {},
-    });
-    sessions.sessions.set(id, session);
-    return session;
-  })();
-  loads.set(id, loading);
-  const finished = () => {
-    if (loads.get(id) === loading) loads.delete(id);
-  };
-  loading.then(finished, finished);
-  return loading;
-}
-
-function save(s) {
-  const snapshot = {
-    id: s.id,
-    buildRevision: s.build.revision,
-    checkpoint: s.checkpoint,
-    generation: s.generation,
-    stateRevision: s.stateRevision,
-    observedAt: s.observedAt,
-    presentationMetrics: s.presentationMetrics,
-    returnTo: s.returnTo ?? [],
-    widgetState: s.widgetState ?? {},
-  };
-  // A transient disk failure must not prevent every later checkpoint from being saved.
-  const next = (saves.get(s.id) ?? Promise.resolve())
-    .catch(() => {})
-    .then(() => writeJSON(join(data, 'sessions', s.id + '.json'), snapshot));
-  saves.set(s.id, next);
-  const finished = () => {
-    if (saves.get(s.id) === next) saves.delete(s.id);
-  };
-  next.then(finished, (error) => {
-    console.error(error.message);
-    finished();
-  });
-  return next;
-}
+const {
+  load,
+  save,
+  viewBuild,
+  drain: drainSessionWrites,
+} = sessionStorage(data, sessions, () => closing);
 
 const decorate = (session) => ({
   ...sessions.describe(session),
@@ -256,7 +167,7 @@ async function createLiveProject(project, input, requestId) {
     : await createScene(project.path, {
         root: resolve(directory, '../..'),
         title: input.title,
-        explanation: input.explanation,
+        document: input.document,
         example: input.example,
       });
   const authored = {
@@ -346,7 +257,7 @@ async function observeCreationDelivery(session) {
   });
 }
 
-async function deliverCreatedExplanation(receipt, fromSessionId) {
+async function deliverCreatedDocument(receipt, fromSessionId) {
   if (!fromSessionId) return receipt;
   const projectId = receipt.project.id;
   const response = () => ({
@@ -378,7 +289,7 @@ async function deliverCreatedExplanation(receipt, fromSessionId) {
     if (source.navigation && source.navigation.sessionId !== receipt.sessionId)
       throw failure(
         'navigation_conflict',
-        'The original card is already opening another explanation.',
+        'The original card is already opening another document.',
       );
     await rememberCreationDelivery(projectId, {
       renderer: source.renderer,
@@ -389,7 +300,7 @@ async function deliverCreatedExplanation(receipt, fromSessionId) {
       target: { sessionId: receipt.sessionId },
     });
     if (destinationResult.sessionId !== receipt.sessionId)
-      throw failure('navigation_conflict', 'The original card opened another explanation.');
+      throw failure('navigation_conflict', 'The original card opened another document.');
     return response();
   } catch (error) {
     const current = projects.get(projectId).creation.delivery;
@@ -516,7 +427,7 @@ const operations = {
       build,
       serverInstance: sessions.instance,
       pid: process.pid,
-      cache: cacheReport,
+      cache: cache.report,
     };
   },
   async prepareUpdate() {
@@ -567,15 +478,15 @@ const operations = {
       return decorate(s);
     });
   },
-  async create({ path, title = 'Новое объяснение', example, explanation, requestId, sessionId }) {
-    if (sessionId !== undefined && explanation === undefined)
+  async create({ path, title = 'Новое объяснение', example, document, requestId, sessionId }) {
+    if (sessionId !== undefined && document === undefined)
       throw new Error(
-        'sessionId requires a prepared explanation; source-code scaffolds and examples open after preparation.',
+        'sessionId requires a prepared document; source-code scaffolds and examples open after preparation.',
       );
-    if (explanation !== undefined) {
+    if (document !== undefined) {
       if (example !== undefined)
-        throw new Error('Choose an explanation document or a copied example.');
-      explanation = validateExplanation(explanation);
+        throw new Error('Choose a story document or a copied example.');
+      document = prepareIllustratedDocument(document).document;
     }
     return projects.serial('create:' + requestId, async () => {
       const requestedPath = path;
@@ -585,7 +496,7 @@ const operations = {
         const requested = {
           title,
           ...(example !== undefined ? { example } : {}),
-          explanation,
+          document,
           ...(sessionId !== undefined ? { sessionId } : {}),
           ...(path ? { path: await projects.canonicalPath(path) } : {}),
         };
@@ -600,13 +511,13 @@ const operations = {
         const receipt =
           previousLive.creation.receipt ??
           (await createLiveProject(previousLive, requested, requestId));
-        return deliverCreatedExplanation(receipt, sessionId);
+        return deliverCreatedDocument(receipt, sessionId);
       }
       const previous = jobs.forRequest(requestId);
       if (previous) {
         if (
           previous.kind !== 'create' ||
-          explanation !== undefined ||
+          document !== undefined ||
           previous.input.title !== title ||
           previous.input.example !== example ||
           (path && previous.input.projectPath !== (await realpath(path)))
@@ -626,18 +537,18 @@ const operations = {
       const input = {
         title,
         ...(example !== undefined ? { example } : {}),
-        explanation,
+        document,
         ...(sessionId !== undefined ? { sessionId } : {}),
         ...(requestedPath ? { path } : {}),
       };
       const project = await projects.create(path, {
         title,
         example,
-        ...(explanation !== undefined ? { creation: { requestId, input } } : {}),
+        ...(document !== undefined ? { creation: { requestId, input } } : {}),
       });
-      if (explanation !== undefined) {
+      if (document !== undefined) {
         const input = projects.get(project.id).creation.input;
-        return deliverCreatedExplanation(
+        return deliverCreatedDocument(
           await createLiveProject(project, input, requestId),
           sessionId,
         );
@@ -694,133 +605,7 @@ const operations = {
     if (patch?.cacheLimitMB !== undefined) scheduleCache();
     return value;
   },
-  async voice({
-    projectId,
-    sourceRevision,
-    requestId,
-    enabled,
-    provider,
-    voice,
-    language,
-    model,
-    adapter,
-  }) {
-    const defaults = await preferences.read();
-    const previous = projectId
-      ? await readJSON(join(projects.get(projectId).path, 'voice.json'))
-      : undefined;
-    provider ??= previous?.provider ?? 'higgs';
-    const selectedLanguage = language ?? previous?.language ?? defaults.language;
-    const settings = {
-      ...(previous?.provider === provider ? previous : {}),
-      ...(enabled !== undefined && { enabled }),
-      provider,
-      language: selectedLanguage,
-      ...(voice !== undefined && { voice }),
-      ...(model !== undefined && { model }),
-      ...(adapter !== undefined && { adapter }),
-    };
-    const persist = () =>
-      operations.edit({
-        projectId,
-        sourceRevision,
-        requestId,
-        changes: [{ path: 'voice.json', content: JSON.stringify(settings, null, 2) + '\n' }],
-      });
-    // Turning speech off must remain possible when a selected backend is incomplete or removed.
-    if (enabled === false) return persist();
-    try {
-      narrationProvider(settings);
-    } catch (error) {
-      if (enabled !== undefined) throw error;
-      return {
-        provider,
-        supported: false,
-        ready: false,
-        reason: error.message,
-        voices: [],
-        settings: voiceSettingsForDisplay(previous),
-      };
-    }
-    if (enabled && provider === 'higgs') requireVoiceSupport();
-    if (enabled === undefined) {
-      await configureEnvironment(data);
-      const higgs = await higgsVoice.doctor();
-      const environment = await environmentStatus(data);
-      const choices = [
-        { provider: 'higgs', kind: 'local', ...higgs },
-        ...(await Promise.all(
-          ['local', 'api'].map(async (id) => ({
-            provider: id,
-            kind: id,
-            ...(id === provider && projectId
-              ? await adapterVoiceStatus(projects.get(projectId).path, settings)
-              : {
-                  supported: true,
-                  ready: false,
-                  voices: [],
-                  reason: 'Выберите модель и подключите её адаптер через агента.',
-                }),
-          })),
-        )),
-      ].map((status) => {
-        const voices = status.voices.filter(
-          (v) => v.language.split('-')[0] === selectedLanguage.split('-')[0],
-        );
-        return {
-          ...status,
-          ready: status.ready && voices.length > 0,
-          reason:
-            status.reason ??
-            (voices.length
-              ? undefined
-              : `У провайдера ${status.provider} нет голоса для ${selectedLanguage}.`),
-          voices,
-        };
-      });
-      const status = choices.find((choice) => choice.provider === provider);
-      return {
-        provider,
-        supported: status.supported,
-        ready: status.ready,
-        reason: status.reason,
-        providers: choices,
-        voices: choices.flatMap((choice) =>
-          choice.voices.map((item) => ({
-            ...item,
-            provider: choice.provider,
-            kind: choice.kind,
-            ready: choice.ready,
-            supported: choice.supported,
-            reason: choice.reason,
-          })),
-        ),
-        settings: voiceSettingsForDisplay(previous),
-        ...(provider === 'higgs' && { requirements: environment.higgs.requirements }),
-        ...(provider !== 'higgs' && {
-          readiness: status.ready ? 'adapter-configured' : 'configuration-required',
-          synthesisVerified: false,
-        }),
-      };
-    }
-    if (provider === 'higgs') {
-      if (adapter !== undefined || model !== undefined)
-        throw new Error('Для своей модели выберите provider: "local" или "api".');
-      if (voice && voice !== 'higgs')
-        throw new Error(
-          'Голос Higgs задаётся образцом в narration.json; другую модель подключите как local или api.',
-        );
-      if (enabled && selectedLanguage.split('-')[0] !== 'ru')
-        throw new Error('Для Higgs сейчас поддерживается русская речь. Выберите ru-RU.');
-    } else {
-      validateAdapterSettings(settings);
-      if (enabled) {
-        const status = await adapterVoiceStatus(projects.get(projectId).path, settings);
-        if (!status.ready) throw new Error(status.reason);
-      }
-    }
-    return persist();
-  },
+  voice: projectVoice({ data, preferences, projects, edit: (args) => operations.edit(args) }),
   async focus({ sessionId, renderer, generation, report }) {
     const claim = playbackClaim
       .catch(() => {})
@@ -869,7 +654,7 @@ const operations = {
       let destination;
       if (back) {
         const id = source.returnTo?.at(-1);
-        if (!id) throw new Error('No earlier explanation to return to.');
+        if (!id) throw new Error('No earlier document to return to.');
         destination = await operations.open({ sessionId: id });
       } else {
         destination = await operations.open(target ?? {});
@@ -930,8 +715,8 @@ const operations = {
   },
   async edit(args) {
     return projects.serial('delivery:' + args.projectId, async () => {
-      const proposed = await projects.prepareSemanticEdit(args);
-      if (proposed) {
+      const proposed = await projects.stageEdit(args);
+      if (proposed.semantic) {
         const views = [...sessions.sessions.values()].filter(
           (session) =>
             session.build.projectId === args.projectId &&
@@ -955,7 +740,7 @@ const operations = {
             authoredInputs: proposed.authoredInputs,
           });
       }
-      const project = await projects.edit(args);
+      const project = await projects.commitPreparedEdit(proposed);
       const priorDelivery =
         project.repeated && (await projects.editDelivery(args.projectId, args.requestId));
       if (project.semantic) {
@@ -1153,88 +938,22 @@ const operations = {
 
 function scheduleClose() {
   clearTimeout(idleTimer);
-  if ((updating || !connections.size) && !closing)
+  if ((updating || !socketServer.connectionCount) && !closing)
     idleTimer = setTimeout(
       () => {
-        if (jobs.busy || (updating && work.size)) scheduleClose();
+        if (jobs.busy || (updating && (work.size || socketServer.workCount))) scheduleClose();
         else void close();
       },
       updating ? 100 : 1500,
     );
 }
 
-// Existing render reports/ACKs and preparation observation finish on their current owner.
-const updateOperations = new Set([
-  'hello',
-  'prepareUpdate',
-  'job',
-  'cancel',
-  'exchange',
-  'detach',
-  'widget',
-  'list',
-  'project',
-  'shownSource',
-]);
-const pollingOperations = new Set(['hello', 'prepareUpdate', 'exchange', 'job', 'list']);
-
-const server = createServer((socket) => {
-  if (closing) {
-    socket.destroy();
-    return;
-  }
-  clearTimeout(idleTimer);
-  connections.add(socket);
-  socket.setEncoding('utf8');
-  let buffer = '';
-  socket.on('data', (chunk) => {
-    buffer += chunk;
-    if (buffer.length > 32_000_000) {
-      socket.destroy();
-      return;
-    }
-    let end;
-    while ((end = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, end);
-      buffer = buffer.slice(end + 1);
-      let method;
-      const operation = (async () => {
-        let id;
-        try {
-          if (closing) throw new Error('Runtime shutting down.');
-          const request = JSON.parse(line);
-          id = request.id;
-          method = request.method;
-          if (!Object.hasOwn(operations, request.method))
-            throw new Error('Unknown runtime operation.');
-          if (updating && !updateOperations.has(request.method))
-            throw Object.assign(new Error('The installed runtime is changing.'), {
-              code: 'RUNTIME_UPDATE_REQUIRED',
-              action:
-                'Reconnect Visual Storytelling in this chat after the current preparation finishes.',
-            });
-          const result = await operations[request.method](request.params);
-          if (!socket.destroyed) socket.write(JSON.stringify({ id, result }) + '\n');
-        } catch (error) {
-          if (!socket.destroyed)
-            socket.write(JSON.stringify({ id, error: errorData(error) }) + '\n');
-        }
-      })();
-      active.add(operation);
-      if (!pollingOperations.has(method)) work.add(operation);
-      const finished = () => {
-        active.delete(operation);
-        work.delete(operation);
-        scheduleClose();
-      };
-      operation.then(finished, finished);
-    }
-  });
-  socket.on('error', () => {});
-  socket.on('close', () => {
-    connections.delete(socket);
-    scheduleClose();
-  });
+const socketServer = runtimeSocketServer({
+  operations,
+  isClosing: () => closing,
+  isUpdating: () => updating,
+  onConnect: () => clearTimeout(idleTimer),
+  onActivity: scheduleClose,
 });
 
 function close() {
@@ -1247,12 +966,10 @@ function close() {
     // A long poll may have accepted a report before its response is released.
     await Promise.all([...sessions.sessions.values()].map(save));
     sessions.close();
-    await Promise.allSettled([...active]);
+    await socketServer.drain();
     await jobs.close();
-    await Promise.allSettled([...saves.values()]);
-    const stopped = new Promise((resolve) => server.close(resolve));
-    for (const socket of connections) socket.destroy();
-    await stopped;
+    await drainSessionWrites();
+    await socketServer.close();
     released = true;
     const current = await lstat(socketPath).catch((error) => {
       if (error.code === 'ENOENT') return null;
@@ -1275,16 +992,13 @@ function close() {
   return shutdown;
 }
 
-await new Promise((resolve, reject) => {
-  server.once('error', reject);
-  server.listen(socketPath, resolve);
-});
+await socketServer.listen(socketPath);
 socketIdentity = await lstat(socketPath);
 await chmod(socketPath, 0o600);
 scheduleClose();
 scheduleCache();
 for (const signal of ['SIGINT', 'SIGTERM'])
   process.once(signal, () => {
-    for (const socket of connections) socket.destroy();
+    socketServer.disconnect();
     void close();
   });

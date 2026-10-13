@@ -1,4 +1,5 @@
-import { mathPlan } from './math.js';
+import { releaseResources } from '../lifecycle.js';
+import { mathPlan } from './plan.js';
 import type { MathOperation, MathMorphPlan } from './types.js';
 import type { ConstructionPlan } from './construction/types.js';
 import type { MorphCues, MorphTime } from './timing.js';
@@ -39,54 +40,71 @@ export async function mountMath(
     if (isConstruction(next)) {
       const prepared = next;
       if (construction) return construction.setOperation(prepared);
-      replace((target) => {
-        const mounted = mountConstruction(target, prepared, { layout });
-        return () => {
+      replace(
+        (target) => mountConstruction(target, prepared, { layout }),
+        (mounted) => {
           construction = mounted;
           body = undefined;
-        };
-      });
+        },
+      );
     } else {
       const prepared = mathPlan(next);
       if (body) return body.setOperation(prepared);
-      replace((target) => {
-        const mounted = mountBodies(target, prepared, { ...options, layout });
-        return () => {
+      replace(
+        (target) => mountBodies(target, prepared, { ...options, layout }),
+        (mounted) => {
           body = mounted;
           construction = undefined;
-        };
-      });
+        },
+      );
     }
   }
-  function replace(mount: (target: HTMLDivElement) => () => void) {
+  function replace<T extends { dispose(): void }>(
+    mount: (target: HTMLDivElement) => T,
+    publish: (candidate: T) => void,
+  ) {
     const target = document.createElement('div');
     target.dataset.mathLayout = layout;
     target.style.visibility = 'hidden';
     element.append(target);
+    let candidate: T;
     try {
-      const publish = mount(target);
-      current()?.dispose();
-      host?.remove();
-      host = target;
-      publish();
-      target.style.removeProperty('visibility');
+      candidate = mount(target);
     } catch (error) {
       target.remove();
       throw error;
     }
+    const previous = current(),
+      previousHost = host;
+    host = target;
+    publish(candidate);
+    target.style.removeProperty('visibility');
+    // Once accepted, a replacement remains usable even if retiring the old owner fails.
+    releaseResources(
+      [() => previous?.dispose(), () => previousHost?.remove()],
+      'Previous math presentation disposal failed.',
+    );
   }
   function dispose() {
     if (disposed) return;
     disposed = true;
-    current().dispose();
-    element.remove();
+    releaseResources(
+      [() => current()?.dispose(), () => element.remove()],
+      'Math presentation disposal failed.',
+    );
   }
   try {
     setOperation(operation);
   } catch (error) {
-    body?.dispose();
-    construction?.dispose();
-    element.remove();
+    releaseResources(
+      [
+        () => {
+          throw error;
+        },
+        dispose,
+      ],
+      'Math presentation initialization failed.',
+    );
     throw error;
   }
   return {

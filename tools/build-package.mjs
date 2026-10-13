@@ -7,6 +7,7 @@ import { buildOutput } from './build-output.mjs';
 import { sourceDigest, writeBuildInfo } from './build-info.mjs';
 import { embedRuntimeAssets } from './asset-urls.mjs';
 import { buildBuiltinCharacters } from './characters/build-builtin.mjs';
+import { buildStyles } from './build-palette.mjs';
 export async function buildPackage() {
   const root = fileURLToPath(new URL('../', import.meta.url));
   const output = join(root, 'dist');
@@ -21,7 +22,7 @@ export async function buildPackage() {
     );
     await mkdir(join(staging, 'assets'), { recursive: true });
     await cp(join(root, 'src/assets'), join(staging, 'assets'), { recursive: true });
-    await cp(join(root, 'src/styles'), join(staging, 'styles'), { recursive: true });
+    await buildStyles(join(root, 'src/styles'), join(staging, 'styles'));
     await cp(join(root, 'src/style.css'), join(staging, 'style.css'));
     await embedRuntimeAssets(staging);
     await buildAPI(root, staging);

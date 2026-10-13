@@ -1,5 +1,6 @@
+import { releaseResources } from '../lifecycle.js';
 import { MathMorph2D } from './svg.js';
-import { mathPlan } from './math.js';
+import { mathPlan } from './plan.js';
 import { SketchControls } from '../controls/index.js';
 import type { MathOperation, MathMorphPlan } from './types.js';
 import type { MorphCues, MorphTime } from './timing.js';
@@ -69,16 +70,16 @@ export function mountBodies(
     }
     function render(time: MorphTime, cues?: MorphCues) {
       if (disposed) return;
-      const frame = volume.render(time, cues);
-      flat.render(time, cues);
+      const frame = projection === '3d' ? volume.render(time, cues) : flat.render(time, cues);
       lastTime = time;
       lastCues = cues;
-      view.shot({
-        target: volume.bounds,
-        direction: [-2.4, 1.8, 9],
-        padding: 30,
-        reduced: typeof time === 'number' ? undefined : time.reduced,
-      });
+      if (projection === '3d')
+        view.shot({
+          target: volume.bounds,
+          direction: [-2.4, 1.8, 9],
+          padding: 30,
+          reduced: typeof time === 'number' ? undefined : time.reduced,
+        });
       return frame;
     }
     const resize = new ResizeObserver(() => render(lastTime, lastCues));
@@ -86,12 +87,17 @@ export function mountBodies(
     function dispose() {
       if (disposed) return;
       disposed = true;
-      resize.disconnect();
-      choice.dispose();
-      flat.dispose();
-      unbind();
-      view.dispose();
-      root.remove();
+      releaseResources(
+        [
+          () => resize.disconnect(),
+          () => choice.dispose(),
+          () => flat.dispose(),
+          unbind,
+          () => view.dispose(),
+          () => root.remove(),
+        ],
+        'Math projection disposal failed.',
+      );
     }
     resize.observe(parent);
     render(0);
@@ -154,8 +160,16 @@ export function mountBodies(
       dispose,
     };
   } catch (error) {
-    view.dispose();
-    root.remove();
+    releaseResources(
+      [
+        () => {
+          throw error;
+        },
+        () => view.dispose(),
+        () => root.remove(),
+      ],
+      'Math projection initialization failed.',
+    );
     throw error;
   }
 }

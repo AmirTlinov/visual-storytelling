@@ -1,3 +1,4 @@
+import { releaseResources } from '../lifecycle.js';
 import type { Material, Texture, Color } from 'three';
 import { pigments } from '../ink/palette.js';
 import { attachInspection } from './inspection.js';
@@ -265,7 +266,6 @@ function mount(
     });
   const scheme = matchMedia('(prefers-color-scheme: dark)');
   scheme.addEventListener('change', theme, listen);
-  window.addEventListener('openai:set_globals', theme, listen);
   function fit(target = object) {
     if (!target) return;
     returning = undefined;
@@ -422,14 +422,23 @@ function mount(
   function release(target?: ThreeKit.Object3D) {
     const removed = resources(target),
       retained = resources(scene, target);
-    for (const m of removed.mats) {
-      if (retained.mats.has(m)) continue;
-      materials.delete(m as ColorMaterial);
-      m.dispose();
-    }
-    for (const texture of removed.textures) if (!retained.textures.has(texture)) texture.dispose();
-    for (const geometry of removed.geometries)
-      if (!retained.geometries.has(geometry)) geometry.dispose();
+    releaseResources(
+      [
+        ...[...removed.mats]
+          .filter((m) => !retained.mats.has(m))
+          .map((m) => () => {
+            materials.delete(m as ColorMaterial);
+            m.dispose();
+          }),
+        ...[...removed.textures]
+          .filter((texture) => !retained.textures.has(texture))
+          .map((texture) => () => texture.dispose()),
+        ...[...removed.geometries]
+          .filter((geometry) => !retained.geometries.has(geometry))
+          .map((geometry) => () => geometry.dispose()),
+      ],
+      '3D subject resource disposal failed.',
+    );
   }
   canvas.addEventListener(
     'webglcontextlost',
@@ -600,23 +609,26 @@ function mount(
         (owner) => owner.dispose(),
         () => {},
       );
-      for (const cleanup of [...cleanups]) cleanup();
+      const resources = [
+        ...cleanups,
+        () => cancelAnimationFrame(pending),
+        () => abort.abort(),
+        () => orbit.dispose(),
+        () => sizeObserver.disconnect(),
+        () => themeObserver.disconnect(),
+        () => labels.dispose(),
+        () => subjects.dispose(),
+        () => release(scene),
+        () => materials.clear(),
+        detachInspection,
+        () => renderer.dispose(),
+        () => renderer.forceContextLoss(),
+        () => canvas.remove(),
+        () => sample.remove(),
+      ];
       cleanups.clear();
       removals.clear();
-      cancelAnimationFrame(pending);
-      abort.abort();
-      orbit.dispose();
-      sizeObserver.disconnect();
-      themeObserver.disconnect();
-      labels.dispose();
-      subjects.dispose();
-      release(scene);
-      materials.clear();
-      detachInspection();
-      renderer.dispose();
-      renderer.forceContextLoss();
-      canvas.remove();
-      sample.remove();
+      releaseResources(resources, '3D viewport disposal failed.');
     },
   };
 }

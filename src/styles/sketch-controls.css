@@ -120,7 +120,8 @@
 }
 /* Keep native scrolling, wheel, touch and keyboard behavior; only the marks use
    the same pen as the list outline. Embedded SVG follows the container colour
-   scheme; scrollbar pseudo-elements cannot paint CSS masks. Forced colours
+   scheme. The package build resolves SVG pigment references from ink.css;
+   scrollbar pseudo-elements cannot paint CSS masks. Forced colours
    retain the system scrollbar. */
 @media (forced-colors: none) {
   @supports selector(::-webkit-scrollbar) {
@@ -134,13 +135,13 @@
     }
     .ve-scene .ve-select-scroll::-webkit-scrollbar-track {
       background: transparent
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 100' preserveAspectRatio='none'%3E%3Cstyle%3Epath{stroke:%23878681}@media(prefers-color-scheme:dark){path{stroke:%238192a8}}%3C/style%3E%3Cpath d='M6 2 Q5 26 6 51 T6 98' fill='none' stroke-width='1'/%3E%3C/svg%3E")
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 100' preserveAspectRatio='none'%3E%3Cstyle%3Epath{stroke:var(--ve-pencil)}%3C/style%3E%3Cpath d='M6 2 Q5 26 6 51 T6 98' fill='none' stroke-width='1'/%3E%3C/svg%3E")
         center/100% 100% no-repeat;
     }
     .ve-scene .ve-select-scroll::-webkit-scrollbar-thumb {
       min-height: 32px;
       background: transparent
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 100' preserveAspectRatio='none'%3E%3Cstyle%3Epath{fill:%23292724}@media(prefers-color-scheme:dark){path{fill:%23eeece7}}%3C/style%3E%3Cpath d='M5 3 Q8 2 8 9 L7.4 91 Q7 98 4 97 Q3 96 3.5 89 L4 11 Q3.6 4 5 3Z'/%3E%3C/svg%3E")
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 100' preserveAspectRatio='none'%3E%3Cstyle%3Epath{fill:var(--ve-default-ink)}%3C/style%3E%3Cpath d='M5 3 Q8 2 8 9 L7.4 91 Q7 98 4 97 Q3 96 3.5 89 L4 11 Q3.6 4 5 3Z'/%3E%3C/svg%3E")
         center/100% 100% no-repeat;
     }
   }

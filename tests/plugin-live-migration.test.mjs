@@ -1,3 +1,4 @@
+import { validateStoryDocument } from '../dist/story/document.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -25,14 +26,11 @@ import { pluginHost } from './plugin/host.mjs';
 import { finishFixtureJob } from './plugin/authoring-fixture.mjs';
 
 const readJSON = async (file) => JSON.parse(await readFile(file, 'utf8'));
-const explanation = {
-  version: 1,
-  model: { id: 'apples', kind: 'division', count: 11, divisor: 3 },
-  views: [
-    { id: 'groups', kind: 'groups', model: 'apples' },
-    { id: 'equation', kind: 'equation', model: 'apples' },
-  ],
-};
+const document = validateStoryDocument({
+  recipe: 'division',
+  id: 'apples',
+  inputs: { count: 11, divisor: 3 },
+});
 
 async function unlockDirectories(directory) {
   await chmod(directory, 0o700);
@@ -86,7 +84,7 @@ test(
       await createScene(projectPath, {
         root: installed.release,
         title: 'Живая миграция',
-        explanation,
+        document,
       });
       const oldPin = await readJSON(join(projectPath, 'scene-runtime.json'));
       assert.equal(oldPin.root, installed.release);
@@ -128,7 +126,7 @@ test(
             authoring: typeof root.scene.authoring?.replace === 'function',
           }));
       const initial = await sceneState();
-      assert.deepEqual(initial.document, explanation);
+      assert.deepEqual(initial.document, document);
       assert.equal(initial.authoring, true);
       let inspected = await call('story_inspect', { sessionId });
       await call('story_control', {
@@ -189,7 +187,7 @@ test(
         `file:${currentRelease}`,
       );
       const afterMigration = await sceneState();
-      assert.deepEqual(afterMigration.document, explanation);
+      assert.deepEqual(afterMigration.document, document);
       assert.equal(
         afterMigration.parameters.divisor,
         4,
@@ -207,7 +205,7 @@ test(
       assert.equal(edited.shown[0].acknowledgement, 'rendered');
       assert.equal(edited.shown[0].shownSourceRevision, edited.project.sourceRevision);
       const changed = await sceneState();
-      assert.equal(changed.document.model.count, 17);
+      assert.equal(changed.document.models[0].inputs.count, 17);
       assert.equal(changed.parameters.count, 17);
       assert.equal(changed.parameters.divisor, 4);
       const undone = await call('story_edit', {
@@ -217,7 +215,7 @@ test(
         undo: true,
       });
       assert.equal(undone.shown[0].acknowledgement, 'rendered');
-      assert.equal((await sceneState()).document.model.count, 11);
+      assert.equal((await sceneState()).document.models[0].inputs.count, 11);
       assert.deepEqual(
         await readJSON(join(projectPath, 'scene-runtime.json')),
         newPin,
@@ -229,7 +227,7 @@ test(
       const reopened = await call('story_inspect', { sessionId });
       assert.equal(reopened.shownSourceRevision, undone.project.sourceRevision);
       const restored = await sceneState();
-      assert.deepEqual(restored.document, explanation);
+      assert.deepEqual(restored.document, document);
       assert.equal(restored.parameters.count, 11);
       assert.equal(restored.parameters.divisor, 4);
       assert.equal(restored.authoring, true);

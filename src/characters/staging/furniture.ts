@@ -1,3 +1,4 @@
+import { releaseResources } from '../../lifecycle.js';
 import type { Texture } from 'three';
 import { stageTexture, stageColor, type CharacterCompositor } from '../compositor.js';
 import { objectShape } from './objects.js';
@@ -308,6 +309,15 @@ export async function loadFurniture(
   signal?: AbortSignal,
 ) {
   const parts: { id: string; depth: number; texture: Texture; bounds: Part['bounds'] }[] = [];
+  let disposed = false;
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    releaseResources(
+      parts.map((part) => () => part.texture.dispose()),
+      'Character furniture disposal failed.',
+    );
+  };
   try {
     for (const [id, object] of Object.entries(objects))
       for (const part of furnitureParts(object, space)) {
@@ -318,9 +328,17 @@ export async function loadFurniture(
         );
         parts.push({ id, depth: part.depth, bounds: b, texture });
       }
-    return { parts, dispose: () => parts.forEach((p) => p.texture.dispose()) };
+    return { parts, dispose };
   } catch (error) {
-    parts.forEach((p) => p.texture.dispose());
+    releaseResources(
+      [
+        () => {
+          throw error;
+        },
+        dispose,
+      ],
+      'Furniture initialization failed.',
+    );
     throw error;
   }
 }

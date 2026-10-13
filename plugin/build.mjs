@@ -22,9 +22,9 @@ await buildOutput(root, output, async (out) => {
   );
   await mkdir(join(out, 'examples'), { recursive: true });
   const live = join(out, 'scenes', 'live');
-  await buildPage(join(root, 'tools/explanation/index.html'), live, {
+  await buildPage(join(root, 'tools/document-scene/index.html'), live, {
     sourcePackage: true,
-    html: (await readFile(join(root, 'tools/explanation/index.html'), 'utf8')).replace(
+    html: (await readFile(join(root, 'tools/document-scene/index.html'), 'utf8')).replace(
       'src="scene.js"',
       `src="${join(root, 'plugin/ui/live-scene.mjs')}"`,
     ),

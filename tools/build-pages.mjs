@@ -4,6 +4,7 @@ import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'parse5';
 import { sourceAliases } from './source-package.mjs';
+import { sourcePaletteImages } from './build-palette.mjs';
 import { sceneAsset, sceneInput } from './assets.mjs';
 import { generateScene } from './generate-scene.mjs';
 import { buildOutput } from './build-output.mjs';
@@ -96,6 +97,7 @@ export async function buildPage(
       ...(tsconfig ? { tsconfig } : { tsconfigRaw: { compilerOptions: {} } }),
       ...(sourcePackage ? { alias: sourceAliases } : {}),
       plugins: [
+        ...(sourcePackage ? [sourcePaletteImages(resolve(root, 'src/styles'))] : []),
         assetURLs({ onAsset: (file) => assets.add(file), transformModule }),
         ...(cdn
           ? [

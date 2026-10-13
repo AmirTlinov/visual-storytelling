@@ -15,7 +15,7 @@ export async function createScene(
   destination,
   {
     example,
-    explanation,
+    document,
     title,
     deferAudio = false,
     silent = false,
@@ -27,14 +27,14 @@ export async function createScene(
   signal?.throwIfAborted();
   destination = resolve(destination);
   const catalog = JSON.parse(await readFile(join(root, 'examples/catalog.json'), 'utf8'));
-  if (explanation !== undefined && example !== undefined)
-    throw new Error('Choose an explanation document or a copied example.');
-  if (explanation !== undefined) {
+  if (document !== undefined && example !== undefined)
+    throw new Error('Choose a StoryDocument or a copied example.');
+  if (document !== undefined) {
     root = await assertPreparedRuntimeRoot(root);
-    const { validateExplanation } = await import(
-      pathToFileURL(join(root, 'dist/explanation/document.js')).href
+    const { prepareIllustratedDocument } = await import(
+      pathToFileURL(join(root, 'dist/story/document.js')).href
     );
-    explanation = validateExplanation(explanation);
+    document = prepareIllustratedDocument(document).document;
   }
   if ([audio, deferAudio, silent].filter(Boolean).length > 1)
     throw new Error('Choose one of --audio, --no-audio or --silent');
@@ -52,7 +52,7 @@ export async function createScene(
   await mkdir(destination, { recursive: true });
   const source = example
     ? join(root, 'examples', example)
-    : join(root, explanation === undefined ? 'tools/scaffold' : 'tools/explanation');
+    : join(root, document === undefined ? 'tools/scaffold' : 'tools/document-scene');
   const target = destination;
   let runtime;
   const manifest = await readFile(join(target, 'story.vstory')).catch((error) => {
@@ -92,19 +92,16 @@ export async function createScene(
     runtime = await pinSceneProject(destination, {
       root,
       signal,
-      prepared: explanation !== undefined,
+      prepared: document !== undefined,
     });
-    if (explanation !== undefined) {
-      await writeFile(
-        join(destination, 'explanation.json'),
-        JSON.stringify(explanation, null, 2) + '\n',
-      );
+    if (document !== undefined) {
+      await writeFile(join(destination, 'story.json'), JSON.stringify(document, null, 2) + '\n');
     }
     const hasAudio = await access(join(destination, 'audio.wav')).then(
       () => true,
       () => false,
     );
-    if (explanation === undefined && !silent && (deferAudio || (!audio && !hasAudio)))
+    if (document === undefined && !silent && (deferAudio || (!audio && !hasAudio)))
       await deferNarration(destination);
     if (audio) await buildNarration(destination, { signal });
     signal?.throwIfAborted();

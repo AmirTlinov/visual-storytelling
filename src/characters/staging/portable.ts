@@ -1,3 +1,4 @@
+import { releaseResources } from '../../lifecycle.js';
 import type { Texture } from 'three';
 import { stageTexture, type CharacterCompositor } from '../compositor.js';
 import type { Furniture, GroundPoint } from './types.js';
@@ -70,8 +71,9 @@ export async function portableArt(
 ) {
   const textures = new Map<string, Texture>();
   const dispose = () => {
-    for (const texture of textures.values()) texture.dispose();
+    const resources = [...textures.values()].map((texture) => () => texture.dispose());
     textures.clear();
+    releaseResources(resources, 'Character prop disposal failed.');
   };
   try {
     for (const [id, item] of Object.entries(objects))
@@ -93,7 +95,15 @@ export async function portableArt(
       dispose,
     };
   } catch (error) {
-    dispose();
+    releaseResources(
+      [
+        () => {
+          throw error;
+        },
+        dispose,
+      ],
+      'Portable artwork initialization failed.',
+    );
     throw error;
   }
 }

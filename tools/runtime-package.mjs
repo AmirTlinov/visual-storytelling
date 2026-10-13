@@ -288,22 +288,45 @@ async function updatePreparedSceneRuntime(destination, options, metadata) {
   return { scene: destination, changed: true, prepared: true, build: pin.build, dependency };
 }
 
-export async function explanationAPI(directory) {
+export async function storyDocumentAPI(directory) {
   const pinned = await readPinnedRuntime(directory);
   if (pinned.archive)
     throw new Error('Install this project’s pinned dependencies before semantic authoring.');
-  return import(pathToFileURL(join(pinned.root, 'dist/explanation/document.js')).href);
+  const migrationRequired = () =>
+    Object.assign(
+      new Error(
+        'This pinned runtime predates StoryDocument v2. Explicitly migrate the project before document authoring.',
+      ),
+      { code: 'runtime_migration_required' },
+    );
+  const entry = join(pinned.root, 'dist/story/document.js');
+  await access(entry).catch((error) => {
+    if (error.code === 'ENOENT') throw migrationRequired();
+    throw error;
+  });
+  const api = await import(pathToFileURL(entry).href);
+  if (
+    [
+      'prepareStoryDocument',
+      'prepareIllustratedDocument',
+      'editStoryDocument',
+      'authoredInputKeys',
+    ].some((name) => typeof api[name] !== 'function')
+  )
+    throw migrationRequired();
+  return api;
 }
 
 /** A modified source entry must keep using the source build path, never lose authored code. */
-export async function assertPreparedExplanation(directory) {
+export async function assertPreparedDocument(directory) {
   const pin = await readPreparedRuntime(directory);
-  if (!pin) throw new Error('Semantic live authoring requires a prepared explanation project.');
+  if (!pin) throw new Error('Document authoring requires a prepared StoryDocument project.');
+  await storyDocumentAPI(directory);
   const [entry, template, page, templatePage, config] = await Promise.all([
     readFile(join(directory, 'scene.js'), 'utf8'),
-    readFile(join(pin.root, 'tools/explanation/scene.js'), 'utf8'),
+    readFile(join(pin.root, 'tools/document-scene/scene.js'), 'utf8'),
     readFile(join(directory, 'index.html'), 'utf8'),
-    readFile(join(pin.root, 'tools/explanation/index.html'), 'utf8'),
+    readFile(join(pin.root, 'tools/document-scene/index.html'), 'utf8'),
     readOptional(join(directory, 'scene.json')),
   ]);
   const withoutTitle = (html) => html.replace(/<title>.*?<\/title>/s, '<title></title>');

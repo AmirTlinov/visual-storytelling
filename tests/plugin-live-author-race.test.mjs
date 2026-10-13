@@ -1,3 +1,4 @@
+import { validateStoryDocument } from '../dist/story/document.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
@@ -5,14 +6,11 @@ import { chromium } from 'playwright';
 import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { assetURLs } from '../tools/asset-urls.mjs';
 
-const document = {
-  version: 1,
-  model: { id: 'division', kind: 'division', count: 14, divisor: 3 },
-  views: [
-    { id: 'groups', kind: 'groups', model: 'division' },
-    { id: 'equation', kind: 'equation', model: 'division' },
-  ],
-};
+const document = validateStoryDocument({
+  recipe: 'division',
+  id: 'division',
+  inputs: { count: 14, divisor: 3 },
+});
 
 test(
   'applied author identity survives viewer input abort during frame acknowledgement',
@@ -21,10 +19,10 @@ test(
     const bundled = await build({
       stdin: {
         resolveDir: process.cwd(),
-        contents: `import {mountExplanation} from './dist/explanation/mount.js';
+        contents: `import {IllustratedStory} from './dist/story/illustrated.js';
         import './dist/style.css';
         window.__visualStorySession = window.__testFrameConfig ?? {sessionId:'preflight',generation:1,stateRevision:0,buildRevision:'build-14',sourceRevision:'source-14'};
-        window.galleryReady = mountExplanation(document.querySelector('main'), window.__testDocument ?? ${JSON.stringify(document)});
+        window.galleryReady = IllustratedStory.mount(document.querySelector('main'), {document: window.__testDocument ?? ${JSON.stringify(document)}});
         import('./plugin/ui/scene-frame.mjs');`,
       },
       bundle: true,
@@ -158,7 +156,10 @@ test(
           timers.clear();
         };
       });
-      const authored = { ...document, model: { ...document.model, count: 17 } };
+      const authored = {
+        ...document,
+        models: [{ ...document.models[0], inputs: { ...document.models[0].inputs, count: 17 } }],
+      };
       const author = command({
         id: 'attempt-17',
         requestId: 'operation-17',
@@ -174,7 +175,7 @@ test(
       });
       assert.equal(
         await scene.evaluate(
-          () => document.querySelector('main').scene.authoring.document.model.count,
+          () => document.querySelector('main').scene.authoring.document.models[0].inputs.count,
         ),
         17,
       );
@@ -220,7 +221,7 @@ test(
       assert.equal(continued.report.state.parameters.find((p) => p.key === 'divisor').value, 4);
       assert.equal(
         await scene.evaluate(
-          () => document.querySelector('main').scene.authoring.document.model.count,
+          () => document.querySelector('main').scene.authoring.document.models[0].inputs.count,
         ),
         17,
       );
@@ -261,7 +262,7 @@ test(
       const remountedScene = page.frames().find((frame) => frame !== page.mainFrame());
       assert.equal(
         await remountedScene.evaluate(
-          () => document.querySelector('main').scene.authoring.document.model.count,
+          () => document.querySelector('main').scene.authoring.document.models[0].inputs.count,
         ),
         17,
       );

@@ -3,17 +3,19 @@ import { join } from 'node:path';
 import { captureWorkingInput } from './revision-input.mjs';
 import { digest } from '../tools/project-files.mjs';
 import { readJSON, writeJSON } from '../tools/storage.mjs';
-import { explanationAPI, assertPreparedExplanation } from '../tools/runtime-package.mjs';
+import { storyDocumentAPI, assertPreparedDocument } from '../tools/runtime-package.mjs';
 
 /** Prepared components and immutable authored inputs are one ordinary project build. */
 export async function prepareLiveProject(data, project) {
   const input = await captureWorkingInput(data, project, project.sourceRevision);
   const snapshot = join(data, 'snapshots', input.inputSnapshot);
-  const pin = await assertPreparedExplanation(snapshot);
-  const { validateExplanation } = await explanationAPI(snapshot);
-  const document = validateExplanation(await readJSON(join(snapshot, 'explanation.json')));
+  const pin = await assertPreparedDocument(snapshot);
+  const { prepareIllustratedDocument } = await storyDocumentAPI(snapshot);
+  const document = prepareIllustratedDocument(
+    await readJSON(join(snapshot, 'story.json')),
+  ).document;
   const template = await readFile(join(pin.root, 'plugin/dist/live.html'), 'utf8');
-  const setup = `<script>window.__visualStoryExplanation=${JSON.stringify(document).replaceAll('<', '\\u003c')}</script>`;
+  const setup = `<script>window.__visualStoryDocument=${JSON.stringify(document).replaceAll('<', '\\u003c')}</script>`;
   const html = template.replace('</head>', () => setup + '</head>');
   const revision = digest(
     JSON.stringify({

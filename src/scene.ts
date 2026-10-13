@@ -1,3 +1,4 @@
+import { releaseResources } from './lifecycle.js';
 import { mountScene } from './scene-handle.js';
 import {
   story,
@@ -78,6 +79,8 @@ export interface SceneMount {
   describeParameter(key: string, description: ControlDescription): void;
   attachStory<P, K extends string, S = P>(options: StoryOptions<P, K, S>): Story<P, K, S>;
   attachController<P, K extends string, S>(controller: Story<P, K, S>): SceneHandle;
+  /** Return to a static subject while retaining the same controls, history and scene handle. */
+  detachController(): void;
   /** Register subject-owned observers, animations and subscriptions for removal. */
   onDispose(cleanup: () => void): () => void;
   /** View gestures keep media running; mode buttons and seeking restore the authored shot. */
@@ -114,17 +117,6 @@ const node = <K extends keyof HTMLElementTagNameMap>(
   return element;
 };
 let shellSerial = 0;
-function releaseResources(resources: readonly (() => void)[], message: string) {
-  const errors: unknown[] = [];
-  for (const cleanup of resources) {
-    try {
-      cleanup();
-    } catch (error) {
-      errors.push(error);
-    }
-  }
-  if (errors.length) throw new AggregateError(errors, message);
-}
 function mount(
   root: HTMLElement,
   {
@@ -648,6 +640,7 @@ function mount(
       return controller;
     },
     attachController,
+    detachController,
     onDispose(cleanup: () => void) {
       if (abort.signal.aborted) cleanup();
       else cleanups.add(cleanup);
@@ -671,6 +664,49 @@ function mount(
 
   function assertLive() {
     if (abort.signal.aborted) throw new Error(`Scene "${title}" has been disposed`);
+  }
+  function detachController() {
+    assertLive();
+    player?.dispose();
+    player = undefined;
+    inputStory = undefined;
+    playback = undefined;
+    transition = undefined;
+    for (const key of [
+      'play',
+      'seek',
+      'pause',
+      'ready',
+      'mute',
+      'setRate',
+      'muted',
+      'rate',
+      'duration',
+      'currentTime',
+      'subject',
+      'rendering',
+      'setReduced',
+      'review',
+    ])
+      Reflect.deleteProperty(handle, key);
+    handle.extend({
+      snapshot: () => ({ ...values }),
+      get condition() {
+        return acceptedCondition;
+      },
+      review: () => ({ duration: 0, cues: [], segments: [] }),
+    });
+    mode = 'explore';
+    root.dataset.sceneMode = mode;
+    controls.replaceChildren();
+    controls.hidden = true;
+    caption.hidden = true;
+    storyButton.hidden = true;
+    modes.hidden = true;
+    fields.hidden = !parameters.length;
+    heading.textContent = title;
+    heading.title = title;
+    updateChrome(true);
   }
   function attachController<P, K extends string, S>(controller: Story<P, K, S>) {
     assertLive();

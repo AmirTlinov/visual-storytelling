@@ -1,7 +1,7 @@
-import { mountExplanation } from '@visual-storytelling/core';
+import { IllustratedStory } from '@visual-storytelling/core';
 import '@visual-storytelling/core/style.css';
 
-// The installed bundle supplies components; this authored document supplies the subject.
+// Runtime components and authored inputs enter through the same public document owner.
 window.galleryReady = Promise.resolve().then(() =>
-  mountExplanation(document.querySelector('main'), window.__visualStoryExplanation),
+  IllustratedStory.mount(document.querySelector('main'), { document: window.__visualStoryDocument }),
 );

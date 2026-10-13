@@ -14,6 +14,7 @@ import type { ActionKey } from './score.js';
 import type { Actor, CharacterPack, Point } from './types.js';
 import { meshBounds, type CharacterData, type CharacterMesh } from './rig.js';
 import { ease } from './staging/space.js';
+import { releaseResources } from '../lifecycle.js';
 
 /** Absolute clip sampling and staging share one bone graph. */
 export function performance(
@@ -25,6 +26,7 @@ export function performance(
   height: number,
   blend = 0.22,
 ) {
+  let disposed = false;
   const object = clone(data.object),
     bones = new Map<string, Bone>(),
     meshes: CharacterMesh[] = [];
@@ -251,12 +253,23 @@ export function performance(
       return point(bone, anchor.x, anchor.y);
     },
     dispose() {
-      mixer.stopAllAction();
-      mixer.uncacheRoot(object);
-      for (const mesh of meshes) mesh.material.dispose();
-      for (const skeleton of new Set(meshes.map((mesh) => mesh.skeleton))) skeleton.dispose();
-      for (const texture of textures.values()) texture.dispose();
-      object.removeFromParent();
+      if (disposed) return;
+      disposed = true;
+      releaseResources(
+        [
+          () => {
+            mixer.stopAllAction();
+          },
+          () => mixer.uncacheRoot(object),
+          ...[
+            ...new Set(meshes.map((mesh) => mesh.material)),
+            ...new Set(meshes.map((mesh) => mesh.skeleton)),
+            ...textures.values(),
+          ].map((resource) => () => resource.dispose()),
+          () => object.removeFromParent(),
+        ],
+        'Character performance disposal failed.',
+      );
     },
   };
 }

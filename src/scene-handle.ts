@@ -1,3 +1,4 @@
+import { releaseResources } from './lifecycle.js';
 import {
   sceneAccess,
   type SceneCommand,
@@ -207,23 +208,15 @@ export function mountScene<T extends SceneRuntime>(
   handle.dispose = () => {
     if (disposed || root.scene !== handle) return;
     disposed = true;
-    const errors: unknown[] = [];
-    for (const cleanup of [
-      () => disconnectHost?.(),
-      () => subjects.dispose(),
-      () => runtime.dispose(),
-      ...disposal,
-    ]) {
-      try {
-        cleanup();
-      } catch (error) {
-        errors.push(error);
-      }
+    try {
+      releaseResources(
+        [() => disconnectHost?.(), () => subjects.dispose(), () => runtime.dispose(), ...disposal],
+        'Scene disposal failed.',
+      );
+    } finally {
+      disposal.clear();
+      if (root.scene === handle) delete root.scene;
     }
-    disposal.clear();
-    if (root.scene === handle) delete root.scene;
-    if (errors.length === 1) throw errors[0];
-    if (errors.length) throw new AggregateError(errors, 'Scene disposal failed.');
   };
   const access = Object.defineProperties(
     {},

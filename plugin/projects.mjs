@@ -7,7 +7,9 @@ import {
   realpath,
   readdir,
   stat,
+  lstat,
   copyFile,
+  link,
 } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join, dirname, basename, resolve } from 'node:path';
@@ -17,7 +19,7 @@ import { readJSON, writeJSON } from '../tools/storage.mjs';
 import { projectFiles, projectFile, readProjectFile, digest } from '../tools/project-files.mjs';
 import { failure } from './errors.mjs';
 import { sceneEntry } from '../tools/scene-entry.mjs';
-import { explanationAPI, assertPreparedExplanation } from '../tools/runtime-package.mjs';
+import { storyDocumentAPI, assertPreparedDocument } from '../tools/runtime-package.mjs';
 
 const readOptional = (file) =>
   readFile(file).catch((error) => {
@@ -30,6 +32,36 @@ const conflict = (name) =>
   new Error(`Interrupted edit conflicts with ${name}. Resolve it using .vstory/transaction.json.`);
 const validRequest = (id) => typeof id === 'string' && /^[a-zA-Z0-9_-]{8,100}$/.test(id);
 const validCursor = (id) => id === null || validRequest(id);
+const validAsset = (asset) =>
+  asset &&
+  /^[a-f0-9]{64}$/.test(asset.hash) &&
+  asset.path === `dependencies/visual-storytelling-core-${asset.hash}.tgz`;
+
+async function copyImmutableAsset(source, target, hash) {
+  const existing = await readOptional(target);
+  if (existing) {
+    if (digest(existing) !== hash) throw new Error('Runtime archive integrity changed.');
+    return;
+  }
+  if (digest(await readFile(source)) !== hash)
+    throw new Error('Runtime archive integrity changed.');
+  await mkdir(dirname(target), { recursive: true });
+  const temporary = join(dirname(target), '.vstory-asset-' + randomUUID());
+  try {
+    await copyFile(source, temporary, constants.COPYFILE_EXCL);
+    if (digest(await readFile(temporary)) !== hash)
+      throw new Error('Runtime archive integrity changed.');
+    try {
+      await link(temporary, target);
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+    }
+    if (digest(await readFile(target)) !== hash)
+      throw new Error('Runtime archive integrity changed.');
+  } finally {
+    await rm(temporary, { force: true });
+  }
+}
 
 /** Validate the same bounded UTF-8 authoring changes for a working edit or migration candidate. */
 export async function prepareProjectChanges(root, changes) {
@@ -319,6 +351,14 @@ export class ProjectStore {
     const file = join(project.path, '.vstory/transaction.json'),
       journal = await readJSON(file);
     if (!journal) return;
+    await this.assertIdentity(project);
+    if (journal.projectId !== undefined && journal.projectId !== project.id)
+      throw failure('project_conflict', 'Interrupted edit belongs to another project identity.');
+    if (
+      journal.assets !== undefined &&
+      (!Array.isArray(journal.assets) || journal.assets.some((asset) => !validAsset(asset)))
+    )
+      throw new Error('Interrupted edit contains invalid runtime assets.');
     const directory = await this.historyDirectory(project);
     const cursor = (await readJSON(join(directory, 'history.json')))?.cursor ?? null;
     if (
@@ -345,14 +385,23 @@ export class ProjectStore {
       if (!matches(current, entry.before) && !matches(current, entry.after))
         throw conflict(entry.path);
     }
+    // The durable journal owns asset publication too; the old pin survives until this boundary.
+    for (const asset of journal.assets ?? []) {
+      await this.assertIdentity(project);
+      await this.publishAsset(project, asset);
+    }
     // Recheck at each write boundary and after the whole series. Conflicts retain the journal.
-    for (const entry of journal.changes) await this.write(project.path, entry);
+    for (const entry of journal.changes) {
+      await this.assertIdentity(project);
+      await this.write(project.path, entry);
+    }
     for (const entry of journal.changes) {
       const current = await readOptional(
         await projectFile(project.path, entry.path, { writable: true }),
       );
       if (!matches(current, entry.after)) throw conflict(entry.path);
     }
+    await this.assertIdentity(project);
     const receipt = {
       ...(await this.inspect(project.id)),
       ...(journal.semantic ? { semantic: true, authoredInputs: journal.authoredInputs ?? [] } : {}),
@@ -363,6 +412,28 @@ export class ProjectStore {
     });
     await writeJSON(join(directory, 'history.json'), { cursor: journal.history.after });
     await rm(file);
+    for (const asset of journal.assets ?? [])
+      await rm(join(directory, 'assets', asset.hash + '.tgz'), { force: true });
+  }
+  async assetDirectory(project) {
+    const directory = join(await this.historyDirectory(project), 'assets');
+    await mkdir(directory, { recursive: true });
+    if ((await realpath(directory)) !== directory)
+      throw new Error('Transaction assets must be stored inside .vstory without links.');
+    return directory;
+  }
+  async publishAsset(project, asset) {
+    const target = await projectFile(project.path, asset.path, { writable: true });
+    const existing = await readOptional(target);
+    if (existing) {
+      if (digest(existing) !== asset.hash) throw new Error('Runtime archive integrity changed.');
+      return;
+    }
+    await copyImmutableAsset(
+      join(await this.assetDirectory(project), asset.hash + '.tgz'),
+      target,
+      asset.hash,
+    );
   }
   write(root, entry) {
     return writeProjectChange(root, entry);
@@ -395,27 +466,29 @@ export class ProjectStore {
     if (operations !== undefined) {
       if (changes !== undefined || undo || assets.length)
         throw new Error('Choose semantic operations, file changes, or undo.');
-      const { editExplanation } = await explanationAPI(p.path);
-      const document = await readJSON(join(p.path, 'explanation.json'));
+      const { editStoryDocument, authoredInputKeys } = await storyDocumentAPI(p.path);
+      const document = await readJSON(join(p.path, 'story.json'));
       changes = [
         {
-          path: 'explanation.json',
-          content: JSON.stringify(editExplanation(document, operations), null, 2) + '\n',
+          path: 'story.json',
+          content: JSON.stringify(editStoryDocument(document, operations), null, 2) + '\n',
         },
       ];
       authoredInputs = [
         ...new Set(
           operations.flatMap((operation) =>
-            operation.op === 'set-inputs' ? Object.keys(operation.values) : [],
+            operation.op === 'set-inputs'
+              ? authoredInputKeys(document, operation.modelId, operation.values)
+              : [],
           ),
         ),
       ];
     }
-    if (semantic) await assertPreparedExplanation(p.path);
+    if (semantic) await assertPreparedDocument(p.path);
     const document = semantic
-      ? (await explanationAPI(p.path)).validateExplanation(
-          JSON.parse(changes.find((change) => change.path === 'explanation.json').content),
-        )
+      ? (await storyDocumentAPI(p.path)).prepareIllustratedDocument(
+          JSON.parse(changes.find((change) => change.path === 'story.json').content),
+        ).document
       : undefined;
     return { cursor, next, semantic, changes, document, authoredInputs };
   }
@@ -431,6 +504,7 @@ export class ProjectStore {
     if (!validRequest(requestId))
       throw new Error('requestId must contain 8–100 letters, digits, underscores or hyphens.');
     const p = this.get(projectId);
+    await this.assertIdentity(p);
     await this.recover(p);
     const directory = await this.historyDirectory(p);
     const signature = digest(
@@ -463,87 +537,94 @@ export class ProjectStore {
       );
     return { p, directory, signature, state };
   }
-  prepareSemanticEdit(args) {
+  async assertIdentity(project) {
+    const file = join(project.path, 'story.vstory');
+    const info = await lstat(file).catch((error) => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+    const manifest = info?.isFile() ? await readJSON(file) : undefined;
+    if (manifest?.format !== 1 || manifest.id !== project.id)
+      throw failure('project_conflict', 'Project identity changed. Open its directory again.');
+  }
+  /** Prepare exactly one proposal before renderer validation; no authored files change here. */
+  stageEdit(args) {
+    args = structuredClone(args);
     return this.serial(args.projectId, async () => {
       const input = await this.editState(args);
-      if (input.prior) return undefined;
-      const resolved = await this.resolveEdit(input.p, input.state, args, input.directory);
-      return resolved.semantic
-        ? { document: resolved.document, authoredInputs: resolved.authoredInputs }
-        : undefined;
-    });
-  }
-  edit({ projectId, sourceRevision, requestId, changes, operations, undo, assets = [] }) {
-    return this.serial(projectId, async () => {
-      const input = await this.editState({
-        projectId,
-        sourceRevision,
-        requestId,
-        changes,
-        operations,
-        undo,
-        assets,
-      });
-      if (input.prior) return input.prior;
-      const { p, directory, signature, state } = input;
-      const journalPath = join(directory, 'transaction.json');
-      // Migration adds immutable packages; undo retains the previous package and restores its lockfile.
+      if (input.prior) return { args, prior: input.prior };
+      const { p, state, directory, signature } = input;
+      const resolved = await this.resolveEdit(p, state, args, directory);
+      const edits = await prepareProjectChanges(p.path, resolved.changes);
+      const assets = args.assets ?? [];
+      if (
+        assets.some((asset) => !validAsset(asset)) ||
+        new Set(assets.map((asset) => asset.path)).size !== assets.length
+      )
+        throw new Error('Migration assets must be distinct content-addressed runtime archives.');
       for (const asset of assets) {
-        if (!/^dependencies\/visual-storytelling-core-[a-f0-9]{64}\.tgz$/.test(asset.path))
-          throw new Error('Migration assets must be content-addressed runtime archives.');
-        const bytes = await readFile(asset.source);
-        if (digest(bytes) !== asset.hash || !asset.path.includes(asset.hash))
+        if (digest(await readFile(asset.source)) !== asset.hash)
           throw new Error('Runtime archive integrity changed.');
         const target = await projectFile(p.path, asset.path, { writable: true });
-        await mkdir(dirname(target), { recursive: true });
-        try {
-          await copyFile(asset.source, target, constants.COPYFILE_EXCL);
-        } catch (error) {
-          if (error.code !== 'EEXIST' || digest(await readFile(target)) !== asset.hash) throw error;
-        }
-        state.files[asset.path] = asset.hash;
+        const existing = await readOptional(target);
+        if (existing && digest(existing) !== asset.hash)
+          throw new Error('Runtime archive integrity changed.');
       }
-      if (assets.length) {
-        const current = await projectFiles(p.path);
-        if (
-          Object.keys(current.files).length !== Object.keys(state.files).length ||
-          Object.entries(current.files).some(([name, hash]) => state.files[name] !== hash)
-        )
-          throw failure('source_conflict', 'Source changed while preparing the runtime update.', {
-            action: 'story_inspect',
-          });
-        state.sourceRevision = current.revision;
-      }
-      const {
-        cursor,
-        next,
-        semantic,
-        authoredInputs,
-        changes: resolvedChanges,
-      } = await this.resolveEdit(
-        p,
-        state,
-        { requestId, changes, operations, undo, assets },
-        directory,
-      );
-      const edits = await prepareProjectChanges(p.path, resolvedChanges);
       if ((await projectFiles(p.path)).revision !== state.sourceRevision)
         throw new Error('Source changed while preparing this edit. Inspect before retrying.');
-      const journal = {
-        requestId,
-        signature,
+      await this.assertIdentity(p);
+      return { args, path: p.path, signature, ...resolved, edits, assets };
+    });
+  }
+  /** Recheck source, history and identity, then let the existing journal own all publication. */
+  commitPreparedEdit(prepared) {
+    const { args } = prepared;
+    return this.serial(args.projectId, async () => {
+      const input = await this.editState(args);
+      if (input.prior) return input.prior;
+      const { p, directory, state } = input;
+      if (p.path !== prepared.path || input.signature !== prepared.signature)
+        throw new Error('Project changed while validating this edit. Inspect before retrying.');
+      const check = async () => {
+        await this.assertIdentity(p);
+        if ((await projectFiles(p.path)).revision !== state.sourceRevision)
+          throw new Error('Source changed while validating this edit. Inspect before retrying.');
+        const cursor = (await readJSON(join(directory, 'history.json')))?.cursor ?? null;
+        if (cursor !== prepared.cursor)
+          throw failure(
+            'history_conflict',
+            'Authoring history changed while validating this edit.',
+            { action: 'story_inspect' },
+          );
+      };
+      await check();
+      // Copy to private recovery storage first. A failed journal write leaves the authored pin intact.
+      for (const asset of prepared.assets) {
+        const target = join(await this.assetDirectory(p), asset.hash + '.tgz');
+        await copyImmutableAsset(asset.source, target, asset.hash);
+      }
+      await check();
+      const { semantic, authoredInputs, edits, cursor, next } = prepared;
+      await writeJSON(join(directory, 'transaction.json'), {
+        projectId: p.id,
+        requestId: args.requestId,
+        signature: prepared.signature,
         createdAt: new Date().toISOString(),
         ...(semantic ? { semantic: true, authoredInputs } : {}),
+        ...(prepared.assets.length
+          ? { assets: prepared.assets.map(({ path, hash }) => ({ path, hash })) }
+          : {}),
         changes: edits,
         history: { before: cursor, after: edits.length ? next : cursor },
-      };
-      await writeJSON(journalPath, journal);
+      });
       await this.recover(p);
       return {
-        ...(await this.inspect(projectId)),
-        requestId,
+        ...(await this.inspect(args.projectId)),
+        requestId: args.requestId,
         ...(semantic ? { semantic: true, authoredInputs } : {}),
       };
     });
+  }
+  async edit(args) {
+    return this.commitPreparedEdit(await this.stageEdit(args));
   }
 }

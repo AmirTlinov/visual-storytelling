@@ -1,3 +1,4 @@
+import { releaseResources } from '../lifecycle.js';
 import type { PhysicsRuntime } from './runtime.js';
 
 /** A body owns its native state, view bindings, and active interactions in either dimension. */
@@ -15,12 +16,25 @@ export function bodyLifetime(
   function dispose() {
     if (disposed || disposing) return;
     disposing = true;
-    for (const cleanup of [...listeners]) cleanup();
+    const resources = [
+      ...listeners,
+      () => {
+        try {
+          native.remove();
+        } finally {
+          disposed = true;
+        }
+      },
+      untrack,
+      () => world.sync(),
+    ];
     listeners.clear();
-    native.remove();
-    disposed = true;
-    untrack();
-    world.sync();
+    try {
+      releaseResources(resources, `Physical body ${id} disposal failed.`);
+    } finally {
+      disposed = true;
+      disposing = false;
+    }
   }
   const untrack = world.track(id, { awake: native.awake, dispose });
   return {

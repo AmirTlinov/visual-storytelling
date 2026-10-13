@@ -5,6 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
 import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { pluginHost } from './plugin/host.mjs';
@@ -36,15 +37,26 @@ test(
         title: 'Проверить полную группу',
         path: join(temporary, 'project'),
         requestId: randomUUID(),
-        explanation: { model: { kind: 'division', count: 13, divisor: 3 } },
+        document: { recipe: 'division', inputs: { count: 13, divisor: 3 } },
       });
       await page.evaluate((result) => window.pluginTest.result(result), created);
       await app.locator('html[data-connection="connected"]').waitFor();
       const session = created.structuredContent;
+      let initial;
+      const deadline = Date.now() + 10000;
+      while (Date.now() < deadline) {
+        const views = (await call('story_inspect', {})).structuredContent.sessions;
+        initial = views.find(
+          (view) => view.sessionId === session.sessionId && view.status === 'connected',
+        );
+        if (initial) break;
+        await delay(25);
+      }
+      assert.ok(initial, 'the scene, not just the MCP connection, acknowledged its first frame');
       const request = {
         sessionId: session.sessionId,
-        buildRevision: session.buildRevision,
-        stateRevision: 0,
+        buildRevision: initial.buildRevision,
+        stateRevision: initial.stateRevision,
         requestId: randomUUID(),
         detail: 'model',
         commands: [

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -73,7 +73,7 @@ test('creation reserves its request before files and resumes only its own manife
       const store = new ProjectStore(data);
       const input = {
         title: 'Reserved',
-        explanation: { model: { kind: 'division', count: 13, divisor: 3 } },
+        document: { model: { kind: 'division', count: 13, divisor: 3 } },
         ...(explicit ? { path } : {}),
       };
       const options = { title: input.title, creation: { requestId: randomUUID(), input } };
@@ -149,7 +149,7 @@ test('a failed first creation commit leaves no candidate directory or unbound pr
   const path = join(directory, 'implicit-candidate');
   const options = {
     title: 'Reserved',
-    creation: { requestId: randomUUID(), input: { title: 'Reserved', explanation: { model: {} } } },
+    creation: { requestId: randomUUID(), input: { title: 'Reserved', document: { model: {} } } },
   };
   await assert.rejects(store.create(path, options));
   assert.equal(store.projects.size, 0);
@@ -319,4 +319,163 @@ test('a new scene ships an immutable runtime archive and its lockfile before pre
     await readFile(join(scene, 'node_modules/@visual-storytelling/core/dist/index.js'), 'utf8'),
     'export const value = 7;\n',
   );
+});
+
+test('a staged edit resolves once, commits the validated proposal and repeats its durable receipt', async (t) => {
+  const f = await fixture(t);
+  const resolve = f.store.resolveEdit.bind(f.store);
+  let resolutions = 0;
+  f.store.resolveEdit = (...args) => {
+    resolutions++;
+    return resolve(...args);
+  };
+  const args = {
+    projectId: f.project.id,
+    sourceRevision: f.project.sourceRevision,
+    requestId: randomUUID(),
+    changes: [{ path: 'a.js', content: 'validated' }],
+  };
+  const prepared = await f.store.stageEdit(args);
+  assert.equal(await f.text(), 'a0', 'staging leaves source intact');
+  args.changes[0].content = 'changed after validation';
+  const committed = await f.store.commitPreparedEdit(prepared);
+  assert.equal(await f.text(), 'validated');
+  assert.equal(resolutions, 1);
+  const repeated = await f.store.edit(prepared.args);
+  assert.equal(repeated.repeated, true);
+  assert.equal(repeated.sourceRevision, committed.sourceRevision);
+  assert.equal(resolutions, 1, 'a receipt does not prepare a new candidate');
+});
+
+test('staged edits fence source changes and history changes even when source returns to the same bytes', async (t) => {
+  for (const boundary of ['source', 'history'])
+    await t.test(boundary, async (t) => {
+      const f = await fixture(t);
+      const prepared = await f.store.stageEdit({
+        projectId: f.project.id,
+        sourceRevision: f.project.sourceRevision,
+        requestId: randomUUID(),
+        changes: [{ path: 'a.js', content: 'candidate' }],
+      });
+      if (boundary === 'source') await writeFile(join(f.root, 'b.js'), 'external');
+      else {
+        await f.edit([{ path: 'b.js', content: 'branch' }]);
+        await f.edit([{ path: 'b.js', content: 'b0' }]);
+        assert.equal(
+          (await f.store.inspect(f.project.id)).sourceRevision,
+          f.project.sourceRevision,
+        );
+      }
+      await assert.rejects(
+        f.store.commitPreparedEdit(prepared),
+        (error) => error.code === (boundary === 'source' ? 'source_conflict' : 'history_conflict'),
+      );
+      assert.equal(await f.text(), 'a0');
+      await assert.rejects(access(join(f.root, '.vstory/transaction.json')), { code: 'ENOENT' });
+    });
+});
+
+test('project identity fences staged edits and interrupted publication across restart', async (t) => {
+  const f = await fixture(t);
+  const manifestFile = join(f.root, 'story.vstory');
+  const manifest = JSON.parse(await readFile(manifestFile, 'utf8'));
+  const other = { ...manifest, id: randomUUID() };
+  const args = {
+    projectId: f.project.id,
+    sourceRevision: f.project.sourceRevision,
+    requestId: randomUUID(),
+    changes: [{ path: 'a.js', content: 'accepted candidate' }],
+  };
+  const prepared = await f.store.stageEdit(args);
+  await writeFile(manifestFile, JSON.stringify(other));
+  await assert.rejects(f.store.commitPreparedEdit(prepared), { code: 'project_conflict' });
+  assert.equal(await f.text(), 'a0');
+  await assert.rejects(access(join(f.root, '.vstory/transaction.json')), { code: 'ENOENT' });
+  await writeFile(manifestFile, JSON.stringify(manifest));
+  f.store.write = async () => { throw new Error('crash before source publication'); };
+  await assert.rejects(f.store.commitPreparedEdit(prepared), /crash before/);
+  await writeFile(manifestFile, JSON.stringify(other));
+  const reopened = new ProjectStore(join(f.directory, 'data'));
+  await reopened.start();
+  await assert.rejects(reopened.recover(f.project), { code: 'project_conflict' });
+  await assert.rejects(reopened.recover({ ...f.project, id: other.id }), { code: 'project_conflict' });
+  assert.equal(await f.text(), 'a0');
+  await access(join(f.root, '.vstory/transaction.json'));
+  await writeFile(manifestFile, JSON.stringify(manifest));
+  await reopened.recover(f.project);
+  assert.equal(await f.text(), 'accepted candidate');
+  assert.equal((await reopened.edit(args)).repeated, true);
+});
+
+async function assetFixture(t) {
+  const f = await fixture(t);
+  const source = join(f.directory, 'new-runtime.tgz');
+  const bytes = Buffer.from('immutable runtime archive fixture');
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  await writeFile(source, bytes);
+  const asset = { source, hash, path: `dependencies/visual-storytelling-core-${hash}.tgz` };
+  const args = {
+    projectId: f.project.id,
+    sourceRevision: f.project.sourceRevision,
+    requestId: randomUUID(),
+    changes: [{ path: 'a.js', content: 'new runtime pin' }],
+    assets: [asset],
+  };
+  return { ...f, asset, args, bytes };
+}
+
+test('migration staging and a failed journal leave the authored pin and source revision intact', async (t) => {
+  const f = await assetFixture(t);
+  const prepared = await f.store.stageEdit(f.args);
+  await assert.rejects(access(join(f.root, f.asset.path)), { code: 'ENOENT' });
+  // Fail journal publication after private asset capture, before any authored file transition.
+  const assetDirectory = f.store.assetDirectory.bind(f.store);
+  f.store.assetDirectory = async (project) => {
+    const directory = await assetDirectory(project);
+    await mkdir(join(f.root, '.vstory/transaction.json'));
+    return directory;
+  };
+  await assert.rejects(f.store.commitPreparedEdit(prepared));
+  assert.equal(await f.text(), 'a0');
+  assert.equal((await f.store.inspect(f.project.id)).sourceRevision, f.project.sourceRevision);
+  await assert.rejects(access(join(f.root, f.asset.path)), { code: 'ENOENT' });
+  await rm(join(f.root, '.vstory/transaction.json'), { recursive: true });
+  f.store.assetDirectory = assetDirectory;
+  await f.store.commitPreparedEdit(prepared);
+  assert.equal(await f.text(), 'new runtime pin');
+  assert.deepEqual(await readFile(join(f.root, f.asset.path)), f.bytes);
+});
+
+test('a migration journal recovers assets and source after restart without the worker candidate', async (t) => {
+  for (const boundary of ['before-asset', 'after-asset'])
+    await t.test(boundary, async (t) => {
+      const f = await assetFixture(t);
+      const publish = f.store.publishAsset.bind(f.store);
+      f.store.publishAsset = async (...args) => {
+        if (boundary === 'after-asset') await publish(...args);
+        throw new Error('interrupted asset publication');
+      };
+      await assert.rejects(f.store.edit(f.args), /interrupted asset publication/);
+      assert.equal(await f.text(), 'a0');
+      await access(join(f.root, '.vstory/transaction.json'));
+      await rm(f.asset.source);
+      const reopened = new ProjectStore(join(f.directory, 'data'));
+      await reopened.start();
+      const recovered = await reopened.edit(f.args);
+      assert.equal(recovered.repeated, true);
+      assert.equal(await f.text(), 'new runtime pin');
+      assert.deepEqual(await readFile(join(f.root, f.asset.path)), f.bytes);
+      await reopened.edit({
+        projectId: f.project.id,
+        sourceRevision: recovered.sourceRevision,
+        requestId: randomUUID(),
+        undo: true,
+      });
+      assert.equal(await f.text(), 'a0');
+      assert.deepEqual(
+        await readFile(join(f.root, f.asset.path)),
+        f.bytes,
+        'undo retains immutable packages',
+      );
+    });
 });

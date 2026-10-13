@@ -1,4 +1,5 @@
-import { Morph, morphPlan, bodySize, type MorphBody, type MorphObject } from '../objects.js';
+import { Morph, morphPlan, type MorphBody, type MorphObject } from '../objects.js';
+import { bodySize } from '../body-geometry.js';
 import {
   volumeBox,
   volumeCapsule,

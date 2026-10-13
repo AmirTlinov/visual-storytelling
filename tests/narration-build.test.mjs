@@ -337,6 +337,9 @@ test('copied story speech retains its receipt and notices changed voice or music
     await writeFile(
       join(source, 'story.json'),
       JSON.stringify({
+        version: 2,
+        models: [],
+        views: [],
         title: 'Цепь',
         narration: {
           voice: { reference_audio: 'reference.wav', reference_text: 'Два входа.' },

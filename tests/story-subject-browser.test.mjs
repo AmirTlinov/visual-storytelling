@@ -14,12 +14,13 @@ test(
       stdin: {
         resolveDir: process.cwd(),
         contents: `
-      import {mountExplanation} from './dist/explanation/mount.js';
+      import {IllustratedStory} from './dist/story/illustrated.js';
       import './dist/style.css';
-      window.ready = mountExplanation(document.querySelector('main'), {
-        version:1,model:{id:'division',kind:'division',count:17,divisor:5},
+      window.mountDocument = IllustratedStory.mount;
+      window.ready = IllustratedStory.mount(document.querySelector('main'), {document:{
+        recipe:'division',inputs:{count:17,divisor:5},
         views:[{id:'objects',kind:'groups',model:'division'},{id:'identity',kind:'equation',model:'division'}],
-      }).then(scene => window.lab = {scene});
+      }}).then(({scene}) => window.lab = {scene});
     `,
       },
       bundle: true,
@@ -105,9 +106,9 @@ test(
       });
       await page.evaluate(async () => {
         const doc = structuredClone(lab.scene.authoring.document);
-        doc.score = [
-          { id: 'collect', action: 'group', seconds: 4 },
-          { id: 'notice', focus: ['remainder'], hold: true, seconds: 2 },
+        doc.chapters[0].beats = [
+          { id: 'collect', operation: { model: 'division', name: 'group' }, seconds: 4 },
+          { id: 'notice', focus: ['division:remainder'], hold: 'Сравнить остаток', seconds: 2 },
         ];
         await lab.scene.authoring.replace(doc);
       });
@@ -124,7 +125,7 @@ test(
       }));
       const failure = await page.evaluate(async () => {
         const doc = structuredClone(lab.scene.authoring.document);
-        doc.model.divisor = 0;
+        doc.models[0].inputs.divisor = 0;
         try {
           await lab.scene.authoring.replace(doc);
         } catch (error) {
@@ -134,7 +135,7 @@ test(
       assert.match(failure, /divisor/);
       const futureFailure = await page.evaluate(async () => {
         const doc = structuredClone(lab.scene.authoring.document);
-        doc.score[1].text = 'x'.repeat(90);
+        doc.chapters[0].beats[1].text = 'x'.repeat(90);
         try {
           await lab.scene.authoring.replace(doc);
         } catch (error) {
@@ -142,6 +143,33 @@ test(
         }
       });
       assert.match(futureFailure, /wider drawing/);
+      const timingFailures = await page.evaluate(() => {
+        const messages = [];
+        for (const timing of [{ until: 'collect' }, { until: 'experience.notice', delay: 99 }]) {
+          const doc = structuredClone(lab.scene.authoring.document);
+          doc.chapters[0].beats[0].timing = timing;
+          try {
+            lab.scene.authoring.validate(doc);
+          } catch (error) {
+            messages.push(error.message);
+          }
+        }
+        const doc = structuredClone(lab.scene.authoring.document);
+        doc.chapters[0].beats[0].timing = { until: 'later.end' };
+        doc.chapters.push({ id: 'later', title: 'Позже', beats: [{ id: 'end', seconds: 1 }] });
+        try {
+          lab.scene.authoring.validate(doc);
+        } catch (error) {
+          messages.push(error.message);
+        }
+        return messages;
+      });
+      assert.equal(
+        timingFailures.length,
+        3,
+        'preflight must reject every timeline that replacement cannot compile',
+      );
+
       assert.deepEqual(
         await page.evaluate(() => ({
           doc: lab.scene.authoring.document,
@@ -161,7 +189,7 @@ test(
         await page.evaluate(
           async ({ count, divisor }) => {
             const doc = structuredClone(lab.scene.authoring.document);
-            Object.assign(doc.model, { count, divisor });
+            Object.assign(doc.models[0].inputs, { count, divisor });
             await lab.scene.authoring.replace(doc);
             lab.scene.seek(lab.scene.duration);
           },
@@ -179,7 +207,7 @@ test(
           await page.emulateMedia({ colorScheme });
           await page.evaluate(async () => {
             const doc = structuredClone(lab.scene.authoring.document);
-            Object.assign(doc.model, { count: 17, divisor: 5 });
+            Object.assign(doc.models[0].inputs, { count: 17, divisor: 5 });
             await lab.scene.authoring.replace(doc);
             lab.scene.seek(lab.scene.duration);
           });
@@ -212,6 +240,141 @@ test(
           .evaluateAll((items) => items.map((item) => item.getAttribute('transform'))),
         reducedPositions,
       );
+      await page.evaluate(async () => {
+        const document = structuredClone(lab.scene.authoring.document);
+        lab.narrative = structuredClone(document);
+        document.chapters = [];
+        await lab.scene.authoring.replace(document);
+      });
+      assert.deepEqual(
+        await page.evaluate(() => ({
+          play: typeof lab.scene.play,
+          seek: typeof lab.scene.seek,
+          duration: lab.scene.duration,
+          mode: lab.scene.inspect({ presentation: false }).mode,
+        })),
+        { play: 'undefined', seek: 'undefined', duration: undefined, mode: 'explore' },
+      );
+      assert.equal((await observe()).completed, 3);
+      await page.evaluate(() => lab.scene.control([{ type: 'parameters', values: { count: 18 } }]));
+      assert.equal((await observe()).state.count, 18);
+      await page.evaluate(() => lab.scene.authoring.replace(lab.narrative));
+      assert.equal((await observe()).state.count, 18);
+      assert.equal(typeof (await page.evaluate(() => lab.scene.duration)), 'number');
+      assert.equal((await observe()).sameHandle, true);
+      const staticResult = await page.evaluate(async () => {
+        const root = document.createElement('main');
+        root.className = 've-scene';
+        document.body.append(root);
+        const { scene, story } = await window.mountDocument(root, {
+          document: { recipe: 'division', inputs: { count: 17, divisor: 5 }, chapters: [] },
+        });
+        const initial = {
+          story: typeof story,
+          play: typeof scene.play,
+          seek: typeof scene.seek,
+          count: scene.snapshot().count,
+        };
+        await scene.control([{ type: 'parameters', values: { count: 19 } }]);
+        const captured = scene.capture();
+        await scene.control([{ type: 'parameters', values: { count: 20 } }]);
+        await scene.restore(captured);
+        const restored = scene.snapshot().count;
+        const same = structuredClone(scene.authoring.document);
+        await scene.authoring.replace(same, { authoredInputs: ['count'] });
+        const authored = scene.snapshot().count;
+        scene.dispose();
+        root.remove();
+        return { initial, restored, authored };
+      });
+      assert.deepEqual(staticResult, {
+        initial: { story: 'undefined', play: 'undefined', seek: 'undefined', count: 17 },
+        restored: 19,
+        authored: 17,
+      });
+      const failedFactory = await page.evaluate(async () => {
+        const root = document.createElement('main');
+        document.body.append(root);
+        try {
+          await window.mountDocument(root, {
+            document: { recipe: 'division', inputs: { count: 17, divisor: 5 }, chapters: [] },
+            subjects: {
+              division: {
+                title: 'Failure',
+                parameters: () => [],
+                create() {
+                  throw new Error('factory failed');
+                },
+              },
+            },
+          });
+        } catch (error) {
+          const result = { message: error.message, attached: !!root.scene };
+          root.remove();
+          return result;
+        }
+      });
+      assert.deepEqual(failedFactory, { message: 'factory failed', attached: false });
+
+      const nonIdempotent = await page.evaluate(async () => {
+        const root = document.createElement('main');
+        document.body.append(root);
+        const counter = {
+          validateInputs: ({ value }) => ({ value }),
+          state: ({ value }) => ({ value, derived: value }),
+          operations: { double: (state) => ({ value: state.value * 2, derived: state.value * 2 }) },
+          validateViews() {},
+          focusTargets: () => [],
+        };
+        const subject = {
+          title: 'Counter',
+          parameters: (model) => [
+            { key: 'value', label: 'Value', value: model.inputs.value, min: 0, max: 20 },
+          ],
+          create() {
+            return {
+              validate() {},
+              render() {},
+              snapshot: (state) => ({ ...state }),
+              dispose() {},
+            };
+          },
+        };
+        const { scene } = await window.mountDocument(root, {
+          document: {
+            version: 2,
+            models: [{ id: 'counter', module: 'counter', inputs: { value: 3 } }],
+            views: [],
+            chapters: [
+              {
+                id: 'math',
+                title: 'Math',
+                beats: [
+                  { id: 'double', operation: { model: 'counter', name: 'double' }, seconds: 2 },
+                ],
+              },
+            ],
+          },
+          modules: { counter },
+          subjects: { counter: subject },
+        });
+        const initial = scene.snapshot();
+        await scene.control([{ type: 'parameters', values: { value: 4 } }]);
+        const edited = scene.snapshot();
+        scene.seek(1);
+        const sought = scene.snapshot();
+        await scene.control([{ type: 'mode', value: 'story' }]);
+        const resumed = scene.snapshot();
+        scene.dispose();
+        root.remove();
+        return { initial, edited, sought, resumed };
+      });
+      assert.deepEqual(nonIdempotent, {
+        initial: { value: 6, derived: 6 },
+        edited: { value: 8, derived: 8 },
+        sought: { value: 8, derived: 8 },
+        resumed: { value: 6, derived: 6 },
+      });
       assert.deepEqual(errors, []);
       await writeFile(`${directory}/observations.json`, JSON.stringify(observations, null, 2));
     } finally {
