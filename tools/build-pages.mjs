@@ -9,7 +9,9 @@ import { sceneAsset, sceneInput } from './assets.mjs';
 import { generateScene } from './generate-scene.mjs';
 import { buildOutput } from './build-output.mjs';
 import { assetURLs, moduleAssetURLs } from './asset-urls.mjs';
-import { checkNarration, setNarrationMode, playbackTimeline } from './narration.mjs';
+import {
+  checkNarration, setNarrationMode, playbackTimeline, withoutUnusedNarration,
+} from './narration.mjs';
 import { resolvePackage } from './build-info.mjs';
 import { readCatalog } from './catalog.mjs';
 import { writeBundleNotices } from './bundle-notices.mjs';
@@ -32,6 +34,7 @@ export async function buildPage(
   } = {},
 ) {
   let html = suppliedHTML ?? (await readFile(source, 'utf8'));
+  html = await withoutUnusedNarration(html, dirname(source));
   if (silent) html = setNarrationMode(html, true);
   await checkNarration(html, dirname(source));
   const document = parse(html, { sourceCodeLocationInfo: true });

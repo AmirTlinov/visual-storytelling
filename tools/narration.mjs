@@ -62,6 +62,16 @@ export function withoutGeneratedNarration(html) {
   return location ? html.slice(0, location.startOffset) + html.slice(location.endOffset) : html;
 }
 
+/** A quiet canonical revision does not need the previous recording's owned hook. */
+export async function withoutUnusedNarration(html, directory) {
+  if (!generatedNarrationHook(html)) return html;
+  const document = await readFile(join(directory, 'story.json'), 'utf8').catch((error) => {
+    if (error.code !== 'ENOENT') throw error;
+  });
+  if (document === undefined || (await narrationSource(directory))) return html;
+  return withoutGeneratedNarration(html);
+}
+
 /** Change actual audio tags without touching scripts, styles or quoted examples. */
 export function setNarrationMode(html, silent) {
   let found = false;

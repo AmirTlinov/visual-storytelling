@@ -15,6 +15,9 @@ import { environmentProfile } from '../tools/environment/resources.mjs';
 import { captureWorkingInput } from '../plugin/revision-input.mjs';
 import { pluginHost } from './plugin/host.mjs';
 import { finishFixtureJob } from './plugin/authoring-fixture.mjs';
+import { prepareLiveProject } from '../plugin/live-project.mjs';
+import { buildScene } from '../tools/build-pages.mjs';
+import { packDirectory } from '../tools/standalone.mjs';
 
 const release = fileURLToPath(new URL('../.plugin-release/', import.meta.url));
 const document = {
@@ -48,6 +51,31 @@ const document = {
     },
   ],
 };
+
+test('a speechless revision ignores obsolete generated hooks and missing media without changing voice settings', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'prepared-quiet-media-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  for (const chapters of [[], document.chapters.map(chapter => ({
+    ...chapter, beats: chapter.beats.map(beat => ({ ...beat, say: '' })),
+  }))]) {
+    const path = join(directory, chapters.length ? 'quiet-story' : 'static');
+    await createScene(path, { document: { ...document, chapters }, root: release });
+    const voice = JSON.stringify({ enabled: true, provider: 'api', adapter: 'missing.mjs' });
+    await writeFile(join(path, 'voice.json'), voice);
+    const index = setNarrationMode(await readFile(join(path, 'index.html'), 'utf8'), false);
+    await writeFile(join(path, 'index.html'), index);
+    const project = {
+      id: randomUUID(), title: 'Quiet', path, sourceRevision: (await projectFiles(path)).revision,
+    };
+    const prepared = await prepareLiveProject(join(directory, 'data'), project);
+    assert.doesNotMatch(prepared.html, /<audio\b/);
+    const output = join(path, 'dist');
+    await buildScene(path, output);
+    assert.doesNotMatch(await packDirectory(output), /<audio\b/);
+    assert.equal(await readFile(join(path, 'voice.json'), 'utf8'), voice);
+    assert.equal(await readFile(join(path, 'index.html'), 'utf8'), index);
+  }
+});
 
 test('prepared source permits its generated narration hook and rejects custom HTML or code', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'prepared-narration-guard-'));

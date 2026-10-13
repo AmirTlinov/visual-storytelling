@@ -168,7 +168,9 @@ test('local chapters start immediately while optional narration reserves the fin
 });
 
 test('aligned chapter local time preserves spoken words and the final action tail', () => {
-  const aligned = documentScript(document, {
+  const authored = structuredClone(document);
+  authored.chapters[0].beats[0].timing = { duration: 7 - 4.4 };
+  const aligned = documentScript(authored, {
     duration: 13,
     cues: {
       'room.switch': { start: 4.4, end: 7, speech: { start: 4.4, end: 5 } },
@@ -185,7 +187,7 @@ test('aligned chapter local time preserves spoken words and the final action tai
       { id: 'paper', start: 10, end: 12, text: 'Проверьте сами.' },
     ],
   });
-  const chapter = documentChapter(document, 'room', aligned);
+  const chapter = documentChapter(authored, 'room', aligned);
   assert.equal(chapter.seconds, 7 - 4.4);
   assert.equal(chapter.script.cues.switch.start, 0);
   assert.deepEqual(chapter.script.cues.switch.speech, { start: 0, end: 5 - 4.4 });

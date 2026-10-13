@@ -16,7 +16,7 @@ export async function prepareLiveProject(data, project) {
   const input = await captureWorkingInput(data, project, project.sourceRevision);
   const snapshot = join(data, 'snapshots', input.inputSnapshot);
   const pin = await assertPreparedDocument(snapshot);
-  const { prepareIllustratedDocument } = await storyDocumentAPI(snapshot);
+  const { prepareIllustratedDocument, documentNarration } = await storyDocumentAPI(snapshot);
   const document = prepareIllustratedDocument(
     await readJSON(join(snapshot, 'story.json')),
   ).document;
@@ -24,7 +24,7 @@ export async function prepareLiveProject(data, project) {
   const setup = `<script>window.__visualStoryDocument=${JSON.stringify(document).replaceAll('<', '\\u003c')}</script>`;
   let html = template.replace('</head>', () => setup + '</head>');
   const hook = generatedNarrationHook(await readFile(join(snapshot, 'index.html'), 'utf8'));
-  if (hook) {
+  if (hook && documentNarration(document).segments.length) {
     if (!(await linkPreparedRuntime(snapshot)))
       throw Object.assign(
         new Error(
