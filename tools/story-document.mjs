@@ -19,7 +19,7 @@ export async function narrationSource(directory) {
       ? pathToFileURL(join(runtime, 'dist/story/document.js'))
       : new URL('../dist/story/document.js', import.meta.url);
     const { documentNarration } = await import(projection.href);
-    const spec = documentNarration(document);
+    let spec = documentNarration(document);
     if (!spec.segments.length) return;
     const retained = await readFile(join(directory, 'timeline.json'), 'utf8')
       .then(JSON.parse)
@@ -52,8 +52,23 @@ export async function narrationSource(directory) {
         spoken(segment.text) === spoken(retained.segments[index].text),
       )
     ) {
-      if (retained.captionAliases === undefined) delete spec.captionAliases;
-      else spec.captionAliases = structuredClone(retained.captionAliases);
+      const { captionAliases: _aliases, segments, ...recording } = spec;
+      spec = {
+        ...recording,
+        ...(retained.captionAliases !== undefined && {
+          captionAliases: structuredClone(retained.captionAliases),
+        }),
+        segments,
+      };
+      for (const segment of spec.segments)
+        for (const cue of segment.cues ?? []) {
+          const accepted = retained.cues?.[cue.id];
+          if (!accepted) continue;
+          for (const field of ['action', 'hold', 'timing']) delete cue[field];
+          for (const field of ['action', 'hold', 'timing']) {
+            if (accepted[field] !== undefined) cue[field] = structuredClone(accepted[field]);
+          }
+        }
     }
     const text = JSON.stringify(spec, null, 2) + '\n';
     const file = join(

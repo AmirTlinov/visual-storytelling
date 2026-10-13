@@ -238,11 +238,14 @@ export function documentScript(
           throw new Error(
             `Silent action before ${id} does not fit aligned narration; regenerate narration with its authored pauses`,
           );
+        const { action: _action, hold: _hold, timing: _timing, ...acoustic } = cue;
+        const anchor = cue.speech ?? cue;
         cues[id] = {
-          ...cue,
+          ...acoustic,
+          start: anchor.start,
+          end: anchor.end,
+          ...intention(beat),
           ...(timing ? { timing } : {}),
-          ...(beat.action !== undefined ? { action: beat.action } : {}),
-          ...(beat.hold !== undefined ? { hold: beat.hold } : {}),
         };
       } else {
         silent.add(id);

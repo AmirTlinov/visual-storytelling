@@ -332,12 +332,14 @@ test('visual document edits reuse accepted narration without cached takes or an 
           {
             id: 'group',
             say: 'Один шаг вправо.',
+            action: 'Исходная подпись действия',
             timing: { duration: 1.1 },
             operation: { model: 'division', name: 'group' },
           },
         ],
       },
     ],
+    narration: { captionAliases: { Один: '1' } },
   };
   const save = (source) => writeFile(join(f.directory, 'story.json'), JSON.stringify(source));
   await save(document);
@@ -349,6 +351,7 @@ test('visual document edits reuse accepted narration without cached takes or an 
   document.models[0].inputs.count = 14;
   document.chapters[0].title = 'Новая подпись той же главы';
   document.narration = { captionAliases: { 'Один шаг': 'Первый шаг' } };
+  document.chapters[0].beats[0].action = 'Новая подпись действия';
   await save(document);
   const previousPath = process.env.PATH;
   try {
@@ -360,6 +363,8 @@ test('visual document edits reuse accepted narration without cached takes or an 
   }
   assert.deepEqual(await f.pair(), accepted, 'accepted WAV and provenance stay byte-identical');
   delete document.narration.captionAliases;
+  delete document.chapters[0].beats[0].action;
+  document.chapters[0].beats[0].hold = 'Наблюдаем тот же опыт';
   await save(document);
   try {
     process.env.PATH = '/nonexistent-no-ffmpeg-or-node';

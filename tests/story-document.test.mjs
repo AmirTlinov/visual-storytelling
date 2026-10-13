@@ -94,7 +94,10 @@ test('one authored document feeds action IDs, speech and exact aligned chapter b
     ],
   };
   const script = documentScript(document, aligned);
-  assert.deepEqual(script.cues['paper.try'], aligned.cues['paper.try']);
+  assert.deepEqual(script.cues['paper.try'], {
+    ...aligned.cues['paper.try'],
+    action: 'Переключатель доступен.',
+  });
   assert.equal(script.cues.paper.start, 10);
   assert.throws(
     () =>
@@ -362,4 +365,32 @@ test('caption edits project current aliases without changing accepted speech or 
   assert.equal(documentChapter(doc, 'lesson', cleared).script.captionAliases, undefined);
   assert.deepEqual(aligned, original);
   assert.deepEqual(cleared.segments, original.segments);
+});
+
+test('a reused recording retains acoustic anchors while the document replaces or removes intentions', () => {
+  const doc = {
+    version: 2, models: [], views: [],
+    chapters: [{ id: 'lesson', title: 'Title', beats: [{ id: 'one', say: 'Смотри.', hold: 'Наблюдаем' }] }],
+  };
+  const aligned = {
+    duration: 4,
+    cues: { 'lesson.one': { start: 1.5, end: 3, speech: { start: 1, end: 2 }, action: 'Old', timing: { duration: 1.5, delay: .5 } } },
+    segments: [{ id: 'lesson', text: 'Смотри.', start: 1, end: 2 }],
+  };
+  const original = structuredClone(aligned);
+  let cue = documentScript(doc, aligned).cues['lesson.one'];
+  assert.equal(cue.hold, 'Наблюдаем');
+  assert.equal(cue.action, undefined);
+  assert.equal(cue.timing, undefined);
+  assert.deepEqual([cue.start, cue.end], [1, 2]);
+  delete doc.chapters[0].beats[0].hold;
+  doc.chapters[0].beats[0].action = 'Current';
+  cue = documentScript(doc, aligned).cues['lesson.one'];
+  assert.equal(cue.hold, undefined);
+  assert.equal(cue.action, 'Current');
+  delete doc.chapters[0].beats[0].action;
+  cue = documentScript(doc, aligned).cues['lesson.one'];
+  assert.equal(cue.hold, undefined);
+  assert.equal(cue.action, undefined);
+  assert.deepEqual(aligned, original);
 });
