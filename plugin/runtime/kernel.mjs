@@ -289,31 +289,47 @@ async function rememberCreationDelivery(projectId, delivery) {
 // The existing frame-report channel completes navigation delivery without another agent call.
 async function observeCreationDelivery(session) {
   if (!session.build.projectId) return;
-  const creation = projects.get(session.build.projectId).creation;
-  const previous = creation?.delivery;
-  if (
-    !previous ||
-    previous.result.delivery === 'shown' ||
-    creation.sessionId !== session.id ||
-    previous.renderer !== session.renderer ||
-    !session.ready ||
-    sessions.expired(session) ||
-    session.build.sourceRevision !== creation.receipt.sourceRevision
-  )
-    return;
-  const delivery =
-    session.renderStatus === 'rendered'
-      ? 'shown'
-      : session.renderStatus === 'prepared'
-        ? 'prepared'
-        : 'failed';
-  if (previous.result.delivery === delivery) return;
-  await rememberCreationDelivery(session.build.projectId, {
-    ...previous,
-    result: {
-      delivery,
-      shown: [{ ...sessions.describe(session), acknowledgement: session.renderStatus }],
-    },
+  await projects.update(session.build.projectId, (project) => {
+    const creation = project.creation;
+    const previous = creation?.delivery;
+    // SessionDirectory owns attach/generation and validates every incoming report.
+    // A remount can replace the renderer while retaining this exact creation.
+    // Recheck its current observation inside the registry queue before publishing.
+    if (
+      !previous ||
+      previous.result.delivery === 'shown' ||
+      creation.sessionId !== session.id ||
+      !session.renderer ||
+      !session.ready ||
+      sessions.expired(session) ||
+      session.build.sourceRevision !== creation.receipt.sourceRevision
+    )
+      return;
+    const delivery =
+      session.renderStatus === 'rendered'
+        ? 'shown'
+        : session.renderStatus === 'prepared'
+          ? 'prepared'
+          : 'failed';
+    if (
+      previous.result.delivery === delivery &&
+      previous.renderer === session.renderer &&
+      previous.generation === session.generation
+    )
+      return;
+    return {
+      creation: {
+        ...creation,
+        delivery: {
+          renderer: session.renderer,
+          generation: session.generation,
+          result: {
+            delivery,
+            shown: [{ ...sessions.describe(session), acknowledgement: session.renderStatus }],
+          },
+        },
+      },
+    };
   });
 }
 
@@ -331,11 +347,12 @@ async function deliverCreatedExplanation(receipt, fromSessionId) {
     const destination = await load(receipt.sessionId);
     await observeCreationDelivery(destination);
     if (projects.get(projectId).creation.delivery?.result.delivery === 'shown') return response();
-    // A destination which has attached is already owned by the card, even before its first frame.
+    // The exact destination may have remounted since navigation. Its current
+    // attachment owns delivery, even before the first report can rebind the receipt.
     if (
-      previous?.renderer === destination.renderer &&
       destination.renderer &&
-      !sessions.expired(destination)
+      !sessions.expired(destination) &&
+      destination.build.sourceRevision === receipt.sourceRevision
     )
       return response();
     const source = await load(fromSessionId);

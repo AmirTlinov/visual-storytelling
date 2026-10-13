@@ -248,6 +248,130 @@ test(
   },
 );
 
+test(
+  'prepared creation follows its remounted destination and rejects former renderer reports',
+  { timeout: 45000 },
+  async () => {
+    const temporary = await mkdtemp(join(tmpdir(), 'story-hot-remount-'));
+    const dataDirectory = join(temporary, 'data');
+    const root = fileURLToPath(new URL('../', import.meta.url));
+    const host = await pluginHost({
+      dataDirectory,
+      initialTarget: {},
+      serverEntry: join(root, '.plugin-release/plugin/dist/server.mjs'),
+    });
+    const browser = await chromium.launch(chromiumLaunchOptions({ headless: true }));
+    const call = async (name, args = {}) => {
+      const result = await host.client.callTool({ name, arguments: args });
+      assert.equal(result.isError, undefined, JSON.stringify(result));
+      return result.structuredContent;
+    };
+    const session = async (id) =>
+      (await call('story_inspect')).sessions.find((item) => item.sessionId === id);
+    const waitConnected = (id) => until(async () => (await session(id))?.status === 'connected');
+    try {
+      const page = await browser.newPage();
+      await page.addInitScript(() => {
+        if (location.href !== 'about:srcdoc') return;
+        const requestFrame = window.requestAnimationFrame.bind(window);
+        window.requestAnimationFrame = (callback) =>
+          window.allowSceneFrames ? requestFrame(callback) : 0;
+      });
+      await page.goto(host.url);
+      const app = page.frameLocator('iframe[title="MCP App"]');
+      await app.locator('#catalog:not([hidden])').waitFor();
+      const originalResult = await host.client.callTool({
+        name: 'story_create',
+        arguments: {
+          title: 'Prepared original',
+          path: join(temporary, 'original'),
+          requestId: randomUUID(),
+          explanation: { model: { kind: 'division', count: 13, divisor: 3 } },
+        },
+      });
+      assert.equal(originalResult.isError, undefined);
+      const originalId = originalResult.structuredContent.sessionId;
+      await page.evaluate((result) => window.pluginTest.result(result), originalResult);
+      await waitConnected(originalId);
+      const request = {
+        title: 'Prepared destination',
+        path: join(temporary, 'destination'),
+        requestId: randomUUID(),
+        sessionId: originalId,
+        explanation: { model: { kind: 'division', count: 17, divisor: 3 } },
+      };
+      const nextResult = await host.client.callTool({ name: 'story_create', arguments: request });
+      assert.equal(nextResult.isError, undefined);
+      const nextId = nextResult.structuredContent.sessionId;
+      // Retain the destination ID in the SDK host for its resource remount.
+      await page.evaluate((result) => window.pluginTest.result(result), nextResult);
+      await waitConnected(nextId);
+      const first = await session(nextId);
+      assert.equal(first.renderStatus, 'prepared');
+      assert.equal((await call('story_create', request)).delivery, 'prepared');
+      await page.evaluate(() => window.pluginTest.remount());
+      await waitConnected(nextId);
+      const remounted = await session(nextId);
+      const renderer = remounted.presentationMetrics.current.renderer;
+      const oldRenderer = first.presentationMetrics.current.renderer;
+      assert.notEqual(renderer, oldRenderer);
+      assert.ok(remounted.generation > first.generation);
+      assert.equal(remounted.renderStatus, 'prepared');
+      assert.equal((await call('story_create', request)).delivery, 'prepared');
+      const delivery = async () =>
+        JSON.parse(await readFile(join(dataDirectory, 'projects.json'), 'utf8')).find(
+          (project) => project.id === nextResult.structuredContent.project.id,
+        ).creation.delivery;
+      const rebound = await delivery();
+      assert.equal(rebound.renderer, renderer);
+      assert.equal(rebound.generation, remounted.generation);
+      for (const owner of [
+        { renderer: oldRenderer, generation: first.generation },
+        { renderer, generation: first.generation },
+      ]) {
+        const stale = await host.client.callTool({
+          name: 'story_view',
+          arguments: {
+            action: 'exchange',
+            sessionId: nextId,
+            ...owner,
+            wait: false,
+            report: {
+              stateRevision: remounted.stateRevision + 1,
+              state: {},
+              checkpoint: { time: 0, progress: 0, mode: 'story', values: {} },
+              renderStatus: 'rendered',
+            },
+          },
+        });
+        assert.equal(stale.isError, true);
+        assert.equal(stale.structuredContent.error.code, 'view_replaced');
+        assert.deepEqual(await delivery(), rebound);
+      }
+      await app
+        .frameLocator('#scene')
+        .locator('body')
+        .evaluate(() => {
+          window.allowSceneFrames = true;
+        });
+      assert.equal((await call('story_inspect', { sessionId: nextId })).renderStatus, 'rendered');
+      await until(async () => (await delivery()).result.delivery === 'shown');
+      const completed = await call('story_create', request);
+      assert.equal(completed.delivery, 'shown');
+      assert.equal(completed.shown[0].generation, remounted.generation);
+      await call('story_navigate', { sessionId: nextId, back: true });
+      await waitConnected(originalId);
+      assert.deepEqual(await call('story_create', request), completed);
+      assert.equal((await session(originalId)).status, 'connected');
+      assert.equal((await session(nextId)).status, 'closed');
+    } finally {
+      await browser.close();
+      await host.close();
+      await rm(temporary, { recursive: true, force: true });
+    }
+  },
+);
+
 async function until(predicate) {
   const deadline = performance.now() + 12000;
   while (!(await predicate())) {

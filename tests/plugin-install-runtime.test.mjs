@@ -11,6 +11,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { installRelease } from '../plugin/install.mjs';
 import { connectRuntime } from '../plugin/runtime/client.mjs';
+import { JobRunner } from '../plugin/jobs.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const shellQuote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
@@ -39,6 +40,46 @@ async function tool(client, name, args = {}) {
   assert.equal(result.isError, undefined, JSON.stringify(result));
   return result.structuredContent;
 }
+
+test(
+  'runtime retirement stays busy until a successful job is durably saved',
+  { timeout: 7000 },
+  async (t) => {
+    const data = await mkdtemp(join(tmpdir(), 'story-runtime-drain-'));
+    const entry = join(data, 'worker.mjs');
+    await writeFile(
+      entry,
+      `process.on('message', () => process.send({ type: 'result', result: { value: 1 } }, () => process.disconnect()));`,
+    );
+    const runner = new JobRunner(data, entry);
+    const commit = Promise.withResolvers();
+    let savingResult = false;
+    const save = runner.save.bind(runner);
+    runner.save = async (job) => {
+      if (job.status === 'succeeded') {
+        savingResult = true;
+        await commit.promise;
+      }
+      return save(job);
+    };
+    t.after(async () => {
+      commit.resolve();
+      await runner.close();
+      await rm(data, { recursive: true, force: true });
+    });
+    await runner.start();
+    const job = await runner.enqueue('create', { projectId: 'draining' }, randomUUID());
+    await wait(() => savingResult);
+    assert.equal(runner.get(job.id).status, 'succeeded');
+    assert.equal(runner.busy, true, 'a visible result does not release the runtime owner');
+    const stored = () => readFile(join(data, 'jobs', job.id + '.json'), 'utf8').then(JSON.parse);
+    assert.equal((await stored()).status, 'running');
+    commit.resolve();
+    await runner.running;
+    assert.equal(runner.busy, false);
+    assert.equal((await stored()).status, 'succeeded');
+  },
+);
 
 test(
   'installed update drains jobs and connected clients, preserves the session and rejects stale launchers',
@@ -234,6 +275,13 @@ process.on('message',async(message)=>{
     await wait(
       async () => (await runtime.call('job', { jobId: created.job.id })).status === 'succeeded',
     );
+    // The result is visible before its final save releases JobRunner.active.
+    // Retirement readiness belongs to the runtime, not the job's display status.
+    await wait(async () => {
+      const update = await runtime.call('prepareUpdate');
+      assert.equal(update.updating, true);
+      return update.busy === false;
+    });
     let updated = false;
     const currentHelp = tool(b, 'story_help', { query: 'Fixture' }).finally(() => {
       updated = true;

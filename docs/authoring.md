@@ -71,7 +71,13 @@ SHA-256 и диапазон исходного текста (`start/end`, кон
 которая освобождает представление один раз.
 
 `SceneShell.mount` сразу регистрирует `root.scene`; `attachStory` сохраняет этот
-handle. Для собственного интерфейса используй `mountScene(root, runtime, owner)`:
+handle. Меню глав, условий и скорости создаёт общий `selectControl`.
+Начиная с 0.31.0 собственный плеер подключает выбор скорости через
+`PlayerControls.mount(element, {speed: true, onRate: value => transport.rate(value)})`.
+`view.update({value, paused, stamp, rate})` отражает состояние транспорта;
+`view.rate` предоставляет `trigger`, `menu`, `setValue`, а не DOM select.
+Фокус задаётся через `view.rate?.trigger.focus()`, очистка — `view.dispose()`.
+Для собственного интерфейса используй `mountScene(root, runtime, owner)`:
 runtime предоставляет существующие команды и снимок, owner — параметры и их ввод.
 Перед управлением прочитай `inspect().capabilities`: доступность seek, play, focus
 зависит от модели и главы. В статической сцене изменяй параметры; номер шага
