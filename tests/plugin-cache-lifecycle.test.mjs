@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  symlink,
+  writeFile,
+  stat,
+  utimes,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SessionDirectory, buildReference } from '../plugin/session-directory.mjs';
@@ -203,4 +213,38 @@ test('collection preserves current, candidate, replacement, delayed author, save
   assert.equal(loaded.build.revision, session.build.revision);
   assert.equal(restored.html, '<main>delayed</main>', 'disk payload survives for view hydration');
   assert.ok(!Object.hasOwn(loaded.build, 'html'));
+});
+
+test('the cache limit budgets disposable data independently of protected builds', async (t) => {
+  const data = await mkdtemp(join(tmpdir(), 'story-cache-budget-'));
+  t.after(() => rm(data, { recursive: true, force: true }));
+  const file = (revision) => join(data, 'builds', revision + '.json');
+  await writeJSON(file('current'), { revision: 'current', html: 'x'.repeat(4096) });
+  await writeJSON(file('reusable'), { revision: 'reusable', html: 'y'.repeat(200) });
+  const protectedBytes = (await stat(file('current'))).size;
+  const disposableBytes = (await stat(file('reusable'))).size;
+  const options = {
+    limitMB: 1 / 1024,
+    projects: [],
+    sessions: [],
+    snapshotLeases: [],
+    buildLeases: ['current'],
+  };
+  const first = await collectCache(data, options);
+  assert.ok(protectedBytes > first.limitBytes);
+  assert.ok(disposableBytes < first.limitBytes);
+  assert.deepEqual(first, {
+    totalBytes: protectedBytes + disposableBytes,
+    protectedBytes,
+    disposableBytes,
+    removedBytes: 0,
+    limitBytes: 1024,
+  });
+  assert.deepEqual((await readdir(join(data, 'builds'))).sort(), ['current.json', 'reusable.json']);
+  await writeJSON(file('obsolete'), { revision: 'obsolete', html: 'z'.repeat(2048) });
+  await utimes(file('obsolete'), 1, 1);
+  const obsoleteBytes = (await stat(file('obsolete'))).size;
+  const second = await collectCache(data, options);
+  assert.deepEqual(second, { ...first, removedBytes: obsoleteBytes });
+  assert.deepEqual((await readdir(join(data, 'builds'))).sort(), ['current.json', 'reusable.json']);
 });

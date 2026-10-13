@@ -134,7 +134,17 @@ test(
     assert.equal(attached.buildRevision, 'example-build');
     await runtime.call('preferences', { patch: { cacheLimitMB: 0 } });
     await runtime.call('job', { jobId: project.jobs[0].id, waitMs: 1000 });
-    await delay(50);
+    let cache;
+    for (let count = 0; count < 200; count++) {
+      cache = (await runtime.call('hello')).cache;
+      if (cache?.protectedBytes > 0) break;
+      await delay(5);
+    }
+    assert.ok(cache.protectedBytes > 0);
+    assert.equal(cache.disposableBytes, 0);
+    assert.equal(cache.totalBytes, cache.protectedBytes);
+    assert.equal(cache.limitBytes, 0);
+    assert.ok(Number.isFinite(Date.parse(cache.collectedAt)));
     assert.equal(
       JSON.parse(await readFile(join(data, 'builds', project.buildRevision + '.json'), 'utf8'))
         .html,

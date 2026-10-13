@@ -121,17 +121,19 @@ let closing = false,
   idleTimer,
   socketIdentity;
 let playbackClaim = Promise.resolve();
+let cacheReport = null;
 
 function scheduleCache() {
-  jobs.requestMaintenance(async () =>
-    collectCache(data, {
+  jobs.requestMaintenance(async () => {
+    const result = await collectCache(data, {
       limitMB: (await preferences.read()).cacheLimitMB,
       projects: await projects.list(),
       sessions: [...sessions.sessions.values()],
       snapshotLeases: jobs.snapshotLeases(),
       buildLeases: sessions.buildLeases(),
-    }),
-  );
+    });
+    cacheReport = { ...result, collectedAt: new Date().toISOString() };
+  });
 }
 
 async function viewBuild(revision) {
@@ -509,7 +511,13 @@ async function createdProject(job) {
 }
 const operations = {
   async hello() {
-    return { protocol, build, serverInstance: sessions.instance, pid: process.pid };
+    return {
+      protocol,
+      build,
+      serverInstance: sessions.instance,
+      pid: process.pid,
+      cache: cacheReport,
+    };
   },
   async prepareUpdate() {
     const installed = await installedRuntime(directory);
