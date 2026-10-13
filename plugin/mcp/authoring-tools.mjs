@@ -44,7 +44,7 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_edit',
     {
       description:
-        'Apply one complete undoable authoring operation. For a live explanation use operations: set-inputs(modelId,values), set-views(views), or set-chapters(chapters). Each payload and the final document are validated before writing; related views/references can change atomically. Explicit input keys override viewer values even when unchanged in the source; other viewer inputs survive. Delivery is shown, prepared, pending or failed: saved source alone is not a rendered result. Retry the same requestId to resume unconfirmed delivery without rewriting; a completed receipt stays historical. sourceRevision fences external edits. For source-code extensions use changes (UTF-8 replacement, null deletion); those retain the existing build/candidate path. Choose operations, changes or undo.',
+        'Apply one complete undoable authoring operation. For a live explanation use operations: set-inputs(modelId,values), set-views(views), or set-chapters(chapters). Each payload and the final document are validated before writing; related views/references can change atomically. Explicit input keys override viewer values even when unchanged in the source; other viewer inputs survive. Delivery is shown, prepared, pending or failed: saved source alone is not a rendered result. Retry the same requestId to resume unconfirmed delivery without rewriting; a completed receipt stays historical. sourceRevision fences external edits. For source-code extensions use changes (UTF-8 replacement, null deletion); those prepare an immutable candidate before committing. While the job runs, project is the accepted source; on success job.result.project is the committed revision. A failed candidate preserves source, runtime pin and the last working picture. Choose operations, changes or undo.',
       inputSchema: {
         projectId,
         sourceRevision: z.string(),
@@ -58,9 +58,7 @@ export function authoringTools(server, runtime, uri, safely) {
     safely(async (args) =>
       result(
         await runtime.call('edit', args),
-        args.operations
-          ? 'Смысловая операция принята; результат показа указан в receipt.'
-          : 'Правка сохранена; новая версия готовится.',
+        'Результат операции различает подготовку, принятый исходник и показанный кадр.',
       ),
     ),
   );
@@ -228,7 +226,7 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_migrate',
     {
       description:
-        'Explicitly upgrade a project to this plugin’s core. Optional changes use the same UTF-8 replacement/deletion contract as story_edit, so removed APIs can be migrated in the same operation. Applies changes to a separate candidate before building; only a successful candidate publishes sources, package and lockfile as one undoable edit. Supply at most 62 source files plus package.json and package-lock.json. A changed sourceRevision prevents publication. Runtime archives remain available for story_edit undo. Existing views remain visible during preparation.',
+        'Explicitly upgrade a project to this plugin’s core. Optional changes use the same UTF-8 replacement/deletion contract as story_edit, so removed APIs can be migrated in the same operation. Applies changes to a separate candidate before building; only a successful candidate publishes sources, package and lockfile as one undoable edit. Supply at most 62 source files plus package.json and package-lock.json. A changed sourceRevision prevents publication. Runtime archives remain available for story_edit undo. The result publishes the verified build directly, without a second compilation. Existing views remain visible during preparation.',
       inputSchema: {
         projectId,
         sourceRevision: z.string(),

@@ -1,0 +1,325 @@
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
+import { readJSON } from '../../tools/storage.mjs';
+import { prepareLiveProject } from '../live-project.mjs';
+import { authoredCandidate } from '../authored-candidate.mjs';
+import { buildReference } from '../session-directory.mjs';
+import { failure, errorData } from '../errors.mjs';
+
+/** One proposal/commit/delivery lifecycle; ProjectStore owns its source and receipt. */
+export function projectTransactions({
+  data,
+  projects,
+  jobs,
+  sessions,
+  watched,
+  save,
+  scheduleCache,
+}) {
+  async function publishBuild(project, prepared, queueCandidate = true) {
+    if ((await projects.inspect(project.id)).sourceRevision !== project.sourceRevision)
+      return false;
+    if (prepared.projectId !== project.id || prepared.sourceRevision !== project.sourceRevision)
+      throw new Error('Prepared build does not belong to this authored revision.');
+    await projects.update(project.id, { buildRevision: prepared.revision });
+    watched.open(projects.get(project.id));
+    if (queueCandidate)
+      for (const session of sessions.sessions.values()) {
+        if (session.build.projectId !== project.id || session.build.revision === prepared.revision)
+          continue;
+        session.nextBuild = buildReference(prepared);
+        session.wake?.();
+      }
+    return true;
+  }
+  async function acceptCandidate(job, result) {
+    const prepared = await readJSON(join(data, 'builds', result.buildRevision + '.json'));
+    if (
+      prepared?.projectId !== job.projectId ||
+      prepared.sourceRevision !== job.sourceRevision ||
+      result.sourceRevision !== job.sourceRevision
+    )
+      throw new Error('Preparation did not produce the proposed authored revision.');
+    return commitPrepared(job.input.authoring, prepared, result);
+  }
+  async function commitPrepared(
+    proposal,
+    prepared,
+    result = {
+      buildRevision: prepared.revision,
+      sourceRevision: prepared.sourceRevision,
+      snapshot: prepared.snapshot,
+    },
+    queueCandidate = true,
+  ) {
+    if (
+      prepared?.projectId !== proposal.args.projectId ||
+      prepared.revision !== result.buildRevision ||
+      prepared.sourceRevision !== result.sourceRevision
+    )
+      throw new Error('Prepared artifact does not match the authored proposal.');
+    const project = await projects.commitPreparedEdit(proposal);
+    const stagedDelivery = { ...result, project, delivery: 'pending' };
+    await projects.editDelivery(project.id, proposal.args.requestId, stagedDelivery);
+    let response;
+    try {
+      const published = await publishBuild(project, prepared, queueCandidate);
+      response = { ...result, project, delivery: published ? 'pending' : 'superseded' };
+    } catch (error) {
+      // Source is accepted. Keep the prepared artifact so a repeat resumes delivery.
+      response = { ...result, project, delivery: 'failed', error: errorData(error) };
+    }
+    await projects.editDelivery(project.id, proposal.args.requestId, response);
+    return response;
+  }
+  async function acceptMigration(job, result) {
+    const proposal = await projects.stageEdit({
+      projectId: job.projectId,
+      sourceRevision: job.sourceRevision,
+      requestId: job.id + '-migration',
+      ...result.migration,
+    });
+    if (!proposal.prior) {
+      const candidate = await jobs.preserveInputs(() =>
+        authoredCandidate(data, projects.get(job.projectId), proposal),
+      );
+      try {
+        if (candidate.input.sourceRevision !== result.sourceRevision)
+          throw new Error('Migration artifact does not match its proposed source and pin.');
+      } finally {
+        await rm(candidate.snapshot, { recursive: true, force: true });
+      }
+    }
+    return acceptCandidate(
+      {
+        ...job,
+        sourceRevision: result.sourceRevision,
+        input: { ...job.input, authoring: proposal },
+      },
+      result,
+    );
+  }
+  return {
+    publishBuild,
+    commitPrepared,
+    acceptCandidate: (job, result) =>
+      projects.serial('delivery:' + job.projectId, () => acceptCandidate(job, result)),
+    acceptMigration: (job, result) =>
+      projects.serial('delivery:' + job.projectId, () => acceptMigration(job, result)),
+    async edit(args) {
+      return projects.serial('delivery:' + args.projectId, () =>
+        jobs.preserveInputs(async () => {
+          const previousBuild = jobs.forRequest(args.requestId + '-build');
+          if (previousBuild?.input.authoring) {
+            if (!isDeepStrictEqual(previousBuild.input.authoring.args, args))
+              throw new Error('requestId already belongs to a different edit.');
+            if (previousBuild.result?.delivery === 'failed')
+              return {
+                ...(await acceptCandidate(previousBuild, previousBuild.result)),
+                job: jobs.describe(previousBuild),
+              };
+            return {
+              project: {
+                ...(previousBuild.result?.project ?? previousBuild.input.baseProject),
+                repeated: true,
+              },
+              job: jobs.describe(previousBuild),
+            };
+          }
+          const proposed = await projects.stageEdit(args);
+          if (!proposed.prior && !proposed.semantic) {
+            const project = await projects.inspect(args.projectId);
+            const candidate = await authoredCandidate(data, project, proposed);
+            try {
+              const job = await jobs.enqueue(
+                'build',
+                { data, ...candidate.input, authoring: proposed, baseProject: project },
+                args.requestId + '-build',
+              );
+              return { project, job, publication: 'preparing' };
+            } catch (error) {
+              await rm(candidate.snapshot, { recursive: true, force: true });
+              throw error;
+            }
+          }
+          let preparedCandidate;
+          if (proposed.semantic) {
+            const views = [...sessions.sessions.values()].filter(
+              (session) =>
+                session.build.projectId === args.projectId &&
+                session.build.live &&
+                session.renderer &&
+                session.ready &&
+                !sessions.expired(session),
+            );
+            if (!views.length)
+              throw failure(
+                'view_closed',
+                'Open this project with story_open(projectId) and wait for its ready frame before a semantic edit.',
+                { action: 'story_open' },
+              );
+            const project = await projects.inspect(args.projectId);
+            const candidate = await authoredCandidate(data, project, proposed);
+            try {
+              preparedCandidate = await prepareLiveProject(data, {
+                ...project,
+                path: candidate.snapshot,
+                sourceRevision: candidate.input.sourceRevision,
+              });
+            } finally {
+              await rm(candidate.snapshot, { recursive: true, force: true });
+            }
+            for (const session of views)
+              await sessions.request(session.id, {
+                op: 'author-validate',
+                buildRevision: session.build.revision,
+                stateRevision: session.stateRevision,
+                document: proposed.document,
+                authoredInputs: proposed.authoredInputs,
+              });
+          }
+          const accepted = preparedCandidate
+            ? await commitPrepared(proposed, preparedCandidate, undefined, false)
+            : { project: await projects.commitPreparedEdit(proposed) };
+          const project = accepted.project;
+          const priorDelivery =
+            project.repeated && (await projects.editDelivery(args.projectId, args.requestId));
+          if (project.semantic) {
+            if (
+              priorDelivery?.shown?.length &&
+              priorDelivery.shown.every(
+                (view) =>
+                  !view.error &&
+                  view.acknowledgement === 'rendered' &&
+                  view.shownSourceRevision === project.sourceRevision,
+              )
+            )
+              return priorDelivery;
+            if ((await projects.inspect(project.id)).sourceRevision !== project.sourceRevision)
+              return {
+                project,
+                shown: [],
+                delivery: 'superseded',
+                message:
+                  'This operation was saved before a newer edit. Its interrupted delivery is not replayed.',
+              };
+            let prepared;
+            const shown = [];
+            try {
+              if (accepted.delivery === 'failed') return { ...accepted, shown };
+              prepared =
+                preparedCandidate ??
+                (priorDelivery?.buildRevision &&
+                  (await readJSON(join(data, 'builds', priorDelivery.buildRevision + '.json')))) ??
+                (await prepareLiveProject(data, project));
+              if (!preparedCandidate && !(await publishBuild(project, prepared, false)))
+                throw failure(
+                  'source_conflict',
+                  'Source changed while resuming document delivery.',
+                );
+            } catch (error) {
+              const result = { project, shown, delivery: 'failed', error: errorData(error) };
+              await projects.editDelivery(args.projectId, args.requestId, result);
+              return result;
+            }
+            for (const session of sessions.sessions.values()) {
+              if (session.build.projectId !== project.id || !session.build.live) continue;
+              if (!session.renderer || !session.ready || sessions.expired(session)) continue;
+              try {
+                const deliveredHere = priorDelivery?.shown?.some(
+                  (view) =>
+                    !view.error &&
+                    view.sessionId === session.id &&
+                    view.buildRevision === prepared.revision &&
+                    ['rendered', 'prepared', 'failed'].includes(view.acknowledgement),
+                );
+                const observed =
+                  deliveredHere && session.build.revision === prepared.revision
+                    ? await sessions.request(session.id, { op: 'inspect' })
+                    : await sessions.request(
+                        session.id,
+                        {
+                          op: 'author',
+                          requestId: args.requestId,
+                          buildRevision: session.build.revision,
+                          stateRevision: session.stateRevision,
+                          nextBuildRevision: prepared.revision,
+                          sourceRevision: project.sourceRevision,
+                          document: prepared.live.document,
+                          authoredInputs: project.authoredInputs,
+                        },
+                        { authoredBuild: prepared },
+                      );
+                shown.push(observed);
+                await save(session);
+              } catch (error) {
+                shown.push({
+                  sessionId: session.id,
+                  error: errorData(error),
+                  shownSourceRevision: sessions.describe(session).shownSourceRevision,
+                });
+              }
+            }
+            const delivery = !shown.length
+              ? 'pending'
+              : shown.every((view) => !view.error && view.acknowledgement === 'rendered')
+                ? 'shown'
+                : shown.some((view) => view.error || view.acknowledgement === 'failed')
+                  ? 'failed'
+                  : 'prepared';
+            const result = { project, buildRevision: prepared.revision, shown, delivery };
+            await projects.editDelivery(args.projectId, args.requestId, result);
+            scheduleCache();
+            return result;
+          }
+          return (
+            priorDelivery ?? {
+              project,
+              shown: [],
+              delivery: 'superseded',
+              message: 'This historical edit has no pending preparation to resume.',
+            }
+          );
+        }),
+      );
+    },
+    async migrate({ projectId, sourceRevision, requestId, changes }) {
+      return projects.serial('revision:' + requestId, async () => {
+        const previous = jobs.forRequest(requestId);
+        if (previous) {
+          if (
+            previous.kind !== 'migrate' ||
+            previous.projectId !== projectId ||
+            previous.sourceRevision !== sourceRevision ||
+            !isDeepStrictEqual(previous.input.changes, changes)
+          )
+            throw new Error('requestId already belongs to another preparation.');
+          if (previous.result?.delivery === 'failed')
+            return {
+              ...jobs.describe(previous),
+              result: await projects.serial('delivery:' + projectId, () =>
+                acceptMigration(previous, previous.result),
+              ),
+            };
+          return jobs.describe(previous);
+        }
+        const project = await projects.inspect(projectId);
+        if (sourceRevision !== project.sourceRevision)
+          throw new Error('Project changed. Inspect its source before migrating.');
+        return jobs.enqueue(
+          'migrate',
+          {
+            data,
+            projectId,
+            projectPath: project.path,
+            title: project.title,
+            sourceRevision,
+            changes,
+          },
+          requestId,
+        );
+      });
+    },
+  };
+}

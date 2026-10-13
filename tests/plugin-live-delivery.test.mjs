@@ -236,9 +236,10 @@ test(
     assert.equal(delivered.shown[0].shownSourceRevision, refused.project.sourceRevision);
     assert.equal((await stat(sourceFile)).mtimeMs, savedStat.mtimeMs);
     assert.equal(await readFile(sourceFile, 'utf8'), savedSource);
-    assert.deepEqual(await readdir(join(project.path, '.vstory/history')), [
-      firstArgs.requestId + '.json',
-    ]);
+    assert.deepEqual(
+      (await readdir(join(project.path, '.vstory/history'))).sort(),
+      [creation.requestId + '.json', firstArgs.requestId + '.json'].sort(),
+    );
     project = delivered.project;
     const nextArgs = args(17),
       next = await start(nextArgs);

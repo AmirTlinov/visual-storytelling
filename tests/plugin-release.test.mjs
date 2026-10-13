@@ -195,7 +195,7 @@ test(
           },
         ],
       });
-      await finish(edited.structuredContent.job.id);
+      const editedProject = (await finish(edited.structuredContent.job.id)).project;
       await app.locator('#update').waitFor();
       assert.equal((await inspect()).buildRevision, before.buildRevision);
       const shown = await produce(shownTarget);
@@ -220,9 +220,9 @@ test(
       const working = await produce({
         kind: 'working',
         projectId: project.id,
-        sourceRevision: edited.structuredContent.project.sourceRevision,
+        sourceRevision: editedProject.sourceRevision,
       });
-      assert.equal(working.sourceRevision, edited.structuredContent.project.sourceRevision);
+      assert.equal(working.sourceRevision, editedProject.sourceRevision);
       assert.equal(
         (await readFile(working.files[0], 'utf8')).includes('Latest working revision'),
         true,

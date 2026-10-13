@@ -1,304 +1,20 @@
-import {
-  readFile,
-  mkdir,
-  mkdtemp,
-  cp,
-  symlink,
-  access,
-  rm,
-  rename,
-  realpath,
-} from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { readFile, mkdir, access, rm, realpath } from 'node:fs/promises';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { createScene } from '../tools/create-scene.mjs';
-import { buildScene } from '../tools/build-pages.mjs';
-import { sceneEntry } from '../tools/scene-entry.mjs';
-import { packDirectory } from '../tools/standalone.mjs';
 import { deliver } from '../tools/deliver.mjs';
 import { snapshotProject, projectFiles, projectFile, digest } from '../tools/project-files.mjs';
 import { writeJSON, readJSON } from '../tools/storage.mjs';
 import { prepareEnvironment } from '../tools/environment.mjs';
-import { buildNarration } from '../tools/narration.mjs';
-import { narrationProvider } from '../tools/voice/settings.mjs';
-import {
-  updateSceneRuntime,
-  readPinnedRuntime,
-  linkPreparedRuntime,
-  readPreparedRuntime,
-  preparedRuntimeFile,
-  assertPreparedDocument,
-  storyDocumentAPI,
-} from '../tools/runtime-package.mjs';
-import { contentDigest } from '../tools/build-info.mjs';
-import { captureWorkingInput } from './revision-input.mjs';
+import { updateSceneRuntime, preparedRuntimeFile } from '../tools/runtime-package.mjs';
 import { migrateStoryDocument } from '../tools/migrate-story-document.mjs';
-import { prepareProjectChanges, writeProjectChange } from './projects.mjs';
+import { prepareProjectChanges, writeProjectChange } from './project-changes.mjs';
 import { videoDimensions } from '../tools/video-dimensions.mjs';
+import { creationCandidate } from './authored-candidate.mjs';
+import { prepareBuild, buildPreparedSnapshot, unchangedInputs } from './build-preparation.mjs';
 const execute = promisify(execFile);
 const root = fileURLToPath(new URL('../', import.meta.url));
-
-async function dependencies(source, data, { signal, progress }) {
-  if (await linkPreparedRuntime(source)) return;
-  const preparedPin = await readPreparedRuntime(source);
-  const pkg = JSON.parse(await readFile(join(source, 'package.json'), 'utf8'));
-  const inputs = await projectFiles(source);
-  if (!inputs.files['package-lock.json'])
-    throw new Error(
-      'This project needs package-lock.json. Run npm install --package-lock-only --ignore-scripts in its directory, then reopen it.',
-    );
-  const dependencyFiles = Object.fromEntries(
-    Object.entries(inputs.files).filter(
-      ([name]) =>
-        name === 'package.json' ||
-        name === 'package-lock.json' ||
-        name === preparedRuntimeFile ||
-        name.endsWith('.tgz'),
-    ),
-  );
-  const key = digest(
-    JSON.stringify({
-      files: dependencyFiles,
-      platform: process.platform,
-      arch: process.arch,
-      abi: process.versions.modules,
-    }),
-  );
-  const target = join(data, 'dependencies', key);
-  if (
-    !(await access(join(target, 'node_modules')).then(
-      () => true,
-      () => false,
-    ))
-  ) {
-    progress('Подготавливаю зависимости…');
-    await mkdir(dirname(target), { recursive: true });
-    const staging = await mkdtemp(target + '.preparing-');
-    try {
-      for (const name of Object.keys(dependencyFiles)) {
-        await mkdir(dirname(join(staging, name)), { recursive: true });
-        await cp(join(source, name), join(staging, name));
-      }
-      for (const entries of [
-        pkg.dependencies,
-        pkg.devDependencies,
-        pkg.optionalDependencies,
-        pkg.peerDependencies,
-      ])
-        for (const value of Object.values(entries ?? {}))
-          if (
-            typeof value === 'string' &&
-            value.startsWith('file:') &&
-            value !== preparedPin?.dependency &&
-            (!value.endsWith('.tgz') ||
-              value.includes('\\') ||
-              value.slice(5).split('/').includes('..') ||
-              value.slice(5).startsWith('/'))
-          )
-            throw new Error('Use a pinned archive inside the project for local dependencies.');
-      await execute(
-        'npm',
-        [
-          'ci',
-          '--include=dev',
-          '--include=optional',
-          '--ignore-scripts',
-          '--no-audit',
-          '--no-fund',
-        ],
-        { cwd: staging, signal, maxBuffer: 2_000_000 },
-      );
-      await mkdir(join(staging, 'node_modules'), { recursive: true });
-      if ((await projectFiles(staging)).revision !== digest(JSON.stringify(dependencyFiles)))
-        throw new Error(
-          'Dependency inputs changed during installation. Inspect the lockfile before retrying.',
-        );
-      await rename(staging, target);
-    } catch (error) {
-      await rm(staging, { recursive: true, force: true });
-      throw error;
-    }
-  }
-  await symlink(join(target, 'node_modules'), join(source, 'node_modules'), 'dir');
-}
-
-async function prepare(input, task) {
-  const { data, projectPath, sourceRevision } = input;
-  const snapshot = join(data, 'snapshots', task.jobId);
-  task.progress('Сохраняю исходники…');
-  let original, receipt, captured;
-  const preparation = { silent: input.options?.silent === true };
-  for (const id of new Set([input.resumeFrom, input.inputSnapshot].filter(Boolean))) {
-    const candidate = join(data, 'snapshots', id);
-    const saved = await readJSON(join(candidate, '.vstory-input.json'));
-    if (!saved || (sourceRevision && saved.revision !== sourceRevision)) continue;
-    // An explicitly selected build is immutable, including its audio. A working
-    // retry can only reuse preparation made for the same narration choice.
-    if (
-      !input.buildRevision &&
-      saved.preparedRevision &&
-      (saved.preparation?.silent ?? false) !== preparation.silent
-    )
-      continue;
-    const revision = saved.preparedRevision ?? saved.revision;
-    const valid = await projectFiles(candidate).then(
-      (value) => value.revision === revision,
-      (error) => {
-        if (error.code === 'ENOENT') return false;
-        throw error;
-      },
-    );
-    if (valid) {
-      original = candidate;
-      receipt = saved;
-      captured = revision;
-      break;
-    }
-  }
-  if (input.resumeFrom && !receipt && !sourceRevision)
-    throw new Error(
-      'The original preparation inputs expired. Open the project to prepare its current revision.',
-    );
-  const reusable = Boolean(receipt);
-  let source;
-  if (reusable) {
-    await snapshotProject(original, snapshot, captured);
-    source = { revision: receipt.revision, files: receipt.files };
-  } else {
-    if (input.inputSnapshot)
-      throw new Error(
-        'The selected immutable inputs are unavailable or changed. Choose a new revision.',
-      );
-    source = await snapshotProject(projectPath, snapshot, sourceRevision ?? receipt?.revision);
-  }
-  await writeJSON(join(snapshot, '.vstory-input.json'), { ...source, preparation });
-  await dependencies(snapshot, data, task);
-  const voice = await readJSON(join(snapshot, 'voice.json'));
-  if (voice?.enabled && !preparation.silent && !(reusable && receipt.preparedRevision)) {
-    const localHiggs = narrationProvider(voice) === 'higgs';
-    await prepareEnvironment(data, {
-      ...task,
-      voice: localHiggs,
-      encoder: true,
-    });
-    await buildNarration(snapshot, {
-      ...task,
-      cache: join(data, 'speech'),
-      managedProcessGroup: Boolean(task.jobId),
-    });
-  }
-  task.signal.throwIfAborted();
-  const preparedRevision = (await projectFiles(snapshot)).revision;
-  let prepared;
-  const buildRevision = input.buildRevision ?? (reusable && receipt.buildRevision);
-  if (buildRevision) {
-    prepared = await readJSON(join(data, 'builds', buildRevision + '.json'));
-    // A live receipt identifies the same immutable sources. Produce compiles their
-    // ordinary entry for the first time; there is no per-operation dist archive.
-    if (prepared?.live && prepared.sourceRevision === source.revision && reusable) {
-      prepared = undefined;
-    } else {
-      if (
-        !prepared ||
-        prepared.sourceRevision !== source.revision ||
-        !prepared.outputDigest ||
-        !reusable ||
-        (await contentDigest(join(original, 'dist'), ['.'])) !== prepared.outputDigest
-      )
-        throw new Error(
-          'The selected prepared build is unavailable or changed. Prepare a new revision.',
-        );
-      await cp(join(original, 'dist'), join(snapshot, 'dist'), { recursive: true });
-    }
-  }
-  await writeJSON(join(snapshot, '.vstory-input.json'), {
-    ...source,
-    preparedRevision,
-    buildRevision: prepared?.revision,
-    preparation,
-  });
-  return {
-    snapshot,
-    source,
-    preparedRevision,
-    prepared,
-    preparation,
-    silent: preparation.silent || voice?.enabled === false,
-  };
-}
-
-async function unchangedInputs(snapshot, revision) {
-  if ((await projectFiles(snapshot)).revision !== revision)
-    throw new Error(
-      'Preparation changed its source inputs. Generators must write only to VISUAL_STORY_OUTPUT. Fix the generator and prepare the new project revision.',
-    );
-}
-
-/** Build once; live preview, review and delivery consume the same verified artifact. */
-async function prepareBuild(input, task) {
-  const result = await prepare(input, task);
-  if (result.prepared) return result;
-  const { snapshot, source, preparedRevision, silent } = result;
-  const output = join(snapshot, 'dist');
-  task.progress('Собираю объяснение…');
-  await buildScene(snapshot, output, {
-    data: input.data,
-    progress: task.progress,
-    signal: task.signal,
-    silent,
-  });
-  task.signal.throwIfAborted();
-  const html = await packDirectory(output, 'index.html', {
-    audio: 'original',
-    signal: task.signal,
-  });
-  await unchangedInputs(snapshot, preparedRevision);
-  const outputDigest = await contentDigest(output, ['.']);
-  const revision = digest(
-    JSON.stringify({
-      projectId: input.projectId,
-      sourceRevision: source.revision,
-      title: input.title,
-      html,
-      outputDigest,
-    }),
-  );
-  const prepared = {
-    title: input.title,
-    projectId: input.projectId,
-    sourceRevision: source.revision,
-    revision,
-    html,
-    snapshot,
-    outputDigest,
-  };
-  const preparedPin = await readPreparedRuntime(snapshot);
-  if (preparedPin) {
-    const recipe = await assertPreparedDocument(snapshot).catch((error) => {
-      // The pinned package already owns a complete source-built artifact.
-      // New document metadata is optional; authoring still requires explicit migration.
-      if (!['custom_scene_entry', 'runtime_migration_required'].includes(error.code)) throw error;
-      return null;
-    });
-    if (recipe)
-      prepared.live = {
-        runtimeBuild: recipe.build,
-        document: (await storyDocumentAPI(snapshot)).prepareIllustratedDocument(
-          await readJSON(join(snapshot, 'story.json')),
-        ).document,
-      };
-  }
-  await writeJSON(join(input.data, 'builds', revision + '.json'), prepared);
-  await writeJSON(join(snapshot, '.vstory-input.json'), {
-    ...source,
-    preparedRevision,
-    buildRevision: revision,
-    preparation: result.preparation,
-  });
-  return { ...result, prepared };
-}
 
 export const workflows = {
   async migrate(input, task) {
@@ -333,17 +49,23 @@ export const workflows = {
     task.progress('Подготавливаю новую библиотеку…');
     const updated = await updateSceneRuntime(snapshot, { root, build: false, signal: task.signal });
     if (!updated.changed && !changes.length && !documentChanges.length) return { upToDate: true };
-    const preparedRevision = (await projectFiles(snapshot)).revision;
-    await buildScene(snapshot, join(snapshot, 'dist'), {
-      data: input.data,
-      progress: task.progress,
-      signal: task.signal,
+    const source = await projectFiles(snapshot);
+    const voice = await readJSON(join(snapshot, 'voice.json'));
+    const silent = voice?.enabled === false;
+    const { prepared } = await buildPreparedSnapshot(input, task, {
+      snapshot,
+      source,
+      preparedRevision: source.revision,
+      preparation: { silent },
+      silent,
     });
-    await unchangedInputs(snapshot, preparedRevision);
     task.signal.throwIfAborted();
     const path = updated.prepared ? undefined : updated.dependency.replace(/^file:(?:\.\/)?/, '');
     const bytes = path ? await readFile(join(snapshot, path)) : undefined;
     return {
+      buildRevision: prepared.revision,
+      sourceRevision: source.revision,
+      snapshot,
       migration: {
         changes: [
           ...new Map(
@@ -367,54 +89,28 @@ export const workflows = {
     };
   },
   async create(input, task) {
-    task.progress('Создаю проект…');
-    const exists =
-      input.resumeFrom &&
-      (await access(join(input.projectPath, 'package.json')).then(
-        () => true,
-        () => false,
-      ));
-    const created = exists
-      ? { directory: input.projectPath, example: input.example }
-      : await createScene(input.projectPath, {
-          root,
-          example: input.example,
-          title: input.title,
-          deferAudio: true,
-          signal: task.signal,
-        });
-    const authored = await projectFiles(
-      input.inputSnapshot ? join(input.data, 'snapshots', input.inputSnapshot) : input.projectPath,
-    );
-    const frozen = input.inputSnapshot
-      ? input
-      : await captureWorkingInput(
-          input.data,
-          {
-            id: input.projectId,
-            path: input.projectPath,
-            title: input.title,
-          },
-          authored.revision,
-        );
-    task.authored?.({
-      id: input.projectId,
-      path: input.projectPath,
+    task.progress('Создаю кандидата проекта…');
+    const candidate = await creationCandidate(input.data, input.baseProject, {
+      root,
+      example: input.example,
       title: input.title,
-      sourceRevision: frozen.sourceRevision,
-      files: authored.files,
-      entry: (await sceneEntry(join(input.data, 'snapshots', frozen.inputSnapshot))).source,
-      runtime:
-        created.runtime ??
-        (await readPinnedRuntime(join(input.data, 'snapshots', frozen.inputSnapshot))).runtime,
-      inputSnapshot: frozen.inputSnapshot,
+      deferAudio: true,
+      signal: task.signal,
     });
+    const built = await workflows.build(
+      {
+        ...input,
+        sourceRevision: candidate.sourceRevision,
+        inputSnapshot: candidate.inputSnapshot,
+        resumeFrom: undefined,
+      },
+      task,
+    );
     return {
-      ...created,
-      ...(await workflows.build(
-        { ...input, ...frozen, resumeFrom: exists ? input.resumeFrom : undefined },
-        task,
-      )),
+      ...built,
+      creation: { changes: candidate.changes, assets: candidate.assets },
+      runtime: candidate.created.runtime,
+      entry: candidate.created.entry,
     };
   },
   async build(input, task) {

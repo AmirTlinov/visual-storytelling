@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { pluginHost } from './plugin/host.mjs';
 
 test(
-  'create exposes editable files and pinned batch help before completion, then edits coalesce to the final revision',
+  'create accepts a verified baseline with pinned batch help, then candidate edits coalesce',
   { timeout: 120000 },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'story-fast-authoring-'));
@@ -93,7 +93,11 @@ test(
         if (!['queued', 'running', 'cancelling'].includes(job.status)) break;
       }
       assert.equal(job.status, 'succeeded', JSON.stringify(job));
-      assert.equal(job.result.sourceRevision, second.project.sourceRevision);
+      assert.equal(job.result.sourceRevision, job.result.project.sourceRevision);
+      assert.equal(
+        (await call('story_inspect', { projectId: created.project.id })).sourceRevision,
+        job.result.sourceRevision,
+      );
       assert.equal(
         (await call('story_inspect', { projectId: created.project.id, file: 'note.txt' })).content,
         'accepted',

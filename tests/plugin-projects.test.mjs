@@ -42,6 +42,41 @@ async function fixture(t) {
   };
 }
 
+test('creation is a verified empty baseline; external files are never adopted or overwritten', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'creation-baseline-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const store = new ProjectStore(join(directory, 'data'));
+  const requestId = randomUUID();
+  const project = await store.create(join(directory, 'project'), {
+    title: 'Baseline',
+    creation: { requestId, input: { title: 'Baseline' } },
+  });
+  const args = {
+    projectId: project.id,
+    requestId,
+    changes: [{ path: 'scene.js', content: 'accepted scene' }],
+  };
+  await writeFile(join(project.path, 'scene.js'), 'external author');
+  await assert.rejects(store.stageCreation(args), { code: 'source_conflict' });
+  assert.equal(await readFile(join(project.path, 'scene.js'), 'utf8'), 'external author');
+  await rm(join(project.path, 'scene.js'));
+  await store.commitPreparedEdit(await store.stageCreation(args));
+  assert.equal(
+    JSON.parse(await readFile(join(project.path, '.vstory/history.json'), 'utf8')).cursor,
+    null,
+  );
+  const current = await store.inspect(project.id);
+  await assert.rejects(
+    store.stageEdit({
+      projectId: project.id,
+      sourceRevision: current.sourceRevision,
+      requestId: randomUUID(),
+      undo: true,
+    }),
+    /No authored edit/,
+  );
+});
+
 test('a failed registry write never publishes a successful receipt in memory; retry survives restart', async (t) => {
   const f = await fixture(t);
   const file = join(f.directory, 'data/projects.json');
@@ -392,13 +427,17 @@ test('project identity fences staged edits and interrupted publication across re
   assert.equal(await f.text(), 'a0');
   await assert.rejects(access(join(f.root, '.vstory/transaction.json')), { code: 'ENOENT' });
   await writeFile(manifestFile, JSON.stringify(manifest));
-  f.store.write = async () => { throw new Error('crash before source publication'); };
+  f.store.write = async () => {
+    throw new Error('crash before source publication');
+  };
   await assert.rejects(f.store.commitPreparedEdit(prepared), /crash before/);
   await writeFile(manifestFile, JSON.stringify(other));
   const reopened = new ProjectStore(join(f.directory, 'data'));
   await reopened.start();
   await assert.rejects(reopened.recover(f.project), { code: 'project_conflict' });
-  await assert.rejects(reopened.recover({ ...f.project, id: other.id }), { code: 'project_conflict' });
+  await assert.rejects(reopened.recover({ ...f.project, id: other.id }), {
+    code: 'project_conflict',
+  });
   assert.equal(await f.text(), 'a0');
   await access(join(f.root, '.vstory/transaction.json'));
   await writeFile(manifestFile, JSON.stringify(manifest));

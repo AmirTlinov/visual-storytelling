@@ -139,6 +139,10 @@ export class JobRunner {
   }
   describe(job) {
     const { input, signature, requestIds, ...visible } = job;
+    if (visible.result?.project) {
+      const { creation, migration, ...result } = visible.result;
+      visible.result = result;
+    }
     return visible;
   }
   get(id) {
@@ -146,11 +150,9 @@ export class JobRunner {
     if (!job) throw new Error('Unknown job.');
     return this.describe(job);
   }
-  wait(id, { until = 'settled', timeout = 15000 } = {}) {
+  wait(id, { timeout = 15000 } = {}) {
     const current = this.get(id);
-    const ready = (job) =>
-      !['queued', 'running', 'cancelling'].includes(job.status) ||
-      (until === 'authored' && job.authored);
+    const ready = (job) => !['queued', 'running', 'cancelling'].includes(job.status);
     if (ready(current) || !timeout) return Promise.resolve(current);
     return new Promise((resolve) => {
       const listeners = this.observers.get(id) ?? new Set();
@@ -298,7 +300,7 @@ export class JobRunner {
         if (
           previous !== job &&
           previous.projectId === job.projectId &&
-          (previous.kind === 'build' || (previous.kind === 'create' && previous.authored)) &&
+          previous.kind === 'build' &&
           previous.sourceRevision !== job.sourceRevision &&
           ['queued', 'running'].includes(previous.status)
         ) {
@@ -382,16 +384,6 @@ export class JobRunner {
             terminal = { error: error.message };
           });
           child.on('message', (message) => {
-            if (message?.type === 'authored' && job.status === 'running' && !terminal) {
-              job.authored = message.project;
-              job.sourceRevision = message.project.sourceRevision;
-              job.input = {
-                ...job.input,
-                sourceRevision: message.project.sourceRevision,
-                inputSnapshot: message.project.inputSnapshot,
-              };
-              void this.save(job).catch((error) => console.error(error.message));
-            }
             if (message?.type === 'progress' && job.status === 'running' && !terminal) {
               job.stage = message.stage;
               job.progress = message.progress;

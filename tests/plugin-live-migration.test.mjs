@@ -159,7 +159,12 @@ test(
         }),
         /requestId already belongs/,
       );
-      const rebuilt = await finishFixtureJob(host.client, migrated.result.job.id);
+      assert.equal(
+        migrated.result.job,
+        undefined,
+        'migration publishes its already verified build',
+      );
+      const rebuilt = migrated;
       inspected = await until(async () => {
         const result = await host.client.callTool({
           name: 'story_inspect',

@@ -88,7 +88,7 @@ test(
           },
         ],
       });
-      await finish(edited.structuredContent.job.id);
+      const editedProject = (await finish(edited.structuredContent.job.id)).result.project;
       await app.locator('#update').waitFor();
       const shownSource = (await call('story_inspect', { sessionId, file: 'scene.js' }))
         .structuredContent;
@@ -98,20 +98,14 @@ test(
         'the shown source stays bound to the playing build',
       );
       assert.equal(shownSource.shownSourceRevision, before.sourceRevision);
-      assert.equal(
-        shownSource.workingSourceRevision,
-        edited.structuredContent.project.sourceRevision,
-      );
+      assert.equal(shownSource.workingSourceRevision, editedProject.sourceRevision);
       await app.locator('#update').click();
       await app
         .frameLocator('#scene')
         .getByText('Проверенная авторская правка', { exact: true })
         .waitFor();
       const shown = await call('story_inspect', { sessionId });
-      assert.equal(
-        shown.structuredContent.sourceRevision,
-        edited.structuredContent.project.sourceRevision,
-      );
+      assert.equal(shown.structuredContent.sourceRevision, editedProject.sourceRevision);
       const conflict = await host.client.callTool({
         name: 'story_edit',
         arguments: {
@@ -124,11 +118,11 @@ test(
       assert.equal(conflict.isError, true);
       const undone = await call('story_edit', {
         projectId: project.id,
-        sourceRevision: edited.structuredContent.project.sourceRevision,
+        sourceRevision: editedProject.sourceRevision,
         requestId: randomUUID(),
         undo: true,
       });
-      await finish(undone.structuredContent.job.id);
+      const undoneProject = (await finish(undone.structuredContent.job.id)).result.project;
       await app
         .frameLocator('#scene')
         .getByText('Одна клетка — один шаг', { exact: true })
@@ -158,7 +152,7 @@ test(
         name: 'story_voice',
         arguments: {
           projectId: project.id,
-          sourceRevision: undone.structuredContent.project.sourceRevision,
+          sourceRevision: undoneProject.sourceRevision,
           requestId: randomUUID(),
           enabled: true,
           provider: 'macos',
@@ -167,13 +161,13 @@ test(
       assert.equal(unsupportedVoice.isError, true);
       assert.equal(
         (await call('story_inspect', { projectId: project.id })).structuredContent.sourceRevision,
-        undone.structuredContent.project.sourceRevision,
+        undoneProject.sourceRevision,
         'an unsupported provider does not edit the project',
       );
       assert.deepEqual(await readdir(join(directory, 'data/jobs')), jobsBeforeUnsupportedVoice);
       const adapterAdded = await call('story_edit', {
         projectId: project.id,
-        sourceRevision: undone.structuredContent.project.sourceRevision,
+        sourceRevision: undoneProject.sourceRevision,
         requestId: randomUUID(),
         changes: [
           {
@@ -185,10 +179,11 @@ test(
           },
         ],
       });
-      await finish(adapterAdded.structuredContent.job.id);
+      const adapterAddedProject = (await finish(adapterAdded.structuredContent.job.id)).result
+        .project;
       const voiceDisabled = await call('story_voice', {
         projectId: project.id,
-        sourceRevision: adapterAdded.structuredContent.project.sourceRevision,
+        sourceRevision: adapterAddedProject.sourceRevision,
         requestId: randomUUID(),
         enabled: false,
         provider: 'local',
@@ -197,15 +192,16 @@ test(
         voice: 'fixture',
         language: 'ru',
       });
-      await finish(voiceDisabled.structuredContent.job.id);
+      const voiceDisabledProject = (await finish(voiceDisabled.structuredContent.job.id)).result
+        .project;
       await call('story_preferences', { patch: { language: 'en' } });
       const narrated = await call('story_voice', {
         projectId: project.id,
-        sourceRevision: voiceDisabled.structuredContent.project.sourceRevision,
+        sourceRevision: voiceDisabledProject.sourceRevision,
         requestId: randomUUID(),
         enabled: true,
       });
-      await finish(narrated.structuredContent.job.id);
+      const narratedProject = (await finish(narrated.structuredContent.job.id)).result.project;
       const voiceSettings = (await call('story_voice', { projectId: project.id })).structuredContent
         .settings;
       assert.equal(voiceSettings.voice, 'fixture');
@@ -233,11 +229,11 @@ test(
       script.segments.at(-1).text += ' Теперь проверьте свой вариант.';
       const spokenEdit = await call('story_edit', {
         projectId: project.id,
-        sourceRevision: narrated.structuredContent.project.sourceRevision,
+        sourceRevision: narratedProject.sourceRevision,
         requestId: randomUUID(),
         changes: [{ path: 'narration.json', content: JSON.stringify(script, null, 2) }],
       });
-      await finish(spokenEdit.structuredContent.job.id);
+      const spokenEditProject = (await finish(spokenEdit.structuredContent.job.id)).result.project;
       assert.equal(
         (await readdir(join(directory, 'data/speech'))).length,
         script.segments.length + 1,
@@ -247,7 +243,7 @@ test(
         target: {
           kind: 'working',
           projectId: project.id,
-          sourceRevision: spokenEdit.structuredContent.project.sourceRevision,
+          sourceRevision: spokenEditProject.sourceRevision,
         },
         requestId: randomUUID(),
         options: {
