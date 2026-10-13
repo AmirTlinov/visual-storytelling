@@ -485,24 +485,22 @@ checkpoint, undo, длинный future text, provisional ID и resize.
 | Рисунок с доступом к полному shell                     | DrawingViewport stage/layout       | все StorySubjectRecipe | build/check, existing consumers            |
 | Короткий ненулевой vector скрывался как нулевой        | vector.length > 0                  | силы и связи           | small moment + counterexamples             |
 
-Приёмка установленного выпуска и итоговые версии добавляются после публикации.
-Milestone и финальные gates5/20/native остаются открыты.
+Установленный plugin 0.23.0 / core 0.35.0 прошёл 13/13 проверок и API,
+manifest, HTML и MP4. Browser-переход 375→960 выявил замыкание высоты iframe
+на viewport fit; выпуск остался непринятым. Исправление передаёт content/viewport
+через SceneHost.frameSizing; sceneFrame сохраняет единственное владение fit.
+Регрессии покрывают resize, fullscreen/inline и подтверждение неизменённого
+превью. Каждый ready синхронизирует текущий режим окна. Независимое ревью завершено.
 
-Установленный0.23.0/core0.35.0 прошёл13/13 проверок и API/manifest/HTML/MP4,
-но browser375→960 выявил замыкание iframeautoheight на viewportfit. Этот выпуск
-не принят. Исправление передаёт content/viewport через existing SceneHost.frameSizing;
-sceneFrame остаётся владельцем fit. Resize/fullscreen/inline и неизменённое
-previewpromotion покрыты regressions; ready синхронизирует mode всех frame kinds.
-Независимое ревью этих границ завершено без существенного остатка.
-
-Срез06 принят на физически установленном plugin0.23.1/core0.35.1:
+Срез 06 принят на физически установленном plugin 0.23.1 / core 0.35.1:
 `0.23.1-acb8ea7ea2b9ae90`, build
 `26b5c6109ce08605fca527291707d8dc185ecf935a0f0bb697ddf8c463e06b8a`.
-17/17 PASS; SDK-host подтвердил API, ручноймомент−1/5Н·м, undo, reload(time6/story),
-375dark/reduced и960light, расширение после узкогокадра. Обычный manifest из
-установленногоdist иportableHTML принят длярычага и маршрута. HTML/PNG/6сMP4
-выпущены;72кадра полностьюдекодированы, middle/finalpixels просмотрены.
+17/17 PASS. SDK-host подтвердил API, ручной момент −1/5 Н·м, undo,
+reload (time 6 / story), 375 px dark/reduced и 960 px light,
+расширение после узкого кадра. Обычный manifest из установленного dist и
+переносимый HTML приняты для рычага и маршрута. HTML/PNG/MP4 выпущены:
+6 секунд, 72 кадра; полное декодирование, просмотр промежуточных и финальных пикселей.
 Доказательства: `artifacts/architecture/2026-10-13/slice06-acceptance.json`,
 `installed-final-0.23.1/`, `installed-dist-0.23.1/`, `artifacts/comparison/`.
-NativeCodexcontainer иauthoring5/20 входят в открытые финальныеgates.
-Следующийсрез—GUI-565.
+Приёмка контейнера Codex и скорость авторства 5/20 входят в открытые финальные gates.
+Следующий срез — GUI-565.
