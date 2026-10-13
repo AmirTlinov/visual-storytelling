@@ -109,6 +109,23 @@ class NarrationCues(unittest.TestCase):
             self.assertEqual(segment["spoken"], "Сначала тихо. А теперь — два предмета!")
             self.assertEqual((segment["cues"][0]["word_start"], segment["cues"][0]["word_end"]), (4, 6))
 
+    def test_higgs_rejects_words_and_numbers_its_aligner_cannot_represent(self):
+        with tempfile.TemporaryDirectory() as folder:
+            script = Path(folder) / "script.json"
+            for text in ["Шаг ١. Шаг ٢.", "Шаг ².", "Шаг Ⅳ.", "Шаг élan.", "Шаг 中文."]:
+                with self.subTest(text=text):
+                    spec = {"version": 3, "segments": [{"id": "line", "text": text}]}
+                    script.write_text(json.dumps(spec, ensure_ascii=False))
+                    with self.assertRaisesRegex(ValueError, "Russian words"):
+                        read_script(script)
+            # Russian spoken words and native delivery controls retain the exact cue contract.
+            spec = {"version": 3, "segments": [{"id": "line",
+                "text": "<|emotion:surprise|>Шаг первый. Шаг второй. Шаг первый!",
+                "cues": [{"id": "repeat", "quote": "Шаг первый", "occurrence": 2}]}]}
+            script.write_text(json.dumps(spec, ensure_ascii=False))
+            cue = read_script(script)["segments"][0]["cues"][0]
+            self.assertEqual((cue["word_start"], cue["word_end"]), (4, 6))
+
     def test_segment_seed_overrides_voice_without_changing_neighbors(self):
         spec = {"version": 3, "voice": {"seed": 17}, "segments": [
             {"id": "question", "text": "Сколько здесь предметов?"},

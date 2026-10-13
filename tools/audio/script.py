@@ -214,7 +214,7 @@ def read_script(path, *, source_directory=None):
             raise ValueError(f"{sid}: use plain Russian spelling and native Higgs controls")
         # Author the spoken form explicitly: 23, CPU and formulas have ambiguous
         # pronunciations. The JS drawing can display any notation independently.
-        if re.search(r"[0-9A-Za-z]", text) or not words(text):
+        if any(char.isalnum() and not WORD.fullmatch(char) for char in text) or not words(text):
             raise ValueError(f"{sid}: write spoken numbers, abbreviations and formulas in Russian words")
         if len(text) > 1000:
             raise ValueError(f"{sid}: split this narration into shorter semantic phrases (max 1000 characters)")
