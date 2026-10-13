@@ -587,10 +587,16 @@ const operations = {
           ...(example !== undefined ? { example } : {}),
           explanation,
           ...(sessionId !== undefined ? { sessionId } : {}),
-          ...(path ? { path: await realpath(path) } : {}),
+          ...(path ? { path: await projects.canonicalPath(path) } : {}),
         };
         if (!isDeepStrictEqual(previousLive.creation.input, requested))
           throw new Error('requestId already belongs to another project creation.');
+        if (!previousLive.creation.receipt)
+          await projects.create(previousLive.path, {
+            title,
+            example,
+            creation: { requestId, input: requested },
+          });
         const receipt =
           previousLive.creation.receipt ??
           (await createLiveProject(previousLive, requested, requestId));
@@ -617,18 +623,20 @@ const operations = {
         throw new Error(
           'Unknown example. Omit example for an empty project or use story_help to inspect the exemplar.',
         );
-      const project = await projects.create(path, { title, example });
+      const input = {
+        title,
+        ...(example !== undefined ? { example } : {}),
+        explanation,
+        ...(sessionId !== undefined ? { sessionId } : {}),
+        ...(requestedPath ? { path } : {}),
+      };
+      const project = await projects.create(path, {
+        title,
+        example,
+        ...(explanation !== undefined ? { creation: { requestId, input } } : {}),
+      });
       if (explanation !== undefined) {
-        const input = {
-          title,
-          ...(example !== undefined ? { example } : {}),
-          explanation,
-          ...(sessionId !== undefined ? { sessionId } : {}),
-          ...(requestedPath ? { path: project.path } : {}),
-        };
-        await projects.update(project.id, {
-          creation: { requestId, input },
-        });
+        const input = projects.get(project.id).creation.input;
         return deliverCreatedExplanation(
           await createLiveProject(project, input, requestId),
           sessionId,

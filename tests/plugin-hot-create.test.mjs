@@ -9,6 +9,79 @@ import { chromium } from 'playwright';
 import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { pluginHost } from './plugin/host.mjs';
 import { ProjectStore } from '../plugin/projects.mjs';
+import { validateExplanation } from '../dist/explanation/document.js';
+
+test(
+  'MCP reconnect resumes a reserved creation before its manifest without a second project',
+  { timeout: 30000 },
+  async (t) => {
+    for (const explicit of [false, true])
+      await t.test(explicit ? 'explicit path' : 'implicit path', async () => {
+        const temporary = await mkdtemp(join(tmpdir(), 'story-hot-reservation-'));
+        const dataDirectory = join(temporary, 'data');
+        const path = join(temporary, 'reserved');
+        const explanation = { model: { kind: 'division', count: 13, divisor: 3 } };
+        const request = {
+          title: 'Reserved creation',
+          requestId: randomUUID(),
+          explanation,
+          ...(explicit ? { path } : {}),
+        };
+        const store = new ProjectStore(dataDirectory);
+        const input = {
+          title: request.title,
+          explanation: validateExplanation(explanation),
+          ...(explicit ? { path } : {}),
+        };
+        const remember = store.remember.bind(store);
+        store.remember = async (record) => {
+          await remember(record);
+          throw new Error('interrupted after reservation');
+        };
+        await assert.rejects(
+          store.create(path, {
+            title: request.title,
+            creation: { requestId: request.requestId, input },
+          }),
+          /interrupted after reservation/,
+        );
+        const reserved = store.creation(request.requestId);
+        await assert.rejects(readdir(path), { code: 'ENOENT' });
+        const root = fileURLToPath(new URL('../', import.meta.url));
+        const host = await pluginHost({
+          dataDirectory,
+          initialTarget: {},
+          serverEntry: join(root, '.plugin-release/plugin/dist/server.mjs'),
+        });
+        try {
+          const conflicting = await host.client.callTool({
+            name: 'story_create',
+            arguments: { ...request, title: 'Changed' },
+          });
+          assert.equal(conflicting.isError, true);
+          assert.match(conflicting.content[0].text, /requestId/);
+          const result = await host.client.callTool({ name: 'story_create', arguments: request });
+          assert.equal(result.isError, undefined, JSON.stringify(result));
+          assert.equal(result.structuredContent.project.id, reserved.id);
+          assert.equal(result.structuredContent.project.path, reserved.path);
+          assert.equal(result.structuredContent.authoring, 'ready');
+          const repeated = await host.client.callTool({ name: 'story_create', arguments: request });
+          assert.deepEqual(repeated.structuredContent, result.structuredContent);
+          const projects = JSON.parse(await readFile(join(dataDirectory, 'projects.json'), 'utf8'));
+          assert.equal(projects.length, 1);
+          assert.equal(projects[0].creation.sessionId, result.structuredContent.sessionId);
+          assert.equal((await readdir(join(dataDirectory, 'sessions'))).length, 1);
+          assert.equal(
+            JSON.parse(await readFile(join(path, 'story.vstory'), 'utf8')).id,
+            reserved.id,
+          );
+        } finally {
+          await host.close();
+          await rm(temporary, { recursive: true, force: true });
+        }
+      });
+  },
+);
 
 test('queued project metadata updates preserve a terminal creation delivery and unrelated metadata', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'story-creation-registry-'));

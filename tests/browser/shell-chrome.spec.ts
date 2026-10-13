@@ -4,8 +4,21 @@ import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { openFixture } from '../support/fixture.mjs';
 import { assetURLs } from '../../tools/asset-urls.mjs';
+import { chromiumLaunchOptions } from '../../tools/chromium.mjs';
 
-async function mount(page: Page | Frame, amountType = 'range') {
+// Headless Chromium otherwise suppresses even authored scrollbar paint.
+test.use({
+  launchOptions: { ...chromiumLaunchOptions(), ignoreDefaultArgs: ['--hide-scrollbars'] },
+});
+
+async function mount(
+  page: Page | Frame,
+  amountType = 'range',
+  chapterTitles: [string, string] = [
+    'Сначала заметим исходные значения',
+    'Затем сравним результат вычисления',
+  ],
+) {
   await openFixture(page, 'scene-shell');
   const source = await build({
     stdin: {
@@ -27,8 +40,8 @@ async function mount(page: Page | Frame, amountType = 'range') {
           drawing.layer.append(result);
           const story = shell.attachStory({
             script: { duration: 20, cues: {}, segments: [
-              { id: 'inputs', title: 'Сначала заметим исходные значения', text: '', start: 0, end: 10 },
-              { id: 'result', title: 'Затем сравним результат вычисления', text: '', start: 10, end: 20 },
+              { id: 'inputs', title: ${JSON.stringify(chapterTitles[0])}, text: '', start: 0, end: 10 },
+              { id: 'result', title: ${JSON.stringify(chapterTitles[1])}, text: '', start: 10, end: 20 },
             ] },
             stateAt: () => ({ amount: 2, method: 'sum' }),
             render(values) {
@@ -57,9 +70,7 @@ async function mount(page: Page | Frame, amountType = 'range') {
   await page.evaluate(() => {
     (window as any).chromeContract = (window as any).ChromeContract.mount();
   });
-  await expect(page.locator('.ve-heading > .ve-select-trigger')).toHaveText(
-    'Сначала заметим исходные значения',
-  );
+  await expect(page.locator('.ve-heading > .ve-select-trigger')).toHaveText(chapterTitles[0]);
 }
 
 async function metrics(page: Page) {
@@ -288,6 +299,7 @@ test('shared playback menu fits narrow light and dark surfaces with full-size ch
       const menu = page.getByRole('listbox', { name: 'Скорость рассказа', exact: true });
       await expect(menu).toBeVisible();
       const bounds = (await menu.boundingBox())!;
+      expect(bounds.width).toBeLessThan(180);
       expect(bounds.x).toBeGreaterThanOrEqual(7.5);
       expect(bounds.x + bounds.width).toBeLessThanOrEqual(width - 7.5);
       expect(bounds.y).toBeGreaterThanOrEqual(7.5);
@@ -304,12 +316,112 @@ test('shared playback menu fits narrow light and dark surfaces with full-size ch
       expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
         false,
       );
+      expect(
+        await menu
+          .locator('.ve-select-scroll')
+          .evaluate((node) => node.scrollHeight <= node.clientHeight + 1),
+      ).toBe(true);
       await page.screenshot({
         path: resolve('artifacts/frame-consistency', `speed-${width}-${colorScheme}.png`),
       });
-      await speed.press('Escape');
+      await speed.press('End');
+      await expect(menu.getByRole('option', { name: '3×', exact: true })).toBeInViewport();
+      await speed.press('Enter');
+      await expect(speed).toHaveText('3×');
     }
   }
+});
+
+test('shared menus wrap long labels, relayout after input and draw only necessary scrollbars', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await mount(page, 'range', [
+    'Сначала заметим, как направление и величина изменения каждого исходного значения влияют на результат вычисления',
+    'Затем сравним полученный результат с первоначальным условием и проверим объяснение на новом примере',
+  ]);
+  const chapter = page.getByRole('combobox', { name: 'Глава', exact: true });
+  await chapter.click();
+  const chapters = page.getByRole('listbox', { name: 'Глава', exact: true });
+  await expect(chapters).toBeVisible();
+  const longBounds = (await chapters.boundingBox())!;
+  expect(longBounds.width).toBeLessThanOrEqual(304);
+  expect(longBounds.width).toBeGreaterThan(200);
+  for (const row of await chapters.getByRole('option').all()) {
+    expect((await row.boundingBox())!.height).toBeGreaterThan(44);
+    expect(await row.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  }
+  await chapter.press('Escape');
+
+  await page.setViewportSize({ width: 390, height: 360 });
+  await mount(page);
+  const speed = page.getByRole('combobox', { name: 'Скорость рассказа', exact: true });
+  await speed.click();
+  const menu = page.getByRole('listbox', { name: 'Скорость рассказа', exact: true });
+  const scroll = menu.locator('.ve-select-scroll');
+  await expect(menu).toBeVisible();
+  expect(await scroll.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+  const scrollbar = await scroll.evaluate((node) => ({
+    thumb: getComputedStyle(node, '::-webkit-scrollbar-thumb').backgroundImage,
+    track: getComputedStyle(node, '::-webkit-scrollbar-track').backgroundImage,
+  }));
+  expect(scrollbar.thumb).toContain('svg');
+  expect(scrollbar.track).toContain('svg');
+  await speed.press('End');
+  const last = menu.getByRole('option', { name: '3×', exact: true });
+  const expectLastVisible = async () => {
+    const row = (await last.boundingBox())!;
+    const box = (await scroll.boundingBox())!;
+    expect(row.y).toBeGreaterThanOrEqual(box.y);
+    expect(row.y + row.height).toBeLessThanOrEqual(box.y + box.height);
+  };
+  await expectLastVisible();
+  expect(await scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+  const drag = await scroll.evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    const thumb = Math.max(32, (node.clientHeight * node.clientHeight) / node.scrollHeight);
+    return { x: box.right - 6, from: box.bottom - thumb / 2, to: box.top };
+  });
+  await page.mouse.move(drag.x, drag.from);
+  await page.mouse.down();
+  await page.mouse.move(drag.x, drag.to, { steps: 4 });
+  await page.mouse.up();
+  // Native compositor drag updates finish asynchronously; observe the destination
+  // before starting the next, independent keyboard gesture.
+  await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBe(0);
+  await speed.press('End');
+  await expectLastVisible();
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.screenshot({
+      path: resolve('artifacts/frame-consistency', `speed-scroll-${colorScheme}.png`),
+    });
+    await expectLastVisible();
+  }
+  await speed.press('Enter');
+  await expect(speed).toHaveText('3×');
+  await speed.click();
+  await page.evaluate(() => (window as any).chromeContract.story.player.rate(0.75));
+  await expect(speed).toHaveText('0.75×');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(menu).toBeVisible();
+  await expect
+    .poll(() => scroll.evaluate((node) => node.scrollHeight <= node.clientHeight + 1))
+    .toBe(true);
+  await expect(menu.getByRole('option', { name: '0.75×', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await speed.press('Escape');
+  await page.emulateMedia({ forcedColors: 'active' });
+  await page.setViewportSize({ width: 390, height: 360 });
+  await speed.click();
+  expect(await scroll.evaluate((node) => getComputedStyle(node).scrollbarColor)).toBe('auto');
+  expect(
+    await scroll.evaluate(
+      (node) => getComputedStyle(node, '::-webkit-scrollbar-thumb').backgroundImage,
+    ),
+  ).toBe('none');
 });
 
 test('compact conditions retain the same field, value, history and clock across reflow', async ({

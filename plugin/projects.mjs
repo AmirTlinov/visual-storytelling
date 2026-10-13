@@ -10,8 +10,9 @@ import {
   copyFile,
 } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { join, dirname, basename } from 'node:path';
+import { join, dirname, basename, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { readJSON, writeJSON } from '../tools/storage.mjs';
 import { projectFiles, projectFile, readProjectFile, digest } from '../tools/project-files.mjs';
 import { failure } from './errors.mjs';
@@ -132,15 +133,67 @@ export class ProjectStore {
     return item;
   }
   async create(path, options) {
-    await mkdir(path, { recursive: true });
-    path = await realpath(path);
+    path = await this.canonicalPath(path);
     return this.serial('path:' + path, async () => {
-      if ((await readdir(path)).length)
+      const creation = options?.creation && {
+        requestId: options.creation.requestId,
+        input: {
+          ...options.creation.input,
+          ...(options.creation.input.path !== undefined ? { path } : {}),
+        },
+      };
+      const reserved = creation && this.creation(creation.requestId);
+      if (
+        [...this.projects.values()].some(
+          (project) => project.path === path && project.id !== reserved?.id,
+        )
+      )
+        throw new Error(
+          'Choose an empty directory. This directory already belongs to another project.',
+        );
+      if (
+        reserved &&
+        (reserved.path !== path || !isDeepStrictEqual(reserved.creation.input, creation.input))
+      )
+        throw new Error('requestId already belongs to another project creation.');
+      const manifest = reserved && (await readJSON(join(path, 'story.vstory')));
+      if (manifest && manifest.id !== reserved.id)
+        throw new Error('The reserved project directory contains another story.vstory.');
+      const names = await readdir(path).catch((error) => {
+        if (error.code === 'ENOENT') return [];
+        throw error;
+      });
+      if (!manifest && names.length)
         throw new Error(
           'Choose an empty directory for a new project. Open an existing project by its path.',
         );
+      if (creation && !reserved) {
+        // Commit identity and request together before publishing any project files.
+        // A retry can recover the exact path even if manifest creation is interrupted.
+        await this.remember({
+          format: 1,
+          id: randomUUID(),
+          title: options.title ?? basename(path),
+          example: options.example,
+          path,
+          openedAt: new Date().toISOString(),
+          creation,
+        });
+      }
+      await mkdir(path, { recursive: true });
+      if ((await realpath(path)) !== path)
+        throw new Error('The project directory changed while reserving its creation.');
       return this.registerPath(path, options);
     });
+  }
+  async canonicalPath(path) {
+    path = resolve(path);
+    try {
+      return await realpath(path);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      return join(await this.canonicalPath(dirname(path)), basename(path));
+    }
   }
   async register(path, options) {
     path = await realpath(path);
@@ -150,11 +203,23 @@ export class ProjectStore {
       );
     return this.serial('path:' + path, () => this.registerPath(path, options));
   }
-  async registerPath(path, { title, example } = {}) {
+  async registerPath(path, { title, example, creation } = {}) {
     const manifestFile = join(path, 'story.vstory');
+    const reserved = creation
+      ? this.creation(creation.requestId)
+      : [...this.projects.values()].find(
+          (project) => project.path === path && project.creation && !project.creation.receipt,
+        );
     let manifest = await readJSON(manifestFile);
     if (!manifest) {
-      manifest = { format: 1, id: randomUUID(), title: title ?? basename(path), example };
+      if (reserved && (await readdir(path)).length)
+        throw new Error('The reserved project directory changed before its manifest was created.');
+      manifest = {
+        format: 1,
+        id: reserved?.id ?? randomUUID(),
+        title: reserved?.title ?? title ?? basename(path),
+        example: reserved?.example ?? example,
+      };
       try {
         await writeFile(manifestFile, JSON.stringify(manifest), { flag: 'wx' });
       } catch (error) {
@@ -164,6 +229,8 @@ export class ProjectStore {
     }
     if (manifest?.format !== 1 || !/^[a-f0-9-]{36}$/.test(manifest.id))
       throw new Error('Unsupported story.vstory manifest.');
+    if (reserved && (reserved.id !== manifest.id || reserved.path !== path))
+      throw new Error('The reserved project directory contains another story.vstory.');
     const known = this.projects.get(manifest.id);
     if (known && known.path !== path) {
       const previous = await realpath(known.path).catch((error) => {
@@ -180,9 +247,11 @@ export class ProjectStore {
       path,
       openedAt: new Date().toISOString(),
     };
-    const item = await (this.projects.has(manifest.id)
-      ? this.update(manifest.id, registration)
-      : this.remember(registration));
+    const item =
+      reserved ??
+      (await (this.projects.has(manifest.id)
+        ? this.update(manifest.id, registration)
+        : this.remember(registration)));
     return this.serial(item.id, async () => {
       await this.recover(item);
       return this.inspect(item.id);
