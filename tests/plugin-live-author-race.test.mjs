@@ -1,4 +1,4 @@
-import { normalizeStoryDocument } from '../dist/story/document.js';
+import { validateStoryDocument } from '../dist/story/document.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
@@ -6,8 +6,10 @@ import { chromium } from 'playwright';
 import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { assetURLs } from '../tools/asset-urls.mjs';
 
-const document = normalizeStoryDocument({
-  model: { id: 'division', kind: 'division', count: 14, divisor: 3 },
+const document = validateStoryDocument({
+  recipe: 'division',
+  id: 'division',
+  inputs: { count: 14, divisor: 3 },
 });
 
 test(
@@ -17,10 +19,10 @@ test(
     const bundled = await build({
       stdin: {
         resolveDir: process.cwd(),
-        contents: `import {mountStoryDocument} from './dist/story/mount.js';
+        contents: `import {IllustratedStory} from './dist/story/illustrated.js';
         import './dist/style.css';
         window.__visualStorySession = window.__testFrameConfig ?? {sessionId:'preflight',generation:1,stateRevision:0,buildRevision:'build-14',sourceRevision:'source-14'};
-        window.galleryReady = mountStoryDocument(document.querySelector('main'), window.__testDocument ?? ${JSON.stringify(document)});
+        window.galleryReady = IllustratedStory.mount(document.querySelector('main'), {document: window.__testDocument ?? ${JSON.stringify(document)}});
         import('./plugin/ui/scene-frame.mjs');`,
       },
       bundle: true,

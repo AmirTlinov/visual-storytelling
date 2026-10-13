@@ -14,7 +14,6 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createScene } from '../tools/create-scene.mjs';
-import { legacyStoryChanges } from '../tools/story-migration.mjs';
 import { buildScene } from '../tools/build-pages.mjs';
 import { sceneEntry } from '../tools/scene-entry.mjs';
 import { packDirectory } from '../tools/standalone.mjs';
@@ -31,11 +30,12 @@ import {
   linkPreparedRuntime,
   readPreparedRuntime,
   preparedRuntimeFile,
-  assertPreparedStory,
+  assertPreparedDocument,
   storyDocumentAPI,
 } from '../tools/runtime-package.mjs';
 import { contentDigest } from '../tools/build-info.mjs';
 import { captureWorkingInput } from './revision-input.mjs';
+import { migrateStoryDocument } from '../tools/migrate-story-document.mjs';
 import { prepareProjectChanges, writeProjectChange } from './projects.mjs';
 import { videoDimensions } from '../tools/video-dimensions.mjs';
 const execute = promisify(execFile);
@@ -177,12 +177,12 @@ async function prepare(input, task) {
   await writeJSON(join(snapshot, '.vstory-input.json'), { ...source, preparation });
   await dependencies(snapshot, data, task);
   const voice = await readJSON(join(snapshot, 'voice.json'));
-  if (
+  const narrated =
     voice?.enabled &&
     !preparation.silent &&
     !(reusable && receipt.preparedRevision) &&
-    (await narrationSource(snapshot))
-  ) {
+    (await narrationSource(snapshot));
+  if (narrated) {
     const localHiggs = narrationProvider(voice) === 'higgs';
     await prepareEnvironment(data, {
       ...task,
@@ -282,16 +282,18 @@ async function prepareBuild(input, task) {
   };
   const preparedPin = await readPreparedRuntime(snapshot);
   if (preparedPin) {
-    const recipe = await assertPreparedStory(snapshot).catch((error) => {
-      if (error.code !== 'custom_scene_entry') throw error;
+    const recipe = await assertPreparedDocument(snapshot).catch((error) => {
+      // The pinned package already owns a complete source-built artifact.
+      // New document metadata is optional; authoring still requires explicit migration.
+      if (!['custom_scene_entry', 'runtime_migration_required'].includes(error.code)) throw error;
       return null;
     });
     if (recipe)
       prepared.live = {
         runtimeBuild: recipe.build,
-        document: (await storyDocumentAPI(snapshot)).validateStoryDocument(
+        document: (await storyDocumentAPI(snapshot)).prepareIllustratedDocument(
           await readJSON(join(snapshot, 'story.json')),
-        ),
+        ).document,
       };
   }
   await writeJSON(join(input.data, 'builds', revision + '.json'), prepared);
@@ -325,25 +327,18 @@ export const workflows = {
         await writeProjectChange(snapshot, edit);
       }
     }
-    const converted = await legacyStoryChanges(snapshot, { root });
+    const documentChanges = await migrateStoryDocument(snapshot, { root, changes });
     if (
       new Set([
         ...metadata,
         ...changes.map((change) => change.path),
-        ...converted.map((change) => change.path),
+        ...documentChanges.map((change) => change.path),
       ]).size > 64
     )
-      throw new Error('Runtime and document migration supports at most 64 changed files.');
-    if (converted.length) {
-      const migrationEdits = await prepareProjectChanges(snapshot, converted);
-      for (const edit of migrationEdits) {
-        task.signal.throwIfAborted();
-        await writeProjectChange(snapshot, edit);
-      }
-    }
+      throw new Error('Runtime and document migration exceed the 64-file transaction limit.');
     task.progress('Подготавливаю новую библиотеку…');
     const updated = await updateSceneRuntime(snapshot, { root, build: false, signal: task.signal });
-    if (!updated.changed && !changes.length && !converted.length) return { upToDate: true };
+    if (!updated.changed && !changes.length && !documentChanges.length) return { upToDate: true };
     const preparedRevision = (await projectFiles(snapshot)).revision;
     await buildScene(snapshot, join(snapshot, 'dist'), {
       data: input.data,
@@ -360,7 +355,7 @@ export const workflows = {
           ...new Map(
             [
               ...changes,
-              ...converted,
+              ...documentChanges,
               ...(await Promise.all(
                 metadata.map(async (name) => ({
                   path: name,

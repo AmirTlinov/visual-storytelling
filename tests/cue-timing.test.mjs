@@ -143,10 +143,10 @@ test('chapter and document projections retain both action and speech coordinates
   };
   const result = documentScript(
     {
-      version: 1,
-      title: 'Lesson',
+      version: 2,
       models: [],
       views: [],
+      title: 'Lesson',
       chapters: [
         {
           id: 'lesson',

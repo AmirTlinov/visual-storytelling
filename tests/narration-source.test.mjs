@@ -36,8 +36,8 @@ async function fixture(t, document) {
 }
 
 const staticDocument = {
-  version: 1,
-  models: [{ id: 'division', kind: 'division', inputs: { count: 23, divisor: 3 } }],
+  version: 2,
+  models: [{ id: 'division', module: 'division', inputs: { count: 23, divisor: 3 } }],
   views: [{ id: 'groups', kind: 'groups', model: 'division' }],
   chapters: [],
 };
@@ -46,7 +46,7 @@ test('static and explicitly silent documents do not project stale legacy speech 
   for (const document of [
     staticDocument,
     {
-      version: 1,
+      version: 2,
       models: [],
       views: [],
       chapters: [
@@ -97,7 +97,7 @@ test('static and explicitly silent documents do not project stale legacy speech 
 
 test('canonical spoken beats project through their own runtime without altering the authored document', async (t) => {
   const document = {
-    version: 1,
+    version: 2,
     title: 'Цепь',
     models: [],
     views: [],
@@ -136,11 +136,11 @@ test('a malformed canonical document is rejected before any speech backend is in
     ...staticDocument,
     views: [{ id: 'groups', kind: 'groups', model: 'missing' }],
   });
-  await assert.rejects(buildNarration(directory), /unknown model missing/);
+  await assert.rejects(buildNarration(directory), /views\[0\]\.model: unknown model/);
   await writeFile(join(directory, 'story.json'), 'null');
   await writeFile(
     join(directory, 'narration.json'),
     JSON.stringify({ version: 3, segments: [{ id: 'old', text: 'Старая речь.' }] }),
   );
-  await assert.rejects(narrationSource(directory), /story: expected an object/);
+  await assert.rejects(narrationSource(directory), /document: expected an object/);
 });

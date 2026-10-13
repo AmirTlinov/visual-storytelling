@@ -12,7 +12,7 @@ import type { Viewport3D } from '../viewport/three.js';
 import { quantityBounds, quantityStep } from './measure.js';
 import { morphBody3D } from './body-3d.js';
 import { mathBodies } from './math-bodies.js';
-import { mathPlan } from './math.js';
+import { mathPlan } from './plan.js';
 import { mathNumber } from './numbers.js';
 import { mathDelivery3D, type MathDelivery3DOptions } from './delivery-3d.js';
 import { cellLayout, validateCellColumns } from './layout.js';

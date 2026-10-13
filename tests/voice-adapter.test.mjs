@@ -321,19 +321,19 @@ test('unsupported music/controls and invalid cue quotes fail before a paid API c
 test('visual document edits reuse accepted narration without cached takes or an encoder', async (t) => {
   const f = await fixture(t);
   const document = {
-    version: 1,
-    models: [{ id: 'division', kind: 'division', inputs: { count: 11, divisor: 3 } }],
+    version: 2,
+    models: [{ id: 'division', module: 'division', inputs: { count: 11, divisor: 3 } }],
     views: [{ id: 'objects', kind: 'groups', model: 'division' }],
     chapters: [
       {
-        id: 'division',
+        id: 'experience',
         title: 'Группы',
         beats: [
           {
             id: 'group',
             say: 'Один шаг вправо.',
             timing: { duration: 1.1 },
-            staging: { model: 'division', operation: 'group' },
+            operation: { model: 'division', name: 'group' },
           },
         ],
       },
@@ -347,6 +347,7 @@ test('visual document edits reuse accepted narration without cached takes or an 
   const receipt = await f.receipt();
   await rm(f.cache, { recursive: true, force: true });
   document.models[0].inputs.count = 14;
+  document.chapters[0].title = 'Новая подпись той же главы';
   await save(document);
   const previousPath = process.env.PATH;
   try {
@@ -444,7 +445,7 @@ test('source changes during synthesis preserve the accepted pair, including proj
   const original = await f.pair();
   // sourceFile can be an immutable speech projection while its authored story changes.
   const authored = {
-    version: 1,
+    version: 2,
     title: 'before',
     models: [],
     views: [],

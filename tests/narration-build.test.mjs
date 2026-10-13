@@ -40,14 +40,7 @@ test('silent creation preserves narrative timing and authored assets without Pyt
     mix: { music: 'old' },
     segments: [{ ...script.segments[0], audio_start: 0, audio_end: 4, seed: 42, delivery: {} }],
   });
-  await write('story.json', {
-    version: 1,
-    title: 'Story',
-    models: [],
-    views: [],
-    chapters: [{ id: 'start', title: 'Start', beats: [{ id: 'move', say: 'Move' }] }],
-    narration: { voice: { seed: 42 } },
-  });
+  await write('story.json', { title: 'Story', narration: { voice: { seed: 42 } } });
   await write('voice.json', { provider: 'api', enabled: true, language: 'ru-RU' });
   const authored = 'Product logo and fonts\nLegacy narrator attribution\n';
   await write(
@@ -344,10 +337,10 @@ test('copied story speech retains its receipt and notices changed voice or music
     await writeFile(
       join(source, 'story.json'),
       JSON.stringify({
-        version: 1,
-        title: 'Цепь',
+        version: 2,
         models: [],
         views: [],
+        title: 'Цепь',
         narration: {
           voice: { reference_audio: 'reference.wav', reference_text: 'Два входа.' },
           music: {

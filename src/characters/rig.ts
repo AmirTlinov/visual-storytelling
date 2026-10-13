@@ -1,3 +1,4 @@
+import { releaseResources } from '../lifecycle.js';
 import {
   AnimationClip,
   Bone,
@@ -29,8 +30,11 @@ export async function readCharacter(
   const manager = new LoadingManager(),
     abort = () => manager.abort();
   let gltf: GLTF | undefined,
-    pages: Texture[] = [];
+    pages: Texture[] = [],
+    disposed = false;
   const dispose = () => {
+    if (disposed) return;
+    disposed = true;
     const geometry = new Set<SkinnedMesh['geometry']>(),
       materials = new Set<MeshBasicMaterial>(),
       maps = new Set<Texture>();
@@ -41,13 +45,17 @@ export async function readCharacter(
       const map = (node.material as MeshBasicMaterial).map;
       if (map) maps.add(map);
     });
-    for (const item of geometry) item.dispose();
-    for (const item of materials) item.dispose();
     const textures = new Set([...maps, ...pages]);
     const images = new Set([...textures].map((texture) => texture.image));
-    for (const map of textures) map.dispose();
-    for (const image of images)
-      if (typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap) image.close();
+    releaseResources(
+      [
+        ...[...geometry, ...materials, ...textures].map((item) => () => item.dispose()),
+        ...[...images].map((image) => () => {
+          if (typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap) image.close();
+        }),
+      ],
+      'Character asset disposal failed.',
+    );
   };
   signal?.addEventListener('abort', abort, { once: true });
   try {
@@ -84,14 +92,22 @@ export async function readCharacter(
     });
     return { object: gltf.scene, clips, pages, dispose };
   } catch (error) {
-    dispose();
-    signal?.throwIfAborted();
-    const message = (error instanceof Error ? error.message : String(error))
-      .replace(/data:[^\s"'<>)]*/gi, '[embedded asset]')
-      .slice(0, 220);
-    throw new Error(`Character pack ${pack.id.slice(0, 80)} failed to load: ${message}`, {
-      cause: error,
-    });
+    releaseResources(
+      [
+        () => {
+          signal?.throwIfAborted();
+          const message = (error instanceof Error ? error.message : String(error))
+            .replace(/data:[^\s"'<>)]*/gi, '[embedded asset]')
+            .slice(0, 220);
+          throw new Error(`Character pack ${pack.id.slice(0, 80)} failed to load: ${message}`, {
+            cause: error,
+          });
+        },
+        dispose,
+      ],
+      'Character asset initialization failed.',
+    );
+    throw error;
   } finally {
     signal?.removeEventListener('abort', abort);
   }

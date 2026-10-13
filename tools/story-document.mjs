@@ -21,6 +21,27 @@ export async function narrationSource(directory) {
     const { documentNarration } = await import(projection.href);
     const spec = documentNarration(document);
     if (!spec.segments.length) return;
+    const retained = await readFile(join(directory, 'timeline.json'), 'utf8')
+      .then(JSON.parse)
+      .catch((error) => {
+        if (error.code !== 'ENOENT') throw error;
+      });
+    // Titles are display metadata. Keep the accepted recording's source identity;
+    // the compiled document supplies current chapter titles to every presentation.
+    const spoken = (text) =>
+      text
+        .replace(/<\|[a-z]+:[a-z_]+\|>/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    for (const segment of spec.segments) {
+      const previous = retained?.segments?.find((item) => item.id === segment.id);
+      if (
+        typeof previous?.title === 'string' &&
+        typeof previous.text === 'string' &&
+        spoken(previous.text) === spoken(segment.text)
+      )
+        segment.title = previous.title;
+    }
     const text = JSON.stringify(spec, null, 2) + '\n';
     const file = join(
       tmpdir(),

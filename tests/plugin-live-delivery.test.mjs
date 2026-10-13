@@ -91,7 +91,7 @@ test(
       path: join(temporary, 'project'),
       title: 'Delivery retry',
       requestId: randomUUID(),
-      document: { model: { kind: 'division', count: 11, divisor: 3 } },
+      document: { recipe: 'division', inputs: { count: 11, divisor: 3 } },
     };
     // A real checkpoint write failure happens after the source and session choice.
     await writeFile(join(data, 'sessions'), 'blocked checkpoint directory');

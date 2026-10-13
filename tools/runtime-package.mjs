@@ -293,27 +293,41 @@ export async function storyDocumentAPI(directory) {
   const pinned = await readPinnedRuntime(directory);
   if (pinned.archive)
     throw new Error('Install this project’s pinned dependencies before semantic authoring.');
-  await assertPreparedRuntimeRoot(pinned.root, { modules: ['dist/story/document.js'] });
-  return import(pathToFileURL(join(pinned.root, 'dist/story/document.js')).href);
+  const migrationRequired = () =>
+    Object.assign(
+      new Error(
+        'This pinned runtime predates StoryDocument v2. Explicitly migrate the project before document authoring.',
+      ),
+      { code: 'runtime_migration_required' },
+    );
+  const entry = join(pinned.root, 'dist/story/document.js');
+  await access(entry).catch((error) => {
+    if (error.code === 'ENOENT') throw migrationRequired();
+    throw error;
+  });
+  const api = await import(pathToFileURL(entry).href);
+  if (
+    [
+      'prepareStoryDocument',
+      'prepareIllustratedDocument',
+      'editStoryDocument',
+      'authoredInputKeys',
+    ].some((name) => typeof api[name] !== 'function')
+  )
+    throw migrationRequired();
+  return api;
 }
 
 /** A modified source entry must keep using the source build path, never lose authored code. */
-export async function assertPreparedStory(directory) {
+export async function assertPreparedDocument(directory) {
   const pin = await readPreparedRuntime(directory);
-  if (!pin) throw new Error('Semantic live authoring requires a prepared story project.');
-  if (
-    !(await readOptional(join(directory, 'story.json'))) ||
-    !(await readOptional(join(pin.root, 'tools/story/scene.js')))
-  )
-    throw Object.assign(
-      new Error('This project needs an explicit story_migrate before StoryDocument authoring.'),
-      { code: 'custom_scene_entry' },
-    );
+  if (!pin) throw new Error('Document authoring requires a prepared StoryDocument project.');
+  await storyDocumentAPI(directory);
   const [entry, template, page, templatePage, config] = await Promise.all([
     readFile(join(directory, 'scene.js'), 'utf8'),
-    readFile(join(pin.root, 'tools/story/scene.js'), 'utf8'),
+    readFile(join(pin.root, 'tools/document-scene/scene.js'), 'utf8'),
     readFile(join(directory, 'index.html'), 'utf8'),
-    readFile(join(pin.root, 'tools/story/index.html'), 'utf8'),
+    readFile(join(pin.root, 'tools/document-scene/index.html'), 'utf8'),
     readOptional(join(directory, 'scene.json')),
   ]);
   const withoutTitle = (html) =>

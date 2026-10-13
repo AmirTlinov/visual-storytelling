@@ -1,4 +1,4 @@
-import { normalizeStoryDocument } from '../dist/story/document.js';
+import { validateStoryDocument } from '../dist/story/document.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -26,8 +26,10 @@ import { pluginHost } from './plugin/host.mjs';
 import { finishFixtureJob } from './plugin/authoring-fixture.mjs';
 
 const readJSON = async (file) => JSON.parse(await readFile(file, 'utf8'));
-const document = normalizeStoryDocument({
-  model: { id: 'apples', kind: 'division', count: 11, divisor: 3 },
+const document = validateStoryDocument({
+  recipe: 'division',
+  id: 'apples',
+  inputs: { count: 11, divisor: 3 },
 });
 
 async function unlockDirectories(directory) {

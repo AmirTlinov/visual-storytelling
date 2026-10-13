@@ -20,7 +20,7 @@ async function packageRoot() {
 }
 
 /** The installer owns trusted releases; authored scene metadata is never executable authority. */
-export async function assertPreparedRuntimeRoot(root, { modules = [] } = {}) {
+export async function assertPreparedRuntimeRoot(root) {
   const canonical = await realpath(root);
   executingPackage ??= packageRoot();
   const owner = await executingPackage;
@@ -43,7 +43,7 @@ export async function assertPreparedRuntimeRoot(root, { modules = [] } = {}) {
   const receiptFile = join(canonical, '.installation.json');
   const files = [
     receiptFile,
-    ...['package.json', 'dist/build-info.json', 'dist/index.js', ...modules].map((file) =>
+    ...['package.json', 'dist/build-info.json', 'dist/index.js'].map((file) =>
       join(canonical, file),
     ),
   ];

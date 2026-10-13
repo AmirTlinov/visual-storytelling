@@ -3,6 +3,7 @@ import { theme, type Theme } from '../ink/palette.js';
 import { projective, paintPlane, type Quad } from '../ink/projective.js';
 import type { InkDrawing } from '../story/ink-chapter.js';
 import type { ChapterFrame } from '../story/composition.js';
+import { releaseResources } from '../lifecycle.js';
 import type { CharacterStageOptions } from './types.js';
 import type { CharacterRenderer } from './renderer.js';
 import type { FrameBox } from './staging/camera.js';
@@ -77,20 +78,23 @@ export function characterSurfaces(
   const cleanup = () => {
     if (disposed) return;
     disposed = true;
-    for (const e of entries.values()) {
-      e.presentation?.release();
-      e.drawing.dispose?.();
-      e.colors?.dispose();
-      e.view.dispose();
-      e.host.remove();
-    }
+    const resources = [
+      ...[...entries.values()].flatMap((e) => [
+        () => e.presentation?.release(),
+        () => e.drawing.dispose?.(),
+        () => e.colors?.dispose(),
+        () => e.view.dispose(),
+        () => e.host.remove(),
+      ]),
+      ...strata.map((canvas) => () => {
+        canvas.remove();
+        canvas.width = canvas.height = 1;
+      }),
+    ];
     entries.clear();
-    for (const canvas of strata) {
-      canvas.remove();
-      canvas.width = canvas.height = 1;
-    }
     strata.length = 0;
     order = [];
+    releaseResources(resources, 'Character surfaces disposal failed.');
   };
   try {
     for (const [id, definition] of Object.entries(definitions)) {
@@ -138,9 +142,17 @@ export function characterSurfaces(
         const drawing = measure(host, () => definition.create(view!));
         entries.set(id, { host, view, drawing, definition, size, colors });
       } catch (error) {
-        view?.dispose();
-        colors?.dispose();
-        host.remove();
+        releaseResources(
+          [
+            () => {
+              throw error;
+            },
+            () => view?.dispose(),
+            () => colors?.dispose(),
+            () => host.remove(),
+          ],
+          'Character drawing initialization failed.',
+        );
         throw error;
       }
       // The browser maps pointer coordinates through the homography. Respect the
@@ -177,7 +189,15 @@ export function characterSurfaces(
         host.addEventListener(name, pointer, true);
     }
   } catch (error) {
-    cleanup();
+    releaseResources(
+      [
+        () => {
+          throw error;
+        },
+        cleanup,
+      ],
+      'Character surfaces initialization failed.',
+    );
     throw error;
   }
   let pass = 0;

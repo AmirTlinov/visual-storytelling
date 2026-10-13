@@ -72,7 +72,7 @@ window.galleryReady = (async () => {
     },
   });
   const snapshot = root.scene.snapshot;
-  root.scene.extend({ story, snapshot: () => ({ ...snapshot(), ...current }) });
+  root.scene.extend({ story, math, snapshot: () => ({ ...snapshot(), ...current }) });
 })().catch((error) => {
   const alert = document.createElement('p');
   alert.setAttribute('role', 'alert');

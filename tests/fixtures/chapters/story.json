@@ -1,8 +1,22 @@
 {
-  "version": 1,
+  "version": 2,
+  "models": [
+    {
+      "id": "circuit-model",
+      "module": "circuit",
+      "inputs": {
+        "closed": true
+      }
+    }
+  ],
+  "views": [
+    {
+      "id": "circuit",
+      "kind": "circuit",
+      "model": "circuit-model"
+    }
+  ],
   "title": "Chapter owner fixture",
-  "models": [],
-  "views": [],
   "chapters": [
     {
       "id": "workshop",
@@ -34,7 +48,11 @@
             "focus": ["board.content"],
             "framing": "detail"
           },
-          "text": "Разомкнутая цепь не проводит ток."
+          "text": "Разомкнутая цепь не проводит ток.",
+          "operation": {
+            "model": "circuit-model",
+            "name": "open"
+          }
         },
         {
           "id": "idea",
@@ -53,7 +71,11 @@
             "focus": ["hero"],
             "framing": "medium"
           },
-          "text": "Замкнутая цепь проводит ток."
+          "text": "Замкнутая цепь проводит ток.",
+          "operation": {
+            "model": "circuit-model",
+            "name": "close"
+          }
         }
       ]
     },

@@ -1,4 +1,3 @@
-import { normalizeStoryDocument } from '../dist/story/document.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
@@ -6,9 +5,7 @@ import { chromium } from 'playwright';
 import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { assetURLs } from '../tools/asset-urls.mjs';
 
-const document = normalizeStoryDocument({
-  model: { id: 'division', kind: 'division', count: 14, divisor: 3 },
-});
+const document = { recipe: 'division', inputs: { count: 14, divisor: 3 } };
 
 test(
   'rejected author preflight reports current viewer input without changing the accepted frame',
@@ -17,10 +14,10 @@ test(
     const bundled = await build({
       stdin: {
         resolveDir: process.cwd(),
-        contents: `import {mountStoryDocument} from './dist/story/mount.js';
+        contents: `import {IllustratedStory} from './dist/story/illustrated.js';
         import './dist/style.css';
         window.__visualStorySession = {sessionId:'preflight',generation:1,stateRevision:0};
-        window.galleryReady = mountStoryDocument(document.querySelector('main'), ${JSON.stringify(document)});
+        window.galleryReady = IllustratedStory.mount(document.querySelector('main'), {document: ${JSON.stringify(document)}});
         import('./plugin/ui/scene-frame.mjs');`,
       },
       bundle: true,
@@ -109,20 +106,7 @@ test(
       assert.equal(stale.report.observationError, undefined);
       const invalid = {
         ...document,
-        chapters: [
-          {
-            id: 'division',
-            title: 'Группы',
-            beats: [
-              {
-                id: 'bad',
-                say: '',
-                staging: { model: 'division', operation: 'group' },
-                text: 'W'.repeat(90),
-              },
-            ],
-          },
-        ],
+        chapters: [{ id: 'experience', title: 'Проверка', beats: [{ id: 'bad', operation: { model: 'division', name: 'group' }, text: 'W'.repeat(90) }] }],
       };
       const rejected = await command({
         id: 'invalid',

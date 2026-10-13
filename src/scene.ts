@@ -1,3 +1,4 @@
+import { releaseResources } from './lifecycle.js';
 import { mountScene } from './scene-handle.js';
 import {
   story,
@@ -78,7 +79,7 @@ export interface SceneMount {
   describeParameter(key: string, description: ControlDescription): void;
   attachStory<P, K extends string, S = P>(options: StoryOptions<P, K, S>): Story<P, K, S>;
   attachController<P, K extends string, S>(controller: Story<P, K, S>): SceneHandle;
-  /** Release timed playback and return this same scene to subject-owned static inputs. */
+  /** Return to a static subject while retaining the same controls, history and scene handle. */
   detachController(): void;
   /** Register subject-owned observers, animations and subscriptions for removal. */
   onDispose(cleanup: () => void): () => void;
@@ -116,17 +117,6 @@ const node = <K extends keyof HTMLElementTagNameMap>(
   return element;
 };
 let shellSerial = 0;
-function releaseResources(resources: readonly (() => void)[], message: string) {
-  const errors: unknown[] = [];
-  for (const cleanup of resources) {
-    try {
-      cleanup();
-    } catch (error) {
-      errors.push(error);
-    }
-  }
-  if (errors.length) throw new AggregateError(errors, message);
-}
 function mount(
   root: HTMLElement,
   {
@@ -677,57 +667,52 @@ function mount(
   }
   function detachController() {
     assertLive();
-    if (!player) return;
-    const previous = player;
+    let cleanupError: unknown;
+    try {
+      player?.dispose();
+    } catch (error) {
+      cleanupError = error;
+    }
     player = undefined;
-    releaseResources(
-      [
-        () => previous.dispose(),
-        () => {
-          inputStory = undefined;
-          playback = undefined;
-          transition = undefined;
-          handle.extend({
-            play: undefined,
-            pause: undefined,
-            seek: undefined,
-            ready: undefined,
-            mute: undefined,
-            muted: undefined,
-            setRate: undefined,
-            rate: undefined,
-            duration: undefined,
-            currentTime: undefined,
-            setReduced: undefined,
-            subject: undefined,
-            rendering: undefined,
-            snapshot: () => ({ ...values }),
-            review: () => ({ duration: 0, cues: [], segments: [] }),
-            get condition() {
-              return acceptedCondition;
-            },
-          });
-          mode = 'explore';
-          root.dataset.sceneMode = mode;
-          storyButton.hidden = true;
-          storyButton.setAttribute('aria-pressed', 'false');
-          exploreButton.setAttribute('aria-pressed', 'true');
-          controls.hidden = true;
-          controls.inert = true;
-          caption.hidden = true;
-          caption.textContent = '';
-          fields.hidden = !fields.childElementCount;
-          heading.textContent = title;
-          heading.title = title;
-          stage.removeAttribute('aria-busy');
-          status.textContent = '';
-          refresh();
-          updateChrome(true);
-          onMode(mode);
-        },
-      ],
-      `Scene "${title}" playback detachment failed.`,
-    );
+    inputStory = undefined;
+    playback = undefined;
+    transition = undefined;
+    for (const key of [
+      'play',
+      'seek',
+      'pause',
+      'ready',
+      'mute',
+      'setRate',
+      'muted',
+      'rate',
+      'duration',
+      'currentTime',
+      'subject',
+      'rendering',
+      'setReduced',
+      'review',
+    ])
+      Reflect.deleteProperty(handle, key);
+    handle.extend({
+      snapshot: () => ({ ...values }),
+      get condition() {
+        return acceptedCondition;
+      },
+      review: () => ({ duration: 0, cues: [], segments: [] }),
+    });
+    mode = 'explore';
+    root.dataset.sceneMode = mode;
+    controls.replaceChildren();
+    controls.hidden = true;
+    caption.hidden = true;
+    storyButton.hidden = true;
+    modes.hidden = true;
+    fields.hidden = !parameters.length;
+    heading.textContent = title;
+    heading.title = title;
+    updateChrome(true);
+    if (cleanupError) throw cleanupError;
   }
   function attachController<P, K extends string, S>(controller: Story<P, K, S>) {
     assertLive();
@@ -751,11 +736,9 @@ function mount(
     if (previousPlayback && previousPlayback.rate !== controller.player.state.rate)
       controller.player.rate(previousPlayback.rate);
     if (previousPlayback && !previousPlayback.playing) controller.player.pause();
-    const previousPlayer = player;
-    player = undefined;
     let cleanupError: unknown;
     try {
-      previousPlayer?.dispose();
+      player?.dispose();
     } catch (error) {
       cleanupError = error;
     }

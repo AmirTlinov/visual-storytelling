@@ -7,8 +7,8 @@
 же ID. Запись исходника и подтверждённый показ имеют отдельные ревизии в ответе.
 Предварительный кадр при потоковом вводе ещё не является принятой правкой.
 
-`mountStoryDocument(root, document)` доступен и из JS/TS. Чистые
-`normalizeStoryDocument`, `validateStoryDocument` и `editStoryDocument` владеют схемой; `root.scene.authoring`
+`IllustratedStory.mount(root, {document})` доступен и из JS/TS. Чистые
+`validateStoryDocument` и `editStoryDocument` владеют схемой; `root.scene.authoring`
 даёт принятый `document` и `replace(document)` на существующей сцене. Доступные
 предметные ограничения описаны рядом с приёмом. Новый механизм создавай обычным
 JS/TS-кодом через `story_create` без `document` или CLI `new`: библиотека,

@@ -83,10 +83,10 @@ test(
       [source, portable, evidence].map((directory) => mkdir(directory, { recursive: true })),
     );
     const document = {
-      version: 1,
-      title: 'Площадь',
+      version: 2,
       models: [],
       views: [],
+      title: 'Площадь',
       chapters: [
         {
           id: 'area',

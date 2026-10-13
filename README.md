@@ -23,7 +23,7 @@ npm run preview        # http://127.0.0.1:8793
 
 ## Создание и правка
 
-В Codex `story_create` с `document` открывает живую карточку из заранее собранного приёма. `story.json` хранит версионируемый `StoryDocument`: модели с входами, представления и необязательные главы с действиями. Первый готовый предмет — деление на целые группы с остатком. Короткий ввод раскрывается в полный документ; `chapters: []` даёт статический рисунок без плеера. `story_edit(operations)` меняет документ одной транзакцией. [Формат и пример](skills/visual-explainer/references/live-explanation.md).
+В Codex `story_create` с `document` открывает живую карточку. `StoryDocument` v2 объединяет модели, представления и необязательные главы; компактный `division` задаёт деление на целые группы с остатком. `story.json` сохраняет авторский замысел; `story_edit(operations)` меняет его одной транзакцией. `chapters: []` создаёт статический опыт без плеера. [Формат и пример](skills/visual-explainer/references/live-explanation.md).
 
 Для собственного JS/TS-кода создай проект через CLI или `story_create` без `document`:
 
@@ -77,24 +77,26 @@ npm run plugin:release
 
 ## Возможности и владельцы
 
-| Область                  | Владелец                                                                                             |
-| ------------------------ | ---------------------------------------------------------------------------------------------------- |
-| Публичный API            | `src/index.ts` и экспорты `package.json`                                                             |
-| Сцена, команды, снимок   | `src/scene-handle.ts`, `src/scene-checkpoint.ts`; один `root.scene`                                  |
-| Кадр и управление        | `src/scene-frame.ts`, `src/scene.ts`; рисунок 16:9 и отдельный плеер                                 |
-| Поля и меню выбора       | `src/controls/fields.ts`; главы, условия и скорость используют общий контрол                         |
-| Время и главы            | `src/story/`; `stateAt → derive → render`, принятый ввод и завершённый кадр                          |
-| Живое авторство          | `src/story/authored.ts`, `compiler.ts`, `mount.ts`; общий документ и существующие SceneShell + Story |
-| Целые группы и остаток   | `src/math/division.ts`, `src/recipes/division.ts`; модель и её рисунок                               |
-| SVG, письмо и палитра    | `src/ink/`, `src/styles/`, `src/assets/`; общий почерк для шрифтов и штрихов                         |
-| Раскладка и 3D           | `src/layout/`, `src/viewport/`; подписи, препятствия, камеры и тензоры                               |
-| Превращения и вычисления | `src/morph/`, `src/math/`; `MathMorph`, `InkMorph`, происхождение результата                         |
-| Физика и персонажи       | `src/physics/`, `src/characters/`; Rapier, постановка и живые поверхности                            |
-| Создание и ревизии       | `tools/create-scene.mjs`, `tools/project-files.mjs`; CLI и плагин используют один путь               |
-| Закрепление библиотеки   | `tools/runtime-package.mjs`; установленный выпуск или переносимый архив                              |
-| Сборка, review и выпуск  | `tools/`; установленный runtime, готовность сцены и атомарная публикация                             |
-| Плагин                   | `plugin/runtime/`, `plugin/projects.mjs`, `plugin/jobs.mjs`; сеансы, транзакции и очередь            |
-| Предметный эталон        | `examples/gpt-model/`; модель и композиция принадлежат сцене                                         |
+| Область                  | Владелец                                                                                               |
+| ------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Публичный API            | `src/index.ts` и экспорты `package.json`                                                               |
+| Сцена, команды, снимок   | `src/scene-handle.ts`, `src/scene-checkpoint.ts`; один `root.scene`                                    |
+| Кадр и управление        | `src/scene-frame.ts`, `src/scene.ts`; рисунок 16:9 и отдельный плеер                                   |
+| Поля и меню выбора       | `src/controls/fields.ts`; главы, условия и скорость используют общий контрол                           |
+| Время и главы            | `src/story/`; `stateAt → derive → render`, принятый ввод и завершённый кадр                            |
+| Авторский документ       | `src/story/document-schema.ts`; общая проверка, чистые операции и ссылки моделей                       |
+| Проекция документа       | `src/story/document-timing.ts`, `document-model.ts`, `illustrated.ts`; существующие SceneShell + Story |
+| Предметные модели        | `src/recipes/*-model.ts`; входы, чистые JS-операции и предметные ограничения                           |
+| Целые группы и остаток   | `src/math/division.ts`, `src/recipes/division.ts`; модель и её рисунок                                 |
+| SVG, письмо и палитра    | `src/ink/`, `src/styles/`, `src/assets/`; общий почерк для шрифтов и штрихов                           |
+| Раскладка и 3D           | `src/layout/`, `src/viewport/`; подписи, препятствия, камеры и тензоры                                 |
+| Превращения и вычисления | `src/morph/`, `src/math/`; `MathMorph`, `InkMorph`, происхождение результата                           |
+| Физика и персонажи       | `src/physics/`, `src/characters/`; Rapier, постановка и живые поверхности                              |
+| Создание и ревизии       | `tools/create-scene.mjs`, `tools/project-files.mjs`; CLI и плагин используют один путь                 |
+| Закрепление библиотеки   | `tools/runtime-package.mjs`; установленный выпуск или переносимый архив                                |
+| Сборка, review и выпуск  | `tools/`; установленный runtime, готовность сцены и атомарная публикация                               |
+| Плагин                   | `plugin/runtime/`, `plugin/projects.mjs`, `plugin/jobs.mjs`; сеансы, транзакции и очередь              |
+| Предметный эталон        | `examples/gpt-model/`; модель и композиция принадлежат сцене                                           |
 
 [Архитектура](docs/architecture.md) раскрывает границы; [контракт автора](docs/authoring.md) — управление и восстановление; [PHILOSOPHY.md](PHILOSOPHY.md) — визуальный характер. При изменении пера пересобери шрифты командой `uv run tools/build_pencil_font.py`.
 

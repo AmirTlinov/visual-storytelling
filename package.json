@@ -1,6 +1,6 @@
 {
   "name": "@visual-storytelling/core",
-  "version": "0.31.2",
+  "version": "0.32.1",
   "private": true,
   "license": "0BSD",
   "type": "module",
@@ -73,7 +73,7 @@
   "sideEffects": [
     "**/*.css",
     "./plugin/ui/live-scene.mjs",
-    "./tools/story/**",
+    "./tools/document-scene/**",
     "./examples/**",
     "./tests/fixtures/**"
   ],

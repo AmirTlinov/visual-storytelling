@@ -9,7 +9,7 @@ import { chromium } from 'playwright';
 import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { pluginHost } from './plugin/host.mjs';
 import { ProjectStore } from '../plugin/projects.mjs';
-import { normalizeStoryDocument } from '../dist/story/document.js';
+import { validateStoryDocument } from '../dist/story/document.js';
 
 test(
   'MCP reconnect resumes a reserved creation before its manifest without a second project',
@@ -20,7 +20,7 @@ test(
         const temporary = await mkdtemp(join(tmpdir(), 'story-hot-reservation-'));
         const dataDirectory = join(temporary, 'data');
         const path = join(temporary, 'reserved');
-        const document = { model: { kind: 'division', count: 13, divisor: 3 } };
+        const document = { recipe: 'division', inputs: { count: 13, divisor: 3 } };
         const request = {
           title: 'Reserved creation',
           requestId: randomUUID(),
@@ -30,7 +30,7 @@ test(
         const store = new ProjectStore(dataDirectory);
         const input = {
           title: request.title,
-          document: normalizeStoryDocument(document),
+          document: validateStoryDocument(document),
           ...(explicit ? { path } : {}),
         };
         const remember = store.remember.bind(store);
@@ -158,7 +158,7 @@ test(
       title,
       path: join(temporary, title),
       requestId: randomUUID(),
-      document: { model: { kind: 'division', count, divisor: 3 } },
+      document: { recipe: 'division', inputs: { count, divisor: 3 } },
       ...(sessionId && { sessionId }),
     });
     try {
@@ -359,7 +359,7 @@ test(
           title: 'Prepared original',
           path: join(temporary, 'original'),
           requestId: randomUUID(),
-          document: { model: { kind: 'division', count: 13, divisor: 3 } },
+          document: { recipe: 'division', inputs: { count: 13, divisor: 3 } },
         },
       });
       assert.equal(originalResult.isError, undefined);
@@ -371,7 +371,7 @@ test(
         path: join(temporary, 'destination'),
         requestId: randomUUID(),
         sessionId: originalId,
-        document: { model: { kind: 'division', count: 17, divisor: 3 } },
+        document: { recipe: 'division', inputs: { count: 17, divisor: 3 } },
       };
       const nextResult = await host.client.callTool({ name: 'story_create', arguments: request });
       assert.equal(nextResult.isError, undefined);

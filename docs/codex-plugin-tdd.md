@@ -8,14 +8,14 @@
 | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `src/story/`                                               | Часы, принятое условие, подтверждённый кадр, подготовка, главы, общий документ и речевые метки |
 | `src/scene*.ts`                                            | Общий handle, команды, возможности, checkpoint, предметы и доступ к модели                     |
-| `src/explanation/`, `src/recipes/division.ts`              | Проверка живого документа и его постановка через существующие SceneShell и Story               |
+| `src/story/document-schema.ts`, `src/recipes/*-model.ts`              | Проверка живого документа и его постановка через существующие SceneShell и Story              |
 | `src/controls/`, `src/host/`                               | Поля, история, учебный ввод, подключение к хосту и сохранение                                  |
 | `src/characters/`                                          | Постановка, маршруты, контакты, реакции и Three.js/glTF; адаптер `characterChapter`            |
 | `src/morph/`                                               | Компиляция формул, непосредственные зависимости ячеек и анимация вычислений                    |
 | `examples/catalog.json`                                    | Подбор основы для MCP, CLI, галереи и навыка; задача, действие, возможности, кадр и исходник   |
 | `tools/create-scene.mjs`, `build-pages.mjs`, `deliver.mjs` | Общий авторский путь CLI и плагина                                                             |
 | `plugin/projects.mjs`, `tools/project-files.mjs`           | Рабочие файлы, транзакции, ревизии и отмена                                                    |
-| `tools/runtime-package.mjs`                                | Закреплённый установленный выпуск или переносимый архив runtime                                |
+| `tools/runtime-package.mjs`                                | Закреплённый установленный выпуск или переносимый архив runtime                               |
 | `plugin/session-directory.mjs`                             | Принадлежность сессии, renderer generation, очередь и подтверждение команд                     |
 | `plugin/jobs.mjs`, `workflows.mjs`, `project-watch.mjs`    | Неизменяемые входы подготовки, прогресс, отмена, повтор и объединение правок                   |
 | `tools/environment.mjs`, `tools/environment/voice.mjs`     | Проверенная подготовка браузера, кодировщика, Python и моделей                                 |

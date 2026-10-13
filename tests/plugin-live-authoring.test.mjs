@@ -1,4 +1,4 @@
-import { normalizeStoryDocument } from '../dist/story/document.js';
+import { validateStoryDocument } from '../dist/story/document.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -11,8 +11,10 @@ import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { pluginHost } from './plugin/host.mjs';
 import { finishFixtureJob } from './plugin/authoring-fixture.mjs';
 
-const document = normalizeStoryDocument({
-  model: { id: 'division', kind: 'division', count: 11, divisor: 3 },
+const document = validateStoryDocument({
+  recipe: 'division',
+  id: 'division',
+  inputs: { count: 11, divisor: 3 },
 });
 
 test(
@@ -62,31 +64,13 @@ test(
         },
       );
       assert.ok(!JSON.parse(registry).some((entry) => entry.path === invalidCreatePath));
-      const needsFactories = await host.client.callTool({
-        name: 'story_create',
-        arguments: {
-          title: 'Custom chapter factories',
-          path: invalidCreatePath,
-          requestId: randomUUID(),
-          document: {
-            version: 1,
-            models: [],
-            views: [],
-            chapters: [
-              { id: 'custom', title: 'Custom', beats: [{ id: 'start', say: '', seconds: 2 }] },
-            ],
-          },
-        },
-      });
-      assert.equal(needsFactories.isError, true);
-      assert.match(JSON.stringify(needsFactories), /source scaffold/);
-      assert.ok(!(await readdir(directory)).includes('invalid-project'));
       await page.goto(host.url);
       await page.waitForFunction(() => Boolean(window.pluginTest));
       const app = page.frameLocator('iframe[title="MCP App"]');
       await app.locator('#catalog:not([hidden])').waitFor();
       await page.evaluate((document) => window.pluginTest.partial({ document }), {
-        model: { kind: 'division', count: 11, divisor: 3 },
+        recipe: 'division',
+        inputs: { count: 11, divisor: 3 },
       });
       await app.locator('#scene[data-provisional="true"]').waitFor();
       await app.frameLocator('#scene').locator('svg').first().waitFor();
@@ -109,7 +93,7 @@ test(
         document,
         requestId: randomUUID(),
       };
-      request.document = { model: { kind: 'division', count: 11, divisor: 3 } };
+      request.document = { recipe: 'division', inputs: { count: 11, divisor: 3 } };
       const started = performance.now();
       const created = await call('story_create', request);
       const creationMs = performance.now() - started;
@@ -244,14 +228,13 @@ test(
               op: 'set-chapters',
               chapters: [
                 {
-                  id: 'division',
-                  title: 'Группы',
+                  id: 'experience',
+                  title: 'Layout preflight',
                   beats: [
-                    { id: 'start', say: '', staging: { model: 'division', operation: 'gather' } },
+                    { id: 'start', operation: { model: 'division', name: 'gather' } },
                     {
                       id: 'future-caption',
-                      say: '',
-                      staging: { model: 'division', operation: 'group' },
+                      operation: { model: 'division', name: 'group' },
                       text: 'W'.repeat(90),
                     },
                   ],
@@ -284,38 +267,6 @@ test(
       assert.equal(
         await scene.evaluate(() => window.initialScene.authoring.document.models[0].inputs.count),
         14,
-      );
-      const staticEdit = (
-        await call('story_edit', {
-          projectId: project.id,
-          sourceRevision: current.sourceRevision,
-          requestId: randomUUID(),
-          operations: [{ op: 'set-chapters', chapters: [] }],
-        })
-      ).structuredContent;
-      current = staticEdit.project;
-      assert.equal(staticEdit.shown[0].acknowledgement, 'rendered');
-      assert.equal(
-        await scene.evaluate(() => window.initialScene.authoring.document.chapters.length),
-        0,
-      );
-      assert.equal(
-        await scene.evaluate(() => document.querySelector('main').scene === window.initialScene),
-        true,
-      );
-      const restoredStory = (
-        await call('story_edit', {
-          projectId: project.id,
-          sourceRevision: current.sourceRevision,
-          requestId: randomUUID(),
-          undo: true,
-        })
-      ).structuredContent;
-      current = restoredStory.project;
-      assert.equal(restoredStory.shown[0].acknowledgement, 'rendered');
-      assert.equal(
-        await scene.evaluate(() => window.initialScene.authoring.document.chapters.length),
-        1,
       );
       const pin = JSON.parse(await readFile(join(project.path, 'scene-runtime.json'), 'utf8'));
       const metrics = await app.locator('body').evaluate(() => window.__visualStoryCreationMetrics);

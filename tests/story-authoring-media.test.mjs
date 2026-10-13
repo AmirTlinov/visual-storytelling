@@ -31,15 +31,16 @@ test(
       stdin: {
         resolveDir: process.cwd(),
         contents: `
-      import {mountStoryDocument} from './src/story/mount.ts';
-      import {normalizeStoryDocument} from './src/story/document.ts';
+      import {IllustratedStory} from './src/story/illustrated.ts';
+      import {divisionStory} from './src/recipes/division-story.ts';
+      const mountDocument = async(root, source, options={}) => (await IllustratedStory.mount(root,{...options,document:source})).scene;
       import './dist/style.css';
       const audio = document.querySelector('audio');
       audio.src = ${JSON.stringify(silentWave())};
       audio.volume = 0;
-      const documentValue = normalizeStoryDocument({model:{kind:'division',count:17,divisor:5}});
+      const documentValue = divisionStory({inputs:{count:17,divisor:5}});
       ['Соберём предметы.', 'Разделим на группы.', 'Посмотрим на остаток.'].forEach((text, index) => documentValue.chapters[0].beats[index].say = text);
-      const alignment = {duration:8,cues:{'division.gather':{start:0,end:1.2},'division.group':{start:1.2,end:5.2},'division.remainder':{start:5.2,end:8}},segments:[{id:'division',start:0,end:8,text:'Соберём предметы. Разделим на группы. Посмотрим на остаток.'}]};
+      const alignment = {duration:8,cues:{'experience.gather':{start:0,end:1.2},'experience.group':{start:1.2,end:5.2},'experience.remainder':{start:5.2,end:8}},segments:[{id:'experience',start:0,end:8,text:'Соберём предметы. Разделим на группы. Посмотрим на остаток.'}]};
       audio.dataset.storyTimeline = 'data:application/json,' + encodeURIComponent(JSON.stringify(alignment));
       window.media = [audio]; window.commands = []; window.maxRunning = 0;
       const countRunning = () => {window.maxRunning = Math.max(window.maxRunning, window.media.filter(audio => !audio.paused).length);};
@@ -53,7 +54,7 @@ test(
       Object.defineProperty(HTMLMediaElement.prototype, 'currentTime', {...nativeTime, set(value) {window.commands.push({id:window.media.indexOf(this),op:'seek',value}); if(window.failCandidateSeek && this !== window.acceptedAudio) throw Error('injected candidate seek'); nativeTime.set.call(this,value);}});
       window.acceptedAudio = audio;
       window.ready = new Promise(resolve => {if(audio.readyState>=1)resolve();else audio.addEventListener('loadedmetadata',resolve,{once:true});}).then(async()=>{
-        const scene = await mountStoryDocument(document.querySelector('main'), documentValue, {audio});
+        const scene = await mountDocument(document.querySelector('main'), documentValue, {audio});
         window.lab = {scene, audio, documentValue, alignment};
       });
     `,

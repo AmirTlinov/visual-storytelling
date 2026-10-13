@@ -20,8 +20,8 @@ test(
     const projectPath = join(directory, 'division');
     const data = join(directory, 'data');
     const document = {
-      version: 1,
-      models: [{ id: 'division', kind: 'division', inputs: { count: 23, divisor: 3 } }],
+      version: 2,
+      models: [{ id: 'division', module: 'division', inputs: { count: 23, divisor: 3 } }],
       views: [{ id: 'groups', kind: 'groups', model: 'division' }],
       chapters: [],
     };

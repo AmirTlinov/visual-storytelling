@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { createScene } from '../tools/create-scene.mjs';
-import { assertPreparedStory } from '../tools/runtime-package.mjs';
+import { assertPreparedDocument } from '../tools/runtime-package.mjs';
 import { buildNarration, playbackTimeline, setNarrationMode } from '../tools/narration.mjs';
 import { projectFiles } from '../tools/project-files.mjs';
 import { environmentProfile } from '../tools/environment/resources.mjs';
@@ -18,31 +18,31 @@ import { finishFixtureJob } from './plugin/authoring-fixture.mjs';
 
 const release = fileURLToPath(new URL('../.plugin-release/', import.meta.url));
 const document = {
-  version: 1,
-  models: [{ id: 'division', kind: 'division', inputs: { count: 11, divisor: 3 } }],
+  version: 2,
+  models: [{ id: 'division', module: 'division', inputs: { count: 11, divisor: 3 } }],
   views: [
     { id: 'objects', kind: 'groups', model: 'division' },
     { id: 'identity', kind: 'equation', model: 'division' },
   ],
   chapters: [
     {
-      id: 'division',
+      id: 'experience',
       title: 'Группы и остаток',
       beats: [
         {
           id: 'gather',
           say: 'Соберём предметы.',
-          staging: { model: 'division', operation: 'gather' },
+          operation: { model: 'division', name: 'gather' },
         },
         {
           id: 'group',
           say: 'Разложим их по группам.',
-          staging: { model: 'division', operation: 'group' },
+          operation: { model: 'division', name: 'group' },
         },
         {
           id: 'remainder',
           say: 'Посмотрим на остаток.',
-          staging: { model: 'division', operation: 'remainder' },
+          operation: { model: 'division', name: 'remainder' },
         },
       ],
     },
@@ -64,7 +64,7 @@ test('prepared source permits its generated narration hook and rejects custom HT
     setNarrationMode(setNarrationMode(audible, true), false),
   ]) {
     await writeFile(page, html);
-    assert.ok((await assertPreparedStory(project)).build);
+    assert.ok((await assertPreparedDocument(project)).build);
   }
   for (const html of [
     audible.replace('src="audio.wav"', 'src="other.wav"'),
@@ -78,11 +78,11 @@ test('prepared source permits its generated narration hook and rejects custom HT
     audible.replace('class="ve-standalone"', 'class="custom"'),
   ]) {
     await writeFile(page, html);
-    await assert.rejects(assertPreparedStory(project), { code: 'custom_scene_entry' });
+    await assert.rejects(assertPreparedDocument(project), { code: 'custom_scene_entry' });
   }
   await writeFile(page, audible);
   await writeFile(join(project, 'scene.js'), 'console.log("Custom scene")');
-  await assert.rejects(assertPreparedStory(project), { code: 'custom_scene_entry' });
+  await assert.rejects(assertPreparedDocument(project), { code: 'custom_scene_entry' });
 });
 
 test(
@@ -198,7 +198,7 @@ test(
     assert.ok(
       before.cues.some(
         ({ id, start }) =>
-          id === 'division.group' && start === receipt.cues['division.group'].start,
+          id === 'experience.group' && start === receipt.cues['experience.group'].start,
       ),
     );
     const project = await call('story_inspect', { projectId: opened.project.id });

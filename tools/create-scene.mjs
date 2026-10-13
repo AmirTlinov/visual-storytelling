@@ -28,17 +28,13 @@ export async function createScene(
   destination = resolve(destination);
   const catalog = JSON.parse(await readFile(join(root, 'examples/catalog.json'), 'utf8'));
   if (document !== undefined && example !== undefined)
-    throw new Error('Choose a story document or a copied example.');
+    throw new Error('Choose a StoryDocument or a copied example.');
   if (document !== undefined) {
-    root = await assertPreparedRuntimeRoot(root, { modules: ['dist/story/document.js'] });
-    const { normalizeStoryDocument } = await import(
+    root = await assertPreparedRuntimeRoot(root);
+    const { prepareIllustratedDocument } = await import(
       pathToFileURL(join(root, 'dist/story/document.js')).href
     );
-    document = normalizeStoryDocument(document);
-    if (!document.models.length)
-      throw new Error(
-        'Prepared creation requires a model. Create a source scaffold for custom chapter presentation factories.',
-      );
+    document = prepareIllustratedDocument(document).document;
   }
   if ([audio, deferAudio, silent].filter(Boolean).length > 1)
     throw new Error('Choose one of --audio, --no-audio or --silent');
@@ -56,7 +52,7 @@ export async function createScene(
   await mkdir(destination, { recursive: true });
   const source = example
     ? join(root, 'examples', example)
-    : join(root, document === undefined ? 'tools/scaffold' : 'tools/story');
+    : join(root, document === undefined ? 'tools/scaffold' : 'tools/document-scene');
   const target = destination;
   let runtime;
   const manifest = await readFile(join(target, 'story.vstory')).catch((error) => {

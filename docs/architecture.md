@@ -73,12 +73,18 @@ SceneHandle, команды и экспорт используют ту же г�
 
 ## Авторство и выпуск
 
-`src/story/authored.ts` проверяет общий авторский документ и чистые
-операции `set-inputs`, `set-views`, `set-chapters`. `mountStoryDocument` компилирует его
-в обычные `SceneShell` и `Story`; `root.scene.authoring` заменяет документ на том же
-handle. `math/division.ts` вычисляет группы и остаток, `recipes/division.ts` рисует
-их и формулу из одного состояния. Ввод зрителя, перемотка и часы принадлежат
-существующим владельцам сцены.
+`story/document-schema.ts` владеет единственным `StoryDocument` v2, ссылками и
+чистыми операциями `set-inputs`, `set-views`, `set-chapters`. `document-timing.ts`
+проецирует главы в существующие cue/composition и речевую разметку;
+`document-model.ts` воспроизводит обычные JS-операции от начальных входов.
+`IllustratedStory` подключает документ к `SceneShell` + `Story` либо к существующим
+фабрикам `SceneStory`. Пустые главы создают статическую сцену. Переход между опытом
+и рассказом сохраняет один handle и общие поля; отдельного JSON-executor нет.
+
+`recipes/*-model.ts` владеют входами, чистыми операциями, допустимыми представлениями
+и предметными ограничениями. `*-subject.ts` связывают модель с готовым рисунком.
+`divisionStory` — авторское сокращение, которое один раз выдаёт тот же документ.
+`math/division.ts` вычисляет группы и остаток; рисунок и формула читают одно состояние.
 
 `plugin/projects.mjs` владеет исходником, `sourceRevision`, журналом транзакции,
 повтором и отменой. `plugin/live-project.mjs` создаёт build receipt из снимка
@@ -123,3 +129,31 @@ entry нельзя незаметно заменить готовым приём
 общую inspection для CLI/HTML. Анализ и сравнение читают сохранённые кадры.
 Общие исправления доходят до сцен через сборку; сгенерированный runtime в SVG/HTML
 остаётся результатом этого же пути.
+
+## Зависимости и освобождение
+
+`morph/plan.ts` содержит чистый план перехода, `body-geometry.ts` — общую
+геометрию. Планирование не импортирует монтируемые представления. Конструкция
+разделена по задачам: layout аннотаций, плоский рисунок, объёмная геометрия и их
+композиция. `body-presentation.ts` обновляет только выбранную проекцию; при смене
+вида сначала рисует актуальное время.
+
+`lifecycle.ts` задаёт одну политику завершения: все освобождения выполняются;
+одна ошибка сохраняет исходную идентичность, несколько возвращаются в
+`AggregateError` в порядке возникновения. Регистрации и ресурсы остаются у своих
+владельцев. Принятый MathMorph публикуется до освобождения прежнего рисунка;
+ошибка завершения сохраняет новый результат и сообщает причину.
+
+Kernel — точка композиции. Socket framing и drain принадлежат
+`runtime/socket-server.mjs`, checkpoint storage — `session-storage.mjs`, bounded
+cache — `cache-maintenance.mjs`, voice adapter — `plugin/voice.mjs`; политика
+голоса остаётся в `tools/voice/settings.mjs`. ProjectStore, SessionDirectory и
+JobRunner сохраняют свои состояния. `stageEdit` разрешает операцию один раз;
+`commitPreparedEdit` повторно проверяет source/path/history fences перед journal.
+Journal/recover публикует source, pin, историю, receipt и immutable assets.
+
+Legacy `ExplanationDocument` и `mountExplanation`, неиспользуемые фасады notebook
+и composition, неявный `globalThis.openai` и отдельная сборка prepared explanation
+удалены из текущего API. Старые формы принимает только явный конвертер
+`tools/migrate-story-document.mjs` на копии. Неизменяемые старые pins остаются
+доступны своим проектам до миграции.

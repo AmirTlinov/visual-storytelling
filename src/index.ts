@@ -3,8 +3,6 @@ export * from './story/index.js';
 export * from './controls/index.js';
 export * from './recipes/index.js';
 export * from './export/index.js';
-export { notebook } from './notebook.js';
-export { composition } from './composition.js';
 export {
   placeLabels,
   type LabelBox,
@@ -33,7 +31,8 @@ export type { DivisionState } from './math/division.js';
 export { TensorData, tensorOriginId } from './math/tensor.js';
 export type { TensorDataOptions, TensorOrigin } from './math/tensor.js';
 export type { MathValue } from './math/value.js';
-export { MathMorph, mathPlan } from './morph/math.js';
+export { MathMorph } from './morph/math.js';
+export { mathPlan } from './morph/plan.js';
 export type {
   Value,
   MathState,

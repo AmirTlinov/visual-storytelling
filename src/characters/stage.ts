@@ -1,3 +1,4 @@
+import { releaseResources } from '../lifecycle.js';
 import { characterRenderer, type CharacterRenderer } from './renderer.js';
 import { destination } from './staging/layout.js';
 import { project } from './staging/space.js';
@@ -108,12 +109,19 @@ export async function characterStage(
     replay = undefined;
     observer.disconnect();
     if (inspected.__visualReview === inspect) delete inspected.__visualReview;
-    surfaces?.dispose();
-    releasePresentation?.();
-    prepared?.dispose();
-    for (const actor of Object.values(performers)) actor.dispose();
-    if (!shared) graphics.dispose();
-    element.remove();
+    releaseResources(
+      [
+        () => surfaces?.dispose(),
+        () => releasePresentation?.(),
+        () => prepared?.dispose(),
+        ...Object.values(performers).map((actor) => () => actor.dispose()),
+        () => {
+          if (!shared) graphics.dispose();
+        },
+        () => element.remove(),
+      ],
+      'Character stage disposal failed.',
+    );
   };
   try {
     const point = (at: CharacterStageOptions['cast'][string]['at']): Point => {
@@ -548,7 +556,15 @@ export async function characterStage(
     replay = () => stage.render(...latest);
     return stage;
   } catch (error) {
-    dispose();
+    releaseResources(
+      [
+        () => {
+          throw error;
+        },
+        dispose,
+      ],
+      'Character stage initialization failed.',
+    );
     throw error;
   }
 }
@@ -566,6 +582,15 @@ export const CharacterStage = {
       graphics = await characterRenderer(pack);
     const stages: Awaited<ReturnType<typeof characterStage>>[] = [];
     let active: Awaited<ReturnType<typeof characterStage>> | undefined;
+    let disposed = false;
+    const dispose = () => {
+      if (disposed) return;
+      disposed = true;
+      releaseResources(
+        [...stages.map((stage) => () => stage.dispose()), () => graphics.dispose()],
+        'Character sequence disposal failed.',
+      );
+    };
     try {
       for (const [i, entry] of options.entries()) {
         const stage = await characterStage(parent, entry, scores[i]!, graphics);
@@ -587,14 +612,18 @@ export const CharacterStage = {
           active = stage;
           return stage;
         },
-        dispose() {
-          for (const stage of stages) stage.dispose();
-          graphics.dispose();
-        },
+        dispose,
       };
     } catch (error) {
-      for (const stage of stages) stage.dispose();
-      graphics.dispose();
+      releaseResources(
+        [
+          () => {
+            throw error;
+          },
+          dispose,
+        ],
+        'Character sequence initialization failed.',
+      );
       throw error;
     }
   },

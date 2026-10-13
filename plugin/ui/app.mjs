@@ -6,7 +6,7 @@ import { frameContext } from './frame-context.mjs';
 import { preferencesUI } from './preferences.mjs';
 import { fileEntrypoint } from './file-entrypoint.mjs';
 import preparedLiveHTML from 'visual-story:prepared-live-scene';
-import { normalizeStoryDocument } from '../../src/story/document.ts';
+import { prepareIllustratedDocument } from '../../src/story/document.ts';
 
 const app = new App({ name: 'Visual Storytelling', version: manifest.version });
 const extensions = new OpenAIExtensions(app);
@@ -57,7 +57,7 @@ function previewInput({ arguments: args } = {}) {
   creationMetrics.inputAt ??= performance.now();
   let document;
   try {
-    document = normalizeStoryDocument(args.document);
+    document = prepareIllustratedDocument(args.document).document;
   } catch {
     return;
   } // An incomplete operation leaves the last coherent preview visible.

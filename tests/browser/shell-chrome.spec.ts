@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { openFixture } from '../support/fixture.mjs';
 import { assetURLs } from '../../tools/asset-urls.mjs';
 import { chromiumLaunchOptions } from '../../tools/chromium.mjs';
+import sharp from 'sharp';
 
 // Headless Chromium otherwise suppresses even authored scrollbar paint.
 test.use({
@@ -428,7 +429,33 @@ test('shared menus wrap long labels, relayout after input and draw only necessar
   await speed.press('End');
   await expectLastVisible();
   for (const colorScheme of ['light', 'dark'] as const) {
-    await page.emulateMedia({ colorScheme });
+    // The embedded image follows the scene's explicit theme, even when the OS differs.
+    await page.emulateMedia({ colorScheme: colorScheme === 'light' ? 'dark' : 'light' });
+    await page.evaluate(
+      (theme) => (window as any).chromeContract.root.scene.setTheme(theme),
+      colorScheme,
+    );
+    const ink = await scroll.evaluate((node) => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--ve-ink)';
+      node.append(probe);
+      const rgb = getComputedStyle(probe).color.match(/\d+/g)!.map(Number);
+      probe.remove();
+      return rgb;
+    });
+    const box = (await scroll.boundingBox())!;
+    const pixels = await sharp(
+      await page.screenshot({
+        clip: { x: box.x + box.width - 12, y: box.y, width: 12, height: box.height },
+      }),
+    )
+      .ensureAlpha()
+      .raw()
+      .toBuffer();
+    let inkPixels = 0;
+    for (let i = 0; i < pixels.length; i += 4)
+      if (ink.every((channel, index) => pixels[i + index] === channel)) inkPixels++;
+    expect(inkPixels, `${colorScheme} native thumb uses the scene ink`).toBeGreaterThan(20);
     await page.screenshot({
       path: resolve('artifacts/frame-consistency', `speed-scroll-${colorScheme}.png`),
     });

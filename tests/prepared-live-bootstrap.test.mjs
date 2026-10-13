@@ -22,7 +22,7 @@ test('the classic prepared boot waits for parser-owned narration before mounting
           builder.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({
             contents: path.endsWith('.css')
               ? ''
-              : 'export const mountStoryDocument = (...args) => globalThis.recordMount(...args);',
+              : 'export const IllustratedStory = {mount: (...args) => globalThis.recordMount(...args)};',
             loader: 'js',
           }));
         },
@@ -33,7 +33,7 @@ test('the classic prepared boot waits for parser-owned narration before mounting
     let ready, audio;
     const calls = [];
     const context = {
-      window: { __visualStoryDocument: { version: 1 } },
+      window: { __visualStoryDocument: { version: 2 } },
       document: {
         readyState,
         addEventListener(type, listener, options) {
@@ -59,6 +59,6 @@ test('the classic prepared boot waits for parser-owned narration before mounting
     }
     await context.window.galleryReady;
     assert.equal(calls.length, 1);
-    assert.equal(calls[0][2].audio, audio);
+    assert.equal(calls[0][1].audio, audio);
   }
 });
