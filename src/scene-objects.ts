@@ -69,8 +69,9 @@ export function sceneObjects(root: Element) {
   });
   const nodes = () => {
     if (abort.signal.aborted) throw new Error('Scene objects have been disposed.');
-    return [...root.querySelectorAll<HTMLElement | SVGElement>('[data-object]')].filter((node) =>
-      meanings.has(node),
+    return [...root.querySelectorAll<HTMLElement | SVGElement>('[data-object]')].filter(
+      (node) =>
+        meanings.has(node) && !node.closest('[data-chapter-pending], [data-chapter][hidden]'),
     );
   };
   const objects = () => {
@@ -81,7 +82,10 @@ export function sceneObjects(root: Element) {
       representations.get(id)!.push(node);
     }
     return [...representations].map(([id, elements]) => {
-      const node = elements[0]!;
+      const node =
+        elements.find(
+          (element) => !element.closest('[aria-hidden="true"]') && isRendered(element),
+        ) ?? elements[0]!;
       const meaning = meanings.get(node)!.meaning;
       return {
         id,

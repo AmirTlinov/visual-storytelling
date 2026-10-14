@@ -80,7 +80,11 @@ export function validateDependencyGraph(value: DependencyGraph): DependencyGraph
 }
 
 /** Deterministic breadth-first routing. Rendering never chooses a route or invents a cause. */
-function route(graph: DependencyGraph, inputs: ModelValues): DependencyTrace {
+function route(
+  graph: DependencyGraph,
+  inputs: ModelValues,
+  reserveAttempt = false,
+): DependencyTrace {
   const reserve = String(inputs.reserve);
   const active = graph.edges.filter(
     (edge) =>
@@ -89,46 +93,59 @@ function route(graph: DependencyGraph, inputs: ModelValues): DependencyTrace {
       (edge.reserve === 'both' && reserve !== 'none'),
   );
   const disabled = (id: string) => inputs[`disabled-${id}`] === true;
+  type Visit = {
+    node: string;
+    reserved: boolean;
+    from: string | null;
+    edge: DependencyEdge | null;
+  };
+  const key = (node: string, reserved: boolean) => `${node}:${Number(reserved)}`;
   function search(ignoreFailures: boolean) {
-    const parent = new Map<string, DependencyEdge | null>();
+    const parent = new Map<string, Visit>();
     if (!ignoreFailures && disabled(graph.origin)) return parent;
-    parent.set(graph.origin, null);
-    const queue = [graph.origin];
-    for (let index = 0; index < queue.length; index++)
+    const initial = key(graph.origin, false);
+    parent.set(initial, { node: graph.origin, reserved: false, from: null, edge: null });
+    const queue = [initial];
+    for (let index = 0; index < queue.length; index++) {
+      const previous = parent.get(queue[index]!)!;
       for (const edge of active) {
+        const reserved = reserveAttempt && (previous.reserved || edge.reserve !== undefined);
+        const next = key(edge.to, reserved);
         if (
-          edge.from !== queue[index] ||
-          parent.has(edge.to) ||
+          edge.from !== previous.node ||
+          parent.has(next) ||
           (!ignoreFailures && disabled(edge.to))
         )
           continue;
-        parent.set(edge.to, edge);
-        queue.push(edge.to);
+        parent.set(next, { node: edge.to, reserved, from: queue[index]!, edge });
+        queue.push(next);
       }
+    }
     return parent;
   }
-  function path(parent: Map<string, DependencyEdge | null>) {
-    if (!parent.has(graph.destination)) return { nodes: [] as string[], edges: [] as string[] };
-    const nodes = [graph.destination],
+  function path(parent: Map<string, Visit>) {
+    const destination = key(graph.destination, reserveAttempt);
+    if (!parent.has(destination)) return { nodes: [] as string[], edges: [] as string[] };
+    const nodes: string[] = [],
       edges: string[] = [];
-    let current = graph.destination;
-    while (current !== graph.origin) {
-      const edge = parent.get(current)!;
-      if (!edge) throw new Error('dependency route: incomplete predecessor chain.');
-      edges.unshift(edge.id);
-      nodes.unshift(edge.from);
-      current = edge.from;
+    let current: string | null = destination;
+    while (current !== null) {
+      const visit: Visit = parent.get(current)!;
+      nodes.unshift(visit.node);
+      if (visit.edge) edges.unshift(visit.edge.id);
+      current = visit.from;
     }
     return { nodes, edges };
   }
   const reachable = search(false),
     healthy = path(reachable);
+  const reached = new Set([...reachable.values()].map((visit) => visit.node));
   const failedBoundary = graph.nodes
     .filter(
       (node) =>
         disabled(node.id) &&
         (node.id === graph.origin ||
-          active.some((edge) => edge.to === node.id && reachable.has(edge.from))),
+          active.some((edge) => edge.to === node.id && reached.has(edge.from))),
     )
     .map((node) => node.id);
   const attempt = healthy.nodes.length ? healthy : path(search(true));
@@ -195,26 +212,42 @@ export function dependencyRouteModel(source: DependencyGraph): StoryModelModule 
       ),
     };
   };
-  const compute = (input: ModelValues, progress: number): ModelState => ({
+  const compute = (
+    input: ModelValues,
+    progress: number,
+    present = true,
+    reserveAttempt = false,
+  ): ModelState => ({
     ...input,
     progress,
+    present,
+    reserveAttempt,
     graph,
-    trace: route(graph, input),
+    trace: route(graph, input, reserveAttempt),
   });
   const conditions = (state: ModelState) =>
     validateInputs(Object.fromEntries([...allowed].map((key) => [key, state[key]])));
   const change = (state: ModelState, patch: ModelValues) =>
-    compute(validateInputs({ ...conditions(state), ...patch }), 0);
+    compute(validateInputs({ ...conditions(state), ...patch }), 0, state.present !== false);
   return {
     validateInputs,
     state: (inputs) => compute(validateInputs(inputs), 0),
     staticState: (inputs) => compute(validateInputs(inputs), 1),
     experimentState: (inputs, authored) =>
-      compute(validateInputs(inputs), Number(authored.progress)),
+      compute(
+        validateInputs(inputs),
+        Number(authored.progress),
+        authored.present !== false,
+        authored.reserveAttempt === true,
+      ),
     operations: {
       trace: (state, progress) => ({ ...state, progress }),
+      'try-reserve': (state, progress) =>
+        compute(conditions(state), progress, state.present !== false, true),
       finish: (state) => ({ ...state, progress: 1 }),
       reset: (state) => compute(conditions(state), 0),
+      'remove-order': (state) => ({ ...state, present: false }),
+      'restore-order': (state) => ({ ...state, present: true }),
       ...Object.fromEntries(
         graph.nodes.flatMap((node) => [
           [

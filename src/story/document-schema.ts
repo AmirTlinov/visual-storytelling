@@ -26,6 +26,8 @@ export interface AuthoredChapter {
   id: string;
   title: string;
   beats: readonly AuthoredBeat[];
+  /** Select declared representations while keeping their model and semantic identities. */
+  views?: readonly string[];
 }
 export interface StoryDocument {
   version: 2;
@@ -142,8 +144,36 @@ function validate(
   ).map((raw, index) => {
     const path = `chapters[${index}]`,
       chapter = record(raw, path);
-    keys(chapter, ['id', 'title', 'beats'], path);
+    keys(chapter, ['id', 'title', 'beats', 'views'], path);
     const chapterId = identity(chapter.id, `${path}.id`);
+    const selected =
+      chapter.views === undefined
+        ? undefined
+        : array(chapter.views, `${path}.views`).map((value) => id(value, `${path}.views`));
+    if (
+      selected &&
+      (!selected.length ||
+        new Set(selected).size !== selected.length ||
+        (references && selected.some((id) => !views.some((view) => view.id === id))))
+    )
+      throw new Error(`${path}.views: select unique declared views.`);
+    if (selected && references)
+      for (const model of models) {
+        const active = views.filter(
+          (view) => view.model === model.id && selected.includes(view.id),
+        );
+        if (active.length) modules[model.module]!.validateViews(active);
+      }
+    const chapterTargets = selected
+      ? new Set(
+          models.flatMap((model) => {
+            const active = views.filter(
+              (view) => view.model === model.id && selected.includes(view.id),
+            );
+            return active.length ? modules[model.module]!.focusTargets(model, active) : [];
+          }),
+        )
+      : targets;
     const beats = array(chapter.beats, `${path}.beats`).map((raw, index): AuthoredBeat => {
       const path = `${chapterId}.beats[${index}]`,
         beat = record(raw, path);
@@ -198,7 +228,7 @@ function validate(
       }
       if (beat.focus !== undefined)
         for (const target of array(beat.focus, `${path}.focus`))
-          if (typeof target !== 'string' || (references && !targets.has(target)))
+          if (typeof target !== 'string' || (references && !chapterTargets.has(target)))
             throw new Error(`${path}.focus: unknown target ${String(target)}.`);
       for (const field of ['actors', 'props', 'shot'])
         if (beat[field] !== undefined) record(beat[field], `${path}.${field}`);
@@ -206,7 +236,12 @@ function validate(
       return structuredClone(beat) as unknown as AuthoredBeat;
     });
     if (!beats.length) throw new Error(`${path}.beats: provide at least one beat.`);
-    return { id: chapterId, title: text(chapter.title, `${path}.title`), beats };
+    return {
+      id: chapterId,
+      title: text(chapter.title, `${path}.title`),
+      beats,
+      ...(selected && { views: selected }),
+    };
   });
   if (references)
     for (const chapter of chapters)

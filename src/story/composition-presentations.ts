@@ -1,9 +1,11 @@
-import type { ChapterPresentation, SceneChapter } from './composition.js';
+import type { ChapterPresentation, SceneChapter, ChapterTransition } from './composition.js';
 import { sourceAt, sourceOf } from '../scene-source.js';
+import { releaseResources } from '../lifecycle.js';
 
 export interface MountedChapter {
   element: HTMLDivElement;
   drawing: ChapterPresentation;
+  effect?: { element: HTMLDivElement; drawing: ReturnType<ChapterTransition['mount']> };
 }
 
 /** A story keeps its live chapter and one recent neighbour; resource preparation is serial. */
@@ -18,15 +20,25 @@ export function chapterPresentations(chapters: readonly SceneChapter[], parent: 
     const item = mounted.get(index);
     if (!item) return;
     mounted.delete(index);
-    try {
-      item.drawing.dispose();
-    } finally {
-      sourceAt(item.element, undefined);
-      item.element.remove();
-    }
+    releaseResources(
+      [
+        () => item.effect?.drawing.dispose(),
+        () => item.drawing.dispose(),
+        () => {
+          sourceAt(item.element, undefined);
+          item.element.remove();
+        },
+      ],
+      'Chapter presentation release failed.',
+    );
   }
   function retain(indices: readonly number[]) {
-    for (const index of mounted.keys()) if (!indices.includes(index)) remove(index);
+    releaseResources(
+      [...mounted.keys()]
+        .filter((index) => !indices.includes(index))
+        .map((index) => () => remove(index)),
+      'Chapter resource release failed.',
+    );
   }
   async function load(index: number, signal: AbortSignal) {
     signal.throwIfAborted();
@@ -57,6 +69,32 @@ export function chapterPresentations(chapters: readonly SceneChapter[], parent: 
     }
   }
   return {
+    prepareTransition(
+      index: number,
+      transition: ChapterTransition,
+      images: Parameters<ChapterTransition['mount']>[1],
+      state: Parameters<ReturnType<ChapterTransition['mount']>['render']>[0],
+    ) {
+      const item = mounted.get(index)!;
+      if (!item.effect) {
+        const element = document.createElement('div');
+        Object.assign(element.style, { position: 'absolute', inset: '0', pointerEvents: 'none' });
+        item.element.append(element);
+        try {
+          item.effect = { element, drawing: transition.mount(element, images) };
+        } catch (error) {
+          element.remove();
+          throw error;
+        }
+      }
+      item.effect.drawing.render(state);
+    },
+    renderTransition(
+      index: number,
+      state: Parameters<ReturnType<ChapterTransition['mount']>['render']>[0],
+    ) {
+      mounted.get(index)?.effect?.drawing.render(state);
+    },
     get(index: number) {
       return mounted.get(index);
     },
@@ -75,6 +113,16 @@ export function chapterPresentations(chapters: readonly SceneChapter[], parent: 
             for (const index of indices) await load(index, signal);
             await capture?.();
             signal.throwIfAborted();
+          } catch (cause) {
+            releaseResources(
+              [
+                () => {
+                  throw cause;
+                },
+                () => retain(current === undefined ? [] : [current]),
+              ],
+              'Chapter preparation failed.',
+            );
           } finally {
             if (disposed || signal.aborted) retain(current === undefined ? [] : [current]);
           }
@@ -93,7 +141,12 @@ export function chapterPresentations(chapters: readonly SceneChapter[], parent: 
         entry.element.hidden = id !== index;
         entry.element.inert = id !== index;
       }
-      retain(recent === undefined ? [index] : [index, recent]);
+      try {
+        retain(recent === undefined ? [index] : [index, recent]);
+      } catch (error) {
+        // Resource disposal follows a successful publication and cannot undo its frame.
+        console.warn('Previous chapter cleanup failed.', error);
+      }
       return item;
     },
     dispose() {

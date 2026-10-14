@@ -3,6 +3,7 @@ import {
   type SceneChapter,
   type SceneStoryOptions,
   type ChapterFrame,
+  type ChapterPresentation,
 } from './composition.js';
 import type { Script } from './cues.js';
 import {
@@ -19,8 +20,24 @@ import { documentModelsAt, documentTimeline } from './document-model.js';
 import { cueSheet } from './cues.js';
 import type { StorySubjects } from './subject.js';
 import { storyModelOwners } from '../recipes/story-models.js';
+import type { ModelValues } from './model.js';
 
-export interface IllustratedStoryOptions extends Omit<SceneStoryOptions, 'title' | 'chapters'> {
+export interface IllustratedChapterFrame extends ChapterFrame {
+  subject: ReturnType<typeof documentModelsAt>;
+}
+export interface IllustratedChapter extends Omit<SceneChapter, 'mount' | 'valuesAt'> {
+  mount(
+    parent: HTMLElement,
+    signal: AbortSignal,
+  ):
+    | (Omit<ChapterPresentation, 'render'> & { render(frame: IllustratedChapterFrame): void })
+    | Promise<
+        Omit<ChapterPresentation, 'render'> & { render(frame: IllustratedChapterFrame): void }
+      >;
+}
+
+export interface IllustratedStoryOptions
+  extends Omit<SceneStoryOptions, 'title' | 'chapters' | 'subjectAt' | 'sharedControls'> {
   document: StoryDocument | unknown;
   modules?: StoryModules;
   subjects?: StorySubjects;
@@ -28,7 +45,7 @@ export interface IllustratedStoryOptions extends Omit<SceneStoryOptions, 'title'
   audio?: HTMLAudioElement | null;
   /** Each authored chapter selects a presentation owned by its subject. */
   chapters?: Readonly<
-    Record<string, (chapter: ReturnType<typeof documentChapter>) => SceneChapter>
+    Record<string, (chapter: ReturnType<typeof documentChapter>) => IllustratedChapter>
   >;
 }
 
@@ -67,14 +84,31 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
     const authored = documentChapter(document, id, aligned, { modules });
     const chapter = factory(authored);
     if (chapter.id !== id) throw new Error(`Chapter presentation changed its authored ID: ${id}`);
-    if (!document.models.length) return chapter;
-    if (chapter.valuesAt)
+    if (chapter.seconds !== authored.seconds)
+      throw new Error(`Chapter ${id}: presentation changed its authored duration.`);
+    if (document.models.length && 'valuesAt' in chapter && typeof chapter.valuesAt === 'function')
       throw new Error(`Chapter ${id}: document operations already own model inputs.`);
     const start = timeline.cues[id]!.start;
     return {
-      ...chapter,
+      id: chapter.id,
+      title: chapter.title,
+      text: chapter.text,
+      seconds: chapter.seconds,
+      get presentation() {
+        return chapter.presentation;
+      },
+      get controls() {
+        return chapter.controls;
+      },
+      script: authored.script,
+      mount(parent: HTMLElement, signal: AbortSignal) {
+        return chapter.mount(parent, signal) as ChapterPresentation | Promise<ChapterPresentation>;
+      },
       valuesAt(frame: ChapterFrame) {
-        const state = documentModelsAt(document, sheet.at(start + frame.time), {}, modules).models;
+        if (!document.models.length) return (chapter as SceneChapter).valuesAt?.(frame) ?? {};
+        const state = documentModelsAt(document, sheet.at(start + frame.time), {}, modules, {
+          chapter: id,
+        }).models;
         return Object.fromEntries(
           document.models.flatMap((model) =>
             Object.entries(
@@ -98,6 +132,33 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
     title: document.title ?? 'Рассказ',
     chapters,
     script: aligned,
+    sharedControls: document.models.flatMap((model) =>
+      authoredInputKeys(document, model.id, model.inputs),
+    ),
+    subjectAt(frame) {
+      const start = timeline.cues[frame.chapter]!.start;
+      const values: Record<string, ModelValues> = Object.fromEntries(
+        document.models.map((model) => [
+          model.id,
+          Object.fromEntries(
+            Object.entries(model.inputs).map(([key, value]) => [
+              key,
+              frame.values[authoredInputKeys(document, model.id, { [key]: value })[0]!] ?? value,
+            ]),
+          ),
+        ]),
+      );
+      return documentModelsAt(
+        document,
+        sheet.at(start + frame.time),
+        frame.mode === 'story' ? {} : values,
+        modules,
+        {
+          mode: frame.mode,
+          chapter: frame.chapter,
+        },
+      );
+    },
   });
 }
 export const IllustratedStory = { mount };

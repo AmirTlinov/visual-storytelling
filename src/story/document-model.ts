@@ -50,8 +50,10 @@ export function documentModelsAt(
   frame?: Frame,
   inputs: Readonly<Record<string, ModelValues>> = {},
   modules: StoryModules = {},
-  options: { mode?: 'story' | 'explore' } = {},
+  options: { mode?: 'story' | 'explore'; chapter?: string } = {},
 ) {
+  if (options.chapter && !document.chapters.some((chapter) => chapter.id === options.chapter))
+    throw new Error(`Unknown chapter: ${options.chapter}`);
   const owners = storyModelOwners(modules);
   const models: Record<string, ModelState> = Object.fromEntries(
     document.models.map((model) => {
@@ -66,12 +68,16 @@ export function documentModelsAt(
     }),
   );
   let beat: AuthoredBeat | undefined;
+  let activeChapter = options.chapter
+    ? document.chapters.find((chapter) => chapter.id === options.chapter)
+    : undefined;
   if (frame)
-    for (const chapter of document.chapters)
+    for (const chapter of document.chapters) {
       for (const action of chapter.beats) {
         const id = `${chapter.id}.${action.id}`;
         if (frame.time < frame.cue(id).start) continue;
         beat = action;
+        activeChapter = chapter;
         if (action.operation) {
           const { model: modelId, name } = action.operation;
           const model = document.models.find((model) => model.id === modelId)!;
@@ -82,8 +88,12 @@ export function documentModelsAt(
           );
           modelInputValues(model, models[modelId]!, owners[model.module]!);
         }
-        for (const view of document.views) frame.target(id, view.id);
+        for (const view of document.views)
+          if (!chapter.views || chapter.views.includes(view.id)) frame.target(id, view.id);
+        for (const target of action.focus ?? []) frame.target(id, target);
       }
+      if (chapter.id === options.chapter) break;
+    }
   if (options.mode === 'explore')
     for (const model of document.models) {
       const owner = owners[model.module]!;
@@ -94,5 +104,10 @@ export function documentModelsAt(
           ? owner.staticState(values, model)
           : owner.state(values, model);
     }
-  return { models, beat };
+  if (options.chapter)
+    activeChapter = document.chapters.find((chapter) => chapter.id === options.chapter);
+  const views = activeChapter?.views
+    ? document.views.filter((view) => activeChapter!.views!.includes(view.id))
+    : document.views;
+  return { models, beat, views, chapter: activeChapter?.id, resources: document.resources ?? [] };
 }

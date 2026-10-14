@@ -11,6 +11,7 @@ export function chapterPreviews(
   get: (index: number) => MountedChapter | undefined,
   restore: () => void,
   captureAspect?: number,
+  subjectAt?: (frame: ChapterFrame) => unknown,
 ) {
   const images: {
     start?: HTMLCanvasElement;
@@ -70,6 +71,7 @@ export function chapterPreviews(
             { element, drawing } = get(id)!;
           const end = id !== index;
           const frame: ChapterFrame = {
+            chapter: chapter.id,
             time: end ? chapter.seconds : 0,
             progress: Number(end),
             reduced: false,
@@ -78,6 +80,7 @@ export function chapterPreviews(
             beat: activeCue(chapter.script, end ? chapter.seconds : 0),
           };
           frame.values = { ...defaults, ...chapter.valuesAt?.(frame) };
+          frame.subject = subjectAt?.(frame);
           const hidden = element.hidden;
           element.hidden = false;
           try {

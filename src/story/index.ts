@@ -46,7 +46,11 @@ export type { InkDrawing, InkViewport } from './ink-chapter.js';
 export * from './document.js';
 export type { StorySubjectRecipe, StorySubjectDrawing, StorySubjects } from './subject.js';
 export { IllustratedStory } from './illustrated.js';
-export type { IllustratedStoryOptions } from './illustrated.js';
+export type {
+  IllustratedStoryOptions,
+  IllustratedChapter,
+  IllustratedChapterFrame,
+} from './illustrated.js';
 export { documentRuntime } from './runtime.js';
 
 export * from './comparison.js';

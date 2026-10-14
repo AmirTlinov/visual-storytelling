@@ -398,6 +398,8 @@ export async function characterStage(
         renderer.frame(camera, set.height, width, height);
         surfaces?.begin(
           frame ?? {
+            chapter:
+              score.script.segments?.findLast((segment) => segment.start <= time)?.id ?? 'stage',
             time,
             progress: time / score.script.duration,
             reduced,

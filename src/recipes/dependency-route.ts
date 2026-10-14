@@ -8,6 +8,8 @@ import { tracePath } from './trace-path.js';
 import type { Surface } from '../ink/surface.js';
 import type { Point } from '../ink/pen.js';
 import type { DependencyGraph, DependencyTrace } from './dependency-route-model.js';
+import { releaseResources } from '../lifecycle.js';
+import { routeLabelPlacement } from './route-label-placement.js';
 
 export interface DependencyRouteDiagramOptions {
   modelId: string;
@@ -17,6 +19,7 @@ export interface DependencyRouteDiagramOptions {
   progress: number;
   networkId: string;
   statusId?: string;
+  present?: boolean;
   text?: string;
   /** Layout coordinates are fractions of the drawing, independent of route computation. */
   positions: Readonly<Record<string, Point>>;
@@ -55,7 +58,12 @@ export function dependencyRouteDiagram(view: Surface) {
       };
       const displayed = width * scale;
       const font = Math.max(16, Math.min(22, displayed / 30)) / scale;
-      const radius = 12 / scale;
+      const radius = Math.min(12, displayed / 48) / scale;
+      const packetSize: Point = [
+        Math.max(32 / scale, font * trace.orderId.length * 0.75),
+        Math.max(24 / scale, font + 8 / scale),
+      ];
+      const routes = graph.edges.map((edge) => [point(edge.from), point(edge.to)] as const);
       const shortText = (
         parent: SVGElement,
         text: string,
@@ -84,15 +92,16 @@ export function dependencyRouteDiagram(view: Surface) {
         );
         port.at(x, y);
         port.describe({ label: item.label, interactive: false });
-        shortText(
+        const label = shortText(
           port.content,
           displayed < 640 ? (item.shortLabel ?? item.label) : item.label,
           width * 0.22,
           0,
-          radius + font * 1.3,
+          0,
         );
+        label.element.dataset.routeLabel = item.id;
         cleanups.push(border.dispose, port.dispose);
-        return { item, port, border };
+        return { item, port, border, label, x, y };
       });
       // Inactive alternatives stay visible as context, while the selected route retains one pigment.
       const edges = graph.edges.map((edge) => {
@@ -117,26 +126,73 @@ export function dependencyRouteDiagram(view: Surface) {
       const packet = node(candidateView, `${modelId}:order:${trace.orderId}`, trace.orderId, {
         parent: layer.content,
         shape: 'rect',
-        width: Math.max(44 / scale, font * trace.orderId.length * 0.75),
-        height: 32 / scale,
+        width: packetSize[0],
+        height: packetSize[1],
         padding: 4 / scale,
         size: font,
         minSize: font,
         pigment: 'blue',
       });
-      packet.describe({ label: `Заказ ${trace.orderId}`, interactive: false });
+      const meaning = {
+        id: trace.orderId,
+        present: options.present !== false,
+        outcome: 'travelling',
+        trace,
+      };
+      packet.describe({
+        label: `Заказ ${trace.orderId}`,
+        interactive: false,
+        value: () => ({ id: meaning.id, present: meaning.present, outcome: meaning.outcome }),
+        provenance: () => ({
+          kind: 'model',
+          route: meaning.trace.route,
+          plannedEvents: meaning.trace.events,
+        }),
+      });
       cleanups.push(packet.dispose);
       if (packet.width > width * 0.22)
         throw new Error('The order ID needs a shorter readable inscription.');
+      for (const { item, label, x, y } of nodes) {
+        let position: Point;
+        try {
+          position = routeLabelPlacement(
+            label.bounds,
+            [x, y],
+            routes,
+            [width, height - 6 / scale - font * 2.25],
+            radius,
+            [packet.width, packet.height],
+            6 / scale,
+          );
+        } catch (cause) {
+          throw new Error(`Route label ${item.label} needs room at ${Math.round(displayed)} px.`, {
+            cause,
+          });
+        }
+        label.render(
+          displayed < 640 ? (item.shortLabel ?? item.label) : item.label,
+          width * 0.22,
+          ...position,
+        );
+      }
       const status = object(layer.content, options.statusId ?? `${modelId}:status`);
       const message =
         options.text ??
-        (trace.status === 'delivered'
-          ? `Заказ ${trace.orderId} доставлен.`
-          : trace.status === 'blocked'
-            ? `${graph.nodes.find((n) => n.id === trace.blocked)!.label} не пропускает заказ.`
-            : 'Маршрут до цели не найден.');
-      shortText(status.content, message, width * 0.9, width / 2, height * 0.9);
+        (options.present === false
+          ? `Заказ ${trace.orderId} удалён.`
+          : trace.status === 'delivered'
+            ? `Заказ ${trace.orderId} доставлен.`
+            : trace.status === 'blocked'
+              ? `${graph.nodes.find((n) => n.id === trace.blocked)!.label} не пропускает заказ.`
+              : 'Маршрут до цели не найден.');
+      status.describe({ label: message, interactive: false });
+      const caption = shortText(status.content, message, width * 0.9, width / 2, height * 0.9);
+      caption.render(
+        message,
+        width * 0.9,
+        width / 2,
+        Math.min(height * 0.9, height - 6 / scale - caption.bounds.y - caption.bounds.height),
+      );
       cleanups.push(status.dispose);
       return {
         canvas,
@@ -144,14 +200,23 @@ export function dependencyRouteDiagram(view: Surface) {
         nodes,
         edges,
         packet,
+        meaning,
         status,
         point,
         dispose() {
-          cleanups.reverse().forEach((fn) => fn());
+          releaseResources(cleanups.toReversed(), 'Dependency drawing release failed.');
         },
       };
     } catch (error) {
-      cleanups.reverse().forEach((fn) => fn());
+      releaseResources(
+        [
+          () => {
+            throw error;
+          },
+          ...cleanups.toReversed(),
+        ],
+        'Dependency drawing preparation failed.',
+      );
       throw error;
     }
   }
@@ -175,6 +240,7 @@ export function dependencyRouteDiagram(view: Surface) {
       options.text,
       options.networkId,
       options.statusId,
+      options.present,
     ]);
     const next = nextKey === key && current ? current : prepare(graph, trace, options);
     const journey = tracePath(
@@ -185,6 +251,13 @@ export function dependencyRouteDiagram(view: Surface) {
     next.packet.pigment(options.progress === 1 && trace.status === 'blocked' ? 'red' : 'blue');
     next.packet.element.dataset.orderId = trace.orderId;
     next.packet.element.dataset.status = options.progress === 1 ? trace.status : 'travelling';
+    next.meaning.trace = trace;
+    next.meaning.outcome = options.progress === 1 ? trace.status : 'travelling';
+    next.packet.show(options.present !== false);
+    if (options.present === false) {
+      next.packet.element.dataset.status = 'removed';
+      next.meaning.outcome = 'removed';
+    }
     for (const { item, port, border } of next.nodes) {
       port.pigment(trace.failedNodes.includes(item.id) ? 'red' : 'ink');
       const location = next.point(item.id);
@@ -201,12 +274,19 @@ export function dependencyRouteDiagram(view: Surface) {
         index >= 0 ? '1' : trace.activeEdges.includes(edge.id) ? '.65' : '.2';
       arrow.element.dataset.route = String(index >= 0);
     }
-    next.status.show(options.statusId !== undefined && options.progress === 1);
+    next.status.show(
+      Boolean(options.text) || (options.statusId !== undefined && options.progress === 1),
+    );
     if (next !== current) {
-      current?.dispose();
+      const previous = current;
       current = next;
       key = nextKey;
       next.canvas.removeAttribute('visibility');
+      try {
+        previous?.dispose();
+      } catch (error) {
+        console.warn('Previous dependency drawing cleanup failed.', error);
+      }
     }
   }
   return {

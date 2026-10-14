@@ -7,6 +7,7 @@ export function chapterNavigation(
   chapters: readonly Chapter[],
   seek: (time: number) => void,
   enabled = !heading.hidden,
+  label?: string,
 ) {
   const named = chapters.filter((chapter) => chapter.title).sort((a, b) => a.start - b.start);
   if (!named.length || !enabled) return { update(_id: string | undefined) {}, dispose() {} };
@@ -19,6 +20,7 @@ export function chapterNavigation(
       type: 'select',
       value: 0,
       options: named.map((chapter, i) => ({ value: i, label: chapter.title! })),
+      ...(label && { format: () => label }),
     },
     (index) => seek(named[Number(index)]!.start),
     { signal: abort.signal },

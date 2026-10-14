@@ -70,6 +70,7 @@ export function authoredChapter(
   return {
     id: chapter.id,
     title: chapter.title,
+    ...(chapter.views && { views: chapter.views }),
     text: chapter.beats.map(spoken).filter(Boolean).join(' '),
     beats: chapter.beats.map(({ say: _say, timing: _timing, ...beat }) => beat),
   };

@@ -77,6 +77,11 @@ npm run plugin:release
 
 Проекты по умолчанию хранятся в `~/Library/Application Support/Visual Storytelling/projects` на Mac и `${XDG_DATA_HOME:-$HOME/.local/share}/visual-storytelling/projects` на Linux. Дополнительные зависимости собственного кода устанавливаются через npm registry; видео и озвучка подготавливают свои инструменты по необходимости. Озвучка необязательна. По умолчанию используется локальный Higgs TTS 3 BF16 с принятым мужским образцом; другую локальную модель или API агент подключает через [адаптер проекта](skills/visual-explainer/references/voice-adapter.md). `story_voice` сохраняет выбор в `voice.json`; системных голосов и автоматической замены провайдера нет. [Формат сценария и голос](skills/visual-explainer/references/narration.md).
 
+Непрерывный [рассказ заказа417](tools/document-modules/continuous-order/story.json)
+сохраняет один model/subject ID через отказ, резерв и независимый обход.
+`chapter.views` выбирает representations; фабрики IllustratedStory читают
+готовый `frame.subject`, а не собственные копии модели.
+
 ## Возможности и владельцы
 
 | Область                  | Владелец                                                                                                                                                            |

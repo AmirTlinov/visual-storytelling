@@ -150,3 +150,36 @@ test('the shared path aid follows computed geometry without routing semantics', 
   assert.throws(() => tracePath([], 0));
   assert.throws(() => tracePath(points, NaN));
 });
+
+test('explicit reserve attempt preserves a common prefix and requires an enabled reserve edge', () => {
+  const graph = {
+    origin: 'shop',
+    destination: 'bank',
+    nodes: [
+      { id: 'shop', label: 'Shop' },
+      { id: 'hub', label: 'Hub' },
+      { id: 'a', label: 'A' },
+      { id: 'b', label: 'B' },
+      { id: 'bank', label: 'Bank' },
+    ],
+    edges: [
+      { id: 'prefix', from: 'shop', to: 'hub' },
+      { id: 'primary', from: 'hub', to: 'a' },
+      { id: 'main-bank', from: 'a', to: 'bank' },
+      { id: 'reserve', from: 'hub', to: 'b', reserve: 'independent' },
+      { id: 'reserve-bank', from: 'b', to: 'bank' },
+    ],
+  };
+  const owner = dependencyRouteModel(graph);
+  const state = owner.operations['try-reserve'](
+    owner.state(owner.validateInputs({ orderId: '417', reserve: 'independent' })),
+    1,
+  );
+  assert.deepEqual(state.trace.route, ['shop', 'hub', 'b', 'bank']);
+  assert.equal(state.trace.status, 'delivered');
+  const absent = owner.operations['try-reserve'](
+    owner.state(owner.validateInputs({ orderId: '417', reserve: 'none' })),
+    1,
+  );
+  assert.equal(absent.trace.status, 'unreachable');
+});

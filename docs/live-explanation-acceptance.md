@@ -554,3 +554,64 @@ GPT input→готовый кадр→два rAF: p95 47,5мс,30 настоящ
 `installed-probability-0.24.1/`, `installed-dist-0.24.1/`,
 `artifacts/probability-0.24.1-*.log`. Приёмка контейнера Codex и скорость
 авторства5/20 входят в открытые финальные gates. Следующий срез —GUI-566.
+
+## Срез 08: непрерывный предмет и связная история
+
+Принят установленный plugin 0.25.3 / core 0.37.3:
+`0.25.3-f482fe27b849058d`, build
+`a75770403210c9fc4bc678918498b60ddcce71d5023bc0f9fa18a1c3f7fc6986`.
+Проект `tools/document-modules/continuous-order` ведёт заказ 417 через исходный
+путь, отказ А, попытку общего резерва, независимый обход и собственный прогноз
+зрителя. Это условный граф, а не подтверждённая инфраструктура компании;
+длина анимации не изображает задержку сети. Рассказ занимает 26,5 с.
+
+`chapter.views` выбирает представления из одного документа. Модель, ID и полный
+trace переживают освобождение геометрии; явное remove/restore сохраняет tombstone.
+Factory получает `ChapterFrame.subject` без повторного replay. Исходящий boundary
+frame вычисляется в своей главе. Общие условия explore сохраняются между главами;
+явный возврат в Story восстанавливает авторский путь. Semantic focus переносится
+по ID, численный camera checkpoint остаётся у своего представления.
+
+Первый render главы и её snapshot effect подготавливаются под clip/inert до
+публикации. Ошибка сохраняет прежний согласованный кадр и checkpoint; отменённая
+геометрия освобождается. Произвольный активный renderer по-прежнему отвечает за
+атомарность собственной DOM-правки. Hidden/pending сосед не подменяет значение
+сквозного объекта. Прототипные методы и getters chapter presentation сохраняются.
+
+Build/check и 72/72 адресных Node PASS. Независимое ревью нашло и помогло устранить
+двойной replay, потерянные методы factory, раннюю публикацию перехода, ошибочный
+выбор резерва, устаревший provenance и повторный camera fit после restore.
+Приёмка пикселей отклонила 0.25.0 из-за обрезанной двухстрочной реплики и 0.25.1
+из-за пересечения заказа с подписью. Размещение использует фактические ink bounds
+и fitted размеры заказа; пересекающийся вариант отклоняется при preparation.
+Подписи не перекрывают реплику и друг друга; шрифт на 375 px сохраняет 16 CSS px.
+
+0.25.2 отклонён после зависшего SDK reload. Ранний expiry timer мог проснуться до
+wall-clock deadline и оставить suspend/attach незавершёнными. Контрпример FAIL
+до исправления,24 session tests PASS после него. Таймер перевзводится до прежнего
+срока; отдельный `session-attachment` использует тот же session owner и generation
+fencing. В установленном 0.25.3 reload во время MP4 успешно сменил generation 1→2
+и восстановил time 26,5 и финальный кадр. Неудачная приёмка сохранена.
+
+SDK-host:375/dark/reduced и 960/light, настоящий switch отказа банка, undo,
+selection; тот же 417 останавливается у банка через независимый резерв. Обычный
+manifest установленного dist и portable HTML сохраняют reverse/forward replay,
+checkpoint и восстановление авторских условий. Непрерывный 1× просмотр завершён:
+89 наблюдений, пиксели каждого содержательного действия, финал совпадает с seek.
+HTML/PNG/MP4 выпущены:960×540,12 fps,318 кадров,26,5 с; полное декодирование и
+просмотр промежуточных/финальных кадров PASS. Озвучка относится к срезу 11.
+
+| Заменённый путь | Владелец | Потребители | Доказательство |
+| --- | --- | --- | --- |
+| Chapter-local subject и урезанные scalar snapshots | documentModelsAt / IllustratedChapterFrame | prepared и factory stories | non-idempotent replay, views, tombstone, remount |
+| Смешанный resolver и camera state в composition | composition-state / composition-view | SceneStory, IllustratedStory, checkpoint | focus carry и numeric restore |
+| Первый render после публикации; общий transition effect | composition-presentations | chapter drawings и snapshot transitions | delayed/cancel/error, bounded disposal |
+| Inspect первого DOM-представителя общего ID | scene-objects | semantic selection и model detail | hidden/reverse representative |
+| Дублирование реплики в заголовке | chapterNavigation / selectControl | подготовленные рассказы | тихие Главы, shared menu,375/960 |
+| Подпись на пути заказа и nominal envelope | route-label-placement / node | dependency-route diagrams |14 промежуточных моментов, collisions rejection |
+| Потерянный expiry после early wake | SessionDirectory / session-attachment | MCP commands и renderer takeover | воспроизведённый FAIL→PASS, installed reload |
+
+Доказательства: `artifacts/architecture/2026-10-13/slice08-acceptance.json`,
+`installed-continuous-0.25.3/`, `installed-dist-0.25.3/`,
+`artifacts/slice08-*-0.25.3.log`. Контейнер Codex и authoring 5/20 остаются
+открытыми финальными gates. Следующий срез —GUI-567.

@@ -18,6 +18,42 @@ const authoring = (command) => ({
   sourceRevision: command.sourceRevision,
 });
 
+test('an early expiry timer cannot strand renderer takeover before the wall-clock deadline', async (t) => {
+  let now = 10000;
+  t.mock.method(Date, 'now', () => now);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { directory, session, view } = await fixture(t, { timeout: 100, rendererTimeout: 100 });
+  let settled = false,
+    result;
+  const takeover = directory.attach(session.id, randomUUID()).then(
+    (value) => {
+      settled = true;
+      result = value;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  assert.equal(session.pending.size, 1);
+  now = 10099;
+  t.mock.timers.tick(100);
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  assert.equal(settled, false, 'a command must remain valid until its deadline');
+  now = 10101;
+  t.mock.timers.tick(1);
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  assert.equal(
+    settled,
+    true,
+    'expiry must re-arm when a timer wakes before Date.now reaches the deadline',
+  );
+  await takeover;
+  assert.equal(result.generation, view.generation + 1);
+  assert.equal(result.restoration.reason, 'lease-expired');
+  assert.deepEqual(result.checkpoint, report().checkpoint);
+});
+
 test('semantic delivery advances the shown source only after the same renderer confirms its revision', async (t) => {
   const { directory, session, view } = await fixture(t);
   const next = {
@@ -576,7 +612,10 @@ test('request IDs survive many later commands and detach; reordered JSON is the 
   await acknowledge(directory, view, 'first-action');
   const result = await pending;
   assert.equal(result.authoringSourceRevision, 'working-B');
-  await assert.rejects(directory.request(session.id, { ...first, authoringSourceRevision: 'working-C' }), /different command/);
+  await assert.rejects(
+    directory.request(session.id, { ...first, authoringSourceRevision: 'working-C' }),
+    /different command/,
+  );
   await assert.rejects(
     directory.request(session.id, { ...first, commands: [{ type: 'pause' }] }),
     /different command/,

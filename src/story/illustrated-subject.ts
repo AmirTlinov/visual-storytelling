@@ -26,7 +26,7 @@ export async function mountIllustratedSubject(
   let latest: SubjectMoment | undefined;
   const shell = SceneShell.mount(root, {
     title: initial.title ?? recipe.title,
-    heading: initial.title !== undefined,
+    heading: options.heading ?? (initial.title !== undefined ? 'navigation' : false),
     parameters: recipe.parameters(model),
     resources: initial.resources,
     frame: options.frame,
@@ -117,7 +117,7 @@ export async function mountIllustratedSubject(
     const { next, values, previous, script } = prepare(source, provisional, authoredInputs);
     const nextModel = next.models[0]!;
     const render = (moment: SubjectMoment) => {
-      drawing.render(nextModel, next.views, moment.models[nextModel.id]!, moment.beat);
+      drawing.render(nextModel, moment.views, moment.models[nextModel.id]!, moment.beat);
       latest = moment;
     };
     if (!script) {
@@ -202,7 +202,7 @@ export async function mountIllustratedSubject(
     if (controller || !latest) return;
     drawing.render(
       document.models[0]!,
-      document.views,
+      latest.views,
       latest.models[document.models[0]!.id]!,
       latest.beat,
     );

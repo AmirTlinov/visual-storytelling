@@ -195,3 +195,26 @@ Legacy `ExplanationDocument` и `mountExplanation`, неиспользуемые
 `story/resources.ts` проверяет происхождение и ограничения данных. Модели ссылаются
 на ресурсы документа по ID. `scene/conditions.ts` владеет единственным раскрытием,
 позиционированием и клавиатурным закрытием условий в обеих областях кадра.
+
+Непрерывный предмет сохраняется в документной модели, а не в chapter-local
+рисунках. `composition-state` разрешает позицию, общие input keys и чистую
+subject projection до подготовки; `composition-presentations` владеет только
+ограниченным набором геометрии. Drawing и snapshot effect одной главы имеют общий lifecycle. Первый render неактивной главы идёт в preparation
+под clip/inert, затем публикуется готовый вид. Его ошибка сохраняет accepted
+frame/checkpoint. Активный произвольный renderer отвечает за атомарность своего
+DOM. `scene-objects` исключает pending/hidden chapters и читает значение принятого
+representation при общем ID. `IllustratedStory` передаёт полный документный trace
+через `ChapterFrame.subject`; общие model inputs переживают переключение глав
+в explore, mode-story восстанавливает авторский replay. `chapter.views` выбирает
+объявленные representations, сохраняя model identity.
+
+`composition-view` переносит semantic focus IDs между representations. Camera state
+сохраняется и восстанавливается только в собственной главе; numeric restore
+не вызывает новый focus-fit. Явный возврат в Story очищает ручной focus intent.
+
+Подготовленные рассказы используют `heading:"navigation"`: тихая кнопка «Главы»
+открывает существующее меню, короткая реплика остаётся у действующего предмета.
+
+`session-attachment` сериализует renderer takeover на состоянии SessionDirectory;
+нового store нет. Expiry перевзводит ранний timer до прежнего wall-clock deadline,
+чтобы незавершённая команда не блокировала смену renderer.

@@ -222,7 +222,7 @@ test('boundary capture, fast theme changes and disposal preserve the current pre
       });
       window.galleryReady = SceneStory.mount(root, { title:'Composition', chapters:[chapter('a'),chapter('b'),...Array.from({length:85},(_,i)=>chapter('unused'+i))], frame:{width:80,height:60},
         transition: { duration:.4, introduction:{id:'opening',title:'Opening',text:'Opening',seconds:.25}, mount(parent, previews) {
-          return { render(state) { window.boundaries = [previews[state.chapter-1]?.end,previews[state.chapter]?.start].map((image,i)=>image ? Array.from(image.getContext('2d').getImageData(i?5:45,5,1,1).data) : null); window.transitionState=state; }, dispose() { window.removed.push('transition'); } };
+          return { render(state) { window.boundaries = [previews[state.chapter-1]?.end,previews[state.chapter]?.start].map((image,i)=>image ? Array.from(image.getContext('2d').getImageData(i?5:45,5,1,1).data) : null); window.transitionState=state; }, dispose() { window.removed.push('transition:'+parent.closest('[data-chapter]').dataset.chapter); } };
         } },
       }).then(value => window.lab=value);
     `,
@@ -296,7 +296,7 @@ test('boundary capture, fast theme changes and disposal preserve the current pre
     assert.deepEqual(result.mounted, ['a', 'b']);
     assert(result.captured.every((id) => id === 'a' || id === 'b'));
     assert.equal(result.capturesAfterResize - result.capturesBeforeResize, 2);
-    assert.deepEqual(result.removed, ['a', 'b', 'transition']);
+    assert.deepEqual(result.removed, ['transition:a', 'a', 'transition:b', 'b']);
     assert.equal(result.children, 0);
   } finally {
     await capture?.close();

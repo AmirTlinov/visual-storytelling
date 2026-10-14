@@ -260,8 +260,9 @@ export function selectControl(
     setValue(value: ControlValue) {
       selected = (p.options ?? []).findIndex((option) => option.value === value);
       const label =
+        p.format?.(value) ??
         (p.options ?? [])[selected]?.label ??
-        (rows.length ? (p.format?.(value) ?? String(value)) : 'Нет вариантов');
+        (rows.length ? String(value) : 'Нет вариантов');
       const changed = trigger.textContent !== label;
       if (changed) trigger.textContent = label;
       trigger.setAttribute('aria-label', p.label);

@@ -40,8 +40,8 @@ export interface SceneOptions {
   presentation?: SceneFramePresentation;
   /** 1280×720 drawing by default. Playback and status stay outside the composition. */
   frame?: SceneFrameOptions;
-  /** Hide the shell heading when the subject supplies its own title. */
-  heading?: boolean;
+  /** false hides it; navigation keeps a quiet chapter button while the subject tells the story. */
+  heading?: boolean | 'navigation';
   /** Hide shared chapter/mode/history navigation when the subject supplies its own. Camera and history ownership are unchanged. */
   navigation?: boolean;
   /** Optional visible word-aligned captions; omitted keeps the accessible chapter text. */
@@ -134,12 +134,13 @@ function mount(
     onMode = () => {},
     exploration = 'model',
     frame = { width: 1280, height: 720, scope: 'scene' },
-    heading: showHeading = true,
+    heading: headingStyle = true,
     navigation: showNavigation = true,
     captions,
     history: retainHistory = true,
   }: SceneOptions,
 ): SceneMount {
+  let showHeading = headingStyle !== false;
   if (parameters.some((p, i) => !p.key || parameters.findIndex((q) => q.key === p.key) !== i))
     throw new Error('Scene parameters need unique, nonempty keys');
   parameters = parameters.map((p) => ({ ...p }));
@@ -708,6 +709,7 @@ function mount(
       controller.sheet.script.segments ?? [],
       (time) => controller.seek(time, { mode: 'story' }),
       showHeading && showNavigation,
+      headingStyle === 'navigation' ? 'Главы' : undefined,
     );
     chapters.update(controller.presented?.chapter);
     let resetAfterSeek = false;
@@ -749,6 +751,7 @@ function mount(
           controller.sheet.script.segments ?? [],
           (time) => controller.seek(time, { mode: 'story' }),
           showHeading && showNavigation,
+          headingStyle === 'navigation' ? 'Главы' : undefined,
         );
         chapters.update(controller.presented?.chapter);
       },

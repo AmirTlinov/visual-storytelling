@@ -11,12 +11,12 @@ import type { StorySubjectRecipe } from '../story/subject.js';
 import type { ModelState } from '../story/model.js';
 
 export const instructionalDependencyPositions: Readonly<Record<string, Point>> = {
-  shop: [0.12, 0.35],
-  gateway: [0.37, 0.16],
-  backup: [0.37, 0.52],
-  provider: [0.64, 0.16],
-  independent: [0.64, 0.52],
-  bank: [0.88, 0.35],
+  shop: [0.12, 0.34],
+  gateway: [0.37, 0.28],
+  backup: [0.37, 0.4],
+  provider: [0.64, 0.28],
+  independent: [0.64, 0.4],
+  bank: [0.88, 0.34],
 };
 let serial = 0;
 export function dependencyRouteSubject(
@@ -78,6 +78,7 @@ export function dependencyRouteSubject(
             ...options(views),
             modelId: model.id,
             progress: 1,
+            present: state.present !== false,
           });
           for (const beat of beats) {
             if (beat.operation) state = modelOwner.operations[beat.operation.name]!(state, 1);
@@ -95,11 +96,23 @@ export function dependencyRouteSubject(
             ...options(views),
             modelId: model.id,
             progress: Number(state.progress),
+            present: state.present !== false,
             text: beat?.text,
           });
         },
         snapshot(state) {
-          return { ...trace(state), progress: state.progress };
+          return {
+            ...trace(state),
+            progress: state.progress,
+            present: state.present !== false,
+            outcome:
+              state.present === false
+                ? 'removed'
+                : Number(state.progress) === 1
+                  ? trace(state).status
+                  : 'travelling',
+            attempt: state.reserveAttempt === true ? 'reserve' : 'automatic',
+          };
         },
         dispose() {
           diagram.dispose();
