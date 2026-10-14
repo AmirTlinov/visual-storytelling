@@ -7,7 +7,11 @@ import { vector } from './vector.js';
 import { tracePath } from './trace-path.js';
 import type { Surface } from '../ink/surface.js';
 import type { Point } from '../ink/pen.js';
-import type { DependencyGraph, DependencyTrace } from './dependency-route-model.js';
+import {
+  dependencyObservation,
+  type DependencyGraph,
+  type DependencyTrace,
+} from './dependency-route-model.js';
 import { releaseResources } from '../lifecycle.js';
 import { routeLabelPlacement } from './route-label-placement.js';
 
@@ -248,16 +252,13 @@ export function dependencyRouteDiagram(view: Surface) {
       options.progress,
     );
     next.packet.at(...journey.point);
-    next.packet.pigment(options.progress === 1 && trace.status === 'blocked' ? 'red' : 'blue');
+    const observed = dependencyObservation(trace, options.progress, options.present !== false);
+    next.packet.pigment(observed.outcome === 'blocked' ? 'red' : 'blue');
     next.packet.element.dataset.orderId = trace.orderId;
-    next.packet.element.dataset.status = options.progress === 1 ? trace.status : 'travelling';
+    next.packet.element.dataset.status = observed.outcome;
     next.meaning.trace = trace;
-    next.meaning.outcome = options.progress === 1 ? trace.status : 'travelling';
+    next.meaning.outcome = observed.outcome;
     next.packet.show(options.present !== false);
-    if (options.present === false) {
-      next.packet.element.dataset.status = 'removed';
-      next.meaning.outcome = 'removed';
-    }
     for (const { item, port, border } of next.nodes) {
       port.pigment(trace.failedNodes.includes(item.id) ? 'red' : 'ink');
       const location = next.point(item.id);

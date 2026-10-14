@@ -3,6 +3,7 @@ import type { Point } from '../ink/pen.js';
 import { dependencyRouteDiagram } from './dependency-route.js';
 import {
   dependencyRouteModel,
+  dependencyObservation,
   instructionalDependencyGraph,
   type DependencyGraph,
   type DependencyTrace,
@@ -105,12 +106,11 @@ export function dependencyRouteSubject(
             ...trace(state),
             progress: state.progress,
             present: state.present !== false,
-            outcome:
-              state.present === false
-                ? 'removed'
-                : Number(state.progress) === 1
-                  ? trace(state).status
-                  : 'travelling',
+            outcome: dependencyObservation(
+              trace(state),
+              Number(state.progress),
+              state.present !== false,
+            ).outcome,
             attempt: state.reserveAttempt === true ? 'reserve' : 'automatic',
           };
         },

@@ -616,28 +616,57 @@ HTML/PNG/MP4 выпущены:960×540,12 fps,318 кадров,26,5 с; полн
 `artifacts/slice08-*-0.25.3.log`. Контейнер Codex и authoring 5/20 остаются
 открытыми финальными gates. Следующий срез —GUI-567.
 
-## Срез 09: проверенная основа камеры, работа продолжается
+## Срез 09: пространственный рассказ и сечение куба
 
-Исходный пакет после 8a741db; установленный выпуск остаётся 0.25.3 / core0.37.3.
-GUI-567 не принят: пространственный рассказ страна→регион→город→устройство→сеть,
-второй пример куб/сечение и установленный выпуск ещё нужны.
+Установлен plugin0.26.2 / core0.38.2, release `8324b00247071ad6`,
+build `e0f025e1e8a8b67d8d722f0575d733e3db8cd0633257f136e785da7983f98e83`.
+Приёмка — настоящий установленный MCP сервер и SDK браузерная карточка.
+Пиксели нативного контейнера Codex не заявлены; этот чат ещё держит API0.26.0.
 
-`shotPlan3D` фиксирует authored predecessor и envelope; clock разрешает существующий
-`cueSheet`. Движение и наблюдение читаются из одного cue. Порядок seek и ручной
-ракурс не меняют постановку. Numerical floor зависит от extent и ULP координат;
-проверены смена единицы масштаба и перенос далеко от начала координат.
-Degenerate point в начале координат требует explicit `referenceScale`.
+`spatial-order` ведёт один заказ через страну, поднятый регион, поселение,
+условное устройство, вычисленную сеть и общий вид. Natural Earth contours
+проверены по digest; координата Боголюбова имеет свой источник. Местная геометрия
+80×40×8м учитывает широту; footprint лежит внутри региона. Подъём — выделение,
+не высота рельефа. План маршрута отделён от наблюдаемого результата через
+`dependencyObservation`; packet следует реальному `InkConnection3D.route`.
 
-`camera-view` извлечён из Viewport3D. Fit, shot и reset используют общий solver;
-удалены отдельная формула fit, world floor0.1 и home-путь. Ручной checkpoint
-сохраняет clipping/orbit ranges. Narrow resize работает и без предварительного fit.
+`cube-section` вычисляет точное пересечение. На обеих гранях z=±1 площадь4;
+вне куба пересечения нет. Detail envelope следует сдвинутой плоскости.
 
-Первый GPU paint остаётся под preparation clip до `drawing.ready(signal)`.
-Waiter отклоняет paint error, потерю context до первого/после прежнего успешного
-кадра, отмену с falsey reason и disposal. Ошибка кандидата сохраняет предыдущую главу.
-Это source/browser proof, не installed acceptance среза.
+Камера принадлежит прежнему Viewport3D/SceneView. `shotPlan3D` фиксирует authored
+from/to и reference envelope; `move:{fraction,maxSeconds}` согласуется с реальной
+репликой и оставляет наблюдение. Pan связан с zoom, чтобы выбранная деталь оставалась
+в кадре. Point floor зависит от extent и ULP; ручной checkpoint хранит depth/orbit.
 
-Build/check PASS;38/38 camera, shot-plan, spatial-view, viewport-labels,
-scene-completion и composition-lifecycle. Лог: `artifacts/slice09-camera-regression.log`.
-Независимый аудит выявил и помог устранить paint hang, clipping checkpoint,
-неразрешённый Cue.timing и numerical ошибки.
+Публикация главы ждёт первый GPU paint, переносит semantic focus и ждёт его кадр.
+Скрытый iframe может остановить RAF: cancellable microtask flush использует тот же
+renderer. Отмена с falsey reason, error/context loss и disposal сохраняют прежний
+кадр. `.26.0` воспроизвёл зависшую source revision; `.26.2` подтвердил её правку,
+показ и undo с исходными байтами, time22 и выбранным заказом. Отдельный кадр MP4
+помог убрать колонку исчезающих подписей при возврате к карте.
+
+Caption owner извлечён из SceneShell; явный overlay входит в PNG/MP4. Оба примера
+тихие, `voice.enabled:false`; TTS не вызывается. Подготовленная по выбору дорожка
+подключается к существующему transport. Проверены короткие aligned cues обоих
+примеров без синтеза. Каталог, API, source, skill, guides и previews обновлены.
+
+Build/check PASS,63/63 focused checks. Установленная карточка390/1200,light/dark,
+reduced, reverse seek, selection/provenance, ручной ввод/undo:PASS. Max2 живых
+GPU views; сеть27 geometries/3 programs, куб5/4. После eviction model/ID сохраняются.
+Полный portable playback:77+42 наблюдения, clipped0, unreadable0, errors0.
+HTML/PNG и полные MP4 из установленного pin:470/252 кадров,960×540,12fps;
+ffmpeg decode PASS, audio streams0. Source-edit/reopen/undo тест:24.431s PASS;
+это тяжёлая source подготовка, не замер авторства5/20. Независимое ревью завершено.
+
+| Удалённый путь | Владелец | Потребители | Доказательство |
+| --- | --- | --- | --- |
+| Отдельные fit/home и world floor0.1 | camera-view / shots | Viewport3D, обе пространственные истории | unit/translation/point/manual depth tests |
+| Last-frame authored predecessor | shotPlan3D | карта/устройство/сеть, куб/сечение | обратные seek и одинаковый snapshot |
+| Разрозненный caption DOM/placement | scene/captions | SceneShell, overlay и экспорты | читаемый физический текст в HTML/PNG/MP4 |
+| Дублирование статуса planned/arrived | dependencyObservation | 2D dependency-route и 3D facility | progress<1 остаётся travelling |
+| Готовность первого GPU кадра только через RAF | Viewport3D.whenRendered | композиция и source candidate iframe | suspended RAF, cancel0, installed edit/undo |
+
+Доказательства: `artifacts/architecture/2026-10-14/installed-{spatial,cube}-0.26.2/`,
+`installed-source-reload-clean-0.26.2/`, `artifacts/slice09-0.26.2-*.log`.
+Исходный пользовательский интернет-рассказ и его прежний pin не менялись.
+Следующий срез —GUI-568. Gate5/20 и финальный аудит15 остаются открытыми.

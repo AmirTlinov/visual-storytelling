@@ -28,6 +28,12 @@ test(
         catalog.structuredContent.examples.map(({ id }) => id),
         ['gpt-model'],
       );
+      const complete = await host.client.callTool({ name: 'story_help', arguments: {} });
+      assert.deepEqual(Object.keys(complete.structuredContent.examples), [
+        'gpt-model',
+        'spatial-order',
+        'cube-section',
+      ]);
       assert.deepEqual(await sessions(), before);
       for (const example of catalog.structuredContent.examples) {
         assert(

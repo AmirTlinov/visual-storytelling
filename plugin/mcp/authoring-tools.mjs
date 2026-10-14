@@ -195,7 +195,7 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_help',
     {
       description:
-        'Read public APIs, existing projects and the complete gpt-model exemplar. For grouping and remainder start with story_create(document), then story_edit(operations) in the same live card. Read StoryDocument, validateStoryDocument or IllustratedStory for its compact contract. For new source-code behavior create a scaffold, edit, review and open it. queries accepts up to 12 public API names; projectId reads the exact pinned runtime before dependency installation.',
+        'Read public APIs, existing projects and complete catalog examples. For grouping and remainder start with story_create(document), then story_edit(operations) in the same live card. Read StoryDocument, validateStoryDocument or IllustratedStory for its compact contract. For new source-code behavior create a scaffold, edit, review and open it. queries accepts up to 12 public API names; projectId reads the exact pinned runtime before dependency installation.',
       inputSchema: {
         query: z.string().max(300).optional(),
         queries: z.array(z.string().min(1).max(300)).min(1).max(12).optional(),

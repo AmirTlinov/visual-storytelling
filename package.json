@@ -1,6 +1,6 @@
 {
   "name": "@visual-storytelling/core",
-  "version": "0.37.3",
+  "version": "0.38.2",
   "private": true,
   "license": "0BSD",
   "type": "module",
@@ -21,7 +21,9 @@
     "README.md",
     "THIRD_PARTY.md",
     "!**/__pycache__/**",
-    "!**/*.pyc"
+    "!**/*.pyc",
+    "examples/spatial-order/**/*.{html,js,json,css,png,md}",
+    "examples/cube-section/**/*.{html,js,json,css,png,md}"
   ],
   "exports": {
     ".": {

@@ -355,7 +355,7 @@ function mount(
         renderListeners.delete(callback);
       };
     },
-    /** Resolve after the queued GPU paint; preparation keeps this canvas concealed until then. */
+    /** Flush pending GPU work through this renderer, including concealed preparation without RAF. */
     whenRendered(signal?: AbortSignal): Promise<number> {
       if (disposed) return Promise.reject(new Error('3D viewport has been disposed'));
       if (signal?.aborted) return Promise.reject(signal.reason);
@@ -376,6 +376,14 @@ function mount(
         cleanups.add(released);
         signal?.addEventListener('abort', aborted, { once: true });
         invalidate();
+        // Concealed iframes can suspend RAF. Explicit preparation still needs a
+        // GPU frame; one cancellable microtask flushes the same pending owner.
+        queueMicrotask(() => {
+          if (disposed || !pending || !paintWaiters.size) return;
+          cancelAnimationFrame(pending);
+          pending = 0;
+          render();
+        });
       });
     },
     onDispose(cleanup: () => void) {

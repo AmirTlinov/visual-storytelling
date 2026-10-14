@@ -4,6 +4,9 @@ import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { assetURLs } from '../tools/asset-urls.mjs';
+import { readFile } from 'node:fs/promises';
+import { documentNarration, documentScript } from '../dist/story/document.js';
+import { cubeModel } from '../examples/cube-section/model.js';
 
 async function fixture(contents, work) {
   const bundle = await build({
@@ -164,6 +167,33 @@ test('GPU readiness settles failure, falsey cancellation, recovery and resource 
   );
 });
 
+test('concealed preparation flushes the same GPU owner when its iframe RAF is suspended', async () => {
+  await fixture(
+    `
+    import {Viewport3D,ThreeKit as T} from './dist/viewport/index.js';
+    let scheduled=0,cancelled=0;
+    window.requestAnimationFrame=()=>++scheduled;
+    window.cancelAnimationFrame=()=>cancelled++;
+    const view=Viewport3D.mount(document.querySelector('main'));
+    view.setObject(new T.Mesh(new T.BoxGeometry(),new T.MeshBasicMaterial()));
+    window.lab={view,stats:()=>({scheduled,cancelled,calls:view.renderer.info.render.calls})};
+  `,
+    async (page) => {
+      const result = await page.evaluate(async () => {
+        const sequence = await Promise.race([
+          lab.view.whenRendered(),
+          new Promise((resolve) => setTimeout(() => resolve('stalled'), 100)),
+        ]);
+        return { sequence, ...lab.stats() };
+      });
+      assert.equal(typeof result.sequence, 'number');
+      assert(result.calls > 0);
+      assert(result.cancelled > 0);
+      await page.evaluate(() => lab.view.dispose());
+    },
+  );
+});
+
 test('a lost GPU context rejects readiness before reporting a new frame', async () => {
   await fixture(
     `
@@ -240,3 +270,118 @@ test('a failed first GPU paint leaves the accepted chapter visible and its check
     },
   );
 });
+
+test('semantic focus reaches a cold 3D chapter after its first GPU paint', async () => {
+  await fixture(
+    `
+    import {SceneStory} from './dist/story/index.js';
+    import {Viewport3D, ThreeKit as T} from './dist/viewport/index.js';
+    const chapters=['a','b','c'].map((id,index)=>({id,title:id,text:id,seconds:1,mount(parent){
+      const view=Viewport3D.mount(parent), root=new T.Group();
+      const item=new T.Mesh(new T.BoxGeometry(),new T.MeshBasicMaterial());
+      item.position.x=10+index*20;root.add(item);
+      view.setObject(root,{fitView:false});view.describe(item,'same',{label:'Same subject'});
+      const target=new T.Box3(new T.Vector3(-100,-100,-100),new T.Vector3(100,100,100));
+      return {view,ready:view.whenRendered,render(){view.shot({target})},dispose:view.dispose};
+    }}));
+    window.galleryReady=SceneStory.mount(document.querySelector('main'),{title:'Cold semantic focus',chapters}).then(lab=>window.lab=lab);
+  `,
+    async (page) => {
+      await page.evaluate(() => galleryReady);
+      await page.evaluate(() =>
+        lab.scene.control([
+          { type: 'mode', value: 'explore' },
+          { type: 'select', ids: ['same'] },
+          { type: 'focus', ids: ['same'] },
+        ]),
+      );
+      for (const [time, x] of [
+        [1.2, 30],
+        [2.2, 50],
+        [0.2, 10],
+      ]) {
+        const saved = await page.evaluate(async (time) => {
+          await lab.scene.control([{ type: 'seek', time }]);
+          return lab.scene.capture();
+        }, time);
+        assert.deepEqual(saved.selected, ['same']);
+        assert.deepEqual(saved.view.focus, ['same']);
+        assert.equal(saved.view.state.following, false);
+        assert(Math.abs(saved.view.state.target[0] - x) < 1, JSON.stringify(saved.view));
+        assert(
+          Math.hypot(...saved.view.state.position.map((v, i) => v - saved.view.state.target[i])) <
+            10,
+        );
+      }
+      await page.evaluate(() => lab.scene.dispose());
+    },
+  );
+});
+
+for (const example of ['spatial-order', 'cube-section'])
+  test(`${example}: short aligned speech remains compatible with every camera chapter`, async () => {
+    const document = JSON.parse(await readFile(`examples/${example}/story.json`, 'utf8'));
+    const modules = example === 'cube-section' ? { 'cube-section': cubeModel } : undefined;
+    const narration = documentNarration(document, { modules });
+    const cues = {},
+      segments = [];
+    let cursor = narration.intro;
+    for (const segment of narration.segments) {
+      const start = cursor;
+      for (const cue of segment.cues) {
+        cues[cue.id] = { start: cursor, end: cursor + 0.5 };
+        cursor += 0.5;
+      }
+      segments.push({ id: segment.id, start, end: cursor, text: segment.text });
+      cursor += segment.pause_after;
+    }
+    const script = documentScript(
+      document,
+      { duration: cursor + narration.outro, cues, segments },
+      { modules },
+    );
+    const cube = example === 'cube-section';
+    await fixture(
+      `
+    import {IllustratedStory} from './dist/story/index.js';
+    import {${cube ? 'cubeChapter' : 'spatialChapter'} as chapter} from './examples/${example}/presentation.js';
+    ${cube ? "import {cubeModel} from './examples/cube-section/model.js';" : ''}
+    const document=${JSON.stringify(document)}, script=${JSON.stringify(script)};
+    const parameters=${
+      cube
+        ? JSON.stringify([{ key: 'offset', label: 'z', value: 0, min: -1.2, max: 1.2, step: 0.1 }])
+        : JSON.stringify([
+            {
+              key: 'reserve',
+              label: 'reserve',
+              type: 'select',
+              value: 'none',
+              options: [
+                { value: 'none', label: 'none' },
+                { value: 'shared', label: 'shared' },
+                { value: 'independent', label: 'independent' },
+              ],
+            },
+            { key: 'disabled-provider', label: 'provider', type: 'toggle', value: false },
+            { key: 'disabled-bank', label: 'bank', type: 'toggle', value: false },
+          ])
+    };
+    window.galleryReady=IllustratedStory.mount(window.document.querySelector('main'),{
+      document,script,parameters,${cube ? "modules:{'cube-section':cubeModel}," : ''}
+      chapters:Object.fromEntries(document.chapters.map(c=>[c.id,a=>chapter(a,c.id,document.models[0])]))
+    }).then(lab=>window.lab=lab);
+  `,
+      async (page) => {
+        await page.evaluate(() => galleryReady);
+        const times = Object.values(script.cues).flatMap((c) => [
+          c.start,
+          (c.start + c.end) / 2,
+          c.end,
+        ]);
+        for (const time of times.reverse())
+          await page.evaluate((time) => lab.scene.control([{ type: 'seek', time }]), time);
+        assert.equal((await page.evaluate(() => lab.scene.inspect())).rendering.phase, 'ready');
+        await page.evaluate(() => lab.scene.dispose());
+      },
+    );
+  });

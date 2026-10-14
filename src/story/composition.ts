@@ -223,6 +223,8 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
             candidate.element.style.clipPath = 'inset(100%)';
             try {
               candidate.drawing.render(moment.frame);
+              await candidate.drawing.ready?.(signal);
+              signal.throwIfAborted();
               view.prepare(selected.index);
               await candidate.drawing.ready?.(signal);
               if (options.transition)

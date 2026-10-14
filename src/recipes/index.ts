@@ -25,6 +25,7 @@ export { divisionDiagram, DIVISION_MAX_COUNT } from './division.js';
 export type { DivisionDiagramOptions, DivisionFocus, DivisionFocusTarget } from './division.js';
 export {
   dependencyRoute,
+  dependencyObservation,
   dependencyRouteModel,
   instructionalDependencyGraph,
   instructionalRouteModel,

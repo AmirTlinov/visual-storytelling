@@ -11,11 +11,11 @@ const examples = async (...args) =>
     (await promisify(execFile)(process.execPath, [cli, 'examples', ...args, '--json'])).stdout,
   );
 
-test('the public catalog exposes one complete exemplar with source, preview and guides', async () => {
+test('the public catalog exposes maintained exemplars with source, preview and guides', async () => {
   const entries = await examples();
   assert.deepEqual(
     entries.map(({ id }) => id),
-    ['gpt-model'],
+    ['gpt-model', 'spatial-order', 'cube-section'],
   );
   await Promise.all(
     entries.flatMap((entry) =>

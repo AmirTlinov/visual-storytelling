@@ -88,7 +88,7 @@ registerAppTool(
   {
     title: 'Визуальное объяснение',
     description:
-      'Open a saved Visual Storytelling project or the gpt-model exemplar in chat. story_create(document) arranges presentation; check its delivery and acknowledgement before treating the scene as shown. Reuse its sessionId to move that scene between views. Source-code scenes use edit and review before showing. With no arguments returns the exemplar catalog. Commands continue the existing view.',
+      'Open a saved Visual Storytelling project or a catalog example in chat. story_create(document) arranges presentation; check its delivery and acknowledgement before treating the scene as shown. Reuse its sessionId to move that scene between views. Source-code scenes use edit and review before showing. With no arguments returns the exemplar catalog. Commands continue the existing view.',
     inputSchema: {
       context: context.optional(),
       sessionId: sessionId.optional(),

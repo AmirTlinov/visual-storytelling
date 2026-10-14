@@ -28,6 +28,7 @@ export {
 } from './math/division.js';
 export type { DivisionState } from './math/division.js';
 
+export { releaseResources } from './lifecycle.js';
 export { TensorData, tensorOriginId } from './math/tensor.js';
 export type { TensorDataOptions, TensorOrigin } from './math/tensor.js';
 export type { MathValue } from './math/value.js';
@@ -103,6 +104,11 @@ export * from './math/quantity-parts.js';
 
 export * from './math/lever.js';
 
-export { normalizeLogits, softmax, probabilityRows, rankProbabilities } from './math/probability.js';
+export {
+  normalizeLogits,
+  softmax,
+  probabilityRows,
+  rankProbabilities,
+} from './math/probability.js';
 export type { ProbabilityTrace, ProbabilityRow } from './math/probability.js';
 export { sampleBernoulli, wilsonInterval, binomialPrefix } from './math/binomial.js';

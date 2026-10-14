@@ -11,6 +11,9 @@
 `inspect/find/control/presentation` и освобождает регистрацию при dispose.
 `scene-access.ts` проверяет команды по фактическим возможностям сцены.
 
+`scene/captions.ts` владеет одним элементом подписи, его разбиением и размещением.
+Время получает от существующего transport; явный overlay входит в экспортируемый кадр.
+
 `SceneShell` владеет полями, режимами, доступностью и жизнью представлений.
 Статическая модель доступна агенту сразу после mount; подключение Story обогащает
 тот же handle. UI и команды используют один ввод. `syncParameters` отражает правки
@@ -218,3 +221,14 @@ representation при общем ID. `IllustratedStory` передаёт пол�
 `session-attachment` сериализует renderer takeover на состоянии SessionDirectory;
 нового store нет. Expiry перевзводит ранний timer до прежнего wall-clock deadline,
 чтобы незавершённая команда не блокировала смену renderer.
+
+## Пространственная постановка
+
+`viewport/camera-view.ts` хранит authored following, ручной orbit и checkpoint.
+`shots.ts` — общий fit/pose solver; `shot-plan.ts` — неподвижные authored envelopes,
+предыдущие ракурсы и окна движения/наблюдения по существующим cues. Geography,
+подъём региона и раскрытие устройства читают один amount Story. Модель заказа
+и точное сечение живут в документе; смена и освобождение GPU-вида их не меняют.
+`whenRendered` выполняет необходимый GPU paint даже в concealed iframe через
+один cancellable microtask flush прежнего renderer. RAF остаётся владельцем
+обычного рисования; первого кадра недостаточно для заявления о показанных пикселях.

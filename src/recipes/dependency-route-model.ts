@@ -31,6 +31,22 @@ export interface DependencyTrace {
   events: readonly { kind: 'visit' | 'stop' | 'deliver'; node: string; orderId: string }[];
 }
 
+/** Planned routing is distinct from the result visibly reached by the travelling order. */
+export function dependencyObservation(trace: DependencyTrace, progress: number, present = true) {
+  if (!Number.isFinite(progress) || progress < 0 || progress > 1)
+    throw new Error('A dependency observation needs progress in [0, 1].');
+  return {
+    id: trace.orderId,
+    present,
+    progress,
+    outcome: !present
+      ? ('removed' as const)
+      : progress === 1
+        ? trace.status
+        : ('travelling' as const),
+  };
+}
+
 export function validateDependencyGraph(value: DependencyGraph): DependencyGraph {
   if (
     !value ||

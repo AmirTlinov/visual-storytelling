@@ -57,6 +57,24 @@ test('camera plans reject ambiguous timing and explicitly invalid envelopes', ()
   assert.throws(() => shotProgress(NaN));
 });
 
+test('an authored movement adapts to short aligned narration and reserves observation time', () => {
+  const target = { target: box(1) };
+  const short = { duration: 1, cues: { detail: { start: 0, end: 1 } } };
+  const move = { fraction: 0.85, maxSeconds: 3 };
+  const plan = shotPlan3D(short, target, [{ cue: 'detail', shot: target, move }]);
+  assert.equal(plan.at(0.5).phase, 'move');
+  assert.equal(plan.at(0.85).phase, 'observe');
+  assert.equal(plan.at(1).progress, 1);
+  for (const invalid of [
+    { fraction: NaN, maxSeconds: 3 },
+    { fraction: 1.1, maxSeconds: 3 },
+    { fraction: 0.8, maxSeconds: -1 },
+  ])
+    assert.throws(() =>
+      shotPlan3D(short, target, [{ cue: 'detail', shot: target, move: invalid }]),
+    );
+});
+
 test('camera movement uses the same delayed action interval as Story', () => {
   const plan = shotPlan3D(
     {
@@ -130,4 +148,31 @@ test('moving a regular subject far from the origin cannot turn its coordinate ma
   assert(Math.abs(distance([0, 0, 0]) - distance([1e10, 0, 0])) < 1e-4);
   assert.throws(() => shotPose(camera, 390, 675, { target: box(0) }), /referenceScale/);
   assert(shotPose(camera, 390, 675, { target: box(0), referenceScale: 100 }).near > 0);
+});
+
+test('a selected part stays visible through a many-scale approach and its reverse', () => {
+  for (const width of [390, 1200]) {
+    const camera = new T.PerspectiveCamera(36, width / 675, 0.01, 1e6);
+    const focus = new T.Vector3(-450, 0, 100),
+      overview = { target: box(1000), direction: [0.4, 1.2, 1.8] },
+      detail = { target: box(0.002, focus.toArray()), direction: [0.4, 1.2, 1.8] };
+    for (const [from, to] of [
+      [overview, detail],
+      [detail, overview],
+    ])
+      for (let i = 0; i <= 100; i++) {
+        const pose = shotPose(camera, width, 675, { ...to, from, progress: i / 100 });
+        camera.position.copy(pose.position);
+        camera.lookAt(pose.target);
+        camera.near = pose.near;
+        camera.far = pose.far;
+        camera.updateProjectionMatrix();
+        camera.updateMatrixWorld();
+        const point = focus.clone().project(camera);
+        assert(
+          Math.abs(point.x) < 1 && Math.abs(point.y) < 1 && Math.abs(point.z) < 1,
+          `lost focus at ${width}px, progress${i / 100}`,
+        );
+      }
+  }
 });

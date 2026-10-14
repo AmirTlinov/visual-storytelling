@@ -497,6 +497,21 @@
 .ve-scene .ve-captions:empty {
   visibility: hidden;
 }
+.ve-scene .ve-stage > .ve-captions[data-placement='overlay'] {
+  position: absolute;
+  bottom: calc(12px / var(--ve-frame-scale, 1));
+  left: calc(20px / var(--ve-frame-scale, 1));
+  right: calc(20px / var(--ve-frame-scale, 1));
+  margin: 0;
+  max-width: none;
+  font-size: calc(18px / var(--ve-frame-scale, 1));
+  line-height: 1.25;
+  text-wrap: balance;
+  color: var(--ve-ink);
+  background: var(--ve-surface);
+  z-index: 10;
+  pointer-events: none;
+}
 .ve-scene [data-story-pressed='true'] {
   filter: brightness(0.85);
 }

@@ -7,7 +7,7 @@ export interface AuthoredShot3D {
   cue: string;
   shot: Shot3D;
   /** Movement consumes this part of the existing cue; its remainder is observation. */
-  move: number;
+  move: number | { fraction: number; maxSeconds: number };
 }
 
 /** Compile fixed authored envelopes once. Rendering and manual orbit cannot change a predecessor. */
@@ -45,8 +45,24 @@ export function shotPlan3D(script: Script, initial: Shot3D, authored: readonly A
     ids = new Set<string>();
   let previous = start,
     end = 0;
-  const legs = authored.map(({ cue, shot, move }) => {
+  const legs = authored.map(({ cue, shot, move: movement }) => {
     const span = script.cues[cue];
+    if (
+      typeof movement !== 'number' &&
+      (!movement ||
+        !Number.isFinite(movement.fraction) ||
+        movement.fraction < 0 ||
+        movement.fraction > 1 ||
+        !Number.isFinite(movement.maxSeconds) ||
+        movement.maxSeconds < 0)
+    )
+      throw new Error(
+        `Camera cue ${cue} needs a finite movement fraction in [0,1] and maximum seconds.`,
+      );
+    const move =
+      typeof movement === 'number'
+        ? movement
+        : Math.min(movement.maxSeconds, (span ? span.end - span.start : NaN) * movement.fraction);
     if (
       ids.has(cue) ||
       !span ||

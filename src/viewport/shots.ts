@@ -128,20 +128,27 @@ export function shotPose(
     from = shot.from ? frame(shot.from, fromBounds) : to;
   const t = shotProgress(shot.progress ?? 1, shot.reduced);
   const radius = Math.exp(Math.log(from.radius) * (1 - t) + Math.log(to.radius) * t);
-  const target = from.target.clone().lerp(to.target, t);
+  let distance = Math.exp(Math.log(from.distance) * (1 - t) + Math.log(to.distance) * t);
+  // Couple pan to zoom: a selected part must stay in the aperture while a large
+  // overview shrinks. Linear world pan with logarithmic zoom loses it mid-flight.
+  const difference = to.distance - from.distance;
+  const pan =
+    Math.abs(difference) <= Math.max(from.distance, to.distance) * 1e-9
+      ? t
+      : Math.max(0, Math.min(1, (distance - from.distance) / difference));
+  const target = from.target.clone().lerp(to.target, pan);
   const rotation = new T.Quaternion().setFromUnitVectors(from.direction, to.direction);
   const direction =
     t === 1
       ? to.direction.clone()
       : from.direction.clone().applyQuaternion(new T.Quaternion().slerp(rotation, t));
-  let distance = Math.exp(Math.log(from.distance) * (1 - t) + Math.log(to.distance) * t);
   if (t > 0 && t < 1) {
     // Endpoint fits alone can clip a long object halfway through a turn.
     // Separate shape from scale so this guard follows the same logarithmic zoom
     // as the endpoint poses, instead of delaying a large close-up until the end.
     const center = from.bounds
       .getCenter(new T.Vector3())
-      .lerp(to.bounds.getCenter(new T.Vector3()), t);
+      .lerp(to.bounds.getCenter(new T.Vector3()), pan);
     // Use the same finite scale at a point and its arbitrarily small neighbourhood.
     const half = from.bounds
       .getSize(new T.Vector3())

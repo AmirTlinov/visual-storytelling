@@ -4,9 +4,26 @@
     "summary": "Локальная учебная модель раскрывает путь от токенов через внимание и два блока к вероятностям следующего слова.",
     "source": "scene.js",
     "time": 0,
-    "checkpoints": [0, 15, 25, 36, 47, 56, 68, 74, 85],
+    "checkpoints": [
+      0,
+      15,
+      25,
+      36,
+      47,
+      56,
+      68,
+      74,
+      85
+    ],
     "group": "explanations",
-    "tags": ["GPT", "трансформер", "языковая модель", "токены", "внимание", "вероятность"],
+    "tags": [
+      "GPT",
+      "трансформер",
+      "языковая модель",
+      "токены",
+      "внимание",
+      "вероятность"
+    ],
     "guides": [
       "skills/visual-explainer/references/visual-storytelling.md",
       "docs/explanations.md",
@@ -16,7 +33,12 @@
     "reference": true,
     "useFor": "Разобрать путь от контекста до выбора следующего слова",
     "visibleAction": "Слова проходят через общую модель к вероятностям продолжения",
-    "capabilities": ["html", "png", "svg", "mp4"],
+    "capabilities": [
+      "html",
+      "png",
+      "svg",
+      "mp4"
+    ],
     "editing": [
       {
         "file": "scene.js",
@@ -37,6 +59,106 @@
       {
         "file": "checkpoint.json",
         "purpose": "обученные веса и происхождение модели"
+      }
+    ]
+  },
+  "spatial-order": {
+    "title": "Куда попал наш заказ?",
+    "summary": "Один заказ проходит через реальную карту, учебное устройство и вычисленную схему зависимостей.",
+    "source": "scene.js",
+    "time": 25,
+    "checkpoints": [
+      0,
+      4,
+      8,
+      12,
+      16,
+      19,
+      22,
+      27,
+      32,
+      35,
+      38
+    ],
+    "group": "explanations",
+    "tags": [
+      "карта",
+      "камера",
+      "зависимости"
+    ],
+    "guides": [
+      "skills/visual-explainer/references/spatial-story.md"
+    ],
+    "reference": true,
+    "useFor": "Объяснить переход целое→деталь со сквозным предметом",
+    "visibleAction": "Камера приближается к устройству; заказ проходит вычисленный маршрут",
+    "capabilities": [
+      "html",
+      "png",
+      "mp4"
+    ],
+    "editing": [
+      {
+        "file": "story.json",
+        "purpose": "авторские главы, операции, ресурсы и условия"
+      },
+      {
+        "file": "presentation.js",
+        "purpose": "представления и authored shot plan"
+      },
+      {
+        "file": "geography.js",
+        "purpose": "проекция и неизменённые контуры источника"
+      },
+      {
+        "file": "facility.js",
+        "purpose": "учебный макет и проекция вычисленного trace"
+      }
+    ]
+  },
+  "cube-section": {
+    "title": "Что остаётся в сечении куба?",
+    "summary": "Точное сечение одного куба сохраняет связь с целым при приближении, возврате и ручном сдвиге.",
+    "source": "scene.js",
+    "time": 10,
+    "checkpoints": [
+      0,
+      3,
+      5.9,
+      8,
+      12.9,
+      15,
+      21
+    ],
+    "group": "explanations",
+    "tags": [
+      "куб",
+      "сечение",
+      "камера"
+    ],
+    "guides": [
+      "skills/visual-explainer/references/spatial-story.md"
+    ],
+    "reference": true,
+    "useFor": "Исследовать целое и деталь на точной геометрии",
+    "visibleAction": "Плоскость входит в куб; камера показывает квадрат сечения",
+    "capabilities": [
+      "html",
+      "png",
+      "mp4"
+    ],
+    "editing": [
+      {
+        "file": "story.json",
+        "purpose": "замысел и порядок наблюдений"
+      },
+      {
+        "file": "model.js",
+        "purpose": "точное пересечение и площадь"
+      },
+      {
+        "file": "presentation.js",
+        "purpose": "геометрия и authored shot plan"
       }
     ]
   }

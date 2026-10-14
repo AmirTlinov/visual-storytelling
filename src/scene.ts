@@ -10,7 +10,7 @@ import {
   type StoryMoment,
 } from './story/story.js';
 import { chapterNavigation } from './story/chapters.js';
-import { captionTrack, type CaptionOptions } from './story/captions.js';
+import { sceneCaptions, type SceneCaptions } from './scene/captions.js';
 import { sceneFrame, inspectPresentation, type SceneFrameOptions } from './scene-frame.js';
 export type { SceneFrameOptions, ScenePresentation } from './scene-frame.js';
 import { loadFonts } from './ink/fonts.js';
@@ -45,12 +45,8 @@ export interface SceneOptions {
   /** Hide shared chapter/mode/history navigation when the subject supplies its own. Camera and history ownership are unchanged. */
   navigation?: boolean;
   /** Optional visible word-aligned captions; omitted keeps the accessible chapter text. */
-  captions?:
-    | true
-    | (CaptionOptions & {
-        /** Below a stage frame, text keeps its screen size. Whole-scene frames include it. */
-        placement?: 'overlay' | 'below';
-      });
+  /** Explicit overlay remains inside the exported stage; below accompanies the drawing. */
+  captions?: SceneCaptions;
   resources?: readonly StoryResource[];
   parameters?: (ControlParameter & { key: string })[];
   onInput?: (values: Record<string, ControlValue>) => void;
@@ -197,11 +193,8 @@ function mount(
     actions = node('div', { class: 've-view-actions' }),
     controls = node('div', { 'data-player': '', hidden: '' });
   heading.hidden = !showHeading;
-  const caption = node('p', {
-      class: captions ? 've-captions' : 'caption sr-only',
-      'data-caption': '',
-      role: 'status',
-    }),
+  const captionOwner = sceneCaptions(captions),
+    caption = captionOwner.element,
     status = node('p', { class: 've-status', role: 'alert' });
   root.addEventListener(
     'scene-restored',
@@ -244,9 +237,6 @@ function mount(
     sheet.append(header, drawing);
     drawing.append(fields, stage);
   } else sheet.append(heading, modes, actions, fields, composition.element);
-  if (captions && !completeFrame && (captions === true || captions.placement !== 'below'))
-    stage.append(caption);
-  else drawing.append(caption);
   if (completeFrame) root.append(composition.element);
   root.append(controls, status);
   root.append(conditions);
@@ -353,10 +343,7 @@ function mount(
     root.dataset.presentation = next;
     root.dataset.paper = String(next === 'stage' ? false : (paper ?? appearance === 'sketch'));
     heading.hidden = !showHeading;
-    if (completeFrame) {
-      if (next === 'stage') controls.before(caption);
-      else stage.after(caption);
-    }
+    captionOwner.place({ presentation: next, completeFrame, stage, paper: drawing, controls });
     updateChrome(true);
     composition.resize();
     updateChrome(true);
@@ -674,14 +661,7 @@ function mount(
       )
         throw new Error(`Scene "${title}": parameter "${key}" is missing from stateAt()`);
     }
-    const segments = controller.sheet.script.segments;
-    const track = captionTrack(
-      {
-        segments: captions ? segments : segments?.map(({ words: _words, ...chapter }) => chapter),
-        captionAliases: controller.sheet.script.captionAliases,
-      },
-      captions === true ? {} : captions,
-    );
+    const track = captionOwner.track(controller.sheet.script);
     const previousPlayback = player?.playback();
     if (previousPlayback && previousPlayback.rate !== controller.player.state.rate)
       controller.player.rate(previousPlayback.rate);
