@@ -15,7 +15,7 @@ test('the public catalog exposes maintained exemplars with source, preview and g
   const entries = await examples();
   assert.deepEqual(
     entries.map(({ id }) => id),
-    ['gpt-model', 'spatial-order', 'cube-section'],
+    ['gpt-model', 'spatial-order', 'cube-section', 'push-block'],
   );
   await Promise.all(
     entries.flatMap((entry) =>

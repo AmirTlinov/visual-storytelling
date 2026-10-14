@@ -4,7 +4,7 @@ import { destination } from './staging/layout.js';
 import { project } from './staging/space.js';
 import { stageFrame, sameShot, type FrameBox } from './staging/camera.js';
 import { world } from './staging/world.js';
-import { performance } from './performance.js';
+import { characterCast } from './cast.js';
 import { compileScore, type CharacterScore } from './score.js';
 import { propFrame, smooth } from './prop-state.js';
 import { artworkSurfaces, mountArtwork } from './artwork.js';
@@ -13,7 +13,6 @@ import { fitFrame } from '../scene-frame.js';
 import { characterSurfaces } from './surfaces.js';
 import type { Shot } from './staging/types.js';
 import type { ChapterFrame } from '../story/composition.js';
-import { characterDetails } from './framing.js';
 import { shotFraming } from './shot-framing.js';
 import { snapshotSVG } from '../export/index.js';
 
@@ -99,7 +98,7 @@ export async function characterStage(
   resize();
   let prepared: Awaited<ReturnType<typeof world>> | undefined;
   let disposed = false;
-  let performers: Record<string, ReturnType<typeof performance>> = {};
+  let castOwner: ReturnType<typeof characterCast> | undefined;
   let releasePresentation: (() => void) | undefined;
   let inspect: (() => unknown) | undefined;
   const inspected = canvas as HTMLCanvasElement & { __visualReview?: () => unknown };
@@ -114,7 +113,7 @@ export async function characterStage(
         () => surfaces?.dispose(),
         () => releasePresentation?.(),
         () => prepared?.dispose(),
-        ...Object.values(performers).map((actor) => () => actor.dispose()),
+        () => castOwner?.dispose(),
         () => {
           if (!shared) graphics.dispose();
         },
@@ -129,21 +128,8 @@ export async function characterStage(
         return project(set.staging.projection, destination(set.staging, at));
       return typeof at === 'string' ? set.spots[at]! : (at as Point);
     };
-    const actors = Object.fromEntries(
-      Object.entries(cast).map(([id, actor]) => [
-        id,
-        performance(
-          data,
-          pack,
-          actor,
-          score.tracks[id]!,
-          point(actor.at),
-          set.height,
-          options.blend,
-        ),
-      ]),
-    );
-    performers = actors;
+    castOwner = characterCast(data, options, score, point);
+    const { actors } = castOwner;
     if (score.blocking) prepared = await world(options, score.blocking, actors, renderer, signal);
     signal?.throwIfAborted();
     if (Object.keys(options.surfaces ?? {}).length) {
@@ -190,6 +176,7 @@ export async function characterStage(
     let camera: FrameBox = { x: 0, y: 0, width: set.width, height: set.height },
       bounds: Record<string, FrameBox> = {};
     let details: Record<string, FrameBox> = {};
+    let castContacts: ReturnType<ReturnType<typeof characterCast>['sample']>['contacts'] = {};
     let propBounds: Record<string, FrameBox> = {};
     const namedSubjects = () => ({ ...bounds, ...propBounds, ...details });
     let focus: readonly string[] | undefined;
@@ -214,24 +201,19 @@ export async function characterStage(
     };
 
     const sampleCast = (time: number, reduced: boolean) => {
-      const actions =
-        prepared?.sample(time, reduced) ??
-        Object.fromEntries(
-          Object.entries(actors).map(([id, actor]) => [id, actor.sample(time, reduced)]),
-        );
-      const actorBounds = Object.fromEntries(
-        Object.entries(actors).map(([id, actor]) => {
-          return [id, actor.bounds()];
-        }),
+      const {
+        actions,
+        actorBounds,
+        details: nextDetails,
+        contacts: nextContacts,
+      } = castOwner!.sample(
+        time,
+        reduced,
+        latest[2],
+        prepared && (() => prepared!.sample(time, reduced)),
       );
-      details = Object.fromEntries(
-        Object.entries(actors).flatMap(([id, actor]) =>
-          Object.entries(characterDetails(actor, pack.rig, set.height)).map(([part, box]) => [
-            `${id}.${part}`,
-            box,
-          ]),
-        ),
-      );
+      details = nextDetails;
+      castContacts = nextContacts;
       return { actions, actorBounds };
     };
     const sample = (time: number, reduced: boolean) => {
@@ -439,6 +421,7 @@ export async function characterStage(
               .map(([id]) => id),
           },
           actions,
+          contacts: castContacts,
           world: prepared?.snapshot(),
           props: propState,
           surfaces: surfaces?.snapshot(),

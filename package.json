@@ -1,6 +1,6 @@
 {
   "name": "@visual-storytelling/core",
-  "version": "0.38.2",
+  "version": "0.39.2",
   "private": true,
   "license": "0BSD",
   "type": "module",
@@ -23,7 +23,8 @@
     "!**/__pycache__/**",
     "!**/*.pyc",
     "examples/spatial-order/**/*.{html,js,json,css,png,md}",
-    "examples/cube-section/**/*.{html,js,json,css,png,md}"
+    "examples/cube-section/**/*.{html,js,json,css,png,md}",
+    "examples/push-block/**/*.{html,js,json,css,png,md}"
   ],
   "exports": {
     ".": {

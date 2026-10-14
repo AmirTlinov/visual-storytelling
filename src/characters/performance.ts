@@ -169,6 +169,7 @@ export function performance(
       pose?: {
         at: Point;
         scale: number;
+        rotation?: number;
         clip?: string;
         mood?: string;
         moodTime?: number;
@@ -190,6 +191,7 @@ export function performance(
         mesh.renderOrder = mesh.userData.slotIndex;
       }
       object.position.set(pose?.at.x ?? at.x, height - (pose?.at.y ?? at.y), 0);
+      object.rotation.z = -(pose?.rotation ?? 0);
       const scale = pose?.scale ?? actor.scale ?? 0.77;
       object.scale.set(scale * (actor.flip ? -1 : 1), scale, 1);
       const index = Math.max(

@@ -161,5 +161,57 @@
         "purpose": "геометрия и authored shot plan"
       }
     ]
+  },
+  "push-block": {
+    "title": "Что удерживает брусок?",
+    "summary": "Персонаж прикладывает силу к тому же физическому бруску; угол и трение меняют движение и измеренный график.",
+    "source": "scene.js",
+    "time": 12,
+    "checkpoints": [
+      0,
+      2,
+      3,
+      5,
+      7,
+      8,
+      10,
+      12,
+      14,
+      16,
+      18,
+      22,
+      26
+    ],
+    "group": "explanations",
+    "tags": [
+      "физика",
+      "трение",
+      "персонаж"
+    ],
+    "guides": [
+      "skills/visual-explainer/references/physics-story.md"
+    ],
+    "reference": true,
+    "useFor": "Связать действие персонажа, контакт, физический результат и измерение",
+    "visibleAction": "Брусок удерживается или движется по вычисленному контакту",
+    "capabilities": [
+      "html",
+      "png",
+      "mp4"
+    ],
+    "editing": [
+      {
+        "file": "story.json",
+        "purpose": "авторский опыт и измерение"
+      },
+      {
+        "file": "model.js",
+        "purpose": "Rapier, условия и воспроизводимая запись"
+      },
+      {
+        "file": "presentation.js",
+        "purpose": "модельная поза, тот же предмет и измеренный график"
+      }
+    ]
   }
 }

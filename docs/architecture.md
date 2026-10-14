@@ -232,3 +232,12 @@ representation при общем ID. `IllustratedStory` передаёт пол�
 `whenRendered` выполняет необходимый GPU paint даже в concealed iframe через
 один cancellable microtask flush прежнего renderer. RAF остаётся владельцем
 обычного рисования; первого кадра недостаточно для заявления о показанных пикселях.
+
+Физический `push-block` читает неизменяемые fixed-step записи Rapier через обычный
+StoryModelModule. PhysicsReplay рассчитывает их и восстанавливает live world
+только при явном handoff/checkpoint. Фабрика вида не перематывает физический мир.
+`characters/cast.ts` владеет исполнителями и модельными контактами плоской сцены;
+подготовленная декорация сохраняет собственную постановку. `SimulationMode`
+передаёт существующий player: Story на паузе, SimulationPlayer активен либо наоборот.
+SceneCheckpoint и MCP report сохраняют отдельное состояние forward-only опыта;
+его codec проверяется до изменения принятого кадра.

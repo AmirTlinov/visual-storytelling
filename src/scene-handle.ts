@@ -36,6 +36,16 @@ declare global {
 
 /** Capabilities supplied by the actual subject, player and drawing owners. */
 export interface SceneRuntime {
+  /** An explicit forward-only experiment borrows the player while Story stays paused. */
+  readonly simulation?: {
+    readonly active: boolean;
+    readonly time: number;
+    readonly reversible: false;
+    readonly storyTime: number;
+    capture(): unknown;
+    validate(value: unknown): void;
+    restore(value: unknown): Promise<void>;
+  };
   /** A compiled subject accepts whole validated authored documents; ProjectStore owns their revisions. */
   readonly authoring?: {
     readonly document: unknown;

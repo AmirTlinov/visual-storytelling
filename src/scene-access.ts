@@ -90,7 +90,7 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
       restoreNotices: handle.restoreNotices,
       time: handle.currentTime ?? 0,
       duration: handle.duration ?? 0,
-      playing: owner.playing?.() ?? false,
+      playing: handle.playing ?? owner.playing?.() ?? false,
       muted: handle.muted,
       rate: handle.rate,
       selected: handle.selected,

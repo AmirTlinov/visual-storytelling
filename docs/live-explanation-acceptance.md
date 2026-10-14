@@ -670,3 +670,49 @@ ffmpeg decode PASS, audio streams0. Source-edit/reopen/undo тест:24.431s PAS
 `installed-source-reload-clean-0.26.2/`, `artifacts/slice09-0.26.2-*.log`.
 Исходный пользовательский интернет-рассказ и его прежний pin не менялись.
 Следующий срез —GUI-568. Gate5/20 и финальный аудит15 остаются открытыми.
+
+## Срез 10: физический опыт и персонаж
+
+Установлен plugin0.27.2 / core0.39.2, release `83195d9c6578aa68`,
+build `6558fec84267b1029533285beef7cfe02131a6d4b1d7cf8061901050c7c87812`.
+Приёмка использует установленный MCP и настоящую SDK-карточку в браузере.
+
+`push-block`: один брусок2кг, наклонная плоскость, контакты Rapier2D0.21.0,
+шаг1/120с, сила6Н на интервале0.5–1.5с. При8°/µ0.55 трение удерживает брусок;
+приµ0.3 он остаётся на месте до толчка, движется и останавливается после него.
+График показывает измеренный путь, стрелки используют общий масштабН→px.
+Пределы модели записаны в resources: движение без вращения/сопротивления воздуха,
+идеальная плоскость; персонаж изображает заданную силу, биомеханика не моделируется.
+
+Фиксированные записи неизменяемы, чтение/подготовка рисунка сохраняет живой world.
+Один PhysicsReplay ведёт детерминированную перемотку; SimulationMode явно передаёт
+время существующему SimulationPlayer и останавливает Story. Изменение условий
+возвращает рассказ, пауза/resize сохраняют опыт. Повтор начинает новый trial с
+текущими условиями, сохраняя позицию рассказа. Извлечённый cast использует прежний
+rig/IK: при толчке рука касается того же бруска при всех проверенных углах.
+
+56 focused checks и16 spatial/cube PASS; после последних исправлений7 focused PASS,
+build/check PASS. Независимое ревью завершено. Ошибки cold-read mutation,
+force-phase, stale live frame, failed handoff cleanup, скрытого candidate owner и
+повтора воспроизведены и исправлены у владельцев; диагностические прогоны сохранены.
+
+Установленная карточка390/dark/reduced и1200/light: reverse seek, selection,
+обычные кнопки play/pause/repeat, ручные условия, checkpoint и re-entry PASS;
+clipped0, unreadable0, pageerrors0. Source edit→reopen→undo33.696с сохраняет
+паузы, physical time, условия, selected ID и исходные байты. Это source preparation,
+не authoring5/20. Полный portable playback26с/10с:52/20 наблюдений, max2/1 canvas,
+ошибок0. HTML/PNG/MP4:960×540,12fps,312кадров/26с, полный ffmpeg decode PASS,
+audio streams0; TTS не вызывался. Короткий и длинный рассказ используют один документ.
+
+| Удалённый путь | Владелец | Потребители | Доказательство |
+| --- | --- | --- | --- |
+| Создание/выборка cast внутри огромного stage | characters/cast | prepared staging и model poses | contact, absolute pose и reverse tests |
+| Непроверенный live pointer скрытого кандидата | SceneStory.presentation | физическая глава и SimulationMode | failed candidate retains accepted presentation |
+| Одновременное время рассказа и опыта | SimulationMode / SimulationPlayer | scene handle, controls, checkpoint | frozen Story, live step, pause/re-entry/repeat |
+| Потерянный physics checkpoint при MCP restore | scene-checkpoint / model codec | SDK source edit, reopen, undo | installed33.696с, invalid checkpoint rollback |
+| Утёкшие listeners при initial read/dispose failure | SimulationPlayer | forward-only players | failed-read retry/dispose/visibilitychange |
+
+Доказательства: `artifacts/architecture/2026-10-14/installed-physics-0.27.2/`,
+`installed-physics-source-0.27.2/`, `artifacts/slice10/`. Пользовательские проекты и
+прежние pins не менялись. Следующий срез —GUI-569; озвучка опциональна.
+Gate5/20 и финальные12–15 остаются открытыми.

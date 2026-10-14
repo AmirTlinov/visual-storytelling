@@ -72,6 +72,7 @@ export const viewReport = z
         values,
         subject: z.unknown().optional(),
         view: z.unknown().optional(),
+        simulation: z.unknown().optional(),
       })
       .optional(),
     reason: z.string().max(100).optional(),

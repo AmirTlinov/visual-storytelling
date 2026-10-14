@@ -106,6 +106,13 @@ export interface Beat {
   shot?: Shot;
 }
 export interface CharacterStageOptions {
+  /** Absolute model pose and hand contacts; prepared scenery keeps its existing staging owner. */
+  pose?(
+    id: string,
+    time: number,
+    reduced: boolean,
+    frame?: import('../story/composition.js').ChapterFrame,
+  ): CharacterPose | undefined;
   /** Fill the host and fit shot subjects to its aspect. Omit to preserve the authored stage frame. */
   camera?: 'responsive';
   /** Live Ink drawings attached to prepared furniture; share the chapter time and values. */
@@ -122,6 +129,17 @@ export interface CharacterStageOptions {
   blend?: number;
   /** False hides scenery, shadows and resting props; items carried by the cast remain visible. */
   background?: boolean;
+}
+export interface CharacterPose {
+  at: Point;
+  scale: number;
+  /** Radians in the stage's x-right/y-down space. */
+  rotation?: number;
+  clip?: string;
+  mood?: string;
+  moodTime?: number;
+  view?: Facing;
+  reach?: readonly { hand: 'left' | 'right'; at: Point; weight?: number }[];
 }
 export interface CharacterStoryOptions extends CharacterStageOptions {
   title: string;

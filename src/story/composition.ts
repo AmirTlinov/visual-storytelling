@@ -328,7 +328,15 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
     }
     shell.attachView(view.owner);
     await story.ready();
-    return { shell, story, scene };
+    return {
+      shell,
+      story,
+      scene,
+      /** The existing presentation owner selects the accepted drawing, including failed preparation. */
+      get presentation() {
+        return presentations.active?.drawing;
+      },
+    };
   } catch (error) {
     shell.dispose();
     throw error;
