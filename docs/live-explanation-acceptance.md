@@ -543,12 +543,12 @@ GPT input→готовый кадр→два rAF: p95 47,5мс,30 настоящ
 менялась; разницу целиком cache не приписываем. Gate авторства5/20 не измерен
 заново и остаётся открытым.
 
-| Заменённый путь | Владелец | Потребители | Доказательство |
-| --- | --- | --- | --- |
-| Local softmax и повторный exp/Σ в GPT рисунке | math/probability trace | GPT forward, attention, scores, logits, bars | PyTorch/masks + GPT browser |
-| Повторное вычисление оценок выборки в рисунке | binomialPrefix / Wilson | sampling model, plot, inspect | seed0/1, prefix, endpoint tests |
-| Inline создание/позиционирование условий | scene/conditions | scene/stage resources и controls | scene-resources browser |
-| Повторное измерение фиксированных glyph paths | ink/motion branded bounded cache | все Ink label | native read counts, CSS override, 2D/3D |
+| Заменённый путь                               | Владелец                         | Потребители                                  | Доказательство                          |
+| --------------------------------------------- | -------------------------------- | -------------------------------------------- | --------------------------------------- |
+| Local softmax и повторный exp/Σ в GPT рисунке | math/probability trace           | GPT forward, attention, scores, logits, bars | PyTorch/masks + GPT browser             |
+| Повторное вычисление оценок выборки в рисунке | binomialPrefix / Wilson          | sampling model, plot, inspect                | seed0/1, prefix, endpoint tests         |
+| Inline создание/позиционирование условий      | scene/conditions                 | scene/stage resources и controls             | scene-resources browser                 |
+| Повторное измерение фиксированных glyph paths | ink/motion branded bounded cache | все Ink label                                | native read counts, CSS override, 2D/3D |
 
 Доказательства: `artifacts/architecture/2026-10-13/slice07-acceptance.json`,
 `installed-probability-0.24.1/`, `installed-dist-0.24.1/`,
@@ -601,17 +601,43 @@ checkpoint и восстановление авторских условий. Н
 HTML/PNG/MP4 выпущены:960×540,12 fps,318 кадров,26,5 с; полное декодирование и
 просмотр промежуточных/финальных кадров PASS. Озвучка относится к срезу 11.
 
-| Заменённый путь | Владелец | Потребители | Доказательство |
-| --- | --- | --- | --- |
-| Chapter-local subject и урезанные scalar snapshots | documentModelsAt / IllustratedChapterFrame | prepared и factory stories | non-idempotent replay, views, tombstone, remount |
-| Смешанный resolver и camera state в composition | composition-state / composition-view | SceneStory, IllustratedStory, checkpoint | focus carry и numeric restore |
-| Первый render после публикации; общий transition effect | composition-presentations | chapter drawings и snapshot transitions | delayed/cancel/error, bounded disposal |
-| Inspect первого DOM-представителя общего ID | scene-objects | semantic selection и model detail | hidden/reverse representative |
-| Дублирование реплики в заголовке | chapterNavigation / selectControl | подготовленные рассказы | тихие Главы, shared menu,375/960 |
-| Подпись на пути заказа и nominal envelope | route-label-placement / node | dependency-route diagrams |14 промежуточных моментов, collisions rejection |
-| Потерянный expiry после early wake | SessionDirectory / session-attachment | MCP commands и renderer takeover | воспроизведённый FAIL→PASS, installed reload |
+| Заменённый путь                                         | Владелец                                   | Потребители                              | Доказательство                                   |
+| ------------------------------------------------------- | ------------------------------------------ | ---------------------------------------- | ------------------------------------------------ |
+| Chapter-local subject и урезанные scalar snapshots      | documentModelsAt / IllustratedChapterFrame | prepared и factory stories               | non-idempotent replay, views, tombstone, remount |
+| Смешанный resolver и camera state в composition         | composition-state / composition-view       | SceneStory, IllustratedStory, checkpoint | focus carry и numeric restore                    |
+| Первый render после публикации; общий transition effect | composition-presentations                  | chapter drawings и snapshot transitions  | delayed/cancel/error, bounded disposal           |
+| Inspect первого DOM-представителя общего ID             | scene-objects                              | semantic selection и model detail        | hidden/reverse representative                    |
+| Дублирование реплики в заголовке                        | chapterNavigation / selectControl          | подготовленные рассказы                  | тихие Главы, shared menu,375/960                 |
+| Подпись на пути заказа и nominal envelope               | route-label-placement / node               | dependency-route diagrams                | 14 промежуточных моментов, collisions rejection  |
+| Потерянный expiry после early wake                      | SessionDirectory / session-attachment      | MCP commands и renderer takeover         | воспроизведённый FAIL→PASS, installed reload     |
 
 Доказательства: `artifacts/architecture/2026-10-13/slice08-acceptance.json`,
 `installed-continuous-0.25.3/`, `installed-dist-0.25.3/`,
 `artifacts/slice08-*-0.25.3.log`. Контейнер Codex и authoring 5/20 остаются
 открытыми финальными gates. Следующий срез —GUI-567.
+
+## Срез 09: проверенная основа камеры, работа продолжается
+
+Исходный пакет после 8a741db; установленный выпуск остаётся 0.25.3 / core0.37.3.
+GUI-567 не принят: пространственный рассказ страна→регион→город→устройство→сеть,
+второй пример куб/сечение и установленный выпуск ещё нужны.
+
+`shotPlan3D` фиксирует authored predecessor и envelope; clock разрешает существующий
+`cueSheet`. Движение и наблюдение читаются из одного cue. Порядок seek и ручной
+ракурс не меняют постановку. Numerical floor зависит от extent и ULP координат;
+проверены смена единицы масштаба и перенос далеко от начала координат.
+Degenerate point в начале координат требует explicit `referenceScale`.
+
+`camera-view` извлечён из Viewport3D. Fit, shot и reset используют общий solver;
+удалены отдельная формула fit, world floor0.1 и home-путь. Ручной checkpoint
+сохраняет clipping/orbit ranges. Narrow resize работает и без предварительного fit.
+
+Первый GPU paint остаётся под preparation clip до `drawing.ready(signal)`.
+Waiter отклоняет paint error, потерю context до первого/после прежнего успешного
+кадра, отмену с falsey reason и disposal. Ошибка кандидата сохраняет предыдущую главу.
+Это source/browser proof, не installed acceptance среза.
+
+Build/check PASS;38/38 camera, shot-plan, spatial-view, viewport-labels,
+scene-completion и composition-lifecycle. Лог: `artifacts/slice09-camera-regression.log`.
+Независимый аудит выявил и помог устранить paint hang, clipping checkpoint,
+неразрешённый Cue.timing и numerical ошибки.

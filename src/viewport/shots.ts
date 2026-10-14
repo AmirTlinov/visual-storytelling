@@ -17,6 +17,8 @@ export interface Shot3D {
   padding?: number;
   anchors?: readonly FrameAnchor[];
   insets?: ReadableFrame['insets'];
+  /** Fixed world reference for point-sized targets; authored plans supply their full envelope. */
+  referenceScale?: number;
 }
 export interface ShotTransition3D extends Shot3D {
   from?: Shot3D;
@@ -33,6 +35,16 @@ const corners = (bounds: T.Box3): FrameAnchor[] => {
   return result;
 };
 
+/** Camera and geometry share this authored progress; no last-frame state is involved. */
+export function shotProgress(progress: number, reduced = false) {
+  if (!Number.isFinite(progress)) throw new Error('A camera shot needs finite progress');
+  const p = Math.max(0, Math.min(1, progress));
+  return reduced ? Number(p > 0) : p * p * (3 - 2 * p);
+}
+
+const minimumExtent = (radius: number, numericalRadius: number) =>
+  Math.max(radius / 1000, numericalRadius);
+
 /** Fit authored targets, then interpolate a pose at the existing story time. */
 export function shotPose(
   camera: T.PerspectiveCamera,
@@ -40,7 +52,7 @@ export function shotPose(
   height: number,
   shot: ShotTransition3D,
 ) {
-  function frame(options: Shot3D) {
+  function envelope(options: Shot3D) {
     const bounds = new T.Box3();
     if (options.bounds) bounds.copy(options.bounds);
     else if (options.target instanceof T.Box3) bounds.copy(options.target);
@@ -50,8 +62,31 @@ export function shotPose(
       ))
         bounds.expandByPoint(anchor.position);
     if (bounds.isEmpty()) throw new Error('A camera shot needs a non-empty object or bounds');
+    return bounds;
+  }
+  const toBounds = envelope(shot),
+    fromBounds = shot.from ? envelope(shot.from) : toBounds;
+  const radii = [fromBounds, toBounds].map(
+    (bounds) => bounds.getBoundingSphere(new T.Sphere()).radius,
+  );
+  const referenceScale = shot.referenceScale ?? Math.max(...radii);
+  if (
+    !Number.isFinite(referenceScale) ||
+    referenceScale < 0 ||
+    (shot.referenceScale !== undefined && referenceScale === 0)
+  )
+    throw new Error('A camera referenceScale must be finite and positive.');
+  const numericalRadius = Math.max(
+    4 * Math.sqrt(Number.EPSILON) * referenceScale,
+    ...[fromBounds, toBounds]
+      .flatMap((bounds) => [...bounds.min.toArray(), ...bounds.max.toArray()])
+      .map((value) => 32 * Number.EPSILON * Math.abs(value)),
+  );
+  if (numericalRadius === 0)
+    throw new Error('A point at the origin needs a positive camera referenceScale.');
+  function frame(options: Shot3D, bounds: T.Box3) {
     const sphere = bounds.getBoundingSphere(new T.Sphere()),
-      radius = Math.max(sphere.radius, 0.1);
+      radius = Math.max(sphere.radius, numericalRadius);
     const margin = options.padding ?? 24;
     const direction = new T.Vector3(...(options.direction ?? [3.2, 2, 4.5])).normalize();
     const up = camera.up.clone().normalize();
@@ -73,6 +108,10 @@ export function shotPose(
       width,
       height,
       insets,
+      minimum: {
+        width: minimumExtent(radius, numericalRadius),
+        height: minimumExtent(radius, numericalRadius),
+      },
       anchors: [...corners(bounds), ...(options.anchors ?? [])],
     });
     return {
@@ -85,10 +124,10 @@ export function shotPose(
       annotations: options.anchors ?? [],
     };
   }
-  const to = frame(shot),
-    from = shot.from ? frame(shot.from) : to;
-  const progress = Math.max(0, Math.min(1, shot.progress ?? 1));
-  const t = shot.reduced ? Number(progress > 0) : progress * progress * (3 - 2 * progress);
+  const to = frame(shot, toBounds),
+    from = shot.from ? frame(shot.from, fromBounds) : to;
+  const t = shotProgress(shot.progress ?? 1, shot.reduced);
+  const radius = Math.exp(Math.log(from.radius) * (1 - t) + Math.log(to.radius) * t);
   const target = from.target.clone().lerp(to.target, t);
   const rotation = new T.Quaternion().setFromUnitVectors(from.direction, to.direction);
   const direction =
@@ -124,6 +163,10 @@ export function shotPose(
       width,
       height,
       insets,
+      minimum: {
+        width: minimumExtent(radius, numericalRadius),
+        height: minimumExtent(radius, numericalRadius),
+      },
       anchors: [
         ...corners(bounds),
         // A label shared by both shots remains attached during the whole camera turn.
@@ -135,12 +178,11 @@ export function shotPose(
     target.copy(fit.target);
     distance = Math.max(distance, fit.position.distanceTo(fit.target));
   }
-  const radius = Math.max(from.radius, to.radius);
   return {
     target,
     position: target.clone().addScaledVector(direction, distance),
-    radius: Math.exp(Math.log(from.radius) * (1 - t) + Math.log(to.radius) * t),
-    near: Math.min(from.radius, to.radius) / 100,
+    radius,
+    near: radius / 100,
     far: distance + radius * 100,
   };
 }

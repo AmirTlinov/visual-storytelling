@@ -34,6 +34,8 @@ export interface ChapterFrame {
 }
 export interface ChapterPresentation {
   render(frame: ChapterFrame): void;
+  /** Finish the first queued paint while the candidate is still concealed. */
+  ready?(signal: AbortSignal): void | Promise<unknown>;
   snapshot?(): unknown;
   /** Freeze the current frame before returning; decoding its boundary image may be asynchronous. */
   capture?(viewport?: { aspect: number }): Promise<HTMLCanvasElement> | HTMLCanvasElement;
@@ -222,6 +224,7 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
             try {
               candidate.drawing.render(moment.frame);
               view.prepare(selected.index);
+              await candidate.drawing.ready?.(signal);
               if (options.transition)
                 presentations.prepareTransition(
                   selected.index,
