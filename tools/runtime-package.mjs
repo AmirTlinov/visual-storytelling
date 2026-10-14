@@ -289,8 +289,14 @@ async function updatePreparedSceneRuntime(destination, options, metadata) {
   return { scene: destination, changed: true, prepared: true, build: pin.build, dependency };
 }
 
-export async function storyDocumentAPI(directory) {
-  const pinned = await readPinnedRuntime(directory);
+export async function storyDocumentAPI(directory, { installedFrom } = {}) {
+  let pinned = await readPinnedRuntime(directory);
+  if (pinned.archive && installedFrom) {
+    const installed = await readPinnedRuntime(installedFrom);
+    if (installed.archive || installed.runtime.build !== pinned.runtime.build)
+      throw new Error('The accepted build does not contain this project’s exact pinned runtime.');
+    pinned = installed;
+  }
   if (pinned.archive)
     throw new Error('Install this project’s pinned dependencies before semantic authoring.');
   const migrationRequired = () =>
@@ -322,8 +328,8 @@ export async function storyDocumentAPI(directory) {
 export async function assertPreparedDocument(directory) {
   const pin = await readPreparedRuntime(directory);
   if (!pin) throw new Error('Document authoring requires a prepared StoryDocument project.');
-  const owner=pathToFileURL(join(pin.root,'tools/runtime-package.mjs')).href;
-  if(owner!==import.meta.url)return (await import(owner)).assertPreparedDocument(directory);
+  const owner = pathToFileURL(join(pin.root, 'tools/runtime-package.mjs')).href;
+  if (owner !== import.meta.url) return (await import(owner)).assertPreparedDocument(directory);
   await storyDocumentAPI(directory);
   const manifest = await readStoryProject(directory);
   if (!manifest)

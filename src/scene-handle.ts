@@ -48,6 +48,8 @@ export interface SceneRuntime {
   };
   /** A compiled subject accepts whole validated authored documents; ProjectStore owns their revisions. */
   readonly authoring?: {
+    /** Derived voice job from this accepted document and its registered module owners. */
+    readonly narration?: unknown;
     readonly document: unknown;
     /** Prepare a complete document with this subject's modules; leaves source and displayed state intact. */
     prepare(document: unknown, operations?: readonly unknown[]): unknown;
@@ -72,6 +74,8 @@ export interface SceneRuntime {
   readonly currentTime?: number;
   readonly playing?: boolean;
   readonly muted?: boolean;
+  /** Applicability of the whole recorded unit at the completed drawing; mute is separate. */
+  readonly speech?: import('./story/speech-gate.js').SpeechAudibility;
   readonly rate?: number;
   readonly selected?: readonly string[];
   objects?(): ReturnType<ReturnType<typeof sceneObjects>['objects']>;
@@ -82,7 +86,7 @@ export interface SceneRuntime {
   mute?(value: boolean): void | Promise<void>;
   setRate?(value: number): void;
   play?(): void | Promise<void>;
-  seek?(time: number): void;
+  seek?(time: number, position?: { mode: 'story' | 'explore' }): void;
   /** Resolve when the latest requested frame is prepared and rendered. */
   ready?(): Promise<void>;
   pause?(): void;

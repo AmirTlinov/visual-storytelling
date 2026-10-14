@@ -12,35 +12,10 @@ import wave
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools' / 'audio'))
 from script import read_script, timed_cues, check_action_windows, check_timeline
-from resources import SPEECH_REPO, SPEECH_REVISION
 from audition import audition
 
 
 class NarrationCues(unittest.TestCase):
-    def test_gallery_audio_matches_its_current_script_and_pcm_duration(self):
-        examples = Path(__file__).resolve().parents[1] / 'examples'
-        catalog = json.loads((examples / 'catalog.json').read_text())
-        for name in catalog:
-            source = examples / name / 'narration.json'
-            if not source.exists():
-                continue
-            with self.subTest(scene=name):
-                timeline = json.loads((source.parent / 'timeline.json').read_text())
-                check_timeline(source, source.parent / 'timeline.json')
-                self.assertEqual(timeline['synthesis']['model'], SPEECH_REPO)
-                self.assertEqual(timeline['synthesis']['revision'], SPEECH_REVISION)
-                script = read_script(source)
-                cues = {}
-                for segment, aligned in zip(script['segments'], timeline['segments'], strict=True):
-                    self.assertEqual(segment['spoken'], aligned['text'])
-                    self.assertEqual(segment.get('title'), aligned.get('title'))
-                    cues.update(timed_cues(segment, aligned['words']))
-                self.assertEqual(timeline['cues'], cues)
-                for key in ('audio', 'voice', 'music'):
-                    if timeline[key]:
-                        with wave.open(str(source.parent / timeline[key])) as audio:
-                            self.assertAlmostEqual(timeline['duration'], audio.getnframes() / audio.getframerate(), places=6)
-
     def script(self, cue, extra=()):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'narration.json'

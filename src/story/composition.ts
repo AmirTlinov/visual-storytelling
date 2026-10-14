@@ -87,6 +87,9 @@ export interface SceneStoryOptions {
   heading?: SceneOptions['heading'];
   script?: Script;
   audio?: HTMLAudioElement | null;
+  exploreTimeline?: boolean;
+  /** The published chapter frame supplies the actual subject values for a whole take. */
+  speechApplicable?(unit: import('./cues.js').Chapter, frame: ChapterFrame): boolean;
   theme?: Theme;
   transition?: ChapterTransition;
   /** Derive the subject once before accepting a frame or preparing its presentation. */
@@ -178,9 +181,16 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
     story = shell.attachStory<Record<string, ControlValue>, string, ComposedMoment>({
       script: plan.script,
       audio: options.audio,
+      exploreTimeline: options.exploreTimeline,
       stateAt: frames.stateAt,
+      resolveTime: frames.resolveTime,
       derive: frames.derive,
       resolveInput: frames.resolveInput,
+      ...(options.speechApplicable && {
+        speechApplicable(unit, moment) {
+          return options.speechApplicable!(unit, moment.state.frame);
+        },
+      }),
       chapterAt(moment) {
         if (moment.mode !== 'explore') return;
         const timing = plan.timings.find((chapter) => chapter.id === moment.values.chapter);

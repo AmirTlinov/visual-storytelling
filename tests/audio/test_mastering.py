@@ -144,6 +144,13 @@ class MasteringChecks(unittest.TestCase):
             with patch("mastering.measure", side_effect=AssertionError("No FFmpeg")):
                 self.assertEqual(reuse_audio(root / "narration.json", root / "out"), second)
             self.assertEqual(original, {p.name: p.read_bytes() for p in (root / "out").iterdir()})
+            credits = root / "out/CREDITS.txt"
+            credits.write_text("Authored scene attribution\n")
+            with patch("mastering.measure", side_effect=AssertionError("No FFmpeg")):
+                self.assertEqual(reuse_audio(root / "narration.json", root / "out"), second)
+            self.assertIn("Authored scene attribution", credits.read_text())
+            self.assertIn("Boson AI", credits.read_text())
+            self.assertEqual((root / "out/audio.wav").read_bytes(), original["audio.wav"])
             # Matching duration cannot hide edited accepted audio.
             data, rate = sf.read(root / "out/audio.wav")
             sf.write(root / "out/audio.wav", data * .5, rate)

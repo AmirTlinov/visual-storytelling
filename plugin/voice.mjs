@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { readJSON } from '../tools/storage.mjs';
 import { configureEnvironment, environmentStatus } from '../tools/environment.mjs';
 import { higgsVoice } from '../tools/voice/higgs.mjs';
-import { adapterVoiceStatus, validateAdapterSettings } from '../tools/voice/adapter.mjs';
+import { adapterVoiceStatus, validateAdapterSettings } from '../tools/voice/adapter-input.mjs';
 import {
   narrationProvider,
   voiceSettingsForDisplay,
@@ -10,9 +10,11 @@ import {
   validateHiggsSelection,
 } from '../tools/voice/settings.mjs';
 import { requireVoiceSupport } from '../tools/environment/voice.mjs';
+import { storyDocumentAPI } from '../tools/runtime-package.mjs';
+import { readStoryProject } from '../tools/story-project.mjs';
 
 /** Adapt provider selection to project revisions; edit remains the sole mutation path. */
-export function projectVoice({ data, preferences, projects, edit }) {
+export function projectVoice({ data, preferences, projects, edit, prepareDocument }) {
   return async function voice({
     projectId,
     sourceRevision,
@@ -35,13 +37,34 @@ export function projectVoice({ data, preferences, projects, edit }) {
     );
     provider = settings.provider;
     const selectedLanguage = settings.language;
-    const persist = () =>
-      edit({
+    const persist = async () => {
+      const changes = [{ path: 'voice.json', content: JSON.stringify(settings, null, 2) + '\n' }];
+      if (enabled) {
+        const project = projects.get(projectId);
+        const source = await readJSON(join(project.path, 'story.json'));
+        if (!source) throw new Error('Provide an authored story.json before preparing voice.');
+        const manifest = await readStoryProject(project.path);
+        const document = manifest?.modules.length
+          ? await prepareDocument({ project, sourceRevision, document: source })
+          : (
+              await storyDocumentAPI(project.path, {
+                installedFrom: (
+                  await readJSON(join(data, 'builds', project.buildRevision + '.json'))
+                )?.snapshot,
+              })
+            ).validateStoryDocument(source);
+        changes.push({
+          path: 'story.json',
+          content: JSON.stringify(document, null, 2) + '\n',
+        });
+      }
+      return edit({
         projectId,
         sourceRevision,
         requestId,
-        changes: [{ path: 'voice.json', content: JSON.stringify(settings, null, 2) + '\n' }],
+        changes,
       });
+    };
     // Turning speech off must remain possible when a selected backend is incomplete or removed.
     if (enabled === false) return persist();
     try {

@@ -71,5 +71,14 @@ export async function captureWorkingInput(data, project, sourceRevision) {
       await rm(staging, { recursive: true, force: true });
     }
   }
-  return { ...base, sourceRevision: target.sourceRevision, inputSnapshot };
+  await writeJSON(join(snapshot, '.vstory-input.json'), {
+    ...(await readJSON(join(snapshot, '.vstory-input.json'))),
+    acceptedBuildRevision: project.buildRevision,
+  });
+  return {
+    ...base,
+    sourceRevision: target.sourceRevision,
+    inputSnapshot,
+    acceptedBuildRevision: project.buildRevision,
+  };
 }

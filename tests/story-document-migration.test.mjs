@@ -92,7 +92,13 @@ test('ordinary legacy story converts to the same document and speech projection 
   };
   const document = validateStoryDocument(convertLegacyStoryDocument(source));
   assert.deepEqual(document.models, []);
-  assert.deepEqual(document.chapters, source.chapters);
+  assert.deepEqual(
+    document.chapters.map((chapter) => ({
+      ...chapter,
+      beats: chapter.beats.map(({ speech, ...beat }) => beat),
+    })),
+    source.chapters,
+  );
   assert.deepEqual(document.narration, source.narration);
   const narration = documentNarration(document);
   assert.equal(narration.segments[0].text, source.chapters[0].beats[1].text);

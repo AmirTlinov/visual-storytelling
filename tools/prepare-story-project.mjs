@@ -5,6 +5,7 @@ import { build } from 'esbuild';
 import { readStoryProject, storyModuleSource, storyProjectOwnerFiles } from './story-project.mjs';
 import { readPreparedRuntime } from './runtime-package.mjs';
 import { assetURLs } from './asset-urls.mjs';
+import { setNarrationMode } from './narration.mjs';
 
 /** Compile authored JS/TS only. Its browser imports bind to the project's immutable common runtime. */
 export async function preparedStoryHTML(directory, { silent = false } = {}) {
@@ -96,16 +97,14 @@ export async function preparedStoryHTML(directory, { silent = false } = {}) {
     return null;
   });
   if (
-    !silent &&
     voice?.enabled &&
     (await access(join(directory, 'audio.wav')).then(
       () => true,
       () => false,
     ))
-  )
-    html = html.replace(
-      '</body>',
-      '<audio data-story-audio data-story-timeline="timeline.json" src="audio.wav" preload="auto"></audio></body>',
-    );
+  ) {
+    html = setNarrationMode(html, false);
+    if (silent) html = setNarrationMode(html, true);
+  }
   return { html, manifest, pin };
 }

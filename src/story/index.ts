@@ -56,3 +56,6 @@ export { documentRuntime } from './runtime.js';
 export * from './comparison.js';
 export type { DrawingViewport } from './subject.js';
 export { SimulationMode } from './simulation-mode.js';
+
+export type { SpeechConditions, SpeechModelCondition } from './speech-condition.js';
+export type { SpeechAudibility } from './speech-gate.js';

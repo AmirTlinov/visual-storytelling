@@ -1,406 +1,22 @@
-import { createHash } from 'node:crypto';
-import { spawn } from 'node:child_process';
-import {
-  readFile,
-  writeFile,
-  readdir,
-  mkdir,
-  mkdtemp,
-  lstat,
-  realpath,
-  rename,
-  rm,
-} from 'node:fs/promises';
-import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { readFile, writeFile, mkdir, mkdtemp, lstat, rename, rm } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 import { dataDirectory } from '../storage.mjs';
-import { voiceDigest } from './receipt.mjs';
+import { voiceDigest, voiceBytesDigest as hash } from './receipt.mjs';
 import { masterAdapterAudio, currentMastering } from './mastering.mjs';
-import { spokenWords as tokens } from '../../dist/story/spoken-words.js';
-
+import {
+  spokenWords as tokens,
+  spokenText as spoken,
+  spokenSpan,
+} from '../../dist/story/spoken-words.js';
+import { validateAdapterSettings, adapterInput, adapterSelection } from './adapter-input.mjs';
+import { readWav, wav, markers, take, rebindCachedTake } from './adapter-take.mjs';
+import { validateSpeechConditions } from '../../dist/story/speech-condition.js';
 const format = 'voice-adapter-v1';
-const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
-const spoken = (text) => text.replace(/<\|[a-z]+:[a-z_]+\|>/g, '').trim();
-const ignored = new Set(['node_modules', 'dist', 'site', 'artifacts', 'review', '__pycache__']);
-const outputs = new Set([
-  'audio.wav',
-  'voice.wav',
-  'music.wav',
-  'timeline.json',
-  'narration.txt',
-  'voice-preview.html',
-  'CREDITS.txt',
-  'voice.json',
-]);
 const maybeJSON = async (file) =>
   readFile(file, 'utf8').then(JSON.parse, (error) => {
     if (error.code !== 'ENOENT') throw error;
     return null;
   });
-
-/** Public settings contain portable selection only. Secrets belong to the process environment. */
-export function validateAdapterSettings(settings) {
-  if (!settings || !['local', 'api'].includes(settings.provider))
-    throw new Error('Choose provider "local" or "api" for a voice adapter.');
-  const allowed = new Set(['provider', 'adapter', 'model', 'voice', 'language', 'enabled']);
-  if (Object.keys(settings).some((key) => !allowed.has(key)))
-    throw new Error(
-      'Voice adapters accept provider, adapter, model, voice, language and enabled. Keep credentials in environment variables.',
-    );
-  const text = (value, label, maximum = 200) => {
-    if (
-      typeof value !== 'string' ||
-      !value.trim() ||
-      value.length > maximum ||
-      /[\x00-\x1f]/.test(value)
-    )
-      throw new Error(`Voice adapter ${label} must be a non-empty plain string.`);
-    return value.trim();
-  };
-  const adapter = text(settings.adapter, 'adapter', 1000);
-  if (
-    isAbsolute(adapter) ||
-    adapter.includes('\\') ||
-    !adapter.endsWith('.mjs') ||
-    adapter.split('/').some((part) => !part || part.startsWith('.') || ignored.has(part))
-  )
-    throw new Error(
-      'Voice adapter must be a project-relative .mjs file, for example voice/adapter.mjs.',
-    );
-  if (settings.enabled !== undefined && typeof settings.enabled !== 'boolean')
-    throw new Error('Voice adapter enabled must be boolean.');
-  return {
-    provider: settings.provider,
-    adapter,
-    model: text(settings.model, 'model'),
-    ...(settings.voice !== undefined && { voice: text(settings.voice, 'voice') }),
-    language: settings.language === undefined ? 'ru-RU' : text(settings.language, 'language', 35),
-    ...(settings.enabled !== undefined && { enabled: settings.enabled }),
-  };
-}
-
-const selection = (settings) => {
-  const { enabled, ...sound } = validateAdapterSettings(settings);
-  return sound;
-};
-
-/** A small adapter directory and its sibling assets form one verifiable implementation. */
-async function adapterInput(directory, settings) {
-  const root = await realpath(directory);
-  let entry = root;
-  for (const part of settings.adapter.split('/')) {
-    entry = join(entry, part);
-    if ((await lstat(entry)).isSymbolicLink())
-      throw new Error('Voice adapter files must stay inside the project without symbolic links.');
-  }
-  if (!(await lstat(entry)).isFile())
-    throw new Error('Voice adapter entry must be a regular file.');
-  const folder = dirname(entry),
-    files = {};
-  async function visit(path, prefix = '') {
-    for (const item of (await readdir(path, { withFileTypes: true })).sort((a, b) =>
-      a.name.localeCompare(b.name),
-    )) {
-      if (
-        item.name.startsWith('.') ||
-        ignored.has(item.name) ||
-        item.name.endsWith('.pyc') ||
-        (path === root && outputs.has(item.name))
-      )
-        continue;
-      const name = prefix ? `${prefix}/${item.name}` : item.name;
-      const file = join(path, item.name);
-      if (item.isSymbolicLink())
-        throw new Error(
-          'Voice adapter dependencies must stay inside the project without symbolic links.',
-        );
-      if (item.isDirectory()) await visit(file, name);
-      else if (item.isFile()) files[name] = hash(await readFile(file));
-      else throw new Error('Voice adapter dependencies must be regular files.');
-    }
-  }
-  await visit(folder);
-  return { entry, identity: voiceDigest({ version: 1, adapter: settings.adapter, files }) };
-}
-
-export async function adapterVoiceStatus(directory, settings) {
-  try {
-    const config = validateAdapterSettings(settings);
-    if (!directory) throw new Error('Choose a project containing the voice adapter.');
-    await adapterInput(directory, config);
-    return {
-      supported: true,
-      ready: true,
-      voices: [{ id: config.voice ?? config.model, name: config.model, language: config.language }],
-    };
-  } catch {
-    return {
-      supported: true,
-      ready: false,
-      voices: [],
-      reason:
-        'Configure a local or API model and a regular project-relative .mjs voice adapter. Discovery does not run it or contact the provider.',
-    };
-  }
-}
-
-function readWav(bytes) {
-  const bad = () => {
-    throw new Error('Voice adapter must produce a complete PCM16 mono take.wav.');
-  };
-  if (
-    bytes.length < 44 ||
-    bytes.length > 128_000_000 ||
-    bytes.toString('ascii', 0, 4) !== 'RIFF' ||
-    bytes.toString('ascii', 8, 12) !== 'WAVE' ||
-    bytes.readUInt32LE(4) + 8 !== bytes.length
-  )
-    bad();
-  let pcm,
-    sampleRate,
-    position = 12;
-  while (position < bytes.length) {
-    if (position + 8 > bytes.length) bad();
-    const kind = bytes.toString('ascii', position, position + 4);
-    const size = bytes.readUInt32LE(position + 4),
-      start = position + 8,
-      end = start + size;
-    if (end > bytes.length) bad();
-    if (kind === 'fmt ') {
-      if (
-        sampleRate ||
-        size < 16 ||
-        bytes.readUInt16LE(start) !== 1 ||
-        bytes.readUInt16LE(start + 2) !== 1 ||
-        bytes.readUInt16LE(start + 14) !== 16
-      )
-        bad();
-      sampleRate = bytes.readUInt32LE(start + 4);
-      if (
-        sampleRate < 8000 ||
-        sampleRate > 192000 ||
-        bytes.readUInt32LE(start + 8) !== sampleRate * 2 ||
-        bytes.readUInt16LE(start + 12) !== 2
-      )
-        bad();
-    } else if (kind === 'data') {
-      if (pcm || !size || size % 2) bad();
-      pcm = bytes.subarray(start, end);
-    }
-    position = end + (size % 2);
-  }
-  if (position !== bytes.length || !sampleRate || !pcm) bad();
-  return { pcm, sampleRate, frames: pcm.length / 2, duration: pcm.length / (sampleRate * 2) };
-}
-
-function wav(pieces, sampleRate) {
-  const pcm = Buffer.concat(pieces),
-    header = Buffer.alloc(44);
-  header.write('RIFF');
-  header.writeUInt32LE(pcm.length + 36, 4);
-  header.write('WAVEfmt ', 8);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20);
-  header.writeUInt16LE(1, 22);
-  header.writeUInt32LE(sampleRate, 24);
-  header.writeUInt32LE(sampleRate * 2, 28);
-  header.writeUInt16LE(2, 32);
-  header.writeUInt16LE(16, 34);
-  header.write('data', 36);
-  header.writeUInt32LE(pcm.length, 40);
-  return Buffer.concat([header, pcm]);
-}
-
-function markers(value, text, duration, sampleRate) {
-  if (!Array.isArray(value) || !value.length || value.length > 20000)
-    throw new Error('Voice adapter must return actual word or phrase timestamps.');
-  let previous = 0;
-  const result = value.map((word) => {
-    if (
-      !word ||
-      typeof word.text !== 'string' ||
-      !tokens(word.text).length ||
-      !Number.isFinite(word.start) ||
-      !Number.isFinite(word.end) ||
-      word.start < previous ||
-      word.end <= word.start ||
-      word.end > duration + 1 / sampleRate
-    )
-      throw new Error('Voice adapter timestamps must be ordered and fit the complete waveform.');
-    previous = word.end;
-    return { text: word.text, start: word.start, end: word.end };
-  });
-  if (voiceDigest(result.flatMap((word) => tokens(word.text))) !== voiceDigest(tokens(text)))
-    throw new Error(
-      'Voice adapter timestamps must cover the complete spoken text without missing or extra words.',
-    );
-  return result;
-}
-
-const alignment = (value) => {
-  if (!value || typeof value.method !== 'string' || !/^[a-z][a-z0-9_.-]{0,79}$/.test(value.method))
-    throw new Error('Voice adapter must identify its real alignment method.');
-  return { method: value.method };
-};
-
-async function invoke(entry, directory, input, signal, managedProcessGroup) {
-  signal?.throwIfAborted();
-  return new Promise((resolveResult, reject) => {
-    // JobRunner retains its group, including adapter descendants. Standalone synthesis
-    // owns a separate group so cancelling a local model also stops its Python children.
-    const ownGroup = process.platform !== 'win32' && !managedProcessGroup;
-    const child = spawn(process.execPath, [entry], {
-      cwd: directory,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      detached: ownGroup,
-    });
-    let output = '',
-      size = 0,
-      failure,
-      timer,
-      killTimer,
-      exited = false,
-      finished = false;
-    const send = (name) => {
-      try {
-        if (ownGroup && child.pid) process.kill(-child.pid, name);
-        else child.kill(name);
-      } catch (error) {
-        if (error.code !== 'ESRCH') throw error;
-      }
-    };
-    const finish = (error, result) => {
-      if (finished) return;
-      finished = true;
-      clearTimeout(timer);
-      clearTimeout(killTimer);
-      signal?.removeEventListener('abort', abort);
-      if (ownGroup) send('SIGKILL');
-      child.stdin.destroy();
-      child.stdout.destroy();
-      child.stderr.destroy();
-      if (error) reject(error);
-      else resolveResult(result);
-    };
-    const stop = (error) => {
-      failure ??= error;
-      send('SIGTERM');
-      if (exited) return finish(failure);
-      killTimer ??= setTimeout(() => {
-        send('SIGKILL');
-        finish(failure);
-      }, 1500);
-      killTimer.unref();
-    };
-    const abort = () => stop(signal.reason ?? new Error('Voice adapter cancelled.'));
-    timer = setTimeout(() => stop(new Error('Voice adapter timed out after 180 seconds.')), 180000);
-    timer.unref();
-    signal?.addEventListener('abort', abort, { once: true });
-    if (signal?.aborted) abort();
-    child.stdout.on('data', (chunk) => {
-      size += chunk.length;
-      if (size > 1_000_000) stop(new Error('Voice adapter response exceeded the 1 MB limit.'));
-      else output += chunk.toString('utf8');
-    });
-    // Provider errors and stdout can contain credentials. They never enter jobs or chat errors.
-    child.stderr.on('data', () => {});
-    child.stdin.on('error', () => {});
-    child.once('error', () => finish(new Error('Voice adapter could not be started.')));
-    // A killed wrapper can leave inherited stdout open in descendants. The worker
-    // must still report failure so JobRunner can release its complete process group.
-    child.once('exit', (code) => {
-      exited = true;
-      if (code !== 0) failure ??= new Error(`Voice adapter failed (exit ${code ?? 'signal'}).`);
-      if (failure) finish(failure);
-    });
-    child.once('close', (code) => {
-      if (failure) return finish(failure);
-      if (code !== 0) return finish(new Error(`Voice adapter failed (exit ${code ?? 'signal'}).`));
-      try {
-        finish(null, JSON.parse(output));
-      } catch {
-        finish(new Error('Voice adapter must return only its JSON timestamp manifest on stdout.'));
-      }
-    });
-    child.stdin.end(JSON.stringify(input));
-  });
-}
-
-async function take(directory, backend, settings, text, cache, signal, managedProcessGroup) {
-  const key = voiceDigest({
-    version: 1,
-    adapter: backend.identity,
-    settings: selection(settings),
-    text,
-  });
-  const target = join(cache, `adapter-${key}`);
-  const validate = (bytes, receipt) => {
-    const audio = readWav(bytes);
-    if (receipt.key !== key || receipt.audio_sha256 !== hash(bytes))
-      throw new Error('Stale voice take.');
-    if (!audio.pcm.some((value) => value !== 0))
-      throw new Error('Voice adapter returned silent audio.');
-    return {
-      ...audio,
-      words: markers(receipt.words, text, audio.duration, audio.sampleRate),
-      alignment: alignment(receipt.alignment),
-    };
-  };
-  try {
-    const receipt = JSON.parse(await readFile(join(target, 'take.json'), 'utf8'));
-    return { ...validate(await readFile(join(target, 'take.wav')), receipt), cached: true };
-  } catch (error) {
-    signal?.throwIfAborted();
-    if (error.code && error.code !== 'ENOENT') throw error;
-  }
-  await mkdir(cache, { recursive: true });
-  const staging = await mkdtemp(join(cache, '.adapter-take-'));
-  try {
-    const result = await invoke(
-      backend.entry,
-      directory,
-      {
-        version: 1,
-        provider: settings.provider,
-        text,
-        model: settings.model,
-        ...(settings.voice !== undefined && { voice: settings.voice }),
-        language: settings.language,
-        outputDirectory: staging,
-      },
-      signal,
-      managedProcessGroup,
-    );
-    const path = join(staging, 'take.wav');
-    const file = await lstat(path);
-    if (!file.isFile() || file.size > 128_000_000)
-      throw new Error('Voice adapter take.wav must be a bounded regular file.');
-    const bytes = await readFile(path);
-    const receipt = {
-      key,
-      audio_sha256: hash(bytes),
-      words: result?.words,
-      alignment: result?.alignment,
-    };
-    const audio = validate(bytes, receipt);
-    if ((await adapterInput(directory, settings)).identity !== backend.identity)
-      throw new Error('Voice adapter changed during synthesis. Its take was not cached.');
-    signal?.throwIfAborted();
-    // Cache only validated output, not arbitrary files an API client might have written.
-    const prepared = await mkdtemp(join(cache, '.adapter-cache-'));
-    try {
-      await writeFile(join(prepared, 'take.wav'), bytes);
-      await writeFile(join(prepared, 'take.json'), JSON.stringify(receipt));
-      signal?.throwIfAborted();
-      await rm(target, { recursive: true, force: true });
-      await rename(prepared, target);
-    } finally {
-      await rm(prepared, { recursive: true, force: true });
-    }
-    return { ...audio, cached: false };
-  } finally {
-    await rm(staging, { recursive: true, force: true });
-  }
-}
 
 function pause(value) {
   if (!Number.isFinite(value) || value < 0 || value > 30)
@@ -420,6 +36,7 @@ function scriptSpec(spec) {
   pause(spec.outro ?? 0.4);
   const ids = new Set();
   for (const segment of spec.segments) {
+    if (segment.conditions !== undefined) validateSpeechConditions(segment.conditions);
     for (const item of [segment, ...(segment.cues ?? [])]) {
       if (typeof item?.id !== 'string' || !/^[a-z][a-z0-9_.-]*$/.test(item.id) || ids.has(item.id))
         throw new Error('Narration segments and cues need unique valid IDs.');
@@ -431,7 +48,11 @@ function scriptSpec(spec) {
       !tokens(spoken(segment.text)).length
     )
       throw new Error('Each narration segment needs a bounded non-empty spoken text.');
-    if (segment.delivery || /<\|[^>]*\|>/.test(segment.text))
+    if (
+      segment.delivery !== undefined ||
+      segment.seed !== undefined ||
+      /<\|[^>]*\|>/.test(segment.text)
+    )
       throw new Error(
         'Higgs delivery controls need to be removed before using a local/API voice adapter.',
       );
@@ -487,16 +108,15 @@ function cueRecords(spec, segments) {
     const record = segments[index],
       words = record.words;
     cues[segment.id] = { text: record.text, start: words[0].start, end: words.at(-1).end };
-    const lexical = words.flatMap((word, at) => tokens(word.text).map((text) => ({ text, at })));
+    const lexical = words.flatMap((word) => tokens(word.text));
     for (const cue of segment.cues ?? []) {
-      const { at, length } = quoteIndex(
-        lexical.map((word) => word.text),
-        cue,
-      );
+      const { at, length } = quoteIndex(lexical, cue);
+      const span = spokenSpan(words, at, length);
+      if (!span)
+        throw new Error(`Narration cue ${cue.id} needs measured word or phrase endpoints.`);
       cues[cue.id] = {
         text: cue.quote,
-        start: words[lexical[at].at].start,
-        end: words[lexical[at + length - 1].at].end,
+        ...span,
         ...Object.fromEntries(
           ['action', 'hold', 'timing', 'awaitInput']
             .filter((key) => cue[key] !== undefined)
@@ -568,6 +188,82 @@ async function publish(directory, staging, signal) {
   }
 }
 
+/** Rebind explicit source units locally, preserving every accepted take and audio byte. */
+export async function bindAdapterRecording(
+  directory,
+  sourceFile,
+  settings,
+  { signal, cache = join(dataDirectory(), 'speech'), previousAdapter } = {},
+) {
+  const current = await inputs(directory, sourceFile, validateAdapterSettings(settings));
+  const previous = await maybeJSON(join(directory, 'timeline.json'));
+  if (
+    !previous ||
+    previous.digest_format !== format ||
+    voiceDigest(previous.voice_settings) !== voiceDigest(adapterSelection(settings)) ||
+    previous.synthesis?.adapter_sha256 !==
+      (previousAdapter?.accepted ?? current.backend.identity) ||
+    (previousAdapter && previousAdapter.current !== current.backend.identity)
+  )
+    throw new Error(
+      'The accepted voice provider or adapter differs; migration cannot synthesize a replacement.',
+    );
+  const bytes = await readFile(join(directory, 'audio.wav'));
+  if (
+    hash(bytes) !== previous.audio_sha256 ||
+    previous.segments.length !== current.spec.segments.length ||
+    previous.segments.some(
+      (unit, index) =>
+        unit.id !== current.spec.segments[index].id ||
+        unit.text !== spoken(current.spec.segments[index].text),
+    )
+  )
+    throw new Error('Migration would change an accepted performance.');
+  const next = {
+    ...previous,
+    source_sha256: current.identity.source,
+    authored_source_sha256: current.identity.authored,
+    synthesis: { ...previous.synthesis, adapter_sha256: current.backend.identity },
+    segments: previous.segments.map((unit, index) => ({
+      ...unit,
+      conditions: structuredClone(current.spec.segments[index].conditions),
+      title: current.spec.segments[index].title,
+    })),
+    cues: cueRecords(current.spec, previous.segments),
+    captionAliases: current.spec.captionAliases,
+  };
+  if (previousAdapter)
+    for (const unit of next.segments)
+      await rebindCachedTake(
+        cache,
+        previousAdapter.accepted,
+        current.backend.identity,
+        settings,
+        unit.text,
+        signal,
+      );
+  await checkAdapterNarration(directory, sourceFile, next, settings);
+  signal?.throwIfAborted();
+  const staging = await mkdtemp(join(dirname(resolve(directory)), '.voice-binding-'));
+  let preserve = false;
+  try {
+    await writeFile(join(staging, 'audio.wav'), bytes);
+    await writeFile(join(staging, 'timeline.json'), JSON.stringify(next, null, 2) + '\n');
+    if (
+      voiceDigest(await maybeJSON(join(directory, 'timeline.json'))) !== voiceDigest(previous) ||
+      hash(await readFile(join(directory, 'audio.wav'))) !== hash(bytes)
+    )
+      throw new Error('The accepted recording changed during migration.');
+    await publish(directory, staging, signal);
+  } catch (error) {
+    preserve = error.preserveNarrationStaging === true;
+    throw error;
+  } finally {
+    if (!preserve) await rm(staging, { recursive: true, force: true });
+  }
+  return next;
+}
+
 /** External models provide performances and measured timestamps; this owner assembles the story. */
 export async function buildAdapterNarration(
   directory,
@@ -636,6 +332,18 @@ export async function buildAdapterNarration(
     }
   }
   cache ??= join(dataDirectory(), 'speech');
+  let acceptedWave;
+  const acceptedProvider =
+    accepted?.synthesis?.adapter_sha256 === backend.identity &&
+    voiceDigest(accepted.voice_settings) === voiceDigest(adapterSelection(config));
+  if (acceptedProvider) {
+    const bytes = await readFile(join(directory, 'audio.wav'));
+    if (hash(bytes) !== accepted.audio_sha256)
+      throw new Error('Accepted narration audio differs from its receipt.');
+    acceptedWave = readWav(bytes);
+    const { cueSheet } = await import('../../dist/story/cues.js');
+    cueSheet(accepted);
+  }
   const pieces = [],
     segments = [],
     alignments = [];
@@ -651,7 +359,26 @@ export async function buildAdapterNarration(
     signal?.throwIfAborted();
     progress('Подготавливаю выбранную озвучку', { done: index, total: spec.segments.length });
     const text = spoken(segment.text);
-    const clip = await take(directory, backend, config, text, cache, signal, managedProcessGroup);
+    const previousUnit =
+      acceptedProvider &&
+      accepted.segments?.find((unit) => unit.id === segment.id && unit.text === text);
+    const clip = await take(
+      directory,
+      backend,
+      config,
+      text,
+      cache,
+      signal,
+      managedProcessGroup,
+      Boolean(previousUnit),
+      previousUnit && {
+        wave: acceptedWave,
+        unit: previousUnit,
+        gainDB: accepted.mix?.mastering?.gain_db,
+        alignment: accepted.alignment?.segments?.find((unit) => unit.id === segment.id),
+        recordingSHA: accepted.audio_sha256,
+      },
+    );
     if (!sampleRate) {
       sampleRate = clip.sampleRate;
       silence(spec.intro ?? 0.4);
@@ -667,6 +394,7 @@ export async function buildAdapterNarration(
     }));
     segments.push({
       id: segment.id,
+      ...(segment.conditions !== undefined && { conditions: structuredClone(segment.conditions) }),
       ...(segment.title !== undefined && { title: segment.title }),
       text,
       start: words[0].start,
@@ -695,7 +423,7 @@ export async function buildAdapterNarration(
     music: null,
     audio_sha256: hash(bytes),
     mix: { mastering },
-    voice_settings: selection(config),
+    voice_settings: adapterSelection(config),
     synthesis: { provider: config.provider, model: config.model, adapter_sha256: backend.identity },
     alignment: { method: 'adapter-timestamps', segments: alignments },
     segments,
@@ -750,7 +478,7 @@ export async function checkAdapterNarration(
     receipt.digest_format !== format ||
     receipt.source_sha256 !== current.identity.source ||
     receipt.authored_source_sha256 !== current.identity.authored ||
-    voiceDigest(receipt.voice_settings) !== voiceDigest(selection(config)) ||
+    voiceDigest(receipt.voice_settings) !== voiceDigest(adapterSelection(config)) ||
     receipt.synthesis?.provider !== config.provider ||
     receipt.synthesis?.model !== config.model ||
     receipt.synthesis?.adapter_sha256 !== current.backend.identity
@@ -780,6 +508,7 @@ export async function checkAdapterNarration(
       record.id !== segment.id ||
       record.text !== text ||
       record.title !== segment.title ||
+      voiceDigest(record.conditions ?? null) !== voiceDigest(segment.conditions ?? null) ||
       !Number.isFinite(record.audio_start) ||
       !Number.isFinite(record.audio_end) ||
       Math.abs(record.audio_start - cursor / wave.sampleRate) > 1 / wave.sampleRate ||

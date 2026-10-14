@@ -84,6 +84,41 @@ test('narrated local cues retain intervening pauses, words and reversible chapte
   );
 });
 
+test('composition projects complete audio and word boundaries through the same chapter clock', () => {
+  const plan = composeChapters(
+    [
+      {
+        id: 'thought',
+        title: 'Мысль',
+        text: 'Один предмет.',
+        seconds: 4,
+        script: {
+          duration: 4,
+          cues: { look: { start: 0, end: 4 } },
+          segments: [
+            {
+              id: 'unit',
+              start: 0.4,
+              end: 3.6,
+              audio_start: 0.2,
+              audio_end: 3.8,
+              text: 'Один предмет.',
+              words: [{ text: 'Один', start: 0.4, end: 1 }],
+            },
+          ],
+        },
+      },
+    ],
+    { introduction: { seconds: 10, id: 'intro', title: 'Начало', text: 'Смотрим.' } },
+  );
+  const unit = plan.script.segments.find((unit) => unit.id === 'thought.unit');
+  assert.deepEqual(
+    [unit.audio_start, unit.start, unit.end, unit.audio_end],
+    [10.2, 10.4, 13.6, 13.8],
+  );
+  assert.deepEqual(unit.words[0], { text: 'Один', start: 10.4, end: 11 });
+});
+
 test('each boundary owns its transition duration and retains reversible local time', () => {
   const chapters = ['room', 'paper', 'next'].map((id) => ({ id, title: id, text: id, seconds: 3 }));
   const plan = composeChapters(chapters, { transition: (index) => (index === 1 ? 4.2 : 1.1) });

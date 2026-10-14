@@ -56,6 +56,7 @@ test(
             state = scene.snapshot(),
             drawing = document.querySelector('[data-division]');
           const items = [...drawing.querySelectorAll('[data-division-role]')];
+          window.initialDivisionDrawing ??= drawing;
           const frame = document.querySelector('[data-scene-frame]').getBoundingClientRect();
           const bounds = items.map((item) => item.getBoundingClientRect());
           return {
@@ -71,6 +72,7 @@ test(
               'none',
             ids: items.map((item) => item.dataset.object),
             sameHandle: document.querySelector('main').scene === scene,
+            sameArtwork: drawing === window.initialDivisionDrawing,
             overflow: document.documentElement.scrollWidth > innerWidth,
             objectsInside: bounds.every(
               (b) =>
@@ -89,6 +91,10 @@ test(
         assert.equal(frame.completed * 5 + frame.ungrouped, 17);
         assert.equal(new Set(frame.ids).size, 17);
         assert(frame.sameHandle);
+        assert(
+          frame.sameArtwork,
+          'replay progress must retain the prepared drawing and its objects',
+        );
         assert(frame.objectsInside);
         if (!frame.complete) assert.equal(frame.visibleIdentity, false, JSON.stringify(frame));
       }
@@ -297,9 +303,23 @@ test(
         document.body.append(root);
         try {
           await window.mountDocument(root, {
-            document: { recipe: 'division', inputs: { count: 17, divisor: 5 }, chapters: [] },
+            document: {
+              version: 2,
+              models: [{ id: 'failed', module: 'failure', inputs: { value: 17 } }],
+              views: [],
+              chapters: [],
+            },
+            modules: {
+              failure: {
+                validateInputs: ({ value }) => ({ value }),
+                state: ({ value }) => ({ value }),
+                operations: {},
+                validateViews() {},
+                focusTargets: () => [],
+              },
+            },
             subjects: {
-              division: {
+              failure: {
                 title: 'Failure',
                 parameters: () => [],
                 create() {
@@ -371,8 +391,8 @@ test(
       });
       assert.deepEqual(nonIdempotent, {
         initial: { value: 6, derived: 6 },
-        edited: { value: 8, derived: 8 },
-        sought: { value: 8, derived: 8 },
+        edited: { value: 4, derived: 4 },
+        sought: { value: 4, derived: 4 },
         resumed: { value: 6, derived: 6 },
       });
       assert.deepEqual(errors, []);

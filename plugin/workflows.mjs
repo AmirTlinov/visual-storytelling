@@ -9,6 +9,7 @@ import { writeJSON, readJSON } from '../tools/storage.mjs';
 import { prepareEnvironment } from '../tools/environment.mjs';
 import { updateSceneRuntime, preparedRuntimeFile } from '../tools/runtime-package.mjs';
 import { migrateStoryDocument } from '../tools/migrate-story-document.mjs';
+import { migrateAcceptedSpeech, acceptedAdapterForMigration } from '../tools/migrate-speech.mjs';
 import { prepareProjectChanges, writeProjectChange } from './project-changes.mjs';
 import { videoDimensions } from '../tools/video-dimensions.mjs';
 import { creationCandidate } from './authored-candidate.mjs';
@@ -30,6 +31,7 @@ export const workflows = {
     // Validate against working paths first: snapshots deliberately flatten internal links.
     const edits = changes.length ? await prepareProjectChanges(input.projectPath, changes) : [];
     await snapshotProject(input.projectPath, snapshot, input.sourceRevision);
+    const previousAdapter = await acceptedAdapterForMigration(snapshot);
     if (edits.length) {
       task.progress('Применяю исходники к новой библиотеке…');
       for (const edit of edits) {
@@ -55,6 +57,21 @@ export const workflows = {
       signal: task.signal,
       retainPreviousArchive: true,
     });
+    documentChanges.push(
+      ...(await migrateAcceptedSpeech(snapshot, {
+        ...task,
+        previousAdapter,
+        cache: join(input.data, 'speech'),
+      })),
+    );
+    if (
+      new Set([
+        ...metadata,
+        ...changes.map((change) => change.path),
+        ...documentChanges.map((change) => change.path),
+      ]).size > 64
+    )
+      throw new Error('Runtime and document migration exceed the 64-file transaction limit.');
     if (!updated.changed && !changes.length && !documentChanges.length) return { upToDate: true };
     const source = await projectFiles(snapshot);
     const voice = await readJSON(join(snapshot, 'voice.json'));

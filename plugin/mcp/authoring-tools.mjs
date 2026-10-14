@@ -65,7 +65,7 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_produce',
     {
       description:
-        'Produce HTML, PNG, supported SVG, video, captions or source from an explicit shown build or working revision. Current conditions require a build target with an observed scene context; they apply to HTML and images. Video requires an explicit story or interval. Returns a persistent, inspectable job.',
+        'Produce HTML, PNG, supported SVG, video, captions or source from an explicit shown build or working revision. Current conditions require a build target with an observed scene context; they apply to HTML, images and video. Video requires an explicit story or interval. Returns a persistent, inspectable job.',
       inputSchema: {
         target: contextTarget,
         requestId,

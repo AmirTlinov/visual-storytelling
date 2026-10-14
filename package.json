@@ -1,6 +1,6 @@
 {
   "name": "@visual-storytelling/core",
-  "version": "0.39.2",
+  "version": "0.40.10",
   "private": true,
   "license": "0BSD",
   "type": "module",
@@ -15,6 +15,7 @@
     "!examples/**/.*/**",
     "skills",
     "docs",
+    "!docs/live-explanation-acceptance.md",
     "PHILOSOPHY.md",
     "AGENTS.md",
     "LICENSE",

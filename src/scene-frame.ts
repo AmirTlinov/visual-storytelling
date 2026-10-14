@@ -252,6 +252,7 @@ export function inspectPresentation(stage: HTMLElement | SVGSVGElement): ScenePr
   const inspect = (node: Element, object: InspectedObject, canvas = false) => {
     if (
       object.visible === false ||
+      (object.width === 0 && object.height === 0) ||
       object.data?.framing === 'background' ||
       ![object.x, object.y, object.width, object.height].every(Number.isFinite)
     )

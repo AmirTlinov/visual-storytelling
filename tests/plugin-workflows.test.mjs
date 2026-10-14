@@ -118,8 +118,15 @@ test('quiet working delivery and retry preserve the chosen inputs without prepar
     JSON.stringify({ provider: 'higgs', enabled: true }),
   );
   await writeFile(
-    join(input.projectPath, 'narration.json'),
-    JSON.stringify({ segments: [{ id: 'start', text: 'Покажем результат.' }] }),
+    join(input.projectPath, 'story.json'),
+    JSON.stringify({
+      version: 2,
+      models: [],
+      views: [],
+      chapters: [
+        { id: 'start', title: 'Результат', beats: [{ id: 'show', say: 'Покажем результат.' }] },
+      ],
+    }),
   );
   input.sourceRevision = (await projectFiles(input.projectPath)).revision;
   const projects = new ProjectStore(input.data);

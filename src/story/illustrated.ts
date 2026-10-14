@@ -21,6 +21,8 @@ import { cueSheet } from './cues.js';
 import type { StorySubjects } from './subject.js';
 import { storyModelOwners } from '../recipes/story-models.js';
 import type { ModelValues } from './model.js';
+import { modelInputValues } from './model.js';
+import { documentSpeechApplicable, documentSpeechAnchorsCurrent } from './document-audibility.js';
 
 export interface IllustratedChapterFrame extends ChapterFrame {
   subject: ReturnType<typeof documentModelsAt>;
@@ -37,7 +39,10 @@ export interface IllustratedChapter extends Omit<SceneChapter, 'mount' | 'values
 }
 
 export interface IllustratedStoryOptions
-  extends Omit<SceneStoryOptions, 'title' | 'chapters' | 'subjectAt' | 'sharedControls'> {
+  extends Omit<
+    SceneStoryOptions,
+    'title' | 'chapters' | 'subjectAt' | 'sharedControls' | 'speechApplicable'
+  > {
   document: StoryDocument | unknown;
   modules?: StoryModules;
   subjects?: StorySubjects;
@@ -52,7 +57,7 @@ export interface IllustratedStoryOptions
 async function narrationScript(
   audio: HTMLAudioElement | null | undefined,
 ): Promise<Script | undefined> {
-  if (!audio || audio.dataset.silent === 'true') return;
+  if (!audio) return;
   const resource = audio.dataset.storyTimeline;
   if (!resource) return;
   const response = await fetch(new URL(resource, audio.baseURI));
@@ -71,7 +76,17 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
   } = options;
   const document = validateStoryDocument(source, { modules });
   documentNarration(document, { modules });
-  const script = options.script ?? (await narrationScript(options.audio));
+  let script = options.script ?? (await narrationScript(options.audio));
+  if (script && !options.script && options.audio?.dataset.silent === 'true') {
+    // Quiet authoring can outlive its old recording. Retain measured timing only
+    // while both the source thought and its action anchors still match.
+    try {
+      if (!documentSpeechAnchorsCurrent(document, script)) script = undefined;
+      else documentScript(document, script, { modules });
+    } catch {
+      script = undefined;
+    }
+  }
   if (!factories) return mountIllustratedSubject(parent, document, options, script);
   if (!document.chapters.length)
     throw new Error('A static prepared subject does not need chapter factories.');
@@ -132,6 +147,25 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
     title: document.title ?? 'Рассказ',
     chapters,
     script: aligned,
+    exploreTimeline: Boolean(options.audio),
+    speechApplicable(unit, frame) {
+      const subject = frame.subject as ReturnType<typeof documentModelsAt>;
+      return documentSpeechApplicable(
+        document,
+        unit,
+        frame.mode,
+        Object.fromEntries(
+          document.models.map((model) => [
+            model.id,
+            modelInputValues(
+              model,
+              subject.models[model.id]!,
+              storyModelOwners(modules)[model.module]!,
+            ),
+          ]),
+        ),
+      );
+    },
     sharedControls: document.models.flatMap((model) =>
       authoredInputKeys(document, model.id, model.inputs),
     ),

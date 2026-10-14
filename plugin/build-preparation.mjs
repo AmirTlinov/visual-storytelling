@@ -19,6 +19,7 @@ import {
 import { contentDigest } from '../tools/build-info.mjs';
 import { readStoryProject, storyProjectOwner } from '../tools/story-project.mjs';
 import { renderer } from '../tools/render.mjs';
+import { reuseAcceptedRecording } from './accepted-recording.mjs';
 const execute = promisify(execFile);
 
 async function dependencies(source, data, { signal, progress }) {
@@ -154,10 +155,15 @@ async function prepare(input, task) {
       );
     source = await snapshotProject(projectPath, snapshot, sourceRevision ?? receipt?.revision);
   }
-  await writeJSON(join(snapshot, '.vstory-input.json'), { ...source, preparation });
+  await writeJSON(join(snapshot, '.vstory-input.json'), {
+    ...source,
+    preparation,
+    acceptedBuildRevision: input.acceptedBuildRevision,
+  });
   await dependencies(snapshot, data, task);
   const voice = await readJSON(join(snapshot, 'voice.json'));
   if (voice?.enabled && !preparation.silent && !(reusable && receipt.preparedRevision)) {
+    await reuseAcceptedRecording(data, input, snapshot);
     const localHiggs = narrationProvider(voice) === 'higgs';
     await prepareEnvironment(data, {
       ...task,
@@ -199,6 +205,7 @@ async function prepare(input, task) {
     preparedRevision,
     buildRevision: prepared?.revision,
     preparation,
+    acceptedBuildRevision: input.acceptedBuildRevision,
   });
   return {
     snapshot,

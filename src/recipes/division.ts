@@ -363,7 +363,9 @@ export function divisionDiagram(surface: Surface, id: string) {
     validate(state, options);
     const moment = divisionProgress(state, options.progress);
     const nextKey = JSON.stringify([
-      state,
+      state.id,
+      state.count,
+      state.divisor,
       options.width,
       options.height,
       options.scale,

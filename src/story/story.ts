@@ -1,7 +1,8 @@
-import { cueSheet, type Frame, type Script } from './cues.js';
+import { cueSheet, type Frame, type Script, type Chapter } from './cues.js';
 import { transport } from './transport.js';
 import { resolveMedia } from './media.js';
 import type { SceneSubject } from '../scene-checkpoint.js';
+import { recordedSpeechAt, nextRecordedSpeechStart } from './recorded-speech.js';
 
 export type StoryMode = 'story' | 'explore';
 /** Portable input schema for experiments that cannot be represented by flat controls. */
@@ -19,7 +20,7 @@ export interface StoryMoment<P, S = P> {
   readonly chapter?: string;
 }
 export interface StoryError {
-  readonly stage: 'stateAt' | 'derive' | 'canContinue' | 'prepare' | 'render';
+  readonly stage: 'stateAt' | 'derive' | 'canContinue' | 'prepare' | 'render' | 'speech';
   readonly cause: unknown;
 }
 export interface StoryStatus<P, S = P> {
@@ -32,6 +33,8 @@ export type StoryOptions<P, K extends string, S = P> = {
   script: Script<K>;
   audio?: HTMLAudioElement | null;
   stateAt(frame: Frame<K>): P;
+  /** Project time-derived input fields while retaining the accepted experiment. */
+  resolveTime?(values: Readonly<P>, frame: Frame<K>): P;
   /** Play and seek retain experimental inputs. Story mode and chapter selection restore authored values. */
   exploreTimeline?: boolean;
   /** Resolve an explicit user edit before accepting its complete condition and time. */
@@ -43,6 +46,8 @@ export type StoryOptions<P, K extends string, S = P> = {
   /** Resolve a selected chapter at a shared time boundary from the accepted condition. */
   chapterAt?(moment: StoryMoment<P, NoInfer<S>>): string | undefined;
   checkpoint?: StoryCheckpoint<P>;
+  /** Evaluate a complete take against the frame that was actually published. */
+  speechApplicable?(unit: Chapter, moment: StoryMoment<P, NoInfer<S>>): boolean;
   /** The subject owns the attempt. True releases an awaitInput cue, including a wrong but checked answer.
    * A thrown error pauses playback and retains the last completed frame; Play retries the check. */
   canContinue?(cue: K, moment: StoryMoment<P, NoInfer<S>>): boolean;
@@ -80,6 +85,7 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
   const player = transport({
     duration: options.script.duration,
     audio: options.audio ? resolveMedia(options.audio, options.script.duration) : undefined,
+    speech: true,
   });
   let forcedReduced: boolean | undefined;
   let changing = false;
@@ -155,11 +161,18 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
     }
   }
   function requestAt(frame: Frame<K>, mode: StoryMode): Request {
-    const values =
-      mode === 'story'
-        ? evaluate('stateAt', () => options.stateAt(frame))
-        : requested.moment.values;
+    const values = valuesAtTime(frame, mode);
     return evaluate('derive', () => compute(values, frame, mode));
+  }
+  function valuesAtTime(frame: Frame<K>, mode: StoryMode, explicit = false): P {
+    return evaluate('stateAt', () =>
+      mode === 'story'
+        ? options.stateAt(frame)
+        : options.resolveTime &&
+            (explicit || frame.time !== requested.moment.time || player.state.playing)
+          ? options.resolveTime(requested.moment.values, frame)
+          : requested.moment.values,
+    );
   }
   function canContinue(id: K, moment: StoryMoment<P, S>) {
     return evaluate('canContinue', () => options.canContinue?.(id, moment) ?? false);
@@ -185,6 +198,16 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
     presented = next.moment;
     phase = 'ready';
     error = undefined;
+    const unit = recordedSpeechAt(sheet.script, presented.time);
+    evaluate('speech', () =>
+      player.presentSpeech({
+        unit,
+        time: presented!.time,
+        nextStart: nextRecordedSpeechStart(sheet.script, presented!.time),
+        applicable:
+          !unit || (options.speechApplicable?.(unit, presented!) ?? presented!.mode === 'story'),
+      }),
+    );
     notify();
   }
   function publish(next: Request) {
@@ -352,6 +375,11 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
   media.addEventListener('change', updateMotionPreference);
   return {
     player,
+    /** Transfer a prepared controller to the live recording only after its drawing was published. */
+    prepareAudio(audio: HTMLAudioElement, settings?: { muted?: boolean }) {
+      assertLive();
+      return player.prepareAudio(resolveMedia(audio, options.script.duration), settings);
+    },
     sheet,
     review: sheet.review,
     pause: player.pause,
@@ -438,9 +466,16 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
         sheet.at(target, forcedReduced ?? media.matches),
         'explore',
       );
+      const retainPlayback =
+        Boolean(options.exploreTimeline || (options.speechApplicable && player.state.hasAudio)) &&
+        player.state.playing;
+      const previousTime = requested.moment.time;
       change(() => {
-        player.pause();
-        if (player.state.time !== target) player.seek(target);
+        if (!retainPlayback) player.pause();
+        // The last displayed frame can lag native media by one frame. A model edit
+        // at that same moment must not seek backwards through a spoken phrase.
+        if (retainPlayback ? target !== previousTime : player.state.time !== target)
+          player.seek(target);
       }, next);
     },
     explore(values: P) {
@@ -466,11 +501,7 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
       if (mode !== 'story' && mode !== 'explore') throw new Error('Invalid story mode');
       const target = Math.max(0, Math.min(options.script.duration, time));
       const frame = sheet.at(target, forcedReduced ?? media.matches);
-      const next = compute(
-        mode === 'story' ? options.stateAt(frame) : requested.moment.values,
-        frame,
-        mode,
-      );
+      const next = compute(valuesAtTime(frame, mode, true), frame, mode);
       change(() => {
         for (const listener of seeks) listener(target);
         player.seek(target);
@@ -480,11 +511,7 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
       assertLive();
       const frame = sheet.at(player.state.time, value ?? media.matches);
       const mode = requested.moment.mode;
-      const next = compute(
-        mode === 'story' ? options.stateAt(frame) : requested.moment.values,
-        frame,
-        mode,
-      );
+      const next = compute(valuesAtTime(frame, mode), frame, mode);
       forcedReduced = value;
       publish(next);
     },

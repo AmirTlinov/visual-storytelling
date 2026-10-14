@@ -37,14 +37,17 @@ test(
     delete pkg.bin['sketch-audio'];
     await writeFile(join(packaged, 'package.json'), JSON.stringify(pkg));
     await writeFile(
-      join(scene, 'narration.json'),
+      join(scene, 'story.json'),
       JSON.stringify({
-        music: null,
-        segments: [
+        version: 2,
+        models: [],
+        views: [],
+        narration: { music: null },
+        chapters: [
           {
             id: 'start',
-            text: 'Один шаг вправо.',
-            cues: [{ id: 'step', quote: 'шаг вправо', action: 'Стрелка показывает шаг.' }],
+            title: 'Шаг',
+            beats: [{ id: 'step', say: 'Один шаг вправо.', action: 'Стрелка показывает шаг.' }],
           },
         ],
       }),
@@ -117,7 +120,12 @@ else if (args[0] === 'build') {
       commands.map((args) => args[0]),
       ['doctor', 'build', 'check'],
     );
-    assert.equal(commands[2][1], join(scene, 'narration.json'));
+    assert(commands[2][1].endsWith('/narration.json'));
+    assert.notEqual(
+      commands[2][1],
+      join(scene, 'narration.json'),
+      'the voice job is derived outside authored sources',
+    );
     assert.equal(commands[2].at(-1), join(scene, 'timeline.json'));
     await audio();
     assert.deepEqual(JSON.parse(await readFile(join(scene, 'voice.json'), 'utf8')), settings);

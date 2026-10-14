@@ -5,6 +5,8 @@ import type { CueTiming } from './cues.js';
 import type { Beat } from '../characters/types.js';
 import { storyModelOwners, storyRecipes } from '../recipes/story-models.js';
 import type { StoryModel, StoryModules, StoryView } from './model.js';
+import type { SpeechConditions } from './speech-condition.js';
+import { authoredSpeech, validateDocumentSpeech } from './document-speech.js';
 export type {
   StoryModel,
   StoryModelModule,
@@ -17,6 +19,8 @@ export type {
 /** One authored beat owns its action, staging and optional speech. */
 export interface AuthoredBeat extends Beat {
   say?: string;
+  /** A complete thought owns one cached take and explicit model applicability. */
+  speech?: { id: string; when: SpeechConditions; seed?: number; delivery?: string };
   timing?: CueTiming;
   /** Name an ordinary registered JS operation; replay always starts from the model inputs. */
   operation?: { model: string; name: string };
@@ -185,6 +189,7 @@ function validate(
           'title',
           'seconds',
           'say',
+          'speech',
           'action',
           'hold',
           'timing',
@@ -233,7 +238,10 @@ function validate(
       for (const field of ['actors', 'props', 'shot'])
         if (beat[field] !== undefined) record(beat[field], `${path}.${field}`);
       if (beat.perform !== undefined) array(beat.perform, `${path}.perform`);
-      return structuredClone(beat) as unknown as AuthoredBeat;
+      const normalized = structuredClone(beat) as unknown as AuthoredBeat;
+      const speech = authoredSpeech(normalized, chapterId, models, modules, path);
+      if (speech) normalized.speech = speech;
+      return normalized;
     });
     if (!beats.length) throw new Error(`${path}.beats: provide at least one beat.`);
     return {
@@ -260,6 +268,7 @@ function validate(
             `${chapter.id}.${beat.id}.timing.until: reference a later beat in the same chapter.`,
           );
       }
+  validateDocumentSpeech({ chapters });
   for (const model of models)
     modules[model.module]!.validateSequence?.(
       chapters.flatMap((chapter) =>

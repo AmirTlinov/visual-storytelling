@@ -13,6 +13,7 @@ export const shippedExamples = Object.keys(
 );
 
 export const releaseInput = (path) =>
+  path.split(sep).join('/') !== 'docs/live-explanation-acceptance.md' &&
   !path
     .split(sep)
     .some(

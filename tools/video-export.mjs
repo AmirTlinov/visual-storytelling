@@ -58,12 +58,13 @@ export async function exportVideo({
   height,
   jobs = 2,
   silent = false,
+  checkpoint,
   signal,
   onProgress = () => {},
   ...view
 }) {
   const { width: w, height: h } = videoDimensions({ width: view.width, height });
-  view = { ...view, width: w, height: h };
+  view = { ...view, width: w, height: h, checkpoint };
   if (!Number.isInteger(jobs) || jobs < 1 || jobs > 8)
     throw new Error('Video jobs must be an integer from 1 to 8');
   if (!Number.isInteger(fps) || fps < 1 || fps > 60)
@@ -109,7 +110,43 @@ export async function exportVideo({
     await mkdir(dirname(output), { recursive: true });
     temporary = await mkdtemp(join(dirname(output), '.visual-story-video-'));
     let audio;
-    if (!silent && first.info.audioURL) {
+    const excluded = new Map();
+    const observeSpeech = async (render) => {
+      const speech = await render.capture.evaluate((scene) => scene.speech());
+      if (speech?.unit && !speech.applicable) excluded.set(speech.unit, true);
+      return speech;
+    };
+    const review = await first.capture
+      .evaluate((scene) => scene.review())
+      .catch((error) => {
+        if (first.info.audioURL) throw error;
+        return { segments: [], cues: [] };
+      });
+    if (!silent && !checkpoint?.muted && first.info.audioURL) {
+      for (const unit of review.segments)
+        if (
+          (unit.audio_end ?? unit.end) > from &&
+          (unit.audio_start ?? unit.start) < end &&
+          ((unit.audio_start ?? unit.start) < from - 1e-6 ||
+            (unit.audio_end ?? unit.end) > end + 1e-6)
+        )
+          excluded.set(unit.id, true);
+      const supported = await observeSpeech(first);
+      if (checkpoint && !supported) excluded.set('recording', true);
+      // Every semantic/acoustic boundary is checked through the same completed
+      // Story frame. Frame workers also invalidate a whole unit if conditions vary.
+      const points = new Set(
+        review.segments.flatMap((unit) => [
+          unit.audio_start ?? unit.start,
+          ...(unit.words ?? []).map((word) => word.start),
+          Math.max(unit.start, (unit.audio_end ?? unit.end) - 1e-6),
+        ]),
+      );
+      for (const cue of review.cues) for (const time of [cue.start, cue.end]) points.add(time);
+      for (const time of [...points].sort((a, b) => a - b)) {
+        await first.seek(time);
+        await observeSpeech(first);
+      }
       const response = await fetch(new URL(first.info.audioURL, first.url), {
         signal: abort.signal,
       });
@@ -155,6 +192,7 @@ export async function exportVideo({
         try {
           for (let index = chunk.start; index < chunk.end; index++) {
             await render.seek(from + index / fps);
+            if (audio) await observeSpeech(render);
             await process.write(await render.png());
             completed++;
             if (completed % fps === 0 || completed === count) onProgress(completed, count);
@@ -181,6 +219,18 @@ export async function exportVideo({
       chunks.map((_, i) => `file '${i}.mp4'`).join('\n'),
     );
     const final = join(temporary, 'complete.mp4');
+    const excludedUnits = excluded.has('recording')
+      ? [{ id: 'recording', start: 0, end: first.info.duration }]
+      : review.segments
+          .filter((unit) => excluded.has(unit.id))
+          .map((unit) => ({
+            id: unit.id,
+            start: unit.audio_start ?? unit.start,
+            end: unit.audio_end ?? unit.end,
+          }));
+    const muted = excludedUnits
+      .map((unit) => `between(t,${Math.max(0, unit.start - from)},${Math.max(0, unit.end - from)})`)
+      .join('+');
     const mux = encoder(
       [
         '-f',
@@ -199,6 +249,7 @@ export async function exportVideo({
               '0:v:0',
               '-map',
               '1:a:0',
+              ...(muted ? ['-af', `aeval='if(${muted},0,val(ch))':c=same`] : []),
               '-c:a',
               'aac',
               '-b:a',
@@ -228,6 +279,9 @@ export async function exportVideo({
       height: h,
       chunks: chunks.length,
       jobs: workers,
+      ...(audio && {
+        speech: { musicPolicy: 'mute-mix-during-inapplicable-whole-take', excludedUnits },
+      }),
     };
   } finally {
     abort.abort();

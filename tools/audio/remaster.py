@@ -12,6 +12,7 @@ from mixing import mix
 from resources import digest, file_digest
 from script import check_timeline, read_script
 from speech import SAMPLE_RATE
+from credits import audio_credits
 
 
 def audio_hashes(directory, timeline):
@@ -95,6 +96,8 @@ def reuse_audio(script_path, output, *, source_directory=None):
         raise
     if (timeline.get("mix", {}).get("mastering", {}).get("profile_sha256") == PROFILE_SHA256
             and timeline.get("audio_sha256")):
+        credits = output / "CREDITS.txt"
+        credits.write_text(audio_credits(credits.read_text() if credits.exists() else "", timeline.get("mix", {}).get("music")))
         return timeline
     spec = read_script(script_path, source_directory=source_directory)
     voice_file = output / "voice.wav"

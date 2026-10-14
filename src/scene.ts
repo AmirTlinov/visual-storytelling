@@ -1,14 +1,9 @@
+import { controllerAccess } from './scene/controller-access.js';
 import { conditionsPanel } from './scene/conditions.js';
 import type { StoryResource } from './story/resources.js';
 import { releaseResources } from './lifecycle.js';
 import { mountScene } from './scene-handle.js';
-import {
-  story,
-  type Story,
-  type StoryOptions,
-  type StoryStatus,
-  type StoryMoment,
-} from './story/story.js';
+import { story, type Story, type StoryOptions, type StoryStatus } from './story/story.js';
 import { chapterNavigation } from './story/chapters.js';
 import { sceneCaptions, type SceneCaptions } from './scene/captions.js';
 import { sceneFrame, inspectPresentation, type SceneFrameOptions } from './scene-frame.js';
@@ -19,7 +14,7 @@ import { theme } from './ink/palette.js';
 import { SceneHistory } from './controls/history.js';
 import { player as statePlayer } from './controls/player.js';
 import type { SceneHandle } from './scene-handle.js';
-import type { SceneInspection, SceneRendering } from './scene-access.js';
+import type { SceneInspection } from './scene-access.js';
 import type { SceneCheckpoint, SceneView } from './scene-checkpoint.js';
 export type {
   SceneCheckpoint,
@@ -358,6 +353,7 @@ function mount(
       }
     | undefined;
   let acceptedCondition = {};
+  let controllerKeys: readonly PropertyKey[] = [];
   function refresh() {
     for (const [key, control] of inputs)
       if (control.value !== values[key]) control.setValue(values[key]!);
@@ -615,23 +611,8 @@ function mount(
     inputStory = undefined;
     playback = undefined;
     transition = undefined;
-    for (const key of [
-      'play',
-      'seek',
-      'pause',
-      'ready',
-      'mute',
-      'setRate',
-      'muted',
-      'rate',
-      'duration',
-      'currentTime',
-      'subject',
-      'rendering',
-      'setReduced',
-      'review',
-    ])
-      Reflect.deleteProperty(handle, key);
+    for (const key of controllerKeys) Reflect.deleteProperty(handle, key);
+    controllerKeys = [];
     handle.extend({
       snapshot: () => ({ ...values }),
       get condition() {
@@ -784,69 +765,17 @@ function mount(
     controls.inert = false;
     caption.hidden = exploration === 'model' && mode !== 'story';
     updateChrome();
-    handle.extend({
+    const access = controllerAccess(controller, {
       play: () => {
         assertLive();
         preparePlayback();
         return controller.player.play();
       },
-      seek: controller.seek,
-      ready: controller.ready,
-      pause: controller.pause,
-      // A silent clock has no sound preference to carry into a narrated build.
-      // Expose the media capability only when there is actual audio to mute.
-      get mute() {
-        return controller.player.state.hasAudio ? controller.player.mute : undefined;
-      },
-      setRate: controller.player.rate,
-      get muted() {
-        const state = controller.player.state;
-        return state.hasAudio ? state.muted : undefined;
-      },
-      get rate() {
-        return controller.player.state.rate;
-      },
-      review: controller.review,
-      duration: controller.duration,
-      get currentTime() {
-        return controller.currentTime;
-      },
-      snapshot: () => controller.presented?.state,
-      get condition() {
-        return controller.condition;
-      },
-      subject: controller.subject,
-      get rendering(): SceneRendering {
-        const moment = (value: StoryMoment<P, S>) => ({
-          time: value.time,
-          chapter: value.chapter,
-          mode: exploration === 'view' ? mode : value.mode,
-          values: Object.fromEntries(
-            parameters.map(({ key }) => [
-              key,
-              (value.values as Record<string, ControlValue>)[key]!,
-            ]),
-          ),
-        });
-        const requested = moment(controller.requested);
-        return {
-          phase: controller.phase,
-          requested,
-          presented:
-            controller.presented === controller.requested
-              ? requested
-              : controller.presented && moment(controller.presented),
-          error: controller.error && {
-            stage: controller.error.stage,
-            message:
-              controller.error.cause instanceof Error
-                ? controller.error.cause.message
-                : String(controller.error.cause),
-          },
-        };
-      },
-      setReduced: controller.setReduced,
+      keys: parameters.map((parameter) => parameter.key),
+      mode: (value) => (exploration === 'view' ? mode : value),
     });
+    controllerKeys = Reflect.ownKeys(access);
+    handle.extend(access);
     if (
       previousPlayback?.playing &&
       !controller.waiting &&

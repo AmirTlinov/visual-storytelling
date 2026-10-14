@@ -43,8 +43,15 @@ def check_timeline(script_path, timeline_path, *, source_directory=None, require
     if (not isinstance(segments, list) or any(not isinstance(s, dict) for s in segments) or
             [s.get("id") for s in segments] != [s["id"] for s in spec["segments"]]):
         raise ValueError("Narration has incomplete aligned segments; run visual-story audio")
-    cues, previous = {}, 0.0
+    cues, previous, previous_take = {}, 0.0, 0.0
     for source_segment, segment in zip(spec["segments"], segments, strict=True):
+        start, end = segment.get('audio_start'), segment.get('audio_end')
+        if (any(type(value) not in (int, float) or not math.isfinite(value) for value in (start, end))
+                or start < previous_take or end <= start
+                or start > segment.get('start', -1) or end < segment.get('end', math.inf)
+                or end > timeline.get('duration', 0)):
+            raise ValueError(f'{segment["id"]}: invalid complete take boundaries')
+        previous_take = end
         aligned = validate_alignment(segment.get("words"))
         if normalized(" ".join(w["text"] for w in aligned)) != normalized(source_segment["spoken"]):
             raise ValueError(f'{segment["id"]}: aligned words do not match the complete narration')
@@ -55,6 +62,10 @@ def check_timeline(script_path, timeline_path, *, source_directory=None, require
                 raise ValueError(f'{segment["id"]}: invalid aligned word times')
             previous = end
         if (segment.get("text") != source_segment["spoken"] or
+                ('source_text' in segment and segment['source_text'] != source_segment['text']) or
+                segment.get("source_seed",segment.get("seed")) != source_segment["seed"] or
+                segment.get("delivery") != source_segment["delivery"] or
+                segment.get("conditions") != source_segment.get("conditions") or
                 segment.get("title") != source_segment.get("title") or
                 segment.get("start") != aligned[0]["start"] or segment.get("end") != aligned[-1]["end"]):
             raise ValueError(f'{segment["id"]}: narration segment differs from its aligned words')
@@ -152,6 +163,22 @@ def seed(value, label):
     return value
 
 
+def speech_conditions(value):
+    """The same bounded JSON contract as the document/runtime speech owner."""
+    if (not isinstance(value, dict) or set(value) != {'basis', 'models'} or
+            value['basis'] not in ('authored', 'presented') or not isinstance(value['models'], list)):
+        raise ValueError('conditions needs authored/presented basis and model inputs')
+    json.dumps(value, allow_nan=False)
+    ids = set()
+    for model in value['models']:
+        if (not isinstance(model, dict) or set(model) != {'model', 'inputs'} or
+                not isinstance(model['model'], str) or not model['model'] or model['model'] in ids or
+                not isinstance(model['inputs'], dict) or any(not key for key in model['inputs'])):
+            raise ValueError('conditions needs unique model IDs and input objects')
+        ids.add(model['model'])
+    return value
+
+
 def caption_aliases(value, segments):
     """Display aliases refer to whole spoken phrases; they never alter synthesis."""
     if not isinstance(value, dict):
@@ -205,6 +232,8 @@ def read_script(path, *, source_directory=None):
         ids.add(sid)
     for segment in segments:
         sid = segment["id"]
+        if 'conditions' in segment:
+            speech_conditions(segment['conditions'])
         if "title" in segment and (not isinstance(segment["title"], str) or not segment["title"].strip()):
             raise ValueError(f"{sid}: title must be a non-empty chapter heading")
         if not isinstance(segment.get("text"), str) or not segment["text"].strip() or "ssml" in segment or "rate" in segment:

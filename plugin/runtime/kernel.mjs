@@ -166,12 +166,18 @@ async function queueRevision(kind, { target, requestId, options = {} }) {
       checkpoint = captured.result.checkpoint;
       capturedView = captured.result.viewport;
     }
-    if (checkpoint && options.formats?.some((format) => !['html', 'png', 'svg'].includes(format)))
+    if (
+      checkpoint &&
+      options.formats?.some((format) => !['html', 'png', 'svg', 'mp4'].includes(format))
+    )
       throw new Error(
-        'Current conditions can be saved as HTML, PNG or SVG. Choose the authored story for other formats.',
+        'Current conditions can be saved as HTML, PNG, SVG or MP4. Captions and source use authored inputs.',
       );
     if (options.formats?.includes('mp4') && !options.video)
       throw new Error('Choose the whole story or an explicit interval for video.');
+    const renderOptions = capturedView ? { ...capturedView, ...options } : options;
+    if (capturedView && options.formats?.includes('mp4'))
+      Object.assign(renderOptions, videoDimensions(options));
     return jobs.preserveInputs(async () => {
       const input = await revisionInput(data, projects, target);
       return jobs.enqueue(
@@ -181,7 +187,7 @@ async function queueRevision(kind, { target, requestId, options = {} }) {
           ...input,
           checkpoint,
           requestOptions: options,
-          options: capturedView ? { ...capturedView, ...options } : options,
+          options: renderOptions,
         },
         requestId,
       );
@@ -360,7 +366,13 @@ const operations = {
     if (patch?.cacheLimitMB !== undefined) scheduleCache();
     return value;
   },
-  voice: projectVoice({ data, preferences, projects, edit: (args) => operations.edit(args) }),
+  voice: projectVoice({
+    data,
+    preferences,
+    projects,
+    edit: (args) => operations.edit(args),
+    prepareDocument: authoring.prepareDocument,
+  }),
   async focus({ sessionId, renderer, generation, report }) {
     const claim = playbackClaim
       .catch(() => {})

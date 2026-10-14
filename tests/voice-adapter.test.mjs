@@ -7,53 +7,17 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { randomUUID, createHash } from 'node:crypto';
 import { JobRunner } from '../plugin/jobs.mjs';
 import {
-  adapterVoiceStatus,
   buildAdapterNarration,
   checkAdapterNarration,
-  validateAdapterSettings,
+  bindAdapterRecording,
 } from '../tools/voice/adapter.mjs';
+import { bindAcceptedSpeech } from '../tools/migrate-speech.mjs';
+import { adapterVoiceStatus, validateAdapterSettings } from '../tools/voice/adapter-input.mjs';
 import { voiceDigest } from '../tools/voice/receipt.mjs';
 import { masteringProfileHash } from '../tools/voice/mastering.mjs';
 import { documentNarration } from '../dist/story/document.js';
 
-// Protocol/ownership fixture: tone intervals have measured phrase timestamps.
-// It is deliberately not a TTS model or a listening-quality acceptance test.
-const adapter = `import { readFile, writeFile, appendFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { spawn } from 'node:child_process';
-let input = ''; for await (const chunk of process.stdin) input += chunk;
-const request = JSON.parse(input), mode = request.model;
-await appendFile(join(process.cwd(), '.voice-calls'), JSON.stringify({provider:request.provider,text:request.text,model:mode,voice:request.voice})+'\\n');
-if (mode === 'secret') { console.error('SECRET-api-token'); console.log('SECRET-api-token'); process.exit(17); }
-if (mode === 'bad-json') { console.log('SECRET-api-token'); process.exit(0); }
-if (mode === 'overflow') { console.log('SECRET-api-token'.repeat(80000)); process.exit(0); }
-if (['child', 'exit-child', 'exit-success-child'].includes(mode)) {
-  const child = spawn(process.execPath, ['-e', "process.on('SIGTERM',()=>{});setInterval(()=>{},100)"], {stdio:'inherit'});
-  await writeFile(join(process.cwd(), '.voice-child'), String(child.pid));
-  if (mode === 'exit-child') process.exit(1);
-  if (mode === 'exit-success-child') process.exit(0);
-  await new Promise(resolve=>setTimeout(resolve,30000));
-}
-if (mode === 'wait') {
-  await writeFile(join(process.cwd(), '.voice-started'), 'yes');
-  await new Promise(resolve=>setTimeout(resolve,400));
-}
-if (mode === 'changed-adapter') await appendFile(new URL(import.meta.url), '\\n// changed during synthesis\\n');
-const rate=8000, frames=16000, pcm=Buffer.alloc(frames*2), header=Buffer.alloc(44);
-for(let i=800;i<15200;i++) pcm.writeInt16LE(Math.round(Math.sin(i/9)*2000),i*2);
-header.write('RIFF');header.writeUInt32LE(pcm.length+36,4);header.write('WAVEfmt ',8);
-header.writeUInt32LE(16,16);header.writeUInt16LE(1,20);header.writeUInt16LE(mode==='stereo'?2:1,22);
-header.writeUInt32LE(rate,24);header.writeUInt32LE(rate*2,28);header.writeUInt16LE(2,32);
-header.writeUInt16LE(16,34);header.write('data',36);header.writeUInt32LE(pcm.length,40);
-let audio=Buffer.concat([header,pcm]); if(mode==='truncated') audio=audio.subarray(0,-1);
-await writeFile(join(request.outputDirectory,'take.wav'),audio);
-let words=[{text:request.text,start:.1,end:1.9}];
-if(mode==='missing') words=[{text:'Один',start:.1,end:1.9}];
-if(mode==='overlap') words=[{text:'Один',start:.1,end:1.3},{text:'шаг вправо.',start:1.2,end:1.9}];
-if(mode==='outside') words=[{text:request.text,start:.1,end:2.1}];
-if(mode==='nonfinite') words=[{text:request.text,start:NaN,end:1.9}];
-console.log(JSON.stringify({words,alignment:{method:'fixture-phrase-tones'}}));
-`;
+import { voiceAdapter as adapter } from './support/voice-adapter.mjs';
 
 async function fixture(t, { two = false } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'story-voice-adapter-'));
@@ -75,7 +39,12 @@ async function fixture(t, { two = false } = {}) {
         text: 'Один шаг вправо.',
         pause_after: 0.2,
         cues: [
-          { id: 'move', quote: 'шаг вправо', action: 'Сдвинуть точку.', timing: { duration: 1.1 } },
+          {
+            id: 'move',
+            quote: 'Один шаг вправо.',
+            action: 'Сдвинуть точку.',
+            timing: { duration: 1.1 },
+          },
         ],
       },
     ],
@@ -156,7 +125,11 @@ test('document occurrences bind repeated Unicode and numeric speech to distinct 
       {
         id: 'lesson',
         title: 'Words',
-        beats: sayings.map((say, i) => ({ id: `word${i}`, say })),
+        beats: sayings.map((say, i) => ({
+          id: `word${i}`,
+          say,
+          speech: { id: 'lesson', when: { basis: 'authored', models: [] } },
+        })),
       },
     ],
   });
@@ -236,6 +209,24 @@ test('local and API selection share verified assembly, precise phrase anchors an
   );
   assert.equal((await f.build()).cached, 0);
   assert.equal((await f.calls()).length, 7);
+});
+
+test('a phrase-level recording rejects interior cues and preserves the accepted pair until measured word endpoints exist', async (t) => {
+  const f = await fixture(t);
+  await f.build();
+  const original = await f.pair();
+  f.spec.segments[0].cues[0].quote = 'шаг вправо';
+  await f.save();
+  await assert.rejects(f.build(), /needs measured word or phrase endpoints/);
+  assert.deepEqual(await f.pair(), original);
+  assert.equal((await f.calls()).length, 1, 'changing actions reuses the whole take');
+  f.settings.model = 'word-precision';
+  await f.save();
+  await f.build();
+  const receipt = await f.receipt();
+  assert.equal(receipt.segments[0].words.length, 3);
+  assert.equal(receipt.cues.move.start, receipt.segments[0].words[1].start);
+  assert.equal(receipt.cues.move.end, receipt.segments[0].words[2].end);
 });
 
 test('accepted adapter audio remasters locally, preserves alignment and then skips FFmpeg and the provider', async (t) => {
@@ -399,6 +390,7 @@ test('receipts bind source, selected model, adapter dependencies, exact audio an
   );
   await rm(join(f.directory, 'voice/helper.json'));
   f.spec.segments[0].text = 'Другой шаг вправо.';
+  f.spec.segments[0].cues[0].quote = 'Другой шаг вправо.';
   await f.save();
   await assert.rejects(
     checkAdapterNarration(f.directory, f.source, receipt, f.settings),
@@ -539,7 +531,11 @@ process.on('message',async message=>{
           await runner.cancel(job.id);
         }
         await until(() => !['queued', 'running', 'cancelling'].includes(runner.get(job.id).status));
-        assert.equal(runner.get(job.id).status, mode === 'exit-child' ? 'failed' : 'cancelled');
+        assert.equal(
+          runner.get(job.id).status,
+          mode === 'exit-child' ? 'failed' : 'cancelled',
+          JSON.stringify({ mode, error: runner.get(job.id).error }),
+        );
         if (mode === 'exit-child') assert.match(runner.get(job.id).error, /exit 1/);
         await until(() => {
           try {
@@ -557,3 +553,270 @@ process.on('message',async message=>{
     }
   },
 );
+
+test('explicit whole-take migration preserves audio and measured bounds without provider calls', async (t) => {
+  const f = await fixture(t);
+  f.settings.model = 'word-precision';
+  await f.save();
+  const source = {
+    version: 2,
+    title: 'Проверим шаг',
+    models: [],
+    views: [],
+    chapters: [
+      {
+        id: 'lesson',
+        title: 'Шаг',
+        beats: [
+          { id: 'first', say: 'Один шаг вправо.', action: 'Движение', seconds: 1 },
+          { id: 'return', say: 'Теперь вернёмся.', action: 'Обратно', seconds: 1 },
+        ],
+      },
+    ],
+    narration: { intro: 0.2, outro: 0.3, pause: 0.2 },
+  };
+  f.spec.segments = [
+    {
+      id: 'lesson',
+      title: 'Шаг',
+      text: 'Один шаг вправо. Теперь вернёмся.',
+      pause_after: 0.2,
+      cues: [
+        { id: 'lesson.first', quote: 'Один шаг вправо.', occurrence: 1, action: 'Движение' },
+        { id: 'lesson.return', quote: 'Теперь вернёмся.', occurrence: 1, action: 'Обратно' },
+      ],
+    },
+  ];
+  // This test replaces the fixture's source explicitly; its build closure owns the file.
+  await writeFile(f.source, JSON.stringify(f.spec));
+  await f.build();
+  const before = await f.receipt(),
+    bytes = await readFile(join(f.directory, 'audio.wav'));
+  const bound = bindAcceptedSpeech(source, before);
+  assert.deepEqual(
+    bound.chapters[0].beats.map((beat) => beat.speech.id),
+    ['lesson', 'lesson'],
+  );
+  await writeFile(join(f.directory, 'story.json'), JSON.stringify(bound));
+  await writeFile(f.source, JSON.stringify(documentNarration(bound)));
+  const next = await bindAdapterRecording(f.directory, f.source, f.settings);
+  assert.equal((await f.calls()).length, 1);
+  assert.deepEqual(await readFile(join(f.directory, 'audio.wav')), bytes);
+  for (const key of ['words', 'audio_start', 'audio_end', 'start', 'end'])
+    assert.deepEqual(next.segments[0][key], before.segments[0][key]);
+  await checkAdapterNarration(f.directory, f.source, next, f.settings);
+  assert.equal((await f.build()).cached, 1);
+  assert.equal((await f.calls()).length, 1);
+  const changed = structuredClone(source);
+  changed.chapters[0].beats[0].say = 'Два шага вправо.';
+  assert.throws(() => bindAcceptedSpeech(changed, before), /change accepted whole take/);
+});
+
+test('document thought IDs give local synthesis while camera, colour and dependencies reuse the accepted takes', async (t) => {
+  const f = await fixture(t);
+  const document = {
+    version: 2,
+    models: [{ id: 'division', module: 'division', inputs: { count: 17, divisor: 4 } }],
+    views: [{ id: 'groups', kind: 'groups', model: 'division' }],
+    chapters: [
+      {
+        id: 'lesson',
+        title: 'Шаг',
+        beats: [
+          { id: 'step', say: 'Один шаг вправо.', action: 'Движение' },
+          { id: 'return', say: 'Теперь вернёмся.', action: 'Обратно' },
+        ],
+      },
+    ],
+    narration: { intro: 0.2, outro: 0.3, pause: 0.1 },
+  };
+  const save = async () => {
+    const spec = documentNarration(document);
+    await writeFile(f.source, JSON.stringify(spec));
+    await writeFile(join(f.directory, 'story.json'), JSON.stringify(document));
+    return spec;
+  };
+  const initial = await save();
+  assert.deepEqual(
+    initial.segments.map((unit) => unit.id),
+    ['voice.lesson.step', 'voice.lesson.return'],
+  );
+  await f.build();
+  const before = await f.receipt();
+  document.chapters[0].beats[0].focus = ['division:remainder'];
+  document.title = 'Меняем цвет рисунка';
+  await save();
+  assert.equal((await f.build()).cached, 2);
+  assert.equal((await f.calls()).length, 2);
+  document.chapters[0].beats[0].say = 'Два шага вправо.';
+  await save();
+  const changed = await f.build();
+  assert.equal(changed.cached, 1);
+  assert.equal((await f.calls()).length, 3);
+  const after = await f.receipt();
+  assert.deepEqual(after.segments[1].words, before.segments[1].words);
+  assert.deepEqual(after.alignment.segments[1], before.alignment.segments[1]);
+});
+
+test('root adapter owns explicit code dependencies and migrates accepted cache identity without another provider request', async (t) => {
+  const { rename, cp } = await import('node:fs/promises');
+  const { adapterInput, historicalRootAdapterInput, adapterSelection } = await import(
+    '../tools/voice/adapter-input.mjs'
+  );
+  const { acceptedAdapterForMigration } = await import('../tools/migrate-speech.mjs');
+  const f = await fixture(t, { two: true });
+  await rename(f.entry, join(f.directory, 'adapter.mjs'));
+  f.settings.adapter = 'adapter.mjs';
+  await f.save();
+  await writeFile(join(f.directory, 'scene.js'), '// author camera 1');
+  await writeFile(join(f.directory, 'story.json'), JSON.stringify({ version: 2, chapters: [] }));
+  const current = (await adapterInput(f.directory, f.settings)).identity;
+  await f.build();
+  const previous = await f.receipt(),
+    bytes = await readFile(join(f.directory, 'audio.wav'));
+  const legacy = (await historicalRootAdapterInput(f.directory, f.settings)).identity;
+  assert.notEqual(current, legacy);
+  const key = (identity, text) =>
+    voiceDigest({ version: 1, adapter: identity, settings: adapterSelection(f.settings), text });
+  for (const unit of f.spec.segments) {
+    const original = join(f.cache, 'adapter-' + key(current, unit.text));
+    const historical = join(f.cache, 'adapter-' + key(legacy, unit.text));
+    await cp(original, historical, { recursive: true });
+    const record = JSON.parse(await readFile(join(historical, 'take.json'), 'utf8'));
+    record.key = key(legacy, unit.text);
+    await writeFile(join(historical, 'take.json'), JSON.stringify(record));
+    await rm(original, { recursive: true });
+  }
+  previous.synthesis.adapter_sha256 = legacy;
+  await writeFile(join(f.directory, 'timeline.json'), JSON.stringify(previous));
+  const accepted = await acceptedAdapterForMigration(f.directory);
+  assert.deepEqual(accepted, { current, accepted: legacy });
+  await writeFile(
+    join(f.directory, 'story.json'),
+    JSON.stringify({ version: 2, chapters: [], speech: 'new binding' }),
+  );
+  await writeFile(join(f.directory, 'scene.js'), '// author camera 2');
+  for (const unit of f.spec.segments) unit.conditions = { basis: 'presented', models: [] };
+  await f.save();
+  assert.equal((await adapterInput(f.directory, f.settings)).identity, current);
+  await bindAdapterRecording(f.directory, f.source, f.settings, {
+    cache: f.cache,
+    previousAdapter: accepted,
+  });
+  assert.deepEqual(await readFile(join(f.directory, 'audio.wav')), bytes);
+  assert.equal((await f.calls()).length, 2);
+  assert.equal((await f.build()).cached, 2);
+  f.spec.segments[0].text = 'Два шага вправо.';
+  f.spec.segments[0].cues[0].quote = 'Два шага вправо.';
+  await f.save();
+  assert.equal((await f.build()).cached, 1);
+  assert.equal((await f.calls()).length, 3);
+});
+
+test('root adapter fingerprints literal resources and rejects computed resource URLs before reuse', async (t) => {
+  const { rename } = await import('node:fs/promises');
+  const { adapterInput } = await import('../tools/voice/adapter-input.mjs');
+  const f = await fixture(t);
+  const entry = join(f.directory, 'adapter.mjs');
+  await rename(f.entry, entry);
+  f.settings.adapter = 'adapter.mjs';
+  const source = await readFile(entry, 'utf8');
+  await writeFile(join(f.directory, 'voice.bin'), 'voice A');
+  await writeFile(entry, source + '\nnew URL("voice.bin", import.meta.url);');
+  const before = (await adapterInput(f.directory, f.settings)).identity;
+  await writeFile(join(f.directory, 'voice.bin'), 'voice B');
+  assert.notEqual((await adapterInput(f.directory, f.settings)).identity, before);
+  await writeFile(entry, source + '\nconst name="voice.bin"; new URL(name, import.meta.url);');
+  await assert.rejects(adapterInput(f.directory, f.settings), /literal resource URLs/);
+});
+
+test('whole-take recovery tolerates PCM quantization at full-scale peaks and rejects larger overflows', async (t) => {
+  const f = await fixture(t);
+  const { take, wav, readWav } = await import('../tools/voice/adapter-take.mjs');
+  const { adapterInput } = await import('../tools/voice/adapter-input.mjs');
+  const backend = await adapterInput(f.directory, f.settings);
+  const gainDB = -2.998;
+  const pcm = Buffer.alloc(24000 * 2);
+  const samples = [32767, -32768];
+  for (let i = 0; i < 24000; i++)
+    pcm.writeInt16LE(Math.round(samples[i % 2] * 10 ** (gainDB / 20)), i * 2);
+  const recovery = {
+    wave: readWav(wav([pcm], 24000)),
+    gainDB,
+    recordingSHA: 'accepted-recording',
+    alignment: { method: 'provided' },
+    unit: {
+      id: 'step',
+      audio_start: 0,
+      audio_end: 1,
+      words: [{ text: 'Один шаг вправо.', start: 0.1, end: 0.9 }],
+    },
+  };
+  const recovered = await take(
+    f.directory,
+    backend,
+    f.settings,
+    f.spec.segments[0].text,
+    f.cache,
+    undefined,
+    false,
+    true,
+    recovery,
+  );
+  assert.equal(recovered.pcm.readInt16LE(0), 32767);
+  assert.equal(recovered.pcm.readInt16LE(2), -32768);
+  assert.equal((await f.calls()).length, 0);
+  await rm(f.cache, { recursive: true, force: true });
+  recovery.wave.pcm.writeInt16LE(24000, 0);
+  await assert.rejects(
+    take(
+      f.directory,
+      backend,
+      f.settings,
+      f.spec.segments[0].text,
+      f.cache,
+      undefined,
+      false,
+      true,
+      recovery,
+    ),
+    /cannot be inverted/,
+  );
+});
+
+test('collected speech cache recovers complete accepted performances without resynthesizing unchanged thoughts', async (t) => {
+  const f = await fixture(t, { two: true });
+  await f.build();
+  const before = await f.receipt();
+  const audio = await readFile(join(f.directory, 'audio.wav'));
+  await rm(f.cache, { recursive: true, force: true });
+  f.spec.segments[0].text = 'Два шага вправо.';
+  f.spec.segments[0].cues[0].quote = 'Два шага вправо.';
+  await f.save();
+  const result = await f.build();
+  assert.equal(result.cached, 1);
+  assert.equal((await f.calls()).length, 3);
+  const after = await f.receipt();
+  assert.deepEqual(after.segments[1].words, before.segments[1].words);
+  assert.deepEqual(after.alignment.segments[1], before.alignment.segments[1]);
+  const gainBefore = 10 ** (before.mix.mastering.gain_db / 20),
+    gainAfter = 10 ** (after.mix.mastering.gain_db / 20);
+  const { readWav } = await import('../tools/voice/adapter-take.mjs');
+  const old = readWav(audio),
+    current = readWav(await readFile(join(f.directory, 'audio.wav')));
+  const start = Math.round(before.segments[1].audio_start * old.sampleRate),
+    end = Math.round(before.segments[1].audio_end * old.sampleRate);
+  let error = 0;
+  for (let i = start; i < end; i++)
+    error = Math.max(
+      error,
+      Math.abs(
+        old.pcm.readInt16LE(i * 2) / gainBefore - current.pcm.readInt16LE(i * 2) / gainAfter,
+      ),
+    );
+  assert(
+    error < 2,
+    'whole accepted waveform and gain-only mastering must preserve the performance within PCM rounding',
+  );
+  await checkAdapterNarration(f.directory, f.source, after, f.settings);
+});

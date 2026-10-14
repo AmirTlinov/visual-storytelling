@@ -22,7 +22,10 @@ export async function authoredCandidate(data, project, proposal) {
         throw new Error('Runtime archive integrity changed.');
     }
     const source = await projectFiles(snapshot);
-    await writeJSON(join(snapshot, '.vstory-input.json'), source);
+    await writeJSON(join(snapshot, '.vstory-input.json'), {
+      ...source,
+      acceptedBuildRevision: project.buildRevision,
+    });
     return {
       snapshot,
       input: {
@@ -31,6 +34,7 @@ export async function authoredCandidate(data, project, proposal) {
         title: project.title,
         sourceRevision: source.revision,
         inputSnapshot: basename(snapshot),
+        acceptedBuildRevision: project.buildRevision,
       },
     };
   } catch (error) {

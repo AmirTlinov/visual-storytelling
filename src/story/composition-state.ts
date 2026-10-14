@@ -72,6 +72,18 @@ export function compositionFrames(
     return { state, index, chapter, progress, transition };
   };
   return {
+    resolveTime(values: Readonly<Record<string, ControlValue>>, frame: Frame) {
+      const state = at(frame.time, frame.reduced),
+        chapter = options.chapters[state.index]!;
+      const next =
+        chapter.id === values.chapter
+          ? { ...values }
+          : { ...defaults, ...chapter.valuesAt?.(state.frame) };
+      if (chapter.id !== values.chapter)
+        for (const key of options.sharedControls ?? [])
+          if (Object.hasOwn(values, key)) next[key] = values[key]!;
+      return { ...next, chapter: chapter.id, sceneTime: state.frame.progress };
+    },
     stateAt(frame: Frame) {
       const state = at(frame.time, frame.reduced),
         chapter = options.chapters[state.index]!;

@@ -44,6 +44,7 @@ export interface SceneInspection {
   duration: number;
   playing: boolean;
   muted?: boolean;
+  speech?: import('./story/speech-gate.js').SpeechAudibility;
   rate?: number;
   selected?: readonly string[];
   objects?: ReturnType<NonNullable<SceneHandle['objects']>>;
@@ -92,6 +93,7 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
       duration: handle.duration ?? 0,
       playing: handle.playing ?? owner.playing?.() ?? false,
       muted: handle.muted,
+      speech: handle.speech,
       rate: handle.rate,
       selected: handle.selected,
       objects,

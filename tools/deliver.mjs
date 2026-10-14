@@ -49,9 +49,9 @@ export async function deliver(
     )
   )
     throw new Error('Delivery formats: html,png,svg,mp4,srt,vtt,source');
-  if (checkpoint && [...wanted].some((format) => !['html', 'png', 'svg'].includes(format)))
+  if (checkpoint && [...wanted].some((format) => !['html', 'png', 'svg', 'mp4'].includes(format)))
     throw new Error(
-      'Saved conditions apply to HTML and images; video and source use authored inputs',
+      'Saved conditions apply to HTML, images and video; captions and source describe authored inputs',
     );
   if (wanted.has('mp4') && (!video || !['story', 'interval'].includes(video.kind)))
     throw new Error('Choose the whole story or an explicit interval for video');
@@ -188,6 +188,7 @@ export async function deliver(
           theme,
           signal,
           silent,
+          checkpoint,
           ...(video?.kind === 'interval' ? { from: video.from, to: video.to } : {}),
           onProgress,
         });

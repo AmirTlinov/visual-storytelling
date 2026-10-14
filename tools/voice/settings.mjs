@@ -39,7 +39,7 @@ export function validateHiggsSelection(settings, { enabled, voice, model, adapte
     throw new Error('Для своей модели выберите provider: "local" или "api".');
   if (voice && voice !== 'higgs')
     throw new Error(
-      'Голос Higgs задаётся образцом в narration.json; другую модель подключите как local или api.',
+      'Голос Higgs задаётся образцом в story.json.narration.voice; другую модель подключите как local или api.',
     );
   if (enabled && settings.language.split('-')[0] !== 'ru')
     throw new Error('Для Higgs сейчас поддерживается русская речь. Выберите ru-RU.');

@@ -17,6 +17,9 @@ import {
   setNarrationMode,
 } from '../tools/narration.mjs';
 import { narrationSource } from '../tools/story-document.mjs';
+import { documentNarration } from '../dist/story/document.js';
+import { chromium } from 'playwright';
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 
 const run = promisify(execFile);
 test('silent creation preserves narrative timing and authored assets without Python', async (t) => {
@@ -157,7 +160,19 @@ test('published timeline imports and assets preserve authored motion in the paus
     const inline = JSON.parse(Buffer.from(context.asset.split(',')[1], 'base64').toString());
     const copied = JSON.parse(await readFile(join(output, 'timeline.json'), 'utf8'));
     for (const published of [imported, inline, copied]) {
-      assert.deepEqual(published, timeline);
+      assert.deepEqual(
+        published,
+        silent
+          ? timeline
+          : {
+              ...timeline,
+              segments: timeline.segments.map((segment) => ({
+                ...segment,
+                seed: 42,
+                delivery: { emotion: 'calm' },
+              })),
+            },
+      );
       assert.ok(published.cues.settle.end > published.segments[0].end);
       assert.ok(published.cues.settle.end <= published.segments[0].audio_end);
     }
@@ -170,9 +185,26 @@ test('scene builds reject stale generated narration while silent and independent
     output = join(directory, 'dist');
   const audioTools = fileURLToPath(new URL('../tools/audio', import.meta.url));
   const html = '<html><head></head><body><audio data-audio src="audio.wav"></audio></body></html>';
-  // Python's canonical source hash retains float syntax (1.0 and exponent notation).
-  const narration =
-    '{"version":3,"intro":1.0,"outro":1e-7,"segments":[{"id":"line","text":"Два входа."}]}';
+  const document = {
+    version: 2,
+    models: [],
+    views: [],
+    narration: { intro: 1, outro: 1e-7, pause: 0 },
+    chapters: [
+      {
+        id: 'line',
+        title: 'Входы',
+        beats: [
+          {
+            id: 'speak',
+            say: 'Два входа.',
+            speech: { id: 'line', when: { basis: 'authored', models: [] } },
+          },
+        ],
+      },
+    ],
+  };
+  const narration = JSON.stringify(documentNarration(document));
   const put = (name, value) => writeFile(join(source, name), value);
   const pcm = Buffer.alloc(44 + 2 * 48000 * 2);
   pcm.write('RIFF');
@@ -190,7 +222,11 @@ test('scene builds reject stale generated narration while silent and independent
   try {
     await mkdir(source);
     await put('index.html', html);
-    await put('narration.json', narration);
+    await put('story.json', JSON.stringify(document));
+    await put(
+      'voice.json',
+      JSON.stringify({ provider: 'higgs', enabled: true, language: 'ru-RU' }),
+    );
     await put('audio.wav', pcm);
     const { stdout } = await run(
       'python3',
@@ -214,15 +250,24 @@ test('scene builds reject stale generated narration while silent and independent
         {
           id: 'line',
           text: 'Два входа.',
+          title: 'Входы',
+          conditions: { basis: 'authored', models: [] },
           start: 1,
           end: 1.5,
+          audio_start: 1,
+          audio_end: 2 - 1e-7,
+          seed: 42,
+          delivery: '',
           words: [
             { text: 'Два', start: 1, end: 1.2, score: 0.9 },
             { text: 'входа', start: 1.2, end: 1.5, score: 0.9 },
           ],
         },
       ],
-      cues: { line: { text: 'Два входа.', start: 1, end: 1.5 } },
+      cues: {
+        line: { text: 'Два входа.', start: 1, end: 1.5 },
+        'line.speak': { text: 'Два входа', start: 1, end: 1.5 },
+      },
       build: { seconds: 12.4, segments: [] },
     };
     const receipt = JSON.stringify(aligned);
@@ -280,7 +325,7 @@ test('scene builds reject stale generated narration while silent and independent
     await put('index.html', html);
     await buildScene(source, output);
 
-    await put('narration.json', narration.replace('Два входа.', 'Три входа.'));
+    await put('story.json', JSON.stringify(document).replace('Два входа.', 'Три входа.'));
     await put('index.html', html.replace('</body>', '<p>New content</p></body>'));
     await assert.rejects(buildScene(source, output), /Narration changed.*visual-story audio/);
     assert.equal(await readFile(join(output, 'index.html'), 'utf8'), before);
@@ -295,9 +340,9 @@ test('scene builds reject stale generated narration while silent and independent
     }
 
     await put('index.html', html);
-    await rm(join(source, 'narration.json'));
+    await rm(join(source, 'story.json'));
     await buildScene(source, output); // External audio with no authored narration.
-    await put('narration.json', narration);
+    await put('story.json', JSON.stringify(document));
     await put('timeline.json', '{"duration":1,"cues":{}}');
     await assert.rejects(buildScene(source, output), /no matching timeline/);
     await rm(join(source, 'timeline.json'));
@@ -380,7 +425,7 @@ with wave.open(str(root/'audio.wav'),'wb') as wav:
  wav.setparams((1,2,48000,96000,'NONE','none'));wav.writeframes(bytes(192000))
 (root/'timeline.json').write_text(json.dumps({'audio':'audio.wav','source_sha256':digest(json.loads(path.read_text())),
  'sample_rate':48000,'duration':2,'audio_sha256':file_digest(root/'audio.wav'),'synthesis':{'reference_sha256':inputs['reference_audio']},'mix':{'mastering':{'profile_sha256':PROFILE_SHA256},'music':{'source_sha256':inputs['music']}},
- 'segments':[{'id':segment['id'],'title':segment.get('title'),'text':segment['spoken'],'start':1,'end':1.5,'words':words}],
+ 'segments':[{'id':segment['id'],'title':segment.get('title'),'conditions':segment.get('conditions'),'text':segment['spoken'],'start':1,'end':1.5,'words':words}],
  'cues':timed_cues(segment,words)}))
 `,
         audioTools,
@@ -413,7 +458,7 @@ test('adding voice to a quiet lesson creates one real audio element without alte
   assert.ok(audible.includes('const quoted="<audio src=example>";'));
   assert.ok(
     audible.includes(
-      '<audio data-story-audio data-story-timeline="timeline.json" src="audio.wav" preload="auto"></audio></body>',
+      '<body><audio data-story-audio data-story-timeline="timeline.json" src="audio.wav" preload="auto"></audio><main>',
     ),
   );
   assert.equal(setNarrationMode(audible, false), audible);
@@ -424,4 +469,49 @@ test('adding voice to a quiet lesson creates one real audio element without alte
   assert.equal(setNarrationMode(existing, false), existing);
   const authored = '<audio src="voice.wav" data-story-timeline="voice-timing.json"></audio>';
   assert.equal(setNarrationMode(authored, false), authored);
+  const lateHook =
+    '<html><body><script>const quoted="<audio>";</script><audio data-story-audio data-silent="true" src="chosen.wav" preload="metadata"></audio></body></html>';
+  const activated = setNarrationMode(lateHook, false);
+  assert.ok(activated.indexOf('<audio data-story-audio') < activated.indexOf('<script>'));
+  assert.ok(activated.includes('src="chosen.wav" preload="metadata"'));
+  assert.ok(activated.includes('const quoted="<audio>";'));
+  assert.equal(setNarrationMode(activated, false), activated);
+});
+
+test('native HTML parsing exposes new and existing voice hooks before scene mount microtasks', async () => {
+  const browser = await chromium.launch(chromiumLaunchOptions());
+  try {
+    const page = await browser.newPage();
+    const script =
+      '<script>window.galleryReady=Promise.resolve().then(()=>{window.mountedAudio=document.querySelector("[data-story-audio]")?.tagName;});</script>';
+    for (const hook of [
+      '',
+      '<audio data-story-audio data-silent="true" src="chosen.wav" preload="none"></audio>',
+      '<template><audio data-story-audio data-silent="true" src="example.wav"></audio></template><audio data-story-audio data-silent="true" src="audio.wav" preload="none"></audio>',
+    ]) {
+      const html = setNarrationMode('<html><body>' + script + hook + '</body></html>', false);
+      await page.goto('data:text/html;base64,' + Buffer.from(html).toString('base64'));
+      assert.equal(
+        await page.evaluate(async () => {
+          await window.galleryReady;
+          return window.mountedAudio;
+        }),
+        'AUDIO',
+      );
+      if (hook.includes('<template>'))
+        assert.deepEqual(
+          await page.evaluate(() => ({
+            source: document.querySelector('[data-story-audio]').getAttribute('src'),
+            template: document
+              .querySelector('template')
+              .content.querySelector('audio')
+              .getAttribute('src'),
+            live: document.querySelectorAll('audio').length,
+          })),
+          { source: 'audio.wav', template: 'example.wav', live: 1 },
+        );
+    }
+  } finally {
+    await browser.close();
+  }
 });

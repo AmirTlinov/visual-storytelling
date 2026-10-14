@@ -35,7 +35,7 @@ test(
       const action = {
         requestId: randomUUID(),
         context: start.context,
-        commands: [{ type: 'cue', id: 'move_x', progress: 0.5 }],
+        commands: [{ type: 'cue', id: 'horizontal.move_x', progress: 0.5 }],
       };
       const before = performance.now();
       const controlled = await call('story_control', action);

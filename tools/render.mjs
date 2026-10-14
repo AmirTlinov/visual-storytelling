@@ -16,6 +16,8 @@ export async function renderer({
   controls = false,
   directory,
   entry = 'index.html',
+  /** A generated page uses the same renderer, source origin and resource paths. */
+  html,
   reduced = false,
   signal,
   checkpoint,
@@ -76,6 +78,10 @@ export async function renderer({
     page.on('pageerror', onStartupFailure);
     let capture;
     try {
+      if (html !== undefined)
+        await page.route(url, (route) =>
+          route.fulfill({ contentType: 'text/html; charset=utf-8', body: html }),
+        );
       capture = await Promise.race([openScene(page, url), startupFailure]);
     } finally {
       page.off('pageerror', onStartupFailure);
@@ -124,7 +130,7 @@ export async function renderer({
     const info = await capture.evaluate((scene) => scene.info());
     const seek = async (next) => {
       time = next;
-      await seekScene(capture, time);
+      await seekScene(capture, time, checkpoint && { mode: checkpoint.mode });
       if (errors.length) throw new Error(`Scene failed: ${errors.join('; ')}`);
     };
     await seek(0);

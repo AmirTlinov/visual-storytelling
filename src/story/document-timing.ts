@@ -1,64 +1,13 @@
-import { cueSheet, type Script, type CueTiming } from './cues.js';
-import { spokenWords } from './spoken-words.js';
+import { cueSheet, type Script } from './cues.js';
 import {
   validateStoryDocument,
   type StoryDocument,
-  type AuthoredBeat,
-  type AuthoredChapter,
   type StoryDocumentOptions,
 } from './document-schema.js';
+import { spoken, intention, duration, occupied, timingFor } from './document-beat.js';
+import { speechUnits } from './document-speech.js';
+import { mapRecordedSpeech } from './recorded-speech.js';
 const timeTolerance = 1e-6;
-const spoken = (beat: AuthoredBeat) => (beat.say ?? beat.text ?? '').trim();
-const intention = (beat: AuthoredBeat) => ({
-  ...(beat.action !== undefined
-    ? { action: beat.action }
-    : beat.hold === undefined && beat.text?.trim()
-      ? { action: beat.text }
-      : {}),
-  ...(beat.hold !== undefined ? { hold: beat.hold } : {}),
-});
-function duration(beat: AuthoredBeat, id: string) {
-  if (beat.timing && typeof beat.timing !== 'object')
-    throw new Error(`Beat ${id}: timing needs duration or until`);
-  const text = spoken(beat);
-  const seconds =
-    beat.seconds ??
-    (text
-      ? Math.max(2.5, text.split(/\s+/).length / 2.5 + 0.6)
-      : beat.timing && 'duration' in beat.timing
-        ? (beat.timing.delay ?? 0) + beat.timing.duration!
-        : 2.5);
-  if (!Number.isFinite(seconds) || seconds <= 0) throw new Error(`Invalid duration for ${id}`);
-  return seconds;
-}
-function occupied(beat: AuthoredBeat, id: string) {
-  return Math.max(
-    duration(beat, id),
-    beat.timing && 'duration' in beat.timing ? (beat.timing.delay ?? 0) + beat.timing.duration! : 0,
-  );
-}
-function timingFor(chapter: AuthoredChapter, beat: AuthoredBeat) {
-  const timing = beat.timing;
-  return typeof timing?.until === 'string' && chapter.beats.some((b) => b.id === timing.until)
-    ? { ...timing, until: `${chapter.id}.${timing.until}` }
-    : timing;
-}
-/** Contiguous spoken runs share synthesis; silent beats use the assembler's existing pauses. */
-function spokenRuns(chapter: AuthoredChapter) {
-  const runs: AuthoredBeat[][] = [];
-  let run: AuthoredBeat[] | undefined;
-  for (const beat of chapter.beats) {
-    if (!spoken(beat)) run = undefined;
-    else {
-      if (!run) runs.push((run = []));
-      run.push(beat);
-    }
-  }
-  return runs.map((beats, index) => ({
-    id: runs.length === 1 ? chapter.id : `${chapter.id}.narration-${index + 1}`,
-    beats,
-  }));
-}
 export function authoredChapter(
   document: StoryDocument,
   id: string,
@@ -72,108 +21,7 @@ export function authoredChapter(
     title: chapter.title,
     ...(chapter.views && { views: chapter.views }),
     text: chapter.beats.map(spoken).filter(Boolean).join(' '),
-    beats: chapter.beats.map(({ say: _say, timing: _timing, ...beat }) => beat),
-  };
-}
-/** Feed the existing cached speech/alignment owner, without empty or invented spoken segments. */
-export function documentNarration(document: StoryDocument, options: StoryDocumentOptions = {}) {
-  document = validateStoryDocument(document, options);
-  const ids = new Set(
-    document.chapters.flatMap((chapter) => [
-      chapter.id,
-      ...chapter.beats.map((beat) => `${chapter.id}.${beat.id}`),
-    ]),
-  );
-  const spec = document.narration ?? {};
-  let intro = spec.intro ?? 0;
-  const spokenIds = new Set(
-    document.chapters.flatMap((chapter) =>
-      chapter.beats.filter((beat) => spoken(beat)).map((beat) => `${chapter.id}.${beat.id}`),
-    ),
-  );
-  const segments: {
-    id: string;
-    title: string;
-    text: string;
-    pause_after: number;
-    cues: {
-      id: string;
-      quote: string;
-      occurrence: number;
-      action?: string;
-      hold?: string;
-      timing?: CueTiming;
-    }[];
-  }[] = [];
-  let actionReserve = 0;
-  const pause = (seconds: number) => {
-    const previous = segments.at(-1);
-    if (previous) previous.pause_after += seconds;
-    else intro += seconds;
-  };
-  for (const chapter of document.chapters) {
-    const runs = spokenRuns(chapter);
-    for (const beat of chapter.beats) {
-      if (!spoken(beat)) {
-        // Speech duration is not known until alignment. Reserving each run's longest
-        // action after its clip guarantees that the following silent action fits.
-        pause(actionReserve + occupied(beat, `${chapter.id}.${beat.id}`));
-        actionReserve = 0;
-        continue;
-      }
-      const run = runs.find((run) => run.beats[0] === beat);
-      if (!run) continue;
-      if (run.id !== chapter.id && ids.has(run.id))
-        throw new Error(`Beat ID is reserved for narration: ${run.id}`);
-      const tokens = run.beats.flatMap((beat) => spokenWords(spoken(beat)));
-      let wordStart = 0;
-      const cues = run.beats.map((beat) => {
-        const quote = spokenWords(spoken(beat));
-        let occurrence = quote.length ? 0 : 1;
-        for (let start = 0; quote.length && start <= wordStart; start++)
-          if (quote.every((word, index) => tokens[start + index] === word)) occurrence++;
-        wordStart += quote.length;
-        const timing = timingFor(chapter, beat);
-        // The speech assembler only knows spoken IDs. The document resolves an action
-        // ending at a silent beat after its real acoustic anchors have been loaded.
-        const acousticTiming = timing?.until && !spokenIds.has(timing.until) ? undefined : timing;
-        return {
-          id: `${chapter.id}.${beat.id}`,
-          quote: spoken(beat),
-          occurrence,
-          ...intention(beat),
-          ...(acousticTiming !== undefined ? { timing: acousticTiming } : {}),
-        };
-      });
-      segments.push({
-        id: run.id,
-        title: chapter.title,
-        text: run.beats.map(spoken).join(' '),
-        pause_after: 0,
-        cues,
-      });
-      actionReserve = Math.max(
-        0,
-        ...run.beats.map((beat) =>
-          beat.timing && 'duration' in beat.timing
-            ? (beat.timing.delay ?? 0) + beat.timing.duration!
-            : 0,
-        ),
-      );
-    }
-    if (runs.length) {
-      pause(actionReserve + (spec.pause ?? 0.6));
-      actionReserve = 0;
-    }
-  }
-  return {
-    version: 3,
-    voice: { ...(spec.voice ?? { seed: 42 }) },
-    intro,
-    outro: spec.outro ?? 0.6,
-    music: spec.music ? structuredClone(spec.music) : null,
-    ...(spec.captionAliases ? { captionAliases: { ...spec.captionAliases } } : {}),
-    segments,
+    beats: chapter.beats.map(({ say: _say, speech: _speech, timing: _timing, ...beat }) => beat),
   };
 }
 function resolve(script: Script, silent: ReadonlySet<string>) {
@@ -191,16 +39,15 @@ export function documentScript(
   options: StoryDocumentOptions = {},
 ): Script {
   document = validateStoryDocument(document, options);
+  aligned = cueSheet(aligned).script;
   const cues = { ...aligned.cues };
   const silent = new Set<string>();
   let previousEnd = 0;
   const chapters = document.chapters.map((chapter) => {
-    const runs = spokenRuns(chapter);
+    const units = speechUnits(chapter);
     const segments =
-      aligned.segments?.filter(
-        (segment) => segment.id === chapter.id || runs.some((run) => run.id === segment.id),
-      ) ?? [];
-    if (runs.length && !segments.length)
+      aligned.segments?.filter((segment) => units.some((unit) => unit.id === segment.id)) ?? [];
+    if (units.length && !segments.length)
       throw new Error(`Aligned narration needs chapter ${chapter.id}`);
     const firstSpoken = chapter.beats.findIndex((beat) => spoken(beat));
     const leading = chapter.beats
@@ -212,7 +59,7 @@ export function documentScript(
       throw new Error(`Missing spoken action ${chapter.id}.${chapter.beats[firstSpoken]!.id}`);
     const projectedStart = firstCue
       ? Math.min(
-          ...segments.map((segment) => segment.start),
+          ...segments.map((segment) => segment.audio_start ?? segment.start),
           (firstCue.speech ?? firstCue).start - leading,
         )
       : previousEnd;
@@ -261,7 +108,7 @@ export function documentScript(
         throw new Error(`Silent action ${id} does not fit the supplied narration duration`);
       precedingSilent = !spoken(beat);
     }
-    previousEnd = Math.max(cursor, ...segments.map((segment) => segment.end));
+    previousEnd = Math.max(cursor, ...segments.map((segment) => segment.audio_end ?? segment.end));
     return { chapter, start, finish: previousEnd };
   });
   const script = resolve({ ...aligned, cues }, silent);
@@ -291,7 +138,7 @@ export function documentScript(
       ...chapter.beats.map((beat) => script.cues[`${chapter.id}.${beat.id}`]!.end),
       ...(aligned.segments
         ?.filter((segment) => segment.id === chapter.id)
-        .map((segment) => segment.end) ?? []),
+        .map((segment) => segment.audio_end ?? segment.end) ?? []),
     );
     const action = chapter.beats
       .map((beat) => beat.action ?? beat.text)
@@ -344,19 +191,10 @@ export function documentChapter(
           : {}),
       };
     }
-    const runs = spokenRuns(chapter);
+    const units = speechUnits(chapter);
     script.segments = aligned!.segments
-      ?.filter((segment) => segment.id === id || runs.some((run) => run.id === segment.id))
-      .map((segment) => ({
-        ...segment,
-        start: segment.start - span.start,
-        end: segment.end - span.start,
-        words: segment.words?.map((word) => ({
-          ...word,
-          start: word.start - span.start,
-          end: word.end - span.start,
-        })),
-      }));
+      ?.filter((segment) => units.some((unit) => unit.id === segment.id))
+      .map((segment) => mapRecordedSpeech(segment, (time) => time - span.start));
   } else {
     let time = 0;
     const segments: NonNullable<Script['segments']>[number][] = [];

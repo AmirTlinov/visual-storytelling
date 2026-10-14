@@ -2,7 +2,7 @@ import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, readdir, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, mkdir, rm, chmod } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
@@ -12,16 +12,26 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
 import { pluginHost } from './plugin/host.mjs';
 import { createProjectFixture } from './plugin/authoring-fixture.mjs';
+import { installRelease } from '../plugin/install.mjs';
 
+async function unlockDirectories(directory) {
+  await chmod(directory, 0o700);
+  for (const entry of await readdir(directory, { withFileTypes: true }))
+    if (entry.isDirectory()) await unlockDirectories(join(directory, entry.name));
+}
 test(
   'installed release completes silent authoring, local narration, cancel/retry, file reopening and portable delivery',
   { timeout: 300000 },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'story-authoring-'));
+    const installed = await installRelease(resolve('.plugin-release'), {
+      directory: join(directory, 'installation'),
+      register: false,
+    });
     const host = await pluginHost({
       dataDirectory: join(directory, 'data'),
-      serverCommand: resolve('.plugin-release/runtime/node'),
-      serverEntry: resolve('.plugin-release/plugin/dist/server.mjs'),
+      serverCommand: join(installed.release, 'runtime/node'),
+      serverEntry: join(installed.release, 'plugin/dist/server.mjs'),
     });
     const browser = await chromium.launch(chromiumLaunchOptions({ headless: true }));
     const page = await browser.newPage();
@@ -214,20 +224,19 @@ test(
         false,
         'enabling narration does not restore the absent sound of a silent clock as mute',
       );
-      const narration = (
-        await call('story_inspect', { projectId: project.id, file: 'narration.json' })
-      ).structuredContent;
+      const narration = (await call('story_inspect', { projectId: project.id, file: 'story.json' }))
+        .structuredContent;
       const script = JSON.parse(narration.content);
-      script.segments.at(-1).text += ' Теперь проверьте свой вариант.';
+      script.chapters.at(-1).beats.at(-1).say += ' Теперь проверьте свой вариант.';
       const spokenEdit = await call('story_edit', {
         context: narratedProject.context,
         requestId: randomUUID(),
-        changes: [{ path: 'narration.json', content: JSON.stringify(script, null, 2) }],
+        changes: [{ path: 'story.json', content: JSON.stringify(script, null, 2) }],
       });
       const spokenEditProject = (await finish(spokenEdit.structuredContent.job.id)).result.project;
       assert.equal(
         (await readdir(join(directory, 'data/speech'))).length,
-        script.segments.length + 1,
+        script.chapters.length + 1,
         'only the changed phrase adds an adapter take',
       );
       const produced = await call('story_produce', {
@@ -354,7 +363,10 @@ test(
         }
       });
       await cleanup(() => host.close());
-      await cleanup(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
+      await cleanup(async () => {
+        await unlockDirectories(directory);
+        await rm(directory, { recursive: true, force: true, maxRetries: 5 });
+      });
       if (failures.length)
         throw new AggregateError(
           [...(primaryError ? [primaryError] : []), ...failures],

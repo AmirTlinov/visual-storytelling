@@ -9,6 +9,8 @@ import type { IllustratedStoryOptions } from './illustrated.js';
 import type { Script } from './cues.js';
 import { editStoryDocument, authoredInputKeys, type StoryDocumentOperation } from './document.js';
 import { modelInputValues } from './model.js';
+import { documentSpeechApplicable } from './document-audibility.js';
+import { documentNarration } from './document-narration.js';
 
 type SubjectMoment = ReturnType<typeof documentModelsAt>;
 /** Compile a prepared drawing to the same shell and Story used by handwritten JS scenes. */
@@ -20,7 +22,6 @@ export async function mountIllustratedSubject(
 ) {
   const { model, recipe, module } = prepareIllustratedDocument(initial, options, aligned);
   let document = initial;
-  let mounted = false;
   await SceneShell.ready();
   let controller: Story<ModelValues, string, SubjectMoment> | undefined;
   let latest: SubjectMoment | undefined;
@@ -63,11 +64,7 @@ export async function mountIllustratedSubject(
   }
   shell.onDispose(drawing.dispose);
   function prepare(source: unknown, provisional = false, authoredInputs: readonly string[] = []) {
-    const { document: next, script } = prepareIllustratedDocument(
-      source,
-      options,
-      !mounted ? aligned : undefined,
-    );
+    const { document: next, script } = prepareIllustratedDocument(source, options, aligned);
     const nextModel = next.models[0];
     if (
       next.models.length !== 1 ||
@@ -132,8 +129,12 @@ export async function mountIllustratedSubject(
         prepared: SubjectMoment | undefined;
       const candidate = story<ModelValues, string, SubjectMoment>({
         script,
-        audio: options.audio,
         exploreTimeline: true,
+        speechApplicable(unit, moment) {
+          return documentSpeechApplicable(next, unit, moment.mode, {
+            [nextModel.id]: modelInputValues(nextModel, moment.state.models[nextModel.id]!, module),
+          });
+        },
         stateAt(frame) {
           return modelInputValues(
             nextModel,
@@ -154,7 +155,9 @@ export async function mountIllustratedSubject(
         resolveInput(patch, current) {
           return {
             values: module.validateInputs({ ...current.values, ...patch }),
-            time: recipe.inputTime?.(next, script) ?? current.time,
+            time: controller?.player.state.playing
+              ? current.time
+              : (recipe.inputTime?.(next, script) ?? current.time),
           };
         },
         render(moment) {
@@ -162,6 +165,9 @@ export async function mountIllustratedSubject(
           else prepared = moment;
         },
       });
+      let audio: ReturnType<typeof candidate.prepareAudio> | undefined;
+      const acceptedMoment = latest,
+        wasPlaying = controller?.player.state.playing;
       try {
         if (previous)
           candidate.restoreInputs(values, {
@@ -173,25 +179,40 @@ export async function mountIllustratedSubject(
         await candidate.ready();
         signal?.throwIfAborted();
         if (!prepared) throw new Error('Document has no prepared model frame.');
+        const previousMuted = controller?.player.state.hasAudio
+          ? controller.player.state.muted
+          : undefined;
+        if (options.audio) audio = candidate.prepareAudio(options.audio, { muted: previousMuted });
         render(prepared);
+        audio?.commit();
         shell.attachController(candidate);
         controller = candidate;
         document = next;
         active = true;
       } catch (error) {
+        if (acceptedMoment) {
+          drawing.render(
+            document.models[0]!,
+            acceptedMoment.views,
+            acceptedMoment.models[document.models[0]!.id]!,
+            acceptedMoment.beat,
+          );
+          latest = acceptedMoment;
+        }
+        if (wasPlaying && controller) void controller.player.play().catch(() => {});
         releaseResources(
           [
             () => {
               throw error;
             },
             () => candidate.dispose(),
+            () => audio?.cancel(),
           ],
           'Story document preparation failed.',
         );
         throw error;
       }
     }
-    mounted = true;
     shell.setResources(next.resources ?? []);
     shell.setTitle(next.title ?? recipe.title, { visible: next.title !== undefined });
     handle.extend({
@@ -218,6 +239,9 @@ export async function mountIllustratedSubject(
     await replace(initial);
     handle.extend({
       authoring: {
+        get narration() {
+          return documentNarration(document, options);
+        },
         get document() {
           return structuredClone(document);
         },

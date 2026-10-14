@@ -140,7 +140,34 @@ export function projectTransactions({
       result,
     );
   }
+  async function prepareDocument({ project, sourceRevision, document, operations }) {
+    const view = [...sessions.sessions.values()].find(
+      (session) =>
+        session.build.projectId === project.id &&
+        session.build.sourceRevision === sourceRevision &&
+        session.build.live &&
+        session.renderer &&
+        session.ready &&
+        !sessions.expired(session),
+    );
+    if (!view)
+      throw failure(
+        'view_closed',
+        'Open the current working revision before editing its authored modules.',
+        { action: 'story_open' },
+      );
+    const response = await sessions.request(view.id, {
+      op: 'author-prepare',
+      buildRevision: view.build.revision,
+      stateRevision: view.stateRevision,
+      document,
+      operations,
+    });
+    if (!response.result?.document) throw new Error('The module owner did not prepare a document.');
+    return response.result.document;
+  }
   return {
+    prepareDocument,
     publishBuild,
     commitPrepared,
     resumeCommitted,
@@ -174,37 +201,11 @@ export function projectTransactions({
               job: jobs.describe(previousBuild),
             };
           }
-          const proposed = await projects.stageEdit(
-            args,
-            async ({ project, sourceRevision, document, operations }) => {
-              const view = [...sessions.sessions.values()].find(
-                (session) =>
-                  session.build.projectId === project.id &&
-                  session.build.sourceRevision === sourceRevision &&
-                  session.build.live &&
-                  session.renderer &&
-                  session.ready &&
-                  !sessions.expired(session),
-              );
-              if (!view)
-                throw failure(
-                  'view_closed',
-                  'Open the current working revision before editing its authored modules.',
-                  { action: 'story_open' },
-                );
-              const response = await sessions.request(view.id, {
-                op: 'author-prepare',
-                buildRevision: view.build.revision,
-                stateRevision: view.stateRevision,
-                document,
-                operations,
-              });
-              if (!response.result?.document)
-                throw new Error('The module owner did not prepare a document.');
-              return response.result.document;
-            },
-          );
-          if (!proposed.prior && !proposed.semantic) {
+          const proposed = await projects.stageEdit(args, prepareDocument);
+          const voiced =
+            (await readJSON(join(projects.get(args.projectId).path, 'voice.json')))?.enabled ===
+            true;
+          if (!proposed.prior && (!proposed.semantic || voiced)) {
             const project = await projects.inspect(args.projectId);
             const candidate = await authoredCandidate(data, project, proposed);
             try {

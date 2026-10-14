@@ -105,7 +105,7 @@ visual-story api [NAME.member ... | ./SUBPATH] [--full]       public names or ex
 ${hasCharacters ? 'visual-story characters --help              prepared actors, actions and editable SVG skin kits\n' : ''}visual-story dev DIRECTORY [--port 8793]       rebuild + restore the selected semantic cue
 visual-story session URL [status|inspect|find|control] [--query TEXT] [--commands JSON] [--view ID] [--revision HASH]
 visual-story build DIRECTORY [--cdn]          build dist/; CDN mode loads pinned Rapier remotely
-visual-story audio DIRECTORY                  voice + aligned cues from story.json or narration.json
+visual-story audio DIRECTORY                  optional voice + aligned cues from story.json
 visual-story preview DIST [--port 8793]        serve an existing build
 visual-story review DIST --out review [--cue ID] [--width 375] [--theme dark] [--reduced]
 visual-story review URL --click SELECTOR --target CSS  capture an interaction

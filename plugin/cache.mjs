@@ -41,6 +41,7 @@ export async function collectCache(
     keepSnapshots.add(snapshot);
     const input = await readJSON(join(snapshot, '.vstory-input.json'));
     if (input?.buildRevision) keepBuilds.add(input.buildRevision);
+    if (input?.acceptedBuildRevision) keepBuilds.add(input.acceptedBuildRevision);
   }
   for (const revision of keepBuilds) {
     if (!/^[a-zA-Z0-9._-]+$/.test(revision)) continue;

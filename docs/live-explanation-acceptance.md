@@ -658,13 +658,13 @@ HTML/PNG и полные MP4 из установленного pin:470/252 ка�
 ffmpeg decode PASS, audio streams0. Source-edit/reopen/undo тест:24.431s PASS;
 это тяжёлая source подготовка, не замер авторства5/20. Независимое ревью завершено.
 
-| Удалённый путь | Владелец | Потребители | Доказательство |
-| --- | --- | --- | --- |
-| Отдельные fit/home и world floor0.1 | camera-view / shots | Viewport3D, обе пространственные истории | unit/translation/point/manual depth tests |
-| Last-frame authored predecessor | shotPlan3D | карта/устройство/сеть, куб/сечение | обратные seek и одинаковый snapshot |
-| Разрозненный caption DOM/placement | scene/captions | SceneShell, overlay и экспорты | читаемый физический текст в HTML/PNG/MP4 |
-| Дублирование статуса planned/arrived | dependencyObservation | 2D dependency-route и 3D facility | progress<1 остаётся travelling |
-| Готовность первого GPU кадра только через RAF | Viewport3D.whenRendered | композиция и source candidate iframe | suspended RAF, cancel0, installed edit/undo |
+| Удалённый путь                                | Владелец                | Потребители                              | Доказательство                              |
+| --------------------------------------------- | ----------------------- | ---------------------------------------- | ------------------------------------------- |
+| Отдельные fit/home и world floor0.1           | camera-view / shots     | Viewport3D, обе пространственные истории | unit/translation/point/manual depth tests   |
+| Last-frame authored predecessor               | shotPlan3D              | карта/устройство/сеть, куб/сечение       | обратные seek и одинаковый snapshot         |
+| Разрозненный caption DOM/placement            | scene/captions          | SceneShell, overlay и экспорты           | читаемый физический текст в HTML/PNG/MP4    |
+| Дублирование статуса planned/arrived          | dependencyObservation   | 2D dependency-route и 3D facility        | progress<1 остаётся travelling              |
+| Готовность первого GPU кадра только через RAF | Viewport3D.whenRendered | композиция и source candidate iframe     | suspended RAF, cancel0, installed edit/undo |
 
 Доказательства: `artifacts/architecture/2026-10-14/installed-{spatial,cube}-0.26.2/`,
 `installed-source-reload-clean-0.26.2/`, `artifacts/slice09-0.26.2-*.log`.
@@ -704,15 +704,86 @@ clipped0, unreadable0, pageerrors0. Source edit→reopen→undo33.696с сохр
 ошибок0. HTML/PNG/MP4:960×540,12fps,312кадров/26с, полный ffmpeg decode PASS,
 audio streams0; TTS не вызывался. Короткий и длинный рассказ используют один документ.
 
-| Удалённый путь | Владелец | Потребители | Доказательство |
-| --- | --- | --- | --- |
-| Создание/выборка cast внутри огромного stage | characters/cast | prepared staging и model poses | contact, absolute pose и reverse tests |
-| Непроверенный live pointer скрытого кандидата | SceneStory.presentation | физическая глава и SimulationMode | failed candidate retains accepted presentation |
-| Одновременное время рассказа и опыта | SimulationMode / SimulationPlayer | scene handle, controls, checkpoint | frozen Story, live step, pause/re-entry/repeat |
-| Потерянный physics checkpoint при MCP restore | scene-checkpoint / model codec | SDK source edit, reopen, undo | installed33.696с, invalid checkpoint rollback |
-| Утёкшие listeners при initial read/dispose failure | SimulationPlayer | forward-only players | failed-read retry/dispose/visibilitychange |
+| Удалённый путь                                     | Владелец                          | Потребители                        | Доказательство                                 |
+| -------------------------------------------------- | --------------------------------- | ---------------------------------- | ---------------------------------------------- |
+| Создание/выборка cast внутри огромного stage       | characters/cast                   | prepared staging и model poses     | contact, absolute pose и reverse tests         |
+| Непроверенный live pointer скрытого кандидата      | SceneStory.presentation           | физическая глава и SimulationMode  | failed candidate retains accepted presentation |
+| Одновременное время рассказа и опыта               | SimulationMode / SimulationPlayer | scene handle, controls, checkpoint | frozen Story, live step, pause/re-entry/repeat |
+| Потерянный physics checkpoint при MCP restore      | scene-checkpoint / model codec    | SDK source edit, reopen, undo      | installed33.696с, invalid checkpoint rollback  |
+| Утёкшие listeners при initial read/dispose failure | SimulationPlayer                  | forward-only players               | failed-read retry/dispose/visibilitychange     |
 
 Доказательства: `artifacts/architecture/2026-10-14/installed-physics-0.27.2/`,
 `installed-physics-source-0.27.2/`, `artifacts/slice10/`. Пользовательские проекты и
 прежние pins не менялись. Следующий срез —GUI-569; озвучка опциональна.
 Gate5/20 и финальные12–15 остаются открытыми.
+
+## Срез 11: опциональный голос и выбранные условия
+
+Кандидат установлен: plugin0.28.11 / core0.40.10, release `f0d87676929c6a75`,
+SHA `f0d87676929c6a75456f9e2741538b3462c3eecf8234f83b92a218856599c9a2`,
+build `262e608c94016ef73d23b8b932c19af338cb50eb05724b55f56686d3c7b0e685`.
+Архив macOSarm64: SHA `b78e3f24a50914a7b997b40a4018aa0fa4a1f93391135e4e77d87444d9b1e0da`.
+Независимое source/installed review CLEAR; все3MP4 отдельно полностью декодированы.
+На движении67/67уникальных кадров; итоговая тихая версия содержит0audio streams.
+Этот реестр — внешнее доказательство выпуска: он остаётся в Git и исключён из
+npm/plugin archive, чтобы запись SHA принятого архива не меняла его байты.
+
+`story.json` владеет замыслом, явные speech IDs — законченными мыслями и условиями
+применимости. `narration.json` существует только как производное задание аудиовладельца.
+Тихий путь не вызывает TTS/API; локальный или API-голос выбирается пользователем.
+Системных голосов и автоматической смены провайдера нет.
+
+Story публикует модель перед проверкой слышимости. Whole-take gate отделён от
+ручного mute, не включает середину фразы и возобновляет следующую применимую мысль.
+Единственные часы — Story/HTMLMedia; WebAudio закрывает выход при неактуальном
+media sample. Ошибка нового контроллера сохраняет прежний кадр и аудиовладельца.
+
+Дорогой синтез локален: цвет/камера не вызывают модель, новая реплика пересоздаёт
+свой take/alignment. Удалённый cache восстанавливается из проверенного принятого
+whole-take и его stem, с сохранением границ и performance. Source seed и фактический
+retry seed различаются. Явная миграция не синтезирует и сохраняет audio bytes.
+
+Authored и frozen experiment используют явные ревизии и checkpoint. Неприменимая
+запись исключается целиком; у смешанной дорожки voice+music замолкают на всём таком
+take, музыка в промежутках остаётся. Интервал с отрезанным началом/концом речи
+исключает её целиком. Silent сохраняет измеренное действие без аудиодорожки.
+Parser монтирует audio hook до scene script; шаблонный пример остаётся inert.
+Quiet timing принимает только тот же упорядоченный набор speech IDs и измеренные
+границы каждой фразы. Перераспределение, перестановка, удаление и лишние записи
+возвращают новый тихий тайминг. Внутренние timestamps phrase-only маркера не выдумываются.
+
+Приёмка голоса: Амир одобрил звучание, отклонил рассинхрон и дёрганье исходного
+контрольного MP4. Исправлены владельцы: division SVG сохраняет объекты между кадрами;
+каждое действие привязано к своей измеренной фразе общего take. 91 кадр сохраняет
+drawing identity, на соответствующих фразах показаны4группы и остаток1.
+Голосовой WAV сохранён: SHA
+`bc119082a4b0c65eff91f6cb0229d11f5a8fde397c431bd0e779ac0d3d512eef`.
+Исправленный17.69с ролик показан при30fps; повторная человеческая визуальная приёмка
+ожидает ответа. Срез и milestone пока открыты.
+
+Проверки: build/check PASS; final source30/30 PASS; финальные acoustic anchors26/26
+PASS; motion/media/parser/native-transfer focused23/23 PASS. Installed SDK цикл
+0.28.11 PASS72.139с: тихое создание, явная озвучка, правка одной мысли, GC recovery,
+current MP4960×540, silent duration, отключение голоса и отсутствие pageerrors.
+Контроль0.28.10:390/dark/reduced и1200/light,8кадров, clipping/unreadable/overflow0;
+полное проигрывание17.69с, HTML/PNG/authored+experiment+silent MP4531кадр/30fps.
+Финальная сверка0.28.11: те же8кадров, clipping/unreadable/overflow0, pageerrors0;
+полное проигрывание17.69с,91motion frames с сохранённым SVG, три экспорта531кадр/30fps.
+Доказательства — в `installed-speech-0.28.11`.
+Это установленный MCP и настоящая браузерная SDK-карточка; OS-native проверка
+отдельна. Текущее подключение чата возвращает RUNTIME_UPDATE_REQUIRED; пользователь
+разрешил браузерную проверку и отказался от перезапуска Codex.
+
+| Удалённый путь                                      | Владелец                                       | Потребители                              | Доказательство                                                      |
+| --------------------------------------------------- | ---------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------- |
+| Независимый narration.json и chapter/run regrouping | document-speech/document-narration             | CLI, plugin voice/build, migration       | stable IDs, local revoice, byte-preserving migration                |
+| Безусловный authored audio при других числах        | document-audibility/Story/speech-gate          | live card, composition, HTML/MP4         | 17→18, generic/dependent, seek/mute/reentry, frozen interval        |
+| Вторая инъекция audio и временный global script     | setNarrationMode/narrationScript               | source entry и prepared HTML             | native parser, early hook, inert template, same quiet timing        |
+| Повторный SVG на каждом progress                    | divisionDiagram                                | live grouping и video                    | same DOM в91кадре и reverse replay                                  |
+| Дублированный список controller capabilities        | controller-access/SceneShell                   | attach/detach и static scene             | forwarding removal, rollback/retry tests                            |
+| Потеря принятой речи после GC                       | accepted-recording/revision lease/adapter-take | build snapshots, queued edits, voice mix | protected lease, verified stems, one revoice after cache collection |
+
+Доказательства: `artifacts/slice11/`,
+`artifacts/architecture/2026-10-14/installed-speech-0.28.11/` и предыдущие
+диагностические кандидаты. Прежние pins и пользовательские проекты сохранены.
+Оставшиеся срезы12–15, gate5/20 и финальная приёмка milestone остаются открытыми.

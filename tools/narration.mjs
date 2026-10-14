@@ -12,7 +12,7 @@ function editAudioTags(html, edit) {
       edit(node.sourceCodeLocation, edits, node);
     }
     for (const child of node.childNodes ?? []) visit(child);
-    if (node.content) visit(node.content);
+    // Template contents are inert examples, never the scene's live media hook.
   };
   visit(parse(html, { sourceCodeLocationInfo: true }));
   for (const change of edits.sort((a, b) => b.start - a.start))
@@ -54,8 +54,25 @@ export function setNarrationMode(html, silent) {
     const body = parse(html, { sourceCodeLocationInfo: true })
       .childNodes.find((node) => node.tagName === 'html')
       ?.childNodes.find((node) => node.tagName === 'body');
-    const end = body?.sourceCodeLocation?.endTag?.startOffset ?? prepared.length;
-    return prepared.slice(0, end) + audio + prepared.slice(end);
+    // Packed scene scripts may execute while the parser is still in the body.
+    // Publish media before them so the scene mounts with its actual clock.
+    const start = body?.sourceCodeLocation?.startTag?.endOffset ?? 0;
+    return prepared.slice(0, start) + audio + prepared.slice(start);
+  }
+  if (!silent) {
+    const hooks = [];
+    const withoutHooks = editAudioTags(prepared, (location, edits, node) => {
+      if (!location || !node.attrs.some(({ name }) => name === 'data-story-audio')) return;
+      hooks.push(prepared.slice(location.startOffset, location.endOffset));
+      edits.push({ start: location.startOffset, end: location.endOffset, text: '' });
+    });
+    if (hooks.length) {
+      const body = parse(withoutHooks, { sourceCodeLocationInfo: true })
+        .childNodes.find((node) => node.tagName === 'html')
+        ?.childNodes.find((node) => node.tagName === 'body');
+      const start = body?.sourceCodeLocation?.startTag?.endOffset ?? 0;
+      return withoutHooks.slice(0, start) + hooks.join('') + withoutHooks.slice(start);
+    }
   }
   return prepared;
 }
@@ -65,7 +82,7 @@ export function playbackHTML(html, { silent = false } = {}) {
   if (silent) html = setNarrationMode(html, true);
   return editAudioTags(html, (location, edits, node) => {
     if (!node.attrs.some(({ name, value }) => name === 'data-silent' && value === 'true')) return;
-    for (const name of ['src', 'data-src', 'data-story-timeline']) {
+    for (const name of ['src', 'data-src']) {
       const span = location?.attrs?.[name];
       if (span) edits.push({ start: span.startOffset, end: span.endOffset, text: '' });
     }
@@ -90,7 +107,20 @@ export function playbackTimeline(timeline) {
     ...(timeline.segments && {
       segments: timeline.segments.map((segment) => ({
         // The audio span includes pauses that authored chapter and motion windows use.
-        ...fields(segment, ['id', 'title', 'text', 'start', 'end', 'audio_start', 'audio_end']),
+        ...fields(segment, [
+          'id',
+          'title',
+          'text',
+          'start',
+          'end',
+          'audio_start',
+          'audio_end',
+          'conditions',
+          'source_text',
+          'seed',
+          'source_seed',
+          'delivery',
+        ]),
         ...(segment.words && {
           words: segment.words.map((word) => fields(word, ['text', 'start', 'end'])),
         }),
@@ -102,7 +132,7 @@ export function playbackTimeline(timeline) {
 /** Defer synthesis without changing the editable speech, timing or selected provider. */
 export async function deferNarration(directory) {
   const names = await readdir(directory);
-  if (names.some((name) => ['voice.json', 'narration.json', 'story.json'].includes(name))) {
+  if (names.some((name) => ['voice.json', 'story.json'].includes(name))) {
     const file = join(directory, 'voice.json');
     const settings = names.includes('voice.json') ? JSON.parse(await readFile(file, 'utf8')) : {};
     if (settings.enabled !== false)
@@ -180,7 +210,10 @@ export async function buildNarration(
 ) {
   signal?.throwIfAborted();
   const source = await narrationSource(directory);
-  if (!source) throw new Error('Provide story.json or narration.json for speech');
+  if (!source)
+    throw new Error('Provide story.json for speech; narration.json is a derived voice job.');
+  // Explicit preparation freezes IDs/dependencies for CLI and plugin consumers alike.
+  await writeFile(join(directory, 'story.json'), JSON.stringify(source.document, null, 2) + '\n');
   const settingsFile = join(directory, 'voice.json');
   let settings = await readFile(settingsFile, 'utf8').then(JSON.parse, (error) => {
     if (error.code !== 'ENOENT') throw error;
@@ -304,7 +337,7 @@ export async function prepareNarration(directory, { audible = false, signal } = 
       if (error.code !== 'ENOENT') throw error;
     },
   );
-  if (settings?.enabled === false) return deferNarration(directory);
+  if (settings?.enabled !== true) return deferNarration(directory);
   let rebuilt = false;
   for (const name of await readdir(directory)) {
     signal?.throwIfAborted();
