@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { authoringTrials } from './plugin/authoring-trials.mjs';
+import { authoringTrials, manualConditionChange } from './plugin/authoring-trials.mjs';
 
 test('authoring dataset retains every failed trial and requires 18 base plus 12 unfamiliar tasks', async (t) => {
   const out = await mkdtemp(join(tmpdir(), 'authoring-trials-'));
@@ -134,7 +134,10 @@ test('comparison grading follows the changed after case and cannot accept a bala
         after: part(balanceAfter ? changed : inputs),
       },
     };
-    for (const snapshot of [initial, final])
+    for (const [snapshot, value] of [
+      [initial, inputs.rightForce],
+      [final, changed.rightForce],
+    ])
       owner.record(
         {
           name: 'story_control',
@@ -142,7 +145,11 @@ test('comparison grading follows the changed after case and cannot accept a bala
             commands: [{ type: 'parameters', values: { comparisonValue: changed.rightForce } }],
           },
         },
-        { structuredContent: { state: { snapshot } } },
+        {
+          structuredContent: {
+            state: { snapshot, rendering: { presented: { values: { comparisonValue: value } } } },
+          },
+        },
         Date.now(),
       );
     const now = Date.now();
@@ -150,6 +157,10 @@ test('comparison grading follows the changed after case and cannot accept a bala
       capturedAt: now,
       interactionAt: now,
       observations: { initial, changed: final },
+      conditions: {
+        initial: { at: task.start, values: { comparisonValue: inputs.rightForce } },
+        changed: { at: now, values: { comparisonValue: changed.rightForce } },
+      },
       authored: {
         models: [{ module: 'lever-comparison', inputs }],
         chapters: [{ beats: [{}, {}] }],
@@ -201,6 +212,10 @@ test('route grading follows the presented inputs and flat subject trace', async 
     capturedAt: now,
     interactionAt: now,
     observations: { initial, changed },
+    conditions: {
+      initial: { at: task.start, values: initialInputs },
+      changed: { at: now, values: changedInputs },
+    },
     authored: {
       models: [{ module: 'dependency-route', inputs: initialInputs }],
       chapters: [{ beats: [{}, {}] }],
@@ -208,4 +223,36 @@ test('route grading follows the presented inputs and flat subject trace', async 
   });
   assert.equal(report.computedStateCorrect, true);
   assert.equal(report.evidenceValid, true);
+});
+
+test('manual evidence rejects no-op, view-only, stale, failed and unmatched patches', () => {
+  const initial = { at: 100, values: { count: 11, divisor: 3, comparisonCase: 'before' } };
+  const changed = { at: 200, values: { count: 12, divisor: 3, comparisonCase: 'before' } };
+  const patch = (values = { count: 12 }, presented = changed.values) => ({
+    name: 'story_control',
+    start: 120,
+    end: 150,
+    arguments: { commands: [{ type: 'parameters', values }] },
+    result: { structuredContent: { state: { rendering: { presented: { values: presented } } } } },
+  });
+  assert.deepEqual(manualConditionChange(initial, changed, [patch()]), {
+    keys: ['count'],
+    complete: true,
+  });
+  for (const [after, calls] of [
+    [{ ...changed, values: initial.values }, [patch({ count: 11 }, initial.values)]],
+    [
+      { ...changed, values: { ...initial.values, comparisonCase: 'after' } },
+      [patch({ comparisonCase: 'after' })],
+    ],
+    [changed, [patch({ divisor: 3 })]],
+    [changed, [patch({ count: 12 }, initial.values)]],
+    [changed, [{ ...patch(), result: { isError: true } }]],
+    [changed, [{ ...patch(), start: 50, end: 90 }]],
+    [changed, [{ ...patch(), start: 210, end: 220 }]],
+    [changed, [{ ...patch(), arguments: { commands: [{ type: 'seek', time: 2 }] } }]],
+    [{ ...changed, values: { ...changed.values, divisor: 4 } }, [patch()]],
+  ])
+    assert.equal(manualConditionChange(initial, after, calls).complete, false);
+  assert.equal(manualConditionChange(undefined, changed, [patch()]).complete, false);
 });

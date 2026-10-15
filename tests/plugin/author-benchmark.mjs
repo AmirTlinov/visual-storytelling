@@ -45,6 +45,7 @@ export async function authorBenchmark({ release, output, model, reasoning }) {
     first,
     interaction,
     observations = {},
+    conditions = {},
     project,
     precedingProject,
     closed = false;
@@ -146,11 +147,16 @@ export async function authorBenchmark({ release, output, model, reasoning }) {
     const path = join(out, `trial-${brief.index}-${label}.png`);
     await writeFile(path, png);
     observations[label] = state.snapshot;
+    const observedAt = Date.now();
+    conditions[label] = {
+      at: observedAt,
+      values: structuredClone(state.rendering?.presented?.values),
+    };
     await writeFile(
       join(out, `observation-${brief.index}-${label}.json`),
       JSON.stringify(
         {
-          at: Date.now(),
+          at: observedAt,
           state,
           context: result.structuredContent.context,
           first,
@@ -191,6 +197,7 @@ export async function authorBenchmark({ release, output, model, reasoning }) {
       frames.begin();
       first = interaction = undefined;
       observations = {};
+      conditions = {};
       return brief;
     },
     async call(args) {
@@ -232,6 +239,7 @@ export async function authorBenchmark({ release, output, model, reasoning }) {
         capturedAt: first?.capturedAt,
         interactionAt: interaction?.capturedAt,
         observations,
+        conditions,
         authored,
         comments,
         error,

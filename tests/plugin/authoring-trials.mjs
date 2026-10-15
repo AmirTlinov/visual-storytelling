@@ -7,6 +7,49 @@ const sameInputs = (state, inputs) =>
   Boolean(state && Object.entries(inputs).every(([k, v]) => state[k] === v));
 const fraction = (value) => value?.numerator / value?.denominator;
 const near = (a, b) => Number.isFinite(a) && Math.abs(a - b) < 1e-10;
+/** A selector or a no-op is not a changed experiment. Match the observed condition
+ * to a successful parameter patch between its two immutable observations. */
+export function manualConditionChange(initial, changed, calls) {
+  if (
+    !Number.isFinite(initial?.at) ||
+    !Number.isFinite(changed?.at) ||
+    initial.at > changed.at ||
+    !initial.values ||
+    !changed.values
+  )
+    return { keys: [], complete: false };
+  const keys = Object.keys(initial.values).filter(
+    (key) =>
+      key !== 'comparisonCase' &&
+      Object.hasOwn(changed.values, key) &&
+      !isDeepStrictEqual(initial.values[key], changed.values[key]),
+  );
+  return {
+    keys,
+    complete:
+      keys.length > 0 &&
+      keys.every((key) =>
+        calls.some(
+          (call) =>
+            call.name === 'story_control' &&
+            !call.result.isError &&
+            call.start >= initial.at &&
+            call.end <= changed.at &&
+            call.start <= call.end &&
+            isDeepStrictEqual(
+              call.result.structuredContent?.state?.rendering?.presented?.values?.[key],
+              changed.values[key],
+            ) &&
+            call.arguments.commands?.some(
+              (command) =>
+                command.type === 'parameters' &&
+                Object.hasOwn(command.values ?? {}, key) &&
+                isDeepStrictEqual(command.values[key], changed.values[key]),
+            ),
+        ),
+      ),
+  };
+}
 function timingSummary(reports) {
   const metric = (key, limit) => {
     const values = reports
@@ -96,7 +139,7 @@ function taskCase(index) {
       family,
       domain: 'mechanics',
       inputs,
-      task: `Невесомый горизонтальный рычаг: слева ${leftForce}Н на плече ${leftArm}см, справа ${rightForce}Н на плече ${rightArm}см. Покажи причину вращения. Затем измени только правую силу и найди равновесие. Укажи, что это статическая модель.`,
+      task: `Невесомый горизонтальный рычаг: слева ${leftForce}Н на плече ${leftArm}см, справа ${rightForce}Н на плече ${rightArm}см. Покажи причину вращения. Затем измени только правую силу и найди равновесие. Укажи допущения модели.`,
       check: (a, b) =>
         sameInputs(conditions(a, 'before'), inputs) &&
         !lever(a, 'before')?.equilibrium &&
@@ -261,7 +304,15 @@ export function authoringTrials(output, { release, model, reasoning, hardware })
       if (!active || !sourceMatches(authored, active.specification))
         throw Error("The first drawing must show this task's authored conditions.");
     },
-    async finish({ capturedAt, interactionAt, observations, authored, comments, error }) {
+    async finish({
+      capturedAt,
+      interactionAt,
+      observations,
+      conditions,
+      authored,
+      comments,
+      error,
+    }) {
       if (finishing || starting) throw Error('A trial transition is already pending.');
       finishing = true;
       try {
@@ -286,11 +337,10 @@ export function authoringTrials(output, { release, model, reasoning, hardware })
         const observedByMCP = [initial, changed].every(
           (value) => value && snapshots.some((snapshot) => isDeepStrictEqual(value, snapshot)),
         );
-        const manual = active.calls.some(
-          (c) =>
-            c.name === 'story_control' &&
-            c.arguments.commands?.some((command) => command.type === 'parameters') &&
-            !c.result.isError,
+        const manualChange = manualConditionChange(
+          conditions?.initial,
+          conditions?.changed,
+          active.calls,
         );
         let computedStateCorrect = false,
           checkError;
@@ -306,7 +356,9 @@ export function authoringTrials(output, { release, model, reasoning, hardware })
           !error &&
           !checkError &&
           observedByMCP &&
-          manual &&
+          manualChange.complete &&
+          conditions.initial.at >= active.start &&
+          conditions.changed.at <= finished &&
           Number.isFinite(capturedAt) &&
           Number.isFinite(interactionAt) &&
           capturedAt >= active.start &&
@@ -317,7 +369,7 @@ export function authoringTrials(output, { release, model, reasoning, hardware })
         const { specification, ...record } = active;
         const report = {
           ...record,
-          criteriaVersion: 2,
+          criteriaVersion: 3,
           release,
           model,
           reasoning,
@@ -330,6 +382,9 @@ export function authoringTrials(output, { release, model, reasoning, hardware })
           interactionMs: interactionAt - active.start,
           checkedExperienceMs,
           observations,
+          conditions,
+          changedInputKeys: manualChange.keys,
+          manualInputChanged: manualChange.complete,
           authored,
           comments,
           error,

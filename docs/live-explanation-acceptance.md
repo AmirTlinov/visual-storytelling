@@ -1306,3 +1306,27 @@ fields и не закрывает их select; обе стороны перех�
 и `artifacts/slice14/lever-*.log`. Установленный кандидат и новая проверка
 понимания ещё не приняты.
 Срез14,15 и milestone остаются открытыми. Озвучка опциональна.
+
+Установлен0.36.0/core0.48.0, sourcee98765b; SHA256
+`ec4063da3c7747ba8a356ba4c5f587f0168a54ecdfd92fea168cf86cb7112b24`.
+Native MCP этого чата прочитал новые lever API и создал проект44fead0f;
+состояние native-сеанса остаётся closed/prepared. Это API/source PASS.
+Тот же проект показан и проверен через согласованный installed SDK/browser;
+OS-native pixels этим не подтверждаются. На карточке руками проверены
+вращение, изменение расстояния и возвращение к исходному горизонтальному старту.
+
+Отдельный установленный cycle PASS:
+`artifacts/slice14/lever-installed/run-b2a77f04-dc4c-4bea-9fca-3ea4befd0a4f`.
+Exact API bytes, create, player motion, grip keyboard, parameters/balance,
+experiment undo, source edit/undo, same SceneHandle, reopen, HTML/PNG и неизменный
+pin проверены. Три предыдущие ошибки приёмочного скрипта сохранены: неверный
+renderStatus, устаревший context после ручного ввода и неправильный discriminator
+операции. Установленный код ради этих ошибок не менялся. Installed custom-module
+cycle тоже PASS: `artifacts/slice14/0.36.0-installed-custom-modules.log`.
+Новая human visual/learning приёмка ожидается; прошлый FAIL не закрыт.
+
+Перед следующим author30 добавлен criteriaVersion3: manual требует реальной
+разницы принятых условий и успешной parameter patch между immutable initial и
+changed observations. No-op, selector-only, failed/stale/unmatched patch дают
+FAIL. Тесты измерителя7/7 PASS. Новая серия не пересчитывает старые raw samples;
+начало clock по-прежнему предшествует чтению нового задания агентом.
