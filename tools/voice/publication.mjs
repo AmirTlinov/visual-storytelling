@@ -1,6 +1,5 @@
 import fs from 'node:fs/promises';
-import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { acquireDirectoryLock } from '../file-lock.mjs';
 
@@ -241,18 +240,5 @@ export async function publishNarration(directory, staging, names, { signal } = {
     }
   } finally {
     await release();
-  }
-}
-
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
-  try {
-    const [command, directory, staging, names] = process.argv.slice(2);
-    if (command === 'publish') await publishNarration(directory, staging, JSON.parse(names));
-    else if (command === 'recover') await recoverNarration(directory);
-    else if (command === 'check') await assertNarrationPublished(directory);
-    else throw new Error('Unknown narration publication command.');
-  } catch (error) {
-    console.error(error.message);
-    process.exitCode = 1;
   }
 }

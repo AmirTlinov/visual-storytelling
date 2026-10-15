@@ -12,7 +12,7 @@ def command(action, output, staging=None, names=None):
     node = os.environ.get("VISUAL_STORY_NODE") or (str(bundled) if bundled.is_file() else shutil.which("node"))
     if not node:
         raise RuntimeError("Narration publication needs the plugin's bundled Node runtime")
-    args = [node, str(root / "tools" / "voice" / "publication.mjs"), action, str(output)]
+    args = [node, str(root / "tools" / "voice" / "publication-cli.mjs"), action, str(output)]
     if staging is not None:
         args += [str(staging), json.dumps(list(names))]
     result = subprocess.run(args, capture_output=True, text=True)

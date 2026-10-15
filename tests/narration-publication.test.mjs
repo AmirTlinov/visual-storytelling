@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { build } from 'esbuild';
 import { pathToFileURL } from 'node:url';
 import {
   publishNarration,
@@ -15,6 +16,43 @@ import { buildNarration, checkNarration } from '../tools/narration.mjs';
 import { narrationSource } from '../tools/story-document.mjs';
 const moduleURL = pathToFileURL(resolve('tools/voice/publication.mjs')).href;
 const narrationURL = pathToFileURL(resolve('tools/narration.mjs')).href;
+test('bundling the publication owner has no CLI side effects; the explicit CLI retains Python delivery', async (t) => {
+  const directory = await fixture(t),
+    bundled = join(directory, 'kernel-import.mjs');
+  await build({
+    stdin: {
+      contents: `import { assertNarrationPublished } from ${JSON.stringify(resolve('tools/voice/publication.mjs'))}; console.log(typeof assertNarrationPublished);`,
+      resolveDir: process.cwd(),
+    },
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    outfile: bundled,
+  });
+  const imported = spawnSync(process.execPath, [bundled], { encoding: 'utf8' });
+  assert.equal(imported.status, 0, imported.stderr);
+  assert.equal(imported.stderr, '');
+  assert.equal(imported.stdout.trim(), 'function');
+  const output = join(directory, 'out'),
+    staging = join(directory, 'staging');
+  await fs.mkdir(output);
+  await fs.mkdir(staging);
+  for (const name of ['audio.wav', 'timeline.json'])
+    await fs.writeFile(join(staging, name), 'prepared ' + name);
+  const bridge = spawnSync(
+    'python3',
+    [
+      '-c',
+      'from tools.audio.publication import publish, assert_published; import sys; publish(sys.argv[1],sys.argv[2],["audio.wav","timeline.json"]); assert_published(sys.argv[2])',
+      staging,
+      output,
+    ],
+    { encoding: 'utf8', env: { ...process.env, VISUAL_STORY_NODE: process.execPath } },
+  );
+  assert.equal(bridge.status, 0, bridge.stderr);
+  for (const name of ['audio.wav', 'timeline.json'])
+    assert.equal(await fs.readFile(join(output, name), 'utf8'), 'prepared ' + name);
+});
 const document = {
   version: 2,
   models: [],

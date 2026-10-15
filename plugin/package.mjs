@@ -3,7 +3,6 @@ import { join, dirname, basename, relative, sep } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
-import { buildAPI } from '../tools/api.mjs';
 import { packageInfo, sourceDigest, writeBuildInfo } from '../tools/build-info.mjs';
 import { playbackTimeline } from '../tools/narration.mjs';
 const execute = promisify(execFile);
@@ -177,7 +176,6 @@ export async function packagePlugin(root) {
   delete pkg.devDependencies;
   pkg.scripts = { build: 'visual-story build .', dev: 'visual-story dev .' };
   await writeFile(join(release, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
-  await buildAPI(release, join(release, 'dist'));
   await cp(join(root, 'package-lock.json'), join(release, 'package-lock.json'));
   await execute('npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], {
     cwd: release,
