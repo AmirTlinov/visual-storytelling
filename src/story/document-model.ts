@@ -11,6 +11,7 @@ import type { Frame, Script } from './cues.js';
 import type { ModelValues, ModelState, StoryModules } from './model.js';
 import { modelInputValues } from './model.js';
 import { cueSheet } from './cues.js';
+import { checkDocumentBoundaries } from './document-checks.js';
 
 /** Publication and mounting prepare the same normalized candidate and its optional clock. */
 export function prepareStoryDocument(
@@ -20,15 +21,16 @@ export function prepareStoryDocument(
 ) {
   const document = validateStoryDocument(source, options);
   const script = documentTimeline(document, aligned, options);
-  if (script) {
-    const sheet = cueSheet(script);
-    const boundaries = new Set([
-      0,
-      ...Object.values(script.cues).flatMap((cue) => [cue.start, cue.end]),
-    ]);
-    for (const time of boundaries) documentModelsAt(document, sheet.at(time), {}, options.modules);
-  }
-  return { document, script };
+  const sheet = script && cueSheet(script);
+  const checks = checkDocumentBoundaries(document, script, options, (time) =>
+    documentModelsAt(
+      document,
+      time === undefined ? undefined : sheet!.at(time),
+      {},
+      options.modules,
+    ),
+  );
+  return { document, script, checks };
 }
 
 /** Project authored chapters through the existing composition and acoustic timing owners. */

@@ -9,7 +9,7 @@ import { SessionDirectory, buildReference } from '../plugin/session-directory.mj
 import { sessionStorage } from '../plugin/runtime/session-storage.mjs';
 import { collectCache } from '../plugin/cache.mjs';
 import { storyProjectOwner } from '../tools/story-project.mjs';
-import { samePreparedOwner } from '../plugin/runtime/project-transactions.mjs';
+import { samePreparedOwner } from '../plugin/runtime/project-delivery.mjs';
 import { writePreparedBuild } from '../plugin/build-payload.mjs';
 import { readJSON, writeJSON } from '../tools/storage.mjs';
 

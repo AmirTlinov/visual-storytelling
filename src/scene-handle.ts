@@ -49,6 +49,8 @@ export interface SceneRuntime {
   };
   /** A compiled subject accepts whole validated authored documents; ProjectStore owns their revisions. */
   readonly authoring?: {
+    /** Addressed model checkpoints and actual drawing-check work; no quality score. */
+    readonly checks?: unknown;
     /** Derived voice job from this accepted document and its registered module owners. */
     readonly narration?: unknown;
     readonly document: unknown;

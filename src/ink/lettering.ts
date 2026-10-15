@@ -1,4 +1,4 @@
-import { measureText } from './text-measure.js';
+import { measureText, measureTextVariants } from './text-measure.js';
 import { svg } from './dom.js';
 import { SketchMotion } from './motion.js';
 import { glyphs } from './glyphs.js';
@@ -189,6 +189,10 @@ export function lettering(
     element,
     text,
     write,
+    /** Native advances at the current font size and fit; leaves the displayed ink intact. */
+    measureWidths(values: readonly string[]) {
+      return measureTextVariants(label, values, (text) => text.getComputedTextLength() * scale);
+    },
     get width() {
       return width;
     },

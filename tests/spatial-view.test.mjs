@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { documentNarration, documentScript } from '../dist/story/document.js';
 import { cubeModel } from '../examples/cube-section/model.js';
 
-async function fixture(contents, work) {
+async function fixture(contents, work, browserOptions = {}) {
   const bundle = await build({
     stdin: { resolveDir: process.cwd(), contents: `import './dist/style.css';\n${contents}` },
     bundle: true,
@@ -20,7 +20,10 @@ async function fixture(contents, work) {
   });
   const browser = await chromium.launch(chromiumLaunchOptions());
   try {
-    const page = await browser.newPage({ viewport: { width: 900, height: 800 } });
+    const page = await browser.newPage({
+      viewport: { width: 900, height: 800 },
+      ...browserOptions,
+    });
     page.setDefaultTimeout(5000);
     await page.setContent(
       '<main class="ve-scene" style="position:relative;width:600px;height:400px;padding:0;box-sizing:border-box"></main>',
@@ -36,6 +39,62 @@ async function fixture(contents, work) {
     await browser.close();
   }
 }
+
+test('preview and final preserve the camera and crisp label layout while changing GPU resources', async () => {
+  const samples = [];
+  for (const profile of ['preview', 'final']) {
+    await fixture(
+      `
+      globalThis[Symbol.for('visual-storytelling.render-profile')]=${JSON.stringify(profile)};
+      import {Viewport3D, ThreeKit as T} from './dist/viewport/index.js';
+      const stage=document.querySelector('main'); stage.style.width='1888px';stage.style.height='1062px';
+      const view=Viewport3D.mount(stage), mesh=new T.Mesh(new T.BoxGeometry(),new T.MeshBasicMaterial());
+      view.setObject(mesh);view.describe(mesh,'cube',{label:'Тот же куб'});
+      view.label('2 × 2 = 4',()=>new T.Vector3(0,0,0),{size:22});
+      window.lab={view};
+    `,
+      async (page) => {
+        await page.evaluate(async () => {
+          await document.fonts.ready;
+          await lab.view.whenRendered();
+        });
+        samples.push(
+          await page.evaluate(() => {
+            const canvas = document.querySelector('canvas'),
+              label = document.querySelector('.ve-3d-label');
+            const labels = [...document.querySelectorAll('[data-label-id]')].map(
+              (n) => n.textContent,
+            );
+            return {
+              width: canvas.width,
+              height: canvas.height,
+              camera: lab.view.capture(),
+              review: canvas.__visualReview(),
+              lettering: [...document.querySelectorAll('span,svg text')]
+                .filter((n) => n.textContent === '2 × 2 = 4')
+                .map((n) => ({
+                  tag: n.tagName,
+                  text: n.textContent,
+                  box: n.getBoundingClientRect().toJSON(),
+                  font: getComputedStyle(n).fontSize,
+                })),
+              labels,
+            };
+          }),
+        );
+      },
+      { viewport: { width: 1920, height: 1200 }, deviceScaleFactor: 2 },
+    );
+  }
+  const [preview, final] = samples;
+  assert(preview.width * preview.height <= 1920 * 1080);
+  assert(final.width * final.height > preview.width * preview.height * 3.8);
+  assert.deepEqual(preview.camera, final.camera);
+  assert(preview.lettering.length, 'Lettering must remain outside the GPU raster');
+  assert.deepEqual(preview.lettering, final.lettering);
+  assert.equal(preview.review.receipt.raster.profile, 'preview');
+  assert.equal(final.review.receipt.raster.profile, 'final');
+});
 
 test('a tiny physical subject fits and its manual checkpoint retains depth precision across remount and resize', async () => {
   await fixture(

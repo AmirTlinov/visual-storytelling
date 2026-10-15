@@ -15,6 +15,7 @@ import type { Shot } from './staging/types.js';
 import type { ChapterFrame } from '../story/composition.js';
 import { shotFraming } from './shot-framing.js';
 import { snapshotSVG } from '../export/index.js';
+import { rasterResolution } from '../raster-budget.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 let nextStage = 0;
@@ -171,6 +172,7 @@ export async function characterStage(
       }),
     );
     let snapshot: unknown;
+    let raster: ReturnType<typeof rasterResolution> | undefined;
     let manualShot: Shot | undefined;
     let latest: [number, boolean, ChapterFrame | undefined] = [0, false, undefined];
     let camera: FrameBox = { x: 0, y: 0, width: set.width, height: set.height },
@@ -184,6 +186,7 @@ export async function characterStage(
     inspect = () => {
       const rect = canvas.getBoundingClientRect();
       return {
+        receipt: { raster },
         camera,
         changingShot,
         objects: Object.entries(focus ? { ...bounds, ...details } : bounds).map(([id, b]) => ({
@@ -369,15 +372,13 @@ export async function characterStage(
         // Logical dimensions also work when the host is hidden or detached.
         const logicalHeight = set.height,
           logicalWidth = (logicalHeight * camera.width) / camera.height;
-        const dpr = Math.min(
-          devicePixelRatio || 1,
-          2,
-          maxTextureSize / logicalWidth,
-          maxTextureSize / logicalHeight,
+        raster = rasterResolution(
+          logicalWidth,
+          logicalHeight,
+          Math.min(devicePixelRatio || 1, 2),
+          maxTextureSize,
         );
-        const width = Math.max(1, Math.round(logicalWidth * dpr)),
-          height = Math.max(1, Math.round(logicalHeight * dpr));
-        renderer.frame(camera, set.height, width, height);
+        renderer.frame(camera, set.height, raster.width, raster.height);
         surfaces?.begin(
           frame ?? {
             chapter:

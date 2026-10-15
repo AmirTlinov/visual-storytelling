@@ -7,19 +7,8 @@ import { readBuildMetadata } from '../build-payload.mjs';
 import { authoredCandidate } from '../authored-candidate.mjs';
 import { buildReference } from '../session-directory.mjs';
 import { failure, errorData } from '../errors.mjs';
-
-/** A hot edit retains the mounted model subjects; other identities need a candidate frame. */
-export function samePreparedOwner(view, prepared) {
-  return (
-    view.build.live?.runtimeBuild === prepared.live?.runtimeBuild &&
-    view.build.live?.moduleRevision === prepared.live?.moduleRevision &&
-    isDeepStrictEqual(view.build.narration, prepared.narration) &&
-    isDeepStrictEqual(
-      view.build.live?.document.models.map(({ id, module }) => ({ id, module })),
-      prepared.live?.document.models.map(({ id, module }) => ({ id, module })),
-    )
-  );
-}
+import { withVerifiedInputs } from '../../tools/input-verification.mjs';
+import { projectDelivery, samePreparedOwner } from './project-delivery.mjs';
 
 /** One proposal/commit/delivery lifecycle; ProjectStore owns its source and receipt. */
 export function projectTransactions({
@@ -169,6 +158,15 @@ export function projectTransactions({
     if (!response.result?.document) throw new Error('The module owner did not prepare a document.');
     return response.result.document;
   }
+  const deliverDocument = projectDelivery({
+    data,
+    toolchainRoot: resolve(directory, '../..'),
+    projects,
+    sessions,
+    save,
+    publishBuild,
+    scheduleCache,
+  });
   return {
     prepareDocument,
     publishBuild,
@@ -179,225 +177,153 @@ export function projectTransactions({
     acceptMigration: (job, result) =>
       projects.serial('delivery:' + job.projectId, () => acceptMigration(job, result)),
     async edit(args) {
+      const requested = performance.now();
       return projects.serial('delivery:' + args.projectId, () =>
-        jobs.preserveInputs(async () => {
-          const previousBuild = jobs.forRequest(args.requestId + '-build');
-          if (previousBuild?.input.authoring) {
-            if (!isDeepStrictEqual(previousBuild.input.authoring.args, args))
-              throw new Error('requestId already belongs to a different edit.');
-            if (
-              !['queued', 'running', 'cancelling'].includes(previousBuild.status) &&
-              (!previousBuild.result || previousBuild.result.delivery === 'failed')
-            ) {
-              const resumed = await resumeCommitted(args.projectId, args.requestId);
-              if (resumed)
-                return {
-                  ...resumed,
-                  job: await jobs.acceptPreparedResult(previousBuild.id, resumed),
-                };
-            }
-            return {
-              project: {
-                ...(previousBuild.result?.project ?? previousBuild.input.baseProject),
-                repeated: true,
-              },
-              job: jobs.describe(previousBuild),
+        jobs.preserveInputs(() =>
+          withVerifiedInputs(async () => {
+            const started = performance.now(),
+              phases = { waitToStart: performance.now() - requested };
+            const measure = async (name, work) => {
+              const began = performance.now();
+              try {
+                return await work();
+              } finally {
+                phases[name] = (phases[name] ?? 0) + performance.now() - began;
+              }
             };
-          }
-          const proposed = await projects.stageEdit(args, prepareDocument);
-          const voiced =
-            (await readJSON(join(projects.get(args.projectId).path, 'voice.json')))?.enabled ===
-            true;
-          if (!proposed.prior && (!proposed.semantic || voiced)) {
-            const project = await projects.inspect(args.projectId);
-            const candidate = await authoredCandidate(data, project, proposed);
-            try {
-              const job = await jobs.enqueue(
-                'build',
-                {
-                  data,
-                  ...candidate.input,
-                  prepareVoice: args.prepareVoice === true,
-                  authoring: proposed,
-                  baseProject: project,
-                },
-                args.requestId + '-build',
-              );
-              return { project, job, publication: 'preparing' };
-            } catch (error) {
-              await rm(candidate.snapshot, { recursive: true, force: true });
-              throw error;
-            }
-          }
-          let preparedCandidate;
-          if (proposed.semantic) {
-            const views = [...sessions.sessions.values()].filter(
-              (session) =>
-                session.build.projectId === args.projectId &&
-                session.build.live &&
-                session.renderer &&
-                session.ready &&
-                !sessions.expired(session),
-            );
-            if (!views.length)
-              throw failure(
-                'view_closed',
-                'Open this project with story_open(projectId) and wait for its ready frame before a semantic edit.',
-                { action: 'story_open' },
-              );
-            const project = await projects.inspect(args.projectId);
-            const candidate = await authoredCandidate(data, project, proposed);
-            try {
-              preparedCandidate = await prepareLiveProject(
-                data,
-                {
-                  ...project,
-                  path: candidate.snapshot,
-                  sourceRevision: candidate.input.sourceRevision,
-                },
-                resolve(directory, '../..'),
-                candidate.input,
-              );
-              for (const session of views.filter((view) =>
-                samePreparedOwner(view, preparedCandidate),
-              ))
-                await sessions.request(session.id, {
-                  op: 'author-validate',
-                  buildRevision: session.build.revision,
-                  stateRevision: session.stateRevision,
-                  document: proposed.document,
-                  authoredInputs: proposed.authoredInputs,
-                });
-            } finally {
-              // A published prepared artifact owns its inputs even when view validation rejects it.
-              // Unreferenced artifacts return to the existing cache collector after this lock.
-              if (preparedCandidate?.snapshot !== candidate.snapshot)
-                await rm(candidate.snapshot, { recursive: true, force: true });
-              scheduleCache();
-            }
-          }
-          const accepted = preparedCandidate
-            ? await commitPrepared(proposed, preparedCandidate, undefined, false)
-            : { project: await projects.commitPreparedEdit(proposed) };
-          const project = accepted.project;
-          const priorDelivery =
-            project.repeated && (await projects.editDelivery(args.projectId, args.requestId));
-          if (project.semantic) {
-            if (
-              priorDelivery?.shown?.length &&
-              priorDelivery.shown.every(
-                (view) =>
-                  !view.error &&
-                  view.acknowledgement === 'rendered' &&
-                  view.shownSourceRevision === project.sourceRevision,
-              )
-            )
-              return priorDelivery;
-            if ((await projects.inspect(project.id)).sourceRevision !== project.sourceRevision)
+            const previousBuild = jobs.forRequest(args.requestId + '-build');
+            if (previousBuild?.input.authoring) {
+              if (!isDeepStrictEqual(previousBuild.input.authoring.args, args))
+                throw new Error('requestId already belongs to a different edit.');
+              if (
+                !['queued', 'running', 'cancelling'].includes(previousBuild.status) &&
+                (!previousBuild.result || previousBuild.result.delivery === 'failed')
+              ) {
+                const resumed = await resumeCommitted(args.projectId, args.requestId);
+                if (resumed)
+                  return {
+                    ...resumed,
+                    job: await jobs.acceptPreparedResult(previousBuild.id, resumed),
+                  };
+              }
               return {
+                project: {
+                  ...(previousBuild.result?.project ?? previousBuild.input.baseProject),
+                  repeated: true,
+                },
+                job: jobs.describe(previousBuild),
+              };
+            }
+            const proposed = await measure('proposal', () =>
+              projects.stageEdit(args, prepareDocument),
+            );
+            const voiced =
+              (await readJSON(join(projects.get(args.projectId).path, 'voice.json')))?.enabled ===
+              true;
+            if (!proposed.prior && (!proposed.semantic || voiced)) {
+              const project = await projects.inspect(args.projectId);
+              const candidate = await measure('capture', () =>
+                authoredCandidate(data, project, proposed),
+              );
+              try {
+                const job = await jobs.enqueue(
+                  'build',
+                  {
+                    data,
+                    ...candidate.input,
+                    prepareVoice: args.prepareVoice === true,
+                    authoring: proposed,
+                    baseProject: project,
+                  },
+                  args.requestId + '-build',
+                );
+                return { project, job, publication: 'preparing' };
+              } catch (error) {
+                await rm(candidate.snapshot, { recursive: true, force: true });
+                throw error;
+              }
+            }
+            let preparedCandidate;
+            if (proposed.semantic) {
+              const views = [...sessions.sessions.values()].filter(
+                (session) =>
+                  session.build.projectId === args.projectId &&
+                  session.build.live &&
+                  session.renderer &&
+                  session.ready &&
+                  !sessions.expired(session),
+              );
+              if (!views.length)
+                throw failure(
+                  'view_closed',
+                  'Open this project with story_open(projectId) and wait for its ready frame before a semantic edit.',
+                  { action: 'story_open' },
+                );
+              const project = await projects.inspect(args.projectId);
+              const candidate = await measure('capture', () =>
+                authoredCandidate(data, project, proposed),
+              );
+              try {
+                preparedCandidate = await measure('presentation', () =>
+                  prepareLiveProject(
+                    data,
+                    {
+                      ...project,
+                      path: candidate.snapshot,
+                      sourceRevision: candidate.input.sourceRevision,
+                    },
+                    resolve(directory, '../..'),
+                    candidate.input,
+                  ),
+                );
+                for (const session of views.filter((view) =>
+                  samePreparedOwner(view, preparedCandidate),
+                ))
+                  await measure('validation', () =>
+                    sessions.request(session.id, {
+                      op: 'author-validate',
+                      buildRevision: session.build.revision,
+                      stateRevision: session.stateRevision,
+                      document: proposed.document,
+                      authoredInputs: proposed.authoredInputs,
+                    }),
+                  );
+              } finally {
+                // A published prepared artifact owns its inputs even when view validation rejects it.
+                // Unreferenced artifacts return to the existing cache collector after this lock.
+                if (preparedCandidate?.snapshot !== candidate.snapshot)
+                  await rm(candidate.snapshot, { recursive: true, force: true });
+                scheduleCache();
+              }
+            }
+            const accepted = preparedCandidate
+              ? await measure('commit', () =>
+                  commitPrepared(proposed, preparedCandidate, undefined, false),
+                )
+              : { project: await projects.commitPreparedEdit(proposed) };
+            const project = accepted.project;
+            const priorDelivery =
+              project.repeated && (await projects.editDelivery(args.projectId, args.requestId));
+            if (project.semantic)
+              return deliverDocument({
+                project,
+                priorDelivery,
+                accepted,
+                preparedCandidate,
+                requestId: args.requestId,
+                phases,
+                started,
+              });
+            return (
+              priorDelivery ?? {
                 project,
                 shown: [],
                 delivery: 'superseded',
-                message:
-                  'This operation was saved before a newer edit. Its interrupted delivery is not replayed.',
-              };
-            let prepared;
-            const shown = [];
-            try {
-              if (accepted.delivery === 'failed') return { ...accepted, shown };
-              prepared =
-                preparedCandidate ??
-                (priorDelivery?.buildRevision &&
-                  (await readBuildMetadata(data, priorDelivery.buildRevision))) ??
-                (await prepareLiveProject(data, project, resolve(directory, '../..')));
-              if (!preparedCandidate && !(await publishBuild(project, prepared, false)))
-                throw failure(
-                  'source_conflict',
-                  'Source changed while resuming document delivery.',
-                );
-            } catch (error) {
-              const result = { project, shown, delivery: 'failed', error: errorData(error) };
-              await projects.editDelivery(args.projectId, args.requestId, result);
-              return result;
-            }
-            for (const session of sessions.sessions.values()) {
-              if (session.build.projectId !== project.id || !session.build.live) continue;
-              if (!session.renderer || !session.ready || sessions.expired(session)) continue;
-              if (!samePreparedOwner(session, prepared)) {
-                session.nextBuild = {
-                  ...buildReference(prepared),
-                  authoredInputs: project.authoredInputs,
-                };
-                session.wake?.();
-                await save(session);
-                shown.push({ ...sessions.describe(session), acknowledgement: 'pending' });
-                continue;
+                message: 'This historical edit has no pending preparation to resume.',
               }
-              try {
-                const deliveredHere = priorDelivery?.shown?.some(
-                  (view) =>
-                    !view.error &&
-                    view.sessionId === session.id &&
-                    view.buildRevision === prepared.revision &&
-                    ['rendered', 'prepared', 'failed'].includes(view.acknowledgement),
-                );
-                const observed =
-                  deliveredHere && session.build.revision === prepared.revision
-                    ? await sessions.request(session.id, { op: 'inspect' })
-                    : await sessions.request(
-                        session.id,
-                        {
-                          op: 'author',
-                          detail: 'model',
-                          requestId: args.requestId,
-                          buildRevision: session.build.revision,
-                          stateRevision: session.stateRevision,
-                          nextBuildRevision: prepared.revision,
-                          sourceRevision: project.sourceRevision,
-                          document: prepared.live.document,
-                          authoredInputs: project.authoredInputs,
-                        },
-                        { authoredBuild: prepared },
-                      );
-                shown.push(observed);
-                await save(session);
-              } catch (error) {
-                shown.push({
-                  sessionId: session.id,
-                  error: errorData(error),
-                  shownSourceRevision: sessions.describe(session).shownSourceRevision,
-                });
-              }
-            }
-            const delivery = !shown.length
-              ? 'pending'
-              : shown.every((view) => !view.error && view.acknowledgement === 'rendered')
-                ? 'shown'
-                : shown.some((view) => view.error || view.acknowledgement === 'failed')
-                  ? 'failed'
-                  : shown.some((view) => view.acknowledgement === 'pending')
-                    ? 'pending'
-                    : 'prepared';
-            const result = {
-              project,
-              buildRevision: prepared.revision,
-              work: prepared.work,
-              shown,
-              delivery,
-            };
-            await projects.editDelivery(args.projectId, args.requestId, result);
-            scheduleCache();
-            return result;
-          }
-          return (
-            priorDelivery ?? {
-              project,
-              shown: [],
-              delivery: 'superseded',
-              message: 'This historical edit has no pending preparation to resume.',
-            }
-          );
-        }),
+            );
+          }),
+        ),
       );
     },
     async migrate({ projectId, sourceRevision, requestId, changes }) {

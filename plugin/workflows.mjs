@@ -16,6 +16,7 @@ import { videoDimensions } from '../tools/video-dimensions.mjs';
 import { creationCandidate } from './authored-candidate.mjs';
 import { prepareBuild, buildPreparedSnapshot, unchangedInputs } from './build-preparation.mjs';
 import { preparedBuildHTML } from './build-payload.mjs';
+import { contentDigest } from '../tools/build-info.mjs';
 const execute = promisify(execFile);
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -253,6 +254,21 @@ export const workflows = {
         .filter((path) => typeof path === 'string' && path.startsWith(canonicalOutput + '/'));
       return {
         ...result,
+        reportProof: {
+          version: 1,
+          kind:
+            result.source?.kind === 'scene-seek' &&
+            prepared.live &&
+            !prepared.live.modules?.length &&
+            !options.scenario
+              ? 'document-checkpoints'
+              : 'opaque',
+          directory: canonicalOutput,
+          digest: await contentDigest(canonicalOutput, ['.']),
+          snapshot,
+          inputRevision: preparedRevision,
+          outputDigest: prepared.outputDigest,
+        },
         sourceRevision: source.revision,
         buildRevision: prepared.revision,
         target: { kind: 'build', projectId: input.projectId, buildRevision: prepared.revision },

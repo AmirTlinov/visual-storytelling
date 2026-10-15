@@ -127,6 +127,11 @@ export async function deliver(
     runtime: identity(packages.consumer ?? packages.cli),
     toolchain: identity(packages.cli),
     formats: [...wanted],
+    renderProfiles: Object.fromEntries(
+      [...wanted]
+        .filter((format) => ['html', 'png', 'svg', 'mp4'].includes(format))
+        .map((format) => [format, format === 'html' ? 'preview' : 'final']),
+    ),
     files: [],
     ...(prepared
       ? { buildRevision: prepared.revision, sourceRevision: prepared.sourceRevision }

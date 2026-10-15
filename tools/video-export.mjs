@@ -274,6 +274,7 @@ export async function exportVideo({
     return {
       output,
       frames: count,
+      profile: first.profile,
       duration: end - from,
       width: w,
       height: h,

@@ -19,10 +19,12 @@ export async function renderer({
   /** A generated page uses the same renderer, source origin and resource paths. */
   html,
   reduced = false,
+  profile = 'final',
   signal,
   checkpoint,
 }) {
   signal?.throwIfAborted();
+  if (!['preview', 'final'].includes(profile)) throw new Error('Unknown render profile');
   if (![width, height].every((n) => Number.isInteger(n) && n > 0 && n <= 8192))
     throw new Error('Render viewport width and height must be integers from 1 to 8192');
   const catalog = directory ? undefined : await readCatalog();
@@ -52,6 +54,9 @@ export async function renderer({
       colorScheme: theme,
       reducedMotion: reduced ? 'reduce' : 'no-preference',
     });
+    await context.addInitScript((value) => {
+      globalThis[Symbol.for('visual-storytelling.render-profile')] = value;
+    }, profile);
     const page = await context.newPage();
     const errors = [];
     const messages = new Map();
@@ -146,6 +151,7 @@ export async function renderer({
       capture,
       url: server.url,
       info,
+      profile,
       get messages() {
         return [...messages.values()];
       },

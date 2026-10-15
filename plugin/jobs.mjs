@@ -8,6 +8,7 @@ import { readJSON, writeJSON } from '../tools/storage.mjs';
 import { digest } from '../tools/project-files.mjs';
 import { contentDigest } from '../tools/build-info.mjs';
 import { failure } from './errors.mjs';
+import { reusePreparation } from './preparation-reuse.mjs';
 
 const processGroups = process.platform !== 'win32';
 function signalWorker(child, signal) {
@@ -179,7 +180,9 @@ export class JobRunner {
   list(projectId) {
     return [...this.jobs.values()]
       .filter((j) => !projectId || j.projectId === projectId)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .sort((a, b) =>
+        (b.lastRequestedAt ?? b.createdAt).localeCompare(a.lastRequestedAt ?? a.createdAt),
+      )
       .slice(0, 30)
       .map((j) => this.describe(j));
   }
@@ -259,25 +262,8 @@ export class JobRunner {
     if (typeof requestId !== 'string' || !/^[a-zA-Z0-9_-]{8,128}$/.test(requestId))
       throw new Error('Supply a stable requestId for this preparation.');
     const signature = digest(JSON.stringify({ kind, input }));
-    const previous = this.forRequest(requestId);
-    if (previous) {
-      if (previous.signature !== signature)
-        throw new Error('requestId already belongs to another preparation.');
-      return this.describe(previous);
-    }
-    const same = [...this.jobs.values()].find(
-      (j) => j.signature === signature && ['queued', 'running'].includes(j.status),
-    );
-    if (same) {
-      (same.requestIds ??= []).push(requestId);
-      try {
-        await this.save(same);
-      } catch (error) {
-        same.requestIds.pop();
-        throw error;
-      }
-      return this.describe(same);
-    }
+    const reused = await reusePreparation(this, { kind, input, requestId, signature });
+    if (reused) return reused;
     const job = {
       id: randomUUID(),
       requestId,

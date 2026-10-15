@@ -413,7 +413,11 @@ addEventListener('message', (event) => {
               'The shown scene has no semantic authoring validator. Reopen this project.',
             );
           scene.authoring.validate(request.document, { authoredInputs: request.authoredInputs });
-          send({ type: 'ack', id: request.id, result: { validated: true } });
+          send({
+            type: 'ack',
+            id: request.id,
+            result: { validated: true, checks: scene.authoring.checks },
+          });
           return;
         }
         if (request.op === 'author-prepare') {
@@ -459,6 +463,7 @@ addEventListener('message', (event) => {
             result = {
               buildRevision: request.nextBuildRevision,
               sourceRevision: request.sourceRevision,
+              checks: scene.authoring.checks,
             };
           } else if (request.op === 'control') {
             try {

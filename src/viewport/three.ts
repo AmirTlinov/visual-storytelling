@@ -1,5 +1,6 @@
 import { releaseResources } from '../lifecycle.js';
 import { registerRaster } from '../export/raster.js';
+import { rasterResolution } from '../raster-budget.js';
 import type { Material, Texture, Color } from 'three';
 import { pigments } from '../ink/palette.js';
 import { attachInspection } from './inspection.js';
@@ -53,6 +54,8 @@ function mount(
     frameSequence,
     renderedAt,
     clock: 'performance.now after renderer.render; display presentation unknown',
+    raster: raster && { ...raster, width: canvas.width, height: canvas.height },
+    resources: { ...renderer.info.memory },
   }));
   canvas.tabIndex = 0;
   canvas.setAttribute('role', 'img');
@@ -189,7 +192,9 @@ function mount(
     materials.set(material, color);
     return material;
   }
-  let raster: { width: number; height: number; ratio: number } | undefined;
+  let raster:
+    | (ReturnType<typeof rasterResolution> & { layoutWidth: number; layoutHeight: number })
+    | undefined;
   function resizeRaster() {
     const width = stage.clientWidth,
       height = stage.clientHeight;
@@ -198,14 +203,20 @@ function mount(
     // Rasterize at the displayed density while keeping the camera in layout pixels.
     const bounds = stage.getBoundingClientRect();
     const scale = Math.max(bounds.width / width, bounds.height / height);
-    const ratio = Math.min(
+    const resolution = rasterResolution(
+      width,
+      height,
       Math.min(devicePixelRatio || 1, 2) * Math.max(scale, 0.01),
-      renderer.capabilities.maxTextureSize / width,
-      renderer.capabilities.maxTextureSize / height,
+      renderer.capabilities.maxTextureSize,
     );
-    if (raster?.width === width && raster.height === height && raster.ratio === ratio) return;
-    raster = { width, height, ratio };
-    renderer.setDrawingBufferSize(width, height, ratio);
+    if (
+      raster?.layoutWidth === width &&
+      raster.layoutHeight === height &&
+      raster.ratio === resolution.ratio
+    )
+      return;
+    raster = { ...resolution, layoutWidth: width, layoutHeight: height };
+    renderer.setDrawingBufferSize(width, height, resolution.ratio);
     invalidate();
   }
   function resize() {

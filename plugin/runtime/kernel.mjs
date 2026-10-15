@@ -96,7 +96,7 @@ let closing = false,
   socketIdentity;
 let playbackClaim = Promise.resolve();
 const cache = runtimeCache({ data, preferences, projects, sessions, jobs });
-const scheduleCache = () => cache.schedule();
+const scheduleCache = (options) => cache.schedule(options);
 
 const {
   load: loadSession,
@@ -363,7 +363,7 @@ const operations = {
   },
   async preferences({ patch } = {}) {
     const value = patch ? await preferences.update(patch) : await preferences.read();
-    if (patch?.cacheLimitMB !== undefined) scheduleCache();
+    if (patch?.cacheLimitMB !== undefined) scheduleCache({ immediate: true });
     return value;
   },
   voice: projectVoice({
@@ -592,6 +592,7 @@ function close() {
   closing = true;
   clearTimeout(idleTimer);
   watched.close();
+  cache.cancel();
   let released = false;
   shutdown = (async () => {
     // A long poll may have accepted a report before its response is released.
@@ -627,7 +628,7 @@ await socketServer.listen(socketPath);
 socketIdentity = await lstat(socketPath);
 await chmod(socketPath, 0o600);
 scheduleClose();
-scheduleCache();
+scheduleCache({ immediate: true });
 for (const signal of ['SIGINT', 'SIGTERM'])
   process.once(signal, () => {
     socketServer.disconnect();

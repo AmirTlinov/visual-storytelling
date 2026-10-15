@@ -13,6 +13,7 @@ import { documentSpeechApplicable } from './document-audibility.js';
 import { documentNarration } from './document-narration.js';
 import { freezePresentation } from './frozen-presentation.js';
 import { holdControlFocus } from '../scene/control-focus.js';
+import { illustratedPreparation } from './illustrated-preparation.js';
 
 type SubjectMoment = ReturnType<typeof documentModelsAt>;
 /** Compile a prepared drawing to the same shell and Story used by handwritten JS scenes. */
@@ -83,41 +84,17 @@ export async function mountIllustratedSubject(
     throw error;
   }
   shell.onDispose(drawing.dispose);
-  function prepare(source: unknown, provisional = false, authoredInputs: readonly string[] = []) {
-    const { document: next, script } = prepareIllustratedDocument(source, options, aligned);
-    const nextModel = next.models[0];
-    if (
-      next.models.length !== 1 ||
-      !nextModel ||
-      nextModel.module !== model.module ||
-      (!provisional && nextModel.id !== document.models[0]!.id)
-    )
-      throw new Error('Retain the prepared subject identity while editing this document.');
-    if (
-      !Array.isArray(authoredInputs) ||
-      authoredInputs.some((key) => !Object.hasOwn(model.inputs, key))
-    )
-      throw new Error('authoredInputs: choose registered model inputs.');
-    const previous = controller?.presented;
-    const current = previous?.values ?? shell.parameters;
-    const values = module.validateInputs(
-      Object.fromEntries(
-        Object.entries(nextModel.inputs).map(([key, value]) => [
-          key,
-          !authoredInputs.includes(key) && value === document.models[0]!.inputs[key]
-            ? current[key]
-            : value,
-        ]),
-      ),
-    );
-    drawing.validate(
-      nextModel,
-      next.views,
-      values,
-      next.chapters.flatMap((chapter) => chapter.beats),
-    );
-    return { next, values, previous, script };
-  }
+  const preparation = illustratedPreparation({
+    model,
+    module,
+    options,
+    aligned,
+    shell,
+    drawing,
+    document: () => document,
+    presented: () => controller?.presented,
+  });
+  const { prepare } = preparation;
   async function replace(
     source: unknown,
     {
@@ -424,6 +401,9 @@ export async function mountIllustratedSubject(
     await replace(initial);
     handle.extend({
       authoring: {
+        get checks() {
+          return preparation.checks;
+        },
         get narration() {
           return documentNarration(document, options);
         },

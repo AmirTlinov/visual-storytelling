@@ -5,6 +5,7 @@ import { readJSON, writeJSON } from '../tools/storage.mjs';
 import { projectFiles, snapshotProject } from '../tools/project-files.mjs';
 import { failure } from './errors.mjs';
 import { readBuildMetadata } from './build-payload.mjs';
+import { contentDigest } from '../tools/build-info.mjs';
 
 /** Resolve and freeze a user's revision before queueing work. Jobs never follow working files. */
 export async function revisionInput(data, projects, target, { prepared = false } = {}) {
@@ -26,6 +27,25 @@ export async function revisionInput(data, projects, target, { prepared = false }
       throw failure(
         'build_unavailable',
         'The selected build snapshot is outside preparation storage.',
+      );
+    const receipt = await readJSON(join(build.snapshot, '.vstory-input.json'));
+    if (
+      !receipt ||
+      receipt.buildRevision !== build.revision ||
+      (await projectFiles(build.snapshot)).revision !==
+        (receipt.preparedRevision ?? receipt.revision)
+    )
+      throw failure(
+        'snapshot_changed',
+        'The selected build inputs were modified. Prepare a new working revision.',
+      );
+    if (
+      build.outputDigest &&
+      (await contentDigest(join(build.snapshot, 'dist'), ['.'])) !== build.outputDigest
+    )
+      throw failure(
+        'build_unavailable',
+        'The selected built resources changed. Prepare a new working revision.',
       );
     return {
       ...base,

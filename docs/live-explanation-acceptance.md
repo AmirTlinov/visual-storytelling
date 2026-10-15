@@ -1058,3 +1058,85 @@ recovery и mutation следующего output; code scope CLEAR. Его от�
 `publication-installed-retry.log`, `voice-sdk-0.33.1/recovery.json`,
 `publication-independent-review.md`. Dependency/check cache, полное IO измерение,
 3D budget и срезы 14–15 остаются открытыми; milestone не закрыт.
+
+## Срез 13: проверенные входы, адресные проверки и растровый бюджет
+
+Приёмочный выпуск: plugin 0.34.2 / core 0.46.2, macOS arm64.
+Release `0d98dc6ca9da74a7d77520f4f1d6020f4b5b001828358240162735df2881335f`,
+packaged core `b57f2b61b68f510c373dcee3bda37888cae7c77b233cf1755f38dbbdc79e1926`,
+runtime `bb858878bb6b35a84fce2bafc8a41b5dcf18f0fdbf4ab17d747c45448139c57c`.
+Карта зависимостей и границы счётчиков — в [preparation](preparation.md).
+
+Операционный `input-verification` повторно использует проверенные bytes только
+внутри одной операции. После неё proof уничтожается; новая операция читает
+содержимое заново. Изменение метаданных во время операции требует повторной
+проверки. Обход дерева, realpath/symlink guards и изоляция inode снимка сохранены.
+`work.inputs` отдельно считает чтение, хеширование и копирование этого владельца,
+`work.phases` — этапы до наблюдения. Эти значения не описывают весь IO процесса.
+
+`document-checks` повторно использует граничные состояния встроенных чистых
+моделей; schema/refs проверяются всегда. `illustrated-preparation` отдельно
+проверяет рисунок по модели, условиям зрителя, видимому тексту и размещению.
+Речь/длительность меняют часы без повторного измерения неизменного рисунка.
+Авторские modules/subjects проверяются полностью. Подтверждение правки содержит
+адреса проверенных моментов; короткий обзор вызывается через прежний story_review.
+Оценки качества научпопа из этих проверок не выводятся.
+
+Повтор завершённого document-checkpoint review разрешён только после сверки
+source, generated output, toolchain и всех report bytes. JobRunner обновляет
+retention прежнего job; отдельного кэша задач нет. Подмена dist/report, внешнего
+media/lockfile, ошибка сохранения и 31 более новая задача проверены независимо.
+Запись playback и opaque JS не переиспользуют такой proof.
+
+`raster-budget` ограничивает preview 2 073 600 пикселями, final 8 388 608;
+текст SVG/HTML сохраняет собственное разрешение. В установленном выпуске на
+spatial-order/cube-section/push-block при CSS1920×1250 и DPR2 модель, checkpoint,
+тайминг и все presentation bounds совпали между профилями. Нормализованы только
+анонимные Three UUID свежего renderer; authored IDs сравнивались без замены.
+Preview buffers1920×1080; final3776×2124 для пространственных сцен и2560×1440
+для персонажа. Сохраняется максимум два canvas с подготовкой следующего вида.
+ANGLE/Metal effective allocation трёх последовательных dumps: preview383/343/443MB,
+final992/941/601MB (десятичные MB). Это allocator, не измерение VRAM; JS heap и RSS
+сохранены отдельно. Необоснованных LOD/texture форматов не добавлено.
+
+Установленный API проверен через настоящий MCP SDK/Chromium: повторный review
+вернул тот же job за18,84мс; изменение report bytes создало новую проверку.
+После17→18 выбранная старая сборка экспортировала17 в HTML/PNG. Очистка под
+давлением270MB orphan удалила orphan и сохранила нужные inputs. Page errors0.
+Чат сохраняет прежнее MCP подключение; SDK/browser не объявляется OS-native
+приёмкой Codex. Перезапуск пользователя не требовался.
+
+Отдельная запись real playback: spatial-order39,1с /1634 compositor frames,
+cube-section21с /1048, push-block26с /1158. rAF p95 соответственно49,5/32,7/39,2мс;
+long-animation-frame observer поддержан, записей0. PNG swap timestamps и семантические
+наблюдения сохранены. Захват влияет на нагрузку; sparse compositor frames не
+равны display FPS и не доказывают отсутствие каждого скачка. Неудачные сценарии
+выгрузки страницы/повторного tool result сохранены и исключены из положительного
+доказательства: окончательный сценарий использует SDK teardown и проверяет session ID.
+
+Build/check/package/skill validator PASS;69/69 focused regressions PASS.
+Независимое ревью нашло и после исправления проверило dist proof, retention lease,
+изолированный text template; итог CLEAR. Все8 builtin validators дополнительно
+проверены на зависимости от речи/времени. Voice recovery и explicit optional voice
+прошли регрессии; новая генерация принятой речи не запускалась.
+
+| Удалённый путь | Владелец | Переведённые потребители | Проверка |
+| --- | --- | --- | --- |
+| Повторные SHA тех же файлов внутри операции | input-verification | project-files, snapshot/delivery | bytes, mutation/restart, inode isolation |
+| Полный replay builtin boundaries при повторе тех же входов | document-checks | prepareStoryDocument, illustrated preparation | schema/refs/clock/opaque cases |
+| Повторная проверка неизменного рисунка при правке речи | illustrated-preparation | illustrated subject, scene ACK | text/viewer/layout/failure,8 validators |
+| Новый worker для совпадающего завершённого checkpoint review | preparation-reuse + JobRunner | review workflow | report/dist mutation, lease renewal |
+| Неограниченная плотность WebGL preview | raster-budget | Viewport3D, CharacterStage, render/deliver | реальные matched profiles |
+| Построение всех будущих pen paths ради ширины счётчика | text-measure/lettering | division | styled/tspan/native widths, old/new visual |
+| Delivery внутри большого project-transactions | project-delivery | runtime composition | retry/recovery/current model identity |
+
+Доказательства: `artifacts/slice13/install-0.34.2.json`, `0.34.2-regressions.log`,
+`0.34.2-resource-comparison.json`, `installed-review/run-e93d7f90-c6b6-473a-90a5-8f701c94e3b0/acceptance.json`,
+`installed-playback/run-95cc6134-896d-4623-9ad5-00d5a12ee6c5/acceptance.json`,
+`inputs-raster-independent-review.md`.
+
+Скорость остаётся открытым gate среза14. На0.34.1 200 правок дали p50/p95/max
+actual pixels121/176/209мс. На0.34.2 повтор тех же200 условий дал216/487/1530мс,
+SDK p95184,8→460,4мс; оба прогона сохранены целиком. Первый результат не заменяет
+провал окончательного выпуска. Полный путь агента5/20 этими SDK измерениями не
+проверен. Milestone и срезы14–15 не закрыты.

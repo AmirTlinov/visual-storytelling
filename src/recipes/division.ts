@@ -245,20 +245,20 @@ export function divisionDiagram(surface: Surface, id: string) {
       target.at(...point(targetX, margin + font));
       cleanups.push(targetLabel.dispose);
       // Check every counter caption before a future frame can select it.
-      for (let completed = 0; completed <= state.quotient; completed++) {
-        sourceLabel.text(`Ещё: ${state.count - completed * state.divisor}`);
-        targetLabel.text(`Группы: ${completed}`);
-        if (
-          sourceLabel.width * options.scale > sourceWidth ||
-          targetLabel.width * options.scale > targetWidth
-        )
-          throw new Error('Division counter labels need a wider drawing');
-      }
-      for (const caption of [`Всего: ${state.count}`, `Остаток: ${state.remainder}`]) {
-        sourceLabel.text(caption);
-        if (sourceLabel.width * options.scale > sourceWidth)
-          throw new Error('Division remainder label needs a wider drawing');
-      }
+      const counters = Array.from({ length: state.quotient + 1 }, (_, completed) => completed);
+      const sourceWidths = sourceLabel.measureWidths([
+        ...counters.map((completed) => `Ещё: ${state.count - completed * state.divisor}`),
+        `Всего: ${state.count}`,
+        `Остаток: ${state.remainder}`,
+      ]);
+      const targetWidths = targetLabel.measureWidths(
+        counters.map((completed) => `Группы: ${completed}`),
+      );
+      if (
+        sourceWidths.some((width) => width * options.scale > sourceWidth) ||
+        targetWidths.some((width) => width * options.scale > targetWidth)
+      )
+        throw new Error('Division counter labels need a wider drawing');
       const identity = formula(
         layer,
         options.viewIds?.equation ?? `${state.id}:identity`,
