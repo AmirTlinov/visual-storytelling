@@ -21,13 +21,25 @@ export async function reuseAcceptedRecording(data, input, target) {
   if (source.revision !== saved.preparedRevision)
     throw new Error('The accepted recording snapshot changed.');
   if (!source.files['audio.wav'] || !source.files['timeline.json']) return;
+  const reference = build.recordingBuildRevision
+    ? await readBuildMetadata(data, build.recordingBuildRevision)
+    : build;
+  if (
+    reference?.projectId !== input.projectId ||
+    !reference.snapshot ||
+    dirname(resolve(reference.snapshot)) !== resolve(data, 'snapshots') ||
+    reference.recordingBuildRevision
+  )
+    throw new Error('The accepted recording source is unavailable.');
+  const recordingSource = { directory: reference.snapshot, buildRevision: reference.revision };
   const authored = await projectFiles(target);
   // Explicit authored media wins; only snapshots receive inherited derived media.
-  if (authored.files['audio.wav'] || authored.files['timeline.json']) return;
+  if (authored.files['audio.wav'] || authored.files['timeline.json']) return recordingSource;
   const recording = await readJSON(join(build.snapshot, 'timeline.json'));
   const stems = Object.keys(recording.stem_sha256 ?? {});
   if (stems.some((file) => !['voice.wav', 'music.wav'].includes(file) || !source.files[file]))
     throw new Error('The accepted recording stems are unavailable.');
   for (const file of ['audio.wav', 'timeline.json', ...stems])
     await copyFile(join(build.snapshot, file), join(target, file));
+  return recordingSource;
 }

@@ -970,3 +970,54 @@ semantic undo, remount, HTML и атомарное отклонение неве
 `input-authoring/run-5b61b373-ecbf-4456-83d6-a9ac64f9ba0e/acceptance.json`,
 `input-recovery-final.log`, `input-custom-installed.log`. Это проверка пакета входов;
 GUI-600, preview/final speech, 3D budget и срезы 14–15 остаются открытыми.
+
+## Срез 13: голос по явному запросу, общий ритм preview/final
+
+Установлен и зарегистрирован plugin 0.33.0 / core 0.45.0, macOS arm64.
+Release `6a995b08471fcde1369a04ff5194ee0dee1856e6e3a66679cab2128740b51787`,
+packaged core build `3e082b6421c9e6fb2b4c3b644631bf14ad56382e4c772ccf8ab0e8185dd839ee`,
+runtime `fc22c5ca3d472a1d48786111b873eb60719047b0fa9e74e5f4610b5e75194e13`.
+Repository build `f62ce586fd6d290c53b1c9d39b8bdfae1306a7c5026a28c42c6fbd29ddb63dae`
+имеет тот же runtime. `packagePlugin` пересобирает API/source identity после удаления
+devDependencies и подготовки распространяемого catalog. Все изменённые tools/plugin/
+skill owners побайтно совпали с установленными.
+
+Обычная правка и preview читают запись без синтеза. `narrationPreview` проверяет
+принятую запись и выбранного провайдера, выдаёт ready/pending целыми мыслями;
+произвольный JS после изменения консервативно остаётся тихим. Запрос подготовки
+голоса показывает число мыслей и символов, неизвестная цена остаётся неизвестной.
+Только явный запрос вызывает модель. Неизменённые дубли сохраняются через один
+recording lease; GC защищает исходный snapshot записи.
+
+Новая подпись pending-мысли привязана к её ID. Она не меняет текст принятого дубля
+с таким же префиксом. Перегруппировка фраз использует реальные границы слов, старые
+cues удаляются. `requireNarration` проверяет финальную запись и не синтезирует её.
+Audible final с pending-речью отклоняется. Выключенный голос и явный silent export
+работают без провайдера и сохраняют подготовленные часы/движение. `prepareNarration`
+и внутренний `prepareAudio` удалены со всеми потребителями.
+
+Build/check/skill validator PASS. Source speech/preview/native-audio/textless
+regressions 38/38; workflow/receipt regressions проверены после обновления ожидания
+на ноль загрузок и синтезов. Installed SDK/Chromium lifecycle 1/1: обычная правка
+не вызывает адаптер, explicit preparation вызывает одну изменённую мысль, pending
+final отклоняется без вызова модели, mute и условия модели независимы. Quiet HTML
+и план видео сохраняют script clock 4,7 с; контейнер MP4 — 4,75 с, 19 кадров при
+4 fps, разница меньше одного кадра. Тестовый адаптер генерировал тоны, качество
+озвучки этим тестом не оценивалось.
+
+Независимый reviewer исправления проверил собственными source/Chromium probes:
+whole-take repartition, scoped captions, общий silent clock, readonly final — CLEAR.
+Доказательства: `artifacts/slice13/voice-source-accepted.log`,
+`voice-workflow-final.log`, `voice-installed-final.log`, `voice-sdk-0.33.0/acceptance.json`,
+`voice-sdk-0.33.0/clock.json`. Это приёмка отдельного пакета; crash-safe публикация
+аудиопары, dependency/check cache, IO и 3D budgets, срезы 14–15 остаются открытыми.
+
+Настоящая принятая запись Higgs также прошла установленный SDK/browser: 17,69 с,
+шесть смысловых cues, условия count 17→18 выключают зависимую речь. Перед импортом
+копия receipt явно перепривязана штатным bind-recording к текущему runtime;
+принятый исходник и SHA-256 аудио сохранены. На весь прогон синтез/remaster были
+запрещены обёрткой; вызван только readonly check. Quiet HTML имеет ту же длительность
+и spans cues; quiet MP4 полностью декодирован, аудиопоток отсутствует, контейнер
+17,75 с (71 кадр, 4 fps), погрешность меньше кадра. Page errors — 0.
+Доказательство: `artifacts/slice13/real-voice-0.33.0/acceptance.json`; прежнее человеческое
+подтверждение качества звучания не подменяется новым автоматическим тестом.

@@ -23,6 +23,8 @@ import {
   storyProjectSource,
 } from './story-project.mjs';
 import { preparedStoryHTML } from './prepare-story-project.mjs';
+import { narrationPreview } from './voice/preview.mjs';
+import { readJSON } from './storage.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 export async function buildPage(
@@ -35,12 +37,16 @@ export async function buildPage(
     cdn = false,
     html: suppliedHTML,
     silent = false,
+    speechPreview,
     outputName = basename(source),
   } = {},
 ) {
   let html = suppliedHTML ?? (await readFile(source, 'utf8'));
+  if (speechPreview?.status.enabled && speechPreview.playable)
+    html = setNarrationMode(html, false, { preparedClock: speechPreview.partial });
+  else if (speechPreview) html = setNarrationMode(html, true);
   if (silent) html = setNarrationMode(html, true);
-  await checkNarration(html, dirname(source));
+  await checkNarration(html, dirname(source), { preview: speechPreview });
   const document = parse(html, { sourceCodeLocationInfo: true });
   const scripts = [],
     edits = [];
@@ -181,8 +187,17 @@ export async function buildPage(
 export async function buildScene(source, target, options = {}) {
   source = resolve(source);
   target = resolve(target);
+  if ((await readJSON(resolve(source, 'voice.json')))?.enabled === false)
+    options = { ...options, silent: true };
   const { page: authoredPage } = await sceneEntry(source);
   const storyProject = await readStoryProject(source);
+  const speechPreview =
+    options.narration === 'preview'
+      ? await narrationPreview(source, {
+          acceptedDirectory: options.acceptedRecording,
+          signal: options.signal,
+        })
+      : undefined;
   if (
     authoredPage !== scenePage &&
     (await access(resolve(source, scenePage)).then(
@@ -195,6 +210,7 @@ export async function buildScene(source, target, options = {}) {
   const tsconfig = resolve(source, 'tsconfig.json');
   options = {
     ...options,
+    speechPreview,
     sourceRoot: source,
     tsconfig: await access(tsconfig).then(
       () => tsconfig,
@@ -225,12 +241,17 @@ export async function buildScene(source, target, options = {}) {
       if (entry.isDirectory()) await visit(from, to);
       else if (entry.isFile() && sceneAsset(entry.name)) {
         await mkdir(output, { recursive: true });
-        if (entry.name === 'timeline.json')
-          await writeFile(
-            to,
-            JSON.stringify(playbackTimeline(JSON.parse(await readFile(from, 'utf8')))) + '\n',
-          );
-        else await copySceneInput(from, to, { signal: options.signal });
+        if (entry.name === 'timeline.json') {
+          const timeline = JSON.parse(await readFile(from, 'utf8'));
+          if (speechPreview?.partial)
+            timeline.segments = timeline.segments.map((segment) => ({
+              ...segment,
+              ...(speechPreview.displayText[segment.id] !== undefined && {
+                displayText: speechPreview.displayText[segment.id],
+              }),
+            }));
+          await writeFile(to, JSON.stringify(playbackTimeline(timeline)) + '\n');
+        } else await copySceneInput(from, to, { signal: options.signal });
       }
     }
     for (const entry of entries)
@@ -248,8 +269,13 @@ export async function buildScene(source, target, options = {}) {
         ? null
         : await preparedStoryHTML(source, { silent: options.silent });
       if (prepared) {
-        await checkNarration(prepared.html, source);
-        await writeFile(resolve(output, scenePage), prepared.html);
+        let html = prepared.html;
+        if (speechPreview)
+          html = setNarrationMode(html, options.silent || !speechPreview.playable, {
+            preparedClock: speechPreview.partial,
+          });
+        await checkNarration(html, source, { preview: speechPreview });
+        await writeFile(resolve(output, scenePage), html);
       } else
         await buildPage(resolve(source, scenePage), output, {
           ...options,
@@ -273,6 +299,7 @@ export async function buildScene(source, target, options = {}) {
       await rename(resolve(output, authoredPage), resolve(output, scenePage));
     await access(resolve(output, scenePage));
   });
+  return { narration: speechPreview?.status };
 }
 
 export async function buildPages(target = resolve(root, 'site'), catalog) {

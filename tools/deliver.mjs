@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { buildOutput } from './build-output.mjs';
 import { buildScene } from './build-pages.mjs';
-import { prepareNarration, playbackHTML } from './narration.mjs';
+import { requireNarration, playbackHTML } from './narration.mjs';
 import { packDirectory, withCheckpoint } from './standalone.mjs';
 import { renderer } from './render.mjs';
 import { exportVideo } from './video-export.mjs';
@@ -25,7 +25,6 @@ export async function deliver(
     out,
     formats = ['html'],
     silent = false,
-    prepareAudio = true,
     prepared,
     checkpoint,
     video,
@@ -88,8 +87,7 @@ export async function deliver(
         { cause: error },
       );
   }
-  if (!prepared && !silent && prepareAudio)
-    await prepareNarration(source, { audible: true, signal });
+  ({ silent } = await requireNarration(source, { signal, silent }));
   const include = (path) => {
     return sceneInput(relative(source, path)) && path !== out && !path.startsWith(out + sep);
   };

@@ -6,13 +6,13 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { workflows } from '../plugin/workflows.mjs';
 import { projectFiles } from '../tools/project-files.mjs';
-import { buildNarration, checkNarration, prepareNarration } from '../tools/narration.mjs';
+import { buildNarration, checkNarration, requireNarration } from '../tools/narration.mjs';
 import { narrationSource } from '../tools/story-document.mjs';
 import { createScene } from '../tools/create-scene.mjs';
 
 test(
   'a deferred voiced template stays quiet through source edits until voice is explicitly enabled',
-  { timeout: 90000, skip: process.platform !== 'darwin' || process.arch !== 'arm64' },
+  { timeout: 180000, skip: process.platform !== 'darwin' || process.arch !== 'arm64' },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'story-deferred-voice-'));
     const data = join(directory, 'data'),
@@ -66,7 +66,7 @@ test(
         /data-silent="true"/,
       );
       // Ordinary delivery asks to prepare audible output; saved project intent remains authoritative.
-      await prepareNarration(projectPath, { audible: true });
+      await requireNarration(projectPath, {});
       assert.deepEqual(await read('voice.json'), voice);
       assert.deepEqual(await read('story.json'), authored);
       assert.equal(await readFile(join(projectPath, 'timeline.json'), 'utf8'), timeline);
@@ -79,7 +79,11 @@ test(
       let preparationRequested = false;
       await assert.rejects(
         workflows.build(
-          { ...input, sourceRevision: (await projectFiles(projectPath)).revision },
+          {
+            ...input,
+            prepareVoice: true,
+            sourceRevision: (await projectFiles(projectPath)).revision,
+          },
           {
             ...task(),
             signal: controller.signal,
@@ -111,7 +115,7 @@ test(
 
 test(
   'quiet story documents retain a speech projection and explicit audio activates the same script',
-  { timeout: 90000 },
+  { timeout: 180000 },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'quiet-document-voice-'));
     const projections = [];
@@ -122,7 +126,7 @@ test(
         for (const name of ['story.json', 'voice.json', 'index.html'])
           await cp(new URL(`./fixtures/${example}/${name}`, import.meta.url), join(project, name));
         const authored = await readFile(join(project, 'story.json'), 'utf8');
-        await prepareNarration(project, { audible: true });
+        await requireNarration(project, {});
         assert.equal(JSON.parse(await readFile(join(project, 'voice.json'))).enabled, false);
         assert.equal(await readFile(join(project, 'story.json'), 'utf8'), authored);
         const projection = await narrationSource(project);

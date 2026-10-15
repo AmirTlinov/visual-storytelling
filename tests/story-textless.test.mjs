@@ -176,7 +176,7 @@ const mixedAlignment = () => ({
   },
   segments: [
     {
-      id: 'lesson.narration-1',
+      id: 'voice.lesson.start',
       start: 2,
       end: 3,
       text: 'Соберём группу.',
@@ -186,7 +186,7 @@ const mixedAlignment = () => ({
       ],
     },
     {
-      id: 'lesson.narration-2',
+      id: 'voice.lesson.end',
       start: 5.5,
       end: 6.2,
       text: 'Видим остаток.',
@@ -204,8 +204,8 @@ test('mixed narration reserves real pauses and the speech parser receives only n
   assert.deepEqual(
     projection.segments.map((segment) => [segment.id, segment.text, segment.pause_after]),
     [
-      ['lesson.narration-1', 'Соберём группу.', 2],
-      ['lesson.narration-2', 'Видим остаток.', 3.6],
+      ['voice.lesson.start', 'Соберём группу.', 2],
+      ['voice.lesson.end', 'Видим остаток.', 3.6],
     ],
   );
   assert.equal(
@@ -228,8 +228,8 @@ test('mixed narration reserves real pauses and the speech parser receives only n
       { env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } },
     );
     assert.deepEqual(JSON.parse(stdout), [
-      ['lesson.narration-1', 1],
-      ['lesson.narration-2', 1],
+      ['voice.lesson.start', 1],
+      ['voice.lesson.end', 1],
     ]);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -310,8 +310,8 @@ test('a spoken action reserves its tail before the following silent hold', () =>
       'motion.finish': { start: secondStart, end: secondStart + 1 },
     },
     segments: [
-      { id: 'motion.narration-1', start: 0, end: 1, text: 'Движение.' },
-      { id: 'motion.narration-2', start: secondStart, end: secondStart + 1, text: 'Готово.' },
+      { id: 'voice.motion.move', start: 0, end: 1, text: 'Движение.' },
+      { id: 'voice.motion.finish', start: secondStart, end: secondStart + 1, text: 'Готово.' },
     ],
   };
   const script = documentScript(document, aligned);
@@ -356,7 +356,7 @@ test('fractional silent chapter boundaries survive acoustic sample rounding and 
   const aligned = {
     duration: 2.2,
     cues: { 'voice.say': { start: 0.6, end: 1 } },
-    segments: [{ id: 'voice', start: 0.6, end: 1, text: 'Речь.' }],
+    segments: [{ id: 'voice.voice.say', start: 0.6, end: 1, text: 'Речь.' }],
   };
   const script = documentScript(document, aligned);
   assert.equal(script.cues.opening.end, script.cues.voice.start);

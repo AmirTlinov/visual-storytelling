@@ -184,12 +184,12 @@ test('quiet working delivery and retry preserve the chosen inputs without prepar
   const receipt = JSON.parse(
     await readFile(join(input.data, 'snapshots', firstTask.jobId, '.vstory-input.json'), 'utf8'),
   );
-  assert.deepEqual(receipt.preparation, { silent: true });
+  assert.deepEqual(receipt.preparation, { silent: true, voice: false });
   assert.equal(
     JSON.parse(await readFile(join(input.projectPath, 'voice.json'), 'utf8')).enabled,
     true,
   );
-  // A different narration choice cannot reuse the quiet prepared output as audible.
+  // Audible final requires a current recording and cannot prepare it implicitly.
   await assert.rejects(
     workflows.produce(
       {
@@ -200,9 +200,9 @@ test('quiet working delivery and retry preserve the chosen inputs without prepar
       },
       task(),
     ),
-    /Unexpected resource download/,
+    /Generated narration has no matching timeline/,
   );
-  assert.ok(downloads > 0);
+  assert.equal(downloads, 0);
 });
 
 test('incompatible video dimensions fail before source capture or environment preparation', async () => {

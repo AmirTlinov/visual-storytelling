@@ -6,3 +6,4 @@ export { prepareStoryDocument, documentTimeline, documentModelsAt } from './docu
 
 export { prepareIllustratedDocument } from './document-subject.js';
 export { documentNarration } from './document-narration.js';
+export { documentSpeechPreparation } from './document-audibility.js';

@@ -141,12 +141,17 @@ export const workflows = {
   },
   async build(input, task) {
     const { snapshot, source, prepared } = await prepareBuild(input, task);
-    return { buildRevision: prepared.revision, sourceRevision: source.revision, snapshot };
+    return {
+      buildRevision: prepared.revision,
+      sourceRevision: source.revision,
+      snapshot,
+      narration: prepared.narration,
+    };
   },
   async produce(input, task) {
     const formats = input.options?.formats ?? ['html'];
     if (formats.includes('mp4')) videoDimensions(input.options);
-    const { snapshot, source, silent, prepared } = await prepareBuild(input, task);
+    const { snapshot, source, silent, prepared } = await prepareBuild(input, task, { final: true });
     await prepareEnvironment(input.data, {
       ...task,
       browser: formats.some((format) => ['png', 'svg', 'mp4', 'srt', 'vtt'].includes(format)),
@@ -158,7 +163,6 @@ export const workflows = {
       ...input.options,
       silent: input.options?.silent ?? silent,
       out: output,
-      prepareAudio: false,
       prepared: {
         ...prepared,
         ...(formats.includes('html') && { html: await preparedBuildHTML(input.data, prepared) }),

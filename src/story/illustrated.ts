@@ -81,7 +81,11 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
     // Quiet authoring can outlive its old recording. Retain measured timing only
     // while both the source thought and its action anchors still match.
     try {
-      if (!documentSpeechAnchorsCurrent(document, script)) script = undefined;
+      if (
+        options.audio.dataset.storyPreview !== 'true' &&
+        !documentSpeechAnchorsCurrent(document, script)
+      )
+        script = undefined;
       else documentScript(document, script, { modules });
     } catch {
       script = undefined;

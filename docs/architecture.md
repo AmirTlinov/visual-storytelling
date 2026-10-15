@@ -297,3 +297,11 @@ Boundary preview ждёт GPU paint каждой стороны. `story/frozen-p
 не удалось, fallback живёт до успешной публикации или dispose; обе причины ошибки
 сохраняются. Raster registry получает текущий буфер от его Viewport3D без второго
 renderer и продвижения времени модели или камеры.
+
+`tools/voice/preview.mjs` проверяет доступную запись без синтеза и сравнивает целые
+мысли через `documentSpeechPreparation`. Источник исходной принятой записи имеет
+build lease; preview наследует его через `recordingBuildRevision`. JobRunner
+готовит голос только по явному `story_voice(enabled: true)`; обычный build/dev
+использует preview, final delivery вызывает read-only `requireNarration`.
+Изменённые фразы остаются pending; структурно несовместимый preview тихий.
+Монотонное время и целые takes принадлежат прежнему Story/voice pipeline.

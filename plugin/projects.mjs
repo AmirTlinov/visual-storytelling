@@ -468,6 +468,7 @@ export class ProjectStore {
     operations,
     undo,
     assets = [],
+    prepareVoice,
   }) {
     if (!validRequest(requestId))
       throw new Error('requestId must contain 8–100 letters, digits, underscores or hyphens.');
@@ -481,6 +482,7 @@ export class ProjectStore {
         changes,
         operations,
         undo,
+        prepareVoice,
         assets: assets.map(({ path, hash }) => ({ path, hash })),
       }),
     );

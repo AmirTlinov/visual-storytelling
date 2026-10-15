@@ -271,3 +271,32 @@ test('ordinary eviction removes orphan unprotected receipts so the same revision
   assert.equal(rebuilt.snapshot, current);
   assert.equal(await preparedBuildHTML(data, rebuilt), '<main>prepared</main>');
 });
+
+test('saved pending voice preview leases its original accepted recording graph', async (t) => {
+  const data = await mkdtemp(join(tmpdir(), 'voice-recording-lease-'));
+  t.after(() => rm(data, { recursive: true, force: true }));
+  const { mkdir } = await import('node:fs/promises');
+  const original = join(data, 'snapshots', 'voice-original'),
+    pending = join(data, 'snapshots', 'voice-pending');
+  await mkdir(original, { recursive: true });
+  await mkdir(pending, { recursive: true });
+  await writeFile(join(original, 'audio.wav'), 'accepted recording');
+  await writePreparedBuild(data, {
+    revision: 'voice-root',
+    projectId: 'project',
+    snapshot: original,
+    html: '<main>accepted</main>',
+  });
+  await writePreparedBuild(data, {
+    revision: 'voice-preview',
+    projectId: 'project',
+    snapshot: pending,
+    recordingBuildRevision: 'voice-root',
+    html: '<main>pending</main>',
+  });
+  await writeJSON(join(data, 'sessions/saved.json'), { buildRevision: 'voice-preview' });
+  await collectCache(data, { limitMB: 0, projects: [], sessions: [], snapshotLeases: [] });
+  assert.equal(await readFile(join(original, 'audio.wav'), 'utf8'), 'accepted recording');
+  assert(await readJSON(join(data, 'builds/voice-root.json')));
+  assert(await readJSON(join(data, 'builds/voice-preview.json')));
+});

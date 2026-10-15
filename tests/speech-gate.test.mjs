@@ -6,6 +6,7 @@ import { speechGate } from '../dist/story/speech-gate.js';
 import { cueSheet } from '../dist/story/cues.js';
 import { playbackHarness } from './story/playback-harness.mjs';
 import { documentSpeechAnchorsCurrent } from '../dist/story/document-audibility.js';
+import { documentScript } from '../dist/story/document-timing.js';
 import { validateStoryDocument } from '../dist/story/document-schema.js';
 import { spokenSpan } from '../dist/story/spoken-words.js';
 
@@ -67,6 +68,17 @@ test('quiet timing rejects repartitioned and reordered action anchors within an 
   changed.chapters[0].beats[0].say = 'Два предмета. Соберём';
   changed.chapters[0].beats[1].say = 'одну группу.';
   assert.equal(documentSpeechAnchorsCurrent(changed, recording), false);
+  const reprojected = documentScript(changed, recording);
+  assert.equal(reprojected.cues['lesson.a'].end, 2.6);
+  assert.equal(reprojected.cues['lesson.b'].start, 3);
+  assert.equal(documentSpeechAnchorsCurrent(changed, reprojected), true);
+  assert.equal(reprojected.duration, recording.duration);
+  const renamed = structuredClone(document);
+  renamed.chapters[0].beats[1].id = 'next';
+  const newAnchors = documentScript(renamed, recording);
+  assert.equal(newAnchors.cues['lesson.next'].start, 2);
+  assert.equal(newAnchors.cues['lesson.b'], undefined);
+
   const repeated = structuredClone(document);
   repeated.chapters[0].beats[0].say = 'Два предмета.';
   repeated.chapters[0].beats[1].say = 'Два предмета.';

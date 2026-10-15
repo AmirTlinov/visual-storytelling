@@ -7,7 +7,6 @@ import { serve } from './site.mjs';
 import { readFile } from 'node:fs/promises';
 import { contentDigest } from './build-info.mjs';
 import { previewSessions } from './dev-session.mjs';
-import { prepareNarration } from './narration.mjs';
 import { parse } from 'parse5';
 const clientSource = await readFile(new URL('./dev-client.mjs', import.meta.url));
 const client = (revision) =>
@@ -57,8 +56,7 @@ export async function develop(
       while (dirty && !closed) {
         dirty = false;
         try {
-          await prepareNarration(source, { signal });
-          await builder(source, destination, { ...buildOptions, signal });
+          await builder(source, destination, { ...buildOptions, narration: 'preview', signal });
           revision = await contentDigest(destination, ['.']);
           const receipt = { revision, builtAt: new Date().toISOString() };
           sessions.publish(receipt);

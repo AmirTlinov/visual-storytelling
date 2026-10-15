@@ -167,6 +167,8 @@ export async function writePreparedBuild(data, { html, ...build }, work = payloa
               'outputDigest',
               'live',
               'presentation',
+              'recordingBuildRevision',
+              'narration',
             ].map((key) => [key, value[key]]),
           ),
         ),

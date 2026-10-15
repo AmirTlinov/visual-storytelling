@@ -180,7 +180,7 @@ async function queueRevision(kind, { target, requestId, options = {} }) {
     if (capturedView && options.formats?.includes('mp4'))
       Object.assign(renderOptions, videoDimensions(options));
     return jobs.preserveInputs(async () => {
-      const input = await revisionInput(data, projects, target);
+      const input = await revisionInput(data, projects, target, { prepared: kind === 'produce' });
       return jobs.enqueue(
         kind,
         {

@@ -13,6 +13,7 @@ export function samePreparedOwner(view, prepared) {
   return (
     view.build.live?.runtimeBuild === prepared.live?.runtimeBuild &&
     view.build.live?.moduleRevision === prepared.live?.moduleRevision &&
+    isDeepStrictEqual(view.build.narration, prepared.narration) &&
     isDeepStrictEqual(
       view.build.live?.document.models.map(({ id, module }) => ({ id, module })),
       prepared.live?.document.models.map(({ id, module }) => ({ id, module })),
@@ -213,7 +214,13 @@ export function projectTransactions({
             try {
               const job = await jobs.enqueue(
                 'build',
-                { data, ...candidate.input, authoring: proposed, baseProject: project },
+                {
+                  data,
+                  ...candidate.input,
+                  prepareVoice: args.prepareVoice === true,
+                  authoring: proposed,
+                  baseProject: project,
+                },
                 args.requestId + '-build',
               );
               return { project, job, publication: 'preparing' };

@@ -116,6 +116,7 @@ export class SessionDirectory {
       authoredInputs: session.build.authoredInputs,
       shownSourceRevision: session.shownSourceRevision,
       title: session.build.title,
+      narration: session.build.narration,
       returnAvailable: Boolean(session.returnTo?.length),
       generation: session.generation,
       stateRevision: session.stateRevision,

@@ -63,6 +63,6 @@ export async function narrationSource(directory) {
     );
     await mkdir(dirname(file), { recursive: true });
     await writeFile(file, text);
-    return { file, directory: resolve(directory), document };
+    return { file, directory: resolve(directory), document, spec };
   }
 }

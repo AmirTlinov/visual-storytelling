@@ -49,6 +49,7 @@ export async function collectCache(
   for (const revision of keepBuilds) {
     if (!/^[a-zA-Z0-9._-]+$/.test(revision)) continue;
     const build = await readBuildMetadata(data, revision);
+    if (build?.recordingBuildRevision) keepBuilds.add(build.recordingBuildRevision);
     if (build?.snapshot) keepSnapshots.add(resolve(build.snapshot));
     for (const part of build?.presentation?.parts ?? [])
       if (/^[a-f0-9]{64}$/.test(part.asset)) keepPayloads.add(part.asset);
@@ -121,7 +122,10 @@ export async function collectCache(
         )));
     const payloadAvailable =
       !build.presentation || (await presentationAvailable(data, build.presentation));
-    if (inputAvailable && payloadAvailable) continue;
+    const recordingAvailable =
+      !build.recordingBuildRevision ||
+      Boolean(await readBuildMetadata(data, build.recordingBuildRevision));
+    if (inputAvailable && payloadAvailable && recordingAvailable) continue;
     await rm(item.path, { force: true });
     bytes -= item.bytes;
   }

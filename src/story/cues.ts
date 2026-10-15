@@ -28,6 +28,8 @@ export interface Cue extends CueSpan {
 export interface Chapter extends Cue {
   id: string;
   text: string;
+  /** Current authored caption for a pending take; accepted speech text/words remain intact. */
+  displayText?: string;
   /** Accepted source spelling, including native performance controls. */
   source_text?: string;
   seed?: number;

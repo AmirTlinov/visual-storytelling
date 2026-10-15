@@ -7,6 +7,7 @@ import {
 import { spoken, intention, duration, occupied, timingFor } from './document-beat.js';
 import { speechUnits } from './document-speech.js';
 import { mapRecordedSpeech } from './recorded-speech.js';
+import { documentSpeechSpans, documentSpeechDeclared } from './document-audibility.js';
 const timeTolerance = 1e-6;
 export function authoredChapter(
   document: StoryDocument,
@@ -40,7 +41,23 @@ export function documentScript(
 ): Script {
   document = validateStoryDocument(document, options);
   aligned = cueSheet(aligned).script;
-  const cues = { ...aligned.cues };
+  const authored = new Set(
+    document.chapters.flatMap((chapter) => [
+      chapter.id,
+      ...chapter.beats.map((beat) => `${chapter.id}.${beat.id}`),
+      ...speechUnits(chapter).map((unit) => unit.id),
+    ]),
+  );
+  const cues = Object.fromEntries(Object.entries(aligned.cues).filter(([id]) => authored.has(id)));
+  for (const unit of aligned.segments ?? []) {
+    const spans = documentSpeechSpans(document, unit);
+    if (documentSpeechDeclared(document, unit) && !spans)
+      throw new Error('Speech actions need measured word boundaries; prepare this narration.');
+    for (const { id, ...span } of spans ?? []) {
+      const cue = cues[id];
+      cues[id] = { ...cue, ...span, ...(cue?.speech && { speech: span }) };
+    }
+  }
   const silent = new Set<string>();
   let previousEnd = 0;
   const chapters = document.chapters.map((chapter) => {
@@ -80,11 +97,17 @@ export function documentScript(
           throw new Error(
             `Silent action before ${id} does not fit aligned narration; regenerate narration with its authored pauses`,
           );
+        const {
+          action: _action,
+          hold: _hold,
+          timing: _timing,
+          awaitInput: _await,
+          ...anchor
+        } = cue;
         cues[id] = {
-          ...cue,
+          ...anchor,
           ...(timing ? { timing } : {}),
-          ...(beat.action !== undefined ? { action: beat.action } : {}),
-          ...(beat.hold !== undefined ? { hold: beat.hold } : {}),
+          ...intention(beat),
         };
       } else {
         silent.add(id);

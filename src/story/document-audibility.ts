@@ -45,6 +45,26 @@ export function documentSpeechApplicable(
   return speechConditionsMatch(unit.conditions, presentedModels);
 }
 
+/** Repartition an unchanged whole take using its measured words, without inventing word times. */
+export function documentSpeechSpans(document: StoryDocument, recorded: Chapter) {
+  if (!recorded.words || !documentSpeechDeclared(document, recorded)) return;
+  const unit = document.chapters.flatMap(speechUnits).find((unit) => unit.id === recorded.id)!;
+  const expected = unit.beats.flatMap((beat) => spokenWords(spoken(beat)));
+  const measured = recorded.words.flatMap((word) => spokenWords(word.text));
+  if (!sameSpeechValue(expected, measured)) return;
+  let offset = 0;
+  const spans = [];
+  for (const beat of unit.beats) {
+    const chapter = document.chapters.find((chapter) => chapter.beats.includes(beat))!;
+    const length = spokenWords(spoken(beat)).length;
+    const span = spokenSpan(recorded.words, offset, length);
+    if (!span) return;
+    offset += length;
+    spans.push({ id: `${chapter.id}.${beat.id}`, ...span });
+  }
+  return spans;
+}
+
 /** A quiet source edit may retain a take while repartitioning its visual actions. */
 export function documentSpeechAnchorsCurrent(document: StoryDocument, script: Script) {
   const units = document.chapters.flatMap(speechUnits);
@@ -57,20 +77,12 @@ export function documentSpeechAnchorsCurrent(document: StoryDocument, script: Sc
     return false;
   for (const unit of units) {
     const recorded = script.segments?.find((segment) => segment.id === unit.id);
-    if (!recorded?.words || !documentSpeechDeclared(document, recorded)) return false;
-    const expected = unit.beats.flatMap((beat) => spokenWords(spoken(beat)));
-    const measured = recorded.words.flatMap((word) => spokenWords(word.text));
-    if (!sameSpeechValue(expected, measured)) return false;
-    let offset = 0;
-    for (const beat of unit.beats) {
-      const chapter = document.chapters.find((chapter) => chapter.beats.includes(beat))!;
-      const cue = script.cues[`${chapter.id}.${beat.id}`];
-      const length = spokenWords(spoken(beat)).length;
-      const expected = spokenSpan(recorded.words, offset, length);
-      offset += length;
+    const spans = recorded && documentSpeechSpans(document, recorded);
+    if (!spans) return false;
+    for (const expected of spans) {
+      const cue = script.cues[expected.id];
       const actual = cue?.speech ?? cue;
       if (
-        !expected ||
         !actual ||
         Math.abs(actual.start - expected.start) > 1e-6 ||
         Math.abs(actual.end - expected.end) > 1e-6
@@ -79,4 +91,19 @@ export function documentSpeechAnchorsCurrent(document: StoryDocument, script: Sc
     }
   }
   return true;
+}
+
+/** Inventory whole takes without synthesizing or assigning readiness to individual words. */
+export function documentSpeechPreparation(document: StoryDocument, recording?: Script) {
+  return document.chapters.flatMap(speechUnits).map((unit) => {
+    const recorded = recording?.segments?.find((segment) => segment.id === unit.id);
+    return {
+      id: unit.id,
+      text: unit.beats.map(spoken).join(' '),
+      status:
+        recorded && documentSpeechDeclared(document, recorded)
+          ? ('ready' as const)
+          : ('pending' as const),
+    };
+  });
 }

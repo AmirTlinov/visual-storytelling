@@ -62,6 +62,7 @@ export function projectVoice({ data, preferences, projects, edit, prepareDocumen
         sourceRevision,
         requestId,
         changes,
+        ...(enabled && { prepareVoice: true }),
       });
     };
     // Turning speech off must remain possible when a selected backend is incomplete or removed.
@@ -77,6 +78,10 @@ export function projectVoice({ data, preferences, projects, edit, prepareDocumen
         reason: error.message,
         voices: [],
         settings: voiceSettingsForDisplay(previous),
+        ...(projectId && {
+          preparation: (await readBuildMetadata(data, projects.get(projectId).buildRevision))
+            ?.narration,
+        }),
       };
     }
     if (enabled && provider === 'higgs') requireVoiceSupport();
@@ -134,6 +139,10 @@ export function projectVoice({ data, preferences, projects, edit, prepareDocumen
         ),
         settings: voiceSettingsForDisplay(previous),
         ...(provider === 'higgs' && { requirements: environment.higgs.requirements }),
+        ...(projectId && {
+          preparation: (await readBuildMetadata(data, projects.get(projectId).buildRevision))
+            ?.narration,
+        }),
         ...(provider !== 'higgs' && {
           readiness: status.ready ? 'adapter-configured' : 'configuration-required',
           synthesisVerified: false,

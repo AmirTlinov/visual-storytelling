@@ -7,8 +7,9 @@ import { packDirectory } from '../tools/standalone.mjs';
 import { snapshotProject, projectFiles, digest } from '../tools/project-files.mjs';
 import { writeJSON, readJSON } from '../tools/storage.mjs';
 import { prepareEnvironment } from '../tools/environment.mjs';
-import { buildNarration } from '../tools/narration.mjs';
+import { buildNarration, requireNarration } from '../tools/narration.mjs';
 import { narrationProvider } from '../tools/voice/settings.mjs';
+import { narrationPreview } from '../tools/voice/preview.mjs';
 import {
   linkPreparedRuntime,
   assertPreparedDocument,
@@ -106,12 +107,15 @@ async function dependencies(source, data, { signal, progress }) {
   await symlink(join(target, 'node_modules'), join(source, 'node_modules'), 'dir');
 }
 
-async function prepare(input, task) {
+async function prepare(input, task, { final = false } = {}) {
   const { data, projectPath, sourceRevision } = input;
   const snapshot = join(data, 'snapshots', task.jobId);
   task.progress('Сохраняю исходники…');
   let original, receipt, captured;
-  const preparation = { silent: input.options?.silent === true };
+  const preparation = {
+    silent: input.options?.silent === true,
+    voice: input.prepareVoice === true,
+  };
   for (const id of new Set([input.resumeFrom, input.inputSnapshot].filter(Boolean))) {
     const candidate = join(data, 'snapshots', id);
     const saved = await readJSON(join(candidate, '.vstory-input.json'));
@@ -121,7 +125,8 @@ async function prepare(input, task) {
     if (
       !input.buildRevision &&
       saved.preparedRevision &&
-      (saved.preparation?.silent ?? false) !== preparation.silent
+      ((saved.preparation?.silent ?? false) !== preparation.silent ||
+        (saved.preparation?.voice ?? false) !== preparation.voice)
     )
       continue;
     const revision = saved.preparedRevision ?? saved.revision;
@@ -162,20 +167,33 @@ async function prepare(input, task) {
   });
   await dependencies(snapshot, data, task);
   const voice = await readJSON(join(snapshot, 'voice.json'));
+  const acceptedRecording =
+    voice?.enabled && !preparation.silent
+      ? await reuseAcceptedRecording(data, input, snapshot)
+      : undefined;
   if (voice?.enabled && !preparation.silent && !(reusable && receipt.preparedRevision)) {
-    await reuseAcceptedRecording(data, input, snapshot);
-    const localHiggs = narrationProvider(voice) === 'higgs';
-    await prepareEnvironment(data, {
-      ...task,
-      voice: localHiggs,
-      encoder: true,
-    });
-    await buildNarration(snapshot, {
-      ...task,
-      cache: join(data, 'speech'),
-      managedProcessGroup: Boolean(task.jobId),
-    });
+    if (preparation.voice) {
+      const plan = await narrationPreview(snapshot, {
+        acceptedDirectory: acceptedRecording?.directory,
+        signal: task.signal,
+      });
+      task.progress(
+        `Подготовка голоса: ${plan.status.preparation.units} мыслей, ${plan.status.preparation.characters} символов; тариф провайдера не задан.`,
+      );
+      const localHiggs = narrationProvider(voice) === 'higgs';
+      await prepareEnvironment(data, {
+        ...task,
+        voice: localHiggs,
+        encoder: true,
+      });
+      await buildNarration(snapshot, {
+        ...task,
+        cache: join(data, 'speech'),
+        managedProcessGroup: Boolean(task.jobId),
+      });
+    }
   }
+  if (final && !preparation.silent) await requireNarration(snapshot, task);
   task.signal.throwIfAborted();
   const preparedRevision = (await projectFiles(snapshot)).revision;
   let prepared;
@@ -184,7 +202,12 @@ async function prepare(input, task) {
     prepared = await readPreparedBuild(data, buildRevision);
     // A live receipt identifies the same immutable sources. Produce compiles their
     // ordinary entry for the first time; there is no per-operation dist archive.
-    if (prepared?.live && prepared.sourceRevision === source.revision && reusable) {
+    if (
+      prepared?.live &&
+      !prepared.outputDigest &&
+      prepared.sourceRevision === source.revision &&
+      reusable
+    ) {
       prepared = undefined;
     } else {
       if (
@@ -205,6 +228,8 @@ async function prepare(input, task) {
     preparedRevision,
     buildRevision: prepared?.revision,
     preparation,
+    final,
+    acceptedRecording,
     acceptedBuildRevision: input.acceptedBuildRevision,
   });
   return {
@@ -213,6 +238,8 @@ async function prepare(input, task) {
     preparedRevision,
     prepared,
     preparation,
+    final,
+    acceptedRecording,
     silent: preparation.silent || voice?.enabled === false,
   };
 }
@@ -230,11 +257,13 @@ export async function buildPreparedSnapshot(input, task, result) {
   const { snapshot, source, preparedRevision, silent } = result;
   const output = join(snapshot, 'dist');
   task.progress('Собираю объяснение…');
-  await buildScene(snapshot, output, {
+  const built = await buildScene(snapshot, output, {
     data: input.data,
     progress: task.progress,
     signal: task.signal,
     silent,
+    narration: result.final ? 'final' : 'preview',
+    acceptedRecording: result.acceptedRecording?.directory,
   });
   const documentProject = await readStoryProject(snapshot);
   let preparedDocument;
@@ -263,6 +292,8 @@ export async function buildPreparedSnapshot(input, task, result) {
   });
   await unchangedInputs(snapshot, preparedRevision);
   const outputDigest = await contentDigest(output, ['.']);
+  const recordingBuildRevision =
+    !result.preparation?.voice && result.acceptedRecording?.buildRevision;
   const revision = digest(
     JSON.stringify({
       projectId: input.projectId,
@@ -270,6 +301,7 @@ export async function buildPreparedSnapshot(input, task, result) {
       title: input.title,
       html,
       outputDigest,
+      recordingBuildRevision: recordingBuildRevision || undefined,
     }),
   );
   const prepared = {
@@ -280,6 +312,8 @@ export async function buildPreparedSnapshot(input, task, result) {
     html,
     snapshot,
     outputDigest,
+    ...(recordingBuildRevision && { recordingBuildRevision }),
+    ...(built.narration && { narration: built.narration }),
   };
   const preparedPin = await readPreparedRuntime(snapshot);
   if (preparedPin) {
@@ -319,6 +353,6 @@ export async function buildPreparedSnapshot(input, task, result) {
   };
 }
 
-export async function prepareBuild(input, task) {
-  return buildPreparedSnapshot(input, task, await prepare(input, task));
+export async function prepareBuild(input, task, options) {
+  return buildPreparedSnapshot(input, task, await prepare(input, task, options));
 }

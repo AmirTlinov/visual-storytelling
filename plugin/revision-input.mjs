@@ -7,7 +7,7 @@ import { failure } from './errors.mjs';
 import { readBuildMetadata } from './build-payload.mjs';
 
 /** Resolve and freeze a user's revision before queueing work. Jobs never follow working files. */
-export async function revisionInput(data, projects, target) {
+export async function revisionInput(data, projects, target, { prepared = false } = {}) {
   const project = projects.get(target.projectId);
   const base = { projectId: project.id, projectPath: project.path, title: project.title, target };
   if (target.kind === 'build') {
@@ -42,6 +42,21 @@ export async function revisionInput(data, projects, target) {
         'The working revision changed. Inspect it before preparing.',
         { current, action: 'story_inspect' },
       );
+    if (prepared && current.buildRevision) {
+      const build = await readBuildMetadata(data, current.buildRevision);
+      if (
+        build?.projectId === project.id &&
+        build.sourceRevision === current.sourceRevision &&
+        build.snapshot &&
+        dirname(resolve(build.snapshot)) === resolve(data, 'snapshots')
+      )
+        return {
+          ...base,
+          sourceRevision: build.sourceRevision,
+          inputSnapshot: basename(build.snapshot),
+          buildRevision: build.revision,
+        };
+    }
     return captureWorkingInput(data, project, target.sourceRevision);
   });
 }

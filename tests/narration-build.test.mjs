@@ -12,7 +12,7 @@ import { masteringProfileHash } from '../tools/voice/mastering.mjs';
 import { buildScene } from '../tools/build-pages.mjs';
 import {
   checkNarration,
-  prepareNarration,
+  requireNarration,
   silenceSceneCopy,
   setNarrationMode,
 } from '../tools/narration.mjs';
@@ -274,7 +274,7 @@ test('scene builds reject stale generated narration while silent and independent
     await put('timeline.json', receipt);
     await buildScene(source, output);
     const before = await readFile(join(output, 'index.html'), 'utf8');
-    await prepareNarration(source, { audible: true });
+    await requireNarration(source, {});
     assert.equal(await readFile(join(source, 'timeline.json'), 'utf8'), receipt);
     for (const invalid of [
       { ...aligned, segments: [] },
@@ -438,7 +438,7 @@ with wave.open(str(root/'audio.wav'),'wb') as wav:
     await cp(source, copy, { recursive: true });
     await rm(source, { recursive: true });
     assert.equal(await readFile((await narrationSource(copy)).file, 'utf8'), text);
-    await prepareNarration(copy, { audible: true });
+    await requireNarration(copy, {});
     assert.equal(await readFile(join(copy, 'timeline.json'), 'utf8'), receipt);
     await writeFile(join(copy, 'reference.wav'), 'changed voice');
     await assert.rejects(checkNarration(html, copy), /Voice reference changed/);

@@ -257,7 +257,12 @@ export function captionTrack(
   const aliases = aliasMatcher(script.captionAliases);
   let previousEnd = 0;
   for (const [index, chapter] of (script.segments ?? []).entries()) {
-    const words = displayWords(chapter, aliases);
+    const words = displayWords(
+      chapter.displayText === undefined
+        ? chapter
+        : { ...chapter, text: chapter.displayText, words: undefined },
+      aliases,
+    );
     for (const word of words) {
       if (
         !Number.isFinite(word.start) ||
