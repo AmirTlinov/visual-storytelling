@@ -22,8 +22,35 @@ test(
       ]) {
         const r = await renderer({ directory: built, width, theme, reduced, controls: true });
         try {
+          const captions = ['Сравним условия.', 'Изменим одно условие.', 'Теперь сравним.'];
+          await r.page.locator('main').evaluate(async (root, captions) => {
+            const doc = structuredClone(root.scene.authoring.document);
+            doc.chapters[0].beats.forEach((beat, index) => {
+              beat.text = captions[index];
+              beat.speech = { id: `thought.${beat.id}`, when: { basis: 'presented', models: [] } };
+            });
+            await root.scene.authoring.replace(doc);
+          }, captions);
           for (const time of [0, 2.5, 6]) {
             await r.seek(time);
+            const caption = captions[time === 0 ? 0 : time === 2.5 ? 1 : 2];
+            const active = time === 0 ? 'before' : 'after';
+            assert(
+              await r.page
+                .locator(
+                  `[data-comparison-case="${active}"] .vs-lettering[aria-label="${caption}"]`,
+                )
+                .isVisible(),
+              `${kind}/${width}/${time}: visible narrative follows active case`,
+            );
+            assert.equal(
+              await r.page
+                .locator(
+                  `[data-comparison-case="${active === 'before' ? 'after' : 'before'}"] .vs-lettering[aria-label="${caption}"]`,
+                )
+                .count(),
+              0,
+            );
             const state = await r.capture.evaluate((scene) => scene.snapshot());
             const pair = state.comparison;
             if (kind === 'lever') {
@@ -47,7 +74,8 @@ test(
                 return { width: b.width, height: b.height };
               }),
             );
-            assert.deepEqual(sizes[0], sizes[1]);
+            assert(Math.abs(sizes[0].width - sizes[1].width) < 0.001);
+            assert(Math.abs(sizes[0].height - sizes[1].height) < 0.001);
             const observed = await r.page.locator('main').evaluate((root) => root.scene.inspect());
             if (kind === 'lever') {
               const moment = observed.objects.find(
@@ -70,6 +98,11 @@ test(
             { type: 'mode', value: 'explore' },
             { type: 'parameters', values: { comparisonCase: 'before' } },
           ]);
+          assert(
+            await r.page
+              .locator(`[data-comparison-case="before"] .vs-lettering[aria-label="${captions[2]}"]`)
+              .isVisible(),
+          );
           if (width === 375) {
             assert.equal(await r.page.locator('[data-comparison-case="before"]').isVisible(), true);
             assert.equal(await r.page.locator('[data-comparison-case="after"]').isVisible(), false);
@@ -161,13 +194,50 @@ test(
           ]);
           await r.page.setViewportSize({ width: width === 960 ? 375 : 960, height: 700 });
           await r.page.waitForTimeout(80);
+          await r.page
+            .waitForFunction(
+              () => {
+                const frame = document.querySelector('[data-scene-frame]');
+                const before = document.querySelector('[data-comparison-case="before"]');
+                return (
+                  getComputedStyle(before).visibility ===
+                    (frame.getBoundingClientRect().width >= 766 ? 'inherit' : 'hidden') ||
+                  (frame.getBoundingClientRect().width >= 766 &&
+                    getComputedStyle(before).visibility === 'visible')
+                );
+              },
+              undefined,
+              { timeout: 3000 },
+            )
+            .catch(async (error) => {
+              await writeFile(
+                join(evidence, `resize-failure-${kind}-${width}.json`),
+                JSON.stringify(
+                  await r.page.locator('main').evaluate((root) => ({
+                    innerWidth,
+                    scene: root.scene.inspect(),
+                    frames: [
+                      ...root.querySelectorAll('[data-scene-frame],[data-comparison-case]'),
+                    ].map((n) => ({
+                      tag: n.outerHTML.slice(0, 300),
+                      bounds: n.getBoundingClientRect().toJSON(),
+                      visibility: getComputedStyle(n).visibility,
+                    })),
+                  })),
+                  null,
+                  2,
+                ),
+              );
+              throw error;
+            });
           const dimensions = await r.page.locator('[data-comparison-case]').evaluateAll((nodes) =>
             nodes.map((node) => {
               const rect = node.getBoundingClientRect();
               return { width: rect.width, height: rect.height };
             }),
           );
-          assert.deepEqual(dimensions[0], dimensions[1]);
+          assert(Math.abs(dimensions[0].width - dimensions[1].width) < 0.001);
+          assert(Math.abs(dimensions[0].height - dimensions[1].height) < 0.001);
           const wideNow = width !== 960;
           assert.equal(
             await r.page.locator('[data-comparison-case="before"]').isVisible(),

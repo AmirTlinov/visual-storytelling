@@ -156,6 +156,24 @@ export function dependencyRouteDiagram(view: Surface) {
       cleanups.push(packet.dispose);
       if (packet.width > width * 0.22)
         throw new Error('The order ID needs a shorter readable inscription.');
+      const status = object(layer.content, options.statusId ?? `${modelId}:status`);
+      const message =
+        options.text ??
+        (options.present === false
+          ? `Заказ ${trace.orderId} удалён.`
+          : trace.status === 'delivered'
+            ? `Заказ ${trace.orderId} доставлен.`
+            : trace.status === 'blocked'
+              ? `${graph.nodes.find((n) => n.id === trace.blocked)!.label} не пропускает заказ.`
+              : 'Маршрут до цели не найден.');
+      status.describe({ label: message, interactive: false });
+      const caption = shortText(status.content, message, width * 0.9, width / 2, height * 0.9);
+      const captionY = Math.min(
+        height * 0.9,
+        height - 6 / scale - caption.bounds.y - caption.bounds.height,
+      );
+      caption.render(message, width * 0.9, width / 2, captionY);
+      cleanups.push(status.dispose);
       for (const { item, label, x, y } of nodes) {
         let position: Point;
         try {
@@ -163,7 +181,7 @@ export function dependencyRouteDiagram(view: Surface) {
             label.bounds,
             [x, y],
             routes,
-            [width, height - 6 / scale - font * 2.25],
+            [width, captionY + caption.bounds.y - 6 / scale],
             radius,
             [packet.width, packet.height],
             6 / scale,
@@ -179,25 +197,7 @@ export function dependencyRouteDiagram(view: Surface) {
           ...position,
         );
       }
-      const status = object(layer.content, options.statusId ?? `${modelId}:status`);
-      const message =
-        options.text ??
-        (options.present === false
-          ? `Заказ ${trace.orderId} удалён.`
-          : trace.status === 'delivered'
-            ? `Заказ ${trace.orderId} доставлен.`
-            : trace.status === 'blocked'
-              ? `${graph.nodes.find((n) => n.id === trace.blocked)!.label} не пропускает заказ.`
-              : 'Маршрут до цели не найден.');
-      status.describe({ label: message, interactive: false });
-      const caption = shortText(status.content, message, width * 0.9, width / 2, height * 0.9);
-      caption.render(
-        message,
-        width * 0.9,
-        width / 2,
-        Math.min(height * 0.9, height - 6 / scale - caption.bounds.y - caption.bounds.height),
-      );
-      cleanups.push(status.dispose);
+
       return {
         canvas,
         layer,

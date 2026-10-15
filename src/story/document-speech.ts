@@ -13,7 +13,7 @@ export function authoredSpeech(
   modules: StoryModules,
   path: string,
 ): AuthoredBeat['speech'] {
-  if (!spoken(beat)) {
+  if (!spoken(beat) && !beat.text?.trim()) {
     if (beat.speech !== undefined)
       throw new Error(`${path}.speech: silent actions have no recording.`);
     return;
@@ -109,5 +109,12 @@ export function validateDocumentSpeech(document: Pick<StoryDocument, 'chapters'>
       if (ids.has(unit.id) || actions.has(unit.id))
         throw new Error(`Speech unit ID is duplicated or reserved for an action: ${unit.id}`);
       ids.add(unit.id);
+    }
+  for (const chapter of document.chapters)
+    for (const beat of chapter.beats) {
+      if (spoken(beat) || !beat.speech) continue;
+      if (ids.has(beat.speech.id) || actions.has(beat.speech.id))
+        throw new Error(`Thought ID is duplicated or reserved for an action: ${beat.speech.id}`);
+      ids.add(beat.speech.id);
     }
 }

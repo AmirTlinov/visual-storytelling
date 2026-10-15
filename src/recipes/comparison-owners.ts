@@ -55,6 +55,7 @@ export const leverComparisonSubject = comparisonSubject({
 });
 export const routeComparisonSubject = comparisonSubject({
   model: routeComparisonModel,
+  frame: { width: 1280, height: 960, scope: 'scene' },
   changes: ['reserve'],
   views: routeViews,
   recipe: () => instructionalRouteSubject,

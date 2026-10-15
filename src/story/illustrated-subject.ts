@@ -10,6 +10,7 @@ import type { Script, Frame } from './cues.js';
 import { editStoryDocument, authoredInputKeys, type StoryDocumentOperation } from './document.js';
 import { modelInputValues } from './model.js';
 import { documentSpeechApplicable } from './document-audibility.js';
+import { documentCaptionApplicable } from './document-conditions.js';
 import { documentNarration } from './document-narration.js';
 import { freezePresentation } from './frozen-presentation.js';
 import { holdControlFocus } from '../scene/control-focus.js';
@@ -256,6 +257,11 @@ export async function mountIllustratedSubject(
         exploreTimeline: true,
         speechApplicable(unit, moment) {
           return documentSpeechApplicable(next, unit, moment.mode, {
+            [nextModel.id]: modelInputValues(nextModel, moment.state.models[nextModel.id]!, module),
+          });
+        },
+        captionApplicable(unit, moment) {
+          return documentCaptionApplicable(next, unit, moment.mode, {
             [nextModel.id]: modelInputValues(nextModel, moment.state.models[nextModel.id]!, module),
           });
         },

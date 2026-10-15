@@ -12,10 +12,12 @@ export function comparisonSubject(config: {
   recipe(pair: ModelComparison): StorySubjectRecipe;
   views(id: string): readonly StoryView[];
   changes: readonly string[];
+  frame?: StorySubjectRecipe['frame'];
 }): StorySubjectRecipe {
   const comparison = (state: ModelState) => state.comparison as ModelComparison;
   return {
     title: 'Сравниваем два опыта',
+    frame: config.frame,
     resolveInput(patch, current, document, script) {
       const time = (() => {
         const chapter = document.chapters.at(-1),
@@ -128,12 +130,12 @@ export function comparisonSubject(config: {
         }
       }
       function validate(next: ReturnType<typeof candidate>, beats: readonly AuthoredBeat[]) {
-        for (const [index, item] of next.drawings.entries())
+        for (const item of next.drawings)
           item.drawing.validate(
             item.model,
             item.views,
             item.model.inputs,
-            index === 1 ? beats.map((beat) => ({ ...beat, operation: undefined })) : [],
+            beats.map((beat) => ({ ...beat, operation: undefined })),
           );
       }
       return {
@@ -169,6 +171,8 @@ export function comparisonSubject(config: {
           ]);
           const next =
             current && signature === key ? current : candidate(model, state, views[0]!.id);
+          const reveal = Number(state.comparisonProgress) > 0;
+          const active = reveal && state.comparisonCase === 'after' ? 'after' : 'before';
           try {
             if (next !== current) validate(next, beat ? [beat] : []);
             for (const [index, item] of next.drawings.entries())
@@ -176,13 +180,11 @@ export function comparisonSubject(config: {
                 item.model,
                 item.views,
                 item.state,
-                index === 1 && beat ? { ...beat, operation: undefined } : undefined,
+                index === (active === 'after' ? 1 : 0) && beat
+                  ? { ...beat, operation: undefined }
+                  : undefined,
               );
-            const reveal = Number(state.comparisonProgress) > 0;
-            next.panels.layout(
-              reveal && state.comparisonCase === 'after' ? 'after' : 'before',
-              reveal,
-            );
+            next.panels.layout(active, reveal);
           } catch (error) {
             if (next !== current)
               releaseResources(

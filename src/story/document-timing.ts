@@ -234,6 +234,7 @@ export function documentChapter(
           id: beat.id,
           ...span,
           text: spoken(beat),
+          ...(beat.speech && { conditions: beat.speech.when }),
           ...((beat.title ?? (segments.length === 0 ? chapter.title : undefined))
             ? { title: beat.title ?? chapter.title }
             : {}),
@@ -243,5 +244,9 @@ export function documentChapter(
     script.duration = time;
     script.segments = segments;
   }
-  return { ...authored, seconds: script.duration, script: resolve(script, silent) };
+  return {
+    ...authored,
+    seconds: script.duration,
+    script: resolve(script, silent),
+  };
 }

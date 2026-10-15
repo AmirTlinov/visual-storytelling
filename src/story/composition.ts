@@ -90,6 +90,7 @@ export interface SceneStoryOptions {
   exploreTimeline?: boolean;
   /** The published chapter frame supplies the actual subject values for a whole take. */
   speechApplicable?(unit: import('./cues.js').Chapter, frame: ChapterFrame): boolean;
+  captionApplicable?(unit: import('./cues.js').Chapter, frame: ChapterFrame): boolean;
   canContinue?(cue: string, frame: ChapterFrame): boolean;
   theme?: Theme;
   transition?: ChapterTransition;
@@ -201,6 +202,19 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
       ...(options.speechApplicable && {
         speechApplicable(unit, moment) {
           return options.speechApplicable!(unit, moment.state.frame);
+        },
+      }),
+      ...(options.captionApplicable && {
+        captionApplicable(unit, moment) {
+          // Supplied segments replace the generated introduction. A retained take
+          // with the same ID still belongs to its subject's applicability owner.
+          if (
+            plan.introduction > 0 &&
+            options.script?.segments === undefined &&
+            unit.id === options.transition?.introduction?.id
+          )
+            return moment.mode === 'story';
+          return options.captionApplicable!(unit, moment.state.frame);
         },
       }),
       chapterAt(moment) {

@@ -49,6 +49,8 @@ export type StoryOptions<P, K extends string, S = P> = {
   checkpoint?: StoryCheckpoint<P>;
   /** Evaluate a complete take against the frame that was actually published. */
   speechApplicable?(unit: Chapter, moment: StoryMoment<P, NoInfer<S>>): boolean;
+  /** Caption meaning is checked against the completed frame, independently of voice readiness. */
+  captionApplicable?(unit: Chapter, moment: StoryMoment<P, NoInfer<S>>): boolean;
   /** The subject owns the attempt. True releases an awaitInput cue, including a wrong but checked answer.
    * A thrown error pauses playback and retains the last completed frame; Play retries the check. */
   canContinue?(cue: K, moment: StoryMoment<P, NoInfer<S>>): boolean;
@@ -430,6 +432,11 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
     },
     get presented() {
       return presented;
+    },
+    captionApplicable(unit: Chapter) {
+      return (
+        !!presented && (options.captionApplicable?.(unit, presented) ?? presented.mode === 'story')
+      );
     },
     get phase() {
       return phase;

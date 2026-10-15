@@ -16,7 +16,7 @@ export interface CaptionOptions {
 }
 export interface CaptionTrack {
   readonly segments: readonly Caption[];
-  at(time: number): string;
+  at(time: number, applicable?: (source: Chapter) => boolean): string;
   serialize(format: 'srt' | 'vtt'): string;
 }
 const normalize = (s: string) =>
@@ -254,9 +254,13 @@ export function captionTrack(
   )
     throw new Error('Caption limits must be positive');
   const segments: Caption[] = [];
+  const sources = new Map<Caption, Chapter>();
   const aliases = aliasMatcher(script.captionAliases);
   let previousEnd = 0;
   for (const [index, chapter] of (script.segments ?? []).entries()) {
+    if (chapter.captionApplicable !== undefined && typeof chapter.captionApplicable !== 'boolean')
+      throw new Error(`Invalid caption applicability in ${chapter.id}`);
+    if (!(chapter.displayText ?? chapter.text).trim()) continue;
     const words = displayWords(
       chapter.displayText === undefined
         ? chapter
@@ -274,24 +278,31 @@ export function captionTrack(
         throw new Error(`Invalid caption time in ${chapter.id}`);
       previousEnd = word.end;
     }
-    segments.push(
-      ...groupWords(
-        words,
-        { maxChars, maxSeconds, lineChars, minSeconds },
-        Math.min(chapter.end, script.segments?.[index + 1]?.start ?? Infinity),
-      ),
+    const captions = groupWords(
+      words,
+      { maxChars, maxSeconds, lineChars, minSeconds },
+      Math.min(chapter.end, script.segments?.[index + 1]?.start ?? Infinity),
     );
+    for (const caption of captions) sources.set(caption, chapter);
+    segments.push(...captions);
   }
   return {
     segments,
-    at(time) {
-      return segments.find((s) => time >= s.start && time < s.end)?.text ?? '';
+    at(time, applicable) {
+      const segment = segments.find((s) => time >= s.start && time < s.end);
+      return segment &&
+        (applicable
+          ? applicable(sources.get(segment)!)
+          : sources.get(segment)!.captionApplicable !== false)
+        ? segment.text
+        : '';
     },
     serialize(format) {
       const vtt = format === 'vtt';
       return (
         (vtt ? 'WEBVTT\n\n' : '') +
         segments
+          .filter((segment) => sources.get(segment)!.captionApplicable !== false)
           .map(
             (s, i) =>
               `${vtt ? '' : `${i + 1}\n`}${stamp(s.start, vtt ? '.' : ',')} --> ${stamp(s.end, vtt ? '.' : ',')}\n${s.text}`,

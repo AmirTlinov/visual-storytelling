@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+  <meta charset="utf-8" /><title>Применимость пояснения</title>
+  <body class="ve-standalone">
+    <main></main>
+    <script type="module">
+      import { IllustratedStory, validateStoryDocument } from '@visual-storytelling/core';
+      import '@visual-storytelling/core/style.css';
+      const query = new URLSearchParams(location.search);
+      const document = validateStoryDocument({
+        recipe: 'division',
+        inputs: { count: 17, divisor: 4 },
+        chapters: [
+          {
+            id: 'lesson',
+            title: 'Соберём группы',
+            beats: [
+              {
+                id: 'group',
+                seconds: 2,
+                text: 'Один остаётся вне групп.',
+                ...(query.has('quiet') ? { say: '' } : {}),
+                operation: { model: 'division', name: 'group' },
+              },
+            ],
+          },
+        ],
+      });
+      window.galleryReady = IllustratedStory.mount(window.document.querySelector('main'), {
+        document,
+        frame: { width: 1280, height: 960 },
+        captions:
+          query.get('captions') === 'overlay'
+            ? { placement: 'overlay' }
+            : query.has('captions')
+              ? true
+              : undefined,
+      });
+    </script>
+  </body>
+</html>

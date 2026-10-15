@@ -12,6 +12,11 @@ import type { ModelValues, ModelState, StoryModules } from './model.js';
 import { modelInputValues } from './model.js';
 import { cueSheet } from './cues.js';
 import { checkDocumentBoundaries } from './document-checks.js';
+import {
+  applicableDocumentBeat,
+  documentCaptionApplicable,
+  documentCaptionConditions,
+} from './document-conditions.js';
 
 /** Publication and mounting prepare the same normalized candidate and its optional clock. */
 export function prepareStoryDocument(
@@ -40,10 +45,47 @@ export function documentTimeline(
   options: StoryDocumentOptions = {},
 ): Script | undefined {
   if (!document.chapters.length) return;
-  if (aligned) return documentScript(document, aligned, options);
-  return composeChapters(
-    document.chapters.map(({ id }) => documentChapter(document, id, undefined, options)),
-  ).script;
+  const script = aligned
+    ? documentScript(document, aligned, options)
+    : composeChapters(
+        document.chapters.map(({ id }) => documentChapter(document, id, undefined, options)),
+      ).script;
+  const sheet = cueSheet(script),
+    owners = storyModelOwners(options.modules);
+  return {
+    ...script,
+    segments: script.segments?.map((unit) => {
+      const moment = documentModelsAt(document, sheet.at(unit.start), {}, options.modules);
+      const values = Object.fromEntries(
+        document.models.map((model) => [
+          model.id,
+          modelInputValues(model, moment.models[model.id]!, owners[model.module]!),
+        ]),
+      );
+      const conditions = documentCaptionConditions(document, unit);
+      // A portable whole thought cannot follow a viewer's changing condition. If an
+      // operation can write its declared model during this take, keep its caption
+      // conservative; the live predicate still follows each actually completed frame.
+      const conditionalOperation =
+        conditions?.basis === 'presented' &&
+        document.chapters.some((chapter) =>
+          chapter.beats.some((beat) => {
+            const span = script.cues[`${chapter.id}.${beat.id}`]!;
+            return (
+              beat.operation &&
+              conditions.models.some((c) => c.model === beat.operation!.model) &&
+              span.start < unit.end &&
+              span.end > unit.start
+            );
+          }),
+        );
+      return {
+        ...unit,
+        captionApplicable:
+          !conditionalOperation && documentCaptionApplicable(document, unit, 'story', values),
+      };
+    }),
+  };
 }
 
 /** Absolute replay of ordinary pure model operations; seeking never accumulates mutations. */
@@ -120,7 +162,23 @@ export function documentModelsAt(
           ? owner.staticState(values, model)
           : owner.state(values, model);
     }
-  return { models, beat, views, chapter: activeChapter?.id, resources: document.resources ?? [] };
+  const wordingInputs =
+    beat?.text && beat.speech?.when.basis === 'presented'
+      ? Object.fromEntries(
+          beat.speech.when.models.map(({ model: id }) => {
+            const model = document.models.find((model) => model.id === id)!;
+            return [id, modelInputValues(model, models[id]!, owners[model.module]!)];
+          }),
+        )
+      : models;
+  return {
+    models,
+    authoredBeat: beat,
+    beat: applicableDocumentBeat(document, beat, options.mode ?? 'story', wordingInputs),
+    views,
+    chapter: activeChapter?.id,
+    resources: document.resources ?? [],
+  };
 }
 
 /** The named model owns acceptance; Story alone owns the playback barrier. */
@@ -129,11 +187,9 @@ export function documentCanContinue(
   moment: ReturnType<typeof documentModelsAt>,
   modules: StoryModules = {},
 ) {
-  const gate = moment.beat?.awaitInput;
+  const authored = moment.authoredBeat;
+  const gate = authored?.awaitInput;
   if (!gate) return true;
   const model = document.models.find((model) => model.id === gate.model)!;
-  return storyModelOwners(modules)[model.module]!.canContinue!(
-    moment.models[model.id]!,
-    moment.beat!,
-  );
+  return storyModelOwners(modules)[model.module]!.canContinue!(moment.models[model.id]!, authored);
 }

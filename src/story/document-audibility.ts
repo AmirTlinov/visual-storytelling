@@ -3,7 +3,8 @@ import type { Chapter, Script } from './cues.js';
 import type { StoryMode } from './story.js';
 import type { ModelValues } from './model.js';
 import { speechUnits } from './document-speech.js';
-import { sameSpeechValue, speechConditionsMatch } from './speech-condition.js';
+import { sameSpeechValue } from './speech-condition.js';
+import { documentConditionsApplicable } from './document-conditions.js';
 import { spokenText, spokenWords, spokenSpan } from './spoken-words.js';
 import { spoken } from './document-beat.js';
 
@@ -35,14 +36,7 @@ export function documentSpeechApplicable(
 ) {
   if (!documentSpeechDeclared(document, unit)) return false;
   if (!unit.conditions) return false;
-  if (unit.conditions.basis === 'authored') {
-    if (mode !== 'story') return false;
-    return speechConditionsMatch(
-      unit.conditions,
-      Object.fromEntries(document.models.map((model) => [model.id, model.inputs])),
-    );
-  }
-  return speechConditionsMatch(unit.conditions, presentedModels);
+  return documentConditionsApplicable(document, unit.conditions, mode, presentedModels);
 }
 
 /** Repartition an unchanged whole take using its measured words, without inventing word times. */

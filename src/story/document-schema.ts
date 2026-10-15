@@ -19,7 +19,7 @@ export type {
 /** One authored beat owns its action, staging and optional speech. */
 export interface AuthoredBeat extends Beat {
   say?: string;
-  /** A complete thought owns one cached take and explicit model applicability. */
+  /** One thought freezes its wording's model applicability; a spoken thought may own a cached take. */
   speech?: { id: string; when: SpeechConditions; seed?: number; delivery?: string };
   timing?: CueTiming;
   /** Name an ordinary registered JS operation; replay always starts from the model inputs. */

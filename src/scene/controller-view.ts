@@ -35,12 +35,6 @@ export function controllerView<P, K extends string, S>(
   try {
     const ui = player(staging, {
       transport: controller.player,
-      captions: {
-        get element() {
-          return active ? options.caption : caption;
-        },
-        track: options.track,
-      },
       onSeek: controller.seek,
       onPlay: options.onPlay,
     });
@@ -82,6 +76,11 @@ export function controllerView<P, K extends string, S>(
     cleanups.push(
       controller.subscribe((state) => {
         latest = state;
+        const element = active ? options.caption : caption;
+        const text = state.presented
+          ? options.track.at(state.presented.time, controller.captionApplicable)
+          : '';
+        if (element.textContent !== text) element.textContent = text;
         chapters.update(state.presented?.chapter);
         if (active) options.onState(state);
       }),

@@ -30,6 +30,8 @@ export interface Chapter extends Cue {
   text: string;
   /** Current authored caption for a pending take; accepted speech text/words remain intact. */
   displayText?: string;
+  /** Derived applicability at this segment's canonical model frame, for portable captions. */
+  captionApplicable?: boolean;
   /** Accepted source spelling, including native performance controls. */
   source_text?: string;
   seed?: number;

@@ -23,6 +23,7 @@ import { storyModelOwners } from '../recipes/story-models.js';
 import type { ModelValues } from './model.js';
 import { modelInputValues } from './model.js';
 import { documentSpeechApplicable, documentSpeechAnchorsCurrent } from './document-audibility.js';
+import { documentCaptionApplicable } from './document-conditions.js';
 
 export interface IllustratedChapterFrame extends ChapterFrame {
   subject: ReturnType<typeof documentModelsAt>;
@@ -41,7 +42,13 @@ export interface IllustratedChapter extends Omit<SceneChapter, 'mount' | 'values
 export interface IllustratedStoryOptions
   extends Omit<
     SceneStoryOptions,
-    'title' | 'chapters' | 'subjectAt' | 'emphasisAt' | 'sharedControls' | 'speechApplicable'
+    | 'title'
+    | 'chapters'
+    | 'subjectAt'
+    | 'emphasisAt'
+    | 'sharedControls'
+    | 'speechApplicable'
+    | 'captionApplicable'
   > {
   document: StoryDocument | unknown;
   modules?: StoryModules;
@@ -101,6 +108,12 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
     const factory = factories[id];
     if (!factory) throw new Error(`Chapter ${id} needs a presentation`);
     const authored = documentChapter(document, id, aligned, { modules });
+    if (!aligned)
+      authored.script.segments = authored.script.segments?.map((unit) => ({
+        ...unit,
+        captionApplicable: timeline.segments?.find((segment) => segment.id === `${id}.${unit.id}`)
+          ?.captionApplicable,
+      }));
     const chapter = factory(authored);
     if (chapter.id !== id) throw new Error(`Chapter presentation changed its authored ID: ${id}`);
     if (chapter.seconds !== authored.seconds)
@@ -150,7 +163,7 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
     resources: document.resources,
     title: document.title ?? 'Рассказ',
     chapters,
-    script: aligned,
+    script: aligned ? timeline : undefined,
     exploreTimeline: Boolean(options.audio),
     canContinue(_cue, frame) {
       return documentCanContinue(
@@ -159,24 +172,10 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
         modules,
       );
     },
-    speechApplicable(unit, frame) {
-      const subject = frame.subject as ReturnType<typeof documentModelsAt>;
-      return documentSpeechApplicable(
-        document,
-        unit,
-        frame.mode,
-        Object.fromEntries(
-          document.models.map((model) => [
-            model.id,
-            modelInputValues(
-              model,
-              subject.models[model.id]!,
-              storyModelOwners(modules)[model.module]!,
-            ),
-          ]),
-        ),
-      );
-    },
+    speechApplicable: (unit, frame) =>
+      documentSpeechApplicable(document, unit, frame.mode, wordingInputs(frame)),
+    captionApplicable: (unit, frame) =>
+      documentCaptionApplicable(document, unit, frame.mode, wordingInputs(frame)),
     sharedControls: document.models.flatMap((model) =>
       authoredInputKeys(document, model.id, model.inputs),
     ),
@@ -208,5 +207,18 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
       );
     },
   });
+  function wordingInputs(frame: ChapterFrame) {
+    const subject = frame.subject as ReturnType<typeof documentModelsAt>;
+    return Object.fromEntries(
+      document.models.map((model) => [
+        model.id,
+        modelInputValues(
+          model,
+          subject.models[model.id]!,
+          storyModelOwners(modules)[model.module]!,
+        ),
+      ]),
+    );
+  }
 }
 export const IllustratedStory = { mount };
