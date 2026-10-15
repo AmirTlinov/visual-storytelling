@@ -1,6 +1,7 @@
 import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { z } from 'zod';
 import { read, changeView, context, contextTarget } from './schema.mjs';
+import { documentOperations } from './document-operations.mjs';
 
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/);
 const projectId = z.string().uuid();
@@ -14,8 +15,9 @@ const fileChanges = z
   .min(1)
   .max(64);
 // Transport accepts JSON; the pinned core owns document and operation semantics.
-const storyDocumentInput = z.record(z.string(), z.json());
-const documentOperations = z.array(z.record(z.string(), z.json())).min(1).max(64);
+const storyDocumentInput = z.record(z.string(), z.json()).describe(
+  'Recipe or canonical StoryDocument v2. Supply custom chapters in this initial document to author the complete story in one request. Each chapter has id/title/beats; each beat has id, optional operation:{model,name}, seconds, text (short visible narrative), action (staging intention, not a caption), and optional say (spoken wording). Voice preparation is explicit.',
+);
 export function authoringTools(server, runtime, uri, safely) {
   const result = (value, text) => ({ content: [{ type: 'text', text }], structuredContent: value });
   registerAppTool(
