@@ -53,16 +53,40 @@ export async function authorBenchmark({ release, output, model, reasoning }) {
   const call = async (name, args) => {
     const started = Date.now(),
       request = { name, arguments: args };
+    let before;
     if (brief && name === 'story_control' && args.commands?.some((c) => c.type === 'parameters')) {
       frames.begin();
       interaction = { started };
+      try {
+        before = await root().evaluate((r) => {
+          const state = r.scene.inspect({ presentation: false });
+          return {
+            at: Date.now(),
+            sessionId: window.__visualStorySession?.sessionId,
+            generation: window.__visualStorySession?.generation,
+            playing: state.playing,
+            phase: state.rendering?.phase,
+            values: state.rendering?.presented?.values,
+          };
+        });
+        before.projectId = project?.id;
+        before.sourceRevision = project?.sourceRevision;
+      } catch (error) {
+        before = { error: error.message };
+      }
     }
     const result = await host.client.callTool(request);
-    trials.record(request, result, started);
+    trials.record(request, result, started, before);
     await appendFile(
       join(out, 'calls.jsonl'),
-      JSON.stringify({ ...request, started, finished: Date.now(), trial: brief?.index, result }) +
-        '\n',
+      JSON.stringify({
+        ...request,
+        started,
+        before,
+        finished: Date.now(),
+        trial: brief?.index,
+        result,
+      }) + '\n',
     );
     const authored = result.structuredContent?.project;
     if (
@@ -183,6 +207,8 @@ export async function authorBenchmark({ release, output, model, reasoning }) {
         url: host.url,
         ...metadata,
         context: await context(),
+        manualEvidence:
+          'Observe initial at a settled paused time. Change the condition with a parameters-only command batch. Evidence records the ready paused Scene condition immediately before this SDK call and its accepted result; the whole read/call/check stays timed. Seek and play are separate calls.',
         tools: (await host.client.listTools()).tools.filter((t) =>
           ['story_create', 'story_control', 'story_edit', 'story_inspect', 'story_help'].includes(
             t.name,

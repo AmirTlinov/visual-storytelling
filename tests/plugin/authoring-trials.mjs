@@ -7,6 +7,7 @@ const sameInputs = (state, inputs) =>
   Boolean(state && Object.entries(inputs).every(([k, v]) => state[k] === v));
 const fraction = (value) => value?.numerator / value?.denominator;
 const near = (a, b) => Number.isFinite(a) && Math.abs(a - b) < 1e-10;
+const criteriaVersion = 3;
 /** A selector or a no-op is not a changed experiment. Match the observed condition
  * to a successful parameter patch between its two immutable observations. */
 export function manualConditionChange(initial, changed, calls) {
@@ -24,30 +25,58 @@ export function manualConditionChange(initial, changed, calls) {
       Object.hasOwn(changed.values, key) &&
       !isDeepStrictEqual(initial.values[key], changed.values[key]),
   );
+  const proven = calls.filter((call) => {
+    const before = call.before,
+      result = call.result.structuredContent;
+    return (
+      call.name === 'story_control' &&
+      !call.result.isError &&
+      call.start >= initial.at &&
+      call.end <= changed.at &&
+      call.start <= call.end &&
+      before?.playing === false &&
+      before.phase === 'ready' &&
+      before.at >= call.start &&
+      before.at <= call.end &&
+      ['sessionId', 'projectId', 'sourceRevision'].every(
+        (key) =>
+          typeof before[key] === 'string' &&
+          before[key].length > 0 &&
+          before[key] === result?.[key],
+      ) &&
+      Number.isSafeInteger(before.generation) &&
+      before.generation >= 0 &&
+      before.generation === result?.generation &&
+      call.arguments.commands?.length > 0 &&
+      call.arguments.commands.every((command) => command.type === 'parameters')
+    );
+  });
   return {
     keys,
     complete:
       keys.length > 0 &&
-      keys.every((key) =>
-        calls.some(
-          (call) =>
-            call.name === 'story_control' &&
-            !call.result.isError &&
-            call.start >= initial.at &&
-            call.end <= changed.at &&
-            call.start <= call.end &&
-            isDeepStrictEqual(
-              call.result.structuredContent?.state?.rendering?.presented?.values?.[key],
-              changed.values[key],
-            ) &&
-            call.arguments.commands?.some(
-              (command) =>
-                command.type === 'parameters' &&
-                Object.hasOwn(command.values ?? {}, key) &&
-                isDeepStrictEqual(command.values[key], changed.values[key]),
-            ),
-        ),
-      ),
+      keys.every((key) => {
+        let value = initial.values[key],
+          advanced = false;
+        for (const call of proven) {
+          const command = call.arguments.commands.findLast((command) =>
+            Object.hasOwn(command.values ?? {}, key),
+          );
+          const after = call.result.structuredContent?.state?.rendering?.presented?.values;
+          if (
+            !command ||
+            !after ||
+            !Object.hasOwn(after, key) ||
+            !isDeepStrictEqual(call.before.values?.[key], value) ||
+            !isDeepStrictEqual(command.values[key], after[key]) ||
+            isDeepStrictEqual(value, after[key])
+          )
+            continue;
+          value = after[key];
+          advanced = true;
+        }
+        return advanced && isDeepStrictEqual(value, changed.values[key]);
+      }),
   };
 }
 function timingSummary(reports) {
@@ -263,7 +292,7 @@ export function authoringTrials(output, { release, model, reasoning, hardware })
       try {
         claim ??= writeFile(
           join(output, 'dataset.json'),
-          JSON.stringify({ criteriaVersion: 2, release, model, reasoning, hardware }),
+          JSON.stringify({ criteriaVersion, release, model, reasoning, hardware }),
           { flag: 'wx' },
         );
         await claim;
@@ -297,8 +326,8 @@ export function authoringTrials(output, { release, model, reasoning, hardware })
         starting = false;
       }
     },
-    record(request, result, start) {
-      if (active) active.calls.push({ ...request, result, start, end: Date.now() });
+    record(request, result, start, before) {
+      if (active) active.calls.push({ ...request, result, start, before, end: Date.now() });
     },
     assertFirst(authored) {
       if (!active || !sourceMatches(authored, active.specification))
@@ -369,7 +398,7 @@ export function authoringTrials(output, { release, model, reasoning, hardware })
         const { specification, ...record } = active;
         const report = {
           ...record,
-          criteriaVersion: 3,
+          criteriaVersion,
           release,
           model,
           reasoning,

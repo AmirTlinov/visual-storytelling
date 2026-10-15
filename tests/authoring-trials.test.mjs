@@ -4,6 +4,19 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { authoringTrials, manualConditionChange } from './plugin/authoring-trials.mjs';
+const identity = {
+  sessionId: 'scene',
+  projectId: 'project',
+  sourceRevision: 'source',
+  generation: 1,
+};
+const beforeCondition = (values) => ({
+  ...identity,
+  at: Date.now(),
+  playing: false,
+  phase: 'ready',
+  values,
+});
 
 test('authoring dataset retains every failed trial and requires 18 base plus 12 unfamiliar tasks', async (t) => {
   const out = await mkdtemp(join(tmpdir(), 'authoring-trials-'));
@@ -137,7 +150,8 @@ test('comparison grading follows the changed after case and cannot accept a bala
     for (const [snapshot, value] of [
       [initial, inputs.rightForce],
       [final, changed.rightForce],
-    ])
+    ]) {
+      const before = beforeCondition({ comparisonValue: inputs.rightForce });
       owner.record(
         {
           name: 'story_control',
@@ -147,11 +161,14 @@ test('comparison grading follows the changed after case and cannot accept a bala
         },
         {
           structuredContent: {
+            ...identity,
             state: { snapshot, rendering: { presented: { values: { comparisonValue: value } } } },
           },
         },
-        Date.now(),
+        before.at,
+        before,
       );
+    }
     const now = Date.now();
     const report = await owner.finish({
       capturedAt: now,
@@ -201,12 +218,20 @@ test('route grading follows the presented inputs and flat subject trace', async 
   for (const [snapshot, values] of [
     [initial, initialInputs],
     [changed, changedInputs],
-  ])
+  ]) {
+    const before = beforeCondition(initialInputs);
     owner.record(
       { name: 'story_control', arguments: { commands: [{ type: 'parameters', values }] } },
-      { structuredContent: { state: { snapshot, rendering: { presented: { values } } } } },
-      Date.now(),
+      {
+        structuredContent: {
+          ...identity,
+          state: { snapshot, rendering: { presented: { values } } },
+        },
+      },
+      before.at,
+      before,
     );
+  }
   const now = Date.now();
   const report = await owner.finish({
     capturedAt: now,
@@ -232,8 +257,14 @@ test('manual evidence rejects no-op, view-only, stale, failed and unmatched patc
     name: 'story_control',
     start: 120,
     end: 150,
+    before: { ...beforeCondition(initial.values), at: 125 },
     arguments: { commands: [{ type: 'parameters', values }] },
-    result: { structuredContent: { state: { rendering: { presented: { values: presented } } } } },
+    result: {
+      structuredContent: {
+        ...identity,
+        state: { rendering: { presented: { values: presented } } },
+      },
+    },
   });
   assert.deepEqual(manualConditionChange(initial, changed, [patch()]), {
     keys: ['count'],
@@ -251,8 +282,42 @@ test('manual evidence rejects no-op, view-only, stale, failed and unmatched patc
     [changed, [{ ...patch(), start: 50, end: 90 }]],
     [changed, [{ ...patch(), start: 210, end: 220 }]],
     [changed, [{ ...patch(), arguments: { commands: [{ type: 'seek', time: 2 }] } }]],
+    [
+      changed,
+      [
+        {
+          ...patch(),
+          arguments: {
+            commands: [
+              { type: 'seek', time: 2 },
+              { type: 'parameters', values: { count: 12 } },
+            ],
+          },
+        },
+      ],
+    ],
+    [changed, [{ ...patch(), before: { ...patch().before, values: changed.values } }]],
+    [changed, [{ ...patch(), before: { ...patch().before, sessionId: 'other' } }]],
+    [changed, [{ ...patch(), before: { ...patch().before, generation: 2 } }]],
+    [changed, [{ ...patch(), before: { ...patch().before, playing: true } }]],
+    [changed, [{ ...patch(), before: { ...patch().before, phase: 'preparing' } }]],
     [{ ...changed, values: { ...changed.values, divisor: 4 } }, [patch()]],
   ])
     assert.equal(manualConditionChange(initial, after, calls).complete, false);
   assert.equal(manualConditionChange(undefined, changed, [patch()]).complete, false);
+  const intermediate = { ...changed.values, count: 12 },
+    final = { ...changed.values, count: 13 };
+  assert.equal(
+    manualConditionChange(initial, { at: 300, values: final }, [
+      patch({ count: 12 }, intermediate),
+      {
+        ...patch({ count: 13 }, final),
+        start: 160,
+        end: 180,
+        before: { ...patch().before, at: 165, values: intermediate },
+      },
+    ]).complete,
+    true,
+    'successive manual steps remain a proven chain',
+  );
 });

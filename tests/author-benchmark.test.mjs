@@ -75,3 +75,80 @@ test(
     await assert.rejects(authorBenchmark(options), { code: 'EEXIST' });
   },
 );
+
+test(
+  'a real paused parameter change produces v3 manual evidence in the installed card',
+  { timeout: 45000 },
+  async (t) => {
+    const temporary = await mkdtemp(join(tmpdir(), 'author-benchmark-change-'));
+    const output = join(temporary, 'run');
+    const runner = await authorBenchmark({
+      release: new URL('../.plugin-release/', import.meta.url).pathname,
+      output,
+      model: 'instrumentation-test',
+      reasoning: 'none',
+    });
+    t.after(async () => {
+      await runner.close();
+      await rm(temporary, { recursive: true, force: true });
+    });
+    const send = async (body) => {
+      const response = await fetch(runner.endpoint.url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-benchmark-token': runner.endpoint.token },
+        body: JSON.stringify(body),
+      });
+      const value = await response.json();
+      assert.equal(response.status, 200, JSON.stringify(value));
+      return value;
+    };
+    const brief = await send({ action: 'start' });
+    const count = Number(brief.task.match(/^\d+/)[0]),
+      divisor = Number(brief.task.match(/по (\d+)/)[1]);
+    const created = await send({
+      action: 'call',
+      name: 'story_create',
+      arguments: {
+        context: brief.context,
+        title: 'Разложим предметы',
+        document: { recipe: 'division', inputs: { count, divisor } },
+        requestId: randomUUID(),
+      },
+    });
+    assert(!created.isError, JSON.stringify(created));
+    const first = await send({ action: 'observe', label: 'first' });
+    const end = await send({
+      action: 'call',
+      name: 'story_control',
+      arguments: {
+        context: first.context,
+        requestId: randomUUID(),
+        commands: [{ type: 'seek', time: first.state.duration }],
+        detail: 'model',
+      },
+    });
+    assert(!end.isError, JSON.stringify(end));
+    const initial = await send({ action: 'observe', label: 'initial' });
+    const changed = await send({
+      action: 'call',
+      name: 'story_control',
+      arguments: {
+        context: initial.context,
+        requestId: randomUUID(),
+        commands: [{ type: 'parameters', values: { count: count + divisor - (count % divisor) } }],
+        detail: 'model',
+      },
+    });
+    assert(!changed.isError, JSON.stringify(changed));
+    await send({ action: 'observe', label: 'changed' });
+    const result = await send({ action: 'finish' });
+    assert.equal(result.computedStateCorrect, true);
+    assert.equal(result.evidenceValid, true);
+    const report = JSON.parse(await readFile(join(output, 'trial-0.json'), 'utf8'));
+    assert.equal(report.manualInputChanged, true, JSON.stringify(report));
+    assert.deepEqual(report.changedInputKeys, ['count']);
+    const dataset = JSON.parse(await readFile(join(output, 'dataset.json'), 'utf8'));
+    assert.equal(dataset.criteriaVersion, 3);
+    assert.equal(report.criteriaVersion, 3);
+  },
+);
