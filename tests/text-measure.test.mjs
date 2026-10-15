@@ -37,6 +37,40 @@ test('batched future lettering preserves exact native advances, source ink and s
       await lab.ready;
       const group = document.querySelector('#labels'),
         values = ['Всего: 36', 'Ещё: 0', 'Группы: 18', 'Остаток: 3', '10 測定', 'A → Б'];
+      const mutations = [];
+      const observer = new MutationObserver(() => {});
+      observer.observe(document.body, { childList: true });
+      const empty = [];
+      for (const options of [
+        {},
+        { maxWidth: 100 },
+        { bounds: { width: 100, height: 50, padding: 4 } },
+        { bounds: { width: 100, height: 50, padding: 4, shape: 'ellipse' } },
+      ]) {
+        const label = lab.lettering(group, '', { size: 25, ...options });
+        const initial = { width: label.width, bounds: label.bounds };
+        mutations.push(...observer.takeRecords());
+        label.text('15 м');
+        const filled = { width: label.width, bounds: label.bounds, html: label.element.outerHTML };
+        observer.takeRecords();
+        label.text('');
+        const cleared = {
+          width: label.width,
+          bounds: label.bounds,
+          paths: label.element.querySelectorAll('path').length,
+        };
+        mutations.push(...observer.takeRecords());
+        label.text('15 м');
+        const restored = {
+          width: label.width,
+          bounds: label.bounds,
+          html: label.element.outerHTML,
+        };
+        observer.takeRecords();
+        empty.push({ initial, cleared, filled, restored });
+        label.dispose();
+      }
+      observer.disconnect();
       const comparisons = [];
       for (const handwriting of ['body', 'heading', 'note'])
         for (const hidden of [false, true]) {
@@ -75,6 +109,10 @@ test('batched future lettering preserves exact native advances, source ink and s
       } catch {}
       return {
         comparisons,
+        empty,
+        emptyLayoutProbes: mutations
+          .flatMap((record) => [...record.addedNodes])
+          .filter((node) => node instanceof SVGSVGElement).length,
         measured,
         mixed,
         original: original === native.outerHTML,
@@ -84,6 +122,22 @@ test('batched future lettering preserves exact native advances, source ink and s
     for (const row of result.comparisons) {
       assert(row.unchanged);
       assert.deepEqual(row.widths, row.expected);
+    }
+    assert.equal(
+      result.emptyLayoutProbes,
+      0,
+      'Empty token labels never build font measurement trees',
+    );
+    for (const { initial, cleared, filled, restored } of result.empty) {
+      assert.equal(initial.width, 0);
+      assert.equal(initial.bounds.width, 0);
+      assert.equal(initial.bounds.height, 0);
+      assert.deepEqual(cleared, { ...initial, paths: 0 });
+      assert.deepEqual(
+        restored,
+        filled,
+        'Returning from empty preserves all visible ink and geometry',
+      );
     }
     assert.equal(result.measured.children, 2);
     assert.deepEqual(result.mixed[1], result.measured);

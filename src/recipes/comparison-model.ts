@@ -24,13 +24,13 @@ export function comparisonModel({
     );
     if (Object.keys(baseline).some((key) => reserved.includes(key)))
       throw new Error('Domain inputs cannot replace comparison conditions.');
-    const change = String(input.comparisonChange),
+    const change = input.comparisonChange,
       next = input.comparisonValue;
-    if (!keys.includes(change) || next === undefined)
+    if (typeof change !== 'string' || !keys.includes(change) || next === undefined)
       throw new Error('Select one comparison change and value.');
     owner.validateInputs({ ...baseline, [change]: next });
-    const comparisonCase = input.comparisonCase ?? 'after';
-    if (!['before', 'after'].includes(String(comparisonCase)))
+    const comparisonCase = input.comparisonCase === undefined ? 'after' : input.comparisonCase;
+    if (typeof comparisonCase !== 'string' || !['before', 'after'].includes(comparisonCase))
       throw new Error('Select before or after.');
     return { ...baseline, comparisonChange: change, comparisonValue: next, comparisonCase };
   };

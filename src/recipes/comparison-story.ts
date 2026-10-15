@@ -1,6 +1,7 @@
 import type { StoryDocument, AuthoredChapter } from '../story/document-schema.js';
 import type { ModelValues } from '../story/model.js';
 import { leverComparisonModel, routeComparisonModel } from './comparison-owners.js';
+import { defaultChapter } from './chapter-identity.js';
 export interface ComparisonStoryInput {
   recipe?: 'comparison';
   kind: 'lever' | 'dependency-route';
@@ -31,8 +32,6 @@ export function comparisonStory(input: ComparisonStoryInput): StoryDocument {
     owner = input.kind === 'lever' ? leverComparisonModel : routeComparisonModel,
     id = input.id === undefined ? input.kind : input.id;
   const viewId = id === 'comparison' ? 'comparison.view' : 'comparison';
-  let chapterId = 'compare';
-  while ([id, viewId].includes(chapterId)) chapterId += '.story';
   return {
     version: 2,
     ...(input.title !== undefined && { title: input.title }),
@@ -51,19 +50,22 @@ export function comparisonStory(input: ComparisonStoryInput): StoryDocument {
     chapters:
       input.chapters === undefined
         ? [
-            {
-              id: chapterId,
-              title:
-                input.title ??
-                (input.kind === 'lever'
-                  ? 'Почему рычаг поворачивается?'
-                  : 'Поможет ли другой резерв?'),
-              beats: [
-                { id: 'before', operation: { model: id, name: 'baseline' }, seconds: 2 },
-                { id: 'change', operation: { model: id, name: 'change' }, seconds: 2 },
-                { id: 'compare', operation: { model: id, name: 'compare' }, seconds: 2 },
-              ],
-            },
+            defaultChapter(
+              {
+                id: 'compare',
+                title:
+                  input.title ??
+                  (input.kind === 'lever'
+                    ? 'Почему рычаг поворачивается?'
+                    : 'Поможет ли другой резерв?'),
+                beats: [
+                  { id: 'before', operation: { model: id, name: 'baseline' }, seconds: 2 },
+                  { id: 'change', operation: { model: id, name: 'change' }, seconds: 2 },
+                  { id: 'compare', operation: { model: id, name: 'compare' }, seconds: 2 },
+                ],
+              },
+              [id, viewId],
+            ),
           ]
         : input.chapters,
   };

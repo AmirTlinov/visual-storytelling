@@ -3,6 +3,7 @@ import type { StoryResource } from '../story/resources.js';
 import type { ModelValues } from '../story/model.js';
 import { probabilityInputs } from './probability-model.js';
 import { samplingInputs } from './sampling-model.js';
+import { defaultChapter } from './chapter-identity.js';
 export interface ProbabilityStoryInput {
   recipe: 'probability' | 'sampling';
   id?: string;
@@ -94,9 +95,6 @@ export function probabilityStory(input: ProbabilityStoryInput): StoryDocument {
   const operations = sampling
     ? ['setup', 'sample', 'interval']
     : ['scores', 'weights', 'normalize'];
-  let chapter = 'derive';
-  while (reserved.has(chapter) || operations.some((name) => reserved.has(`${chapter}.${name}`)))
-    chapter += '.story';
   return {
     version: 2,
     ...(input.title !== undefined && { title: input.title }),
@@ -118,15 +116,18 @@ export function probabilityStory(input: ProbabilityStoryInput): StoryDocument {
     chapters:
       input.chapters === undefined
         ? [
-            {
-              id: chapter,
-              title: sampling ? 'Насколько точна доля успехов?' : 'Как оценки становятся долями?',
-              beats: operations.map((name, index) => ({
-                id: name,
-                operation: { model: id, name },
-                seconds: index === 1 ? 3 : 1.5,
-              })),
-            },
+            defaultChapter(
+              {
+                id: 'derive',
+                title: sampling ? 'Насколько точна доля успехов?' : 'Как оценки становятся долями?',
+                beats: operations.map((name, index) => ({
+                  id: name,
+                  operation: { model: id, name },
+                  seconds: index === 1 ? 3 : 1.5,
+                })),
+              },
+              reserved,
+            ),
           ]
         : input.chapters,
   };

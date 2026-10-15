@@ -35,8 +35,8 @@ export function fractionInputs(value: unknown): ModelValues {
     )
   )
     throw new Error('Unknown fraction input.');
-  const action = input.action ?? 'move';
-  if (!['move', 'copy'].includes(action as string))
+  const action = input.action === undefined ? 'move' : input.action;
+  if (typeof action !== 'string' || !['move', 'copy'].includes(action))
     throw new Error('Choose moving the pieces or copying the first fraction.');
   const normalized: ModelValues = { action: action as string };
   for (const side of ['left', 'right']) {

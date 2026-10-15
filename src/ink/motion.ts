@@ -127,34 +127,37 @@ function prepareText(text: SVGTextElement) {
     group.setAttribute('transform', text.getAttribute('transform')!);
   text.after(group);
   const strokes: SVGPathElement[] = [];
-  measureText(text, (measured) =>
-    Array.from(text.textContent ?? '').forEach((char, i) => {
-      if (/\s/.test(char)) return;
-      const glyph = SketchPencil[char];
-      if (!glyph)
-        throw Error(`No pen strokes for ${char}; add them in src/ink/glyphs.ts or use static text`);
-      const advance = measured.getSubStringLength(i, 1),
-        position = measured.getStartPositionOfChar(i),
-        letter = document.createElementNS(NS, 'g');
-      letter.setAttribute(
-        'transform',
-        `translate(${position.x} ${position.y}) matrix(${handwritingTransform(char, advance, size, profile).join(' ')})`,
-      );
-      group.append(letter);
-      glyph.forEach((d) => {
-        const path = document.createElementNS(NS, 'path');
-        path.setAttribute('d', d);
-        path.setAttribute('fill', 'none');
-        path.setAttribute('stroke', 'currentColor');
-        path.setAttribute('stroke-width', String(profile.stroke));
-        path.setAttribute('stroke-linecap', 'round');
-        path.setAttribute('stroke-linejoin', 'round');
-        registerGlyph(path, d);
-        letter.append(path);
-        strokes.push(path);
-      });
-    }),
-  );
+  if (text.textContent)
+    measureText(text, (measured) =>
+      Array.from(text.textContent ?? '').forEach((char, i) => {
+        if (/\s/.test(char)) return;
+        const glyph = SketchPencil[char];
+        if (!glyph)
+          throw Error(
+            `No pen strokes for ${char}; add them in src/ink/glyphs.ts or use static text`,
+          );
+        const advance = measured.getSubStringLength(i, 1),
+          position = measured.getStartPositionOfChar(i),
+          letter = document.createElementNS(NS, 'g');
+        letter.setAttribute(
+          'transform',
+          `translate(${position.x} ${position.y}) matrix(${handwritingTransform(char, advance, size, profile).join(' ')})`,
+        );
+        group.append(letter);
+        glyph.forEach((d) => {
+          const path = document.createElementNS(NS, 'path');
+          path.setAttribute('d', d);
+          path.setAttribute('fill', 'none');
+          path.setAttribute('stroke', 'currentColor');
+          path.setAttribute('stroke-width', String(profile.stroke));
+          path.setAttribute('stroke-linecap', 'round');
+          path.setAttribute('stroke-linejoin', 'round');
+          registerGlyph(path, d);
+          letter.append(path);
+          strokes.push(path);
+        });
+      }),
+    );
   text.style.fillOpacity = '0';
   // Include small pen-lift intervals between strokes. Their placement is stable.
   const weights = strokes.map((p) => geometry(p).length + 0.9),

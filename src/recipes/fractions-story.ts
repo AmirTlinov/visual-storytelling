@@ -1,6 +1,7 @@
 import type { AuthoredChapter, StoryDocument, StoryView } from '../story/document-schema.js';
 import type { ModelValues } from '../story/model.js';
 import { fractionInputs } from './fractions-model.js';
+import { defaultChapter } from './chapter-identity.js';
 export interface FractionsStoryInput {
   recipe?: 'fractions';
   id?: string;
@@ -28,9 +29,7 @@ export function fractionsStory(input: FractionsStoryInput): StoryDocument {
           },
         ]
       : input.views;
-  let chapter = 'together';
-  while ([id, ...(Array.isArray(views) ? views.map((view) => view?.id) : [])].includes(chapter))
-    chapter += '.story';
+  const occupied = [id, ...(Array.isArray(views) ? views.map((view) => view?.id) : [])];
   return {
     version: 2,
     ...(input.title !== undefined && { title: input.title }),
@@ -39,16 +38,19 @@ export function fractionsStory(input: FractionsStoryInput): StoryDocument {
     chapters:
       input.chapters === undefined
         ? [
-            {
-              id: chapter,
-              title: 'Собираем части одного целого',
-              beats: [
-                { id: 'align', operation: { model: id, name: 'align' }, seconds: 1 },
-                { id: 'partition', operation: { model: id, name: 'partition' }, seconds: 2 },
-                { id: 'collect', operation: { model: id, name: 'collect' }, seconds: 2 },
-                { id: 'result', operation: { model: id, name: 'finish' }, seconds: 1 },
-              ],
-            },
+            defaultChapter(
+              {
+                id: 'together',
+                title: 'Собираем части одного целого',
+                beats: [
+                  { id: 'align', operation: { model: id, name: 'align' }, seconds: 1 },
+                  { id: 'partition', operation: { model: id, name: 'partition' }, seconds: 2 },
+                  { id: 'collect', operation: { model: id, name: 'collect' }, seconds: 2 },
+                  { id: 'result', operation: { model: id, name: 'finish' }, seconds: 1 },
+                ],
+              },
+              occupied,
+            ),
           ]
         : input.chapters,
   };

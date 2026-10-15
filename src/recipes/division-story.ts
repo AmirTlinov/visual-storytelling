@@ -1,5 +1,6 @@
 import type { StoryDocument, AuthoredChapter, StoryView } from '../story/document-schema.js';
 import { divisionModel } from './division-model.js';
+import { defaultChapter } from './chapter-identity.js';
 
 export interface DivisionStoryInput {
   recipe?: 'division';
@@ -25,8 +26,6 @@ export function divisionStory(input: DivisionStoryInput): StoryDocument {
         ]
       : input.views;
   const occupied = new Set([model, ...(Array.isArray(views) ? views.map((view) => view?.id) : [])]);
-  let chapterId = 'experience';
-  while (occupied.has(chapterId)) chapterId += '.story';
   return {
     version: 2,
     ...(input.title !== undefined && { title: input.title }),
@@ -35,31 +34,34 @@ export function divisionStory(input: DivisionStoryInput): StoryDocument {
     chapters:
       input.chapters === undefined
         ? [
-            {
-              id: chapterId,
-              title: input.title ?? 'Остаток от деления',
-              beats: [
-                {
-                  id: 'gather',
-                  action: 'Собрать предметы',
-                  operation: { model, name: 'gather' },
-                  seconds: 1.2,
-                },
-                {
-                  id: 'group',
-                  action: 'Разложить по полным группам',
-                  operation: { model, name: 'group' },
-                  seconds: 4,
-                },
-                {
-                  id: 'remainder',
-                  action: 'Сравнить остаток с размером группы',
-                  operation: { model, name: 'remainder' },
-                  seconds: 2.8,
-                  focus: [`${model}:remainder`],
-                },
-              ],
-            },
+            defaultChapter(
+              {
+                id: 'experience',
+                title: input.title ?? 'Остаток от деления',
+                beats: [
+                  {
+                    id: 'gather',
+                    action: 'Собрать предметы',
+                    operation: { model, name: 'gather' },
+                    seconds: 1.2,
+                  },
+                  {
+                    id: 'group',
+                    action: 'Разложить по полным группам',
+                    operation: { model, name: 'group' },
+                    seconds: 4,
+                  },
+                  {
+                    id: 'remainder',
+                    action: 'Сравнить остаток с размером группы',
+                    operation: { model, name: 'remainder' },
+                    seconds: 2.8,
+                    focus: [`${model}:remainder`],
+                  },
+                ],
+              },
+              occupied,
+            ),
           ]
         : input.chapters,
   };
