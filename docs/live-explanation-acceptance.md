@@ -4,10 +4,16 @@
 Этот журнал хранит доказательства и открытые условия, а не заменяет приёмку установленного выпуска.
 Целевая платформа milestone — macOS Apple Silicon; Linux и другие ОС отложены пользователем.
 
-Текущий установленный выпуск0.36.0/core0.48.0: API и SDK/browser cycle PASS;
-полный200/200 speed gate FAIL (p95 source533,569мс, viewer359,760мс).
-Новая human visual/learning приёмка рычага ожидается. Срезы14–15, финальная
-приёмка01–03 и milestone открыты. Ниже сохранена хронология; свежие результаты в конце.
+Установлен plugin0.37.1/core0.49.1, исходный код5729841. Physical release,
+SDK/browser exports и все4полных silent playback прошли проверку; независимое
+GitHub review не нашло существенных замечаний,25review threads закрыты.
+Полный200source/200viewer набор0.37.0 дал p95 145,815/54,034мс;362исполняемых
+файла core совпадают с0.37.1. Повторный pilot0.37.1:152,242/75,620мс,18верных состояний.
+Амир принял видимость движения и управление рычагом. Учебный прогноз оказался
+неверным; корректный результат показан в опыте, перенос пока не подтверждён.
+Авторский5/20, native container pixels и human full-story/listening остаются открытыми.
+Срезы14–15, финальная приёмка01–03 и milestone не закрыты. Голос опционален.
+Ниже сохранена хронология; свежие результаты в конце.
 
 ## GUI-561: группы и остаток
 
@@ -1382,3 +1388,184 @@ README/INSTALL сохраняют текущий Mac scope, help больше н
 синтез; frame и optional voice согласованы с PHILOSOPHY. Старые pins и принятые
 визуальные/звуковые fixtures сохранены. Кандидат ещё не установлен; новые
 author30, full playback и итоговые скоростные gates остаются открытыми.
+
+
+Установлен0.37.0/core0.49.0 из0582301. Release SHA256
+`623ee378c8a0601bab8f2c6b607b7882050ed82216284112c0b380e244e1e01e`,
+core build `c14038c0e870747cff7a3ed662740a288387b8d7314309b66007623ca6ca63d1`.
+Package benchmark/distribution11/11 PASS, включая реальный здоровый v3 manual
+SDK сценарий. Installed lever cycle PASS:
+`artifacts/slice14/lever-installed/run-0fb0ee70-6cc0-40c3-90ed-496e48e0af56`.
+Installed custom modules PASS: `artifacts/slice14/0.37.0-installed-custom-modules.log`.
+Pin0354 сохранил SHA4dc316bd93cc046771bf449f9ad23aaa4a38ec70b2bb1fe82e442c1711547ac4.
+Native MCP чата ещё читает0.36.0; API/пиксели0.37.0 проверены на разрешённой
+SDK/browser surface, без нового запроса рестарта.
+
+Короткий0.37.0 pilot9source+9viewer: все18предметных результатов и6presentation
+checks PASS, errors:[]. Source p50102,511/p95130,232/max130,232мс;
+viewer p5022,286/p9552,031/max52,031мс. Набор
+`artifacts/slice14/input-frame-check/run-59eff856-0b34-4339-8fea-9ba9b1bc31c1`.
+Он не заменяет полные200/200 или предыдущие FAIL.
+
+15октября в21:34МСК Амир подтвердил новый рычаг: «Да, теперь видно и удобно».
+Это закрывает замечание о видимости изменений и управлении на0.36.0; рисунок
+0.37.0 сохраняет этот визуал. Ответ на новый прогноз (6Н×30см против4Н×35→50см)
+и перенос к правому плечу60см ещё не получен; learning не объявляется PASS.
+Начат новый author30 v3 на физическом0.37.0, по одному свежему GPT-6.1-sol low
+на задачу; installed skill/API доступны до нового вопроса, все дальнейшие
+действия учитываются. Bootstrap и9SHA harness сохранены до первого вопроса;
+текущий набор `artifacts/slice14/author-sdk-0.37.0/run-ee3c0902-85b4-48ea-9328-fe10d44bc692`.
+
+Первое новое author задание0.37.0: правильные условия11/5→15/5, полноценное
+v3 manual evidence, видимые initial/changed PNG и короткий связный текст PASS;
+first pixel8,642с, finish35,880с —5/20 FAIL. До create прошло7,103с; его SDK
+время1,148с, последующие вызовы7–221мс. Остальное — работа автора и переходы
+между инструментами; всё сохранено в отсчёте. Набор остановлен после1/30как
+диагностический, полного author30 нет. Готовится отдельная проверка объединённых
+клиентских действий без готовых ответов и без сокращения визуальных проверок.
+
+GitHub independent review0582301 завершён без существенных замечаний:
+https://github.com/AmirTlinov/visual-storytelling/pull/2#issuecomment-6199481980.
+Неразрешённых review threads нет. Moving PNG установленного0.36.0 и0.37.0
+побайтно совпадает (SHA3ff52ad49c0f495cda791158ff9a81b3f964b7929f02b32ed45d956c56628bbf):
+принятый рисунок движения сохранён. Это дополняет отдельный cycle0.37.0.
+
+В21:51МСК MCP этого чата обновился без рестарта: живой story_help вернул
+декларации физического0.37.0, inspect.objects и comparisonSubject.parameters.
+Это native API PASS; native container pixels по-прежнему отдельно не подтверждены.
+Ответ «н» на учебный прогноз не содержит решения; learning остаётся открытым.
+Повторный вызов независимого low-profile автора завершился account usage limit
+до выполнения нового задания. Новое author task не стартовало; работа над
+установленными сценариями продолжается без обхода ограничений.
+
+### Полный installed speed0.37.0 — PASS
+
+Набор `artifacts/slice14/input-frame-check/run-cd896219-36d4-4519-aca3-9f2494964207`:200source+200trusted viewer,
+все400предметных состояний и6presentation checks PASS, errors:[].
+Source p5096,817/p95145,815/max294,508мс;
+viewer p5027,145/p9554,034/max114,022мс.
+Пороги поp95:250мс/100мс — оба PASS. SDK p95159,274мс.
+AppleM5Max/18CPU/128GiB/macOS27; loadavg1:8,34→10,84.
+Шесть SHA harness зафиксированы до начала. Тяжёлые проверки не выполнялись
+одновременно; все slow samples сохранены. Это отклик установленной карточки;
+авторский5/20 с работой агента остаётся отдельным открытым gate.
+
+Installed GPT0.37.0 cycle PASS:
+`artifacts/slice14/gpt-installed/run-c1d659b7-a443-4f4a-82f9-d2f3c0cb23e1`.
+Настоящая фраза «птица сидит на» изменяет trace; logits независимо пересчитаны
+как finalNorm×фактические tokenEmbedding weights, вероятность каждой строки
+суммируется в1. Viewer undo/redo, source input edit, собственный subject-model.js
+edit/undo, reopen, play, current silent HTML/PNG и неизменный pin PASS; errors:[].
+Две ошибки приёмочного сценария сохранены: пропущен BOS token; продолжение
+после job до показанной ревизии. Вторую защитный fence корректно отклонил.
+Новый сценарий ждёт exact shown source без pending update перед продолжением;
+исходники runtime ради этих проверок не менялись.
+
+Installed spatial0.37.0 source cycle PASS (26,45с):
+`artifacts/slice14/installed-spatial-0.37.0/receipt.json`.
+Create, concealed3D preparation, source edit, same order/selection/time22s,
+390/1200px screenshots, semantic undo иreopen PASS; errors:[].
+
+### Коррекция композиции GPT0.37.1
+
+Полный просмотр0.37.0 обнаружил пересечение подписи позиции с первым вектором.
+Регрессия до исправления воспроизвела дефект на960px. Владелец — embeddingDrawing:
+три числовых ряда теперь имеют явную высоту и интервалы под подписи; общий
+vector сохраняет прежние defaults у остальных рисунков.20browser и16model
+проверок GPT PASS; свежие build/check/previews PASS.
+Уточнён skill: context успешного ответа пригоден для продолжения, inspect нужен
+для подробностей/конфликтов; SDK хранит непрозрачный context в клиенте и проверяет
+последовательные вызовы без лишней генерации токенов через модель. Это изменение
+не даёт нового5/20 PASS. Итоговая установка и проверки core0.49.1/plugin0.37.1 ниже.
+
+Первый full-playback script0.37.0 не завершился: ждал input gate у82с вместо
+его авторского старта74с и читал необязательный playing getter. Raw failure сохранён.
+Сценарий теперь читает gate из документа/review и authoritative inspect.playing;
+полный playback будет повторён на установленном исправленном выпуске.
+
+Установлен0.37.1/core0.49.1 из5729841; releaseSHA
+`90c6f9cc1d58bce8858e01d440787f1f039d95029fdc26117f3f6ae0046d7d55`,
+core build `fc0eb981f6d8e372b3c48086f88cfcbf6042218c99c640f5b0682a9e06b4e76a`.
+Сравнение всех362исполняемых JS/CSS/font/WASM core файлов с0.37.0:
+побайтное совпадение, удалённых нет (`artifacts/slice14/0.37.1-core-bytes.json`).
+Новая композиция GPT и skill поставлены из общего source; основной runtime
+поведения не менялся. Итоговые full silent playback и physical release checks ниже.
+Запрос повторного independent GitHub review5729841:
+https://github.com/AmirTlinov/visual-storytelling/pull/2#issuecomment-6200044775.
+
+GPT0.37.1 full runtime playback дошёл0→94с, через реальный prediction/check
+на74с;4928compositor frames сохранены. Wall87,931с: явный ответ на gate
+завершает8-секундное окно ожидания и переводит к82с; это записанное предметное
+действие, не скрытая начальная перемотка. Новый embedding проверен по настоящему
+кадру20,5с. Набор run-14097d6a сохраняет законченный GPT case и последующую
+ошибку harness: factory-based spatial handle не обязан иметь authoring.document.
+Проверка capabilities исправлена; оставшиеся3примера проверены отдельным
+набором ниже. Runtime ради этой ошибки не менялся.
+
+Оставшиеся3installed playback cases0.37.1 PASS:
+`artifacts/slice14/installed-playback/run-3ea628b2-a229-401c-aecc-589e0821f0e0`.
+Spatial39,1с→39,254wall/2272frames; cube21с→21,145wall/1242frames;
+push-block26с→26,224wall/1524frames; errors:[]. Вместе с завершённым GPT
+это4полностью пройденных runtime сценария на одном неизменяемом выпуске.
+Это silent инженерная проверка playback/frames, не human learning/listening PASS.
+
+Physical installed release0.37.1 PASS (177,285с):
+`artifacts/slice14/0.37.1-installed-release.log`. Shown/working revision,
+current checkpoint, HTML/PNG/SVG/source, leases иexport во время изменений
+проверены реальными jobs. Mean PNG channel difference с показанным кадром0.
+Озвучка остаётся выключенной; синтез не запускался.
+Trial guards5/5 иpackage/benchmark7/7 PASS.
+
+Independent GitHub review5729841 CLEAR:
+https://github.com/AmirTlinov/visual-storytelling/pull/2#issuecomment-6200103251.
+Current installed0.37.1 pilot9source+9viewer PASS, все18состояний верны, errors:[].
+`artifacts/slice14/input-frame-check/run-6ef148f0-c971-437f-81c9-34ea712e5875`:
+source p50126,399/p95152,242/max152,242мс; viewer47,234/75,620/75,620мс.
+Он дополняет полный200/2000.37.0 и proof362identical core files; полного
+200/200на0.37.1не объявляю. Native MCP Apps inventory пуст, OS UI не запрашивался.
+
+Обычный CLI подтвердил доступность GPT-6.1-sol low. SDK ready сначала не прошёл
+из временного workspace-write профиля без сети; parent SDK работал. Процессный
+network_access=true в уже разрешённой сетевой среде подтвердил ready0.37.1;
+approval/safety bypass flags не используются. До этого новые вопросы не стартовали.
+Для свежей серии выбран один ephemeral CLI на задачу, единый frozen prompt,
+skill/API warmup до неизвестного brief, все дальнейшие мысли/действия/проверки
+в clock. Thin helpers не выбирают операции и не решают вопросы; агент может
+хранить непрозрачный context и последовательно передавать собственные вызовы.
+
+### Завершение текущего пакета,15октября
+
+По просьбе Амира новая длинная серия не запускается. Текущий installed выпуск
+0.37.1 сохранён; источник5729841 прошёл независимое review без существенных
+замечаний. Все25предыдущих review threads разрешены. Этот журнал исключён из
+пакета и не меняет SHA установленного выпуска.
+
+Свежий CLI author набор
+`artifacts/slice14/author-batched-0.37.1/run-f3773ab3-5054-4cf0-b5bd-ca370f23a67e`
+остановлен после5завершённых попыток из30. Все5неуспешны, first pixels не получены.
+Первые4автора ошиблись в envelope тестового HTTP transport: формат action/call
+не был явно описан перед brief. У пятого story_create принят с корректным lever
+document, затем observe:first завершился30-секундным timeout получения context
+карточки. Причина этого timeout пока не установлена. Ошибки и CLI traces сохранены;
+набор диагностический, его нельзя называть полным author30 или timing PASS.
+Для разбора следующему исполнителю: сначала воспроизвести timeout с сохранённым
+документом, затем явно описать transport и проверить нейтральный call/context
+во время warmup, до неизвестного задания. Не давать готовые операции/ответы.
+
+19:19:31UTC приостановлено только расписание следующих CLI процессов;
+активный автор4продолжил работу и закончил trial. Его часы не останавливались.
+После завершения driver и benchmark server закрыты; незавершённого trial нет.
+cohort.json успел сохранить4строки, пятая остаётся в trial-4.json; отдельный
+cohort-status.json явно отмечает5завершённых диагностических попыток.
+
+Учебная проверка: на вопрос6Н×30см против4Н×50см Амир ответил «слева».
+Это неверный прогноз:180<200Н·см. В открытой принятой браузерной карточке0.36.0
+выставлены эти условия, рассказ проигран полностью; скриншот подтвердил правый
+конец внизу,6Н/30см и4Н/50см у грузов. Перенос на60см предложен отдельно,
+ответа пока нет. Learning PASS не объявляется. Принятые удобство и видимость
+изменений сохраняются как отдельное свидетельство, без подмены ими понимания.
+
+Native story_help по-прежнему читает0.37.0; его core API совпадает с0.37.1.
+Нативные пиксели Codex не подтверждены, SDK/browser fallback разрешён пользователем.
+Вспомогательные hosts старых проверок закрыты; пользовательский опыт61550 оставлен.
+Следующий пакет ограничен оставшимися gate14;15иmilestone ожидают их приёмки.
