@@ -839,3 +839,47 @@ Build/check PASS. Реальная математика, документ и lif
 Текущее нативное подключение чата по-прежнему читает API 0.28.11; OS-native
 проверка не заявляется. Браузерная приёмка разрешена пользователем.
 Следующий срез — GUI-600. Скоростные gates 5/20 и финальные 13–15 остаются открытыми.
+
+## Исправления перед срезом 13
+
+Установлен plugin 0.30.0 / core 0.42.0, macOS arm64.
+Release `e6bb297be8ef225c47395ee39f616f1e06675e3d72fadea95b9b7123df4c3244`,
+core build `22c15948e7bd6be7654db3a885195102af8d1bffba8bce69278994dab98daa89`,
+архив SHA `15a33e26c8bb2cf242fe54311b95bf8ccea9657bcc1c25d6b963aa6d4fc3252c`.
+
+Закрыты найденные ревью ошибки: явные null в рецептах, legacy runtime без API v2,
+первый переход static → story с ручными условиями, сериализация бесконечного
+camera range и чтение прежнего checkpoint, неудачный handoff SimulationMode.
+
+Публикация controller готовит UI до принятия внешних ресурсов и освобождения
+предшественника. Retirement/callback failures диагностируются; принятый controller
+сохраняется. Общая аудиодорожка продолжает играть после замены. При заимствовании
+рисунка frozen presentation сохраняет принятые pixels и object meanings; boundary
+capture ждёт готовности обеих сторон. Реальный WebGL snapshot проверен при одном
+renderer, без продвижения модели. Это расширяет проверку GPU publication среза 12.
+
+Отмена, failed rollback, dispose/remount, черновик поля и позднее завершение проверены
+отдельно. После failed rollback кадр сохраняется и ввод блокируется до успешного
+восстановления. Конкурентная замена получает scene_authoring_busy до завершения
+предыдущей. Единственный authored focus обслуживает оба пути IllustratedStory;
+выбор зрителя независим.
+
+Build/check PASS. Итоговые regressions 17/17, GPT browser 19/19, shell chrome 10/10.
+Независимое review с браузерными probes CLEAR. Установленный MCP и SDK-карточка:
+division/fractions/dependency-route, seek/reverse, semantic edit/undo, same handle,
+static detach; actual viewport 390 dark/reduced и 1200 light. Clipping, unreadable,
+overflow, pageerrors — 0. Голосовая модель/API не запускались. OS-native pixels не
+проверены; браузерная приёмка разрешена пользователем.
+
+| Удалённый путь | Владелец | Потребители | Доказательство |
+| --- | --- | --- | --- |
+| Частный DivisionFocus | scene-objects / svg-contour | single subject, factory chapters | три установленных семейства, reverse, resize |
+| Dispose перед публикацией binding | scene/controller-view / SceneShell | attach/detach, narrated replacement | failed precommit, throwing retirement, shared media |
+| Snapshot до paint и раскрытый borrowed renderer | frozen-presentation / Drawing.ready | chapter preview, document replace, GPU raster | delayed ready, cancellation, failed rollback, real WebGL pixels |
+| Несогласованные pending-метки | presentation lifecycle | composition, objects, GPT | cold concealed math, cancellation, accepted SVG |
+| Делегирование legacy API до проверки | runtime-package | semantic authoring | trusted old pin, missing entry/export |
+
+Доказательства: `artifacts/slice13/installed-0.30.0/acceptance.json`,
+`final-regressions.log`, `final-accepted-gpt.log`, `final-chrome.log`,
+`independent-review.md`. Это приёмка пакета корректности. GUI-600 и срезы 14–15,
+скоростные gates и согласованный финальный выпуск milestone остаются открытыми.

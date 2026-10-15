@@ -11,6 +11,8 @@ import { editStoryDocument, authoredInputKeys, type StoryDocumentOperation } fro
 import { modelInputValues } from './model.js';
 import { documentSpeechApplicable } from './document-audibility.js';
 import { documentNarration } from './document-narration.js';
+import { freezePresentation } from './frozen-presentation.js';
+import { holdControlFocus } from '../scene/control-focus.js';
 
 type SubjectMoment = ReturnType<typeof documentModelsAt>;
 /** Compile a prepared drawing to the same shell and Story used by handwritten JS scenes. */
@@ -24,8 +26,14 @@ export async function mountIllustratedSubject(
   let document = initial;
   await SceneShell.ready();
   let controller: Story<ModelValues, string, SubjectMoment> | undefined;
+  let renderingOwner: object | undefined;
   let latest: SubjectMoment | undefined;
   let latestFrame: { frame: Frame; mode: 'story' | 'explore' } | undefined;
+  let releaseCover: (() => void) | undefined;
+  let coveredSnapshot: { value: unknown } | undefined;
+  let coverWasInert = false;
+  let interactionRestore: boolean | undefined;
+  let replacing = false;
   const shell = SceneShell.mount(root, {
     title: initial.title ?? recipe.title,
     heading: options.heading ?? (initial.title !== undefined ? 'navigation' : false),
@@ -43,10 +51,20 @@ export async function mountIllustratedSubject(
       );
       drawing.validate(document.models[0]!, document.views, values, []);
       drawing.render(document.models[0]!, document.views, next.models[document.models[0]!.id]!);
+      handle.emphasize([]);
       latest = next;
     },
   });
   const handle = root.scene!;
+  const lifetime = new AbortController();
+  shell.onDispose(() => lifetime.abort());
+  shell.onDispose(() => {
+    if (interactionRestore !== undefined && root.scene === handle) root.inert = interactionRestore;
+    interactionRestore = undefined;
+    releaseCover?.();
+    releaseCover = undefined;
+    coveredSnapshot = undefined;
+  });
   if (options.theme) handle.setTheme!(options.theme);
   let drawing: ReturnType<typeof recipe.create>;
   try {
@@ -112,15 +130,94 @@ export async function mountIllustratedSubject(
       authoredInputs?: readonly string[];
     } = {},
   ) {
+    signal = AbortSignal.any([lifetime.signal, ...(signal ? [signal] : [])]);
     signal?.throwIfAborted();
-    const { next, values, previous, script } = prepare(source, provisional, authoredInputs);
+    if (replacing)
+      throw Object.assign(new Error('The previous document replacement is still settling.'), {
+        code: 'scene_authoring_busy',
+      });
+    let proposal = prepare(source, provisional, authoredInputs);
+    replacing = true;
+    try {
+      const previousOwner = renderingOwner;
+      const wasInert = root.inert,
+        restoreInteraction = releaseCover ? coverWasInert : wasInert,
+        visual = { ready: !releaseCover };
+      const draft = holdControlFocus([root]);
+      const unregisterDraft = shell.onDispose(draft.release);
+      interactionRestore = restoreInteraction;
+      const previous = controller,
+        wasPlaying = previous?.player.state.playing;
+      root.inert = true;
+      try {
+        previous?.pause();
+        // Retire the old render intention before lending its drawing to a candidate.
+        if (previous?.phase !== 'failed') await previous?.ready();
+        signal?.throwIfAborted();
+        // An input already preparing when the edit arrived can have just become accepted.
+        if (previous?.presented !== proposal.previous)
+          proposal = prepare(source, provisional, authoredInputs);
+        renderingOwner = {};
+        if (latest && !releaseCover) {
+          coverWasInert = wasInert;
+          coveredSnapshot = { value: handle.snapshot() };
+          releaseCover = await freezePresentation({ element: shell.stage, drawing: {} }, signal);
+        }
+        await replacePrepared(proposal, visual, signal);
+      } finally {
+        if (controller === previous) renderingOwner = previousOwner;
+        if (visual.ready || lifetime.signal.aborted) {
+          releaseCover?.();
+          releaseCover = undefined;
+          coveredSnapshot = undefined;
+        }
+        if (root.scene === handle) {
+          root.inert = visual.ready || lifetime.signal.aborted ? restoreInteraction : true;
+          if (visual.ready || lifetime.signal.aborted) interactionRestore = undefined;
+        }
+        try {
+          if (!lifetime.signal.aborted && root.scene === handle) draft.restore();
+        } catch (error) {
+          root.dispatchEvent(
+            new CustomEvent('scene-callback-error', { bubbles: true, detail: error }),
+          );
+        } finally {
+          unregisterDraft();
+          draft.release();
+        }
+        if (
+          visual.ready &&
+          !lifetime.signal.aborted &&
+          wasPlaying &&
+          controller &&
+          !controller.waiting &&
+          controller.currentTime < controller.duration
+        )
+          await controller.player
+            .play()
+            .catch((error) =>
+              root.dispatchEvent(
+                new CustomEvent('scene-playback-error', { bubbles: true, detail: error }),
+              ),
+            );
+      }
+    } finally {
+      replacing = false;
+    }
+  }
+  async function replacePrepared(
+    { next, values, previous, script }: ReturnType<typeof prepare>,
+    visual: { ready: boolean },
+    signal?: AbortSignal,
+  ) {
+    const owner = {};
+    renderingOwner = owner;
     const nextModel = next.models[0]!;
     const baseline = document,
       acceptedMoment = latest,
-      acceptedFrame = latestFrame,
-      wasPlaying = controller?.player.state.playing;
+      acceptedFrame = latestFrame;
     const restoreDrawing = async () => {
-      if (!acceptedMoment || document !== baseline) return;
+      if (lifetime.signal.aborted || !acceptedMoment || document !== baseline) return;
       latest = acceptedMoment;
       latestFrame = acceptedFrame;
       drawing.render(
@@ -130,10 +227,14 @@ export async function mountIllustratedSubject(
         acceptedMoment.beat,
         acceptedFrame,
       );
+      handle.emphasize(acceptedMoment.beat?.focus ?? []);
       await drawing.ready?.();
+      visual.ready = true;
     };
     const render = (moment: SubjectMoment, frame?: typeof latestFrame) => {
+      visual.ready = false;
       drawing.render(nextModel, moment.views, moment.models[nextModel.id]!, moment.beat, frame);
+      handle.emphasize(moment.beat?.focus ?? []);
       latest = moment;
       latestFrame = frame;
     };
@@ -236,18 +337,19 @@ export async function mountIllustratedSubject(
           );
         },
         render(moment, frame, mode) {
-          if (active) render(moment, { frame, mode });
+          if (active && renderingOwner === owner) render(moment, { frame, mode });
           else prepared = { moment, frame: { frame, mode } };
         },
       });
       let audio: ReturnType<typeof candidate.prepareAudio> | undefined;
+      signal?.addEventListener('abort', candidate.dispose, { once: true });
       try {
         if (previous)
           candidate.restoreInputs(values, {
             time: Math.min(previous.time, script.duration),
             mode: previous.mode,
           });
-        else if (controller === undefined && document !== initial)
+        else if (controller === undefined && latest !== undefined)
           candidate.restoreInputs(values, { time: 0, mode: 'explore' });
         await candidate.ready();
         signal?.throwIfAborted();
@@ -259,8 +361,9 @@ export async function mountIllustratedSubject(
         render(prepared.moment, prepared.frame);
         await drawing.ready?.(signal);
         signal?.throwIfAborted();
-        audio?.commit();
-        shell.attachController(candidate);
+        // Publication synchronously transfers ownership; cancellation no longer owns this controller.
+        signal?.removeEventListener('abort', candidate.dispose);
+        shell.attachController(candidate, () => audio?.commit());
         controller = candidate;
         document = next;
         active = true;
@@ -271,7 +374,6 @@ export async function mountIllustratedSubject(
         } catch (failure) {
           rollbackFailure = failure;
         }
-        if (wasPlaying && controller) void controller.player.play().catch(() => {});
         releaseResources(
           [
             () => {
@@ -286,13 +388,19 @@ export async function mountIllustratedSubject(
           'Story document preparation failed.',
         );
         throw error;
+      } finally {
+        signal?.removeEventListener('abort', candidate.dispose);
       }
     }
     shell.setResources(next.resources ?? []);
     shell.setTitle(next.title ?? recipe.title, { visible: next.title !== undefined });
     handle.extend({
-      snapshot: () => latest && drawing.snapshot(latest.models[document.models[0]!.id]!),
+      snapshot: () =>
+        coveredSnapshot
+          ? coveredSnapshot.value
+          : latest && drawing.snapshot(latest.models[document.models[0]!.id]!),
     });
+    visual.ready = true;
   }
   const resize = () => {
     if (controller || !latest) return;
@@ -303,6 +411,7 @@ export async function mountIllustratedSubject(
       latest.beat,
       latestFrame,
     );
+    handle.emphasize(latest.beat?.focus ?? []);
   };
   const observer = new ResizeObserver(resize);
   observer.observe(shell.stage);

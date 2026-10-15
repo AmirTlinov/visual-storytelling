@@ -47,22 +47,34 @@ function mount(options: {
   const active = () => Boolean(player);
   const anchor = () => {
     const position = scene.capture({ basis: 'requested' });
-    return JSON.stringify([position.time, position.mode, position.values, position.subject]);
+    // The requested drawing may trail pause() until preparation completes.
+    // Story's accepted player time is already frozen at the handoff boundary.
+    return JSON.stringify([story.currentTime, position.mode, position.values, position.subject]);
   };
   function leave(refresh = true, remember = true) {
     request++;
     if (!player) return;
-    resumed = remember ? { anchor: anchored, state: options.checkpoint.capture() } : undefined;
     const previous = player;
     player = undefined;
-    previous.dispose();
-    liveElement.hidden = true;
-    element.hidden = wasHidden;
-    try {
-      options.onMode?.(false);
-    } finally {
-      if (refresh) story.update();
-    }
+    releaseResources(
+      [
+        () => {
+          resumed = remember
+            ? { anchor: anchored, state: options.checkpoint.capture() }
+            : undefined;
+        },
+        () => previous.dispose(),
+        () => {
+          liveElement.hidden = true;
+          element.hidden = wasHidden;
+        },
+        () => options.onMode?.(false),
+        () => {
+          if (refresh) story.update();
+        },
+      ],
+      'Simulation handoff cleanup failed.',
+    );
   }
   const stop = story.subscribe(() => {
     if (active() && story.requested !== frozen && anchor() !== anchored) leave(false, false);
@@ -72,37 +84,62 @@ function mount(options: {
     // A failed candidate does not own the visible experiment. Restore its accepted moment first.
     if (scene.rendering?.phase === 'failed') await scene.restore(scene.capture());
     const next = ++request;
+    const wasPlaying = story.player.state.playing;
     story.pause();
     const intended = anchor();
-    await story.ready();
-    if (disposed || next !== request || player || anchor() !== intended) return;
-    frozen = story.requested;
-    anchored = anchor();
-    const state =
-      restored ?? (resumed?.anchor === anchored ? resumed.state : options.checkpoint.start());
-    options.checkpoint.validate(state);
-    options.checkpoint.restore(state);
-    wasHidden = element.hidden;
+    let previousState: unknown,
+      captured = false;
+    const hidden = element.hidden;
     try {
+      await story.ready();
+      if (disposed || next !== request || player || anchor() !== intended) return;
+      frozen = story.requested;
+      anchored = anchor();
+      const state =
+        restored ?? (resumed?.anchor === anchored ? resumed.state : options.checkpoint.start());
+      options.checkpoint.validate(state);
+      previousState = options.checkpoint.capture();
+      captured = true;
+      options.checkpoint.restore(state);
+      wasHidden = hidden;
       player = SimulationPlayer.mount(liveElement, options.model);
       element.hidden = true;
       liveElement.hidden = false;
       options.onMode?.(true);
     } catch (cause) {
-      player?.dispose();
+      // A newer handoff or disposal owns the shared player and visible elements now.
+      if (disposed || next !== request) throw cause;
+      const previous = player;
       player = undefined;
-      liveElement.hidden = true;
-      element.hidden = wasHidden;
-      releaseResources(
-        [
-          () => {
-            throw cause;
-          },
-          () => options.onMode?.(false),
-          () => story.update(),
-        ],
-        'Simulation handoff preparation failed.',
-      );
+      const errors = [cause];
+      try {
+        releaseResources(
+          [
+            () => previous?.dispose(),
+            () => {
+              liveElement.hidden = true;
+              element.hidden = hidden;
+            },
+            () => {
+              if (captured) options.checkpoint.restore(previousState);
+            },
+            () => options.onMode?.(false),
+            () => story.update(),
+          ],
+          'Simulation rollback failed.',
+        );
+      } catch (error) {
+        errors.push(error);
+      }
+      if (wasPlaying && !disposed && next === request && anchor() === intended) {
+        try {
+          await delegated.play?.();
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      if (errors.length === 1) throw cause;
+      throw new AggregateError(errors, 'Simulation handoff preparation failed.');
     }
   }
   scene.extend({

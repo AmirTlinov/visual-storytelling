@@ -21,11 +21,11 @@ export function probabilityStory(input: ProbabilityStoryInput): StoryDocument {
   const sampling = input.recipe === 'sampling';
   if (!sampling && input.recipe !== 'probability')
     throw new Error('Select normalization or sampling.');
-  const id = input.id ?? input.recipe;
+  const id = input.id === undefined ? input.recipe : input.id;
   const reserved = new Set([
     id,
-    ...(input.resources ?? []).map((item) => item.id),
-    ...(input.chapters ?? []).flatMap((chapter) => [
+    ...(Array.isArray(input.resources) ? input.resources.map((item) => item?.id) : []),
+    ...(Array.isArray(input.chapters) ? input.chapters : []).flatMap((chapter: AuthoredChapter) => [
       chapter.id,
       ...chapter.beats.map((beat) => `${chapter.id}.${beat.id}`),
     ]),
@@ -85,7 +85,10 @@ export function probabilityStory(input: ProbabilityStoryInput): StoryDocument {
           limits: ['Нулевой вес из-за численного underflow отличается от явной маски.'],
         },
       ];
-  const resources: readonly StoryResource[] = [...defaults, ...(input.resources ?? [])];
+  const resources: readonly StoryResource[] = [
+    ...defaults,
+    ...(input.resources === undefined ? [] : input.resources),
+  ];
   const viewId = availableId('distribution', '.view'),
     secondId = availableId('scores', '.view');
   const operations = sampling
@@ -112,16 +115,19 @@ export function probabilityStory(input: ProbabilityStoryInput): StoryDocument {
           { id: secondId, kind: 'probability-scores', model: id },
           { id: viewId, kind: 'probability-distribution', model: id },
         ],
-    chapters: input.chapters ?? [
-      {
-        id: chapter,
-        title: sampling ? 'Насколько точна доля успехов?' : 'Как оценки становятся долями?',
-        beats: operations.map((name, index) => ({
-          id: name,
-          operation: { model: id, name },
-          seconds: index === 1 ? 3 : 1.5,
-        })),
-      },
-    ],
+    chapters:
+      input.chapters === undefined
+        ? [
+            {
+              id: chapter,
+              title: sampling ? 'Насколько точна доля успехов?' : 'Как оценки становятся долями?',
+              beats: operations.map((name, index) => ({
+                id: name,
+                operation: { model: id, name },
+                seconds: index === 1 ? 3 : 1.5,
+              })),
+            },
+          ]
+        : input.chapters,
   };
 }

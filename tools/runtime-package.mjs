@@ -306,6 +306,14 @@ async function updatePreparedSceneRuntime(destination, options, metadata) {
   return { scene: destination, changed: true, prepared: true, build: pin.build, dependency };
 }
 
+const documentMigrationRequired = () =>
+  Object.assign(
+    new Error(
+      'This pinned runtime predates StoryDocument v2. Explicitly migrate the project before document authoring.',
+    ),
+    { code: 'runtime_migration_required' },
+  );
+
 export async function storyDocumentAPI(directory, { installedFrom } = {}) {
   let pinned = await readPinnedRuntime(directory);
   if (pinned.archive && installedFrom) {
@@ -316,16 +324,9 @@ export async function storyDocumentAPI(directory, { installedFrom } = {}) {
   }
   if (pinned.archive)
     throw new Error('Install this project’s pinned dependencies before semantic authoring.');
-  const migrationRequired = () =>
-    Object.assign(
-      new Error(
-        'This pinned runtime predates StoryDocument v2. Explicitly migrate the project before document authoring.',
-      ),
-      { code: 'runtime_migration_required' },
-    );
   const entry = join(pinned.root, 'dist/story/document.js');
   await access(entry).catch((error) => {
-    if (error.code === 'ENOENT') throw migrationRequired();
+    if (error.code === 'ENOENT') throw documentMigrationRequired();
     throw error;
   });
   const api = await import(pathToFileURL(entry).href);
@@ -337,7 +338,7 @@ export async function storyDocumentAPI(directory, { installedFrom } = {}) {
       'authoredInputKeys',
     ].some((name) => typeof api[name] !== 'function')
   )
-    throw migrationRequired();
+    throw documentMigrationRequired();
   return api;
 }
 
@@ -345,9 +346,18 @@ export async function storyDocumentAPI(directory, { installedFrom } = {}) {
 export async function assertPreparedDocument(directory) {
   const pin = await readPreparedRuntime(directory);
   if (!pin) throw new Error('Document authoring requires a prepared StoryDocument project.');
-  const owner = pathToFileURL(join(pin.root, 'tools/runtime-package.mjs')).href;
-  if (owner !== import.meta.url) return (await import(owner)).assertPreparedDocument(directory);
   await storyDocumentAPI(directory);
+  const file = join(pin.root, 'tools/runtime-package.mjs');
+  const owner = pathToFileURL(file).href;
+  if (owner !== import.meta.url) {
+    await access(file).catch((error) => {
+      if (error.code === 'ENOENT') throw documentMigrationRequired();
+      throw error;
+    });
+    const api = await import(owner);
+    if (typeof api.assertPreparedDocument !== 'function') throw documentMigrationRequired();
+    return api.assertPreparedDocument(directory);
+  }
   const manifest = await readStoryProject(directory);
   if (!manifest)
     throw Object.assign(

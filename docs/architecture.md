@@ -256,3 +256,21 @@ Story.prepare и отменяется его signal. Принятый рисун
 `ready` и `SceneView.whenRendered` завершают GPU-кадр через существующий viewport;
 SceneShell.ready ожидает модель и её активный renderer. Перенос документа, контроллера
 и аудио ждёт ready; failed/cancelled candidate восстанавливает принятую композицию.
+
+
+Авторская подсветка идёт через `SceneHandle.emphasize` и общий contour в
+`scene-objects`/`controls/svg-contour`; выбор зрителя сохраняется отдельно. Оба пути
+IllustratedStory передают ему `beat.focus`. У division больше нет частного focus API.
+
+`scene/controller-view` готовит UI вне действующей карточки. SceneShell захватывает
+playback intent, принимает подготовленные внешние ресурсы, публикует binding и
+освобождает прежний controller. Ошибки retirement и уведомления `onMode` сообщаются
+через `scene-cleanup-error`/`scene-callback-error`; принятая сцена сохраняет управление.
+При правке играющий Story временно останавливается, прежний render теряет право
+менять общий рисунок, после принятия или отката восстанавливается playback intent.
+
+Boundary preview ждёт GPU paint каждой стороны. `story/frozen-presentation` сохраняет
+принятые пиксели и смысл объектов на время заимствования renderer. Если восстановление
+не удалось, fallback живёт до успешной публикации или dispose; обе причины ошибки
+сохраняются. Raster registry получает текущий буфер от его Viewport3D без второго
+renderer и продвижения времени модели или камеры.

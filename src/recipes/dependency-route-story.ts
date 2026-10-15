@@ -17,13 +17,21 @@ export function dependencyRouteStory(input: DependencyRouteStoryInput): StoryDoc
     (key) => !['recipe', 'id', 'title', 'inputs', 'views', 'chapters'].includes(key),
   );
   if (extra) throw new Error(`dependency-route.${extra}: unknown field.`);
-  const id = input.id ?? 'route';
-  const views = input.views ?? [
-    { id: id === 'network' ? 'network.view' : 'network', kind: 'dependency-network', model: id },
-    { id: id === 'status' ? 'status.view' : 'status', kind: 'order-status', model: id },
-  ];
+  const id = input.id === undefined ? 'route' : input.id;
+  const views =
+    input.views === undefined
+      ? [
+          {
+            id: id === 'network' ? 'network.view' : 'network',
+            kind: 'dependency-network',
+            model: id,
+          },
+          { id: id === 'status' ? 'status.view' : 'status', kind: 'order-status', model: id },
+        ]
+      : input.views;
   let chapterId = 'journey';
-  while ([id, ...views.map((view) => view.id)].includes(chapterId)) chapterId += '.story';
+  while ([id, ...(Array.isArray(views) ? views.map((view) => view?.id) : [])].includes(chapterId))
+    chapterId += '.story';
   return {
     version: 2,
     ...(input.title !== undefined && { title: input.title }),
@@ -35,31 +43,34 @@ export function dependencyRouteStory(input: DependencyRouteStoryInput): StoryDoc
       },
     ],
     views,
-    chapters: input.chapters ?? [
-      {
-        id: chapterId,
-        title: input.title ?? 'Куда попадёт заказ?',
-        beats: [
-          {
-            id: 'start',
-            action: 'Послать один заказ',
-            operation: { model: id, name: 'reset' },
-            seconds: 1,
-          },
-          {
-            id: 'follow',
-            action: 'Проследить выбранный маршрут',
-            operation: { model: id, name: 'trace' },
-            seconds: 4,
-          },
-          {
-            id: 'result',
-            action: 'Проверить, куда дошёл заказ',
-            operation: { model: id, name: 'finish' },
-            seconds: 1,
-          },
-        ],
-      },
-    ],
+    chapters:
+      input.chapters === undefined
+        ? [
+            {
+              id: chapterId,
+              title: input.title ?? 'Куда попадёт заказ?',
+              beats: [
+                {
+                  id: 'start',
+                  action: 'Послать один заказ',
+                  operation: { model: id, name: 'reset' },
+                  seconds: 1,
+                },
+                {
+                  id: 'follow',
+                  action: 'Проследить выбранный маршрут',
+                  operation: { model: id, name: 'trace' },
+                  seconds: 4,
+                },
+                {
+                  id: 'result',
+                  action: 'Проверить, куда дошёл заказ',
+                  operation: { model: id, name: 'finish' },
+                  seconds: 1,
+                },
+              ],
+            },
+          ]
+        : input.chapters,
   };
 }

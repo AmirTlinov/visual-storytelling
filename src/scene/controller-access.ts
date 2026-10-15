@@ -1,6 +1,17 @@
 import type { Story, StoryMoment, StoryMode } from '../story/story.js';
 import type { ControlValue } from '../controls/fields.js';
 import type { SceneRendering } from '../scene-access.js';
+import type { SceneHandle, SceneRuntime } from '../scene-handle.js';
+
+/** Replace the complete controller capability set with its accepted static owner. */
+export function clearControllerAccess(
+  handle: SceneHandle,
+  keys: readonly PropertyKey[],
+  base: Pick<SceneRuntime, 'snapshot' | 'condition' | 'review' | 'ready'>,
+) {
+  for (const key of keys) Reflect.deleteProperty(handle, key);
+  handle.extend(base);
+}
 
 /** Live capabilities forward to the accepted Story; the shell owns its controls and layout. */
 export function controllerAccess<P, K extends string, S>(

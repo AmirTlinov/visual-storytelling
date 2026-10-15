@@ -81,6 +81,7 @@ export interface SceneAccessOwner {
     position: { time: number; mode: 'story' | 'explore' },
   ): void | Promise<void>;
   assertLive(): void;
+  assertInteractive?(): void;
 }
 export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
   const inspect = ({ presentation = true }: { presentation?: boolean } = {}): SceneInspection => {
@@ -330,6 +331,7 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
       for (const [index, c] of commands.entries()) {
         try {
           owner.assertLive();
+          if (c.type !== 'pause') owner.assertInteractive?.();
           signal?.throwIfAborted();
           validate(c);
           switch (c.type) {

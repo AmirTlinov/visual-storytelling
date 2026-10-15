@@ -1,6 +1,7 @@
 import type { sceneFrame } from '../scene-frame.js';
 import type { SceneFramePresentation } from '../scene.js';
 import type { conditionsPanel } from './conditions.js';
+import { holdControlFocus } from './control-focus.js';
 /** One placement owner keeps the same fields and focused drafts across frame scopes. */
 export function sceneChrome({
   root,
@@ -81,8 +82,7 @@ export function sceneChrome({
         (fields.parentElement === conditions && fieldsParent !== conditions));
     const keepEdit = moved && preserveFocus && ownedFocus,
       restoreFocus = keepEdit && document.hasFocus();
-    if (keepEdit)
-      for (const controls of [toolbar, fields]) controls.dataset.sceneControlsMoving = '';
+    const draft = keepEdit ? holdControlFocus([toolbar, fields]) : undefined;
     try {
       if ((!hasConditions || leavingConditions) && conditions.matches(':popover-open'))
         conditions.hidePopover();
@@ -104,12 +104,10 @@ export function sceneChrome({
       if (restoreFocus) {
         if (conditions.contains(focused) && !conditions.matches(':popover-open'))
           conditions.showPopover();
-        if (focused.checkVisibility() && document.activeElement !== focused)
-          focused.focus({ preventScroll: true });
+        draft?.restore();
       }
     } finally {
-      if (keepEdit)
-        for (const controls of [toolbar, fields]) delete controls.dataset.sceneControlsMoving;
+      draft?.release();
     }
     placeConditions();
   }

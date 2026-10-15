@@ -48,7 +48,9 @@ test('same ID follows accepted chapter on reverse seeks and excludes pending geo
         rendering: lab.scene.inspect().rendering,
         checkpoint: lab.scene.capture(),
         shown: [
-          ...document.querySelectorAll('[data-chapter]:not([hidden]):not([data-chapter-pending])'),
+          ...document.querySelectorAll(
+            '[data-chapter]:not([hidden]):not([data-presentation-pending])',
+          ),
         ].map((n) => n.dataset.chapter),
       }));
     await page.evaluate(async () => {
@@ -118,7 +120,14 @@ const document = {
       id: 'stopped',
       title: 'Где остановился заказ?',
       views: ['network'],
-      beats: [{ id: 'follow', operation: { model: 'route', name: 'trace' }, seconds: 1 }],
+      beats: [
+        {
+          id: 'follow',
+          focus: ['route:order:417'],
+          operation: { model: 'route', name: 'trace' },
+          seconds: 1,
+        },
+      ],
     },
     {
       id: 'reserved',
@@ -158,6 +167,12 @@ test('chapter factories consume full document trace, preserve viewer inputs and 
       await lab.scene.ready();
       lab.scene.select(['route:order:417']);
     });
+    assert.deepEqual(
+      await page.evaluate(() =>
+        [...document.querySelectorAll('[data-story-highlight]')].map((n) => n.dataset.object),
+      ),
+      ['route:order:417'],
+    );
     let state = await page.evaluate(() => lab.scene.snapshot().content);
     assert.equal(state.models.route.trace.blocked, 'provider');
     assert.deepEqual(
@@ -172,6 +187,12 @@ test('chapter factories consume full document trace, preserve viewer inputs and 
       ]);
     });
     state = await page.evaluate(() => lab.scene.snapshot().content);
+    assert.deepEqual(
+      await page.evaluate(() =>
+        [...document.querySelectorAll('[data-story-highlight]')].map((n) => n.dataset.object),
+      ),
+      [],
+    );
     assert.equal(state.models.route.reserve, 'independent');
     assert.equal(state.models.route.trace.status, 'delivered');
     await page.evaluate(async () => {
@@ -291,7 +312,9 @@ test('failed snapshot transition is prepared off screen and preserves the prior 
       capture: lab.scene.capture(),
       inspection: lab.scene.inspect(),
       visible: [
-        ...document.querySelectorAll('[data-chapter]:not([hidden]):not([data-chapter-pending])'),
+        ...document.querySelectorAll(
+          '[data-chapter]:not([hidden]):not([data-presentation-pending])',
+        ),
       ].map((n) => ({ id: n.dataset.chapter, text: n.textContent })),
     }));
     assert.equal(after.inspection.rendering.phase, 'failed');

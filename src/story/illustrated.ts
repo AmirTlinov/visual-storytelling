@@ -41,7 +41,7 @@ export interface IllustratedChapter extends Omit<SceneChapter, 'mount' | 'values
 export interface IllustratedStoryOptions
   extends Omit<
     SceneStoryOptions,
-    'title' | 'chapters' | 'subjectAt' | 'sharedControls' | 'speechApplicable'
+    'title' | 'chapters' | 'subjectAt' | 'emphasisAt' | 'sharedControls' | 'speechApplicable'
   > {
   document: StoryDocument | unknown;
   modules?: StoryModules;
@@ -176,6 +176,9 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
     sharedControls: document.models.flatMap((model) =>
       authoredInputKeys(document, model.id, model.inputs),
     ),
+    emphasisAt(frame) {
+      return (frame.subject as ReturnType<typeof documentModelsAt>).beat?.focus ?? [];
+    },
     subjectAt(frame) {
       const start = timeline.cues[frame.chapter]!.start;
       const values: Record<string, ModelValues> = Object.fromEntries(

@@ -239,6 +239,8 @@ export function cameraView3D({
         target: controls.target.toArray(),
         aspect: camera.aspect,
         ...range(),
+        // OrbitControls uses Infinity for an unconstrained orbit; JSON keeps it explicitly.
+        maxDistance: controls.maxDistance === Infinity ? null : controls.maxDistance,
         subjects: subjectIds(),
       };
     },
@@ -252,7 +254,7 @@ export function cameraView3D({
         near?: number;
         far?: number;
         minDistance?: number;
-        maxDistance?: number;
+        maxDistance?: number | null;
         subjects?: string[];
       };
       if (
@@ -263,15 +265,39 @@ export function cameraView3D({
         state.position.length !== 3 ||
         state.target.length !== 3 ||
         ![...state.position, ...state.target].every(Number.isFinite) ||
-        ![state.aspect, state.near, state.far, state.minDistance, state.maxDistance].every(
+        typeof state.aspect !== 'number' ||
+        !Number.isFinite(state.aspect) ||
+        state.aspect! <= 0 ||
+        new T.Vector3(...state.position).distanceToSquared(new T.Vector3(...state.target)) === 0
+      )
+        return false;
+      const distance = new T.Vector3(...state.position).distanceTo(new T.Vector3(...state.target));
+      // Older persisted views carry pose/aspect only. The current camera owner supplies
+      // their clipping range; widen it to contain the saved manual viewing distance.
+      const savedRange = [state.near, state.far, state.minDistance, state.maxDistance].every(
+        (value) => value === undefined,
+      )
+        ? {
+            near: Math.min(camera.near, distance * 1e-4),
+            far: Math.max(camera.far, distance * 1e4),
+            minDistance: Math.min(controls.minDistance, distance * 0.7),
+            maxDistance: Math.max(controls.maxDistance, distance * 4),
+          }
+        : {
+            near: state.near!,
+            far: state.far!,
+            minDistance: state.minDistance!,
+            maxDistance: state.maxDistance === null ? Infinity : state.maxDistance!,
+          };
+      if (
+        ![savedRange.near, savedRange.far, savedRange.minDistance].every(
           (value) => typeof value === 'number' && Number.isFinite(value),
         ) ||
-        state.aspect! <= 0 ||
-        state.near! <= 0 ||
-        state.far! <= state.near! ||
-        state.minDistance! < 0 ||
-        state.maxDistance! <= state.minDistance! ||
-        new T.Vector3(...state.position).distanceToSquared(new T.Vector3(...state.target)) === 0
+        savedRange.near <= 0 ||
+        savedRange.far <= savedRange.near ||
+        savedRange.minDistance < 0 ||
+        !(Number.isFinite(savedRange.maxDistance) || savedRange.maxDistance === Infinity) ||
+        savedRange.maxDistance <= savedRange.minDistance
       )
         return false;
       if (state.subjects?.length && !state.subjects.some((id) => subjectIds().includes(id)))
@@ -284,12 +310,7 @@ export function cameraView3D({
       following = false;
       camera.position.fromArray(state.position);
       controls.target.fromArray(state.target);
-      restoreRange({
-        near: state.near!,
-        far: state.far!,
-        minDistance: state.minDistance!,
-        maxDistance: state.maxDistance!,
-      });
+      restoreRange(savedRange);
       if (state.aspect !== camera.aspect) {
         camera.position
           .sub(controls.target)
@@ -298,9 +319,9 @@ export function cameraView3D({
       }
       // A checkpoint may focus one cell of a much larger authored shot. The
       // current shot's orbit limits must not push that saved viewpoint away.
-      const distance = camera.position.distanceTo(controls.target);
-      controls.minDistance = Math.min(controls.minDistance, distance);
-      controls.maxDistance = Math.max(controls.maxDistance, distance);
+      const restoredDistance = camera.position.distanceTo(controls.target);
+      controls.minDistance = Math.min(controls.minDistance, restoredDistance);
+      controls.maxDistance = Math.max(controls.maxDistance, restoredDistance);
       controls.update();
       invalidate();
       return true;

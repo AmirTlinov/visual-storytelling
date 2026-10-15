@@ -207,7 +207,7 @@
 .ve-scene:not([data-paper='false'])
   > .ve-scene-frame
   > .ve-scene-content
-  > .ve-scene-paper:not(:has(.vs-grid:not([hidden] *, [data-chapter-pending] *) > path)) {
+  > .ve-scene-paper:not(:has(.vs-grid:not([hidden] *, [data-presentation-pending] *) > path)) {
   background-image: var(--ve-grid);
   background-size: var(--ve-grid-size);
   background-position: var(--ve-grid-x) var(--ve-grid-y);

@@ -34,7 +34,7 @@ test('controller replacement retains prepared experiments, explicit restore time
             render:(state,frame,mode)=>rendered.push({count:state.count,time:frame.time,mode}),
           });
           const controller=create();shell.attachController(controller);
-          window.lab={root,shell,scene:root.scene,controller,create,rendered};
+          window.lab={root,shell,scene:root.scene,controller,create,rendered,mount:SceneShell.mount};
         });`,
     },
     outdir: '.',
@@ -157,6 +157,114 @@ test('controller replacement retains prepared experiments, explicit restore time
       hidden: true,
       chapter: 'Second chapter',
       chapterMenus: 1,
+    });
+    const preflight = await page.evaluate(async () => {
+      const candidate = lab.create(true),
+        accepted = lab.scene.currentTime;
+      let error;
+      try {
+        lab.shell.attachController(candidate, () => {
+          throw Error('resource adoption failed');
+        });
+      } catch (cause) {
+        error = cause.message;
+      }
+      candidate.dispose();
+      lab.scene.seek(3);
+      await lab.scene.ready();
+      return {
+        error,
+        accepted,
+        time: lab.scene.currentTime,
+        menus: document.querySelectorAll('.ve-chapter-menu').length,
+        players: document.querySelectorAll('.vs-player').length,
+      };
+    });
+    assert.deepEqual(preflight, {
+      error: 'resource adoption failed',
+      accepted: 7,
+      time: 3,
+      menus: 1,
+      players: 1,
+    });
+    const callbackFailure = await page.evaluate(async () => {
+      const root = document.createElement('main');
+      document.body.append(root);
+      const shell = lab.mount(root, {
+        title: 'Callback failure',
+        onMode() {
+          throw Error('mode notification failed');
+        },
+      });
+      const old = lab.create();
+      shell.attachController(old);
+      const candidate = lab.create();
+      candidate.restoreInputs({ count: 2 }, { time: 2, mode: 'explore' });
+      let diagnostic;
+      root.addEventListener('scene-callback-error', (event) => (diagnostic = event.detail.message));
+      shell.attachController(candidate);
+      await root.scene.ready();
+      let oldDisposed = false;
+      try {
+        old.input({ count: 9 });
+      } catch {
+        oldDisposed = true;
+      }
+      const result = {
+        diagnostic,
+        oldDisposed,
+        time: root.scene.currentTime,
+        players: root.querySelectorAll('.vs-player').length,
+      };
+      root.scene.dispose();
+      root.remove();
+      return result;
+    });
+    assert.deepEqual(callbackFailure, {
+      diagnostic: 'mode notification failed',
+      oldDisposed: true,
+      time: 2,
+      players: 1,
+    });
+    const plainHeading = await page.evaluate(() => {
+      lab.shell.attachController(lab.create());
+      return {
+        text: document.querySelector('h1').textContent,
+        menus: document.querySelectorAll('.ve-chapter-menu').length,
+        buttons: document.querySelectorAll('h1 button').length,
+      };
+    });
+    assert.deepEqual(plainHeading, { text: 'Underlying title', menus: 0, buttons: 0 });
+    const detached = await page.evaluate(async () => {
+      const failing = lab.create();
+      lab.shell.attachController(failing);
+      const dispose = failing.dispose;
+      failing.dispose = () => {
+        dispose();
+        throw Error('cleanup failed');
+      };
+      let error;
+      lab.root.addEventListener('scene-cleanup-error', (event) => (error = event.detail.message), {
+        once: true,
+      });
+      lab.shell.detachController();
+      const result = {
+        error,
+        mode: lab.shell.mode,
+        seek: typeof lab.scene.seek,
+        playerHidden: document.querySelector('[data-player]').hidden,
+      };
+      const retry = lab.create();
+      lab.shell.attachController(retry);
+      await lab.scene.ready();
+      return { ...result, retry: typeof lab.scene.seek };
+    });
+    assert.deepEqual(detached, {
+      error: 'cleanup failed',
+      mode: 'explore',
+      seek: 'undefined',
+      playerHidden: true,
+      retry: 'function',
     });
   } finally {
     await browser.close();

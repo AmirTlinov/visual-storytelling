@@ -1,4 +1,5 @@
 import { releaseResources } from '../lifecycle.js';
+import { registerRaster } from '../export/raster.js';
 import type { Material, Texture, Color } from 'three';
 import { pigments } from '../ink/palette.js';
 import { attachInspection } from './inspection.js';
@@ -79,6 +80,15 @@ function mount(
   const materials = new Map<ColorMaterial, MaterialInk>(),
     palette: Palette = {};
   const cleanups = new Set<() => void>();
+  cleanups.add(
+    registerRaster(canvas, () => {
+      if (disposed || renderer.getContext().isContextLost())
+        throw new Error('3D viewport is unavailable.');
+      // Copy the accepted scene without advancing its camera or model clocks.
+      renderer.render(scene, camera);
+      return canvas.toDataURL();
+    }),
+  );
   const removals = new Set<(object: ThreeKit.Object3D) => void>();
   const renderListeners = new Set<() => void>();
   const paintWaiters = new Set<(failed: boolean, cause?: unknown) => void>();

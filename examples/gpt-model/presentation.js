@@ -120,13 +120,13 @@ export function createGPTPresentation(shell) {
   function prepare(state, frame, signal) {
     if (
       !needsMath(state.values) ||
-      (!mathHost.hidden && !mathHost.hasAttribute('data-chapter-pending'))
+      (!mathHost.hidden && !mathHost.hasAttribute('data-presentation-pending'))
     )
       return;
     const revision = ++preparation;
     return (async () => {
       mathLayout();
-      mathHost.dataset.chapterPending = '';
+      mathHost.dataset.presentationPending = '';
       mathHost.style.clipPath = 'inset(100%)';
       mathHost.inert = true;
       mathHost.hidden = false;
@@ -140,7 +140,7 @@ export function createGPTPresentation(shell) {
           mathHost.hidden = true;
           mathHost.style.removeProperty('clip-path');
           mathHost.inert = false;
-          delete mathHost.dataset.chapterPending;
+          delete mathHost.dataset.presentationPending;
         }
       }
     })();
@@ -149,7 +149,7 @@ export function createGPTPresentation(shell) {
     preparation++;
     mathHost.style.removeProperty('clip-path');
     mathHost.inert = false;
-    delete mathHost.dataset.chapterPending;
+    delete mathHost.dataset.presentationPending;
     current = { ...state, modelId: identity.modelId };
     const nextRepresentation = `${identity.view.id}/${state.values.view}`;
     if (representation !== nextRepresentation) {

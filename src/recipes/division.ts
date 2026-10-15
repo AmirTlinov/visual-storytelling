@@ -17,8 +17,6 @@ import {
 
 /** Drawing capacity, separate from the unbounded safe-integer arithmetic model. */
 export { DIVISION_MAX_COUNT } from './division-capacity.js';
-export type DivisionFocusTarget = 'groups' | 'remainder' | 'equation';
-export type DivisionFocus = 'all' | readonly DivisionFocusTarget[];
 export interface DivisionDiagramOptions {
   width: number;
   height: number;
@@ -27,7 +25,6 @@ export interface DivisionDiagramOptions {
   progress: number;
   showEquation: boolean;
   text?: string;
-  focus?: DivisionFocus;
   viewIds?: { groups: string; equation?: string };
 }
 
@@ -64,13 +61,6 @@ export function divisionDiagram(surface: Surface, id: string) {
       (options.text !== undefined && typeof options.text !== 'string')
     )
       throw new Error('Division drawing needs valid equation and text options');
-    if (
-      options.focus !== undefined &&
-      options.focus !== 'all' &&
-      (!Array.isArray(options.focus) ||
-        options.focus.some((target) => !['groups', 'remainder', 'equation'].includes(target)))
-    )
-      throw new Error('Unknown division focus');
     if (
       options.viewIds &&
       (typeof options.viewIds.groups !== 'string' ||
@@ -319,19 +309,6 @@ export function divisionDiagram(surface: Surface, id: string) {
         second.at(...point(width / 2, equationY + font * 2.7));
         cleanups.push(second.dispose);
       }
-      const focuses = (['groups', 'remainder', 'equation'] as const).map((target) => {
-        const x = target === 'groups' ? targetX : target === 'equation' ? width / 2 : sourceX;
-        const y = target === 'equation' ? equationY + font * 0.3 : margin + font * 1.25;
-        return {
-          target,
-          mark: drawingPen.path(
-            layer,
-            `${id}:focus:${target}`,
-            `M${(x - sourceWidth * 0.28) / options.scale} ${y / options.scale} h${(sourceWidth * 0.56) / options.scale}`,
-            { width: 1.5 / options.scale },
-          ),
-        };
-      });
       return {
         canvas,
         layer,
@@ -341,7 +318,6 @@ export function divisionDiagram(surface: Surface, id: string) {
         sourceLabel,
         targetLabel,
         identity,
-        focuses,
         observed,
         from,
         to,
@@ -417,20 +393,10 @@ export function divisionDiagram(surface: Surface, id: string) {
     next.source.pigment(moment.complete ? 'red' : 'ink');
     next.targetLabel.text(`Группы: ${moment.completedGroups}`);
     next.identity.show(options.showEquation && moment.complete);
-    const focus = options.focus ?? 'all';
-    for (const { target, mark } of next.focuses)
-      mark.reveal(
-        focus !== 'all' &&
-          focus.includes(target) &&
-          (target !== 'equation' || (options.showEquation && moment.complete))
-          ? 1
-          : 0,
-      );
     next.layer.dataset.count = String(state.count);
     next.layer.dataset.completedGroups = String(moment.completedGroups);
     next.layer.dataset.ungrouped = String(moment.ungrouped);
     next.layer.dataset.complete = String(moment.complete);
-    next.layer.dataset.focus = focus === 'all' ? focus : focus.join(' ');
     if (next !== current) {
       current?.dispose();
       current = next;

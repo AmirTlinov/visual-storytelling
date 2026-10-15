@@ -1120,6 +1120,9 @@ test('cold math paints without RAF and cancelling its preparation preserves the 
         { type: 'parameters', values: { view: 'attention', perspective: 'algebra' } },
       ]);
       const preparing = scene.rendering?.phase;
+      const preparingHost = document.querySelector<HTMLElement>('.gpt-computation')!;
+      const concealed =
+        preparingHost.hasAttribute('data-presentation-pending') && preparingHost.inert;
       await scene.control([
         { type: 'parameters', values: { view: 'overview', perspective: 'diagram' } },
       ]);
@@ -1128,9 +1131,10 @@ test('cold math paints without RAF and cancelling its preparation preserves the 
       const host = document.querySelector<HTMLElement>('.gpt-computation')!;
       return {
         preparing,
+        concealed,
         sameSVG: svg === document.querySelector('#gpt-drawing')!.outerHTML,
         hidden: host.hidden,
-        pending: host.hasAttribute('data-chapter-pending'),
+        pending: host.hasAttribute('data-presentation-pending'),
         state: scene.snapshot(),
         before,
       };
@@ -1140,6 +1144,7 @@ test('cold math paints without RAF and cancelling its preparation preserves the 
     }
   });
   expect(cancelled.preparing).toBe('preparing');
+  expect(cancelled.concealed).toBe(true);
   expect(cancelled.sameSVG).toBe(true);
   expect(cancelled.hidden).toBe(true);
   expect(cancelled.pending).toBe(false);

@@ -29,7 +29,7 @@ export function comparisonStory(input: ComparisonStoryInput): StoryDocument {
   const [change] = Object.keys(input.changes),
     module = input.kind === 'lever' ? 'lever-comparison' : 'route-comparison',
     owner = input.kind === 'lever' ? leverComparisonModel : routeComparisonModel,
-    id = input.id ?? input.kind;
+    id = input.id === undefined ? input.kind : input.id;
   const viewId = id === 'comparison' ? 'comparison.view' : 'comparison';
   let chapterId = 'compare';
   while ([id, viewId].includes(chapterId)) chapterId += '.story';
@@ -48,18 +48,23 @@ export function comparisonStory(input: ComparisonStoryInput): StoryDocument {
       },
     ],
     views: [{ id: viewId, kind: 'comparison', model: id }],
-    chapters: input.chapters ?? [
-      {
-        id: chapterId,
-        title:
-          input.title ??
-          (input.kind === 'lever' ? 'Почему рычаг поворачивается?' : 'Поможет ли другой резерв?'),
-        beats: [
-          { id: 'before', operation: { model: id, name: 'baseline' }, seconds: 2 },
-          { id: 'change', operation: { model: id, name: 'change' }, seconds: 2 },
-          { id: 'compare', operation: { model: id, name: 'compare' }, seconds: 2 },
-        ],
-      },
-    ],
+    chapters:
+      input.chapters === undefined
+        ? [
+            {
+              id: chapterId,
+              title:
+                input.title ??
+                (input.kind === 'lever'
+                  ? 'Почему рычаг поворачивается?'
+                  : 'Поможет ли другой резерв?'),
+              beats: [
+                { id: 'before', operation: { model: id, name: 'baseline' }, seconds: 2 },
+                { id: 'change', operation: { model: id, name: 'change' }, seconds: 2 },
+                { id: 'compare', operation: { model: id, name: 'compare' }, seconds: 2 },
+              ],
+            },
+          ]
+        : input.chapters,
   };
 }

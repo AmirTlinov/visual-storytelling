@@ -1,4 +1,5 @@
 import { releaseResources } from './lifecycle.js';
+import { assertSceneInteraction } from './scene/interaction.js';
 import {
   sceneAccess,
   type SceneCommand,
@@ -119,6 +120,8 @@ export interface SceneHandle extends SceneRuntime {
     options?: SceneControlOptions,
   ): Promise<SceneInspection>;
   find(query: string): SceneSearchResult[];
+  /** Authored attention shares rendered contours and leaves viewer selection unchanged. */
+  emphasize(ids: readonly string[]): void;
   snapshot(): unknown;
   review(): CueReview;
   presentation(): ScenePresentation;
@@ -128,7 +131,7 @@ export interface SceneHandle extends SceneRuntime {
 export function mountScene<T extends SceneRuntime>(
   root: HTMLElement | SVGSVGElement,
   runtime: T,
-  owner: Omit<SceneAccessOwner, 'assertLive'> = {},
+  owner: Omit<SceneAccessOwner, 'assertLive' | 'assertInteractive'> = {},
 ): T & SceneHandle {
   if (root.scene) throw new Error('Dispose the mounted scene before replacing it');
   let disposed = false;
@@ -144,7 +147,10 @@ export function mountScene<T extends SceneRuntime>(
     review: (): CueReview => ({ duration: handle.duration ?? 0, cues: [], segments: [] }),
     presentation: () => inspectPresentation(root),
     objects: subjects.objects,
-    select: subjects.select,
+    select(ids: readonly string[]) {
+      assertSceneInteraction(root);
+      subjects.select(ids);
+    },
     get selected() {
       return subjects.selected;
     },
@@ -171,6 +177,7 @@ export function mountScene<T extends SceneRuntime>(
       'inspect',
       'control',
       'find',
+      'emphasize',
       'restoreNotices',
     ];
     if ([...keys].some((key) => reserved.includes(String(key))))
@@ -187,6 +194,21 @@ export function mountScene<T extends SceneRuntime>(
             method = value;
             bound = (...args: unknown[]) => {
               assertLive();
+              if (
+                [
+                  'play',
+                  'seek',
+                  'setRate',
+                  'mute',
+                  'setReduced',
+                  'setTheme',
+                  'focus',
+                  'select',
+                  'undoExperiment',
+                  'redoExperiment',
+                ].includes(String(key))
+              )
+                assertSceneInteraction(root);
               if (key === 'snapshot' && handle.rendering && !handle.rendering.presented)
                 return undefined;
               return Reflect.apply(value, runtime, args);
@@ -207,6 +229,7 @@ export function mountScene<T extends SceneRuntime>(
   root.scene = handle;
   extend(runtime, true);
   handle.extend = (extension) => extend(extension) as typeof handle & typeof extension;
+  handle.emphasize = subjects.emphasize;
   handle.connectHost = (host) => {
     assertLive();
     disconnectHost?.();
@@ -239,12 +262,14 @@ export function mountScene<T extends SceneRuntime>(
     Object.getOwnPropertyDescriptors(owner),
   ) as SceneAccessOwner;
   access.assertLive = assertLive;
+  access.assertInteractive = () => assertSceneInteraction(root);
   access.playing ??= () => runtime.playing ?? false;
   access.view ??= () => handle.camera;
   Object.assign(handle, sceneAccess(handle, access));
   handle.capture = (options) => captureScene(handle, access.view?.(), options);
   let restoration = 0;
   handle.restore = async (state) => {
+    assertSceneInteraction(root);
     const request = ++restoration;
     const restoring = Object.defineProperties(
       {},

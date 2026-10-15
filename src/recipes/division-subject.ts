@@ -1,7 +1,7 @@
 import { DIVISION_MAX_COUNT, DIVISION_MAX_DIVISOR } from './division-capacity.js';
 import { surface } from '../ink/surface.js';
 import { divisionState } from '../math/division.js';
-import { divisionDiagram, type DivisionFocusTarget } from './division.js';
+import { divisionDiagram } from './division.js';
 import type { StorySubjectRecipe } from '../story/subject.js';
 let serial = 0;
 export const divisionSubject: StorySubjectRecipe = {
@@ -72,17 +72,10 @@ export const divisionSubject: StorySubjectRecipe = {
         latestModel = model;
         const layout = shell.layout;
         drawing.resize(layout.width, layout.height, false);
-        const focus = beat?.focus?.map(
-          (id): DivisionFocusTarget =>
-            id === `${model.id}:remainder`
-              ? 'remainder'
-              : (views.find((view) => view.id === id)!.kind as DivisionFocusTarget),
-        );
         diagram.render(snapshot(state), {
           ...options(views),
           progress: Number(state.progress),
           text: beat?.text,
-          focus: focus ?? 'all',
         });
       },
       snapshot,

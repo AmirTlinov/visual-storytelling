@@ -95,6 +95,8 @@ export interface SceneStoryOptions {
   transition?: ChapterTransition;
   /** Derive the subject once before accepting a frame or preparing its presentation. */
   subjectAt?(frame: ChapterFrame): unknown;
+  /** Authored attention uses the scene's shared contour owner; viewer selection is independent. */
+  emphasisAt?(frame: ChapterFrame): readonly string[];
   /** These controls belong to a continuous subject and survive chapter switches in exploration. */
   sharedControls?: readonly string[];
 }
@@ -157,6 +159,7 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
   try {
     let story: Story<Record<string, ControlValue>, string, ComposedMoment> | undefined;
     let staged: ComposedMoment | undefined;
+    let previewSnapshot: { content: unknown } | undefined;
     const view = compositionView(
       presentations,
       () => options.chapters[current]!.id,
@@ -168,8 +171,11 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
           shell.stage,
           defaults,
           presentations.get,
-          () => {
-            if (latest) presentations.active?.drawing.render(latest);
+          async () => {
+            if (latest && presentations.active) {
+              presentations.active.drawing.render(latest);
+              await presentations.active.drawing.ready?.(new AbortController().signal);
+            }
           },
           options.transition.captureAspect,
           options.subjectAt,
@@ -221,7 +227,8 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
         if (
           presentations.active &&
           presentations.get(selected.index) === presentations.active &&
-          !capture
+          !capture &&
+          !previews?.frozen
         )
           return;
         shell.stage.setAttribute('aria-busy', 'true');
@@ -229,12 +236,19 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
           capture && selected.index ? [selected.index - 1, selected.index] : [selected.index];
         return presentations
           .prepare(indices, signal, async () => {
-            if (capture) await previews!.prepare(selected.index, signal);
+            if (capture) {
+              previewSnapshot ??= { content: presentations.active?.drawing.snapshot?.() };
+              try {
+                await previews!.prepare(selected.index, signal);
+              } finally {
+                if (!previews!.frozen) previewSnapshot = undefined;
+              }
+            }
             signal.throwIfAborted();
             const candidate = presentations.get(selected.index)!;
-            if (candidate === presentations.active) return;
+            if (candidate === presentations.active && !previews?.frozen) return;
             // First render is preparation: keep the accepted chapter visible on failure.
-            candidate.element.dataset.chapterPending = '';
+            candidate.element.dataset.presentationPending = '';
             candidate.element.hidden = false;
             candidate.element.style.clipPath = 'inset(100%)';
             try {
@@ -254,7 +268,7 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
             } finally {
               candidate.element.hidden = true;
               candidate.element.style.removeProperty('clip-path');
-              delete candidate.element.dataset.chapterPending;
+              delete candidate.element.dataset.presentationPending;
             }
           })
           .catch((cause) => {
@@ -270,7 +284,10 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
           presentations.renderTransition(index, nextTransition);
         }
         staged = undefined;
+        previews?.accept();
         presentations.show(index);
+        previewSnapshot = undefined;
+        parent.scene!.emphasize(options.emphasisAt?.(moment.frame) ?? []);
         current = index;
         shell.setPresentation(chapter.presentation ?? 'explanation');
         shell.stage.removeAttribute('aria-busy');
@@ -303,7 +320,9 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
           values: latest.values,
           beat: latest.beat,
         },
-        content: presentations.active?.drawing.snapshot?.(),
+        content: previewSnapshot
+          ? previewSnapshot.content
+          : presentations.active?.drawing.snapshot?.(),
       };
     scene.checkpoints = [
       ...new Set([

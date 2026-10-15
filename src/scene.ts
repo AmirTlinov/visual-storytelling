@@ -1,11 +1,12 @@
 import { sceneChrome } from './scene/chrome.js';
-import { controllerAccess } from './scene/controller-access.js';
+import { assertSceneInteraction } from './scene/interaction.js';
+import { clearControllerAccess, controllerAccess } from './scene/controller-access.js';
 import { conditionsPanel } from './scene/conditions.js';
 import type { StoryResource } from './story/resources.js';
 import { releaseResources } from './lifecycle.js';
 import { mountScene } from './scene-handle.js';
 import { story, type Story, type StoryOptions, type StoryStatus } from './story/story.js';
-import { chapterNavigation } from './story/chapters.js';
+import { controllerView } from './scene/controller-view.js';
 import { sceneCaptions, type SceneCaptions } from './scene/captions.js';
 import { sceneFrame, inspectPresentation, type SceneFrameOptions } from './scene-frame.js';
 export type { SceneFrameOptions, ScenePresentation } from './scene-frame.js';
@@ -13,7 +14,6 @@ import { loadFonts } from './ink/fonts.js';
 import { exportCompositionSVG } from './export/composition.js';
 import { theme } from './ink/palette.js';
 import { SceneHistory } from './controls/history.js';
-import { player as statePlayer } from './controls/player.js';
 import type { SceneHandle } from './scene-handle.js';
 import type { SceneInspection } from './scene-access.js';
 import type { SceneCheckpoint, SceneView } from './scene-checkpoint.js';
@@ -75,7 +75,11 @@ export interface SceneMount {
   showParameters(keys?: readonly string[]): void;
   describeParameter(key: string, description: ControlDescription): void;
   attachStory<P, K extends string, S = P>(options: StoryOptions<P, K, S>): Story<P, K, S>;
-  attachController<P, K extends string, S>(controller: Story<P, K, S>): SceneHandle;
+  /** beforeCommit adopts prepared external resources after fallible UI preparation. */
+  attachController<P, K extends string, S>(
+    controller: Story<P, K, S>,
+    beforeCommit?: () => void,
+  ): SceneHandle;
   /** Return to a static subject while retaining the same controls, history and scene handle. */
   detachController(): void;
   /** Register subject-owned observers, animations and subscriptions for removal. */
@@ -201,14 +205,15 @@ function mount(
     },
     options,
   );
-  root.addEventListener(
-    'scene-playback-error',
-    (event) => {
-      const error = (event as CustomEvent<unknown>).detail;
-      status.textContent = error instanceof Error ? error.message : String(error);
-    },
-    options,
-  );
+  for (const eventName of ['scene-playback-error', 'scene-cleanup-error', 'scene-callback-error'])
+    root.addEventListener(
+      eventName,
+      (event) => {
+        const error = (event as CustomEvent<unknown>).detail;
+        status.textContent = error instanceof Error ? error.message : String(error);
+      },
+      options,
+    );
   const completeFrame = frame.scope === 'scene';
   const showHistory = parameters.length > 0 && retainHistory && showNavigation;
   const sheet = completeFrame ? node('div') : root;
@@ -284,6 +289,7 @@ function mount(
       if (control.value !== values[key]) control.setValue(values[key]!);
   }
   function changeValues(next: Record<string, ControlValue>) {
+    assertSceneInteraction(root);
     if (history) history.change(() => applyValues(next));
     else applyValues(next);
   }
@@ -334,7 +340,11 @@ function mount(
     storyButton.setAttribute('aria-pressed', String(mode === 'story'));
     exploreButton.setAttribute('aria-pressed', String(mode === 'explore'));
     root.dataset.sceneMode = mode;
-    onMode(mode);
+    try {
+      onMode(mode);
+    } catch (error) {
+      root.dispatchEvent(new CustomEvent('scene-callback-error', { bubbles: true, detail: error }));
+    }
     if (next === 'story') history?.clear();
   }
   function selectMode(next: 'story' | 'explore') {
@@ -446,7 +456,10 @@ function mount(
     get mode() {
       return mode;
     },
-    setMode,
+    setMode(next) {
+      assertSceneInteraction(root);
+      setMode(next);
+    },
     setPresentation,
     setResources(resources: readonly StoryResource[]) {
       assertLive();
@@ -531,16 +544,23 @@ function mount(
   function assertLive() {
     if (abort.signal.aborted) throw new Error(`Scene "${title}" has been disposed`);
   }
+  // Retirement follows publication. A cleanup failure is observable but cannot revoke it.
+  function retire(previous: typeof player) {
+    try {
+      previous?.dispose();
+    } catch (error) {
+      root.dispatchEvent(new CustomEvent('scene-cleanup-error', { bubbles: true, detail: error }));
+      console.warn(`Scene "${title}" previous controller cleanup failed.`, error);
+    }
+  }
   function detachController() {
     assertLive();
-    player?.dispose();
+    const previous = player;
     player = undefined;
     inputStory = undefined;
     playback = undefined;
     transition = undefined;
-    for (const key of controllerKeys) Reflect.deleteProperty(handle, key);
-    controllerKeys = [];
-    handle.extend({
+    clearControllerAccess(handle, controllerKeys, {
       snapshot: () => ({ ...values }),
       get condition() {
         return acceptedCondition;
@@ -550,6 +570,7 @@ function mount(
         await view?.whenRendered?.();
       },
     });
+    controllerKeys = [];
     mode = 'explore';
     root.dataset.sceneMode = mode;
     controls.replaceChildren();
@@ -558,11 +579,16 @@ function mount(
     storyButton.hidden = true;
     modes.hidden = true;
     fields.hidden = !parameters.length;
+    retire(previous);
     heading.textContent = title;
     heading.title = title;
     updateChrome(true);
   }
-  function attachController<P, K extends string, S>(controller: Story<P, K, S>) {
+
+  function attachController<P, K extends string, S>(
+    controller: Story<P, K, S>,
+    beforeCommit?: () => void,
+  ) {
     assertLive();
     for (const { key } of parameters) {
       if (
@@ -577,96 +603,88 @@ function mount(
     if (previousPlayback && previousPlayback.rate !== controller.player.state.rate)
       controller.player.rate(previousPlayback.rate);
     if (previousPlayback && !previousPlayback.playing) controller.player.pause();
-    player?.dispose();
+    const previous = player;
+    let resetAfterSeek = false;
+    const access = controllerAccess(controller, {
+      ready: async () => {
+        await controller.ready();
+        await view?.whenRendered?.();
+      },
+      play: () => {
+        assertLive();
+        preparePlayback();
+        return controller.player.play();
+      },
+      keys: parameters.map((parameter) => parameter.key),
+      mode: (value) => (exploration === 'view' ? mode : value),
+    });
+    const binding = controllerView(controller, {
+      root,
+      stage,
+      controls,
+      heading,
+      caption,
+      track,
+      title,
+      navigation: showHeading && showNavigation,
+      headingLabel: headingStyle === 'navigation' ? 'Главы' : undefined,
+      onPlay: preparePlayback,
+      onSeek() {
+        resetAfterSeek = true;
+      },
+      onState(state) {
+        try {
+          reflectState(state);
+        } catch (error) {
+          root.dispatchEvent(
+            new CustomEvent('scene-callback-error', { bubbles: true, detail: error }),
+          );
+        }
+      },
+    });
+    try {
+      beforeCommit?.();
+    } catch (cause) {
+      releaseResources(
+        [
+          () => {
+            throw cause;
+          },
+          binding.dispose,
+        ],
+        'Controller commit preparation failed.',
+      );
+    }
     transition = (next) => {
       if (exploration === 'model' && controller.requested.mode !== next) {
         if (next === 'explore') controller.explore(controller.requested.values);
         else controller.resume();
       }
     };
-    const ui = statePlayer(controls, {
-      transport: controller.player,
-      captions: { element: caption, track },
-      onSeek: controller.seek,
-      onPlay: preparePlayback,
-    });
     inputStory = (next, position) => {
       if (position) controller.restoreInputs(next as Partial<P>, position);
       else controller.input(next as Partial<P>);
     };
     playback = () => controller.player.state.playing;
-    let chapters = chapterNavigation(
-      heading,
-      controller.sheet.script.segments ?? [],
-      (time) => controller.seek(time, { mode: 'story' }),
-      showHeading && showNavigation,
-      headingStyle === 'navigation' ? 'Главы' : undefined,
-    );
-    chapters.update(controller.presented?.chapter);
-    let resetAfterSeek = false;
-    const stopSeeking = controller.onSeek(() => {
-      resetAfterSeek = true;
-    });
-    // Layout can change the stage height. Render outside ResizeObserver delivery so
-    // that surface.resize() cannot create a same-frame observation loop.
-    let layoutFrame = 0,
-      stageWidth = stage.clientWidth,
-      stageHeight = stage.clientHeight;
-    const requestLayout = () => {
-      if (layoutFrame) return;
-      layoutFrame = requestAnimationFrame(() => {
-        layoutFrame = 0;
-        controller.update();
-      });
-    };
-    const layout = new ResizeObserver(() => {
-      const width = stage.clientWidth,
-        height = stage.clientHeight;
-      if (width === stageWidth && height === stageHeight) return;
-      stageWidth = width;
-      stageHeight = height;
-      requestLayout();
-    });
-    layout.observe(stage);
-    // The logical canvas can stay fixed while its displayed size crosses a layout breakpoint.
-    root.addEventListener('scene-frame-resize', requestLayout);
-    let unsubscribe = () => {};
     player = {
       playback: () => controller.player.state,
-      refreshHeading() {
-        chapters.dispose();
-        heading.textContent = title;
-        heading.title = title;
-        chapters = chapterNavigation(
-          heading,
-          controller.sheet.script.segments ?? [],
-          (time) => controller.seek(time, { mode: 'story' }),
-          showHeading && showNavigation,
-          headingStyle === 'navigation' ? 'Главы' : undefined,
-        );
-        chapters.update(controller.presented?.chapter);
-      },
+      refreshHeading: () => binding.refreshHeading(title, showHeading && showNavigation),
       dispose() {
         releaseResources(
-          [
-            () => layout.disconnect(),
-            () => root.removeEventListener('scene-frame-resize', requestLayout),
-            () => cancelAnimationFrame(layoutFrame),
-            unsubscribe,
-            () => ui.dispose(),
-            () => chapters.dispose(),
-            stopSeeking,
-            () => controller.dispose(),
-          ],
+          [binding.dispose, controller.dispose],
           `Scene "${title}" player disposal failed.`,
         );
       },
     };
+    controllerKeys = Reflect.ownKeys(access);
+    handle.extend(access);
+    binding.publish();
+    retire(previous);
     storyButton.hidden = false;
     modes.hidden =
       !showNavigation ||
       (![...inputs.values()].some((control) => !control.element.hidden) && !view);
-    function reflectState({ requested, presented, phase, error }: StoryStatus<P, S>) {
+    function reflectState({ requested, phase, error }: StoryStatus<P, S>) {
       const { mode: next, values: state } = requested;
       if (next !== 'story') resetAfterSeek = false;
       if (phase === 'ready' && resetAfterSeek) {
@@ -683,10 +701,7 @@ function mount(
       for (const { key } of parameters) values[key] = (state as Record<string, ControlValue>)[key]!;
       if (exploration === 'model') setMode(next);
       refresh();
-      // The heading is part of the drawing, including while a later chapter prepares or fails.
-      if (presented) chapters.update(presented.chapter);
     }
-    unsubscribe = controller.subscribe(reflectState);
     // Attaching an already prepared experiment must not become a new mode command.
     // View-only shells retain their current view on replacement; their first story
     // still starts with the authored view as before.
@@ -695,21 +710,6 @@ function mount(
     controls.inert = false;
     caption.hidden = exploration === 'model' && mode !== 'story';
     updateChrome();
-    const access = controllerAccess(controller, {
-      ready: async () => {
-        await controller.ready();
-        await view?.whenRendered?.();
-      },
-      play: () => {
-        assertLive();
-        preparePlayback();
-        return controller.player.play();
-      },
-      keys: parameters.map((parameter) => parameter.key),
-      mode: (value) => (exploration === 'view' ? mode : value),
-    });
-    controllerKeys = Reflect.ownKeys(access);
-    handle.extend(access);
     if (
       previousPlayback?.playing &&
       !controller.waiting &&

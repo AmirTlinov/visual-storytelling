@@ -136,10 +136,21 @@ test('simulation handoff cancels a pending intention, preserves refresh, restore
       };
       // Use the actual exported owner from the fixture, after disposal released its lease.
       const mode = fixture.createMode(options);
+      await fixture.scene.play();
+      const beforePlaying = fixture.story.player.state.playing;
+      let failure;
       try {
         await mode.enter();
-      } catch {}
-      const result = { phase, active: mode.active };
+      } catch (e) {
+        failure = e.message;
+      }
+      const result = {
+        phase,
+        active: mode.active,
+        playing: fixture.story.player.state.playing,
+        beforePlaying,
+        failure,
+      };
       await mode.enter();
       result.retry = mode.active;
       mode.dispose();
@@ -149,7 +160,111 @@ test('simulation handoff cancels a pending intention, preserves refresh, restore
       retained: true,
       active: true,
     });
-    assert.deepEqual(rollback, { phase: 'story', active: false, retry: true });
+    assert.deepEqual(rollback, {
+      phase: 'story',
+      active: false,
+      playing: true,
+      beforePlaying: true,
+      failure: 'failed view',
+      retry: true,
+    });
+    const cleanupFailure = await page.evaluate(async () => {
+      let fail = false,
+        live;
+      const options = {
+        ...fixture.options,
+        onMode(value) {
+          live = value;
+        },
+        model: {
+          ...fixture.options.model,
+          read() {
+            if (fail) throw Error('failed final read');
+            return { value: 0, done: false, stamp: '0' };
+          },
+        },
+      };
+      const mode = fixture.createMode(options);
+      await mode.enter();
+      fail = true;
+      let error;
+      try {
+        mode.leave();
+      } catch (cause) {
+        error = cause.message;
+      }
+      const result = {
+        error,
+        active: mode.active,
+        live,
+        storyHidden: options.element.hidden,
+        liveHidden: options.element.nextElementSibling.hidden,
+      };
+      fail = false;
+      mode.dispose();
+      return result;
+    });
+    assert.deepEqual(cleanupFailure, {
+      error: 'failed final read',
+      active: false,
+      live: false,
+      storyHidden: false,
+      liveHidden: true,
+    });
+    const stale = await page.evaluate(async () => {
+      const waiting = [];
+      let live = false;
+      const options = {
+        ...fixture.options,
+        onMode(value) {
+          live = value;
+        },
+        story: {
+          ...fixture.story,
+          ready() {
+            return new Promise((resolve, reject) => waiting.push({ resolve, reject }));
+          },
+        },
+      };
+      const mode = fixture.createMode(options);
+      const first = mode.enter().catch((error) => error.message);
+      const second = mode.enter();
+      waiting[1].resolve();
+      await second;
+      const entered = mode.active;
+      waiting[0].reject(Error('stale failure'));
+      const failure = await first;
+      const result = { entered, active: mode.active, live, failure };
+      mode.dispose();
+      const disposedWaiting = [];
+      let callbacks = 0;
+      const disposedMode = fixture.createMode({
+        ...fixture.options,
+        onMode() {
+          callbacks++;
+        },
+        story: {
+          ...fixture.story,
+          ready() {
+            return new Promise((resolve, reject) => disposedWaiting.push({ resolve, reject }));
+          },
+        },
+      });
+      const pending = disposedMode.enter().catch((error) => error.message);
+      disposedMode.dispose();
+      const afterDispose = callbacks;
+      disposedWaiting[0].reject(Error('late disposal failure'));
+      await pending;
+      return { ...result, afterDispose, callbacks };
+    });
+    assert.deepEqual(stale, {
+      entered: true,
+      active: true,
+      live: true,
+      failure: 'stale failure',
+      afterDispose: 1,
+      callbacks: 1,
+    });
     await page.evaluate(() => fixture.scene.dispose());
     const count = await page.evaluate(() => fixture.advances);
     await page.waitForTimeout(30);
