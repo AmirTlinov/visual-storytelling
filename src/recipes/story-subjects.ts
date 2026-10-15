@@ -5,6 +5,7 @@ import { leverComparisonSubject, routeComparisonSubject } from './comparison-own
 import { fractionsSubject } from './fractions-subject.js';
 import { divisionSubject } from './division-subject.js';
 import { instructionalRouteSubject } from './dependency-route-subject.js';
+import { circuitSubject } from './circuit-subject.js';
 import type { StorySubjects } from '../story/subject.js';
 export const storySubjects: StorySubjects = {
   probability: probabilitySubject,
@@ -14,6 +15,7 @@ export const storySubjects: StorySubjects = {
   'lever-comparison': leverComparisonSubject,
   'route-comparison': routeComparisonSubject,
   fractions: fractionsSubject,
+  circuit: circuitSubject,
   'dependency-route': instructionalRouteSubject,
 };
 export function storySubjectOwners(subjects: StorySubjects = {}) {

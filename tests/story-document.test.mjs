@@ -101,7 +101,10 @@ test('one authored document feeds action IDs, speech and exact aligned chapter b
     ],
   };
   const script = documentScript(document, aligned);
-  assert.deepEqual(script.cues['paper.try'], aligned.cues['paper.try']);
+  assert.deepEqual(script.cues['paper.try'], {
+    ...aligned.cues['paper.try'],
+    action: document.chapters[1].beats[0].text,
+  });
   assert.equal(script.cues.paper.start, 10);
   assert.throws(
     () =>

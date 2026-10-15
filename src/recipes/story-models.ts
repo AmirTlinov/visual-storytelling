@@ -8,6 +8,7 @@ import { fractionsModel } from './fractions-model.js';
 import { fractionsStory } from './fractions-story.js';
 import { divisionModel } from './division-model.js';
 import { circuitModel } from './circuit-model.js';
+import { circuitStory } from './circuit-story.js';
 import { instructionalRouteModel } from './dependency-route-model.js';
 import type { StoryModules } from '../story/model.js';
 
@@ -38,6 +39,7 @@ export const storyRecipes: Readonly<Record<string, (input: unknown) => StoryDocu
   comparison: (input) => comparisonStory(input as Parameters<typeof comparisonStory>[0]),
   division: (input) => divisionStory(input as Parameters<typeof divisionStory>[0]),
   fractions: (input) => fractionsStory(input as Parameters<typeof fractionsStory>[0]),
+  circuit: (input) => circuitStory(input as Parameters<typeof circuitStory>[0]),
   'dependency-route': (input) =>
     dependencyRouteStory(input as Parameters<typeof dependencyRouteStory>[0]),
 };
