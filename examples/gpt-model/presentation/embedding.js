@@ -23,24 +23,27 @@ export function embeddingDrawing(context, components = {}) {
         id: 'embedding:token',
         source: 'weights.tokenEmbedding',
         row: s.trace.ids[s.token],
+        height: 55,
       }),
     );
     d.sequence('embedding.position', () => {
-      d.text('+', x - 75, 332, { size: 50 });
-      vector(d, s.trace.embedding.position[s.token], x, 305, w, {
+      d.text('+', x - 75, 375, { size: 50 });
+      vector(d, s.trace.embedding.position[s.token], x, 340, w, {
         label: `Таблица позиции ${s.token}`,
         id: 'embedding:position',
         source: 'weights.positionEmbedding',
         pigment: 'orange',
+        height: 55,
       });
     });
     d.sequence('embedding.sum', () => {
-      d.line([x - 20, 408], [x + w + 20, 408], 'muted');
-      vector(d, s.trace.embedding.residual[s.token], x, 450, w, {
+      d.line([x - 20, 425], [x + w + 20, 425], 'muted');
+      vector(d, s.trace.embedding.residual[s.token], x, 480, w, {
         label: 'Начало residual stream',
         id: 'embedding:sum',
         source: 'embedding.residual',
         pigment: 'purple',
+        height: 55,
       });
     });
     d.button('change-position', '«на»: другая позиция →', 55, 550, 345, () =>

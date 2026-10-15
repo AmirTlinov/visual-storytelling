@@ -22,7 +22,14 @@ test(
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'story-release-'));
     const data = join(directory, 'data');
-    const host = await pluginHost({ dataDirectory: data });
+    const release = process.env.VISUAL_STORY_RELEASE;
+    const host = await pluginHost({
+      dataDirectory: data,
+      ...(release && {
+        serverCommand: join(release, 'runtime/node'),
+        serverEntry: join(release, 'plugin/dist/server.mjs'),
+      }),
+    });
     const browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage({ viewport: { width: 820, height: 900 } });
     page.setDefaultTimeout(15000);
@@ -192,11 +199,20 @@ test(
       const editedProject = (await finish(edited.structuredContent.job.id)).project;
       await app.locator('#update').waitFor();
       assert.equal((await inspect()).buildRevision, before.buildRevision);
-      const boundWorking = (await call('story_open', { context: editedProject.context, sessionId })).structuredContent;
-      assert.equal(boundWorking.buildRevision, before.buildRevision, 'working B remains separate from playing A');
-      const controlledWorking = (await call('story_control', {
-        context: boundWorking.context, requestId: randomUUID(), commands: [{ type: 'rate', value: 0.25 }],
-      })).structuredContent;
+      const boundWorking = (await call('story_open', { context: editedProject.context, sessionId }))
+        .structuredContent;
+      assert.equal(
+        boundWorking.buildRevision,
+        before.buildRevision,
+        'working B remains separate from playing A',
+      );
+      const controlledWorking = (
+        await call('story_control', {
+          context: boundWorking.context,
+          requestId: randomUUID(),
+          commands: [{ type: 'rate', value: 0.25 }],
+        })
+      ).structuredContent;
       const shown = await produce(shownTarget);
       assert.equal(shown.sourceRevision, before.sourceRevision);
       assert.equal(

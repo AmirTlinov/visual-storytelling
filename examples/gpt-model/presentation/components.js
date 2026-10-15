@@ -86,6 +86,7 @@ export function componentsDrawing(context, components = {}) {
       id = `${context.current.values.view}:${label ?? 'vector'}`,
       pigment = 'ink',
       numbers = true,
+      height,
       source,
       row = context.current.token,
       offset = 0,
@@ -100,7 +101,7 @@ export function componentsDrawing(context, components = {}) {
         x + i * (cell + gap),
         y,
         cell,
-        Math.max(cell, d.compact ? 85 : 55),
+        Math.max(height ?? cell, d.compact ? 85 : 55),
         pigment,
         'marker',
       );

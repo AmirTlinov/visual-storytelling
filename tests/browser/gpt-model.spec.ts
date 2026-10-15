@@ -23,6 +23,50 @@ const parameters = (values: Record<string, string | number | boolean>): SceneCom
   { type: 'parameters', values },
 ];
 
+test('embedding captions stay outside every vector row during the story and manual exploration', async ({
+  page,
+}) => {
+  await ready(page);
+  for (const width of [960, 1200]) {
+    await page.setViewportSize({ width, height: 960 });
+    for (const commands of [
+      [
+        { type: 'mode', value: 'story' },
+        { type: 'seek', time: 20.5 },
+      ],
+      parameters({ view: 'embedding', token: 3 }),
+    ] as SceneCommand[][]) {
+      await command(page, commands);
+      const geometry = await page.evaluate(() => {
+        const captions = ['Таблица слова «на»', 'Таблица позиции 3', 'Начало residual stream'];
+        const drawing = document.querySelector('#gpt-drawing')!;
+        return {
+          captions: captions.map((text) => ({
+            text,
+            box: drawing
+              .querySelector<SVGElement>(`[aria-label='${text}']`)!
+              .getBoundingClientRect()
+              .toJSON(),
+          })),
+          cells: [...drawing.querySelectorAll<SVGElement>('[data-object^="embedding:"]')].map(
+            (node) => node.getBoundingClientRect().toJSON(),
+          ),
+        };
+      });
+      expect(geometry.cells).toHaveLength(24);
+      for (const caption of geometry.captions)
+        for (const cell of geometry.cells) {
+          const overlaps =
+            caption.box.left < cell.right &&
+            caption.box.right > cell.left &&
+            caption.box.top < cell.bottom &&
+            caption.box.bottom > cell.top;
+          expect(overlaps, `${caption.text} at ${width}px overlaps a vector cell`).toBe(false);
+        }
+    }
+  }
+});
+
 test('the calculation aperture clears its controls and keeps screen annotations readable in a fitted frame', async ({
   page,
 }) => {
