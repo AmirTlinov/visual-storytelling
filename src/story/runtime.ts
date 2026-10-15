@@ -10,9 +10,16 @@ import { story } from './story.js';
 import * as document from './document.js';
 import * as rational from '../math/rational.js';
 import * as quantities from '../math/quantity-parts.js';
+import { borrowSceneView } from '../scene/view-access.js';
 import { TensorData, tensorOriginId } from '../math/tensor.js';
+import { MathMorph } from '../morph/math.js';
+import * as viewport from '../viewport/index.js';
+import { svgButton } from '../controls/svg.js';
+import { placeLabels } from '../layout/labels.js';
+import { SvgLayout } from '../layout/svg.js';
+import { describeObject } from '../scene-objects.js';
 
-/** Prepared 2D author modules import these existing owners; they do not bundle a second runtime. */
+/** Author modules borrow these existing owners instead of bundling another runtime. */
 export const documentRuntime = {
   ...ink,
   ...recipes,
@@ -22,8 +29,15 @@ export const documentRuntime = {
   ...binomial,
   ...quantities,
   ...lever,
+  ...viewport,
+  MathMorph,
+  svgButton,
+  placeLabels,
+  SvgLayout: SvgLayout as typeof import('../layout/svg.js').SvgLayout,
+  describeObject,
   compareModelSnapshots,
   TensorData,
+  borrowSceneView,
   tensorOriginId,
   SceneShell,
   mountScene,

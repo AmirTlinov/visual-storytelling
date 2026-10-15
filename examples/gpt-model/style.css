@@ -1,13 +1,13 @@
-#gpt-model .ve-stage {
+.ve-scene .ve-stage {
   min-height: 0;
 }
-#gpt-model .gpt-computation {
+.ve-scene .gpt-computation {
   position: absolute;
   z-index: 1;
 }
-#gpt-model .gpt-computation[hidden] {
+.ve-scene .gpt-computation[hidden] {
   display: none;
 }
-#gpt-model .ve-svg-button {
+.ve-scene .ve-svg-button {
   cursor: pointer;
 }

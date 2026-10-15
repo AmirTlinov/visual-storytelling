@@ -104,6 +104,9 @@ export function mountBodies(
     return {
       element: root,
       view: {
+        get whenRendered() {
+          return projection === '3d' ? view.whenRendered.bind(view) : undefined;
+        },
         get transition() {
           return projection === '3d' ? view.transition : 'idle';
         },

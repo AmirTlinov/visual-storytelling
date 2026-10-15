@@ -9,6 +9,7 @@ import { sceneEntry } from './scene-entry.mjs';
 import { copySceneInput } from './copy-scene-input.mjs';
 import { projectFiles } from './project-files.mjs';
 import { assertPreparedRuntimeRoot } from './prepared-runtime-trust.mjs';
+import { readStoryProject } from './story-project.mjs';
 
 /** CLI and plugin create the same editable project with an immutable runtime dependency. */
 export async function createScene(
@@ -92,7 +93,7 @@ export async function createScene(
     runtime = await pinSceneProject(destination, {
       root,
       signal,
-      prepared: document !== undefined,
+      prepared: document !== undefined || Boolean(await readStoryProject(destination)),
     });
     if (document !== undefined) {
       await writeFile(join(destination, 'story.json'), JSON.stringify(document, null, 2) + '\n');

@@ -9,12 +9,18 @@ export function controllerAccess<P, K extends string, S>(
     play,
     keys,
     mode,
-  }: { play: () => Promise<void>; keys: readonly string[]; mode: (value: StoryMode) => StoryMode },
+    ready,
+  }: {
+    play: () => Promise<void>;
+    keys: readonly string[];
+    mode: (value: StoryMode) => StoryMode;
+    ready?: () => Promise<void>;
+  },
 ) {
   return {
     play,
     seek: controller.seek,
-    ready: controller.ready,
+    ready: ready ?? controller.ready,
     pause: controller.pause,
     get mute() {
       return controller.player.state.hasAudio ? controller.player.mute : undefined;

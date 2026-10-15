@@ -25,6 +25,8 @@ export interface AuthoredBeat extends Beat {
   /** Name an ordinary registered JS operation; replay always starts from the model inputs. */
   operation?: { model: string; name: string };
   focus?: readonly string[];
+  /** Automatic playback waits for the named model's accepted attempt; explicit seek stays available. */
+  awaitInput?: { model: string };
 }
 export interface AuthoredChapter {
   id: string;
@@ -195,6 +197,7 @@ function validate(
           'timing',
           'operation',
           'focus',
+          'awaitInput',
           'actors',
           'props',
           'perform',
@@ -239,6 +242,13 @@ function validate(
         if (beat[field] !== undefined) record(beat[field], `${path}.${field}`);
       if (beat.perform !== undefined) array(beat.perform, `${path}.perform`);
       const normalized = structuredClone(beat) as unknown as AuthoredBeat;
+      if (beat.awaitInput !== undefined) {
+        const gate = record(beat.awaitInput, `${path}.awaitInput`);
+        keys(gate, ['model'], `${path}.awaitInput`);
+        const model = models.find((model) => model.id === gate.model);
+        if (!model || !modules[model.module]?.canContinue)
+          throw new Error(`${path}.awaitInput: name a model with canContinue.`);
+      }
       const speech = authoredSpeech(normalized, chapterId, models, modules, path);
       if (speech) normalized.speech = speech;
       return normalized;

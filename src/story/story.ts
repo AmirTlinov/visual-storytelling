@@ -42,6 +42,7 @@ export type StoryOptions<P, K extends string, S = P> = {
     patch: Readonly<Partial<P>>,
     current: StoryMoment<P, NoInfer<S>>,
     frame: Frame<K>,
+    intent: 'input' | 'restore',
   ): { values: P; time?: number };
   /** Resolve a selected chapter at a shared time boundary from the accepted condition. */
   chapterAt?(moment: StoryMoment<P, NoInfer<S>>): string | undefined;
@@ -446,7 +447,7 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
       const authored = options.stateAt(frame);
       if (position.mode === 'story') return restorePosition(compute(authored, frame, 'story'));
       const resolved = options.resolveInput
-        ? options.resolveInput(patch, compute(authored, frame, 'story').moment, frame)
+        ? options.resolveInput(patch, compute(authored, frame, 'story').moment, frame, 'restore')
         : { values: { ...authored, ...patch } };
       // A restored position is already an accepted observation. Input resolution
       // still normalizes its values, but a new-input transition cannot move it.
@@ -455,7 +456,12 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
     /** Apply only the supplied fields; the subject resolves transitions before publication. */
     input(patch: Partial<P>) {
       assertLive();
-      const resolved = options.resolveInput?.(patch, requested.moment, requested.frame) ?? {
+      const resolved = options.resolveInput?.(
+        patch,
+        requested.moment,
+        requested.frame,
+        'input',
+      ) ?? {
         values: { ...requested.moment.values, ...patch },
       };
       const time = resolved.time ?? requested.moment.time;

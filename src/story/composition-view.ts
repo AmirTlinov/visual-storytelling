@@ -23,6 +23,10 @@ export function compositionView(
     view.focus(ids);
   };
   const owner: SceneView = {
+    get whenRendered() {
+      const view = presentations.active?.drawing.view;
+      return view?.whenRendered?.bind(view);
+    },
     get transition() {
       return presentations.active?.drawing.view?.transition;
     },

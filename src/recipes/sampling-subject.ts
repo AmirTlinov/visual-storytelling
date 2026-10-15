@@ -13,10 +13,16 @@ let serial = 0;
 const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
 export const samplingSubject: StorySubjectRecipe = {
   title: 'Насколько точна доля успехов?',
-  inputTime(document, script) {
-    const chapter = document.chapters.at(-1),
-      beat = chapter?.beats.at(-1);
-    return beat ? script.cues[`${chapter!.id}.${beat.id}`]!.end : undefined;
+  resolveInput(patch, current, document, script) {
+    const time = (() => {
+      const chapter = document.chapters.at(-1),
+        beat = chapter?.beats.at(-1);
+      return beat ? script.cues[`${chapter!.id}.${beat.id}`]!.end : undefined;
+    })();
+    return {
+      values: { ...current.values, ...patch },
+      time: current.playing ? current.time : (time ?? current.time),
+    };
   },
   parameters: (model) =>
     samplingKeys.map((key) => ({

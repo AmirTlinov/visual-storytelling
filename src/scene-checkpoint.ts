@@ -37,6 +37,8 @@ export interface SceneSubject {
 }
 
 export interface SceneView {
+  /** Complete pending paint through the view's existing renderer, even in a concealed host. */
+  whenRendered?(signal?: AbortSignal): Promise<unknown>;
   readonly transition?: 'running' | 'idle';
   validateFocus?(ids: readonly string[]): void;
   focus?(ids: readonly string[]): void;

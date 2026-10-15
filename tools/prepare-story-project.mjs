@@ -53,7 +53,7 @@ export async function preparedStoryHTML(directory, { silent = false } = {}) {
               namespace: 'story-runtime',
             }));
             builder.onResolve(
-              { filter: /^@visual-storytelling\/core(?:\/(?:ink|recipes|story))?$/ },
+              { filter: /^@visual-storytelling\/core(?:\/(?:ink|recipes|story|three))?$/ },
               () => ({ path: 'runtime', namespace: 'story-runtime' }),
             );
             builder.onLoad({ filter: /.*/, namespace: 'story-runtime' }, ({ path }) => ({

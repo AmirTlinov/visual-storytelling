@@ -94,6 +94,20 @@ export function documentModelsAt(
       }
       if (chapter.id === options.chapter) break;
     }
+  if (options.chapter)
+    activeChapter = document.chapters.find((chapter) => chapter.id === options.chapter);
+  const views = activeChapter?.views
+    ? document.views.filter((view) => activeChapter!.views!.includes(view.id))
+    : document.views;
+  if (activeChapter || !document.chapters.length)
+    for (const model of document.models) {
+      const owner = owners[model.module]!,
+        selected = views.filter((view) => view.model === model.id);
+      if (selected.length && owner.projectViews) {
+        models[model.id] = owner.projectViews(models[model.id]!, selected, model);
+        modelInputValues(model, models[model.id]!, owner);
+      }
+    }
   if (options.mode === 'explore')
     for (const model of document.models) {
       const owner = owners[model.module]!;
@@ -104,10 +118,20 @@ export function documentModelsAt(
           ? owner.staticState(values, model)
           : owner.state(values, model);
     }
-  if (options.chapter)
-    activeChapter = document.chapters.find((chapter) => chapter.id === options.chapter);
-  const views = activeChapter?.views
-    ? document.views.filter((view) => activeChapter!.views!.includes(view.id))
-    : document.views;
   return { models, beat, views, chapter: activeChapter?.id, resources: document.resources ?? [] };
+}
+
+/** The named model owns acceptance; Story alone owns the playback barrier. */
+export function documentCanContinue(
+  document: StoryDocument,
+  moment: ReturnType<typeof documentModelsAt>,
+  modules: StoryModules = {},
+) {
+  const gate = moment.beat?.awaitInput;
+  if (!gate) return true;
+  const model = document.models.find((model) => model.id === gate.model)!;
+  return storyModelOwners(modules)[model.module]!.canContinue!(
+    moment.models[model.id]!,
+    moment.beat!,
+  );
 }

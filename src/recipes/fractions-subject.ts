@@ -19,10 +19,16 @@ const inputs = (state: ModelState) =>
   );
 export const fractionsSubject: StorySubjectRecipe = {
   title: 'Собираем части одного целого',
-  inputTime(document, script) {
-    const chapter = document.chapters.at(-1),
-      beat = chapter?.beats.at(-1);
-    return beat ? script.cues[`${chapter!.id}.${beat.id}`]!.end : undefined;
+  resolveInput(patch, current, document, script) {
+    const time = (() => {
+      const chapter = document.chapters.at(-1),
+        beat = chapter?.beats.at(-1);
+      return beat ? script.cues[`${chapter!.id}.${beat.id}`]!.end : undefined;
+    })();
+    return {
+      values: { ...current.values, ...patch },
+      time: current.playing ? current.time : (time ?? current.time),
+    };
   },
   parameters: (model) => [
     ...(['left', 'right'] as const).flatMap((side, index) => [

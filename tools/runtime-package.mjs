@@ -129,6 +129,23 @@ export async function packRuntime(destination, options = {}) {
 /** A prepared release is already an immutable package; pin its identity before any archive work. */
 async function preparedRelease(root = library) {
   root = await assertPreparedRuntimeRoot(root);
+  if (!(await readOptional(join(root, 'release.json')))) {
+    // The source CLI uses its own generated release. Never select the installer's
+    // current pointer or silently pin an older build after source edits.
+    const source = root;
+    const action = 'Prepare this checkout first: npm run plugin:release.';
+    try {
+      root = await assertPreparedRuntimeRoot(join(source, '.plugin-release'));
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      throw new Error(action, { cause: error });
+    }
+    const [info, release] = await Promise.all([
+      packageInfo(source),
+      readFile(join(root, 'release.json'), 'utf8').then(JSON.parse),
+    ]);
+    if (info.status !== 'current' || release.sourceBuild !== info.build) throw new Error(action);
+  }
   const [release, receipt, pkg] = await Promise.all([
     readFile(join(root, 'release.json'), 'utf8').then(JSON.parse),
     readFile(join(root, 'dist/build-info.json'), 'utf8').then(JSON.parse),

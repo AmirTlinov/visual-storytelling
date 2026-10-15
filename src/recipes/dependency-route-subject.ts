@@ -27,9 +27,15 @@ export function dependencyRouteSubject(
   const modelOwner = dependencyRouteModel(graph);
   return {
     title: 'Куда попадёт заказ?',
-    inputTime(document, script) {
-      const last = document.chapters.at(-1)?.beats.at(-1);
-      return last ? script.cues[`${document.chapters.at(-1)!.id}.${last.id}`]!.end : undefined;
+    resolveInput(patch, current, document, script) {
+      const time = (() => {
+        const last = document.chapters.at(-1)?.beats.at(-1);
+        return last ? script.cues[`${document.chapters.at(-1)!.id}.${last.id}`]!.end : undefined;
+      })();
+      return {
+        values: { ...current.values, ...patch },
+        time: current.playing ? current.time : (time ?? current.time),
+      };
     },
     parameters: (model) => [
       { key: 'orderId', label: 'Заказ', type: 'text', value: model.inputs.orderId! },

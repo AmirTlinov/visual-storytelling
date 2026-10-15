@@ -123,7 +123,7 @@ receipt; первый undo относится к правке после соз�
 Готовый приём не требует npm, esbuild или упаковки runtime на каждый запрос.
 `story-project.mjs` проверяет единственное владение entry, ссылки модулей и ресурсов.
 `prepare-story-project.mjs` собирает авторские модули с существующим владельцем
-ресурсов; их imports связываются с подготовленным 2D runtime. Модель исполняется
+ресурсов; их imports связываются с общим подготовленным runtime ink/story/three. Модель исполняется
 в Chromium worker, не в MCP/ProjectStore. Горячая проверка и замена требуют
 совпадения runtime и module revision; другой код получает обычный candidate.
 Самостоятельный JS/HTML entry использует стандартную сборку без документного manifest.
@@ -241,3 +241,18 @@ StoryModelModule. PhysicsReplay рассчитывает их и восстан�
 передаёт существующий player: Story на паузе, SimulationPlayer активен либо наоборот.
 SceneCheckpoint и MCP report сохраняют отдельное состояние forward-only опыта;
 его codec проверяется до изменения принятого кадра.
+
+GPT: `story-project.json` объявляет model/subject-модули; `story.json` задаёт главы
+и semantic operations. `subject-model.js` сохраняет реальные веса и trace;
+`presentation/` разделяет предметные рисунки, `computation.js` связывает выбранные
+тензорные адреса с MathMorph. Общие надписи, framing и borrowed view находятся в
+`morph/notes-3d.ts`, `morph/scene-framing.ts`, `scene/view-access.ts`.
+`StoryModelModule.projectViews` проецирует выбранные authored representations до
+`experimentState`; ручной опыт сохраняет свои scalar inputs. `resolveInput` получает
+intent input/restore: восстановление не запускает сбросы нового пользовательского ввода.
+
+`StorySubjectDrawing.prepare` подготавливает скрытые ресурсы через существующий
+Story.prepare и отменяется его signal. Принятый рисунок остаётся видимым до render.
+`ready` и `SceneView.whenRendered` завершают GPU-кадр через существующий viewport;
+SceneShell.ready ожидает модель и её активный renderer. Перенос документа, контроллера
+и аудио ждёт ready; failed/cancelled candidate восстанавливает принятую композицию.

@@ -1,6 +1,7 @@
 import type { AuthoredBeat, AuthoredChapter } from './document-schema.js';
 export const spoken = (beat: AuthoredBeat) => (beat.say ?? beat.text ?? '').trim();
 export const intention = (beat: AuthoredBeat) => ({
+  ...(beat.awaitInput ? { awaitInput: true } : {}),
   ...(beat.action !== undefined
     ? { action: beat.action }
     : beat.hold === undefined && beat.text?.trim()

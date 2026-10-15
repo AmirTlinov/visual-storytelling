@@ -289,14 +289,15 @@ export function inspectPresentation(stage: HTMLElement | SVGSVGElement): ScenePr
       result.clipped.push({ id: object.id, bounds: rectangle(object), clip });
   };
   const nodes = subject.querySelectorAll<HTMLElement | SVGElement>(
-    '[data-review-id], [data-camera-world], svg text, [data-lettering-size], canvas' +
+    '[data-review-id], [data-camera-world], svg text, [data-lettering-size], .ve-annotation > .ve-label, canvas' +
       (subject === framed
         ? ', .ve-heading, .ve-chapter-navigation, .modes, .ve-parameters, [data-player], .ve-captions, .ve-select-list:popover-open'
         : ''),
   );
   for (const [index, node] of [...nodes].entries()) {
     if (!visible(node) || node.closest('[data-review-framing="background"]')) continue;
-    const id = node.dataset.reviewId || node.id || `${node.localName}:${index}`;
+    const id =
+      node.dataset.reviewId || node.dataset.object || node.id || `${node.localName}:${index}`;
     let text: InspectedObject['data'];
     if ((node.localName === 'text' || node.dataset.letteringSize) && 'getScreenCTM' in node) {
       text = {
@@ -305,6 +306,15 @@ export function inspectPresentation(stage: HTMLElement | SVGSVGElement): ScenePr
             node as SVGGraphicsElement,
             Number(node.dataset.letteringSize) || parseFloat(styleOf(node).fontSize),
           ),
+          minimum: Number(node.dataset.minimumFontSize) || 14,
+        },
+      };
+    } else if (node instanceof HTMLElement && node.classList.contains('ve-label')) {
+      text = {
+        text: {
+          pixels:
+            (parseFloat(styleOf(node).fontSize) * node.getBoundingClientRect().height) /
+            node.offsetHeight,
           minimum: Number(node.dataset.minimumFontSize) || 14,
         },
       };

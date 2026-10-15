@@ -31,7 +31,7 @@ test('the public catalog exposes maintained exemplars with source, preview and g
   );
   const [detail] = await examples('gpt-model');
   assert.ok(detail.create.includes('--example gpt-model'));
-  assert.ok(detail.source.endsWith('/gpt-model/scene.js'));
+  assert.ok(detail.source.endsWith('/gpt-model/story-project.json'));
 });
 
 test('CLI search combines topic and group, handles multiple words and reports no matches', async () => {

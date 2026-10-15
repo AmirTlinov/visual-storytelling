@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { buildAPI } from '../tools/api.mjs';
-import { sourceDigest, writeBuildInfo } from '../tools/build-info.mjs';
+import { packageInfo, sourceDigest, writeBuildInfo } from '../tools/build-info.mjs';
 import { playbackTimeline } from '../tools/narration.mjs';
 const execute = promisify(execFile);
 // The installed plugin, CLI and gallery publish the same versioned catalog.
@@ -118,6 +118,8 @@ export async function linuxDeployment(root, arch = process.arch) {
 
 /** A distributable local beta: runtime, authoring tools, docs and licensed assets travel together. */
 export async function packagePlugin(root) {
+  const source = await packageInfo(root);
+  if (source.status !== 'current') throw new Error('Build the core before packaging the plugin.');
   if (
     !(
       (process.platform === 'darwin' && process.arch === 'arm64') ||
@@ -218,6 +220,7 @@ export async function packagePlugin(root) {
         ...deployment,
         core: { version: pkg.version, build: core.build },
         plugin: JSON.parse(await readFile(join(root, 'plugin.json'), 'utf8')).version,
+        sourceBuild: source.build,
         examples: shippedExamples,
         onDemand: [
           'Python for SVG generators',

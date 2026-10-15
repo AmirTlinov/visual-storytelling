@@ -114,10 +114,12 @@ test('the largest authored power remains a visible measured area after changing 
   await page.evaluate(() => window.galleryReady);
   await page.locator('[data-mode=explore]').click();
   await expect(page.locator('[data-caption]')).toBeHidden();
+  await page.getByRole('button', { name: 'Условия', exact: true }).click();
   await page.getByRole('radio', { name: 'Степень', exact: true }).check();
   await page.getByRole('slider', { name: 'Первое число', exact: true }).fill('6');
   await page.getByRole('slider', { name: 'Второе число', exact: true }).fill('4');
   await page.getByRole('slider', { name: 'Переход', exact: true }).fill('1');
+  await page.getByRole('button', { name: 'Условия', exact: true }).click();
   await expect(page.locator('[data-projection="3d"]')).toContainText('6^4 = 1296');
   // Measure the canvas contribution against the same paper and HTML labels. This
   // stays valid for neutral ink; neither the grid nor the formula counts as area.

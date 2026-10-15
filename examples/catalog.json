@@ -2,28 +2,11 @@
   "gpt-model": {
     "title": "Как GPT выбирает следующее слово",
     "summary": "Локальная учебная модель раскрывает путь от токенов через внимание и два блока к вероятностям следующего слова.",
-    "source": "scene.js",
+    "source": "story-project.json",
     "time": 0,
-    "checkpoints": [
-      0,
-      15,
-      25,
-      36,
-      47,
-      56,
-      68,
-      74,
-      85
-    ],
+    "checkpoints": [0, 15, 25, 36, 47, 56, 68, 74, 85],
     "group": "explanations",
-    "tags": [
-      "GPT",
-      "трансформер",
-      "языковая модель",
-      "токены",
-      "внимание",
-      "вероятность"
-    ],
+    "tags": ["GPT", "трансформер", "языковая модель", "токены", "внимание", "вероятность"],
     "guides": [
       "skills/visual-explainer/references/visual-storytelling.md",
       "docs/explanations.md",
@@ -33,32 +16,27 @@
     "reference": true,
     "useFor": "Разобрать путь от контекста до выбора следующего слова",
     "visibleAction": "Слова проходят через общую модель к вероятностям продолжения",
-    "capabilities": [
-      "html",
-      "png",
-      "svg",
-      "mp4"
-    ],
+    "capabilities": ["html", "png", "svg", "mp4"],
     "editing": [
       {
-        "file": "scene.js",
-        "purpose": "сценарий, переходы и предметная композиция"
+        "file": "story.json",
+        "purpose": "причинная история, эпизоды и представления"
+      },
+      {
+        "file": "subject-model.js",
+        "purpose": "входы, trace и предметные операции"
+      },
+      {
+        "file": "presentation.js",
+        "purpose": "рисунок и предметные действия"
       },
       {
         "file": "model.js",
-        "purpose": "локальная модель GPT и полный след вычислений"
-      },
-      {
-        "file": "drawing.js",
-        "purpose": "предметный рисунок, подписи и действия"
+        "purpose": "реальная обученная модель GPT"
       },
       {
         "file": "computation.js",
-        "purpose": "наглядные матричные операции на данных модели"
-      },
-      {
-        "file": "checkpoint.json",
-        "purpose": "обученные веса и происхождение модели"
+        "purpose": "trace, тензоры и проверенные арифметические превращения"
       }
     ]
   },
@@ -67,36 +45,14 @@
     "summary": "Один заказ проходит через реальную карту, учебное устройство и вычисленную схему зависимостей.",
     "source": "scene.js",
     "time": 25,
-    "checkpoints": [
-      0,
-      4,
-      8,
-      12,
-      16,
-      19,
-      22,
-      27,
-      32,
-      35,
-      38
-    ],
+    "checkpoints": [0, 4, 8, 12, 16, 19, 22, 27, 32, 35, 38],
     "group": "explanations",
-    "tags": [
-      "карта",
-      "камера",
-      "зависимости"
-    ],
-    "guides": [
-      "skills/visual-explainer/references/spatial-story.md"
-    ],
+    "tags": ["карта", "камера", "зависимости"],
+    "guides": ["skills/visual-explainer/references/spatial-story.md"],
     "reference": true,
     "useFor": "Объяснить переход целое→деталь со сквозным предметом",
     "visibleAction": "Камера приближается к устройству; заказ проходит вычисленный маршрут",
-    "capabilities": [
-      "html",
-      "png",
-      "mp4"
-    ],
+    "capabilities": ["html", "png", "mp4"],
     "editing": [
       {
         "file": "story.json",
@@ -121,32 +77,14 @@
     "summary": "Точное сечение одного куба сохраняет связь с целым при приближении, возврате и ручном сдвиге.",
     "source": "scene.js",
     "time": 10,
-    "checkpoints": [
-      0,
-      3,
-      5.9,
-      8,
-      12.9,
-      15,
-      21
-    ],
+    "checkpoints": [0, 3, 5.9, 8, 12.9, 15, 21],
     "group": "explanations",
-    "tags": [
-      "куб",
-      "сечение",
-      "камера"
-    ],
-    "guides": [
-      "skills/visual-explainer/references/spatial-story.md"
-    ],
+    "tags": ["куб", "сечение", "камера"],
+    "guides": ["skills/visual-explainer/references/spatial-story.md"],
     "reference": true,
     "useFor": "Исследовать целое и деталь на точной геометрии",
     "visibleAction": "Плоскость входит в куб; камера показывает квадрат сечения",
-    "capabilities": [
-      "html",
-      "png",
-      "mp4"
-    ],
+    "capabilities": ["html", "png", "mp4"],
     "editing": [
       {
         "file": "story.json",
@@ -167,38 +105,14 @@
     "summary": "Персонаж прикладывает силу к тому же физическому бруску; угол и трение меняют движение и измеренный график.",
     "source": "scene.js",
     "time": 12,
-    "checkpoints": [
-      0,
-      2,
-      3,
-      5,
-      7,
-      8,
-      10,
-      12,
-      14,
-      16,
-      18,
-      22,
-      26
-    ],
+    "checkpoints": [0, 2, 3, 5, 7, 8, 10, 12, 14, 16, 18, 22, 26],
     "group": "explanations",
-    "tags": [
-      "физика",
-      "трение",
-      "персонаж"
-    ],
-    "guides": [
-      "skills/visual-explainer/references/physics-story.md"
-    ],
+    "tags": ["физика", "трение", "персонаж"],
+    "guides": ["skills/visual-explainer/references/physics-story.md"],
     "reference": true,
     "useFor": "Связать действие персонажа, контакт, физический результат и измерение",
     "visibleAction": "Брусок удерживается или движется по вычисленному контакту",
-    "capabilities": [
-      "html",
-      "png",
-      "mp4"
-    ],
+    "capabilities": ["html", "png", "mp4"],
     "editing": [
       {
         "file": "story.json",

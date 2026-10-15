@@ -1,12 +1,12 @@
 import { releaseResources } from '../lifecycle.js';
 import { SceneShell } from '../scene.js';
 import { story, type Story } from './story.js';
-import { documentModelsAt } from './document-model.js';
+import { documentModelsAt, documentCanContinue } from './document-model.js';
 import { prepareIllustratedDocument } from './document-subject.js';
 import type { StoryDocument } from './document-schema.js';
 import type { ModelValues } from './model.js';
 import type { IllustratedStoryOptions } from './illustrated.js';
-import type { Script } from './cues.js';
+import type { Script, Frame } from './cues.js';
 import { editStoryDocument, authoredInputKeys, type StoryDocumentOperation } from './document.js';
 import { modelInputValues } from './model.js';
 import { documentSpeechApplicable } from './document-audibility.js';
@@ -25,12 +25,13 @@ export async function mountIllustratedSubject(
   await SceneShell.ready();
   let controller: Story<ModelValues, string, SubjectMoment> | undefined;
   let latest: SubjectMoment | undefined;
+  let latestFrame: { frame: Frame; mode: 'story' | 'explore' } | undefined;
   const shell = SceneShell.mount(root, {
     title: initial.title ?? recipe.title,
     heading: options.heading ?? (initial.title !== undefined ? 'navigation' : false),
     parameters: recipe.parameters(model),
     resources: initial.resources,
-    frame: options.frame,
+    frame: options.frame ?? recipe.frame,
     captions: options.captions,
     onInput(values) {
       if (controller) return;
@@ -49,6 +50,7 @@ export async function mountIllustratedSubject(
   if (options.theme) handle.setTheme!(options.theme);
   let drawing: ReturnType<typeof recipe.create>;
   try {
+    if (recipe.controls) shell.showParameters(recipe.controls);
     drawing = recipe.create(shell, model);
   } catch (error) {
     releaseResources(
@@ -113,20 +115,64 @@ export async function mountIllustratedSubject(
     signal?.throwIfAborted();
     const { next, values, previous, script } = prepare(source, provisional, authoredInputs);
     const nextModel = next.models[0]!;
-    const render = (moment: SubjectMoment) => {
-      drawing.render(nextModel, moment.views, moment.models[nextModel.id]!, moment.beat);
+    const baseline = document,
+      acceptedMoment = latest,
+      acceptedFrame = latestFrame,
+      wasPlaying = controller?.player.state.playing;
+    const restoreDrawing = async () => {
+      if (!acceptedMoment || document !== baseline) return;
+      latest = acceptedMoment;
+      latestFrame = acceptedFrame;
+      drawing.render(
+        baseline.models[0]!,
+        acceptedMoment.views,
+        acceptedMoment.models[baseline.models[0]!.id]!,
+        acceptedMoment.beat,
+        acceptedFrame,
+      );
+      await drawing.ready?.();
+    };
+    const render = (moment: SubjectMoment, frame?: typeof latestFrame) => {
+      drawing.render(nextModel, moment.views, moment.models[nextModel.id]!, moment.beat, frame);
       latest = moment;
+      latestFrame = frame;
     };
     if (!script) {
       const moment = documentModelsAt(next, undefined, { [nextModel.id]: values }, options.modules);
-      render(moment);
-      shell.detachController();
-      controller = undefined;
-      shell.syncParameters(values);
-      document = next;
+      try {
+        await drawing.prepare?.(
+          nextModel,
+          moment.views,
+          moment.models[nextModel.id]!,
+          moment.beat,
+          undefined,
+          signal ?? new AbortController().signal,
+        );
+        signal?.throwIfAborted();
+        render(moment);
+        await drawing.ready?.(signal);
+        signal?.throwIfAborted();
+        shell.detachController();
+        controller = undefined;
+        shell.syncParameters(values);
+        document = next;
+      } catch (error) {
+        let rollbackFailure: unknown;
+        try {
+          await restoreDrawing();
+        } catch (failure) {
+          rollbackFailure = failure;
+        }
+        if (rollbackFailure)
+          throw new AggregateError(
+            [error, rollbackFailure],
+            'Static drawing preparation and rollback failed.',
+          );
+        throw error;
+      }
     } else {
       let active = false,
-        prepared: SubjectMoment | undefined;
+        prepared: { moment: SubjectMoment; frame: NonNullable<typeof latestFrame> } | undefined;
       const candidate = story<ModelValues, string, SubjectMoment>({
         script,
         exploreTimeline: true,
@@ -142,6 +188,20 @@ export async function mountIllustratedSubject(
             module,
           );
         },
+        resolveTime(values, frame) {
+          return recipe.resolveTime
+            ? module.validateInputs(
+                recipe.resolveTime(
+                  values,
+                  documentModelsAt(next, frame, {}, options.modules).models[nextModel.id]!,
+                  frame,
+                ),
+              )
+            : values;
+        },
+        canContinue(_cue, moment) {
+          return documentCanContinue(next, moment.state, options.modules);
+        },
         derive(values, frame, mode) {
           const valid = module.validateInputs(values);
           return documentModelsAt(
@@ -152,22 +212,35 @@ export async function mountIllustratedSubject(
             { mode },
           );
         },
-        resolveInput(patch, current) {
+        resolveInput(patch, current, _frame, intent) {
+          const resolved = recipe.resolveInput?.(
+            patch,
+            { ...current, playing: Boolean(controller?.player.state.playing) },
+            next,
+            script,
+            intent,
+          );
           return {
-            values: module.validateInputs({ ...current.values, ...patch }),
-            time: controller?.player.state.playing
-              ? current.time
-              : (recipe.inputTime?.(next, script) ?? current.time),
+            values: module.validateInputs(resolved?.values ?? { ...current.values, ...patch }),
+            time: resolved?.time ?? current.time,
           };
         },
-        render(moment) {
-          if (active) render(moment);
-          else prepared = moment;
+        prepare(moment, frame, mode, signal) {
+          return drawing.prepare?.(
+            nextModel,
+            moment.views,
+            moment.models[nextModel.id]!,
+            moment.beat,
+            { frame, mode },
+            signal,
+          );
+        },
+        render(moment, frame, mode) {
+          if (active) render(moment, { frame, mode });
+          else prepared = { moment, frame: { frame, mode } };
         },
       });
       let audio: ReturnType<typeof candidate.prepareAudio> | undefined;
-      const acceptedMoment = latest,
-        wasPlaying = controller?.player.state.playing;
       try {
         if (previous)
           candidate.restoreInputs(values, {
@@ -183,27 +256,29 @@ export async function mountIllustratedSubject(
           ? controller.player.state.muted
           : undefined;
         if (options.audio) audio = candidate.prepareAudio(options.audio, { muted: previousMuted });
-        render(prepared);
+        render(prepared.moment, prepared.frame);
+        await drawing.ready?.(signal);
+        signal?.throwIfAborted();
         audio?.commit();
         shell.attachController(candidate);
         controller = candidate;
         document = next;
         active = true;
       } catch (error) {
-        if (acceptedMoment) {
-          drawing.render(
-            document.models[0]!,
-            acceptedMoment.views,
-            acceptedMoment.models[document.models[0]!.id]!,
-            acceptedMoment.beat,
-          );
-          latest = acceptedMoment;
+        let rollbackFailure: unknown;
+        try {
+          await restoreDrawing();
+        } catch (failure) {
+          rollbackFailure = failure;
         }
         if (wasPlaying && controller) void controller.player.play().catch(() => {});
         releaseResources(
           [
             () => {
               throw error;
+            },
+            () => {
+              if (rollbackFailure) throw rollbackFailure;
             },
             () => candidate.dispose(),
             () => audio?.cancel(),
@@ -226,6 +301,7 @@ export async function mountIllustratedSubject(
       latest.views,
       latest.models[document.models[0]!.id]!,
       latest.beat,
+      latestFrame,
     );
   };
   const observer = new ResizeObserver(resize);

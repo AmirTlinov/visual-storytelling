@@ -788,3 +788,54 @@ current MP4960×540, silent duration, отключение голоса и от�
 `artifacts/architecture/2026-10-14/installed-speech-0.28.11/` и предыдущие
 диагностические кандидаты. Прежние pins и пользовательские проекты сохранены.
 Оставшиеся срезы12–15, gate5/20 и финальная приёмка milestone остаются открытыми.
+
+## Срез 12: GPT и авторские модули
+
+Принят установленный plugin 0.29.2 / core 0.41.2 на macOS arm64.
+Release `86315b6c8f4672a4c0986fe92b14ff330578096457259fa31e9e13e32c5a62c2`,
+core build `bfa5e450f2be6ca924d35bcd216c80598ce90115911f7ed9146a3db3ff21c263`,
+архив SHA `f0d6270d4a3ff2a7cb75ce2bd9f411a062ed6fa7e5fd2a176e1b46f2988619a1`.
+
+GPT использует story-project.json и StoryDocument v2. Предметный JS-модуль хранит
+настоящий forward pass и проверяет вычисления MathMorph относительно trace.
+Исходные веса не менялись. Общий Story ведёт главы, модель, ручные условия,
+попытку прогноза и восстановление; рисунки разделены по предметным представлениям.
+Переименование глав и beats не меняет семантические шаги и тензорные адреса.
+
+Установленный MCP и настоящая браузерная SDK-карточка прошли create → prompt/token/
+source/head → checkpoint → set-inputs/set-views/set-chapters → undo → remount.
+Все содержательные правки подтверждены как shown. Десять кадров проверены при
+реальной ширине iframe 390/820 px, в dark/reduced и light; outer width второго
+набора — 1200, имя файла не означает ширину iframe. Дополнительно проверен
+установленный кадр с actual viewport 1200×809. Clipped/unreadable/overflow и
+pageerrors — 0. Исправлены перекрытие math action row и масштаб экранной подписи;
+диагностика теперь также измеряет HTML-подписи 3D, отдельный regression ловит 10px.
+
+Автономный HTML с текущими условиями сохраняет «птица говорит» → «чирик», token 2,
+source 1, head 1, algebra; сетевых запросов и ошибок нет. Тихий MP4 интервала:
+180 кадров, 6 секунд, 960×540, 30 fps, полный ffmpeg decode PASS, audio streams 0.
+Переносимый source archive содержит тот же core build, редактируемые модули и
+локальный dependency tgz; машинный pin убран. После распаковки npm ci и собственный
+закреплённый CLI build прошли. Голосовая модель/API в этих операциях не вызывались.
+
+Build/check PASS. Реальная математика, документ и lifecycle: 58 focused checks PASS;
+последние owner/trust/create/framing: 6/6; итоговые GPT/math/tensor browser: 27/27.
+Независимое source и installed review CLEAR. Найденная ревью регрессия default CLI
+исправлена: checkout выбирает только свою свежую .plugin-release с sourceBuild;
+устаревший выпуск требует явной подготовки. README и короткий навык переведены,
+превью пересобраны. Тест прежнего UI обновлён для открытия общей панели «Условия».
+
+| Удалённый путь | Владелец | Потребители | Доказательство |
+| --- | --- | --- | --- |
+| GPT scene.js и второй HTML entry | StoryDocument / manifest / subject model | каталог, CLI, plugin, archive | source edit, rename, undo, portable build |
+| Частные framing/notes и фасады SceneView | morph/scene-framing, notes-3d, scene/view-access | GPT, MathMorph presentation/story | formula objects, actual arrangement, void restore |
+| Дублированная компоновка навигации stage frame | scene/chrome | все SceneShell frame scopes | chrome reflow/menu/draft checks |
+| Потеря черновика и reset при restore | controls/fields, Story resolveInput intent | GPT prompt, generic text fields, checkpoint | resize → blur → один commit, complete restore |
+| Публикация GPU-кандидата до готовности | Story.prepare / Drawing.ready / Viewport3D | custom subject, composition, shell | cold no-RAF, cancel, failed rollback |
+| Ручные шаблоны со вторыми clock/store/handle | visual-explainer manifest contract | навык, справки, примеры | validator, catalog/source build |
+
+Доказательства: artifacts/slice12/installed-0.29.2, portable-0.29.2 и журналы среза.
+Копия принятых файлов — artifacts/slice12-review в основном каталоге проекта.
+Текущее нативное подключение чата по-прежнему читает API 0.28.11; OS-native
+проверка не заявляется. Браузерная приёмка разрешена пользователем.
+Следующий срез — GUI-600. Скоростные gates 5/20 и финальные 13–15 остаются открытыми.

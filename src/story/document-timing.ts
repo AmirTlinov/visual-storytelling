@@ -211,7 +211,9 @@ export function documentChapter(
           id: beat.id,
           ...span,
           text: spoken(beat),
-          ...((beat.title ?? beat.text) ? { title: beat.title ?? beat.text } : {}),
+          ...((beat.title ?? (segments.length === 0 ? chapter.title : undefined))
+            ? { title: beat.title ?? chapter.title }
+            : {}),
         });
       time += occupied(beat, `${id}.${beat.id}`);
     }

@@ -6,10 +6,16 @@ import type { StorySubjectRecipe } from '../story/subject.js';
 let serial = 0;
 export const divisionSubject: StorySubjectRecipe = {
   title: 'Остаток от деления',
-  inputTime(document, script) {
-    for (const chapter of document.chapters)
-      for (const beat of chapter.beats)
-        if (beat.operation?.name === 'group') return script.cues[`${chapter.id}.${beat.id}`]!.end;
+  resolveInput(patch, current, document, script) {
+    const time = (() => {
+      for (const chapter of document.chapters)
+        for (const beat of chapter.beats)
+          if (beat.operation?.name === 'group') return script.cues[`${chapter.id}.${beat.id}`]!.end;
+    })();
+    return {
+      values: { ...current.values, ...patch },
+      time: current.playing ? current.time : (time ?? current.time),
+    };
   },
   parameters: (model) => [
     {

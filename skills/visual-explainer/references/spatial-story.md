@@ -17,13 +17,14 @@ Fit/shot/reset используют один solver. Для point-sized envelope
 
 ```js
 const plan = shotPlan3D(chapter.script, { target: countryBounds }, [
-  { cue: 'region', shot: { target: regionBounds }, move: {fraction:.85,maxSeconds:3} },
-  { cue: 'device', shot: { target: deviceBounds }, move: {fraction:.85,maxSeconds:3} },
+  { cue: 'region', shot: { target: regionBounds }, move: { fraction: 0.85, maxSeconds: 3 } },
+  { cue: 'device', shot: { target: deviceBounds }, move: { fraction: 0.85, maxSeconds: 3 } },
 ]);
 // Обычный render IllustratedChapterPresentation:
 const pose = plan.at(frame.time, frame.reduced);
-region.position.y = rise * (frame.time < chapter.script.cues.region.start
-  ? 0 : pose.cue === 'region' ? pose.amount : 1);
+region.position.y =
+  rise *
+  (frame.time < chapter.script.cues.region.start ? 0 : pose.cue === 'region' ? pose.amount : 1);
 view.shot(pose.shot);
 ```
 

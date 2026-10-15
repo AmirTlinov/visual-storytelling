@@ -90,6 +90,7 @@ export interface SceneStoryOptions {
   exploreTimeline?: boolean;
   /** The published chapter frame supplies the actual subject values for a whole take. */
   speechApplicable?(unit: import('./cues.js').Chapter, frame: ChapterFrame): boolean;
+  canContinue?(cue: string, frame: ChapterFrame): boolean;
   theme?: Theme;
   transition?: ChapterTransition;
   /** Derive the subject once before accepting a frame or preparing its presentation. */
@@ -186,6 +187,11 @@ async function mount(parent: HTMLElement, options: SceneStoryOptions) {
       resolveTime: frames.resolveTime,
       derive: frames.derive,
       resolveInput: frames.resolveInput,
+      ...(options.canContinue && {
+        canContinue(cue, moment) {
+          return options.canContinue!(cue, moment.state.frame);
+        },
+      }),
       ...(options.speechApplicable && {
         speechApplicable(unit, moment) {
           return options.speechApplicable!(unit, moment.state.frame);

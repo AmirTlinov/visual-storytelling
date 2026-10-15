@@ -15,7 +15,7 @@
 `model.ts` экспортирует default `StoryModelModule`: проверку scalar inputs,
 чистое состояние и операции, допустимые views и focus targets. Вычисляемый
 `ModelState` может содержать trace, граф и другие предметные данные.
-`drawing.ts` экспортирует default `StorySubjectRecipe`; рисунок читает модель. `create` получает `DrawingViewport` (`stage`, `layout`); управление, история и время принадлежат внешнему SceneShell.
+`drawing.ts` экспортирует default `StorySubjectRecipe`; рисунок читает модель. `create` получает `DrawingViewport`: геометрию `stage/layout` и, у интерактивного рисунка, заимствованные `input/attachView`. В сравнении доступны только геометрия и render. Управление, история и время принадлежат внешнему SceneShell.
 ID модуля уникален и не заменяет встроенного владельца. В `story.json` укажи
 тот же ID в `models[].module`; остальные ссылки и главы имеют общий формат v2.
 
@@ -27,11 +27,11 @@ manifest, модули, ресурсы и полный `story.json`. Подго�
 `index.html`, `scene.js`, `scene.ts` или `scene.json`. Полный самостоятельный entry
 создаётся без manifest через обычный исходный каркас.
 
-Подготовленный 2D runtime предоставляет существующие exports ink/recipes/story,
-`SceneShell`, `mountScene`, точную рациональную арифметику, QuantityPart, TensorData, `leverState` и `compareModelSnapshots`. Компилируется авторский JS/TS; imports и ресурсы
+Общий runtime предоставляет exports ink/recipes/story и `/three`, `SceneShell`,
+`mountScene`, рациональную арифметику, QuantityPart, TensorData, MathMorph и Viewport3D. Компилируется авторский JS/TS; imports и ресурсы
 остаются внутри immutable snapshot. Используй обычный
 `new URL('../assets/parcel.svg', import.meta.url)`: общий asset owner замыкает SVG.
-Другие движки подключаются через обычную исходную сцену.
+Классы тензоров и камер остаются теми же экземплярами общего runtime; отдельный пакет или плеер модулю не нужен.
 
 В story операции выполняются один раз от authored baseline. При переходе в
 explore сохраняются вычисленные scalar inputs; ручной ввод не повторяет авторское
@@ -42,3 +42,30 @@ explore сохраняются вычисленные scalar inputs; ручно�
 Рабочие исходники: `tools/document-modules/route/` (иная сеть, TS и SVG),
 `tools/document-modules/counter/` (операция «прибавить один»). Проверки:
 `custom-story-project.test.mjs` и `plugin-custom-modules.test.mjs`.
+
+`render(model, views, state, beat, moment)` получает общий `moment.frame` и режим.
+Метку читай через `frame.reveal("chapter.beat")`; ручной опыт может показывать
+завершённую форму того же рисунка. `resolveInput(patch, current, document, script, intent)`
+возвращает новые scalar values и необязательное время из `script.cues`,
+`resolveTime(values, authored, frame)` проецирует сценарные поля при seek.
+`controls` выбирает видимые поля; остальные сохраняются для предметных действий.
+
+Для прогноза beat задаёт `awaitInput:{model:"model-id"}`; модуль экспортирует
+`canContinue(state, beat)`. Барьер воспроизведения исполняет общий Story.
+Самостоятельное действие использует `viewport.input(patch)`; второй clock,
+SceneHandle или store не создаётся. Рабочий полный пример —
+[GPT](../../../examples/gpt-model/story-project.json).
+
+`projectViews(state, selectedViews, model)` у model owner проецирует авторское
+представление перед `experimentState`. У GPT одна representation на главу;
+`calculation` раскрывает Q·K/√4, схема, геометрия и тензоры сохраняют тот же trace.
+Отображаемые предметы регистрируются через `describeObject` с model/view IDs.
+
+`intent:"restore"` нормализует полный checkpoint без сбросов нового ввода.
+Для валидируемой строки `ControlParameter.commit:"change"` оставляет черновик
+до Enter/blur. Пример — ввод собственной фразы GPT.
+
+Если рисунку нужна холодная подготовка, `prepare(..., moment, signal)` готовит
+скрытый candidate, не меняя принятые pixels или semantic objects. `ready(signal)`
+ждёт существующий renderer; 3D использует `Viewport3D.whenRendered`. Своего RAF
+или второго плеера модуль не добавляет.

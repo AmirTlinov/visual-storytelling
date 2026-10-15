@@ -112,3 +112,5 @@ export {
 } from './math/probability.js';
 export type { ProbabilityTrace, ProbabilityRow } from './math/probability.js';
 export { sampleBernoulli, wilsonInterval, binomialPrefix } from './math/binomial.js';
+
+export { borrowSceneView } from './scene/view-access.js';

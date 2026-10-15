@@ -16,7 +16,7 @@ import {
   type StoryModules,
 } from './document.js';
 import { mountIllustratedSubject } from './illustrated-subject.js';
-import { documentModelsAt, documentTimeline } from './document-model.js';
+import { documentModelsAt, documentTimeline, documentCanContinue } from './document-model.js';
 import { cueSheet } from './cues.js';
 import type { StorySubjects } from './subject.js';
 import { storyModelOwners } from '../recipes/story-models.js';
@@ -148,6 +148,13 @@ async function mount(parent: HTMLElement, options: IllustratedStoryOptions) {
     chapters,
     script: aligned,
     exploreTimeline: Boolean(options.audio),
+    canContinue(_cue, frame) {
+      return documentCanContinue(
+        document,
+        frame.subject as ReturnType<typeof documentModelsAt>,
+        modules,
+      );
+    },
     speechApplicable(unit, frame) {
       const subject = frame.subject as ReturnType<typeof documentModelsAt>;
       return documentSpeechApplicable(

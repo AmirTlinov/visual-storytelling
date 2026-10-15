@@ -118,7 +118,7 @@ ${manifest.resources
   .map((file) => `import ${JSON.stringify(join(directory, file))};`)
   .join('\n')}
 ${storyModuleSource(manifest, directory)}
-window.galleryReady=IllustratedStory.mount(document.querySelector('main'),{document:storyDocument,modules,subjects});`;
+window.galleryReady=IllustratedStory.mount(document.querySelector('main'),{document:storyDocument,modules,subjects,audio:document.querySelector('[data-story-audio]')});`;
 }
 export function storyProjectPage(source, title = 'Визуальное объяснение') {
   const escaped = title.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');

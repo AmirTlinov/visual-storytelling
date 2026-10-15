@@ -29,7 +29,7 @@ async function mount(
           const shell = SceneShell.mount(root, {
             title: 'Как изменение одного условия влияет на результат вычисления',
             parameters: [
-              { key: 'amount', type: '${amountType}', label: 'Значение первого слагаемого перед вычислением', value: 2, min: -10, max: 10 },
+              { key: 'amount', type: '${amountType}', ${amountType === 'text' ? "commit:'change'," : ''} label: 'Значение первого слагаемого перед вычислением', value: 2, min: -10, max: 10 },
               { key: 'method', label: 'Способ сравнения результата', type: 'select', value: 'sum', options: [
                 { value: 'sum', label: 'Сложить исходные значения' },
                 { value: 'difference', label: 'Найти разность между исходным и вычисленным значением' },
@@ -612,4 +612,33 @@ test('an inactive iframe retains its condition without taking focus from the hos
       }),
     ).toEqual({ amount: 6, playing: false });
   }
+});
+
+test('validated text retains its draft through chrome reparenting and commits on the next real blur', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await mount(page, 'text');
+  await page.getByRole('button', { name: 'Условия', exact: true }).click();
+  const input = page.getByRole('textbox', {
+    name: 'Значение первого слагаемого перед вычислением',
+  });
+  await input.fill('');
+  await input.pressSequentially('кот');
+  const before = await input.elementHandle();
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await expect(input).toBeFocused();
+  await expect(input).toHaveValue('кот');
+  expect(await input.evaluate((n, same) => n === same, before)).toBe(true);
+  expect(
+    await page.evaluate(() => (window as any).chromeContract.root.scene.snapshot().amount),
+  ).toBe(2);
+  await input.press('Tab');
+  expect(
+    await page.evaluate(() => (window as any).chromeContract.root.scene.snapshot().amount),
+  ).toBe('кот');
+  await page.evaluate(() => (window as any).chromeContract.root.scene.undoExperiment());
+  expect(
+    await page.evaluate(() => (window as any).chromeContract.root.scene.snapshot().amount),
+  ).toBe(2);
 });

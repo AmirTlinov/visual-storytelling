@@ -1,3 +1,4 @@
+import { sceneChrome } from './scene/chrome.js';
 import { controllerAccess } from './scene/controller-access.js';
 import { conditionsPanel } from './scene/conditions.js';
 import type { StoryResource } from './story/resources.js';
@@ -227,110 +228,34 @@ function mount(
   let subjectWidth = frame.width,
     subjectHeight = frame.height;
   cleanups.add(composition.dispose);
-  if (completeFrame) toolbar.append(modes, actions);
+  toolbar.append(modes, actions);
   if (completeFrame) {
     sheet.append(header, drawing);
     drawing.append(fields, stage);
-  } else sheet.append(heading, modes, actions, fields, composition.element);
+  } else sheet.append(header, fields, composition.element);
   if (completeFrame) root.append(composition.element);
   root.append(controls, status);
   root.append(conditions);
-  if (!completeFrame) composition.element.before(conditionsButton);
   let shownPresentation: SceneFramePresentation | undefined;
-  const visibleContent = (element: Element): boolean => {
-    if (element.hasAttribute('hidden') || getComputedStyle(element).display === 'none')
-      return false;
-    return (
-      element.matches('input,textarea,button') ||
-      [...element.childNodes].some((child) =>
-        child instanceof Element ? visibleContent(child) : Boolean(child.textContent?.trim()),
-      )
-    );
-  };
-  const placeConditions = panel.place;
-  function updateChrome(preserveFocus = false) {
-    if (abort.signal.aborted) return;
-    if (!completeFrame) {
-      conditionsButton.hidden = !panel.hasResources;
-      placeConditions();
-      return;
-    }
-    const compact = composition.element.getBoundingClientRect().width < 640;
-    const denseConditions = parameters.length > 3;
-    // Opening Conditions exposes the inputs; only editing them enters an experiment.
-    fields.hidden = !fields.childElementCount || (mode === 'story' && !compact && !denseConditions);
-    const toolbarVisible = [...toolbar.children].some(visibleContent);
-    if (toolbar.hidden === toolbarVisible) toolbar.hidden = !toolbarVisible;
-    const focused = document.activeElement,
-      ownedFocus =
-        focused instanceof HTMLElement &&
-        (header.contains(focused) || toolbar.contains(focused) || fields.contains(focused)),
-      hasUI = toolbarVisible || visibleContent(fields),
-      popup = compact && hasUI,
-      popupFields = (compact || denseConditions) && hasUI,
-      hasConditions = popupFields || showHistory || panel.hasResources;
-    sheet.dataset.compactChrome = String(compact);
-    conditionsButton.hidden = !hasConditions;
-    header.hidden = heading.hidden && !hasConditions && !toolbarVisible;
-    const headerParent = shownPresentation === 'stage' ? root : sheet,
-      toolbarParent = popup ? conditions : header,
-      fieldsParent = popupFields ? conditions : shownPresentation === 'stage' ? root : drawing;
-    const moved =
-      header.parentElement !== headerParent ||
-      toolbar.parentElement !== toolbarParent ||
-      fields.parentElement !== fieldsParent;
-    const leavingConditions =
-      moved &&
-      ((toolbar.parentElement === conditions && toolbarParent !== conditions) ||
-        (fields.parentElement === conditions && fieldsParent !== conditions));
-    const keepEdit = moved && preserveFocus && ownedFocus,
-      restoreFocus = keepEdit && document.hasFocus();
-    if (keepEdit)
-      for (const controls of [toolbar, fields]) controls.dataset.sceneControlsMoving = '';
-    try {
-      if ((!hasConditions || leavingConditions) && conditions.matches(':popover-open'))
-        conditions.hidePopover();
-      if (header.parentElement !== headerParent) {
-        if (headerParent === root) root.insertBefore(header, composition.element);
-        else sheet.prepend(header);
-      }
-      if (moved) {
-        const historyBar =
-          conditions.querySelector(':scope > .ve-experiment-history') ?? panel.resources;
-        if (toolbarParent === conditions) conditions.insertBefore(toolbar, historyBar);
-        else if (toolbar.parentElement !== header) conditionsButton.before(toolbar);
-        if (fieldsParent === conditions) conditions.insertBefore(fields, historyBar);
-        else if (fieldsParent === root) controls.before(fields);
-        else if (fields.parentElement !== drawing) stage.before(fields);
-      }
-      // Reparenting a native field emits blur/focus. Its draft and history gesture
-      // still belong to the same edit; only an actual departure commits them.
-      if (restoreFocus) {
-        if (conditions.contains(focused) && !conditions.matches(':popover-open'))
-          conditions.showPopover();
-        if (focused.checkVisibility() && document.activeElement !== focused)
-          focused.focus({ preventScroll: true });
-      }
-    } finally {
-      if (keepEdit)
-        for (const controls of [toolbar, fields]) delete controls.dataset.sceneControlsMoving;
-    }
-    placeConditions();
-  }
-  root.addEventListener('scene-frame-resize', () => updateChrome(true), options);
-  // Actions/chapter navigation are public extension points of this shell.
-  const chromeObserver = new MutationObserver(() => updateChrome());
-  if (completeFrame)
-    chromeObserver.observe(toolbar, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['hidden'],
-    });
-  cleanups.add(() => {
-    chromeObserver.disconnect();
-    if (conditions.matches(':popover-open')) conditions.hidePopover();
+  const chrome = sceneChrome({
+    root,
+    sheet,
+    drawing,
+    stage,
+    header,
+    heading,
+    toolbar,
+    fields,
+    controls,
+    composition,
+    panel,
+    showHistory,
+    dense: parameters.length > 3,
+    signal: abort.signal,
+    state: () => ({ mode, presentation: shownPresentation }),
   });
+  const updateChrome = chrome.update;
+  cleanups.add(chrome.dispose);
   function setPresentation(next: SceneFramePresentation) {
     assertLive();
     if (shownPresentation === next) return;
@@ -430,6 +355,9 @@ function mount(
         return acceptedCondition;
       },
       presentation: () => inspectPresentation(stage),
+      ready: async () => {
+        await view?.whenRendered?.();
+      },
       exportSVG: () => exportCompositionSVG(completeFrame ? sheet : stage),
       setTheme: sceneTheme.set,
       dispose,
@@ -456,8 +384,7 @@ function mount(
       redo = node('button', { type: 'button', disabled: '' }, 'Повторить');
     bar.append(undo, redo);
     // Undo belongs to the editing session, not the exported subject or its geometry.
-    if (completeFrame) conditions.append(bar);
-    else controls.before(bar);
+    conditions.append(bar);
     bar.hidden = !showNavigation;
     history = SceneHistory.mount(root, {
       read: () => handle.capture({ basis: 'requested' }),
@@ -619,6 +546,9 @@ function mount(
         return acceptedCondition;
       },
       review: () => ({ duration: 0, cues: [], segments: [] }),
+      ready: async () => {
+        await view?.whenRendered?.();
+      },
     });
     mode = 'explore';
     root.dataset.sceneMode = mode;
@@ -766,6 +696,10 @@ function mount(
     caption.hidden = exploration === 'model' && mode !== 'story';
     updateChrome();
     const access = controllerAccess(controller, {
+      ready: async () => {
+        await controller.ready();
+        await view?.whenRendered?.();
+      },
       play: () => {
         assertLive();
         preparePlayback();

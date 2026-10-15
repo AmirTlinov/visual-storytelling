@@ -1,3 +1,4 @@
+import { borrowSceneView } from '../scene/view-access.js';
 import { releaseResources } from '../lifecycle.js';
 import { mathPlan } from './plan.js';
 import type { MathOperation, MathMorphPlan } from './types.js';
@@ -109,30 +110,7 @@ export async function mountMath(
   }
   return {
     element,
-    view: {
-      get transition() {
-        return currentView().transition;
-      },
-      get focus() {
-        const view = currentView();
-        return view.focus?.bind(view);
-      },
-      get validateFocus() {
-        const view = currentView();
-        return view.validateFocus?.bind(view);
-      },
-      reset(settings) {
-        currentView().reset(settings);
-      },
-      capture() {
-        return currentView().capture?.();
-      },
-      restore(value) {
-        const view = currentView();
-        return view.restore ? view.restore(value) : false;
-      },
-      dispose,
-    } satisfies SceneView,
+    view: borrowSceneView(() => (disposed ? undefined : currentView()), dispose),
     render(time: MorphTime, cues?: MorphCues) {
       if (!disposed) return current().render(time, cues);
     },
