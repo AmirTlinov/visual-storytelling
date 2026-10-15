@@ -3,7 +3,7 @@ import { chromium } from 'playwright';
 import { chromiumLaunchOptions } from '../../tools/chromium.mjs';
 import { readFile, writeFile, appendFile, mkdir, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { loadavg, cpus, totalmem, platform, arch, release as osRelease } from 'node:os';
 import assert from 'node:assert/strict';
 import { observeBrowserFrames } from './frame-observer.mjs';
@@ -11,6 +11,27 @@ import { assertViewerSnapshot } from './viewer-snapshot.mjs';
 
 const out = resolve('artifacts/slice14/input-frame-check/run-' + randomUUID());
 await mkdir(out, { recursive: true });
+const instrumentation = Object.fromEntries(
+  await Promise.all(
+    [
+      'tests/plugin/measure-authoring.mjs',
+      'tests/plugin/frame-observer.mjs',
+      'tests/plugin/viewer-snapshot.mjs',
+      'tests/plugin/host.mjs',
+      'tests/plugin/host-client.mjs',
+      'tools/chromium.mjs',
+    ].map(async (path) => [
+      path,
+      createHash('sha256')
+        .update(await readFile(path))
+        .digest('hex'),
+    ]),
+  ),
+);
+await writeFile(
+  join(out, 'instrumentation.json'),
+  JSON.stringify({ recordedAt: new Date().toISOString(), hashes: instrumentation }, null, 2),
+);
 const authorTrials = Number(process.env.TRIALS ?? 200),
   viewerTrials = Number(process.env.VIEWER_TRIALS ?? 0);
 assert(Number.isSafeInteger(authorTrials) && authorTrials > 0);
@@ -36,6 +57,8 @@ const environment = {
   os: osRelease(),
   loadAtStartup: loadavg(),
   startupMs,
+  foregroundPreparation:
+    'bringToFront, Scene.ready and two animation frames before every operation clock',
 };
 const browser = await chromium.launch(chromiumLaunchOptions());
 const call = async (name, args) => {
@@ -134,12 +157,23 @@ try {
     const width = widthAt(index, authorTrials);
     if (item.page.viewportSize().width !== width) {
       await item.page.setViewportSize({ width, height: 960 });
-      await item.frame.locator('main').evaluate(async (root) => {
-        await root.scene.ready?.();
-        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-      });
-      item.box = await item.frame.locator('.ve-stage').boundingBox();
     }
+    const visibility = await item.frame.locator('main').evaluate(async (root) => {
+      if (document.visibilityState !== 'visible') throw Error('Warm target is not foregrounded');
+      await root.scene.ready?.();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return document.visibilityState;
+    });
+    assert.equal(visibility, 'visible', 'A warm operation starts in an active, settled drawing');
+    item.box = await item.frame.locator('.ve-stage').boundingBox();
+    assert(
+      item.box &&
+        item.box.x >= 0 &&
+        item.box.y >= 0 &&
+        item.box.x + item.box.width <= width &&
+        item.box.y + item.box.height <= 960,
+      'The warm drawing must fit the viewport before timing the operation',
+    );
     const startedEpoch = item.frames.begin();
     const began = performance.now(),
       result = await call('story_edit', {
@@ -344,6 +378,7 @@ try {
   const receipt = {
     version: JSON.parse(await readFile(join(release, 'plugin.json'), 'utf8')).version,
     releaseInfo: JSON.parse(await readFile(join(release, 'release.json'), 'utf8')),
+    instrumentation,
     authorTrials,
     viewerTrials,
     surface: 'owned Chromium SDK card; target page foregrounded before every clock',
