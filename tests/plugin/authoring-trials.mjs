@@ -90,19 +90,19 @@ function taskCase(index) {
       rightArm = 10,
       inputs = { leftForce, leftArm, rightForce, rightArm },
       balancedForce = (leftForce * leftArm) / rightArm;
-    const lever = (s) => s?.comparison?.before?.state ?? s;
-    const conditions = (s) => s?.comparison?.before?.inputs ?? s;
+    const lever = (s, side) => s?.comparison?.[side]?.state ?? s;
+    const conditions = (s, side) => s?.comparison?.[side]?.inputs ?? s;
     return {
       family,
       domain: 'mechanics',
       inputs,
       task: `Невесомый горизонтальный рычаг: слева ${leftForce}Н на плече ${leftArm}см, справа ${rightForce}Н на плече ${rightArm}см. Покажи причину вращения. Затем измени только правую силу и найди равновесие. Укажи, что это статическая модель.`,
       check: (a, b) =>
-        sameInputs(conditions(a), inputs) &&
-        !lever(a)?.equilibrium &&
-        sameInputs(conditions(b), { ...inputs, rightForce: balancedForce }) &&
-        lever(b)?.equilibrium === true &&
-        fraction(lever(b).netMoment) === 0,
+        sameInputs(conditions(a, 'before'), inputs) &&
+        !lever(a, 'before')?.equilibrium &&
+        sameInputs(conditions(b, 'after'), { ...inputs, rightForce: balancedForce }) &&
+        lever(b, 'after')?.equilibrium === true &&
+        fraction(lever(b, 'after').netMoment) === 0,
     };
   }
   if (family === 'probability') {
@@ -193,11 +193,16 @@ function taskCase(index) {
     domain: 'network-dependencies',
     inputs,
     task: `Заказ${inputs.orderId}: провайдерА недоступен, резерв разделяет с ним провайдера. Покажи, почему повторный путь сохраняет отказ. Затем вручную выбери независимый резерв и проверь доставку. Банк работает; сохрани тот же ID заказа.`,
-    check: (a, b) =>
-      sameInputs(a, inputs) &&
-      a.trace?.status !== 'delivered' &&
-      sameInputs(b, { ...inputs, reserve: 'independent' }) &&
-      b.trace?.status === 'delivered',
+    check: (a, b, presented) =>
+      sameInputs(presented.initial, inputs) &&
+      a.orderId === inputs.orderId &&
+      a.status === 'blocked' &&
+      a.blocked === 'provider' &&
+      sameInputs(presented.changed, { ...inputs, reserve: 'independent' }) &&
+      b.orderId === inputs.orderId &&
+      b.status === 'delivered' &&
+      b.route.includes('independent') &&
+      b.route.at(-1) === 'bank',
   };
 }
 
@@ -215,7 +220,7 @@ export function authoringTrials(output, { release, model, reasoning, hardware })
       try {
         claim ??= writeFile(
           join(output, 'dataset.json'),
-          JSON.stringify({ release, model, reasoning, hardware }),
+          JSON.stringify({ criteriaVersion: 2, release, model, reasoning, hardware }),
           { flag: 'wx' },
         );
         await claim;
@@ -264,9 +269,20 @@ export function authoringTrials(output, { release, model, reasoning, hardware })
         const s = active.specification,
           initial = observations?.initial,
           changed = observations?.changed;
-        const snapshots = active.calls
-          .map((c) => c.result.structuredContent?.state?.snapshot)
-          .filter(Boolean);
+        const states = active.calls
+          .map((c) => c.result.structuredContent?.state)
+          .filter((state) => state?.snapshot);
+        const snapshots = states.map((state) => state.snapshot);
+        const presented = Object.fromEntries(
+          [
+            ['initial', initial],
+            ['changed', changed],
+          ].map(([label, snapshot]) => [
+            label,
+            states.findLast((state) => isDeepStrictEqual(state.snapshot, snapshot))?.rendering
+              ?.presented?.values,
+          ]),
+        );
         const observedByMCP = [initial, changed].every(
           (value) => value && snapshots.some((snapshot) => isDeepStrictEqual(value, snapshot)),
         );
@@ -279,7 +295,7 @@ export function authoringTrials(output, { release, model, reasoning, hardware })
         let computedStateCorrect = false,
           checkError;
         try {
-          computedStateCorrect = sourceMatches(authored, s) && s.check(initial, changed);
+          computedStateCorrect = sourceMatches(authored, s) && s.check(initial, changed, presented);
         } catch (failure) {
           checkError = failure.message;
         }
@@ -301,6 +317,7 @@ export function authoringTrials(output, { release, model, reasoning, hardware })
         const { specification, ...record } = active;
         const report = {
           ...record,
+          criteriaVersion: 2,
           release,
           model,
           reasoning,

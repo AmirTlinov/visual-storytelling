@@ -164,41 +164,6 @@ if (document.body.dataset.webTools === 'true') {
           return result;
         },
       });
-    if (document.body.dataset.authorTrial === 'true') {
-      const trialCall = async (action, args) => {
-        const value = await fetch('/author-trial', {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-test-token': token,
-          },
-          body: JSON.stringify({ action, ...args }),
-        }).then((r) => r.json());
-        return {
-          structuredContent: value,
-          content: [{ type: 'text', text: JSON.stringify(value) }],
-        };
-      };
-      await document.modelContext.registerTool({
-        name: 'warm_author_start',
-        description:
-          'Start an unknown division authoring trial after the installed card is warm. Returns a brief, frozen scene context and start timestamp. No experience is authored by this tool.',
-        inputSchema: { type: 'object', properties: {} },
-        execute: () =>
-          trialCall('start', { context: context?.structuredContent?.visualStory?.context }),
-      });
-      await document.modelContext.registerTool({
-        name: 'warm_author_finish',
-        description:
-          'Record the end of an agent-checked authoring trial. Supply the first verified screenshot timestamp and factual observations. Does not change the scene.',
-        inputSchema: {
-          type: 'object',
-          properties: { capturedAt: { type: 'number' }, observations: { type: 'object' } },
-          required: ['capturedAt', 'observations'],
-        },
-        execute: (args) => trialCall('finish', args),
-      });
-    }
     document.body.dataset.webMcp = 'ready';
   }
 }

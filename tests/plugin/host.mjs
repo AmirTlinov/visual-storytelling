@@ -18,7 +18,6 @@ export async function pluginHost({
   fixture,
   initialTarget = { example: 'gpt-model' },
   webTools = false,
-  authorTrial,
 } = {}) {
   const temporary = !dataDirectory;
   dataDirectory ??= await mkdtemp(join(tmpdir(), 'visual-story-host-'));
@@ -58,23 +57,6 @@ export async function pluginHost({
   const token = randomUUID();
   const server = createServer(async (req, res) => {
     try {
-      if (
-        req.url === '/author-trial' &&
-        req.method === 'POST' &&
-        authorTrial &&
-        req.headers['x-test-token'] === token
-      ) {
-        let input = '';
-        for await (const chunk of req) input += chunk;
-        if (input.length > 64000) throw Error('Trial input is too large');
-        const { action, ...args } = JSON.parse(input);
-        const result =
-          action === 'start'
-            ? await authorTrial.start(args, client)
-            : await authorTrial.finish(args);
-        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
-        return;
-      }
       if (req.url === '/call' && req.method === 'POST' && req.headers['x-test-token'] === token) {
         let text = '';
         for await (const chunk of req) {
@@ -82,9 +64,7 @@ export async function pluginHost({
           if (text.length > 2_000_000) throw new Error('Request too large');
         }
         const request = JSON.parse(text);
-        const started = Date.now();
         const result = await client.callTool(request);
-        authorTrial?.record(request, result, started);
         res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
         return;
       }
@@ -115,7 +95,7 @@ export async function pluginHost({
         res
           .writeHead(200, { 'content-type': 'text/html' })
           .end(
-            `<!doctype html><html><head><meta charset="utf-8"><title>Visual Storytelling · MCP contract host</title></head><body data-token="${token}" data-web-tools="${webTools}" data-author-trial="${Boolean(authorTrial)}" data-initial="${encodeURIComponent(JSON.stringify(initialTarget))}" style="margin:0;max-width:820px;margin:auto"><script type="module" src="/host.js"></script></body></html>`,
+            `<!doctype html><html><head><meta charset="utf-8"><title>Visual Storytelling · MCP contract host</title></head><body data-token="${token}" data-web-tools="${webTools}" data-initial="${encodeURIComponent(JSON.stringify(initialTarget))}" style="margin:0;max-width:820px;margin:auto"><script type="module" src="/host.js"></script></body></html>`,
           );
       else res.writeHead(404).end();
     } catch (error) {

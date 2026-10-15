@@ -101,3 +101,111 @@ test('trial transitions and durable reports reject forged clocks and retain malf
   });
   assert.equal(await readFile(join(out, 'summary.json'), 'utf8'), before);
 });
+
+test('comparison grading follows the changed after case and cannot accept a balanced before in its place', async (t) => {
+  const { leverModel } = await import('../dist/index.js');
+  for (const balanceAfter of [true, false]) {
+    const out = await mkdtemp(join(tmpdir(), 'authoring-comparison-'));
+    t.after(() => rm(out, { recursive: true, force: true }));
+    const owner = authoringTrials(out, {
+      release: 'test',
+      model: 'test',
+      reasoning: 'test',
+      hardware: {},
+    });
+    const client = {
+      callTool: async () => ({ structuredContent: { status: 'connected', context: 'observed' } }),
+    };
+    await owner.start({ context: 'observed' }, client);
+    await owner.finish({ error: 'unit test skips division' });
+    const task = await owner.start({ context: 'observed' }, client);
+    const m = task.task.match(/слева (\d+)Н на плече (\d+)см, справа (\d+)Н на плече (\d+)см/);
+    const inputs = { leftForce: +m[1], leftArm: +m[2], rightForce: +m[3], rightArm: +m[4] };
+    const changed = {
+      ...inputs,
+      rightForce: (inputs.leftForce * inputs.leftArm) / inputs.rightArm,
+    };
+    const model = { id: 'lever', module: 'lever', inputs };
+    const part = (v) => ({ inputs: v, state: leverModel.staticState(v, model) });
+    const initial = { comparison: { before: part(inputs), after: part(inputs) } };
+    const final = {
+      comparison: {
+        before: part(balanceAfter ? inputs : changed),
+        after: part(balanceAfter ? changed : inputs),
+      },
+    };
+    for (const snapshot of [initial, final])
+      owner.record(
+        {
+          name: 'story_control',
+          arguments: {
+            commands: [{ type: 'parameters', values: { comparisonValue: changed.rightForce } }],
+          },
+        },
+        { structuredContent: { state: { snapshot } } },
+        Date.now(),
+      );
+    const now = Date.now();
+    const report = await owner.finish({
+      capturedAt: now,
+      interactionAt: now,
+      observations: { initial, changed: final },
+      authored: {
+        models: [{ module: 'lever-comparison', inputs }],
+        chapters: [{ beats: [{}, {}] }],
+      },
+    });
+    assert.equal(report.computedStateCorrect, balanceAfter);
+    assert.equal(report.evidenceValid, true);
+  }
+});
+
+test('route grading follows the presented inputs and flat subject trace', async (t) => {
+  const { instructionalRouteModel } = await import('../dist/index.js');
+  const out = await mkdtemp(join(tmpdir(), 'authoring-route-'));
+  t.after(() => rm(out, { recursive: true, force: true }));
+  const owner = authoringTrials(out, {
+    release: 'test',
+    model: 'test',
+    reasoning: 'test',
+    hardware: {},
+  });
+  const client = {
+    callTool: async () => ({ structuredContent: { status: 'connected', context: 'observed' } }),
+  };
+  for (let i = 0; i < 21; i++) {
+    await owner.start({ context: 'observed' }, client);
+    await owner.finish({ error: 'unit test skips earlier questions' });
+  }
+  const task = await owner.start({ context: 'observed' }, client);
+  const orderId = task.task.match(/Заказ(\d+)/)[1];
+  const initialInputs = instructionalRouteModel.validateInputs({
+    orderId,
+    reserve: 'shared',
+    'disabled-provider': true,
+  });
+  const changedInputs = { ...initialInputs, reserve: 'independent' };
+  const initial = instructionalRouteModel.staticState(initialInputs).trace;
+  const changed = instructionalRouteModel.staticState(changedInputs).trace;
+  for (const [snapshot, values] of [
+    [initial, initialInputs],
+    [changed, changedInputs],
+  ])
+    owner.record(
+      { name: 'story_control', arguments: { commands: [{ type: 'parameters', values }] } },
+      { structuredContent: { state: { snapshot, rendering: { presented: { values } } } } },
+      Date.now(),
+    );
+  const now = Date.now();
+  const report = await owner.finish({
+    capturedAt: now,
+    interactionAt: now,
+    observations: { initial, changed },
+    authored: {
+      models: [{ module: 'dependency-route', inputs: initialInputs }],
+      chapters: [{ beats: [{}, {}] }],
+    },
+  });
+  assert.equal(report.computedStateCorrect, true);
+  assert.equal(report.evidenceValid, true);
+});
