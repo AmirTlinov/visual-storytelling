@@ -124,6 +124,7 @@ export function playbackTimeline(timeline) {
           'title',
           'text',
           'displayText',
+          'captionApplicable',
           'start',
           'end',
           'audio_start',
