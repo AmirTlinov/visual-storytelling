@@ -30,7 +30,9 @@ test('one conditions owner exposes resources in both frame scopes and rejects un
   const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage({ viewport: { width: 375, height: 760 } });
-    await page.setContent('<main class="ve-scene" style="width:100%"></main>');
+    await page.setContent(
+      '<body class="ve-standalone"><main class="ve-scene" style="width:100%"></main></body>',
+    );
     const css = await build({
       entryPoints: ['dist/style.css'],
       bundle: true,
@@ -131,6 +133,18 @@ test('one conditions owner exposes resources in both frame scopes and rejects un
       sizing: getComputedStyle(node).boxSizing,
     }));
     assert(shortGeometry.height <= 264.01, JSON.stringify(shortGeometry));
+    await page.setViewportSize({ width: 1200, height: 960 });
+    await page.waitForFunction(() => {
+      const panel = document.querySelector('.ve-scene-conditions').getBoundingClientRect();
+      const drawing = document.querySelector('[data-scene-frame]').getBoundingClientRect();
+      return (
+        panel.left >= drawing.right - 1 &&
+        panel.bottom <= innerHeight &&
+        drawing.top >= 0 &&
+        drawing.bottom <= innerHeight &&
+        document.documentElement.scrollWidth <= innerWidth
+      );
+    });
   } finally {
     await browser.close();
   }

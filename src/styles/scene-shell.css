@@ -328,6 +328,20 @@
   gap: 8px;
   margin-bottom: 12px;
 }
+@media (min-width: 960px) {
+  .ve-standalone > .ve-scene:has(> .ve-scene-conditions:not([hidden])) {
+    position: relative;
+    padding-inline-end: 360px;
+  }
+  .ve-standalone > .ve-scene > .ve-scene-conditions:not([hidden]) {
+    position: absolute;
+    inset-block-start: 8px;
+    inset-inline-end: 8px;
+    width: 344px;
+    max-height: min(480px, calc(100% - 16px));
+    margin: 0;
+  }
+}
 .ve-scene .ve-conditions-heading h2 {
   flex: 1 1 0;
   min-width: 0;
