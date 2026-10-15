@@ -2,19 +2,13 @@ import { readFile } from 'node:fs/promises';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { benchmarkRequest } from './benchmark-request.mjs';
 
 // Test transport only. The same installed MCP, clocks, questions and browser evidence
 // remain owned by authorBenchmark; this process authors no document or answer.
 const endpoint = JSON.parse(await readFile(process.argv[2], 'utf8'));
 async function request(action, args = {}) {
-  const response = await fetch(endpoint.url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-benchmark-token': endpoint.token },
-    body: JSON.stringify({ action, ...args }),
-  });
-  const result = await response.json();
-  if (!response.ok) throw Error(result.error ?? `Benchmark transport: ${response.status}`);
-  return result;
+  return benchmarkRequest(endpoint, { action, ...args });
 }
 const ready = await request('ready');
 const object = (properties = {}) => ({ type: 'object', properties, additionalProperties: false });

@@ -1120,15 +1120,15 @@ Build/check/package/skill validator PASS;69/69 focused regressions PASS.
 проверены на зависимости от речи/времени. Voice recovery и explicit optional voice
 прошли регрессии; новая генерация принятой речи не запускалась.
 
-| Удалённый путь | Владелец | Переведённые потребители | Проверка |
-| --- | --- | --- | --- |
-| Повторные SHA тех же файлов внутри операции | input-verification | project-files, snapshot/delivery | bytes, mutation/restart, inode isolation |
-| Полный replay builtin boundaries при повторе тех же входов | document-checks | prepareStoryDocument, illustrated preparation | schema/refs/clock/opaque cases |
-| Повторная проверка неизменного рисунка при правке речи | illustrated-preparation | illustrated subject, scene ACK | text/viewer/layout/failure,8 validators |
-| Новый worker для совпадающего завершённого checkpoint review | preparation-reuse + JobRunner | review workflow | report/dist mutation, lease renewal |
-| Неограниченная плотность WebGL preview | raster-budget | Viewport3D, CharacterStage, render/deliver | реальные matched profiles |
-| Построение всех будущих pen paths ради ширины счётчика | text-measure/lettering | division | styled/tspan/native widths, old/new visual |
-| Delivery внутри большого project-transactions | project-delivery | runtime composition | retry/recovery/current model identity |
+| Удалённый путь                                               | Владелец                      | Переведённые потребители                      | Проверка                                   |
+| ------------------------------------------------------------ | ----------------------------- | --------------------------------------------- | ------------------------------------------ |
+| Повторные SHA тех же файлов внутри операции                  | input-verification            | project-files, snapshot/delivery              | bytes, mutation/restart, inode isolation   |
+| Полный replay builtin boundaries при повторе тех же входов   | document-checks               | prepareStoryDocument, illustrated preparation | schema/refs/clock/opaque cases             |
+| Повторная проверка неизменного рисунка при правке речи       | illustrated-preparation       | illustrated subject, scene ACK                | text/viewer/layout/failure,8 validators    |
+| Новый worker для совпадающего завершённого checkpoint review | preparation-reuse + JobRunner | review workflow                               | report/dist mutation, lease renewal        |
+| Неограниченная плотность WebGL preview                       | raster-budget                 | Viewport3D, CharacterStage, render/deliver    | реальные matched profiles                  |
+| Построение всех будущих pen paths ради ширины счётчика       | text-measure/lettering        | division                                      | styled/tspan/native widths, old/new visual |
+| Delivery внутри большого project-transactions                | project-delivery              | runtime composition                           | retry/recovery/current model identity      |
 
 Доказательства: `artifacts/slice13/install-0.34.2.json`, `0.34.2-regressions.log`,
 `0.34.2-resource-comparison.json`, `installed-review/run-e93d7f90-c6b6-473a-90a5-8f701c94e3b0/acceptance.json`,
@@ -1179,13 +1179,51 @@ p50/p95 nearest-rank включают отсутствующий кадр как
 Этот warm cohort относится к готовым документным механизмам; custom JS,
 новые assets, research, полный просмотр и кодирование — отдельные проверки.
 
-Набор `artifacts/slice14/author-30/run-7b8b95a2-a76a-4c24-8b08-61c1d0ff60c0`
-пока выполняется; частичные числа не являются приёмкой14. В нём обнаружена
-ошибка evaluator: для lever-comparison после ручного изменения проверяется before
-вместо after. Raw данные и первоначальные verdict сохраняются; независимое
-повторное оценивание должно быть отдельным версионированным sidecar. Времена
-от этой ошибки не меняются. В продукте обнаружено скрытие baseline beat.text
-в comparison; исправление и проверка требуются до закрытия14.
+Полный набор `artifacts/slice14/author-30/run-7b8b95a2-a76a-4c24-8b08-61c1d0ff60c0`
+завершён: все30 заданий сохранены с90 PNG и5 ошибками вызовов. Первый кадр:
+p50 9,314с, p95 21,437с; проверенный опыт: p50 20,710с, p95 35,359с.
+5/20 FAIL у всех30. Время включает работу автора, проверки и повторные вызовы.
+
+Первоначальный evaluator ошибся в7 случаях рычага и маршрута. Исправленный
+sidecar `artifacts/slice14/author-30/regrade-v2-verified-7b8b95a2.json` отдельно
+подтверждает30/30 вычисленных состояний и0/30 скоростных PASS. Независимый reviewer
+пересчитал32 SHA256 и проверил неизменность времён. Raw v1 и два отклонённых
+sidecar сохранены; новые вердикты не подменяют исходный набор.
+
+В core0.47.1/plugin0.35.1 исправлена применимость текста: изменение условия
+убирает устаревшую формулировку, сохраняя действие. Подписи следуют принятому
+кадру, включая асинхронную подготовку; SRT/VTT учитывают ту же применимость.
+`text` с `say:''` не создаёт задания озвучки. Comparison использует подпись только
+активного случая и один масштаб; схема маршрутов сохраняет читаемость в4:3,
+рычаг — в16:9. Source regressions52/52 и дополнительные browser/video5/5 PASS.
+Независимое ревью выявило и проверило исправления для intro, caption meaning и
+сохранённой записи. Озвучка остаётся опциональной.
+
+Установленный0.35.1 выявил лишнюю смену сцены для custom module: отключённая
+озвучка представлялась как `{enabled:false}` или отсутствие metadata.
+В0.35.2 это один тихий владелец; активная запись, media и код сохраняют собственную
+идентичность. Installed SDK create/edit/undo/reopen/HTML PASS на физическом
+`0.35.2-fb1657ac9868f4bd`; receipt `artifacts/slice14/0.35.2-installed-custom-modules.log`.
+
+Проба0.35.2 из9 локальных операций дала pixel p95 140,218мс. Viewer-проба
+сохранила9 вводов:4 не наблюдались, поскольку Conditions закрывали весь рисунок
+на узком окне. Это FAIL, а не нулевая задержка. В новом измерителе сравниваются
+baseline, финальный кадр и compositor с одной маской перекрытий; проверяется
+предметный результат. Все случаи сохраняются. Набор:
+`artifacts/slice14/input-frame-check/run-ca498302-a1fd-465d-ae60-f6b0846bdbeb`.
+
+Кандидат0.35.3/core0.47.2 раскрывает Conditions в потоке под кадром. Сохранены
+владельцы полей, режимов, истории и вложенных меню; удалены popup geometry и
+распорки. Десять browser-сценариев оболочки, короткое окно, ресурсы и PNG с
+незавершённым вводом PASS. Отдельный CLI публикации записи устраняет запуск
+командной оболочки при импорте bundled kernel. Python использует тот же owner;
+проверки публикации и восстановления не вызывают реальный TTS.
+Установка и основные выборки нового кандидата ещё не приняты.
+
+Прямой тест нового MCP в отдельном Codex CLI отклонён его проверкой разрешений:
+`MCP tool call requires approval, but approval policy is never`. Параметры
+безопасности не менялись. Разрешённый SDK/browser-путь использует тонкий
+HTTP-клиент; задания, время, вычисления и PNG остаются у прежнего измерителя.
 
 Нативное MCP-подключение этого чата снова вернуло «previous installed release».
 Установленный SDK/browser используется по согласованному обходному пути;

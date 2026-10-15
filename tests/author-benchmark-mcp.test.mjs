@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { createServer } from 'node:http';
+import { spawn } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
@@ -69,6 +70,33 @@ test('direct author measurement transport preserves installed tool calls and ima
   assert.equal(observed.content[0].mimeType, 'image/png');
   assert.equal(observed.structuredContent.path, '/retained/frame.png');
   assert(!Object.hasOwn(observed.structuredContent, 'png'));
+  const shell = async (request) => {
+    const child = spawn(process.execPath, [
+      resolve('tests/plugin/author-benchmark-client.mjs'),
+      endpoint,
+    ]);
+    let stdout = '',
+      stderr = '';
+    child.stdout.on('data', (bytes) => (stdout += bytes));
+    child.stderr.on('data', (bytes) => (stderr += bytes));
+    const finished = new Promise((resolve, reject) => {
+      child.once('error', reject);
+      child.once('close', resolve);
+    });
+    child.stdin.end(JSON.stringify(request));
+    assert.equal(await finished, 0, stderr);
+    return JSON.parse(stdout);
+  };
+  assert.deepEqual(
+    (await shell({ action: 'call', name: 'story_create', arguments: { document } }))
+      .structuredContent.accepted,
+    document,
+  );
+  assert.deepEqual(calls.at(-1), { action: 'call', name: 'story_create', arguments: { document } });
+  const retained = await shell({ action: 'observe', label: 'first' });
+  assert.equal(retained.path, '/retained/frame.png');
+  assert.deepEqual(retained.state.snapshot, { count: 17 });
+  assert(!Object.hasOwn(retained, 'png'));
   const unknown = await client.callTool({ name: 'unknown', arguments: {} });
   assert.equal(unknown.isError, true);
 });
