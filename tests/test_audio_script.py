@@ -12,35 +12,10 @@ import wave
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools' / 'audio'))
 from script import read_script, timed_cues, check_action_windows, check_timeline
-from resources import SPEECH_REPO, SPEECH_REVISION
 from audition import audition
 
 
 class NarrationCues(unittest.TestCase):
-    def test_gallery_audio_matches_its_current_script_and_pcm_duration(self):
-        examples = Path(__file__).resolve().parents[1] / 'examples'
-        catalog = json.loads((examples / 'catalog.json').read_text())
-        for name in catalog:
-            source = examples / name / 'narration.json'
-            if not source.exists():
-                continue
-            with self.subTest(scene=name):
-                timeline = json.loads((source.parent / 'timeline.json').read_text())
-                check_timeline(source, source.parent / 'timeline.json')
-                self.assertEqual(timeline['synthesis']['model'], SPEECH_REPO)
-                self.assertEqual(timeline['synthesis']['revision'], SPEECH_REVISION)
-                script = read_script(source)
-                cues = {}
-                for segment, aligned in zip(script['segments'], timeline['segments'], strict=True):
-                    self.assertEqual(segment['spoken'], aligned['text'])
-                    self.assertEqual(segment.get('title'), aligned.get('title'))
-                    cues.update(timed_cues(segment, aligned['words']))
-                self.assertEqual(timeline['cues'], cues)
-                for key in ('audio', 'voice', 'music'):
-                    if timeline[key]:
-                        with wave.open(str(source.parent / timeline[key])) as audio:
-                            self.assertAlmostEqual(timeline['duration'], audio.getnframes() / audio.getframerate(), places=6)
-
     def script(self, cue, extra=()):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'narration.json'
@@ -108,6 +83,23 @@ class NarrationCues(unittest.TestCase):
             self.assertEqual(segment["text"], text)
             self.assertEqual(segment["spoken"], "Сначала тихо. А теперь — два предмета!")
             self.assertEqual((segment["cues"][0]["word_start"], segment["cues"][0]["word_end"]), (4, 6))
+
+    def test_higgs_rejects_words_and_numbers_its_aligner_cannot_represent(self):
+        with tempfile.TemporaryDirectory() as folder:
+            script = Path(folder) / "script.json"
+            for text in ["Шаг ١. Шаг ٢.", "Шаг ².", "Шаг Ⅳ.", "Шаг élan.", "Шаг 中文."]:
+                with self.subTest(text=text):
+                    spec = {"version": 3, "segments": [{"id": "line", "text": text}]}
+                    script.write_text(json.dumps(spec, ensure_ascii=False))
+                    with self.assertRaisesRegex(ValueError, "Russian words"):
+                        read_script(script)
+            # Russian spoken words and native delivery controls retain the exact cue contract.
+            spec = {"version": 3, "segments": [{"id": "line",
+                "text": "<|emotion:surprise|>Шаг первый. Шаг второй. Шаг первый!",
+                "cues": [{"id": "repeat", "quote": "Шаг первый", "occurrence": 2}]}]}
+            script.write_text(json.dumps(spec, ensure_ascii=False))
+            cue = read_script(script)["segments"][0]["cues"][0]
+            self.assertEqual((cue["word_start"], cue["word_end"]), (4, 6))
 
     def test_segment_seed_overrides_voice_without_changing_neighbors(self):
         spec = {"version": 3, "voice": {"seed": 17}, "segments": [

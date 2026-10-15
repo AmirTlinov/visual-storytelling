@@ -1,22 +1,21 @@
+import { sceneChrome } from './scene/chrome.js';
+import { assertSceneInteraction } from './scene/interaction.js';
+import { clearControllerAccess, controllerAccess } from './scene/controller-access.js';
+import { conditionsPanel } from './scene/conditions.js';
+import type { StoryResource } from './story/resources.js';
+import { releaseResources } from './lifecycle.js';
 import { mountScene } from './scene-handle.js';
-import {
-  story,
-  type Story,
-  type StoryOptions,
-  type StoryStatus,
-  type StoryMoment,
-} from './story/story.js';
-import { chapterNavigation } from './story/chapters.js';
-import { captionTrack, type CaptionOptions } from './story/captions.js';
+import { story, type Story, type StoryOptions, type StoryStatus } from './story/story.js';
+import { controllerView } from './scene/controller-view.js';
+import { sceneCaptions, type SceneCaptions } from './scene/captions.js';
 import { sceneFrame, inspectPresentation, type SceneFrameOptions } from './scene-frame.js';
 export type { SceneFrameOptions, ScenePresentation } from './scene-frame.js';
 import { loadFonts } from './ink/fonts.js';
 import { exportCompositionSVG } from './export/composition.js';
 import { theme } from './ink/palette.js';
 import { SceneHistory } from './controls/history.js';
-import { player as statePlayer } from './controls/player.js';
 import type { SceneHandle } from './scene-handle.js';
-import type { SceneInspection, SceneRendering } from './scene-access.js';
+import type { SceneInspection } from './scene-access.js';
 import type { SceneCheckpoint, SceneView } from './scene-checkpoint.js';
 export type {
   SceneCheckpoint,
@@ -37,17 +36,14 @@ export interface SceneOptions {
   presentation?: SceneFramePresentation;
   /** 1280×720 drawing by default. Playback and status stay outside the composition. */
   frame?: SceneFrameOptions;
-  /** Hide the shell heading when the subject supplies its own title. */
-  heading?: boolean;
+  /** false hides it; navigation keeps a quiet chapter button while the subject tells the story. */
+  heading?: boolean | 'navigation';
   /** Hide shared chapter/mode/history navigation when the subject supplies its own. Camera and history ownership are unchanged. */
   navigation?: boolean;
   /** Optional visible word-aligned captions; omitted keeps the accessible chapter text. */
-  captions?:
-    | true
-    | (CaptionOptions & {
-        /** Below a stage frame, text keeps its screen size. Whole-scene frames include it. */
-        placement?: 'overlay' | 'below';
-      });
+  /** Explicit overlay remains inside the exported stage; below accompanies the drawing. */
+  captions?: SceneCaptions;
+  resources?: readonly StoryResource[];
   parameters?: (ControlParameter & { key: string })[];
   onInput?: (values: Record<string, ControlValue>) => void;
   onMode?: (mode: 'story' | 'explore') => void;
@@ -68,16 +64,26 @@ export interface SceneMount {
   setMode(mode: 'story' | 'explore'): void;
   /** Publish the current subject's frame without changing its clock, inputs or player. */
   setPresentation(presentation: SceneFramePresentation): void;
+  /** Replace the source disclosure through the same conditions owner. */
+  setResources(resources: readonly StoryResource[]): void;
   /** Update the shell's heading through the existing chapter navigation owner. */
   setTitle(title: string, options?: { visible?: boolean }): void;
   /** Reflect subject-owned edits in an editable shell; story edits use story.input(). */
   syncParameters(values: Record<string, ControlValue>): void;
   /** Commit a subject-owned user action through the existing controls and undo history. */
   input(values: Record<string, ControlValue>): void;
+  /** Group direct subject edits into one undo step, using the existing scene history. */
+  inputGesture(): () => void;
   showParameters(keys?: readonly string[]): void;
   describeParameter(key: string, description: ControlDescription): void;
   attachStory<P, K extends string, S = P>(options: StoryOptions<P, K, S>): Story<P, K, S>;
-  attachController<P, K extends string, S>(controller: Story<P, K, S>): SceneHandle;
+  /** beforeCommit adopts prepared external resources after fallible UI preparation. */
+  attachController<P, K extends string, S>(
+    controller: Story<P, K, S>,
+    beforeCommit?: () => void,
+  ): SceneHandle;
+  /** Return to a static subject while retaining the same controls, history and scene handle. */
+  detachController(): void;
   /** Register subject-owned observers, animations and subscriptions for removal. */
   onDispose(cleanup: () => void): () => void;
   /** View gestures keep media running; mode buttons and seeking restore the authored shot. */
@@ -113,18 +119,6 @@ const node = <K extends keyof HTMLElementTagNameMap>(
   if (text !== undefined) element.textContent = text;
   return element;
 };
-let shellSerial = 0;
-function releaseResources(resources: readonly (() => void)[], message: string) {
-  const errors: unknown[] = [];
-  for (const cleanup of resources) {
-    try {
-      cleanup();
-    } catch (error) {
-      errors.push(error);
-    }
-  }
-  if (errors.length) throw new AggregateError(errors, message);
-}
 function mount(
   root: HTMLElement,
   {
@@ -133,16 +127,18 @@ function mount(
     presentation = 'explanation',
     appearance = 'sketch',
     parameters = [],
+    resources = [],
     onInput = () => {},
     onMode = () => {},
     exploration = 'model',
     frame = { width: 1280, height: 720, scope: 'scene' },
-    heading: showHeading = true,
+    heading: headingStyle = true,
     navigation: showNavigation = true,
     captions,
     history: retainHistory = true,
   }: SceneOptions,
 ): SceneMount {
+  let showHeading = headingStyle !== false;
   if (parameters.some((p, i) => !p.key || parameters.findIndex((q) => q.key === p.key) !== i))
     throw new Error('Scene parameters need unique, nonempty keys');
   parameters = parameters.map((p) => ({ ...p }));
@@ -199,11 +195,8 @@ function mount(
     actions = node('div', { class: 've-view-actions' }),
     controls = node('div', { 'data-player': '', hidden: '' });
   heading.hidden = !showHeading;
-  const caption = node('p', {
-      class: captions ? 've-captions' : 'caption sr-only',
-      'data-caption': '',
-      role: 'status',
-    }),
+  const captionOwner = sceneCaptions(captions),
+    caption = captionOwner.element,
     status = node('p', { class: 've-status', role: 'alert' });
   root.addEventListener(
     'scene-restored',
@@ -214,196 +207,58 @@ function mount(
     },
     options,
   );
-  root.addEventListener(
-    'scene-playback-error',
-    (event) => {
-      const error = (event as CustomEvent<unknown>).detail;
-      status.textContent = error instanceof Error ? error.message : String(error);
-    },
-    options,
-  );
+  for (const eventName of ['scene-playback-error', 'scene-cleanup-error', 'scene-callback-error'])
+    root.addEventListener(
+      eventName,
+      (event) => {
+        const error = (event as CustomEvent<unknown>).detail;
+        status.textContent = error instanceof Error ? error.message : String(error);
+      },
+      options,
+    );
   const completeFrame = frame.scope === 'scene';
   const showHistory = parameters.length > 0 && retainHistory && showNavigation;
   const sheet = completeFrame ? node('div') : root;
   const drawing = completeFrame ? node('div', { class: 've-scene-paper' }) : sheet;
   const composition = sceneFrame(completeFrame ? sheet : stage, frame);
-  const conditionsId = `ve-conditions-${++shellSerial}`,
-    conditions = node('div', {
-      id: conditionsId,
-      class: 've-scene-conditions',
-      popover: 'auto',
-      role: 'dialog',
-      'aria-label': 'Условия объяснения',
-    }),
-    conditionsButton = node(
-      'button',
-      {
-        type: 'button',
-        class: 've-conditions-trigger',
-        popovertarget: conditionsId,
-        'aria-expanded': 'false',
-        'aria-controls': conditionsId,
-        hidden: '',
-      },
-      'Условия',
-    ),
-    header = node('div', { class: 've-scene-header' }),
-    conditionsTitle = node('div', { class: 've-conditions-heading' });
-  conditionsTitle.append(
-    node('h2', {}, title),
-    node(
-      'button',
-      {
-        type: 'button',
-        popovertarget: conditionsId,
-        popovertargetaction: 'hide',
-        'aria-label': 'Закрыть условия',
-      },
-      '×',
-    ),
-  );
-  conditions.append(conditionsTitle);
+  const panel = conditionsPanel(title, abort.signal),
+    conditions = panel.element,
+    conditionsButton = panel.button,
+    header = node('div', { class: 've-scene-header' });
+  panel.setResources(resources);
   header.append(heading, toolbar, conditionsButton);
   heading.title = title;
   let subjectWidth = frame.width,
     subjectHeight = frame.height;
   cleanups.add(composition.dispose);
-  if (completeFrame) toolbar.append(modes, actions);
+  toolbar.append(modes, actions);
   if (completeFrame) {
     sheet.append(header, drawing);
     drawing.append(fields, stage);
-  } else sheet.append(heading, modes, actions, fields, composition.element);
-  if (captions && !completeFrame && (captions === true || captions.placement !== 'below'))
-    stage.append(caption);
-  else drawing.append(caption);
+  } else sheet.append(header, fields, composition.element);
   if (completeFrame) root.append(composition.element);
   root.append(controls, status);
-  if (completeFrame) root.append(conditions);
+  root.append(conditions);
   let shownPresentation: SceneFramePresentation | undefined;
-  const visibleContent = (element: Element): boolean => {
-    if (element.hasAttribute('hidden') || getComputedStyle(element).display === 'none')
-      return false;
-    return (
-      element.matches('input,textarea,button') ||
-      [...element.childNodes].some((child) =>
-        child instanceof Element ? visibleContent(child) : Boolean(child.textContent?.trim()),
-      )
-    );
-  };
-  function placeConditions() {
-    if (!conditions.matches(':popover-open')) return;
-    const viewport = window.visualViewport,
-      left = viewport?.offsetLeft || 0,
-      top = viewport?.offsetTop || 0,
-      width = viewport?.width || innerWidth,
-      height = viewport?.height || innerHeight,
-      button = conditionsButton.getBoundingClientRect(),
-      panelWidth = Math.min(520, width - 16, composition.element.getBoundingClientRect().width);
-    conditions.style.width = `${Math.max(0, panelWidth)}px`;
-    conditions.style.maxHeight = `${Math.max(0, height - 16)}px`;
-    conditions.style.left = `${Math.max(left + 8, Math.min(button.right - panelWidth, left + width - panelWidth - 8))}px`;
-    conditions.style.top = `${Math.max(top + 8, Math.min(button.bottom + 6, top + height - conditions.getBoundingClientRect().height - 8))}px`;
-  }
-  function updateChrome(preserveFocus = false) {
-    if (!completeFrame || abort.signal.aborted) return;
-    const compact = composition.element.getBoundingClientRect().width < 640;
-    // Opening Conditions exposes the inputs; only editing them enters an experiment.
-    fields.hidden = !fields.childElementCount || (mode === 'story' && !compact);
-    const toolbarVisible = [...toolbar.children].some(visibleContent);
-    if (toolbar.hidden === toolbarVisible) toolbar.hidden = !toolbarVisible;
-    const focused = document.activeElement,
-      ownedFocus =
-        focused instanceof HTMLElement &&
-        (header.contains(focused) || toolbar.contains(focused) || fields.contains(focused)),
-      hasUI = toolbarVisible || visibleContent(fields),
-      popup = compact && hasUI,
-      hasConditions = popup || showHistory;
-    sheet.dataset.compactChrome = String(compact);
-    conditionsButton.hidden = !hasConditions;
-    header.hidden = heading.hidden && !hasConditions && !toolbarVisible;
-    const headerParent = shownPresentation === 'stage' ? root : sheet,
-      toolbarParent = popup ? conditions : header,
-      fieldsParent = popup ? conditions : shownPresentation === 'stage' ? root : drawing;
-    const moved =
-      header.parentElement !== headerParent ||
-      toolbar.parentElement !== toolbarParent ||
-      fields.parentElement !== fieldsParent;
-    const leavingConditions =
-      moved &&
-      !popup &&
-      (toolbar.parentElement === conditions || fields.parentElement === conditions);
-    const keepEdit = moved && preserveFocus && ownedFocus,
-      restoreFocus = keepEdit && document.hasFocus();
-    if (keepEdit)
-      for (const controls of [toolbar, fields]) controls.dataset.sceneControlsMoving = '';
-    try {
-      if ((!hasConditions || leavingConditions) && conditions.matches(':popover-open'))
-        conditions.hidePopover();
-      if (header.parentElement !== headerParent) {
-        if (headerParent === root) root.insertBefore(header, composition.element);
-        else sheet.prepend(header);
-      }
-      if (moved) {
-        if (popup) {
-          const historyBar = conditions.querySelector(':scope > .ve-experiment-history');
-          conditions.insertBefore(toolbar, historyBar);
-          conditions.insertBefore(fields, historyBar);
-        } else {
-          if (toolbar.parentElement !== header) conditionsButton.before(toolbar);
-          if (fieldsParent === root) controls.before(fields);
-          else if (fields.parentElement !== drawing) stage.before(fields);
-        }
-      }
-      // Reparenting a native field emits blur/focus. Its draft and history gesture
-      // still belong to the same edit; only an actual departure commits them.
-      if (restoreFocus) {
-        if (popup && conditions.contains(focused) && !conditions.matches(':popover-open'))
-          conditions.showPopover();
-        if (focused.checkVisibility() && document.activeElement !== focused)
-          focused.focus({ preventScroll: true });
-      }
-    } finally {
-      if (keepEdit)
-        for (const controls of [toolbar, fields]) delete controls.dataset.sceneControlsMoving;
-    }
-    placeConditions();
-  }
-  conditions.addEventListener(
-    'toggle',
-    () => {
-      conditionsButton.setAttribute('aria-expanded', String(conditions.matches(':popover-open')));
-      placeConditions();
-    },
-    options,
-  );
-  const dismissConditions = (event: Event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (conditions.matches(':popover-open')) conditions.hidePopover();
-    conditionsButton.focus({ preventScroll: true });
-  };
-  conditionsTitle.querySelector('button')!.addEventListener('click', dismissConditions, options);
-  conditions.addEventListener(
-    'keydown',
-    (event) => {
-      if (event.key === 'Escape' && !event.defaultPrevented) dismissConditions(event);
-    },
-    options,
-  );
-  root.addEventListener('scene-frame-resize', () => updateChrome(true), options);
-  // Actions/chapter navigation are public extension points of this shell.
-  const chromeObserver = new MutationObserver(() => updateChrome());
-  if (completeFrame)
-    chromeObserver.observe(toolbar, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['hidden'],
-    });
-  cleanups.add(() => {
-    chromeObserver.disconnect();
-    if (conditions.matches(':popover-open')) conditions.hidePopover();
+  const chrome = sceneChrome({
+    root,
+    sheet,
+    drawing,
+    stage,
+    header,
+    heading,
+    toolbar,
+    fields,
+    controls,
+    composition,
+    panel,
+    showHistory,
+    dense: parameters.length > 3,
+    signal: abort.signal,
+    state: () => ({ mode, presentation: shownPresentation }),
   });
+  const updateChrome = chrome.update;
+  cleanups.add(chrome.dispose);
   function setPresentation(next: SceneFramePresentation) {
     assertLive();
     if (shownPresentation === next) return;
@@ -411,10 +266,7 @@ function mount(
     root.dataset.presentation = next;
     root.dataset.paper = String(next === 'stage' ? false : (paper ?? appearance === 'sketch'));
     heading.hidden = !showHeading;
-    if (completeFrame) {
-      if (next === 'stage') controls.before(caption);
-      else stage.after(caption);
-    }
+    captionOwner.place({ presentation: next, completeFrame, stage, paper: drawing, controls });
     updateChrome(true);
     composition.resize();
     updateChrome(true);
@@ -429,11 +281,13 @@ function mount(
       }
     | undefined;
   let acceptedCondition = {};
+  let controllerKeys: readonly PropertyKey[] = [];
   function refresh() {
     for (const [key, control] of inputs)
       if (control.value !== values[key]) control.setValue(values[key]!);
   }
   function changeValues(next: Record<string, ControlValue>) {
+    assertSceneInteraction(root);
     if (history) history.change(() => applyValues(next));
     else applyValues(next);
   }
@@ -484,7 +338,11 @@ function mount(
     storyButton.setAttribute('aria-pressed', String(mode === 'story'));
     exploreButton.setAttribute('aria-pressed', String(mode === 'explore'));
     root.dataset.sceneMode = mode;
-    onMode(mode);
+    try {
+      onMode(mode);
+    } catch (error) {
+      root.dispatchEvent(new CustomEvent('scene-callback-error', { bubbles: true, detail: error }));
+    }
     if (next === 'story') history?.clear();
   }
   function selectMode(next: 'story' | 'explore') {
@@ -505,6 +363,9 @@ function mount(
         return acceptedCondition;
       },
       presentation: () => inspectPresentation(stage),
+      ready: async () => {
+        await view?.whenRendered?.();
+      },
       exportSVG: () => exportCompositionSVG(completeFrame ? sheet : stage),
       setTheme: sceneTheme.set,
       dispose,
@@ -531,8 +392,7 @@ function mount(
       redo = node('button', { type: 'button', disabled: '' }, 'Повторить');
     bar.append(undo, redo);
     // Undo belongs to the editing session, not the exported subject or its geometry.
-    if (completeFrame) conditions.append(bar);
-    else controls.before(bar);
+    conditions.append(bar);
     bar.hidden = !showNavigation;
     history = SceneHistory.mount(root, {
       read: () => handle.capture({ basis: 'requested' }),
@@ -594,12 +454,21 @@ function mount(
     get mode() {
       return mode;
     },
-    setMode,
+    setMode(next) {
+      assertSceneInteraction(root);
+      setMode(next);
+    },
     setPresentation,
+    setResources(resources: readonly StoryResource[]) {
+      assertLive();
+      panel.setResources(resources);
+      updateChrome(true);
+    },
     setTitle(next: string, options: { visible?: boolean } = {}) {
       assertLive();
       if (typeof next !== 'string') throw new Error('Scene title must be a string');
       title = next;
+      panel.setTitle(next);
       showHeading = options.visible ?? showHeading;
       heading.hidden = !showHeading;
       if (player) player.refreshHeading();
@@ -612,6 +481,16 @@ function mount(
       updateChrome(true);
     },
     input: changeValues,
+    inputGesture() {
+      assertSceneInteraction(root);
+      history?.begin();
+      let ended = false;
+      return () => {
+        if (ended) return;
+        ended = true;
+        history?.end();
+      };
+    },
     syncParameters(next: Record<string, ControlValue>) {
       assertLive();
       if (inputStory) throw new Error('Story parameters belong to story.input()');
@@ -648,6 +527,7 @@ function mount(
       return controller;
     },
     attachController,
+    detachController,
     onDispose(cleanup: () => void) {
       if (abort.signal.aborted) cleanup();
       else cleanups.add(cleanup);
@@ -672,7 +552,51 @@ function mount(
   function assertLive() {
     if (abort.signal.aborted) throw new Error(`Scene "${title}" has been disposed`);
   }
-  function attachController<P, K extends string, S>(controller: Story<P, K, S>) {
+  // Retirement follows publication. A cleanup failure is observable but cannot revoke it.
+  function retire(previous: typeof player) {
+    try {
+      previous?.dispose();
+    } catch (error) {
+      root.dispatchEvent(new CustomEvent('scene-cleanup-error', { bubbles: true, detail: error }));
+      console.warn(`Scene "${title}" previous controller cleanup failed.`, error);
+    }
+  }
+  function detachController() {
+    assertLive();
+    const previous = player;
+    player = undefined;
+    inputStory = undefined;
+    playback = undefined;
+    transition = undefined;
+    clearControllerAccess(handle, controllerKeys, {
+      snapshot: () => ({ ...values }),
+      get condition() {
+        return acceptedCondition;
+      },
+      review: () => ({ duration: 0, cues: [], segments: [] }),
+      ready: async () => {
+        await view?.whenRendered?.();
+      },
+    });
+    controllerKeys = [];
+    mode = 'explore';
+    root.dataset.sceneMode = mode;
+    controls.replaceChildren();
+    controls.hidden = true;
+    caption.hidden = true;
+    storyButton.hidden = true;
+    modes.hidden = true;
+    fields.hidden = !parameters.length;
+    retire(previous);
+    heading.textContent = title;
+    heading.title = title;
+    updateChrome(true);
+  }
+
+  function attachController<P, K extends string, S>(
+    controller: Story<P, K, S>,
+    beforeCommit?: () => void,
+  ) {
     assertLive();
     for (const { key } of parameters) {
       if (
@@ -682,106 +606,93 @@ function mount(
       )
         throw new Error(`Scene "${title}": parameter "${key}" is missing from stateAt()`);
     }
-    const segments = controller.sheet.script.segments;
-    const track = captionTrack(
-      {
-        segments: captions ? segments : segments?.map(({ words: _words, ...chapter }) => chapter),
-        captionAliases: controller.sheet.script.captionAliases,
-      },
-      captions === true ? {} : captions,
-    );
+    const track = captionOwner.track(controller.sheet.script);
     const previousPlayback = player?.playback();
     if (previousPlayback && previousPlayback.rate !== controller.player.state.rate)
       controller.player.rate(previousPlayback.rate);
     if (previousPlayback && !previousPlayback.playing) controller.player.pause();
-    player?.dispose();
+    const previous = player;
+    let resetAfterSeek = false;
+    const access = controllerAccess(controller, {
+      ready: async () => {
+        await controller.ready();
+        await view?.whenRendered?.();
+      },
+      play: () => {
+        assertLive();
+        preparePlayback();
+        return controller.player.play();
+      },
+      keys: parameters.map((parameter) => parameter.key),
+      mode: (value) => (exploration === 'view' ? mode : value),
+    });
+    const binding = controllerView(controller, {
+      root,
+      stage,
+      controls,
+      heading,
+      caption,
+      track,
+      title,
+      navigation: showHeading && showNavigation,
+      headingLabel: headingStyle === 'navigation' ? 'Главы' : undefined,
+      onPlay: preparePlayback,
+      onSeek() {
+        resetAfterSeek = true;
+      },
+      onState(state) {
+        try {
+          reflectState(state);
+        } catch (error) {
+          root.dispatchEvent(
+            new CustomEvent('scene-callback-error', { bubbles: true, detail: error }),
+          );
+        }
+      },
+    });
+    try {
+      beforeCommit?.();
+    } catch (cause) {
+      releaseResources(
+        [
+          () => {
+            throw cause;
+          },
+          binding.dispose,
+        ],
+        'Controller commit preparation failed.',
+      );
+    }
     transition = (next) => {
       if (exploration === 'model' && controller.requested.mode !== next) {
         if (next === 'explore') controller.explore(controller.requested.values);
         else controller.resume();
       }
     };
-    const ui = statePlayer(controls, {
-      transport: controller.player,
-      captions: { element: caption, track },
-      onSeek: controller.seek,
-      onPlay: preparePlayback,
-    });
     inputStory = (next, position) => {
       if (position) controller.restoreInputs(next as Partial<P>, position);
       else controller.input(next as Partial<P>);
     };
     playback = () => controller.player.state.playing;
-    let chapters = chapterNavigation(
-      heading,
-      controller.sheet.script.segments ?? [],
-      (time) => controller.seek(time, { mode: 'story' }),
-      showHeading && showNavigation,
-    );
-    chapters.update(controller.presented?.chapter);
-    let resetAfterSeek = false;
-    const stopSeeking = controller.onSeek(() => {
-      resetAfterSeek = true;
-    });
-    // Layout can change the stage height. Render outside ResizeObserver delivery so
-    // that surface.resize() cannot create a same-frame observation loop.
-    let layoutFrame = 0,
-      stageWidth = stage.clientWidth,
-      stageHeight = stage.clientHeight;
-    const requestLayout = () => {
-      if (layoutFrame) return;
-      layoutFrame = requestAnimationFrame(() => {
-        layoutFrame = 0;
-        controller.update();
-      });
-    };
-    const layout = new ResizeObserver(() => {
-      const width = stage.clientWidth,
-        height = stage.clientHeight;
-      if (width === stageWidth && height === stageHeight) return;
-      stageWidth = width;
-      stageHeight = height;
-      requestLayout();
-    });
-    layout.observe(stage);
-    // The logical canvas can stay fixed while its displayed size crosses a layout breakpoint.
-    root.addEventListener('scene-frame-resize', requestLayout);
-    let unsubscribe = () => {};
     player = {
       playback: () => controller.player.state,
-      refreshHeading() {
-        chapters.dispose();
-        heading.textContent = title;
-        heading.title = title;
-        chapters = chapterNavigation(
-          heading,
-          controller.sheet.script.segments ?? [],
-          (time) => controller.seek(time, { mode: 'story' }),
-          showHeading && showNavigation,
-        );
-        chapters.update(controller.presented?.chapter);
-      },
+      refreshHeading: () => binding.refreshHeading(title, showHeading && showNavigation),
       dispose() {
         releaseResources(
-          [
-            () => layout.disconnect(),
-            () => root.removeEventListener('scene-frame-resize', requestLayout),
-            () => cancelAnimationFrame(layoutFrame),
-            unsubscribe,
-            () => ui.dispose(),
-            () => chapters.dispose(),
-            stopSeeking,
-            () => controller.dispose(),
-          ],
+          [binding.dispose, controller.dispose],
           `Scene "${title}" player disposal failed.`,
         );
       },
     };
+    controllerKeys = Reflect.ownKeys(access);
+    handle.extend(access);
+    binding.publish();
+    retire(previous);
     storyButton.hidden = false;
     modes.hidden =
       !showNavigation ||
       (![...inputs.values()].some((control) => !control.element.hidden) && !view);
-    function reflectState({ requested, presented, phase, error }: StoryStatus<P, S>) {
+    function reflectState({ requested, phase, error }: StoryStatus<P, S>) {
       const { mode: next, values: state } = requested;
       if (next !== 'story') resetAfterSeek = false;
       if (phase === 'ready' && resetAfterSeek) {
@@ -798,10 +709,7 @@ function mount(
       for (const { key } of parameters) values[key] = (state as Record<string, ControlValue>)[key]!;
       if (exploration === 'model') setMode(next);
       refresh();
-      // The heading is part of the drawing, including while a later chapter prepares or fails.
-      if (presented) chapters.update(presented.chapter);
     }
-    unsubscribe = controller.subscribe(reflectState);
     // Attaching an already prepared experiment must not become a new mode command.
     // View-only shells retain their current view on replacement; their first story
     // still starts with the authored view as before.
@@ -810,69 +718,6 @@ function mount(
     controls.inert = false;
     caption.hidden = exploration === 'model' && mode !== 'story';
     updateChrome();
-    handle.extend({
-      play: () => {
-        assertLive();
-        preparePlayback();
-        return controller.player.play();
-      },
-      seek: controller.seek,
-      ready: controller.ready,
-      pause: controller.pause,
-      // A silent clock has no sound preference to carry into a narrated build.
-      // Expose the media capability only when there is actual audio to mute.
-      get mute() {
-        return controller.player.state.hasAudio ? controller.player.mute : undefined;
-      },
-      setRate: controller.player.rate,
-      get muted() {
-        const state = controller.player.state;
-        return state.hasAudio ? state.muted : undefined;
-      },
-      get rate() {
-        return controller.player.state.rate;
-      },
-      review: controller.review,
-      duration: controller.duration,
-      get currentTime() {
-        return controller.currentTime;
-      },
-      snapshot: () => controller.presented?.state,
-      get condition() {
-        return controller.condition;
-      },
-      subject: controller.subject,
-      get rendering(): SceneRendering {
-        const moment = (value: StoryMoment<P, S>) => ({
-          time: value.time,
-          chapter: value.chapter,
-          mode: exploration === 'view' ? mode : value.mode,
-          values: Object.fromEntries(
-            parameters.map(({ key }) => [
-              key,
-              (value.values as Record<string, ControlValue>)[key]!,
-            ]),
-          ),
-        });
-        const requested = moment(controller.requested);
-        return {
-          phase: controller.phase,
-          requested,
-          presented:
-            controller.presented === controller.requested
-              ? requested
-              : controller.presented && moment(controller.presented),
-          error: controller.error && {
-            stage: controller.error.stage,
-            message:
-              controller.error.cause instanceof Error
-                ? controller.error.cause.message
-                : String(controller.error.cause),
-          },
-        };
-      },
-      setReduced: controller.setReduced,
-    });
     if (
       previousPlayback?.playing &&
       !controller.waiting &&

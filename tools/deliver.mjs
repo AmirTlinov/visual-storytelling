@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { buildOutput } from './build-output.mjs';
 import { buildScene } from './build-pages.mjs';
-import { prepareNarration, playbackHTML } from './narration.mjs';
+import { requireNarration, playbackHTML } from './narration.mjs';
 import { packDirectory, withCheckpoint } from './standalone.mjs';
 import { renderer } from './render.mjs';
 import { exportVideo } from './video-export.mjs';
@@ -25,7 +25,6 @@ export async function deliver(
     out,
     formats = ['html'],
     silent = false,
-    prepareAudio = true,
     prepared,
     checkpoint,
     video,
@@ -49,9 +48,9 @@ export async function deliver(
     )
   )
     throw new Error('Delivery formats: html,png,svg,mp4,srt,vtt,source');
-  if (checkpoint && [...wanted].some((format) => !['html', 'png', 'svg'].includes(format)))
+  if (checkpoint && [...wanted].some((format) => !['html', 'png', 'svg', 'mp4'].includes(format)))
     throw new Error(
-      'Saved conditions apply to HTML and images; video and source use authored inputs',
+      'Saved conditions apply to HTML, images and video; captions and source describe authored inputs',
     );
   if (wanted.has('mp4') && (!video || !['story', 'interval'].includes(video.kind)))
     throw new Error('Choose the whole story or an explicit interval for video');
@@ -88,8 +87,7 @@ export async function deliver(
         { cause: error },
       );
   }
-  if (!prepared && !silent && prepareAudio)
-    await prepareNarration(source, { audible: true, signal });
+  ({ silent } = await requireNarration(source, { signal, silent }));
   const include = (path) => {
     return sceneInput(relative(source, path)) && path !== out && !path.startsWith(out + sep);
   };
@@ -129,6 +127,11 @@ export async function deliver(
     runtime: identity(packages.consumer ?? packages.cli),
     toolchain: identity(packages.cli),
     formats: [...wanted],
+    renderProfiles: Object.fromEntries(
+      [...wanted]
+        .filter((format) => ['html', 'png', 'svg', 'mp4'].includes(format))
+        .map((format) => [format, format === 'html' ? 'preview' : 'final']),
+    ),
     files: [],
     ...(prepared
       ? { buildRevision: prepared.revision, sourceRevision: prepared.sourceRevision }
@@ -188,6 +191,7 @@ export async function deliver(
           theme,
           signal,
           silent,
+          checkpoint,
           ...(video?.kind === 'interval' ? { from: video.from, to: video.to } : {}),
           onProgress,
         });

@@ -9,6 +9,7 @@ import { inlineResources } from './inline-resources.mjs';
 import { readCatalog } from './catalog.mjs';
 import { standaloneAssetURLs } from './asset-urls.mjs';
 import { playbackHTML } from './narration.mjs';
+import { inStoryHead, inStoryBody } from './story-html.mjs';
 
 const execute = promisify(execFile);
 const attribute = (node, name) => node.attrs?.find((attr) => attr.name === name)?.value;
@@ -28,9 +29,7 @@ export function withCheckpoint(html, checkpoint) {
   if (!checkpoint) return html;
   const value = JSON.stringify(checkpoint).replaceAll('<', '\\u003c');
   const script = `<script type="module">window.galleryReady=Promise.resolve(window.galleryReady).then(async()=>{await document.fonts.ready;const scene=document.querySelector('.ve-scene')?.scene;if(!scene?.restore)throw new Error('Saved conditions require SceneHandle.restore');scene.pause?.();await scene.restore(${value});await scene.ready?.();});</script>`;
-  return html.includes('</body>')
-    ? html.replace('</body>', () => script + '</body>')
-    : html + script;
+  return inStoryBody(html, script);
 }
 function replaceSpans(html, edits) {
   const unique = [...new Map(edits.map((edit) => [edit[0].startOffset, edit])).values()];
@@ -148,10 +147,7 @@ export async function packDirectory(
       `<style>${css.replace(/(?<![-\w])object(?![-\w])/g, 'iframe[data-scene-svg]')}</style>`,
   );
   if (theme !== 'auto')
-    html = html.replace(
-      '</head>',
-      `<style>:root,.ve-scene{color-scheme:${theme}!important}</style></head>`,
-    );
+    html = inStoryHead(html, `<style>:root,.ve-scene{color-scheme:${theme}!important}</style>`);
   for (const path of [
     join(root, 'CREDITS.txt'),
     new URL('../THIRD_PARTY.md', import.meta.url),

@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "modules": [{ "id": "counter", "model": "model.js", "subject": "drawing.js" }],
+  "resources": []
+}

@@ -167,6 +167,8 @@ test('the release copy excludes development environments, hidden credentials and
       'tools/scene.mjs',
       'plugin/dist/server.mjs',
       'dist/index.js',
+      'docs/authoring.md',
+      'docs/live-explanation-acceptance.md',
     ]) {
       await mkdir(join(source, path, '..'), { recursive: true });
       await writeFile(join(source, path), path);
@@ -176,6 +178,7 @@ test('the release copy excludes development environments, hidden credentials and
       filter: (path) => releaseInput(relative(source, path)),
     });
     assert.deepEqual(await readdir(join(output, 'tools')), ['scene.mjs']);
+    assert.deepEqual(await readdir(join(output, 'docs')), ['authoring.md']);
     assert.equal(
       await readFile(join(output, 'plugin/dist/server.mjs'), 'utf8'),
       'plugin/dist/server.mjs',

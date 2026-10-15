@@ -24,8 +24,7 @@ export async function createProjectFixture(client, { title, path }, fixture = 's
       })),
   );
   return call(client, 'story_edit', {
-    projectId: project.id,
-    sourceRevision: project.sourceRevision,
+    context: project.context,
     requestId: randomUUID(),
     changes,
   });

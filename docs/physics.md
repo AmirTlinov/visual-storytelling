@@ -54,3 +54,10 @@ const player = PhysicsPlayer.mount(playerElement, world);
 [Контакт с морфящейся формой](morphing.md#столкновения-с-меняющейся-формой): `Physics2D.morph` и `Physics3D.morph` используют текущее поле рисунка как опору для окружающих тел.
 
 Проверка: после `npm run build` — `node --test tests/physics.test.mjs` и `npx playwright test tests/browser/physics.spec.js`.
+
+Рассказ с персонажем и измерением — [push-block](../examples/push-block/scene.js).
+Обычный StoryDocument сохраняет одну модель; её state читает неизменяемую запись
+Rapier, а PhysicsReplay восстанавливает live world только при явной передаче
+управления. `SimulationMode` использует существующий SimulationPlayer и сохраняет
+forward-only checkpoint через model codec. Чтение/подготовка рисунка не перематывает
+живой мир. [Приём и границы](../skills/visual-explainer/references/physics-story.md).

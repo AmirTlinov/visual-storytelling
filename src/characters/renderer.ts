@@ -1,3 +1,4 @@
+import { releaseResources } from '../lifecycle.js';
 import { readCharacter } from './rig.js';
 import { characterCompositor } from './compositor.js';
 import type { CharacterPack } from './types.js';
@@ -33,15 +34,34 @@ export async function characterRenderer(pack: CharacterPack, signal?: AbortSigna
       dispose() {
         if (disposed) return;
         disposed = true;
-        data.dispose();
-        renderer?.dispose();
-        canvas.width = canvas.height = 1;
-        canvas.remove();
+        releaseResources(
+          [
+            data.dispose,
+            () => renderer?.dispose(),
+            () => {
+              canvas.width = canvas.height = 1;
+              canvas.remove();
+            },
+          ],
+          'Character renderer disposal failed.',
+        );
       },
     };
   } catch (error) {
-    data.dispose();
-    renderer?.dispose();
+    releaseResources(
+      [
+        () => {
+          throw error;
+        },
+        data.dispose,
+        () => renderer?.dispose(),
+        () => {
+          canvas.width = canvas.height = 1;
+          canvas.remove();
+        },
+      ],
+      'Character renderer initialization failed.',
+    );
     throw error;
   }
 }

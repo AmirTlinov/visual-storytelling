@@ -6,7 +6,8 @@ import { frameContext } from './frame-context.mjs';
 import { preferencesUI } from './preferences.mjs';
 import { fileEntrypoint } from './file-entrypoint.mjs';
 import preparedLiveHTML from 'visual-story:prepared-live-scene';
-import { validateExplanation } from '../../src/explanation/document.ts';
+import { prepareIllustratedDocument } from '../../src/story/document.ts';
+import { withStoryDocument } from '../../tools/story-html.mjs';
 
 const app = new App({ name: 'Visual Storytelling', version: manifest.version });
 const extensions = new OpenAIExtensions(app);
@@ -49,15 +50,15 @@ function discardProvisional() {
   $('notice').hidden = true;
 }
 function previewInput({ arguments: args } = {}) {
-  if (args?.sessionId) {
+  if (args?.context) {
     if (!session) discardProvisional();
     return;
   }
-  if (session || !args?.explanation) return;
+  if (session || !args?.document) return;
   creationMetrics.inputAt ??= performance.now();
   let document;
   try {
-    document = validateExplanation(args.explanation);
+    document = prepareIllustratedDocument(args.document).document;
   } catch {
     return;
   } // An incomplete operation leaves the last coherent preview visible.
@@ -65,23 +66,20 @@ function previewInput({ arguments: args } = {}) {
   if (provisional?.identity === identity) return;
   if (!provisional) {
     provisional = { id: crypto.randomUUID(), generation: -1, identity, document, ready: false };
-    const setup = `<script>window.__visualStoryExplanation=${identity.replaceAll('<', '\\u003c')}</script>`;
     frame.hidden = false;
     $('catalog').hidden = true;
     frame.dataset.provisional = 'true';
     $('notice').textContent = 'Предварительный показ';
     $('notice').hidden = false;
-    frame.srcdoc = sceneDocument(
-      preparedLiveHTML.replace('</head>', () => setup + '</head>'),
-      {
-        sessionId: provisional.id,
-        generation: provisional.generation,
-        preview: true,
-        provisional: true,
-        stateRevision: 0,
-        theme: app.getHostContext()?.theme,
-      },
-    );
+    frame.srcdoc = sceneDocument(withStoryDocument(preparedLiveHTML, document), {
+      displayMode,
+      sessionId: provisional.id,
+      generation: provisional.generation,
+      preview: true,
+      provisional: true,
+      stateRevision: 0,
+      theme: app.getHostContext()?.theme,
+    });
   } else {
     provisional.document = document;
     provisional.identity = identity;
@@ -124,8 +122,15 @@ function sync(acknowledgement) {
         wait: false,
       });
       if (session === owner && exchanged.structuredContent.generation === owner.generation) {
-        for (const key of ['buildRevision', 'sourceRevision', 'shownSourceRevision'])
+        for (const key of [
+          'buildRevision',
+          'sourceRevision',
+          'shownSourceRevision',
+          'stateRevision',
+          'context',
+        ])
           owner[key] = exchanged.structuredContent[key];
+        publishContext();
       }
     })
     .catch((e) => {
@@ -146,6 +151,12 @@ const send = (value) =>
     { channel, sessionId: session?.sessionId, generation: session?.generation, ...value },
     '*',
   );
+function sendSizing(target, sessionId, generation) {
+  target.contentWindow?.postMessage(
+    { channel, sessionId, generation, type: 'host-layout', displayMode },
+    '*',
+  );
+}
 async function call(action, args = {}) {
   const metrics = creationMetrics;
   if (action === 'attach') metrics.attachStartedAt ??= performance.now();
@@ -221,12 +232,14 @@ function recoverView(cause) {
         });
         if (result._meta?.sceneHTML) {
           frame.srcdoc = sceneDocument(result._meta.sceneHTML, {
+            displayMode,
             theme: app.getHostContext()?.theme,
             sessionId: session.sessionId,
             generation: session.generation,
             checkpoint: session.checkpoint,
             stateRevision: session.stateRevision,
             widgetState: session.widgetState,
+            authoredInputs: session.authoredInputs,
           });
         } else send({ type: 'command', command: { op: 'resume', id, expiresAt: deadline } });
         report = await beforeDeadline(restored, deadline);
@@ -377,6 +390,7 @@ async function mount(result) {
   document.title = session.title;
   updateJobs(session.jobs ?? []);
   const config = {
+    displayMode,
     theme: app.getHostContext()?.theme,
     sessionId: session.sessionId,
     generation: session.generation,
@@ -384,6 +398,7 @@ async function mount(result) {
     stateRevision: session.stateRevision,
     widgetState: session.widgetState,
     authoring: session.authoring,
+    authoredInputs: session.authoredInputs,
   };
   if (attached._meta.sceneHTML) {
     if (provisional && session.authoredDocument) {
@@ -436,11 +451,13 @@ async function prepareUpdate(update) {
       15000,
     );
     preview.srcdoc = sceneDocument(result._meta.sceneHTML, {
+      displayMode,
       theme: app.getHostContext()?.theme,
       sessionId: session.sessionId,
       preview: true,
       generation: candidate.generation,
       checkpoint: next.checkpoint,
+      authoredInputs: next.authoredInputs,
       stateRevision: next.stateRevision,
       widgetState: next.widgetState,
     });
@@ -601,6 +618,7 @@ addEventListener('message', (event) => {
     data.generation === provisional.generation
   ) {
     if (data.type === 'ready') {
+      sendSizing(frame, data.sessionId, data.generation);
       provisional.ready = true;
       observeContent(data.report?.renderStatus);
       if (provisional.confirmation) sendPreview('confirm-preview', provisional.confirmation);
@@ -622,6 +640,7 @@ addEventListener('message', (event) => {
       candidate.restoration.reject(new Error(data.message));
     if (data.type === 'error') failCandidate(data.message);
     if (data.type === 'ready') {
+      sendSizing(candidate.frame, data.sessionId, data.generation);
       clearTimeout(candidate.timer);
       candidate.ready = true;
       $('update').hidden = false;
@@ -637,6 +656,7 @@ addEventListener('message', (event) => {
     data.generation !== session?.generation
   )
     return;
+  if (data.type === 'ready') sendSizing(frame, data.sessionId, data.generation);
   if (data.type === 'layout') {
     if (
       document.documentElement.dataset.mode !== 'fullscreen' &&
@@ -719,6 +739,9 @@ function host(context) {
   modelContext.host(context);
   displayMode = context.displayMode ?? displayMode;
   document.documentElement.dataset.mode = displayMode;
+  if (provisional) sendSizing(frame, provisional.id, provisional.generation);
+  else sendSizing(frame, session?.sessionId, session?.generation);
+  if (candidate && session) sendSizing(candidate.frame, session.sessionId, candidate.generation);
 }
 async function dispose() {
   closed = true;
@@ -763,7 +786,7 @@ $('back').onclick = async () => {
     await ensureConnected();
     const result = await app.callServerTool({
       name: 'story_navigate',
-      arguments: { sessionId: session.sessionId, back: true },
+      arguments: { context: session.context, back: true },
     });
     if (result.isError) throw new Error(result.content[0].text);
   } catch (e) {

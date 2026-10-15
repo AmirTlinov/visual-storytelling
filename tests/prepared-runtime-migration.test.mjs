@@ -18,12 +18,10 @@ import { randomUUID } from 'node:crypto';
 import { writeBuildInfo } from '../tools/build-info.mjs';
 import { releaseDigest } from '../plugin/install.mjs';
 import { pinSceneProject } from '../tools/scene-project.mjs';
-import {
-  updateSceneRuntime,
-  linkPreparedRuntime,
-  readPreparedRuntime,
-} from '../tools/runtime-package.mjs';
+import { updateSceneRuntime, linkPreparedRuntime } from '../tools/runtime-package.mjs';
+import { readPreparedRuntime } from '../tools/runtime-reference.mjs';
 import { ProjectStore } from '../plugin/projects.mjs';
+import { commitStoreEdit } from './plugin/store-edit.mjs';
 
 async function permissions(directory, immutable) {
   await chmod(directory, immutable ? 0o555 : 0o700);
@@ -112,7 +110,7 @@ test('prepared migration and undo move the pin with its dependency; cancellation
     first,
     'candidate cannot change working metadata',
   );
-  const accepted = await projects.edit({
+  const accepted = await commitStoreEdit(projects, {
     projectId: project.id,
     sourceRevision: project.sourceRevision,
     requestId: randomUUID(),
@@ -129,7 +127,7 @@ test('prepared migration and undo move the pin with its dependency; cancellation
   await linkPreparedRuntime(projectPath);
   assert.equal((await readPreparedRuntime(projectPath)).root, second);
   assert.equal(await realpath(join(projectPath, 'node_modules/@visual-storytelling/core')), second);
-  await projects.edit({
+  await commitStoreEdit(projects, {
     projectId: project.id,
     sourceRevision: accepted.sourceRevision,
     requestId: randomUUID(),

@@ -5,6 +5,11 @@ export interface WidgetSnapshot {
 
 /** Host services are optional. The scene remains a normal offline document. */
 export interface SceneHost {
+  /** Inline cards grow with the composition; fullscreen provides a bounded viewport. */
+  frameSizing?: {
+    readonly height: 'content' | 'viewport';
+    subscribe?(listener: () => void): () => void;
+  };
   beforePlay?(request: {
     muted: boolean;
     hasAudio: boolean;
@@ -17,26 +22,6 @@ export interface SceneHost {
   };
 }
 
-interface OpenAIWidget {
-  widgetState?: WidgetSnapshot;
-  setWidgetState?(snapshot: WidgetSnapshot): void | Promise<unknown>;
-}
-const legacyWidget = () => (globalThis as typeof globalThis & { openai?: OpenAIWidget }).openai;
-const legacyHost: SceneHost = {
-  widgetState: {
-    read: () => legacyWidget()?.widgetState,
-    save: (_id, snapshot) => legacyWidget()?.setWidgetState?.(snapshot),
-    subscribe(_id, listener) {
-      const changed = (event: Event) => {
-        const state = (event as CustomEvent<{ globals?: { widgetState?: WidgetSnapshot } }>).detail
-          ?.globals?.widgetState;
-        if (state !== undefined) listener(state);
-      };
-      addEventListener('openai:set_globals', changed);
-      return () => removeEventListener('openai:set_globals', changed);
-    },
-  },
-};
 // SVG entries and their HTML shell can be bundled independently in the same realm.
 // The host connection belongs to that document, not to an individual module copy.
 const hostKey = Symbol.for('@visual-storytelling/scene-host');
@@ -45,8 +30,7 @@ const realm = globalThis as typeof globalThis & {
 };
 const registry = (realm[hostKey] ??= { listeners: new Set() });
 
-export const sceneHost = (): SceneHost | undefined =>
-  registry.connected ?? (legacyWidget() ? legacyHost : undefined);
+export const sceneHost = (): SceneHost | undefined => registry.connected;
 
 /** One host connection per document; an obsolete disconnect cannot remove a newer host. */
 export function connectSceneHost(host: SceneHost) {

@@ -21,9 +21,26 @@ let scene,
 const gestures = new Set();
 const hostRequests = new Map();
 const widgetListeners = new Map();
+const sizingListeners = new Set();
 let preparedReplacement;
 // Absent until an authored transition: the mounted build is identified by generation.
 let appliedAuthor = config.authoring;
+function restoredCondition(checkpoint) {
+  if (!config.authoredInputs?.length) return checkpoint;
+  const inputs = scene?.authoring?.document?.models?.[0]?.inputs;
+  if (!inputs) return checkpoint;
+  return {
+    ...checkpoint,
+    values: {
+      ...checkpoint.values,
+      ...Object.fromEntries(
+        config.authoredInputs
+          .filter((key) => Object.hasOwn(inputs, key))
+          .map((key) => [key, inputs[key]]),
+      ),
+    },
+  };
+}
 function beforePlay({ signal }) {
   if (config.preview || suspended) throw new Error('This preview cannot play.');
   return new Promise((resolve, reject) => {
@@ -215,6 +232,11 @@ addEventListener('message', (event) => {
     hostRequests.get(event.data.id)?.(event.data.error ? new Error(event.data.error) : undefined);
     return;
   }
+  if (event.data.type === 'host-layout') {
+    config.displayMode = event.data.displayMode;
+    for (const listener of sizingListeners) listener();
+    return;
+  }
   if (['author-preview', 'confirm-preview'].includes(event.data.type)) {
     if (!config.provisional || !scene?.authoring) return;
     const request = event.data;
@@ -230,7 +252,7 @@ addEventListener('message', (event) => {
           return;
         await scene.authoring.replace(request.document, { provisional: true });
         if (request.type === 'confirm-preview' && request.checkpoint)
-          await scene.restore(request.checkpoint);
+          await scene.restore(restoredCondition(request.checkpoint));
         await rendered();
         if (request.type === 'confirm-preview') {
           config.sessionId = request.nextSessionId;
@@ -241,6 +263,7 @@ addEventListener('message', (event) => {
           stateRevision = request.stateRevision;
           document.body.inert = false;
           renew();
+          scheduleLayout();
           send({ type: 'ready', report: report('ready') });
         } else send({ type: 'preview-content', renderStatus });
       })
@@ -265,7 +288,10 @@ addEventListener('message', (event) => {
             if (Object.hasOwn(config.widgetState, id))
               for (const notify of listeners) notify(config.widgetState[id]);
           if (request.checkpoint)
-            await completed(scene.restore(request.checkpoint), controller.signal);
+            await completed(
+              scene.restore(restoredCondition(request.checkpoint)),
+              controller.signal,
+            );
           await rendered(controller.signal);
           preparedReplacement = request.replacementId;
           send({ type: 'preview-restored', replacementId: request.replacementId });
@@ -370,13 +396,16 @@ addEventListener('message', (event) => {
         if (!scene || suspended || Date.now() > request.expiresAt)
           throw new Error('View is unavailable or command expired. Inspect again.');
         if (
-          ['control', 'author', 'author-validate'].includes(request.op) &&
+          ['control', 'author', 'author-validate', 'author-prepare'].includes(request.op) &&
           request.stateRevision !== stateRevision
         )
           throw new Error(
             'The user changed the scene. Inspect the latest state before controlling it.',
           );
-        if (['control', 'author', 'author-validate'].includes(request.op) && gestures.size)
+        if (
+          ['control', 'author', 'author-validate', 'author-prepare'].includes(request.op) &&
+          gestures.size
+        )
           throw new Error('The user is adjusting the scene. Wait for the gesture to finish.');
         if (request.op === 'author-validate') {
           if (!scene.authoring?.validate)
@@ -384,7 +413,18 @@ addEventListener('message', (event) => {
               'The shown scene has no semantic authoring validator. Reopen this project.',
             );
           scene.authoring.validate(request.document, { authoredInputs: request.authoredInputs });
-          send({ type: 'ack', id: request.id, result: { validated: true } });
+          send({
+            type: 'ack',
+            id: request.id,
+            result: { validated: true, checks: scene.authoring.checks },
+          });
+          return;
+        }
+        if (request.op === 'author-prepare') {
+          if (!scene.authoring?.prepare)
+            throw new Error('The shown subject has no document preparation owner.');
+          const document = scene.authoring.prepare(request.document, request.operations);
+          send({ type: 'ack', id: request.id, result: { document } });
           return;
         }
         commandController = new AbortController();
@@ -423,6 +463,7 @@ addEventListener('message', (event) => {
             result = {
               buildRevision: request.nextBuildRevision,
               sourceRevision: request.sourceRevision,
+              checks: scene.authoring.checks,
             };
           } else if (request.op === 'control') {
             try {
@@ -446,7 +487,7 @@ addEventListener('message', (event) => {
           type: 'ack',
           id: request.id,
           report: scene
-            ? request.op === 'author-validate'
+            ? ['author-validate', 'author-prepare'].includes(request.op)
               ? report(request.op, request.detail)
               : failedReport(error, request.op, request.detail)
             : undefined,
@@ -473,6 +514,15 @@ async function ready() {
     scene.pause?.();
     scene.connectHost?.({
       beforePlay,
+      frameSizing: {
+        get height() {
+          return config.displayMode === 'fullscreen' ? 'viewport' : 'content';
+        },
+        subscribe(listener) {
+          sizingListeners.add(listener);
+          return () => sizingListeners.delete(listener);
+        },
+      },
       widgetState: {
         read: (id) => config.widgetState?.[id],
         save: (id, snapshot) => {
@@ -491,7 +541,7 @@ async function ready() {
       },
     });
     if (config.theme) await scene.setTheme?.(config.theme);
-    if (config.checkpoint) await scene.restore(config.checkpoint);
+    if (config.checkpoint) await scene.restore(restoredCondition(config.checkpoint));
     await rendered();
     hasRendered = true;
     layoutObserver = new ResizeObserver(scheduleLayout);
@@ -501,7 +551,11 @@ async function ready() {
     send({ type: 'ready', report: report('ready') });
     let sampling = false;
     sampleTimer = setInterval(() => {
-      if (!suspended && !sampling && scene.inspect({ presentation: false }).playing) {
+      if (
+        !suspended &&
+        !sampling &&
+        scene.inspect({ presentation: false, objects: false }).playing
+      ) {
         sampling = true;
         void observe('playback').finally(() => {
           sampling = false;

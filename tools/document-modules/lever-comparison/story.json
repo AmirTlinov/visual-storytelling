@@ -1,0 +1,6 @@
+{
+  "recipe": "comparison",
+  "kind": "lever",
+  "inputs": { "leftForce": 10, "leftArm": 40, "rightForce": 10, "rightArm": 20 },
+  "changes": { "rightForce": 20 }
+}

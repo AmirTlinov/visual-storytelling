@@ -1,6 +1,6 @@
 # Тензор, срез и вычисление
 
-[GPT-эталон](../examples/gpt-model/scene.js) связывает выбранные токен, блок,
+[GPT-эталон](../examples/gpt-model/story.json) связывает выбранные токен, блок,
 голову и координату с одним вычислением. [Модель](../examples/gpt-model/model.js)
 возвращает полный forward trace, а [вычислительная панель](../examples/gpt-model/computation.js)
 создаёт `TensorData` из его матриц и сохраняет исходные адреса при выборе строки

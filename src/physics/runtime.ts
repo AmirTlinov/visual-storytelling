@@ -1,5 +1,7 @@
 /// <reference lib="esnext.disposable" preserve="true" />
 
+import { releaseResources } from '../lifecycle.js';
+
 interface SnapshotWorld {
   timestep: number;
   step(): void;
@@ -173,16 +175,24 @@ export function physicsRuntime<W extends SnapshotWorld>(
     dispose() {
       if (disposed || disposing) return;
       disposing = true;
-      for (const cleanup of [...cleanups]) cleanup();
-      for (const body of [...participants.values()]) body.dispose();
-      participants.clear();
-      renders.clear();
-      beforeStep.clear();
-      wakeListeners.clear();
-      cleanups.clear();
-      checkpointListeners.clear();
-      raw.free();
-      disposed = true;
+      function* resources() {
+        yield* [...cleanups];
+        // Cleanup callbacks may register a final participant before the native world is freed.
+        for (const body of [...participants.values()]) yield () => body.dispose();
+        yield () => raw.free();
+      }
+      try {
+        releaseResources(resources(), 'Physics world disposal failed.');
+      } finally {
+        participants.clear();
+        renders.clear();
+        beforeStep.clear();
+        wakeListeners.clear();
+        cleanups.clear();
+        checkpointListeners.clear();
+        disposed = true;
+        disposing = false;
+      }
     },
   };
 }

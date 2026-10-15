@@ -17,7 +17,6 @@ process.on('message', async (message) => {
       jobId: message.jobId,
       signal: abort.signal,
       progress: (stage, progress) => process.send?.({ type: 'progress', stage, progress }),
-      authored: (project) => process.send?.({ type: 'authored', project }),
     });
     abort.signal.throwIfAborted();
     terminal = { type: 'result', result };

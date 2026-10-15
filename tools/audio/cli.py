@@ -19,6 +19,10 @@ def main():
     check.add_argument("script", type=Path)
     check.add_argument("--timeline", type=Path, required=True)
     check.add_argument("--source-directory", type=Path, help="Base for a generated script's authored relative resources")
+    bind = commands.add_parser("bind-recording", help="Bind accepted whole takes to explicit document units without synthesis")
+    bind.add_argument("script", type=Path)
+    bind.add_argument("--timeline", type=Path, required=True)
+    bind.add_argument("--source-directory", type=Path)
     refresh = commands.add_parser("remaster", help="Reuse an accepted performance without synthesis or model loading")
     refresh.add_argument("script", type=Path)
     refresh.add_argument("--out", type=Path, required=True)
@@ -43,6 +47,9 @@ def main():
         elif args.command == "check":
             from script import check_timeline
             check_timeline(args.script, args.timeline, source_directory=args.source_directory)
+        elif args.command == "bind-recording":
+            from recording import bind_recording
+            bind_recording(args.script, args.timeline, source_directory=args.source_directory)
         elif args.command == "remaster":
             from remaster import reuse_audio
             timeline = reuse_audio(args.script.resolve(), args.out.resolve(), source_directory=args.source_directory)

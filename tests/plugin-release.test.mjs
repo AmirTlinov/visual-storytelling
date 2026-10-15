@@ -22,7 +22,14 @@ test(
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'story-release-'));
     const data = join(directory, 'data');
-    const host = await pluginHost({ dataDirectory: data });
+    const release = process.env.VISUAL_STORY_RELEASE;
+    const host = await pluginHost({
+      dataDirectory: data,
+      ...(release && {
+        serverCommand: join(release, 'runtime/node'),
+        serverEntry: join(release, 'plugin/dist/server.mjs'),
+      }),
+    });
     const browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage({ viewport: { width: 820, height: 900 } });
     page.setDefaultTimeout(15000);
@@ -69,7 +76,8 @@ test(
       const project = created.project,
         { sessionId } = opened.structuredContent;
       assert.equal(await app.locator('#voice, #release').count(), 0);
-      const voice = (await call('story_voice', { projectId: project.id })).structuredContent;
+      const voice = (await call('story_voice', { context: opened.structuredContent.context }))
+        .structuredContent;
       assert.equal(voice.provider, 'higgs');
       assert.ok(voice.voices.some((choice) => choice.provider === 'higgs'));
       assert.equal(Boolean(voice.settings?.enabled), false);
@@ -78,9 +86,7 @@ test(
       const inspect = async () => (await call('story_inspect', { sessionId })).structuredContent;
       const before = await inspect();
       await call('story_control', {
-        sessionId,
-        buildRevision: before.buildRevision,
-        stateRevision: before.stateRevision,
+        context: before.context,
         requestId: randomUUID(),
         commands: [
           { type: 'mode', value: 'explore' },
@@ -114,15 +120,13 @@ test(
           options: {
             formats: ['html'],
             conditions,
-            ...(conditions === 'current' ? { sessionId } : {}),
           },
         });
         return finish(result.structuredContent.id);
       };
       const shownTarget = {
         kind: 'build',
-        projectId: project.id,
-        buildRevision: before.buildRevision,
+        context: before.context,
       };
       const captured = await produce(shownTarget, 'current');
       assert.equal(captured.buildRevision, before.buildRevision);
@@ -176,17 +180,14 @@ test(
 
       const current = await inspect();
       await call('story_control', {
-        sessionId,
-        buildRevision: current.buildRevision,
-        stateRevision: current.stateRevision,
+        context: current.context,
         requestId: randomUUID(),
         commands: [{ type: 'rate', value: 0.25 }, { type: 'play' }],
       });
       const file = (await call('story_inspect', { projectId: project.id, file: 'scene.js' }))
         .structuredContent;
       const edited = await call('story_edit', {
-        projectId: project.id,
-        sourceRevision: before.sourceRevision,
+        context: before.context,
         requestId: randomUUID(),
         changes: [
           {
@@ -195,9 +196,23 @@ test(
           },
         ],
       });
-      await finish(edited.structuredContent.job.id);
+      const editedProject = (await finish(edited.structuredContent.job.id)).project;
       await app.locator('#update').waitFor();
       assert.equal((await inspect()).buildRevision, before.buildRevision);
+      const boundWorking = (await call('story_open', { context: editedProject.context, sessionId }))
+        .structuredContent;
+      assert.equal(
+        boundWorking.buildRevision,
+        before.buildRevision,
+        'working B remains separate from playing A',
+      );
+      const controlledWorking = (
+        await call('story_control', {
+          context: boundWorking.context,
+          requestId: randomUUID(),
+          commands: [{ type: 'rate', value: 0.25 }],
+        })
+      ).structuredContent;
       const shown = await produce(shownTarget);
       assert.equal(shown.sourceRevision, before.sourceRevision);
       assert.equal(
@@ -205,7 +220,7 @@ test(
         false,
       );
       const archiveJob = await call('story_produce', {
-        target: { kind: 'build', projectId: project.id, buildRevision: before.buildRevision },
+        target: { kind: 'build', context: before.context },
         requestId: randomUUID(),
         options: { formats: ['source'] },
       });
@@ -219,10 +234,9 @@ test(
       assert.equal(archivedScene.includes('Latest working revision'), false);
       const working = await produce({
         kind: 'working',
-        projectId: project.id,
-        sourceRevision: edited.structuredContent.project.sourceRevision,
+        context: controlledWorking.context,
       });
-      assert.equal(working.sourceRevision, edited.structuredContent.project.sourceRevision);
+      assert.equal(working.sourceRevision, editedProject.sourceRevision);
       assert.equal(
         (await readFile(working.files[0], 'utf8')).includes('Latest working revision'),
         true,

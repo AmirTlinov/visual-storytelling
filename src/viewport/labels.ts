@@ -13,6 +13,7 @@ export type { Face } from './label-faces.js';
 
 export interface LabelOptions extends SurfaceOptions {
   offset?: [number, number];
+  /** Displayed CSS pixels, preserved when the surrounding authored frame is fitted. */
   size?: number;
   frame?: LabelFrame;
   /** Screen annotations pack by default. False pins the label and reserves its exact footprint. */
@@ -109,7 +110,9 @@ export function projectedLabels(
           if (a.element.textContent !== text) a.element.textContent = text;
         }
         a.group.hidden = a.element.hidden = false;
-        const font = options.size ? `${options.size}px` : '';
+        // A screen annotation keeps its CSS pixel size when an authored frame
+        // scales the surrounding logical drawing. Physical inscriptions scale in 3D.
+        const font = `calc(${options.size ?? 18}px / var(--ve-frame-scale, 1))`;
         if (a.element.style.fontSize !== font) a.element.style.fontSize = font;
         const safe = insets(),
           padding = options.frame?.padding?.[0] ?? (options.frame ? 13 : 0);

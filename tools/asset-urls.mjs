@@ -64,7 +64,7 @@ export function resourceNodes(source, file = 'scene.js') {
 }
 
 /** Resolve the standard module-relative asset idiom before modules lose their own base URL. */
-export async function moduleAssetURLs(source, file) {
+export async function moduleAssetURLs(source, file, { assertAsset } = {}) {
   if (!source.includes('import.meta')) return source;
   const edits = [];
   for (const node of resourceNodes(source, file)) {
@@ -78,6 +78,7 @@ export async function moduleAssetURLs(source, file) {
     const url = new URL(value, pathToFileURL(file));
     if (url.protocol !== 'file:') continue;
     const path = fileURLToPath(url);
+    await assertAsset?.(path);
     if (!extname(path) || /\.[cm]?tsx?$/.test(path))
       throw new Error(`${file}: ${value} is not a standalone data asset; import code as a module`);
     if (/\.[cm]?jsx?$/.test(path)) {
@@ -160,7 +161,7 @@ export async function embedRuntimeAssets(output) {
 }
 
 /** Vite-compatible ?url assets are embedded by the offline scene builder. */
-export function assetURLs({ onAsset, transformModule } = {}) {
+export function assetURLs({ onAsset, transformModule, assertAsset } = {}) {
   return {
     name: 'scene-asset-urls',
     setup(build) {
@@ -174,7 +175,7 @@ export function assetURLs({ onAsset, transformModule } = {}) {
         if (transformed === source && !source.includes('import.meta')) return;
         const extension = extname(args.path).slice(1);
         return {
-          contents: await moduleAssetURLs(transformed, args.path),
+          contents: await moduleAssetURLs(transformed, args.path, { assertAsset }),
           loader: extension.endsWith('ts')
             ? 'ts'
             : ['jsx', 'tsx'].includes(extension)
@@ -188,6 +189,7 @@ export function assetURLs({ onAsset, transformModule } = {}) {
           kind: args.kind,
         });
         if (resolved.errors.length) return { errors: resolved.errors };
+        await assertAsset?.(resolved.path);
         onAsset?.(resolved.path);
         const id = createHash('sha256')
           .update(await assetContents(resolved.path))

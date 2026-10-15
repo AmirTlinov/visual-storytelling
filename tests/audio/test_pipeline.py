@@ -18,10 +18,66 @@ from resources import REFERENCE_AUDIO, REFERENCE_TEXT, digest, file_digest
 from script import read_script, words, check_timeline
 from speech import Speaker, GENERATION, SAMPLE_RATE, SpeechLimitError, generation_parameters
 
-EXAMPLE = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "scene-shell" / "narration.json"
+EXAMPLE = Path(__file__).resolve().parent / "fixtures" / "accepted-task.json"
 
 
 class AudioChecks(unittest.TestCase):
+    def test_explicit_recording_binding_preserves_accepted_whole_audio_without_models(self):
+        from recording import bind_recording
+        class FixtureSpeaker:
+            identity = {"model": "fixture", "reference_sha256": file_digest(REFERENCE_AUDIO)}
+            def synthesize(self, segment):
+                return np.sin(np.arange(SAMPLE_RATE * 2) * .05) * .1, segment["text"], {"cached": True, "seconds": 0}
+        class FixtureAligner:
+            device = "cpu"
+            def align(self, audio, text, key):
+                return [{"text": token, "start": .1 + i * .2, "end": .25 + i * .2, "score": .9}
+                        for i, token in enumerate(words(text))], {"cached": True, "seconds": 0}
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            script = root / "derived.json"
+            source = {"version":3,"intro":.2,"outro":.3,"music":None,"segments":[
+                {"id":"whole","text":"Посмотрим на четыре предмета.","seed":43,"delivery":""}]}
+            script.write_text(json.dumps(source,ensure_ascii=False))
+            speaker = FixtureSpeaker();speaker.voice=read_script(script)["voice"]
+            timeline = build_audio(script,root / "recording","cpu",speaker=speaker,aligner=FixtureAligner(),report=False)
+            old = {name:(root / "recording" / name).read_bytes() for name in ["audio.wav","voice.wav"]}
+            source["segments"][0]["conditions"]={"basis":"authored","models":[]}
+            script.write_text(json.dumps(source,ensure_ascii=False))
+            with patch('speech.Speaker',side_effect=AssertionError('binding must not load a model')):
+                bound=bind_recording(script,root / "recording/timeline.json")
+            for name,data in old.items():self.assertEqual((root / "recording" / name).read_bytes(),data)
+            for key in ['audio_start','audio_end','words','seed','delivery']:
+                self.assertEqual(bound['segments'][0][key],timeline['segments'][0][key])
+            check_timeline(script,root / "recording/timeline.json")
+            accepted=(root / "recording/timeline.json").read_bytes()
+            source['segments'][0]['seed']=44
+            script.write_text(json.dumps(source,ensure_ascii=False))
+            with self.assertRaisesRegex(ValueError,'accepted performance'):
+                bind_recording(script,root / "recording/timeline.json")
+            self.assertEqual((root / "recording/timeline.json").read_bytes(),accepted)
+
+    def test_accepted_acoustic_retry_retains_requested_and_actual_seed(self):
+        class FixtureSpeaker:
+            identity = {"model":"fixture","reference_sha256":file_digest(REFERENCE_AUDIO)}
+            def synthesize(self,segment):
+                return np.sin(np.arange(SAMPLE_RATE*2)*.05)*.1,str(segment['seed']),{"cached":True,"seconds":0}
+        class FixtureAligner:
+            device="cpu"
+            def align(self,audio,text,key):
+                return [{"text":token,"start":.1+i*.2,"end":.25+i*.2,"score":.1 if key=='42' else .9}
+                        for i,token in enumerate(words(text))],{"cached":True,"seconds":0}
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);source=root/'derived.json'
+            source.write_text(json.dumps({"version":3,"intro":.2,"outro":.3,"music":None,"segments":[
+                {"id":"whole","text":"Посмотрим на четыре предмета.","seed":42}]}))
+            speaker=FixtureSpeaker();speaker.voice=read_script(source)['voice']
+            timeline=build_audio(source,root/'recording','cpu',speaker=speaker,aligner=FixtureAligner(),report=False)
+            self.assertEqual(timeline['segments'][0]['source_seed'],42)
+            self.assertEqual(timeline['segments'][0]['seed'],43)
+            self.assertEqual(timeline['build']['segments'][0]['retries'][0]['seed'],42)
+            check_timeline(source,root/'recording/timeline.json')
+
     def test_music_prepares_only_when_used_and_before_input_receipt(self):
         class FixtureSpeaker:
             identity = {"model": "fixture", "reference_sha256": file_digest(REFERENCE_AUDIO)}

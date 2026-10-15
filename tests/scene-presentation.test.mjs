@@ -105,6 +105,7 @@ test('intentional background geometry stays inspectable without being reported a
     visible: true,
     data: { framing },
   }));
+  objects.push({ id: 'empty-overlay', x: 0, y: 900, width: 0, height: 0, visible: true });
   const stage = {
     parentElement: null,
     closest: () => null,
@@ -136,7 +137,7 @@ test('intentional background geometry stays inspectable without being reported a
     assert.equal(report.uninspectedCanvases, 0);
     assert.equal(
       canvas.__visualReview().objects.length,
-      2,
+      3,
       'background geometry remains in motion telemetry',
     );
   } finally {

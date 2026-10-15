@@ -38,13 +38,17 @@ test('a production-only installation of the packed public API typechecks outside
     const publicFiles = distribution.files.map(({ path }) => path);
     assert.ok(publicFiles.includes('tools/scaffold/scene.js'));
     assert.ok(publicFiles.includes('tools/project-files.mjs'));
+    const examples = ['gpt-model', 'spatial-order', 'cube-section', 'push-block'];
     assert.ok(
       publicFiles
         .filter((path) => path.startsWith('examples/'))
         .every(
-          (path) => path === 'examples/catalog.json' || path.startsWith('examples/gpt-model/'),
+          (path) =>
+            path === 'examples/catalog.json' ||
+            examples.some((id) => path.startsWith(`examples/${id}/`)),
         ),
     );
+    for (const id of examples) assert.ok(publicFiles.includes(`examples/${id}/story.json`), id);
     const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
     await writeFile(
       join(directory, 'package.json'),
@@ -97,11 +101,9 @@ test('a production-only installation of the packed public API typechecks outside
         })
       ).stdout,
     );
-    assert.equal(entries.length, 1);
-    assert.equal(entries[0].id, 'gpt-model');
+    assert.deepEqual(entries.map((entry) => entry.id).sort(), [...examples].sort());
     for (const file of [
-      entries[0].source,
-      ...entries[0].guides,
+      ...entries.flatMap((entry) => [entry.source, ...entry.guides]),
       join(installed, 'skills/visual-explainer/SKILL.md'),
     ])
       assert.ok((await readFile(file, 'utf8')).length > 0);

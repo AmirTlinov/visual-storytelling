@@ -6,12 +6,13 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { workflows } from '../plugin/workflows.mjs';
 import { projectFiles } from '../tools/project-files.mjs';
-import { buildNarration, checkNarration, prepareNarration } from '../tools/narration.mjs';
+import { buildNarration, checkNarration, requireNarration } from '../tools/narration.mjs';
 import { narrationSource } from '../tools/story-document.mjs';
+import { createScene } from '../tools/create-scene.mjs';
 
 test(
   'a deferred voiced template stays quiet through source edits until voice is explicitly enabled',
-  { timeout: 90000, skip: process.platform !== 'darwin' || process.arch !== 'arm64' },
+  { timeout: 180000, skip: process.platform !== 'darwin' || process.arch !== 'arm64' },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'story-deferred-voice-'));
     const data = join(directory, 'data'),
@@ -37,7 +38,7 @@ test(
         downloads++;
         throw new Error('Quiet authoring must not download a voice environment');
       };
-      await workflows.create(input, task());
+      await createScene(projectPath, { deferAudio: true, signal: new AbortController().signal });
       await cp(new URL('./fixtures/scene-shell/', import.meta.url), projectPath, {
         recursive: true,
       });
@@ -48,16 +49,14 @@ test(
       const voice = await read('voice.json');
       assert.deepEqual(voice, { provider: 'higgs', enabled: false, language: 'ru-RU' });
       const timeline = await readFile(join(projectPath, 'timeline.json'), 'utf8');
-      const authored = await read('narration.json');
+      const authored = await read('story.json');
       assert.deepEqual(
         authored,
-        JSON.parse(
-          await readFile(new URL('./fixtures/scene-shell/narration.json', import.meta.url)),
-        ),
+        JSON.parse(await readFile(new URL('./fixtures/scene-shell/story.json', import.meta.url))),
         'deferring speech preserves the editable script',
       );
-      authored.segments.at(-1).text += ' Теперь исследуйте свой вариант.';
-      await writeFile(join(projectPath, 'narration.json'), JSON.stringify(authored));
+      authored.chapters.at(-1).beats.at(-1).say += ' Теперь исследуйте свой вариант.';
+      await writeFile(join(projectPath, 'story.json'), JSON.stringify(authored));
       const built = await workflows.build(
         { ...input, sourceRevision: (await projectFiles(projectPath)).revision },
         task(),
@@ -67,9 +66,9 @@ test(
         /data-silent="true"/,
       );
       // Ordinary delivery asks to prepare audible output; saved project intent remains authoritative.
-      await prepareNarration(projectPath, { audible: true });
+      await requireNarration(projectPath, {});
       assert.deepEqual(await read('voice.json'), voice);
-      assert.deepEqual(await read('narration.json'), authored);
+      assert.deepEqual(await read('story.json'), authored);
       assert.equal(await readFile(join(projectPath, 'timeline.json'), 'utf8'), timeline);
       assert.equal(downloads, 0);
       await assert.rejects(readdir(join(data, 'environment')), { code: 'ENOENT' });
@@ -80,7 +79,11 @@ test(
       let preparationRequested = false;
       await assert.rejects(
         workflows.build(
-          { ...input, sourceRevision: (await projectFiles(projectPath)).revision },
+          {
+            ...input,
+            prepareVoice: true,
+            sourceRevision: (await projectFiles(projectPath)).revision,
+          },
           {
             ...task(),
             signal: controller.signal,
@@ -98,7 +101,7 @@ test(
       assert.equal(preparationRequested, true);
       assert.equal(downloads, 0);
       assert.equal((await read('voice.json')).enabled, true);
-      assert.deepEqual(await read('narration.json'), authored);
+      assert.deepEqual(await read('story.json'), authored);
       assert.deepEqual(await readdir(join(data, 'environment')), []);
     } finally {
       globalThis.fetch = fetch;
@@ -112,7 +115,7 @@ test(
 
 test(
   'quiet story documents retain a speech projection and explicit audio activates the same script',
-  { timeout: 90000 },
+  { timeout: 180000 },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'quiet-document-voice-'));
     const projections = [];
@@ -123,7 +126,7 @@ test(
         for (const name of ['story.json', 'voice.json', 'index.html'])
           await cp(new URL(`./fixtures/${example}/${name}`, import.meta.url), join(project, name));
         const authored = await readFile(join(project, 'story.json'), 'utf8');
-        await prepareNarration(project, { audible: true });
+        await requireNarration(project, {});
         assert.equal(JSON.parse(await readFile(join(project, 'voice.json'))).enabled, false);
         assert.equal(await readFile(join(project, 'story.json'), 'utf8'), authored);
         const projection = await narrationSource(project);

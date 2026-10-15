@@ -3,6 +3,7 @@ import { join, dirname, relative, resolve, sep, isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
 import { sceneInput } from './assets.mjs';
 import { copySceneInput } from './copy-scene-input.mjs';
+import { verifiedInputDigest } from './input-verification.mjs';
 
 const inside = (root, path) => path === root || path.startsWith(root + sep);
 export const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -39,7 +40,7 @@ export async function projectFiles(root) {
       if (!inside(root, target)) throw new Error(`Project link leaves its directory: ${name}`);
       const stat = await lstat(target);
       if (stat.isDirectory()) await visit(target, name, next);
-      else if (stat.isFile()) files[name] = digest(await readFile(target));
+      else if (stat.isFile()) files[name] = await verifiedInputDigest(target);
     }
   }
   await visit(root);

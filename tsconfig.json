@@ -22,5 +22,5 @@
     },
     "allowJs": true
   },
-  "include": ["src", "examples", "tests", "playwright.config.ts"]
+  "include": ["src", "examples", "tests", "playwright.config.ts", "tools/document-modules"]
 }

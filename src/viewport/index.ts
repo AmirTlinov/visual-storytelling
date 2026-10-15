@@ -19,6 +19,9 @@ export type { SubjectOptions3D } from './semantics.js';
 export { SvgOrbit } from './svg-orbit.js';
 export type { SvgOrbitPose } from './svg-orbit.js';
 export type { Shot3D, ShotTransition3D } from './shots.js';
+export { shotProgress } from './shots.js';
+export { shotPlan3D } from './shot-plan.js';
+export type { AuthoredShot3D } from './shot-plan.js';
 export type { LabelOptions, LabelInsets, Face } from './labels.js';
 export type { LabelAnchor } from './label-anchor.js';
 export { arrangeTensorRows, deliverTensorCells } from './tensor-motion.js';
@@ -31,5 +34,6 @@ export { readableFrame, geometryFrameAnchors } from './framing.js';
 export type { FrameAnchor, ReadableFrame } from './framing.js';
 
 export { MathMorph3D } from '../morph/three.js';
+export { calculationTiming, calculationFraming } from '../morph/scene-framing.js';
 export type { MathDelivery3DOptions } from '../morph/delivery-3d.js';
 export { Morph3D } from '../morph/object-3d.js';

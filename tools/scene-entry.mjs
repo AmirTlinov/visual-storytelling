@@ -1,10 +1,12 @@
 import { readFile, access } from 'node:fs/promises';
 import { join, basename } from 'node:path';
+import { readStoryProject, storyProjectFile } from './story-project.mjs';
 
 /** The authored entry may be generated; every build exposes one HTML entry. */
 export const scenePage = 'index.html';
 
 export async function sceneEntry(directory) {
+  if (await readStoryProject(directory)) return { page: scenePage, source: storyProjectFile };
   const config = await readFile(join(directory, 'scene.json'), 'utf8').then(JSON.parse, (error) => {
     if (error.code !== 'ENOENT') throw error;
     return {};

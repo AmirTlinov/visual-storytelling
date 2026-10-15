@@ -1,5 +1,7 @@
 import { gsap } from 'gsap';
 import { clamp } from '../ink/dom.js';
+import { validateRecordedSpeech } from './recorded-speech.js';
+import type { SpeechConditions } from './speech-condition.js';
 
 export interface CueSpan {
   start: number;
@@ -26,10 +28,24 @@ export interface Cue extends CueSpan {
 export interface Chapter extends Cue {
   id: string;
   text: string;
+  /** Current authored caption for a pending take; accepted speech text/words remain intact. */
+  displayText?: string;
+  /** Derived applicability at this segment's canonical model frame, for portable captions. */
+  captionApplicable?: boolean;
+  /** Accepted source spelling, including native performance controls. */
+  source_text?: string;
+  seed?: number;
+  /** Requested source seed; seed is the accepted performance after acoustic retries. */
+  source_seed?: number;
+  delivery?: string;
   /** Short navigable heading; text remains the spoken paragraph. */
   title?: string;
   /** Absolute word times produced by the narration aligner. */
   words?: readonly { text: string; start: number; end: number }[];
+  /** Bounds of a complete accepted take, including its natural head/tail pauses. */
+  audio_start?: number;
+  audio_end?: number;
+  conditions?: SpeechConditions;
 }
 export interface Script<K extends string = string> {
   duration: number;
@@ -162,16 +178,7 @@ export function cueSheet<K extends string>(source: Script<K>) {
     )
       throw new Error(`Cue ${id}: provide either a non-empty action or hold`);
   }
-  for (const chapter of script.segments ?? []) {
-    if (
-      !Number.isFinite(chapter.start) ||
-      !Number.isFinite(chapter.end) ||
-      chapter.start < 0 ||
-      chapter.end < chapter.start ||
-      chapter.end > script.duration + 0.01
-    )
-      throw new Error(`Invalid chapter: ${chapter.id}`);
-  }
+  validateRecordedSpeech(script);
   function get(id: K): Cue {
     const cue = script.cues[id];
     if (!cue)

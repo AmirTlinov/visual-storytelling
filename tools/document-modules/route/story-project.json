@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "modules": [
+    { "id": "delivery-route", "model": "modules/model.ts", "subject": "modules/drawing.ts" }
+  ],
+  "resources": ["assets/parcel.svg"]
+}

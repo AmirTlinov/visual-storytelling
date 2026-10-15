@@ -348,8 +348,7 @@ try {
       {
         name: 'story_voice',
         arguments: {
-          projectId: project.id,
-          sourceRevision: project.sourceRevision,
+          context: project.context,
           requestId: randomUUID(),
           enabled: true,
           provider,
@@ -392,8 +391,7 @@ try {
 
   stage = 'author a timed scene';
   const edited = await call('story_edit', {
-    projectId: project.id,
-    sourceRevision: project.sourceRevision,
+    context: project.context,
     requestId: randomUUID(),
     changes: [{ path: 'scene.js', content: sceneSource }],
   });
@@ -415,7 +413,7 @@ try {
 
   stage = 'produce HTML PNG MP4';
   const produced = await call('story_produce', {
-    target: { kind: 'working', projectId: project.id, sourceRevision: project.sourceRevision },
+    target: { kind: 'working', context: project.context },
     requestId: randomUUID(),
     options: {
       formats: ['html', 'png', 'mp4'],

@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { JobRunner } from '../plugin/jobs.mjs';
+import { contentDigest } from '../tools/build-info.mjs';
+import { projectFiles } from '../tools/project-files.mjs';
 
 async function wait(check, timeout = 6000) {
   const end = Date.now() + timeout;
@@ -57,6 +59,81 @@ const terminal = (runner, id) =>
     const job = runner.get(id);
     return !['queued', 'running', 'cancelling'].includes(job.status) && job;
   });
+
+test('completed deterministic review reuses verified evidence and rejects changed report or snapshot bytes', async (t) => {
+  const { runner, directory } = await fixture(t);
+  const snapshot = join(directory, 'snapshots', 'review-input');
+  const output = join(await realpath(directory), 'report');
+  await mkdir(snapshot, { recursive: true });
+  await mkdir(output);
+  await writeFile(join(snapshot, 'scene.js'), 'accepted model');
+  await mkdir(join(snapshot, 'dist'));
+  await writeFile(join(snapshot, 'dist/index.html'), 'accepted drawing');
+  for (const name of ['index.html', 'motion.json', 'session.json'])
+    await writeFile(join(output, name), 'accepted evidence');
+  const input = {
+    projectId: 'review-project',
+    inputSnapshot: 'review-input',
+    sourceRevision: 'revision',
+    value: 1,
+  };
+  const first = await runner.enqueue('review', input, randomUUID());
+  await terminal(runner, first.id);
+  const stored = runner.jobs.get(first.id);
+  stored.result = {
+    path: join(output, 'index.html'),
+    reportProof: {
+      version: 1,
+      kind: 'document-checkpoints',
+      directory: output,
+      digest: await contentDigest(output, ['.']),
+      snapshot,
+      inputRevision: (await projectFiles(snapshot)).revision,
+      outputDigest: await contentDigest(join(snapshot, 'dist'), ['.']),
+    },
+  };
+  await runner.save(stored);
+  stored.createdAt = new Date(Date.now() - 20000).toISOString();
+  for (let index = 0; index < 31; index++)
+    runner.jobs.set('newer-' + index, {
+      id: 'newer-' + index,
+      projectId: input.projectId,
+      kind: 'build',
+      status: 'succeeded',
+      createdAt: new Date(Date.now() - 10000 + index).toISOString(),
+      input: {},
+    });
+  assert(!runner.snapshotLeases().includes(first.id));
+  const repeated = await runner.enqueue('review', input, randomUUID());
+  assert.equal(repeated.id, first.id);
+  assert.equal(repeated.status, 'succeeded');
+  assert(
+    runner.snapshotLeases().includes(first.id),
+    'The returned proof retains its source links through collection',
+  );
+  await writeFile(join(snapshot, 'dist/index.html'), 'changed drawing');
+  const changedDrawing = await runner.enqueue('review', input, randomUUID());
+  assert.notEqual(changedDrawing.id, first.id);
+  await terminal(runner, changedDrawing.id);
+  await writeFile(join(snapshot, 'dist/index.html'), 'accepted drawing');
+  await writeFile(join(output, 'motion.json'), 'changed evidence');
+  const changedReport = await runner.enqueue('review', input, randomUUID());
+  assert.notEqual(changedReport.id, first.id);
+  await terminal(runner, changedReport.id);
+  await writeFile(join(output, 'motion.json'), 'accepted evidence');
+  await writeFile(join(snapshot, 'scene.js'), 'changed model');
+  const changedModel = await runner.enqueue('review', input, randomUUID());
+  assert.notEqual(changedModel.id, first.id);
+  await terminal(runner, changedModel.id);
+  await writeFile(join(snapshot, 'scene.js'), 'accepted model');
+  const scenarioInput = { ...input, options: { scenario: 'attempt.json' } };
+  const scenario = await runner.enqueue('review', scenarioInput, randomUUID());
+  await terminal(runner, scenario.id);
+  runner.jobs.get(scenario.id).result = stored.result;
+  const nextAttempt = await runner.enqueue('review', scenarioInput, randomUUID());
+  assert.notEqual(nextAttempt.id, scenario.id);
+  await terminal(runner, nextAttempt.id);
+});
 
 test('idle maintenance coalesces requests and fences source capture plus direct worker enqueues', async (t) => {
   const { runner } = await fixture(t);

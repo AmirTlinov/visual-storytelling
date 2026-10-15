@@ -11,6 +11,7 @@ import { registeredEnvelope } from '../viewport/morph/registration.js';
 import { contactRetention } from '../viewport/morph/contact-rounding.js';
 import { smooth } from './numbers.js';
 import { materialMotion } from './material.js';
+import { shapeSize } from './body-geometry.js';
 
 /** A written object. Its inscription belongs to its material, in local front-face coordinates. */
 export interface MorphObject {
@@ -44,16 +45,6 @@ export interface MorphPlan {
   readonly completeAt: number;
   readonly bounds: readonly [VolumePoint, VolumePoint];
   sample(progress: number, duration?: number): MorphFrame;
-}
-export function shapeSize(shape: VolumeShape): VolumePoint {
-  return shape.kind === 'box'
-    ? shape.size
-    : shape.kind === 'sphere'
-      ? [shape.radius * 2, shape.radius * 2, shape.radius * 2]
-      : [shape.length, shape.radius * 2, shape.radius * 2];
-}
-export function bodySize(body: MorphBody): VolumePoint {
-  return shapeSize(body.shape).map((v, i) => v * (body.scale?.[i] ?? 1)) as unknown as VolumePoint;
 }
 function packed(objects: readonly MorphObject[], gap: number, columns: number): MorphBody[] {
   const rows = Array.from({ length: Math.ceil(objects.length / columns) }, (_, i) =>

@@ -1,0 +1,149 @@
+{
+  "version": 2,
+  "title": "Почему один предмет остаётся?",
+  "models": [
+    {
+      "id": "division",
+      "module": "division",
+      "inputs": {
+        "count": 17,
+        "divisor": 4
+      }
+    }
+  ],
+  "views": [
+    {
+      "id": "objects",
+      "kind": "groups",
+      "model": "division"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "lesson",
+      "title": "Проверим группы",
+      "beats": [
+        {
+          "id": "look",
+          "say": "Посмотри на эти предметы.",
+          "action": "Увидеть исходное количество",
+          "speech": {
+            "id": "voice.lesson.look",
+            "when": {
+              "basis": "presented",
+              "models": []
+            }
+          }
+        },
+        {
+          "id": "group",
+          "say": "Распределим семнадцать предметов по четыре.",
+          "operation": {
+            "model": "division",
+            "name": "group"
+          },
+          "speech": {
+            "id": "voice.lesson.group",
+            "when": {
+              "basis": "presented",
+              "models": [
+                {
+                  "model": "division",
+                  "inputs": {
+                    "count": 17,
+                    "divisor": 4
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "groups",
+          "say": "Получатся четыре полные группы,",
+          "focus": ["objects"],
+          "speech": {
+            "id": "voice.lesson.group",
+            "when": {
+              "basis": "presented",
+              "models": [
+                {
+                  "model": "division",
+                  "inputs": {
+                    "count": 17,
+                    "divisor": 4
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "remainder",
+          "say": "и ещё один предмет останется.",
+          "operation": {
+            "model": "division",
+            "name": "remainder"
+          },
+          "focus": ["division:remainder"],
+          "speech": {
+            "id": "voice.lesson.group",
+            "when": {
+              "basis": "presented",
+              "models": [
+                {
+                  "model": "division",
+                  "inputs": {
+                    "count": 17,
+                    "divisor": 4
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "explain",
+          "say": "Ему не хватает соседей для целой группы.",
+          "focus": ["division:remainder"],
+          "speech": {
+            "id": "voice.lesson.group",
+            "when": {
+              "basis": "presented",
+              "models": [
+                {
+                  "model": "division",
+                  "inputs": {
+                    "count": 17,
+                    "divisor": 4
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "try",
+          "say": "А теперь добавь один предмет и проверь, что изменится.",
+          "hold": "Изменить количество и увидеть остаток",
+          "speech": {
+            "id": "voice.lesson.try",
+            "when": {
+              "basis": "presented",
+              "models": []
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "narration": {
+    "intro": 0.25,
+    "outro": 0.6,
+    "pause": 0.4,
+    "voice": {
+      "seed": 42
+    },
+    "music": null
+  }
+}

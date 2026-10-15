@@ -57,11 +57,36 @@ export function describeObject(element: Element, meaning: ObjectMeaning) {
   };
 }
 
+/** A temporary frozen presentation retains accepted meaning while its renderer prepares. */
+export function freezeObjectMeanings(source: Element, target: Element) {
+  const original = [source, ...source.querySelectorAll('*')];
+  const copies = [target, ...target.querySelectorAll('*')];
+  const releases: (() => void)[] = [];
+  for (const [index, node] of original.entries()) {
+    const meaning = meanings.get(node)?.meaning;
+    if (!meaning) continue;
+    const value = structuredClone(meaning.value?.()),
+      inputs = meaning.inputs?.(),
+      provenance = structuredClone(meaning.provenance?.());
+    releases.push(
+      describeObject(copies[index]!, {
+        ...meaning,
+        interactive: false,
+        value: () => value,
+        inputs: () => inputs ?? [],
+        provenance: () => provenance,
+      }),
+    );
+  }
+  return () => releases.forEach((release) => release());
+}
+
 export function sceneObjects(root: Element) {
   const abort = new AbortController();
   const controls =
     'button, input, select, textarea, label, summary, a[href], [contenteditable]:not([contenteditable="false"]), [role="button"], [role="slider"], [tabindex]:not(canvas, svg, [role="img"])';
   let selected: string[] = [];
+  let emphasized: string[] = [];
   const highlighted = new Set<HTMLElement | SVGElement>();
   const contours = new Map<SVGGraphicsElement, ReturnType<typeof svgInteractionContour>>();
   const resizeObserver = new ResizeObserver(() => {
@@ -69,8 +94,9 @@ export function sceneObjects(root: Element) {
   });
   const nodes = () => {
     if (abort.signal.aborted) throw new Error('Scene objects have been disposed.');
-    return [...root.querySelectorAll<HTMLElement | SVGElement>('[data-object]')].filter((node) =>
-      meanings.has(node),
+    return [...root.querySelectorAll<HTMLElement | SVGElement>('[data-object]')].filter(
+      (node) =>
+        meanings.has(node) && !node.closest('[data-presentation-pending], [data-chapter][hidden]'),
     );
   };
   const objects = () => {
@@ -81,7 +107,10 @@ export function sceneObjects(root: Element) {
       representations.get(id)!.push(node);
     }
     return [...representations].map(([id, elements]) => {
-      const node = elements[0]!;
+      const node =
+        elements.find(
+          (element) => !element.closest('[aria-hidden="true"]') && isRendered(element),
+        ) ?? elements[0]!;
       const meaning = meanings.get(node)!.meaning;
       return {
         id,
@@ -96,7 +125,13 @@ export function sceneObjects(root: Element) {
       };
     });
   };
-  const refreshSelection = (elements = nodes()) => {
+  const attentionNodes = () =>
+    [...root.querySelectorAll<HTMLElement | SVGElement>('[data-object]')].filter(
+      (node) =>
+        !node.closest('[data-presentation-pending], [data-chapter][hidden]') &&
+        (meanings.has(node) || emphasized.includes(node.dataset.object!)),
+    );
+  const refreshSelection = (elements = attentionNodes()) => {
     const representatives = new Map<string, HTMLElement | SVGElement>();
     const priority = (node: Element) =>
       node.classList.contains('ve-viewport-object')
@@ -109,7 +144,12 @@ export function sceneObjects(root: Element) {
       node.toggleAttribute('data-selected', active);
       if (interactive(node) && node.matches('button, [role="button"]'))
         attribute(node, 'aria-pressed', String(active));
-      if (!active || node.closest('[aria-hidden="true"]') || !isRendered(node)) continue;
+      if (
+        (!active && !emphasized.includes(node.dataset.object!)) ||
+        node.closest('[aria-hidden="true"]') ||
+        !isRendered(node)
+      )
+        continue;
       const bounds = node.getBoundingClientRect();
       if (!bounds.width || !bounds.height) continue;
       const previous = representatives.get(node.dataset.object!);
@@ -118,10 +158,14 @@ export function sceneObjects(root: Element) {
     }
     const next = new Set(representatives.values());
     for (const node of highlighted)
-      if (!next.has(node)) node.removeAttribute('data-selection-highlight');
+      if (!next.has(node)) {
+        node.removeAttribute('data-selection-highlight');
+        node.removeAttribute('data-story-highlight');
+      }
     highlighted.clear();
     for (const node of next) {
-      node.toggleAttribute('data-selection-highlight', true);
+      node.toggleAttribute('data-selection-highlight', selected.includes(node.dataset.object!));
+      node.toggleAttribute('data-story-highlight', emphasized.includes(node.dataset.object!));
       highlighted.add(node);
     }
     const activeContours = new Set<SVGGraphicsElement>();
@@ -140,7 +184,8 @@ export function sceneObjects(root: Element) {
         contours.set(node, contour);
         resizeObserver.observe(node);
       }
-      contour.selected(highlighted.has(node));
+      contour.selected(highlighted.has(node) && selected.includes(node.dataset.object!));
+      contour.emphasize(highlighted.has(node) && emphasized.includes(node.dataset.object!));
       contour.update();
     }
     for (const [node, contour] of contours) {
@@ -152,10 +197,18 @@ export function sceneObjects(root: Element) {
   };
   const observer = new MutationObserver((records) => {
     if (
-      records.every((record) => (record.target as Element).closest?.('[data-interaction-contour]'))
+      records.every(
+        (record) =>
+          (record.target as Element).closest?.('[data-interaction-contour]') ||
+          (record.type === 'childList' &&
+            [...record.addedNodes, ...record.removedNodes].every(
+              (node) => node instanceof Element && node.matches('[data-interaction-contour]'),
+            )),
+      )
     )
       return;
-    if ((selected.length || contours.size) && !abort.signal.aborted) refreshSelection();
+    if ((selected.length || emphasized.length || contours.size) && !abort.signal.aborted)
+      refreshSelection();
   });
   observer.observe(root, {
     subtree: true,
@@ -192,7 +245,7 @@ export function sceneObjects(root: Element) {
     if (ids.some((id) => !known.has(id)))
       throw new Error('Unknown scene object. Inspect available objects.');
     selected = [...new Set(ids)];
-    refreshSelection(elements);
+    refreshSelection();
     root.dispatchEvent(new CustomEvent('scene-selection', { bubbles: true }));
   };
   const target = (event: Event) => {
@@ -271,6 +324,14 @@ export function sceneObjects(root: Element) {
   return {
     objects,
     select,
+    emphasize(ids: readonly string[]) {
+      if (abort.signal.aborted) throw new Error('Scene objects have been disposed.');
+      if (ids.some((id) => typeof id !== 'string' || !id.trim()))
+        throw new Error('Authored focus needs object IDs.');
+      if (!ids.length && !emphasized.length) return;
+      emphasized = [...new Set(ids)];
+      refreshSelection();
+    },
     get selected() {
       const known = new Set(nodes().map((node) => node.dataset.object!));
       return selected.filter((id) => known.has(id));
@@ -281,7 +342,10 @@ export function sceneObjects(root: Element) {
       resizeObserver.disconnect();
       for (const contour of contours.values()) contour.dispose();
       contours.clear();
-      for (const node of highlighted) node.removeAttribute('data-selection-highlight');
+      for (const node of highlighted) {
+        node.removeAttribute('data-selection-highlight');
+        node.removeAttribute('data-story-highlight');
+      }
       highlighted.clear();
       for (const node of nodes()) {
         node.removeAttribute('data-selected');
@@ -289,6 +353,7 @@ export function sceneObjects(root: Element) {
           node.setAttribute('aria-pressed', 'false');
       }
       selected = [];
+      emphasized = [];
       down = undefined;
       abort.abort();
     },

@@ -1,0 +1,4 @@
+{
+  "recipe": "fractions",
+  "inputs": { "leftNumerator": 1, "leftDenominator": 2, "rightNumerator": 1, "rightDenominator": 3 }
+}

@@ -2,7 +2,7 @@
   "gpt-model": {
     "title": "Как GPT выбирает следующее слово",
     "summary": "Локальная учебная модель раскрывает путь от токенов через внимание и два блока к вероятностям следующего слова.",
-    "source": "scene.js",
+    "source": "story-project.json",
     "time": 0,
     "checkpoints": [0, 15, 25, 36, 47, 56, 68, 74, 85],
     "group": "explanations",
@@ -19,24 +19,112 @@
     "capabilities": ["html", "png", "svg", "mp4"],
     "editing": [
       {
-        "file": "scene.js",
-        "purpose": "сценарий, переходы и предметная композиция"
+        "file": "story.json",
+        "purpose": "причинная история, эпизоды и представления"
+      },
+      {
+        "file": "subject-model.js",
+        "purpose": "входы, trace и предметные операции"
+      },
+      {
+        "file": "presentation.js",
+        "purpose": "рисунок и предметные действия"
       },
       {
         "file": "model.js",
-        "purpose": "локальная модель GPT и полный след вычислений"
-      },
-      {
-        "file": "drawing.js",
-        "purpose": "предметный рисунок, подписи и действия"
+        "purpose": "реальная обученная модель GPT"
       },
       {
         "file": "computation.js",
-        "purpose": "наглядные матричные операции на данных модели"
+        "purpose": "trace, тензоры и проверенные арифметические превращения"
+      }
+    ]
+  },
+  "spatial-order": {
+    "title": "Куда попал наш заказ?",
+    "summary": "Один заказ проходит через реальную карту, учебное устройство и вычисленную схему зависимостей.",
+    "source": "scene.js",
+    "time": 25,
+    "checkpoints": [0, 4, 8, 12, 16, 19, 22, 27, 32, 35, 38],
+    "group": "explanations",
+    "tags": ["карта", "камера", "зависимости"],
+    "guides": ["skills/visual-explainer/references/spatial-story.md"],
+    "reference": true,
+    "useFor": "Объяснить переход целое→деталь со сквозным предметом",
+    "visibleAction": "Камера приближается к устройству; заказ проходит вычисленный маршрут",
+    "capabilities": ["html", "png", "mp4"],
+    "editing": [
+      {
+        "file": "story.json",
+        "purpose": "авторские главы, операции, ресурсы и условия"
       },
       {
-        "file": "checkpoint.json",
-        "purpose": "обученные веса и происхождение модели"
+        "file": "presentation.js",
+        "purpose": "представления и authored shot plan"
+      },
+      {
+        "file": "geography.js",
+        "purpose": "проекция и неизменённые контуры источника"
+      },
+      {
+        "file": "facility.js",
+        "purpose": "учебный макет и проекция вычисленного trace"
+      }
+    ]
+  },
+  "cube-section": {
+    "title": "Что остаётся в сечении куба?",
+    "summary": "Точное сечение одного куба сохраняет связь с целым при приближении, возврате и ручном сдвиге.",
+    "source": "scene.js",
+    "time": 10,
+    "checkpoints": [0, 3, 5.9, 8, 12.9, 15, 21],
+    "group": "explanations",
+    "tags": ["куб", "сечение", "камера"],
+    "guides": ["skills/visual-explainer/references/spatial-story.md"],
+    "reference": true,
+    "useFor": "Исследовать целое и деталь на точной геометрии",
+    "visibleAction": "Плоскость входит в куб; камера показывает квадрат сечения",
+    "capabilities": ["html", "png", "mp4"],
+    "editing": [
+      {
+        "file": "story.json",
+        "purpose": "замысел и порядок наблюдений"
+      },
+      {
+        "file": "model.js",
+        "purpose": "точное пересечение и площадь"
+      },
+      {
+        "file": "presentation.js",
+        "purpose": "геометрия и authored shot plan"
+      }
+    ]
+  },
+  "push-block": {
+    "title": "Что удерживает брусок?",
+    "summary": "Персонаж прикладывает силу к тому же физическому бруску; угол и трение меняют движение и измеренный график.",
+    "source": "scene.js",
+    "time": 12,
+    "checkpoints": [0, 2, 3, 5, 7, 8, 10, 12, 14, 16, 18, 22, 26],
+    "group": "explanations",
+    "tags": ["физика", "трение", "персонаж"],
+    "guides": ["skills/visual-explainer/references/physics-story.md"],
+    "reference": true,
+    "useFor": "Связать действие персонажа, контакт, физический результат и измерение",
+    "visibleAction": "Брусок удерживается или движется по вычисленному контакту",
+    "capabilities": ["html", "png", "mp4"],
+    "editing": [
+      {
+        "file": "story.json",
+        "purpose": "авторский опыт и измерение"
+      },
+      {
+        "file": "model.js",
+        "purpose": "Rapier, условия и воспроизводимая запись"
+      },
+      {
+        "file": "presentation.js",
+        "purpose": "модельная поза, тот же предмет и измеренный график"
       }
     ]
   }

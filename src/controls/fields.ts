@@ -17,6 +17,8 @@ export interface ControlParameter {
   max?: number;
   step?: number;
   disabled?: boolean;
+  /** Validated text retains a draft until change/Enter instead of accepting every keystroke. */
+  commit?: 'input' | 'change';
   format?: (value: ControlValue) => string;
   options?: { value: ControlValue; label: string; color?: string }[];
 }
@@ -260,8 +262,9 @@ export function selectControl(
     setValue(value: ControlValue) {
       selected = (p.options ?? []).findIndex((option) => option.value === value);
       const label =
+        p.format?.(value) ??
         (p.options ?? [])[selected]?.label ??
-        (rows.length ? (p.format?.(value) ?? String(value)) : 'Нет вариантов');
+        (rows.length ? String(value) : 'Нет вариантов');
       const changed = trigger.textContent !== label;
       if (changed) trigger.textContent = label;
       trigger.setAttribute('aria-label', p.label);
@@ -299,6 +302,34 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
     update(editedInput);
     onChange(next);
   };
+  const bindText = (input: HTMLInputElement | HTMLTextAreaElement) => {
+    if (p.commit !== 'change') {
+      input.addEventListener('input', () => emit(input.value), listen);
+      return;
+    }
+    const commit = () => {
+      if (input.closest('[data-scene-controls-moving]') || input.value === value) return;
+      emit(input.value);
+    };
+    input.addEventListener('change', commit, listen);
+    input.addEventListener('blur', commit, listen);
+    input.addEventListener(
+      'keydown',
+      (event) => {
+        if (!(event instanceof KeyboardEvent)) return;
+        if (event.isComposing) return;
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          update();
+        } else if (event.key === 'Enter' && (type === 'text' || event.ctrlKey || event.metaKey)) {
+          event.preventDefault();
+          commit();
+        }
+      },
+      listen,
+    );
+  };
   if (type === 'choice') {
     const group = make('span', { class: 've-choices' }),
       name = `ve-choice-${++serial}`;
@@ -326,7 +357,7 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
     element.append(wrapper);
   } else if (type === 'textarea') {
     textarea = make('textarea', { rows: 3, 'aria-label': p.label, spellcheck: 'false' });
-    textarea.addEventListener('input', () => emit(textarea!.value), listen);
+    bindText(textarea);
     element.append(inkField(textarea));
   } else if (type === 'text') {
     const input = make('input', {
@@ -336,7 +367,7 @@ function field(p: ControlParameter, onChange: (value: ControlValue) => void = ()
       spellcheck: 'false',
     });
     inputs = [input];
-    input.addEventListener('input', () => emit(input.value), listen);
+    bindText(input);
     element.append(inkField(input));
   } else if (type === 'range' || type === 'number' || type === 'stepper') {
     const input = make('input', {

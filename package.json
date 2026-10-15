@@ -1,6 +1,6 @@
 {
   "name": "@visual-storytelling/core",
-  "version": "0.31.2",
+  "version": "0.49.1",
   "private": true,
   "license": "0BSD",
   "type": "module",
@@ -15,13 +15,17 @@
     "!examples/**/.*/**",
     "skills",
     "docs",
+    "!docs/live-explanation-acceptance.md",
     "PHILOSOPHY.md",
     "AGENTS.md",
     "LICENSE",
     "README.md",
     "THIRD_PARTY.md",
     "!**/__pycache__/**",
-    "!**/*.pyc"
+    "!**/*.pyc",
+    "examples/spatial-order/**/*.{html,js,json,css,png,md}",
+    "examples/cube-section/**/*.{html,js,json,css,png,md}",
+    "examples/push-block/**/*.{html,js,json,css,png,md}"
   ],
   "exports": {
     ".": {
@@ -73,9 +77,10 @@
   "sideEffects": [
     "**/*.css",
     "./plugin/ui/live-scene.mjs",
-    "./tools/explanation/**",
+    "./tools/document-scene/**",
     "./examples/**",
-    "./tests/fixtures/**"
+    "./tests/fixtures/**",
+    "./tools/document-modules/**"
   ],
   "scripts": {
     "dev": "node tools/dev-gallery.mjs",

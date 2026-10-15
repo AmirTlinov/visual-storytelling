@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+export const voiceBytesDigest = (bytes) => createHash('sha256').update(bytes).digest('hex');
+
 /** Stable narration/configuration identity; object key order is not an input. */
 export const voiceDigest = (value) =>
   createHash('sha256')

@@ -7,10 +7,6 @@
 @import './styles/characters.css';
 @import './styles/prediction.css';
 @import './styles/selection.css';
-.vs-notebook {
-  max-width: 900px;
-  margin: auto;
-}
 .vs-canvas {
   width: 100%;
   height: auto;
@@ -28,9 +24,6 @@
 }
 .vs-hatch {
   opacity: 0.68;
-}
-.vs-notebook .ve-parameters:empty {
-  display: none;
 }
 .vs-sr {
   position: absolute;

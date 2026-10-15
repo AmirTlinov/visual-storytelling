@@ -1,3 +1,4 @@
+import { borrowSceneView } from '../scene/view-access.js';
 import { SceneShell, type SceneOptions, type SceneView } from '../scene.js';
 import type { ControlDescription, ControlParameter, ControlValue } from '../controls/fields.js';
 import { cueSheet, type Frame, type Script } from '../story/cues.js';
@@ -178,27 +179,12 @@ async function mount<P extends Record<string, unknown>, O, F>(
     shell.onDispose(() => drawing!.dispose());
     if (drawing.view) {
       const view = drawing.view;
-      shell.attachView({
-        get transition() {
-          return view.transition;
-        },
-        get focus() {
-          return view.focus?.bind(view);
-        },
-        get validateFocus() {
-          return view.validateFocus?.bind(view);
-        },
-        reset(settings) {
-          view.reset(settings);
-        },
-        capture() {
-          return view.capture?.();
-        },
-        restore(value) {
-          return view.restore ? view.restore(value) : false;
-        },
-        dispose() {},
-      });
+      shell.attachView(
+        borrowSceneView(
+          () => view,
+          () => {},
+        ),
+      );
     }
     const mounted = drawing;
     let current = firstOperation;

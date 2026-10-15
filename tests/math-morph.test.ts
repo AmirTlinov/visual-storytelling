@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MathMorph, mathPlan } from '../dist/morph/math.js';
+import { MathMorph, mathPlan } from '../dist/index.js';
 import { cellLayout } from '../dist/morph/layout.js';
 import type { MathPart } from '../dist/morph/types.js';
 const close = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-8, `${a} != ${b}`);

@@ -75,12 +75,14 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
         offset = cursor / SAMPLE_RATE
         words = [{**w, "start": round(w["start"] + offset, 5), "end": round(w["end"] + offset, 5)} for w in aligned]
         record = {
-            "id": segment["id"], "text": segment["spoken"], "start": words[0]["start"], "end": words[-1]["end"],
+            "id": segment["id"], "text": segment["spoken"], "source_text":segment["text"], "start": words[0]["start"], "end": words[-1]["end"],
             "audio_start": offset, "audio_end": (cursor + len(audio)) / SAMPLE_RATE, "words": words,
-            "seed": take["seed"], "delivery": segment["delivery"],
+            "seed": take["seed"], "source_seed":segment["seed"], "delivery": segment["delivery"],
         }
         if "title" in segment:
             record["title"] = segment["title"]
+        if "conditions" in segment:
+            record["conditions"] = segment["conditions"]
         if "passages" in take:
             record["passages"] = [{key: part[key] for key in ("seed", "word_start", "word_end")}
                                   for part in take["passages"]]

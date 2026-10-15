@@ -207,7 +207,7 @@
 .ve-scene:not([data-paper='false'])
   > .ve-scene-frame
   > .ve-scene-content
-  > .ve-scene-paper:not(:has(.vs-grid:not([hidden] *, [data-chapter-pending] *) > path)) {
+  > .ve-scene-paper:not(:has(.vs-grid:not([hidden] *, [data-presentation-pending] *) > path)) {
   background-image: var(--ve-grid);
   background-size: var(--ve-grid-size);
   background-position: var(--ve-grid-x) var(--ve-grid-y);
@@ -310,9 +310,10 @@
 }
 .ve-scene .ve-scene-conditions {
   --ve-control-unit: 1px;
-  position: fixed;
-  inset: auto;
-  margin: 0;
+  position: relative;
+  width: min(520px, calc(100% - 16px));
+  max-height: min(480px, calc(100dvh - 16px));
+  margin: 8px auto;
   padding: 12px 16px 16px;
   border: 1px solid var(--ve-pencil);
   border-radius: 6px;
@@ -326,6 +327,20 @@
   align-items: flex-start;
   gap: 8px;
   margin-bottom: 12px;
+}
+@media (min-width: 960px) {
+  .ve-standalone > .ve-scene:has(> .ve-scene-conditions:not([hidden])) {
+    position: relative;
+    padding-inline-end: 360px;
+  }
+  .ve-standalone > .ve-scene > .ve-scene-conditions:not([hidden]) {
+    position: absolute;
+    inset-block-start: 8px;
+    inset-inline-end: 8px;
+    width: 344px;
+    max-height: min(480px, calc(100% - 16px));
+    margin: 0;
+  }
 }
 .ve-scene .ve-conditions-heading h2 {
   flex: 1 1 0;
@@ -497,6 +512,21 @@
 .ve-scene .ve-captions:empty {
   visibility: hidden;
 }
+.ve-scene .ve-stage > .ve-captions[data-placement='overlay'] {
+  position: absolute;
+  bottom: calc(12px / var(--ve-frame-scale, 1));
+  left: calc(20px / var(--ve-frame-scale, 1));
+  right: calc(20px / var(--ve-frame-scale, 1));
+  margin: 0;
+  max-width: none;
+  font-size: calc(18px / var(--ve-frame-scale, 1));
+  line-height: 1.25;
+  text-wrap: balance;
+  color: var(--ve-ink);
+  background: var(--ve-surface);
+  z-index: 10;
+  pointer-events: none;
+}
 .ve-scene [data-story-pressed='true'] {
   filter: brightness(0.85);
 }
@@ -545,4 +575,21 @@
     scroll-snap-align: start;
     min-width: 0;
   }
+}
+
+.ve-scene-resources {
+  margin-top: 16px;
+  font-size: 18px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.ve-scene-resources article {
+  margin-top: 16px;
+}
+.ve-scene-resources p {
+  margin: 8px 0;
+}
+.ve-scene-resources ul {
+  margin: 8px 0;
+  padding-left: 24px;
 }

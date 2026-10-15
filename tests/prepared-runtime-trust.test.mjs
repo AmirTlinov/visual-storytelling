@@ -5,18 +5,18 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertPreparedRuntimeRoot } from '../tools/prepared-runtime-trust.mjs';
-import { readPreparedRuntime } from '../tools/runtime-package.mjs';
+import { storyDocumentAPI, assertPreparedDocument } from '../tools/runtime-package.mjs';
+import {
+  readPreparedRuntime,
+  readPinnedRuntime,
+  readPinnedReference,
+} from '../tools/runtime-reference.mjs';
 
 test('prepared runtime authority comes from the executable and installer, never an authored path', async () => {
   const temporary = await mkdtemp(join(tmpdir(), 'story-runtime-trust-'));
   const previous = process.env.VISUAL_STORY_INSTALL_DIR;
   process.env.VISUAL_STORY_INSTALL_DIR = join(temporary, 'installation');
-  const files = [
-    '.installation.json',
-    'package.json',
-    'dist/build-info.json',
-    'dist/explanation/document.js',
-  ];
+  const files = ['.installation.json', 'package.json', 'dist/build-info.json', 'dist/index.js'];
   let installed;
   try {
     assert.equal(
@@ -56,9 +56,9 @@ test('prepared runtime authority comes from the executable and installer, never 
     await assert.rejects(assertPreparedRuntimeRoot(installed), /installed immutable/);
     await chmod(installed, 0o555);
     assert.equal(await assertPreparedRuntimeRoot(installed), await realpath(installed));
-    await chmod(join(installed, 'dist/explanation/document.js'), 0o644);
+    await chmod(join(installed, 'dist/index.js'), 0o644);
     await assert.rejects(assertPreparedRuntimeRoot(installed), /installed immutable/);
-    await chmod(join(installed, 'dist/explanation/document.js'), 0o444);
+    await chmod(join(installed, 'dist/index.js'), 0o444);
     const linked = join(process.env.VISUAL_STORY_INSTALL_DIR, 'releases', 'linked');
     await symlink(outside, linked);
     await assert.rejects(assertPreparedRuntimeRoot(linked), /installed immutable/);
@@ -66,6 +66,80 @@ test('prepared runtime authority comes from the executable and installer, never 
     if (previous === undefined) delete process.env.VISUAL_STORY_INSTALL_DIR;
     else process.env.VISUAL_STORY_INSTALL_DIR = previous;
     if (installed) await chmod(installed, 0o755);
+    await rm(temporary, { recursive: true, force: true });
+  }
+});
+
+test('a trusted legacy pin missing the document entry requests explicit migration before importing code', async () => {
+  const temporary = await mkdtemp(join(tmpdir(), 'story-legacy-api-'));
+  const previous = process.env.VISUAL_STORY_INSTALL_DIR;
+  process.env.VISUAL_STORY_INSTALL_DIR = join(temporary, 'installation');
+  const digest = 'b'.repeat(64),
+    version = '0.16.0';
+  const installed = join(
+    process.env.VISUAL_STORY_INSTALL_DIR,
+    'releases',
+    `${version}-${digest.slice(0, 16)}`,
+  );
+  const files = {
+    '.installation.json': JSON.stringify({ digest, version }),
+    'package.json': JSON.stringify({ name: '@visual-storytelling/core', version, type: 'module' }),
+    'dist/build-info.json': JSON.stringify({ package: '@visual-storytelling/core', build: digest }),
+    'dist/index.js': 'export {};\n',
+  };
+  try {
+    for (const [name, content] of Object.entries(files)) {
+      const file = join(installed, name);
+      await mkdir(dirname(file), { recursive: true });
+      await writeFile(file, content);
+      await chmod(file, 0o444);
+    }
+    await chmod(installed, 0o555);
+    await writeFile(
+      join(temporary, 'scene-runtime.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        name: '@visual-storytelling/core',
+        version,
+        build: digest,
+        root: await realpath(installed),
+      }),
+    );
+    const identity = await readPinnedRuntime(temporary);
+    assert.equal(identity.runtime.build, digest, 'identity checks do not load reference payloads');
+    assert.equal(identity.api, undefined);
+    await assert.rejects(readPinnedReference(identity), { code: 'ENOENT' });
+    await assert.rejects(storyDocumentAPI(temporary), { code: 'runtime_migration_required' });
+    await assert.rejects(assertPreparedDocument(temporary), { code: 'runtime_migration_required' });
+    await chmod(installed, 0o755);
+    const entry = join(installed, 'dist/story/document.js');
+    await mkdir(dirname(entry), { recursive: true });
+    await writeFile(
+      entry,
+      [
+        'prepareStoryDocument',
+        'prepareIllustratedDocument',
+        'editStoryDocument',
+        'authoredInputKeys',
+      ]
+        .map((name) => `export function ${name}() {}`)
+        .join('\n'),
+    );
+    await chmod(entry, 0o444);
+    const owner = join(installed, 'tools/runtime-package.mjs');
+    await mkdir(dirname(owner), { recursive: true });
+    await writeFile(
+      owner,
+      'export function assertPreparedExplanation() { throw Error("legacy code must not execute"); }',
+    );
+    await chmod(owner, 0o444);
+    await chmod(installed, 0o555);
+    assert.equal(typeof (await storyDocumentAPI(temporary)).editStoryDocument, 'function');
+    await assert.rejects(assertPreparedDocument(temporary), { code: 'runtime_migration_required' });
+  } finally {
+    if (previous === undefined) delete process.env.VISUAL_STORY_INSTALL_DIR;
+    else process.env.VISUAL_STORY_INSTALL_DIR = previous;
+    await chmod(installed, 0o755).catch(() => {});
     await rm(temporary, { recursive: true, force: true });
   }
 });

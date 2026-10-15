@@ -1,3 +1,4 @@
+import { releaseResources } from '../lifecycle.js';
 import {
   BufferAttribute,
   BufferGeometry,
@@ -60,7 +61,8 @@ export function characterCompositor(canvas: HTMLCanvasElement) {
   camera.position.z = 10;
   const primitives: Mesh<BufferGeometry, MeshBasicMaterial>[] = [];
   let used = 0,
-    sequence = 0;
+    sequence = 0,
+    disposed = false;
   const queued: Object3D[] = [];
   const actors = new Map<CharacterPerformance, { mesh: CharacterMesh; order: number }[]>();
   function primitive(points: number[], tint: StageColor, texture?: Texture) {
@@ -184,12 +186,19 @@ export function characterCompositor(canvas: HTMLCanvasElement) {
       }
     },
     dispose() {
-      for (const mesh of primitives) {
-        mesh.geometry.dispose();
-        mesh.material.dispose();
-      }
-      renderer.dispose();
-      renderer.forceContextLoss();
+      if (disposed) return;
+      disposed = true;
+      releaseResources(
+        [
+          ...primitives.flatMap((mesh) => [
+            () => mesh.geometry.dispose(),
+            () => mesh.material.dispose(),
+          ]),
+          () => renderer.dispose(),
+          () => renderer.forceContextLoss(),
+        ],
+        'Character compositor disposal failed.',
+      );
     },
   };
   return api;

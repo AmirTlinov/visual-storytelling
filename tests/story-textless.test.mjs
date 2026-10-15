@@ -17,7 +17,10 @@ async function sourceModule(path) {
     platform: 'node',
   });
   return import(
-    'data:text/javascript;base64,' + Buffer.from(result.outputFiles[0].text).toString('base64')
+    'data:text/javascript;base64,' +
+      Buffer.from(
+        result.outputFiles[0].text + '\n//# sourceURL=story-textless-under-test.mjs',
+      ).toString('base64')
   );
 }
 const { documentNarration, documentChapter, documentScript } =
@@ -26,6 +29,9 @@ const { composeChapters } = await sourceModule('src/story/composition-plan.ts');
 const { compileScore } = await sourceModule('src/characters/score.ts');
 
 const quiet = {
+  version: 2,
+  models: [{ id: 'division', module: 'division', inputs: { count: 17, divisor: 5 } }],
+  views: [{ id: 'objects', kind: 'groups', model: 'division' }],
   title: 'Группы',
   chapters: [
     {
@@ -80,6 +86,9 @@ test('visual actions and holds need no title, text, captions or invented speech 
 
 test('explicit silence retains a visible caption as authored metadata without speaking it', () => {
   const document = {
+    version: 2,
+    models: [],
+    views: [],
     title: 'Пауза',
     chapters: [
       {
@@ -110,6 +119,9 @@ test('explicit silence retains a visible caption as authored metadata without sp
 
 test('an explicit silent action duration supplies local timing while a longer authored hold remains intact', () => {
   const document = {
+    version: 2,
+    models: [],
+    views: [],
     title: 'Движение',
     chapters: [
       {
@@ -137,6 +149,9 @@ test('an explicit silent action duration supplies local timing while a longer au
 });
 
 const mixed = {
+  version: 2,
+  models: [],
+  views: [],
   title: 'Сначала посмотреть, затем услышать',
   chapters: [
     { id: 'opening', title: 'Начало', beats: [{ id: 'show', seconds: 1.5 }] },
@@ -161,7 +176,7 @@ const mixedAlignment = () => ({
   },
   segments: [
     {
-      id: 'lesson.narration-1',
+      id: 'voice.lesson.start',
       start: 2,
       end: 3,
       text: 'Соберём группу.',
@@ -171,7 +186,7 @@ const mixedAlignment = () => ({
       ],
     },
     {
-      id: 'lesson.narration-2',
+      id: 'voice.lesson.end',
       start: 5.5,
       end: 6.2,
       text: 'Видим остаток.',
@@ -189,8 +204,8 @@ test('mixed narration reserves real pauses and the speech parser receives only n
   assert.deepEqual(
     projection.segments.map((segment) => [segment.id, segment.text, segment.pause_after]),
     [
-      ['lesson.narration-1', 'Соберём группу.', 2],
-      ['lesson.narration-2', 'Видим остаток.', 3.6],
+      ['voice.lesson.start', 'Соберём группу.', 2],
+      ['voice.lesson.end', 'Видим остаток.', 3.6],
     ],
   );
   assert.equal(
@@ -213,8 +228,8 @@ test('mixed narration reserves real pauses and the speech parser receives only n
       { env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } },
     );
     assert.deepEqual(JSON.parse(stdout), [
-      ['lesson.narration-1', 1],
-      ['lesson.narration-2', 1],
+      ['voice.lesson.start', 1],
+      ['voice.lesson.end', 1],
     ]);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -262,12 +277,15 @@ test('a stale narration gap cannot silently discard or overlap an authored silen
         },
         'groups',
       ),
-    /either a non-empty action or hold/,
+    /choose action or hold/,
   );
 });
 
 test('a spoken action reserves its tail before the following silent hold', () => {
   const document = {
+    version: 2,
+    models: [],
+    views: [],
     title: 'Движение',
     chapters: [
       {
@@ -292,8 +310,8 @@ test('a spoken action reserves its tail before the following silent hold', () =>
       'motion.finish': { start: secondStart, end: secondStart + 1 },
     },
     segments: [
-      { id: 'motion.narration-1', start: 0, end: 1, text: 'Движение.' },
-      { id: 'motion.narration-2', start: secondStart, end: secondStart + 1, text: 'Готово.' },
+      { id: 'voice.motion.move', start: 0, end: 1, text: 'Движение.' },
+      { id: 'voice.motion.finish', start: secondStart, end: secondStart + 1, text: 'Готово.' },
     ],
   };
   const script = documentScript(document, aligned);
@@ -312,6 +330,9 @@ test('a spoken action reserves its tail before the following silent hold', () =>
 
 test('fractional silent chapter boundaries survive acoustic sample rounding and composition', () => {
   const document = {
+    version: 2,
+    models: [],
+    views: [],
     title: 'Граница',
     chapters: [
       {
@@ -335,7 +356,7 @@ test('fractional silent chapter boundaries survive acoustic sample rounding and 
   const aligned = {
     duration: 2.2,
     cues: { 'voice.say': { start: 0.6, end: 1 } },
-    segments: [{ id: 'voice', start: 0.6, end: 1, text: 'Речь.' }],
+    segments: [{ id: 'voice.voice.say', start: 0.6, end: 1, text: 'Речь.' }],
   };
   const script = documentScript(document, aligned);
   assert.equal(script.cues.opening.end, script.cues.voice.start);
@@ -397,6 +418,9 @@ function alignRequestedNarration(projection) {
 for (const following of ['spoken', 'silent', 'end']) {
   test(`a final spoken action reserves its tail before ${following === 'end' ? 'story end' : `the next ${following} chapter`}`, () => {
     const document = {
+      version: 2,
+      models: [],
+      views: [],
       title: 'Завершить движение',
       narration: { intro: 0.2, pause: 0.6, outro: 0.3 },
       chapters: [
@@ -439,6 +463,9 @@ for (const following of ['spoken', 'silent', 'end']) {
 
 test('a spoken tail already reserved before a silent beat is not added again at chapter end', () => {
   const document = {
+    version: 2,
+    models: [],
+    views: [],
     title: 'Пауза',
     narration: { pause: 0.6, outro: 0.3 },
     chapters: [

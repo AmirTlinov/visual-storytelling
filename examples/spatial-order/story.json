@@ -1,0 +1,159 @@
+{
+  "version": 2,
+  "title": "Куда попал наш заказ?",
+  "resources": [
+    {
+      "id": "natural-earth",
+      "kind": "data",
+      "title": "Контуры Natural Earth",
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_10m_admin_0_countries.geojson",
+      "description": "Исходные контуры admin-0/admin-1 1:10m; координаты не менялись.",
+      "limits": [
+        "Равнопромежуточная проекция; вертикальный подъём выделяет регион и не показывает высоту рельефа."
+      ]
+    },
+    {
+      "id": "settlement",
+      "kind": "data",
+      "title": "Боголюбово",
+      "url": "https://yandex.ru/pogoda/ru/bogolyubovo",
+      "description": "Реальная географическая точка населённого пункта.",
+      "limits": [
+        "Макет80×40×8м условный; адрес и инфраструктура реального дата-центра не утверждаются.",
+        "Метровые размеры макета переводятся в местные координаты этой картографической проекции с учётом широты; это условные размеры, а не измерение реального здания."
+      ]
+    },
+    {
+      "id": "teaching-network",
+      "kind": "model",
+      "title": "Учебная сеть оплаты",
+      "description": "Один заказ417; маршрут и отказ вычисляются dependency-route/BFS.",
+      "limits": [
+        "Узлы внутри макета обозначают логические зависимости, не физическое размещение серверов.",
+        "Анимация не измеряет сетевую задержку."
+      ]
+    }
+  ],
+  "models": [
+    {
+      "id": "route",
+      "module": "dependency-route",
+      "inputs": {
+        "orderId": "417",
+        "reserve": "none",
+        "disabled-provider": false,
+        "disabled-bank": false
+      },
+      "resources": [
+        "teaching-network"
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "route-view",
+      "kind": "dependency-network",
+      "model": "route"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "geography",
+      "title": "Найдём устройство",
+      "beats": [
+        {
+          "id": "country",
+          "seconds": 2,
+          "text": "Найдём, куда попал наш заказ."
+        },
+        {
+          "id": "region",
+          "seconds": 4,
+          "text": "Приблизимся к Владимирской области."
+        },
+        {
+          "id": "city",
+          "seconds": 4,
+          "text": "Вот Боголюбово — точка на настоящей карте."
+        },
+        {
+          "id": "device",
+          "seconds": 4,
+          "text": "А здесь поставим учебный макет устройства."
+        },
+        {
+          "id": "order",
+          "seconds": 3,
+          "text": "Внутри проследим тот же заказ 417."
+        }
+      ]
+    },
+    {
+      "id": "network",
+      "title": "Проследим зависимость",
+      "beats": [
+        {
+          "id": "connections",
+          "seconds": 3,
+          "text": "Эти узлы показывают, от кого зависит оплата."
+        },
+        {
+          "id": "send",
+          "seconds": 4,
+          "text": "От магазина — через А — к банку.",
+          "operation": {
+            "model": "route",
+            "name": "trace"
+          }
+        },
+        {
+          "id": "finish",
+          "seconds": 1,
+          "operation": {
+            "model": "route",
+            "name": "finish"
+          }
+        },
+        {
+          "id": "failure",
+          "seconds": 0.1,
+          "operation": {
+            "model": "route",
+            "name": "disable-provider"
+          }
+        },
+        {
+          "id": "retry",
+          "seconds": 4,
+          "text": "А перестал отвечать. Проследим, где остановится заказ.",
+          "operation": {
+            "model": "route",
+            "name": "trace"
+          }
+        },
+        {
+          "id": "hold",
+          "seconds": 2,
+          "hold": "Проверить запасной путь",
+          "text": "Заказ остановился у А. Какой резерв поможет?"
+        }
+      ]
+    },
+    {
+      "id": "whole",
+      "title": "Вернёмся к целому",
+      "beats": [
+        {
+          "id": "context",
+          "seconds": 6,
+          "text": "Вернёмся к карте. Это всё тот же путь заказа."
+        },
+        {
+          "id": "observe",
+          "seconds": 2,
+          "text": "Теперь можно поменять отказ и проверить свой прогноз."
+        }
+      ]
+    }
+  ]
+}

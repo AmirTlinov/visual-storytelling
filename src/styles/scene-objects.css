@@ -23,6 +23,7 @@
   mask: var(--ve-selection-outline) center / 100% 100% no-repeat;
 }
 .ve-scene [data-object]:not(svg *)[data-selection-highlight]:not([aria-disabled='true'])::after,
+.ve-scene [data-object]:not(svg *)[data-story-highlight]:not([aria-disabled='true'])::after,
 .ve-scene [data-object]:not(svg *)[role='button']:focus-visible:not([aria-disabled='true'])::after {
   content: '';
 }
@@ -36,7 +37,8 @@
   visibility: hidden;
   stroke-width: 1.35;
 }
-[data-interaction-contour][data-contour-selected] [data-selection-contour] {
+[data-interaction-contour]:is([data-contour-selected], [data-contour-emphasized])
+  [data-selection-contour] {
   visibility: visible;
 }
 :is(.ve-svg-button, [data-object][role='button']):focus-visible:not([aria-disabled='true'])

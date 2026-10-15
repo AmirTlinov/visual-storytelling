@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { openFixture } from '../support/fixture.mjs';
 import { assetURLs } from '../../tools/asset-urls.mjs';
 import { chromiumLaunchOptions } from '../../tools/chromium.mjs';
+import sharp from 'sharp';
 
 // Headless Chromium otherwise suppresses even authored scrollbar paint.
 test.use({
@@ -18,6 +19,7 @@ async function mount(
     'Сначала заметим исходные значения',
     'Затем сравним результат вычисления',
   ],
+  dense = false,
 ) {
   await openFixture(page, 'scene-shell');
   const source = await build({
@@ -28,11 +30,15 @@ async function mount(
           const shell = SceneShell.mount(root, {
             title: 'Как изменение одного условия влияет на результат вычисления',
             parameters: [
-              { key: 'amount', type: '${amountType}', label: 'Значение первого слагаемого перед вычислением', value: 2, min: -10, max: 10 },
+              { key: 'amount', type: '${amountType}', ${amountType === 'text' ? "commit:'change'," : ''} label: 'Значение первого слагаемого перед вычислением', value: 2, min: -10, max: 10 },
               { key: 'method', label: 'Способ сравнения результата', type: 'select', value: 'sum', options: [
                 { value: 'sum', label: 'Сложить исходные значения' },
                 { value: 'difference', label: 'Найти разность между исходным и вычисленным значением' },
               ] },
+              ...(${dense} ? [
+                {key:'second',label:'Второе слагаемое',value:3,type:'number'},
+                {key:'third',label:'Третье слагаемое',value:0,type:'number'},
+              ] : []),
             ],
           });
           const drawing = surface(shell.stage, { width: 960, height: 400, grid: false });
@@ -43,7 +49,7 @@ async function mount(
               { id: 'inputs', title: ${JSON.stringify(chapterTitles[0])}, text: '', start: 0, end: 10 },
               { id: 'result', title: ${JSON.stringify(chapterTitles[1])}, text: '', start: 10, end: 20 },
             ] },
-            stateAt: () => ({ amount: 2, method: 'sum' }),
+            stateAt: () => ({ amount: 2, method: 'sum', ...(${dense} ? {second:3,third:0} : {}) }),
             render(values) {
               const { width, height, scale } = shell.layout;
               drawing.resize(width, height);
@@ -106,7 +112,7 @@ async function metrics(page: Page) {
       overflow: document.documentElement.scrollWidth > innerWidth,
       panelOverflow: [
         ...document.querySelectorAll(
-          '.ve-scene-conditions:popover-open,.ve-select-list:popover-open',
+          '.ve-scene-conditions:not([hidden]),.ve-select-list:popover-open',
         ),
       ].some((node) => node.scrollWidth > node.clientWidth + 1),
     };
@@ -392,7 +398,33 @@ test('shared menus wrap long labels, relayout after input and draw only necessar
   await speed.press('End');
   await expectLastVisible();
   for (const colorScheme of ['light', 'dark'] as const) {
-    await page.emulateMedia({ colorScheme });
+    // The embedded image follows the scene's explicit theme, even when the OS differs.
+    await page.emulateMedia({ colorScheme: colorScheme === 'light' ? 'dark' : 'light' });
+    await page.evaluate(
+      (theme) => (window as any).chromeContract.root.scene.setTheme(theme),
+      colorScheme,
+    );
+    const ink = await scroll.evaluate((node) => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--ve-ink)';
+      node.append(probe);
+      const rgb = getComputedStyle(probe).color.match(/\d+/g)!.map(Number);
+      probe.remove();
+      return rgb;
+    });
+    const box = (await scroll.boundingBox())!;
+    const pixels = await sharp(
+      await page.screenshot({
+        clip: { x: box.x + box.width - 12, y: box.y, width: 12, height: box.height },
+      }),
+    )
+      .ensureAlpha()
+      .raw()
+      .toBuffer();
+    let inkPixels = 0;
+    for (let i = 0; i < pixels.length; i += 4)
+      if (ink.every((channel, index) => pixels[i + index] === channel)) inkPixels++;
+    expect(inkPixels, `${colorScheme} native thumb uses the scene ink`).toBeGreaterThan(20);
     await page.screenshot({
       path: resolve('artifacts/frame-consistency', `speed-scroll-${colorScheme}.png`),
     });
@@ -585,4 +617,56 @@ test('an inactive iframe retains its condition without taking focus from the hos
       }),
     ).toEqual({ amount: 6, playing: false });
   }
+});
+
+test('validated text retains its draft through chrome reparenting and commits on the next real blur', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await mount(page, 'text');
+  await page.getByRole('button', { name: 'Условия', exact: true }).click();
+  const input = page.getByRole('textbox', {
+    name: 'Значение первого слагаемого перед вычислением',
+  });
+  await input.fill('');
+  await input.pressSequentially('кот');
+  const before = await input.elementHandle();
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await expect(input).toBeFocused();
+  await expect(input).toHaveValue('кот');
+  expect(await input.evaluate((n, same) => n === same, before)).toBe(true);
+  expect(
+    await page.evaluate(() => (window as any).chromeContract.root.scene.snapshot().amount),
+  ).toBe(2);
+  await input.press('Tab');
+  expect(
+    await page.evaluate(() => (window as any).chromeContract.root.scene.snapshot().amount),
+  ).toBe('кот');
+  await page.evaluate(() => (window as any).chromeContract.root.scene.undoExperiment());
+  expect(
+    await page.evaluate(() => (window as any).chromeContract.root.scene.snapshot().amount),
+  ).toBe(2);
+});
+
+test('an open dense Conditions select survives both toolbar placements', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await mount(page, 'range', undefined, true);
+  await page.getByRole('button', { name: 'Условия', exact: true }).click();
+  const field = page.getByRole('combobox', { name: 'Способ сравнения результата' });
+  await field.click();
+  const menu = page.getByRole('listbox', { name: 'Способ сравнения результата' });
+  await expect(menu).toBeVisible();
+  for (const width of [960, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await expect(
+      page.locator(
+        `${width === 960 ? '.ve-scene-conditions' : '.ve-scene-header'} > .ve-scene-toolbar`,
+      ),
+    ).toHaveCount(1);
+    await expect(menu).toBeVisible();
+    await expect(field).toBeFocused();
+  }
+  await field.press('End');
+  await field.press('Enter');
+  await expect(field).toContainText('Найти разность');
 });

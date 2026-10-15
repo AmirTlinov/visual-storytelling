@@ -1,3 +1,4 @@
+import { releaseResources } from '../../lifecycle.js';
 import { portableArt, portableBounds, type CarriedFrame } from './portable.js';
 import type { CharacterCompositor } from '../compositor.js';
 import type { CharacterStageOptions } from '../types.js';
@@ -33,15 +34,34 @@ export async function world(
     signal,
   );
   let props: Awaited<ReturnType<typeof portableArt>> | undefined;
+  let disposed = false;
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    releaseResources(
+      [
+        ...Object.values(bodies).map((body) => () => body.dispose()),
+        () => props?.dispose(),
+        () => furniture.dispose(),
+      ],
+      'Character world disposal failed.',
+    );
+  };
   try {
     if (graphics) props = await portableArt(staging.objects, signal);
     signal?.throwIfAborted();
     for (const [id, perf] of Object.entries(actors))
       bodies[id] = body(perf, options.cast[id]!, options.pack.rig!, staging.projection, height);
   } catch (error) {
-    for (const prepared of Object.values(bodies)) prepared.dispose();
-    props?.dispose();
-    furniture.dispose();
+    releaseResources(
+      [
+        () => {
+          throw error;
+        },
+        dispose,
+      ],
+      'Character world initialization failed.',
+    );
     throw error;
   }
   type ItemFrame = BookFrame | CarriedFrame;
@@ -271,10 +291,6 @@ export async function world(
       objects: { ...frames.objects },
     }),
     controls: () => frames.objects,
-    dispose() {
-      for (const body of Object.values(bodies)) body.dispose();
-      props?.dispose();
-      furniture.dispose();
-    },
+    dispose,
   };
 }

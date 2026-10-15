@@ -9,15 +9,110 @@ async function ready(page: Page) {
 }
 async function command(page: Page, commands: SceneCommand[]): Promise<any> {
   return page.evaluate(async (commands) => {
-    const scene = document.getElementById('gpt-model')!.scene!;
+    const scene = document.querySelector<HTMLElement>('main.ve-scene')!.scene!;
     if (commands.length) await scene.control(commands);
-    await new Promise(requestAnimationFrame);
-    return scene.snapshot();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return {
+      ...(scene.snapshot() as Record<string, unknown>),
+      time: scene.inspect().time,
+      playing: scene.inspect().playing,
+    };
   }, commands);
 }
 const parameters = (values: Record<string, string | number | boolean>): SceneCommand[] => [
   { type: 'parameters', values },
 ];
+
+test('embedding captions stay outside every vector row during the story and manual exploration', async ({
+  page,
+}) => {
+  await ready(page);
+  for (const width of [960, 1200]) {
+    await page.setViewportSize({ width, height: 960 });
+    for (const commands of [
+      [
+        { type: 'mode', value: 'story' },
+        { type: 'seek', time: 20.5 },
+      ],
+      parameters({ view: 'embedding', token: 3 }),
+    ] as SceneCommand[][]) {
+      await command(page, commands);
+      const geometry = await page.evaluate(() => {
+        const captions = ['Таблица слова «на»', 'Таблица позиции 3', 'Начало residual stream'];
+        const drawing = document.querySelector('#gpt-drawing')!;
+        return {
+          captions: captions.map((text) => ({
+            text,
+            box: drawing
+              .querySelector<SVGElement>(`[aria-label='${text}']`)!
+              .getBoundingClientRect()
+              .toJSON(),
+          })),
+          cells: [...drawing.querySelectorAll<SVGElement>('[data-object^="embedding:"]')].map(
+            (node) => node.getBoundingClientRect().toJSON(),
+          ),
+        };
+      });
+      expect(geometry.cells).toHaveLength(24);
+      for (const caption of geometry.captions)
+        for (const cell of geometry.cells) {
+          const overlaps =
+            caption.box.left < cell.right &&
+            caption.box.right > cell.left &&
+            caption.box.top < cell.bottom &&
+            caption.box.bottom > cell.top;
+          expect(overlaps, `${caption.text} at ${width}px overlaps a vector cell`).toBe(false);
+        }
+    }
+  }
+});
+
+test('the calculation aperture clears its controls and keeps screen annotations readable in a fitted frame', async ({
+  page,
+}) => {
+  await ready(page);
+  for (const width of [390, 1200, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await command(page, parameters({ view: 'attention', perspective: 'algebra', phase: 1 }));
+    const geometry = await page.evaluate(() => {
+      const host = document.querySelector<HTMLElement>('.gpt-computation')!;
+      const box = host.getBoundingClientRect();
+      const button = document
+        .querySelector<SVGElement>('[data-action="math-step"]')!
+        .getBoundingClientRect();
+      const labels = [...host.querySelectorAll<HTMLElement>('.ve-label')].filter(
+        (n) => !n.hidden && n.getBoundingClientRect().height > 0,
+      );
+      return {
+        bottom: box.bottom,
+        buttonTop: button.top,
+        labels: labels.map((n) => ({
+          text: n.textContent,
+          pixels: (parseFloat(getComputedStyle(n).fontSize) * box.width) / host.clientWidth,
+        })),
+      };
+    });
+    expect(geometry.bottom).toBeLessThan(geometry.buttonTop - 1);
+    expect(geometry.labels.map((n) => n.text)).toContain('Оценка связи');
+    for (const label of geometry.labels)
+      expect(label.pixels, label.text ?? '').toBeGreaterThanOrEqual(17.9);
+  }
+  expect(
+    await page.evaluate(() => {
+      const label = [...document.querySelectorAll<HTMLElement>('.gpt-computation .ve-label')].find(
+        (n) => !n.hidden,
+      )!;
+      const original = label.style.fontSize;
+      label.style.fontSize = '10px';
+      try {
+        return document.querySelector<HTMLElement>('main.ve-scene')!.scene!.presentation()
+          .unreadableText.length;
+      } finally {
+        label.style.fontSize = original;
+      }
+    }),
+  ).toBeGreaterThan(0);
+});
 
 test('a short review viewport fits measured button lettering and retains subject navigation', async ({
   page,
@@ -26,7 +121,7 @@ test('a short review viewport fits measured button lettering and retains subject
   await ready(page);
   await command(page, parameters({ view: 'overview' }));
   const bounds = await page.evaluate(() => {
-    const scene = document.getElementById('gpt-model')!.scene!;
+    const scene = document.querySelector<HTMLElement>('main.ve-scene')!.scene!;
     const buttons = [...document.querySelectorAll<SVGElement>('#gpt-drawing [data-action]')];
     return {
       errors: [...document.querySelectorAll<HTMLElement>('[data-layout-error]')].map(
@@ -60,10 +155,9 @@ test('a short review viewport fits measured button lettering and retains subject
   await page.setViewportSize({ width: 390, height: 900 });
   for (const perspective of ['algebra', 'diagram']) {
     await command(page, parameters({ view: 'attention', perspective }));
-    await expect(page.locator('.ve-conditions-trigger')).toBeHidden();
-    await expect(page.locator('.ve-scene-header')).toBeHidden();
-    await expect(page.locator('.ve-scene-toolbar')).toBeHidden();
-    await expect(page.locator('.ve-experiment-history')).toBeHidden();
+    await expect(page.locator('.ve-conditions-trigger')).toBeVisible();
+    await expect(page.locator('.ve-scene-header')).toBeVisible();
+    expect(await page.locator('.ve-conditions-trigger').count()).toBe(1);
     expect(await page.locator('.ve-player').count()).toBe(1);
   }
 });
@@ -95,7 +189,7 @@ test('the selected token, prediction and next pass use the same genuine model', 
   const next = await command(page, parameters({ preset: 'bird-place' }));
   expect(next.generated).toBe(false);
   expect(next.trace.next.token).toBe('ветке');
-  expect(next.checked).toBe(true);
+  expect(next.checked).toBe(false);
   expect(next.guess).toBe('');
 });
 
@@ -150,7 +244,7 @@ test('one frame and one player stay usable at all supported widths, themes and v
           }),
         );
         const geometry = await page.evaluate(() => {
-          const scene = document.getElementById('gpt-model')!.scene!;
+          const scene = document.querySelector<HTMLElement>('main.ve-scene')!.scene!;
           const frame = document.querySelector('[data-scene-frame]')!.getBoundingClientRect();
           const buttons = [
             ...document.querySelectorAll('[data-action],.ve-player button,.ve-player select'),
@@ -261,10 +355,10 @@ test('embedding reveals token, position and their sum without changing the drawn
   for (const reduced of [false, true]) {
     await command(page, [{ type: 'reduced', value: reduced }]);
     for (const [time, visible] of [
-      [11, ['token-embedding']],
-      [15, ['token-embedding', 'position-embedding']],
-      [19, ['token-embedding', 'position-embedding', 'embedding-sum']],
-      [11, ['token-embedding']],
+      [11, ['embedding.word']],
+      [15, ['embedding.word', 'embedding.position']],
+      [19, ['embedding.word', 'embedding.position', 'embedding.sum']],
+      [11, ['embedding.word']],
     ] as const) {
       await command(page, [{ type: 'seek', time }]);
       const frame = await drawing();
@@ -380,7 +474,9 @@ test('ten surface transitions and reverse seeks preserve one paused subject and 
       axis: 2,
     }),
   );
-  const before = await page.evaluate(() => document.getElementById('gpt-model')!.scene!.capture());
+  const before = await page.evaluate(() =>
+    document.querySelector<HTMLElement>('main.ve-scene')!.scene!.capture(),
+  );
   const control = page.locator('.ve-player [data-play]');
   await control.focus();
   for (let i = 0; i < 10; i++) {
@@ -390,7 +486,9 @@ test('ten surface transitions and reverse seeks preserve one paused subject and 
         () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
       );
       expect(
-        await page.evaluate(() => document.getElementById('gpt-model')!.scene!.capture()),
+        await page.evaluate(() =>
+          document.querySelector<HTMLElement>('main.ve-scene')!.scene!.capture(),
+        ),
       ).toEqual(before);
       await expect(control).toBeFocused();
       await expect(page.locator('.ve-player:visible')).toHaveCount(1);
@@ -407,7 +505,7 @@ test('ten surface transitions and reverse seeks preserve one paused subject and 
   const b = await command(page, [{ type: 'seek', time: 47 }]);
   expect(b).toEqual(a);
   const inspection = await page.evaluate(() =>
-    document.getElementById('gpt-model')!.scene!.inspect(),
+    document.querySelector<HTMLElement>('main.ve-scene')!.scene!.inspect(),
   );
   expect(inspection.playing).toBe(false);
 });
@@ -420,9 +518,11 @@ test('prediction waits for an attempt and preserves a wrong choice on narrow and
     await page.setViewportSize({ width, height: 1000 });
     await command(page, parameters({ preset: 'cat-place', checked: false }));
     let state = await command(page, [{ type: 'seek', time: 74 }, { type: 'play' }]);
-    expect(state.waiting).toBe('prediction');
+    expect(state.time).toBe(74);
     expect(
-      await page.evaluate(() => document.getElementById('gpt-model')!.scene!.inspect().playing),
+      await page.evaluate(
+        () => document.querySelector<HTMLElement>('main.ve-scene')!.scene!.inspect().playing,
+      ),
     ).toBe(false);
     await page.getByRole('button', { name: 'ветке', exact: true }).click();
     state = await command(page, [{ type: 'play' }]);
@@ -454,7 +554,7 @@ test('opening the result directly keeps an unanswered prediction closed when Pla
     let state = await command(page, []);
     expect(state.view).toBe('output');
     expect(state.checked).toBe(false);
-    expect(state.waiting).toBe('prediction');
+    expect(state.time).toBe(74);
     await expect(page.locator('[data-action^="output-word-"]')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Проверить →', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'ветке', exact: true }).click();
@@ -463,7 +563,9 @@ test('opening the result directly keeps an unanswered prediction closed when Pla
     expect(state.guess).toBe('ветке');
     expect(state.checked).toBe(false);
     expect(
-      await page.evaluate(() => document.getElementById('gpt-model')!.scene!.inspect().playing),
+      await page.evaluate(
+        () => document.querySelector<HTMLElement>('main.ve-scene')!.scene!.inspect().playing,
+      ),
     ).toBe(false);
     await expect(page.getByRole('button', { name: 'Проверить →', exact: true })).toBeVisible();
     await expect(page.locator('[data-action^="output-word-"]')).toHaveCount(0);
@@ -627,7 +729,9 @@ for (const width of [375, 390]) {
       false,
     );
     expect(
-      await page.evaluate(() => document.getElementById('gpt-model')!.scene!.inspect().playing),
+      await page.evaluate(
+        () => document.querySelector<HTMLElement>('main.ve-scene')!.scene!.inspect().playing,
+      ),
     ).toBe(false);
   });
 }
@@ -677,7 +781,7 @@ test('warm local input reaches the next displayed frame within the interaction b
     // dispatch. scene.control also builds an agent inspection and has a separate budget.
     const pending = await page.evaluateHandle(
       ({ action, field }) => {
-        const root = document.getElementById('gpt-model')!;
+        const root = document.querySelector<HTMLElement>('main.ve-scene')!;
         const scene = root.scene!;
         const abort = new AbortController();
         let start = 0,
@@ -777,4 +881,315 @@ test('warm local input reaches the next displayed frame within the interaction b
     JSON.stringify(report, null, 2),
   );
   expect(report.p95).toBeLessThan(100);
+});
+
+test('custom prompts drive the prediction choices and generated token on both surfaces', async ({
+  page,
+}) => {
+  for (const width of [390, 1200]) {
+    await page.setViewportSize({ width, height: 900 });
+    await ready(page);
+    for (const prompt of ['кот говорит', 'сейчас кот сидит на']) {
+      let state = await command(page, parameters({ prompt, view: 'output', token: 7 }));
+      const next = state.trace.next.token;
+      await expect(page.locator(`[data-action="guess-${next}"]`)).toBeVisible();
+      await page.locator(`[data-action="guess-${next}"]`).click();
+      await page.locator('[data-action="check-prediction"]').click();
+      state = await command(page, []);
+      const original = state.trace.tokens;
+      await page.locator('[data-action="generate"]').click();
+      state = await command(page, []);
+      expect(state.trace.tokens).toEqual([...original, next]);
+      expect(state.token).toBe(original.length);
+      await command(page, parameters({ view: 'output' }));
+      await page.locator('[data-action="generate"]').click();
+      state = await command(page, []);
+      expect(state.trace.tokens).toEqual(original);
+      expect(state.token).toBe(original.length - 1);
+    }
+  }
+});
+
+test('a full teaching context remains readable and editable through the same document owner', async ({
+  page,
+}) => {
+  for (const width of [375, 1200]) {
+    await page.setViewportSize({ width, height: 900 });
+    await ready(page);
+    const prompt = 'сейчас кот сидит на ковре кот говорит';
+    let state = await command(page, parameters({ prompt, view: 'attention' }));
+    expect(state.trace.tokens.length).toBe(8);
+    const p = await page.evaluate(() =>
+      document.querySelector<HTMLElement>('main.ve-scene')!.scene!.presentation(),
+    );
+    expect(p.clipped).toEqual([]);
+    expect(p.unreadableText).toEqual([]);
+    expect(p.layoutOverflow).toEqual([]);
+    const overlaps = await page.locator('[data-action^="source-"]').evaluateAll((nodes) =>
+      nodes.flatMap((a, i) =>
+        nodes
+          .slice(i + 1)
+          .filter((b) => {
+            const x = a.getBoundingClientRect(),
+              y = b.getBoundingClientRect();
+            return (
+              Math.min(x.right, y.right) - Math.max(x.left, y.left) > 1 &&
+              Math.min(x.bottom, y.bottom) - Math.max(x.top, y.top) > 1
+            );
+          })
+          .map((b) => [a.getAttribute('data-action'), b.getAttribute('data-action')]),
+      ),
+    );
+    expect(overlaps).toEqual([]);
+    await command(page, parameters({ view: 'output' }));
+    await command(page, parameters({ checked: true }));
+    await expect(page.locator('[data-action="generate"]')).toHaveCount(0);
+    const result = await page.evaluate(async () => {
+      const root = document.querySelector<HTMLElement>('main.ve-scene')!,
+        scene = root.scene!,
+        author = scene.authoring!;
+      const doc = author.prepare(author.document, [
+        {
+          op: 'set-inputs',
+          modelId: 'gpt',
+          values: { prompt: 'пёс говорит', token: 2, checked: false, generated: false, guess: '' },
+        },
+      ]);
+      await author.replace(doc, {
+        authoredInputs: ['prompt', 'token', 'checked', 'generated', 'guess'],
+      });
+      const edited = author.prepare(author.document, [
+        {
+          op: 'set-chapters',
+          chapters: (author.document as any).chapters.map((c: any, i: number) =>
+            i
+              ? c
+              : {
+                  ...c,
+                  beats: c.beats.map((b: any, j: number) =>
+                    j ? b : { ...b, seconds: b.seconds + 2 },
+                  ),
+                },
+          ),
+        },
+      ]);
+      await author.replace(edited);
+      let rejected = false;
+      try {
+        author.prepare(author.document, [
+          { op: 'set-inputs', modelId: 'gpt', values: { prompt: 'внесловарное' } },
+        ]);
+      } catch {
+        rejected = true;
+      }
+      return {
+        same: root.scene === scene,
+        rejected,
+        document: author.document,
+        state: scene.snapshot(),
+        duration: scene.inspect().duration,
+      };
+    });
+    expect(result.same).toBe(true);
+    expect(result.rejected).toBe(true);
+    expect((result.document as any).models[0].inputs.prompt).toBe('пёс говорит');
+    expect((result.state as any).trace.next.token).toBe('гав');
+    expect(result.duration).toBe(96);
+    expect(await page.locator('.ve-player').count()).toBe(1);
+    state = await command(page, parameters({ view: 'overview' }));
+    expect(state.trace.tokens).toEqual(['<начало>', 'пёс', 'говорит']);
+  }
+});
+
+test('a validated prompt keeps a draft while typing and commits only a complete vocabulary phrase', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await ready(page);
+  await page.getByRole('button', { name: 'Условия', exact: true }).click();
+  const input = page.getByRole('textbox', { name: 'Своя фраза', exact: true });
+  await input.pressSequentially('кот говорит');
+  expect((await command(page, [])).prompt).toBe('');
+  await expect(input).toHaveValue('кот говорит');
+  await input.press('Enter');
+  expect((await command(page, [])).trace.next.token).toBe('мяу');
+  await input.press('Backspace');
+  await input.pressSequentially('т');
+  await input.press('Tab');
+  expect((await command(page, [])).prompt).toBe('кот говорит');
+  await input.fill('пёс говорит');
+  await input.press('Escape');
+  await expect(input).toHaveValue('кот говорит');
+  await input.fill('кот говорит неизвестное');
+  await input.press('Enter');
+  await expect(page.locator('main.ve-scene > .ve-status')).not.toBeEmpty();
+  expect((await command(page, [])).prompt).toBe('кот говорит');
+  await expect(input).toHaveValue('кот говорит');
+});
+
+test('checkpoints and source episode edits preserve the complete accepted GPT attempt', async ({
+  page,
+}) => {
+  await ready(page);
+  await command(page, parameters({ view: 'attention', token: 1, source: 0, head: 1 }));
+  const checkpoint = await page.evaluate(() =>
+    document.querySelector<HTMLElement>('main.ve-scene')!.scene!.capture(),
+  );
+  await command(page, parameters({ token: 2, source: 2 }));
+  await page.evaluate(
+    (saved) => document.querySelector<HTMLElement>('main.ve-scene')!.scene!.restore(saved),
+    checkpoint,
+  );
+  let state = await command(page, []);
+  expect(state.token).toBe(1);
+  expect(state.source).toBe(0);
+  expect(state.head).toBe(1);
+  await command(page, parameters({ view: 'output', token: 3 }));
+  await command(page, parameters({ checked: true, guess: 'полу' }));
+  await page.locator('[data-action="generate"]').click();
+  const before = await command(page, []);
+  await page.evaluate(async () => {
+    const author = document.querySelector<HTMLElement>('main.ve-scene')!.scene!.authoring!;
+    const source = author.document as any;
+    const next = author.prepare(source, [
+      {
+        op: 'set-chapters',
+        chapters: source.chapters.map((c: any) => ({
+          ...c,
+          id: 'episode-' + c.id,
+          beats: c.beats.map((b: any) => ({ ...b, id: 'beat-' + b.id })),
+        })),
+      },
+    ]);
+    await author.replace(next);
+  });
+  state = await command(page, []);
+  for (const key of ['prompt', 'token', 'source', 'head', 'checked', 'generated', 'guess'])
+    expect(state[key], key).toEqual(before[key]);
+  expect(state.trace).toEqual(before.trace);
+  await command(page, [
+    { type: 'mode', value: 'story' },
+    { type: 'seek', time: 15 },
+  ]);
+  expect((await command(page, [])).view).toBe('embedding');
+  await command(page, parameters({ view: 'output' }));
+  await command(page, parameters({ checked: true }));
+  expect((await command(page, [])).time).toBe(82);
+});
+
+test('changing a declared representation changes the model, its semantic object and its label', async ({
+  page,
+}) => {
+  await ready(page);
+  const result = await page.evaluate(async () => {
+    const root = document.querySelector<HTMLElement>('main.ve-scene')!,
+      scene = root.scene!,
+      author = scene.authoring!;
+    const doc = author.document as any;
+    const next = author.prepare(doc, [
+      {
+        op: 'set-views',
+        views: doc.views.map((v: any, i: number) => (i ? v : { ...v, kind: 'mlp' })),
+      },
+    ]);
+    await author.replace(next);
+    await scene.control([
+      { type: 'mode', value: 'story' },
+      { type: 'seek', time: 0 },
+    ]);
+    return { state: scene.snapshot(), objects: scene.inspect({ presentation: false }).objects };
+  });
+  expect((result.state as any).view).toBe('mlp');
+  expect(result.objects!.find((o) => o.id === 'gpt.view.overview')!.label).toContain('MLP');
+  await command(page, parameters({ view: 'attention', token: 1 }));
+  const objects = await page.evaluate(() =>
+    document.querySelector<HTMLElement>('main.ve-scene')!.scene!.objects!(),
+  );
+  expect(objects.find((o) => o.id === 'gpt:token-1')!.provenance).toMatchObject({
+    model: 'gpt',
+    position: 1,
+    token: 'кот',
+  });
+  await command(page, [{ type: 'select', ids: ['gpt:token-1'] }]);
+});
+
+test('cold math paints without RAF and cancelling its preparation preserves the accepted SVG', async ({
+  page,
+}) => {
+  await ready(page);
+  const result = await page.evaluate(async () => {
+    const scene = document.querySelector<HTMLElement>('main.ve-scene')!.scene!;
+    const raf = window.requestAnimationFrame,
+      cancel = window.cancelAnimationFrame;
+    const callbacks = new Map<number, FrameRequestCallback>();
+    let serial = 100000;
+    window.requestAnimationFrame = (callback) => {
+      callbacks.set(++serial, callback);
+      return serial;
+    };
+    window.cancelAnimationFrame = (id) => {
+      callbacks.delete(id);
+    };
+    try {
+      await scene.control([
+        { type: 'parameters', values: { view: 'attention', perspective: 'algebra' } },
+      ]);
+      await scene.ready!();
+      const canvas = document.querySelector<HTMLCanvasElement>('.gpt-computation canvas')!,
+        gl = canvas.getContext('webgl2')!;
+      const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+      gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      return {
+        painted: pixels.some((v, i) => i % 4 === 3 && v > 0),
+        phase: scene.rendering?.phase,
+        state: scene.snapshot(),
+      };
+    } finally {
+      window.requestAnimationFrame = raf;
+      window.cancelAnimationFrame = cancel;
+    }
+  });
+  expect(result.painted).toBe(true);
+  expect(result.phase).toBe('ready');
+  await ready(page);
+  const cancelled = await page.evaluate(async () => {
+    const scene = document.querySelector<HTMLElement>('main.ve-scene')!.scene!;
+    const before = scene.snapshot(),
+      svg = document.querySelector('#gpt-drawing')!.outerHTML;
+    const queue = window.queueMicrotask,
+      held: VoidFunction[] = [];
+    window.queueMicrotask = (fn) => held.push(fn);
+    try {
+      const pending = scene.control([
+        { type: 'parameters', values: { view: 'attention', perspective: 'algebra' } },
+      ]);
+      const preparing = scene.rendering?.phase;
+      const preparingHost = document.querySelector<HTMLElement>('.gpt-computation')!;
+      const concealed =
+        preparingHost.hasAttribute('data-presentation-pending') && preparingHost.inert;
+      await scene.control([
+        { type: 'parameters', values: { view: 'overview', perspective: 'diagram' } },
+      ]);
+      held.splice(0).forEach((fn) => queue(fn));
+      await pending;
+      const host = document.querySelector<HTMLElement>('.gpt-computation')!;
+      return {
+        preparing,
+        concealed,
+        sameSVG: svg === document.querySelector('#gpt-drawing')!.outerHTML,
+        hidden: host.hidden,
+        pending: host.hasAttribute('data-presentation-pending'),
+        state: scene.snapshot(),
+        before,
+      };
+    } finally {
+      window.queueMicrotask = queue;
+      held.splice(0).forEach((fn) => queue(fn));
+    }
+  });
+  expect(cancelled.preparing).toBe('preparing');
+  expect(cancelled.concealed).toBe(true);
+  expect(cancelled.sameSVG).toBe(true);
+  expect(cancelled.hidden).toBe(true);
+  expect(cancelled.pending).toBe(false);
 });

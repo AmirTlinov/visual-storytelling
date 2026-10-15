@@ -1,0 +1,48 @@
+{
+  "version": 2,
+  "title": "Два перемещения",
+  "models": [],
+  "views": [],
+  "narration": { "intro": 0, "outro": 0, "pause": 0, "music": null },
+  "chapters": [
+    {
+      "id": "horizontal",
+      "title": "Горизонталь",
+      "beats": [
+        {
+          "id": "move_x",
+          "say": "Три шага вправо.",
+          "action": "Изменить горизонтальное условие",
+          "seconds": 6,
+          "speech": { "id": "horizontal", "when": { "basis": "authored", "models": [] } }
+        }
+      ]
+    },
+    {
+      "id": "vertical",
+      "title": "Вертикаль",
+      "beats": [
+        {
+          "id": "move_y",
+          "say": "Два шага вверх.",
+          "action": "Изменить вертикальное условие",
+          "seconds": 6,
+          "speech": { "id": "vertical", "when": { "basis": "authored", "models": [] } }
+        }
+      ]
+    },
+    {
+      "id": "result",
+      "title": "Сумма",
+      "beats": [
+        {
+          "id": "result_arrow",
+          "say": "Начало и конец связаны.",
+          "action": "Показать результат",
+          "seconds": 8,
+          "speech": { "id": "result", "when": { "basis": "authored", "models": [] } }
+        }
+      ]
+    }
+  ]
+}

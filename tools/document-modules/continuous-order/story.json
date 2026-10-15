@@ -1,0 +1,199 @@
+{
+  "version": 2,
+  "title": "Почему запасной путь тоже остановил заказ?",
+  "resources": [
+    {
+      "id": "teaching-network",
+      "kind": "model",
+      "title": "Учебная сеть оплаты",
+      "description": "Заказ 417 проходит по ориентированному графу. Рабочий путь ищется BFS; отказ узла исключает его из достижимых.",
+      "limits": [
+        "Это вымышленная топология, не описание инфраструктуры компании.",
+        "Длина анимации не показывает сетевую задержку или время оплаты."
+      ]
+    }
+  ],
+  "models": [
+    {
+      "id": "route",
+      "module": "dependency-route",
+      "inputs": {
+        "orderId": "417",
+        "reserve": "none"
+      },
+      "resources": [
+        "teaching-network"
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "network",
+      "kind": "dependency-network",
+      "model": "route"
+    },
+    {
+      "id": "status",
+      "kind": "order-status",
+      "model": "route"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "send",
+      "title": "Проследим один заказ",
+      "views": [
+        "network"
+      ],
+      "beats": [
+        {
+          "id": "start",
+          "operation": {
+            "model": "route",
+            "name": "reset"
+          },
+          "seconds": 0.1
+        },
+        {
+          "id": "follow",
+          "operation": {
+            "model": "route",
+            "name": "trace"
+          },
+          "seconds": 3.4,
+          "text": "Проследим оплату заказа."
+        },
+        {
+          "id": "arrive",
+          "operation": {
+            "model": "route",
+            "name": "finish"
+          },
+          "seconds": 2,
+          "text": "Через А — в банк."
+        }
+      ]
+    },
+    {
+      "id": "failure",
+      "title": "Где оборвался путь?",
+      "beats": [
+        {
+          "id": "stop",
+          "operation": {
+            "model": "route",
+            "name": "disable-provider"
+          },
+          "seconds": 0.1
+        },
+        {
+          "id": "retry",
+          "operation": {
+            "model": "route",
+            "name": "trace"
+          },
+          "seconds": 3.9,
+          "text": "Провайдер А перестал отвечать."
+        },
+        {
+          "id": "notice",
+          "operation": {
+            "model": "route",
+            "name": "finish"
+          },
+          "seconds": 2,
+          "text": "До банка заказ не дошёл.",
+          "focus": [
+            "route:node:provider"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shared",
+      "title": "Проверим запасной вход",
+      "beats": [
+        {
+          "id": "connect",
+          "operation": {
+            "model": "route",
+            "name": "reconnect-shared"
+          },
+          "seconds": 0.1
+        },
+        {
+          "id": "follow",
+          "operation": {
+            "model": "route",
+            "name": "try-reserve"
+          },
+          "seconds": 3.9,
+          "text": "Попробуем запасной вход."
+        },
+        {
+          "id": "notice",
+          "operation": {
+            "model": "route",
+            "name": "finish"
+          },
+          "seconds": 2,
+          "text": "Он тоже упирается в А.",
+          "focus": [
+            "route:node:provider"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "independent",
+      "title": "Обойдём общий отказ",
+      "beats": [
+        {
+          "id": "connect",
+          "operation": {
+            "model": "route",
+            "name": "reconnect-independent"
+          },
+          "seconds": 0.1
+        },
+        {
+          "id": "follow",
+          "operation": {
+            "model": "route",
+            "name": "try-reserve"
+          },
+          "seconds": 3.9,
+          "text": "А если обойти сам провайдер?"
+        },
+        {
+          "id": "notice",
+          "operation": {
+            "model": "route",
+            "name": "finish"
+          },
+          "seconds": 2,
+          "text": "Теперь заказ дошёл до банка.",
+          "focus": [
+            "route:order:417"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "try",
+      "title": "Что изменит отказ банка?",
+      "beats": [
+        {
+          "id": "predict",
+          "hold": "Собственный прогноз",
+          "seconds": 3,
+          "text": "Что будет, если перестанет отвечать банк?",
+          "say": "",
+          "focus": [
+            "route:node:bank"
+          ]
+        }
+      ]
+    }
+  ]
+}

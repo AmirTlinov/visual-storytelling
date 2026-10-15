@@ -1,12 +1,15 @@
-import { MathMorph, TensorData } from '@visual-storytelling/core';
-import { MathMorph3D, Tensor3D, ThreeKit as T, Viewport3D } from '@visual-storytelling/core/three';
+import { borrowSceneView, MathMorph, TensorData } from '@visual-storytelling/core';
+import {
+  calculationTiming,
+  calculationFraming,
+  MathMorph3D,
+  Tensor3D,
+  ThreeKit as T,
+  Viewport3D,
+} from '@visual-storytelling/core/three';
 import { CONFIG, MODEL, VOCAB } from './model.js';
 
 const clamp = (value) => Math.max(0, Math.min(1, value));
-const smooth = (value) => {
-  const p = clamp(value);
-  return p * p * (3 - 2 * p);
-};
 const format = (value) => Number(value.toPrecision(3)).toString().replace('-', '−');
 const matrix = (id, values, axes) =>
   new TensorData({
@@ -161,6 +164,7 @@ export function computationPlan({
 
 /** One bounded calculation, borrowed by the lesson's existing clocks and player. */
 export function mountComputation(parent) {
+  let latest;
   const view = Viewport3D.mount(parent, {
     label: 'Действительное вычисление учебной GPT: входы превращаются в результат',
   });
@@ -172,6 +176,7 @@ export function mountComputation(parent) {
     formula: false,
     notes: 'operators',
     format,
+    inputNames: (part) => (latest ? inputName(part) : undefined),
   });
   const receiver = Tensor3D.mount(
     view,
@@ -189,16 +194,14 @@ export function mountComputation(parent) {
   view.setObject(objects, { fitView: false });
   let condition,
     configuration,
-    latest,
-    stageBounds,
     deliveryBounds,
     lastFrame,
     scalar = true,
     active = true,
     disposed = false;
-  let lastProgress = 0;
+  let lastProgress = 0,
+    rendered;
   let listeners = [];
-  const labels = new Map();
 
   function inputName(part) {
     const component = /^(?:left|right|pair):(\d+)$/.exec(part.id ?? '');
@@ -217,28 +220,6 @@ export function mountComputation(parent) {
     if (part.id?.endsWith(':constant')) return latest.kind === 'score' ? '√4' : 'bias';
     if (/^(sum:|result)/.test(part.id ?? '')) return 'сумма';
     return part.origins?.[0]?.source?.tensor.includes('attention-update') ? 'Δ' : 'x';
-  }
-
-  function inputLabels(frame) {
-    for (const { label } of labels.values()) label.show(false);
-    if (frame.morph > 0.15) return;
-    for (const part of frame.sources) {
-      let entry = labels.get(part.id);
-      if (!entry) {
-        const anchor = new T.Object3D();
-        objects.add(anchor);
-        const label = view.label('', anchor, {
-          space: 'world',
-          height: 0.58,
-          maxWidth: 2.4,
-          tone: 'ink',
-        });
-        labels.set(part.id, (entry = { anchor, label }));
-      }
-      entry.label.set(inputName(part));
-      entry.anchor.position.set(part.position[0], part.position[1] + part.size[1] / 2 + 0.5, 0);
-      entry.label.show(true);
-    }
   }
 
   function render(state) {
@@ -261,6 +242,9 @@ export function mountComputation(parent) {
       state.candidate ?? trace.next.id,
       !!state.compact,
     ].join('/');
+    const stamp = [key, progress, reduced, parent.clientWidth, parent.clientHeight].join('/');
+    if (condition === trace && rendered === stamp) return;
+
     if (condition !== trace || configuration !== key) {
       const next = computationPlan(state);
       calculation.setDelivery();
@@ -302,21 +286,6 @@ export function mountComputation(parent) {
       condition = trace;
       configuration = key;
       latest = next;
-      stageBounds = Array.from({ length: next.plan.stages }, (_, stage) => {
-        const bounds = new T.Box3();
-        const frame = next.plan.sample(stage / next.plan.stages);
-        for (const part of [...frame.sources, ...frame.targets])
-          bounds.union(
-            new T.Box3().setFromCenterAndSize(
-              new T.Vector3(...part.position),
-              new T.Vector3(...part.size),
-            ),
-          );
-        // The short operand names sit above the same bodies and retain room
-        // throughout this stage, including when the names are temporarily hidden.
-        bounds.max.y += 1.15;
-        return bounds;
-      });
       deliveryBounds = new T.Box3();
       for (const part of next.plan.sample(1).targets)
         deliveryBounds.union(
@@ -331,34 +300,28 @@ export function mountComputation(parent) {
     lastProgress = p;
     // The calculation settles before the separate handoff begins. Direct and
     // reverse seeks go through these same two absolute progress values.
-    const calculate = scalar ? clamp(p / 0.82) : p;
-    const deliver = scalar ? clamp((p - 0.84) / 0.16) : undefined;
+    const timing = calculationTiming(p, scalar);
+    const calculate = timing.calculation,
+      deliver = timing.delivery;
     lastFrame = calculation.render(
       { progress: calculate, reduced, duration: latest.kind === 'mlp' ? 24 : 7 },
       undefined,
       deliver,
     );
     receiver.object.visible = scalar && p >= 0.84;
-    inputLabels(lastFrame);
     objects.updateMatrixWorld(true);
     // Fit the current complete stage, rather than reserving future operands and
     // the delivery destination during every multiplication. The final hold of
     // each stage opens the next envelope using absolute time, so reverse seek
     // cannot retain a different camera. Both envelopes contain the carried body.
-    const stage = lastFrame.stage;
-    const bounds = stageBounds[stage].clone();
-    const local = Math.min(1, calculate * latest.plan.stages - stage);
-    if (stage + 1 < stageBounds.length && local > 0.9) {
-      const next = stageBounds[stage + 1];
-      const amount = reduced ? 1 : smooth((local - 0.9) / 0.1);
-      bounds.min.lerp(next.min, amount);
-      bounds.max.lerp(next.max, amount);
-    }
-    if (scalar && p >= 0.82) {
-      const amount = reduced ? 1 : smooth((p - 0.82) / 0.02);
-      bounds.min.lerp(deliveryBounds.min, amount);
-      bounds.max.lerp(deliveryBounds.max, amount);
-    }
+    const bounds = calculationFraming(latest.plan, lastFrame, calculate, {
+      annotationHeight: 1.15,
+      arrangement: calculation.arrangement,
+      reduced,
+      ...(scalar && p >= 0.82
+        ? { delivery: { bounds: deliveryBounds, progress: timing.framing } }
+        : {}),
+    });
     bounds.applyMatrix4(calculation.object.matrixWorld);
     view.shot({
       // The current envelope already reserves physical operands and their names.
@@ -371,6 +334,7 @@ export function mountComputation(parent) {
     });
     parent.setAttribute('aria-label', `${latest.title}. ${Math.round(p * 100)}%.`);
     view.invalidate();
+    rendered = stamp;
   }
 
   function dispose() {
@@ -378,11 +342,6 @@ export function mountComputation(parent) {
     disposed = true;
     listeners.forEach((remove) => remove());
     listeners = [];
-    for (const { anchor, label } of labels.values()) {
-      label.remove();
-      anchor.removeFromParent();
-    }
-    labels.clear();
     calculation.dispose();
     receiver.dispose();
     view.dispose();
@@ -390,32 +349,13 @@ export function mountComputation(parent) {
 
   // The shell owns the complete presentation through this adapter. A hidden
   // calculation contributes no camera state or focus capability to a checkpoint.
-  const sceneView = {
-    get transition() {
-      return active && !disposed ? view.transition : 'idle';
-    },
-    get validateFocus() {
-      return active && !disposed ? view.validateFocus : undefined;
-    },
-    get focus() {
-      return active && !disposed ? view.focus : undefined;
-    },
-    reset(options) {
-      if (active && !disposed) view.reset(options);
-    },
-    capture() {
-      return active && !disposed ? view.capture() : undefined;
-    },
-    restore(state) {
-      return active && !disposed ? view.restore(state) : false;
-    },
-    dispose,
-  };
+  const sceneView = borrowSceneView(() => (active && !disposed ? view : undefined), dispose);
 
   return {
     render,
     dispose,
     view: sceneView,
+    ready: (signal) => view.whenRendered(signal),
     setActive(value) {
       if (disposed) return;
       active = !!value;
