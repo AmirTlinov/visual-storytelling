@@ -937,3 +937,36 @@ scalar input сохранили принятый исходник и рисун�
 `storage-independent-review.md`. GUI-600 остаётся In Progress: dependency/check cache,
 preview/final и pending speech без скрытого синтеза, verified input sets/dirty paths,
 измеренный 3D budget и оставшаяся приёмка ещё не завершены. Срезы 14–15 открыты.
+
+## Срез 13: проверенные входы и восстановление
+
+Изолированная установка plugin 0.32.0 / core 0.44.0, macOS arm64.
+Release `8138b8e441106168ca035045830fc6ebad316eb2e31242f303e7aa548a0df619`,
+core build `26edc35d1cb0a5b3ed1e022692ef484735b4bf07437411591d03049b1085cb9a`.
+Общая регистрация и установленный пользовательский выпуск пока остаются на 0.31.0.
+
+Минимальная runtime identity отделена от явного чтения API/catalog. Семантический
+candidate передаёт свой проверенный snapshot live build без второго захвата.
+Здоровый build receipt и его входы сохраняются при повторной подготовке. Утерянные
+или повреждённые входы восстанавливаются только из проверенной копии с тем же
+логическим artifact identity. GC удаляет оставшиеся без входов/ресурсов receipts;
+защищённые карточками и jobs графы сохраняются. Watcher собирает dirty paths,
+повторяет reconciliation после ошибки и переподключается. Полное content hashing
+при внешнем изменении сохраняется; targeted dependency cache ещё не реализован.
+
+Настоящий SDK и браузер изолированно установленного сервера: 200 разных состояний
+трёх семейств, 200 уникальных build revisions, тот же SceneHandle, правильные значения,
+без повторных build jobs. MCP edit→observed frame: p50 362,04 мс, p95 535,70 мс,
+max 676,34 мс, без LLM. Это улучшение полного пути, gate 250 мс ещё открыт.
+Payload: 115800 байт descriptor reads, 0 тяжёлых hashed/written bytes; общий payload
+7415145 байт, 357283 байт metadata для уникальных builds. Полный snapshot IO этими
+счётчиками не измеряется. Cold first frame: 3,375/2,126/2,278 с; startup 0,427 с.
+390 dark/reduced и 1200 light: clipped/unreadable/overflow/pageerrors — 0.
+
+Build/check PASS. Input/recovery/workflow regressions 15/15; source watcher/trust
+проверены отдельно. Изолированно установленный TS/SVG-модуль прошёл create/edit,
+semantic undo, remount, HTML и атомарное отклонение неверных кандидатов, 1/1.
+Доказательства: `artifacts/slice13/input-install-0.32.0.json`,
+`input-authoring/run-5b61b373-ecbf-4456-83d6-a9ac64f9ba0e/acceptance.json`,
+`input-recovery-final.log`, `input-custom-installed.log`. Это проверка пакета входов;
+GUI-600, preview/final speech, 3D budget и срезы 14–15 остаются открытыми.

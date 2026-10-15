@@ -1,7 +1,7 @@
-import { readdir, lstat, readlink, rm } from 'node:fs/promises';
+import { readdir, lstat, readlink, rm, access } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
 import { readJSON } from '../tools/storage.mjs';
-import { readBuildMetadata } from './build-payload.mjs';
+import { readBuildMetadata, presentationAvailable } from './build-payload.mjs';
 
 const entries = (path) =>
   readdir(path).catch((error) => {
@@ -91,13 +91,38 @@ export async function collectCache(
                   : false;
       bytes += bytesHere;
       if (protectedEntry) protectedBytes += bytesHere;
-      else candidates.push({ path, bytes: bytesHere, used: stat.mtimeMs });
+      else candidates.push({ path, category, name, bytes: bytesHere, used: stat.mtimeMs });
     }
   const before = bytes,
     limit = limitMB * 1024 * 1024;
+  const removed = new Set();
   for (const item of candidates.sort((a, b) => a.used - b.used)) {
     if (bytes - protectedBytes <= limit) break;
     await rm(item.path, { recursive: true, force: true });
+    removed.add(item.path);
+    bytes -= item.bytes;
+  }
+  // An unprotected receipt cannot outlive an evicted dependency and block rebuilding
+  // that same content revision. Protected graphs were closed before eviction above.
+  for (const item of candidates) {
+    if (item.category !== 'builds' || !item.name.endsWith('.json') || removed.has(item.path))
+      continue;
+    const build = await readBuildMetadata(data, item.name.slice(0, -5));
+    if (!build) continue;
+    const inputAvailable =
+      !build.snapshot ||
+      (dirname(resolve(build.snapshot)) === resolve(data, 'snapshots') &&
+        (await access(build.snapshot).then(
+          () => true,
+          (error) => {
+            if (error.code === 'ENOENT') return false;
+            throw error;
+          },
+        )));
+    const payloadAvailable =
+      !build.presentation || (await presentationAvailable(data, build.presentation));
+    if (inputAvailable && payloadAvailable) continue;
+    await rm(item.path, { force: true });
     bytes -= item.bytes;
   }
   return {

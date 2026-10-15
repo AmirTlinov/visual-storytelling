@@ -11,11 +11,10 @@ import { buildNarration } from '../tools/narration.mjs';
 import { narrationProvider } from '../tools/voice/settings.mjs';
 import {
   linkPreparedRuntime,
-  readPreparedRuntime,
-  preparedRuntimeFile,
   assertPreparedDocument,
   storyDocumentAPI,
 } from '../tools/runtime-package.mjs';
+import { readPreparedRuntime, preparedRuntimeFile } from '../tools/runtime-reference.mjs';
 import { contentDigest } from '../tools/build-info.mjs';
 import { readStoryProject, storyProjectOwner } from '../tools/story-project.mjs';
 import { renderer } from '../tools/render.mjs';
@@ -311,7 +310,13 @@ export async function buildPreparedSnapshot(input, task, result) {
     buildRevision: revision,
     preparation: result.preparation,
   });
-  return { ...result, prepared: stored };
+  const accepted = await readJSON(join(stored.snapshot, '.vstory-input.json'));
+  return {
+    ...result,
+    snapshot: stored.snapshot,
+    preparedRevision: accepted?.preparedRevision ?? accepted?.revision,
+    prepared: stored,
+  };
 }
 
 export async function prepareBuild(input, task) {

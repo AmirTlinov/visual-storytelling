@@ -239,3 +239,35 @@ test('literal head text in authored JS and CSS never becomes the document insert
   assert.equal(window.example, '</head>');
   assert.deepEqual(window.__visualStoryDocument, document);
 });
+
+test('ordinary eviction removes orphan unprotected receipts so the same revision can be prepared again', async (t) => {
+  const data = await mkdtemp(join(tmpdir(), 'story-orphan-build-'));
+  t.after(() => rm(data, { recursive: true, force: true }));
+  const { mkdir } = await import('node:fs/promises');
+  const { projectFiles } = await import('../tools/project-files.mjs');
+  const capture = async (name) => {
+    const snapshot = join(data, 'snapshots', name);
+    await mkdir(snapshot, { recursive: true });
+    await writeFile(join(snapshot, 'value.txt'), 'x'.repeat(10000));
+    await writeJSON(join(snapshot, '.vstory-input.json'), await projectFiles(snapshot));
+    return snapshot;
+  };
+  const previous = await capture('previous');
+  const first = await writePreparedBuild(data, {
+    revision: 'same-content',
+    sourceRevision: (await projectFiles(previous)).revision,
+    snapshot: previous,
+    html: '<main>prepared</main>',
+  });
+  await utimes(previous, new Date(0), new Date(0));
+  await collectCache(data, { limitMB: 0.002, projects: [], sessions: [], snapshotLeases: [] });
+  assert.equal(
+    await readJSON(join(data, 'builds', first.revision + '.json')),
+    null,
+    'a receipt cannot retain a missing snapshot',
+  );
+  const current = await capture('current');
+  const rebuilt = await writePreparedBuild(data, { ...first, snapshot: current });
+  assert.equal(rebuilt.snapshot, current);
+  assert.equal(await preparedBuildHTML(data, rebuilt), '<main>prepared</main>');
+});

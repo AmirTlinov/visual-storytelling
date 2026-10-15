@@ -1,8 +1,9 @@
-import { readFile, mkdir, access, open, rename, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, mkdir, access, open, rename, rm, link } from 'node:fs/promises';
+import { join, dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { parse } from 'parse5';
-import { digest } from '../tools/project-files.mjs';
+import { digest, projectFiles } from '../tools/project-files.mjs';
 import { readJSON, writeJSON } from '../tools/storage.mjs';
 import { storyDocumentScript, headInsertionOffset } from '../tools/story-html.mjs';
 
@@ -141,8 +142,79 @@ export async function writePreparedBuild(data, { html, ...build }, work = payloa
   if (!revisionKey(build.revision)) throw new Error('Invalid prepared build revision.');
   if (html !== undefined) build.presentation = await storePresentation(data, html, { work });
   if (!Array.isArray(build.presentation?.parts)) throw new Error('Build has no presentation.');
-  await writeJSON(join(data, 'builds', build.revision + '.json'), build);
-  return build;
+  const file = join(data, 'builds', build.revision + '.json'),
+    temporary = file + '.' + randomUUID();
+  try {
+    await writeJSON(temporary, build);
+    try {
+      // The private metadata file is complete and synced before its immutable name appears.
+      await link(temporary, file);
+      return build;
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+    }
+    const existing = await readPreparedBuild(data, build.revision);
+    if (!existing) throw new Error('The existing prepared artifact disappeared.');
+    const identity = (value) =>
+      JSON.parse(
+        JSON.stringify(
+          Object.fromEntries(
+            [
+              'revision',
+              'projectId',
+              'sourceRevision',
+              'title',
+              'outputDigest',
+              'live',
+              'presentation',
+            ].map((key) => [key, value[key]]),
+          ),
+        ),
+      );
+    if (!isDeepStrictEqual(identity(existing), identity(build)))
+      throw new Error('A prepared revision cannot change its accepted artifact identity.');
+    if (!(await presentationAvailable(data, existing.presentation)))
+      throw new Error('The accepted presentation resources are unavailable.');
+    if (existing.snapshot) {
+      const current = await snapshotIdentity(data, existing.snapshot);
+      if (!current.valid || current.source !== existing.sourceRevision) {
+        const replacement = await snapshotIdentity(data, build.snapshot);
+        if (
+          !replacement.valid ||
+          replacement.source !== build.sourceRevision ||
+          (current.expected && current.expected !== replacement.expected)
+        )
+          throw new Error('The accepted preparation inputs changed.');
+        // Restore only unavailable/corrupt cache inputs from an identically verified
+        // artifact. Healthy accepted snapshots are never replaced by later candidates.
+        const repaired = { ...existing, snapshot: build.snapshot };
+        await writeJSON(file, repaired);
+        return { ...repaired, ...(build.work && { work: build.work }) };
+      }
+    }
+    // Work belongs to this operation; the persisted artifact and its snapshot stay immutable.
+    return { ...existing, ...(build.work && { work: build.work }) };
+  } finally {
+    await rm(temporary, { force: true }).catch((error) =>
+      console.error(`Prepared metadata cleanup: ${error.message}`),
+    );
+  }
+}
+
+async function snapshotIdentity(data, snapshot) {
+  if (!snapshot || dirname(resolve(snapshot)) !== resolve(data, 'snapshots'))
+    throw new Error('The prepared snapshot is outside preparation storage.');
+  const receipt = await readJSON(join(snapshot, '.vstory-input.json'));
+  const expected = receipt?.preparedRevision ?? receipt?.revision;
+  const actual = await projectFiles(snapshot).catch((error) => {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  });
+  return {
+    expected,
+    source: receipt?.revision,
+    valid: Boolean(expected && actual?.revision === expected),
+  };
 }
 
 /** Descriptor cache hits validate their graph without reading or hashing large resources. */
@@ -205,5 +277,9 @@ export async function readBuildMetadata(data, revision) {
 /** Upgrade selected persisted cards under the JobRunner input/maintenance exclusion. */
 export async function readPreparedBuild(data, revision) {
   const build = await storedBuild(data, revision);
-  return typeof build?.html === 'string' ? writePreparedBuild(data, build) : build;
+  if (typeof build?.html !== 'string') return build;
+  const { html, ...metadata } = build;
+  metadata.presentation = await storePresentation(data, html);
+  await writeJSON(join(data, 'builds', revision + '.json'), metadata);
+  return metadata;
 }

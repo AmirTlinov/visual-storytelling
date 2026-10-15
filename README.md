@@ -112,7 +112,7 @@ npm run plugin:release
 | Превращения и вычисления | `src/morph/`, `src/math/`; `MathMorph`, `InkMorph`, происхождение результата                                                                                        |
 | Физика и персонажи       | `src/physics/`, `src/characters/`; Rapier, постановка и живые поверхности                                                                                           |
 | Создание и ревизии       | `tools/create-scene.mjs`, `tools/project-files.mjs`; CLI и плагин используют один путь                                                                              |
-| Закрепление библиотеки   | `tools/runtime-package.mjs`; установленный выпуск или переносимый архив                                                                                             |
+| Закрепление библиотеки   | `tools/runtime-package.mjs` закрепляет/обновляет выпуск; `runtime-reference.mjs` проверяет выбранную идентичность и отдельно загружает справку                      |
 | Сборка, review и выпуск  | `tools/`; установленный runtime, готовность сцены и атомарная публикация                                                                                            |
 | Плагин                   | `plugin/runtime/`, `plugin/projects.mjs`, `plugin/jobs.mjs`; сеансы, транзакции и очередь                                                                           |
 | Подготовленное авторство | `plugin/runtime/project-creation.mjs`, `project-transactions.mjs`; общий commit, отдельные способы доставки                                                         |

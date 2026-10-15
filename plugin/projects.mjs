@@ -15,11 +15,8 @@ import {
   prepareProjectChanges,
   writeProjectChange,
 } from './project-changes.mjs';
-import {
-  storyDocumentAPI,
-  assertPreparedDocument,
-  readPinnedRuntime,
-} from '../tools/runtime-package.mjs';
+import { storyDocumentAPI, assertPreparedDocument } from '../tools/runtime-package.mjs';
+import { readPinnedRuntime } from '../tools/runtime-reference.mjs';
 
 const validRequest = (id) => typeof id === 'string' && /^[a-zA-Z0-9_-]{8,100}$/.test(id);
 const validCursor = (id) => id === null || validRequest(id);

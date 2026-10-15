@@ -3,7 +3,7 @@ import { join, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { readStoryProject, storyModuleSource, storyProjectOwnerFiles } from './story-project.mjs';
-import { readPreparedRuntime } from './runtime-package.mjs';
+import { readPreparedRuntime } from './runtime-reference.mjs';
 import { assetURLs } from './asset-urls.mjs';
 import { setNarrationMode } from './narration.mjs';
 import { withStoryDocument, inStoryHead } from './story-html.mjs';

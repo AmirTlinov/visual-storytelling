@@ -5,11 +5,12 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertPreparedRuntimeRoot } from '../tools/prepared-runtime-trust.mjs';
+import { storyDocumentAPI, assertPreparedDocument } from '../tools/runtime-package.mjs';
 import {
   readPreparedRuntime,
-  storyDocumentAPI,
-  assertPreparedDocument,
-} from '../tools/runtime-package.mjs';
+  readPinnedRuntime,
+  readPinnedReference,
+} from '../tools/runtime-reference.mjs';
 
 test('prepared runtime authority comes from the executable and installer, never an authored path', async () => {
   const temporary = await mkdtemp(join(tmpdir(), 'story-runtime-trust-'));
@@ -85,8 +86,6 @@ test('a trusted legacy pin missing the document entry requests explicit migratio
     'package.json': JSON.stringify({ name: '@visual-storytelling/core', version, type: 'module' }),
     'dist/build-info.json': JSON.stringify({ package: '@visual-storytelling/core', build: digest }),
     'dist/index.js': 'export {};\n',
-    'dist/api.json': '{}',
-    'examples/catalog.json': '{}',
   };
   try {
     for (const [name, content] of Object.entries(files)) {
@@ -106,6 +105,10 @@ test('a trusted legacy pin missing the document entry requests explicit migratio
         root: await realpath(installed),
       }),
     );
+    const identity = await readPinnedRuntime(temporary);
+    assert.equal(identity.runtime.build, digest, 'identity checks do not load reference payloads');
+    assert.equal(identity.api, undefined);
+    await assert.rejects(readPinnedReference(identity), { code: 'ENOENT' });
     await assert.rejects(storyDocumentAPI(temporary), { code: 'runtime_migration_required' });
     await assert.rejects(assertPreparedDocument(temporary), { code: 'runtime_migration_required' });
     await chmod(installed, 0o755);
@@ -131,6 +134,7 @@ test('a trusted legacy pin missing the document entry requests explicit migratio
     );
     await chmod(owner, 0o444);
     await chmod(installed, 0o555);
+    assert.equal(typeof (await storyDocumentAPI(temporary)).editStoryDocument, 'function');
     await assert.rejects(assertPreparedDocument(temporary), { code: 'runtime_migration_required' });
   } finally {
     if (previous === undefined) delete process.env.VISUAL_STORY_INSTALL_DIR;

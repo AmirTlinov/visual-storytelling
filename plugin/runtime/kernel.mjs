@@ -23,7 +23,7 @@ import { acquireDirectoryLock } from '../../tools/file-lock.mjs';
 import { revisionInput } from '../revision-input.mjs';
 import { selectExamples } from '../../tools/catalog-query.mjs';
 import { exampleDetails } from '../../tools/catalog.mjs';
-import { readPinnedRuntime } from '../../tools/runtime-package.mjs';
+import { readPinnedRuntime, readPinnedReference } from '../../tools/runtime-reference.mjs';
 import { videoDimensions } from '../../tools/video-dimensions.mjs';
 import { writePreparedBuild, readBuildMetadata } from '../build-payload.mjs';
 
@@ -47,7 +47,7 @@ const projects = new ProjectStore(data);
 const preferences = new Preferences(data);
 await configureEnvironment(data);
 await projects.start();
-const watched = new ProjectWatch((id) =>
+const watched = new ProjectWatch((id, change) =>
   refreshProject(
     {
       data,
@@ -58,6 +58,7 @@ const watched = new ProjectWatch((id) =>
       isUpdating: () => updating,
     },
     id,
+    change,
   ),
 );
 const jobs = new JobRunner(
@@ -98,7 +99,7 @@ const cache = runtimeCache({ data, preferences, projects, sessions, jobs });
 const scheduleCache = () => cache.schedule();
 
 const {
-  load,
+  load: loadSession,
   save,
   viewBuild,
   drain: drainSessionWrites,
@@ -109,19 +110,26 @@ const {
   (work) => jobs.preserveInputs(work),
 );
 
+async function load(id) {
+  const session = await loadSession(id);
+  if (projects.projects.has(session.build.projectId))
+    watched.open(projects.get(session.build.projectId));
+  return session;
+}
+
 const decorate = (session) => ({
   ...sessions.describe(session),
   authoredInputs: session.build.authoredInputs,
   jobs: jobs.list(session.build.projectId).filter((j) => j.projectId === session.build.projectId),
 });
-async function prepareProject(project, requestId = randomUUID()) {
+async function prepareProject(project, requestId = randomUUID(), reconciliation) {
   const preparation = jobs.preserveInputs(async () => {
     const input = await revisionInput(data, projects, {
       kind: 'working',
       projectId: project.id,
       sourceRevision: project.sourceRevision,
     });
-    return jobs.enqueue('build', { data, ...input }, requestId);
+    return jobs.enqueue('build', { data, ...input, reconciliation }, requestId);
   });
   work.add(preparation);
   try {
@@ -438,7 +446,8 @@ const operations = {
     let pinned;
     if (projectId) {
       const project = await projects.inspect(projectId);
-      pinned = await readPinnedRuntime(project.path);
+      const identity = await readPinnedRuntime(project.path);
+      pinned = { ...identity, ...(await readPinnedReference(identity)) };
       root = pinned.root;
     }
     // The reader belongs to the installed plugin; declarations belong to the pinned project.

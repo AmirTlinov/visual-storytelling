@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { resolvePackage } from './build-info.mjs';
 import { readStoryProject } from './story-project.mjs';
-import { readPinnedRuntime } from './runtime-package.mjs';
+import { readPinnedRuntime } from './runtime-reference.mjs';
 
 /** Project-owned story.json is the source; this generated speech projection is disposable. */
 export async function narrationSource(directory) {

@@ -18,11 +18,8 @@ import { randomUUID } from 'node:crypto';
 import { writeBuildInfo } from '../tools/build-info.mjs';
 import { releaseDigest } from '../plugin/install.mjs';
 import { pinSceneProject } from '../tools/scene-project.mjs';
-import {
-  updateSceneRuntime,
-  linkPreparedRuntime,
-  readPreparedRuntime,
-} from '../tools/runtime-package.mjs';
+import { updateSceneRuntime, linkPreparedRuntime } from '../tools/runtime-package.mjs';
+import { readPreparedRuntime } from '../tools/runtime-reference.mjs';
 import { ProjectStore } from '../plugin/projects.mjs';
 
 async function permissions(directory, immutable) {

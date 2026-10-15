@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { createScene } from '../tools/create-scene.mjs';
 import { writeBuildInfo } from '../tools/build-info.mjs';
 import { projectFiles } from '../tools/project-files.mjs';
-import { readPinnedRuntime } from '../tools/runtime-package.mjs';
+import { readPinnedRuntime } from '../tools/runtime-reference.mjs';
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'story-create-'));

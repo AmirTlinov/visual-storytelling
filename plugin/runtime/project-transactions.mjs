@@ -249,20 +249,25 @@ export function projectTransactions({
                   sourceRevision: candidate.input.sourceRevision,
                 },
                 resolve(directory, '../..'),
+                candidate.input,
               );
+              for (const session of views.filter((view) =>
+                samePreparedOwner(view, preparedCandidate),
+              ))
+                await sessions.request(session.id, {
+                  op: 'author-validate',
+                  buildRevision: session.build.revision,
+                  stateRevision: session.stateRevision,
+                  document: proposed.document,
+                  authoredInputs: proposed.authoredInputs,
+                });
             } finally {
-              await rm(candidate.snapshot, { recursive: true, force: true });
+              // A published prepared artifact owns its inputs even when view validation rejects it.
+              // Unreferenced artifacts return to the existing cache collector after this lock.
+              if (preparedCandidate?.snapshot !== candidate.snapshot)
+                await rm(candidate.snapshot, { recursive: true, force: true });
+              scheduleCache();
             }
-            for (const session of views.filter((view) =>
-              samePreparedOwner(view, preparedCandidate),
-            ))
-              await sessions.request(session.id, {
-                op: 'author-validate',
-                buildRevision: session.build.revision,
-                stateRevision: session.stateRevision,
-                document: proposed.document,
-                authoredInputs: proposed.authoredInputs,
-              });
           }
           const accepted = preparedCandidate
             ? await commitPrepared(proposed, preparedCandidate, undefined, false)
@@ -366,7 +371,13 @@ export function projectTransactions({
                   : shown.some((view) => view.acknowledgement === 'pending')
                     ? 'pending'
                     : 'prepared';
-            const result = { project, buildRevision: prepared.revision, shown, delivery };
+            const result = {
+              project,
+              buildRevision: prepared.revision,
+              work: prepared.work,
+              shown,
+              delivery,
+            };
             await projects.editDelivery(args.projectId, args.requestId, result);
             scheduleCache();
             return result;

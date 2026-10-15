@@ -1,7 +1,11 @@
 import { readBuildMetadata } from '../build-payload.mjs';
 
 /** Filesystem events reconcile after authored delivery, against the accepted build owner. */
-export function refreshProject({ data, projects, sessions, jobs, prepareProject, isUpdating }, id) {
+export function refreshProject(
+  { data, projects, sessions, jobs, prepareProject, isUpdating },
+  id,
+  change,
+) {
   return projects.serial('delivery:' + id, async () => {
     if (isUpdating()) return;
     const project = await projects.inspect(id);
@@ -28,6 +32,6 @@ export function refreshProject({ data, projects, sessions, jobs, prepareProject,
           session.nextBuild?.sourceRevision !== project.sourceRevision,
       )
     )
-      await prepareProject(project);
+      await prepareProject(project, undefined, change);
   });
 }

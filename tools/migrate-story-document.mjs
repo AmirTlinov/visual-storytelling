@@ -1,7 +1,8 @@
 import { readFile, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { readPreparedRuntime, assertPreparedDocument } from './runtime-package.mjs';
+import { assertPreparedDocument } from './runtime-package.mjs';
+import { readPreparedRuntime } from './runtime-reference.mjs';
 import { divisionStory } from '../dist/recipes/division-story.js';
 
 const readOptional = (file) =>
