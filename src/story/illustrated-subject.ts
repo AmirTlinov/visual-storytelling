@@ -36,6 +36,7 @@ export async function mountIllustratedSubject(
   let coverWasInert = false;
   let interactionRestore: boolean | undefined;
   let replacing = false;
+  let drawingHasPlayer = Boolean(initial.chapters.length);
   const shell = SceneShell.mount(root, {
     title: initial.title ?? recipe.title,
     heading: options.heading ?? (initial.title !== undefined ? 'navigation' : false),
@@ -52,14 +53,16 @@ export async function mountIllustratedSubject(
         options.modules,
       );
       drawing.validate(document.models[0]!, document.views, values, []);
-      drawing.render(document.models[0]!, document.views, next.models[document.models[0]!.id]!);
+      renderDrawing(document.models[0]!, document.views, next.models[document.models[0]!.id]!);
       handle.emphasize([]);
       latest = next;
     },
   });
   const handle = root.scene!;
   const lifetime = new AbortController();
-  shell.onDispose(() => lifetime.abort());
+  shell.onDispose(() => {
+    lifetime.abort();
+  });
   shell.onDispose(() => {
     if (interactionRestore !== undefined && root.scene === handle) root.inert = interactionRestore;
     interactionRestore = undefined;
@@ -69,9 +72,50 @@ export async function mountIllustratedSubject(
   });
   if (options.theme) handle.setTheme!(options.theme);
   let drawing: ReturnType<typeof recipe.create>;
+  function renderDrawing(...args: Parameters<typeof drawing.render>) {
+    const previous = drawingHasPlayer;
+    drawingHasPlayer = Boolean(args[4]);
+    try {
+      drawing.render(...args);
+    } catch (error) {
+      drawingHasPlayer = previous;
+      throw error;
+    }
+  }
   try {
     if (recipe.controls) shell.showParameters(recipe.controls);
-    drawing = recipe.create(shell, model);
+    const viewport = {
+      stage: shell.stage,
+      get layout() {
+        return shell.layout;
+      },
+      input: shell.input,
+      inputGesture: shell.inputGesture,
+      attachView: shell.attachView,
+      playback: {
+        get available() {
+          return drawingHasPlayer;
+        },
+        pause() {
+          controller?.pause();
+        },
+        replay() {
+          if (!drawingHasPlayer || !controller || lifetime.signal.aborted) return;
+          const current = controller;
+          current.pause();
+          current.seek(0);
+          // Register playback before yielding. Transport owns preparation, permission,
+          // cancellation by any Pause path, and disposal of this single clock.
+          void current.player.play().catch((error) => {
+            if (!lifetime.signal.aborted && controller === current)
+              root.dispatchEvent(
+                new CustomEvent('scene-playback-error', { bubbles: true, detail: error }),
+              );
+          });
+        },
+      },
+    };
+    drawing = recipe.create(viewport, model);
   } catch (error) {
     releaseResources(
       [
@@ -198,7 +242,7 @@ export async function mountIllustratedSubject(
       if (lifetime.signal.aborted || !acceptedMoment || document !== baseline) return;
       latest = acceptedMoment;
       latestFrame = acceptedFrame;
-      drawing.render(
+      renderDrawing(
         baseline.models[0]!,
         acceptedMoment.views,
         acceptedMoment.models[baseline.models[0]!.id]!,
@@ -211,7 +255,7 @@ export async function mountIllustratedSubject(
     };
     const render = (moment: SubjectMoment, frame?: typeof latestFrame) => {
       visual.ready = false;
-      drawing.render(nextModel, moment.views, moment.models[nextModel.id]!, moment.beat, frame);
+      renderDrawing(nextModel, moment.views, moment.models[nextModel.id]!, moment.beat, frame);
       handle.emphasize(moment.beat?.focus ?? []);
       latest = moment;
       latestFrame = frame;
@@ -307,6 +351,7 @@ export async function mountIllustratedSubject(
           return {
             values: module.validateInputs(resolved?.values ?? { ...current.values, ...patch }),
             time: resolved?.time ?? current.time,
+            playback: resolved?.playback,
           };
         },
         prepare(moment, frame, mode, signal) {
@@ -387,7 +432,7 @@ export async function mountIllustratedSubject(
   }
   const resize = () => {
     if (controller || !latest) return;
-    drawing.render(
+    renderDrawing(
       document.models[0]!,
       latest.views,
       latest.models[document.models[0]!.id]!,

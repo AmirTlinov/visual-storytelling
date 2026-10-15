@@ -43,7 +43,7 @@ export type StoryOptions<P, K extends string, S = P> = {
     current: StoryMoment<P, NoInfer<S>>,
     frame: Frame<K>,
     intent: 'input' | 'restore',
-  ): { values: P; time?: number };
+  ): { values: P; time?: number; playback?: 'pause' };
   /** Resolve a selected chapter at a shared time boundary from the accepted condition. */
   chapterAt?(moment: StoryMoment<P, NoInfer<S>>): string | undefined;
   checkpoint?: StoryCheckpoint<P>;
@@ -480,6 +480,7 @@ export function story<P, K extends string, S = P>(options: StoryOptions<P, K, S>
         'explore',
       );
       const retainPlayback =
+        resolved.playback !== 'pause' &&
         Boolean(options.exploreTimeline || (options.speechApplicable && player.state.hasAudio)) &&
         player.state.playing;
       const previousTime = requested.moment.time;

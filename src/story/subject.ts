@@ -42,7 +42,7 @@ export interface StorySubjectRecipe {
     document: StoryDocument,
     script: Script,
     intent: 'input' | 'restore',
-  ): { values: Partial<ModelValues>; time?: number };
+  ): { values: Partial<ModelValues>; time?: number; playback?: 'pause' };
   /** Project narrative fields while retaining the viewer's chosen subject inputs. */
   resolveTime?(values: Readonly<ModelValues>, authored: ModelState, frame: Frame): ModelValues;
   controls?: readonly string[];
@@ -50,5 +50,8 @@ export interface StorySubjectRecipe {
 }
 /** Drawings receive geometry; SceneShell alone owns input, history and playback. */
 export type DrawingViewport = Pick<SceneMount, 'stage' | 'layout'> &
-  Partial<Pick<SceneMount, 'input' | 'attachView'>>;
+  Partial<Pick<SceneMount, 'input' | 'inputGesture' | 'attachView'>> & {
+    /** Direct experiments borrow the existing Story player; drawings own no clock. */
+    playback?: { readonly available: boolean; pause(): void; replay(): void };
+  };
 export type StorySubjects = Readonly<Record<string, StorySubjectRecipe>>;

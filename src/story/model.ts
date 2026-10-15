@@ -26,6 +26,8 @@ export interface StoryModelModule {
   projectViews?(state: ModelState, views: readonly StoryView[], model: StoryModel): ModelState;
   /** Viewer conditions remain authoritative while the authored episode supplies its visual progress. */
   experimentState?(inputs: ModelValues, authored: ModelState, model?: StoryModel): ModelState;
+  /** Physical operations use normalized elapsed action time, independently of reduced-motion reveal. */
+  operationTiming?: 'continuous';
   operations: Readonly<
     Record<string, (state: ModelState, progress: number, model?: StoryModel) => ModelState>
   >;

@@ -72,6 +72,8 @@ export interface SceneMount {
   syncParameters(values: Record<string, ControlValue>): void;
   /** Commit a subject-owned user action through the existing controls and undo history. */
   input(values: Record<string, ControlValue>): void;
+  /** Group direct subject edits into one undo step, using the existing scene history. */
+  inputGesture(): () => void;
   showParameters(keys?: readonly string[]): void;
   describeParameter(key: string, description: ControlDescription): void;
   attachStory<P, K extends string, S = P>(options: StoryOptions<P, K, S>): Story<P, K, S>;
@@ -479,6 +481,16 @@ function mount(
       updateChrome(true);
     },
     input: changeValues,
+    inputGesture() {
+      assertSceneInteraction(root);
+      history?.begin();
+      let ended = false;
+      return () => {
+        if (ended) return;
+        ended = true;
+        history?.end();
+      };
+    },
     syncParameters(next: Record<string, ControlValue>) {
       assertLive();
       if (inputStory) throw new Error('Story parameters belong to story.input()');

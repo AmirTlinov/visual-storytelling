@@ -111,12 +111,18 @@ test(
           const caseField = r.page.getByRole('combobox', { name: 'Опыт', exact: true });
           await caseField.press('End');
           await caseField.press('Enter');
+          await r.page.waitForFunction(
+            () => document.querySelector('main').scene.snapshot().comparisonCase === 'after',
+          );
           assert.equal(
             (await r.capture.evaluate((scene) => scene.snapshot())).comparisonCase,
             'after',
           );
           await caseField.press('Home');
           await caseField.press('Enter');
+          await r.page.waitForFunction(
+            () => document.querySelector('main').scene.snapshot().comparisonCase === 'before',
+          );
           assert.equal(
             (await r.capture.evaluate((scene) => scene.snapshot())).comparisonCase,
             'before',
@@ -238,7 +244,9 @@ test(
           );
           assert(Math.abs(dimensions[0].width - dimensions[1].width) < 0.001);
           assert(Math.abs(dimensions[0].height - dimensions[1].height) < 0.001);
-          const wideNow = width !== 960;
+          const wideNow = await r.page
+            .locator('[data-scene-frame]')
+            .evaluate((frame) => frame.getBoundingClientRect().width >= 766);
           assert.equal(
             await r.page.locator('[data-comparison-case="before"]').isVisible(),
             wideNow,

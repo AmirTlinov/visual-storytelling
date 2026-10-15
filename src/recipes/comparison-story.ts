@@ -2,6 +2,7 @@ import type { StoryDocument, AuthoredChapter } from '../story/document-schema.js
 import type { ModelValues } from '../story/model.js';
 import { leverComparisonModel, routeComparisonModel } from './comparison-owners.js';
 import { defaultChapter } from './chapter-identity.js';
+import { leverResources } from './lever-story.js';
 export interface ComparisonStoryInput {
   recipe?: 'comparison';
   kind: 'lever' | 'dependency-route';
@@ -34,6 +35,7 @@ export function comparisonStory(input: ComparisonStoryInput): StoryDocument {
   const viewId = id === 'comparison' ? 'comparison.view' : 'comparison';
   return {
     version: 2,
+    ...(input.kind === 'lever' && { resources: leverResources(id) }),
     ...(input.title !== undefined && { title: input.title }),
     models: [
       {

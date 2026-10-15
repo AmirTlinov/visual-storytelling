@@ -120,10 +120,9 @@ test(
     const receipt = JSON.parse(await readFile(join(source, 'timeline.json'), 'utf8'));
     const timing = playbackTimeline(receipt);
     assert.equal(receipt.synthesis.provider, 'local');
-    assert.equal(
-      timing.cues['area.result'].start,
-      2.2,
-      'the second phrase starts at its generated tone',
+    assert.ok(
+      Math.abs(timing.cues['area.result'].start - 2.3) < 1e-12,
+      'the second whole take starts after 2.2s of the first take and its own 0.1s lead-in',
     );
     const explicit = {
       duration: timing.duration,
@@ -165,7 +164,7 @@ test(
     await writeFile(
       join(portable, 'explicit.html'),
       packed
-        .replace('<body>', '<body data-explicit>')
+        .replace(/<body\b/, '<body data-explicit')
         .replace(
           /data-story-timeline="[^"]*"/,
           'data-story-timeline="data:application/json;base64,e30="',
@@ -175,8 +174,9 @@ test(
     await rm(built, { recursive: true });
     for (const [entry, start, audible] of [
       ['index.html', timing.cues['area.result'].start, true],
-      ['explicit.html', 1, true],
-      ['silent.html', 2.5, false],
+      ['explicit.html', timing.cues['area.result'].start, true],
+      // Quiet playback retains this current recording's accepted physical clock.
+      ['silent.html', timing.cues['area.result'].start, false],
     ]) {
       const render = await renderer({
         directory: portable,
@@ -186,15 +186,25 @@ test(
         controls: true,
       });
       try {
+        if (entry === 'explicit.html') {
+          assert.equal(await render.page.locator('body').getAttribute('data-explicit'), '');
+          assert.equal(
+            await render.page.locator('audio').getAttribute('data-story-timeline'),
+            'data:application/json;base64,e30=',
+          );
+        }
         const cue = await render.capture.evaluate((scene) =>
           scene.review().cues.find((cue) => cue.id === 'area.result'),
         );
         assert.equal(cue.start, start);
         if (!audible) {
           assert.equal(await render.page.locator('audio').getAttribute('src'), null);
-          assert.equal(
-            await render.page.locator('audio').getAttribute('data-story-timeline'),
-            null,
+          const quietTiming = await render.page
+            .locator('audio')
+            .getAttribute('data-story-timeline');
+          assert.deepEqual(
+            JSON.parse(Buffer.from(quietTiming.split(',')[1], 'base64').toString()),
+            timing,
           );
           assert.deepEqual(
             render.messages.filter(({ type }) => type === 'error'),

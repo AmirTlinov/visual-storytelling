@@ -19,6 +19,7 @@ async function mount(
     'Сначала заметим исходные значения',
     'Затем сравним результат вычисления',
   ],
+  dense = false,
 ) {
   await openFixture(page, 'scene-shell');
   const source = await build({
@@ -34,6 +35,10 @@ async function mount(
                 { value: 'sum', label: 'Сложить исходные значения' },
                 { value: 'difference', label: 'Найти разность между исходным и вычисленным значением' },
               ] },
+              ...(${dense} ? [
+                {key:'second',label:'Второе слагаемое',value:3,type:'number'},
+                {key:'third',label:'Третье слагаемое',value:0,type:'number'},
+              ] : []),
             ],
           });
           const drawing = surface(shell.stage, { width: 960, height: 400, grid: false });
@@ -44,7 +49,7 @@ async function mount(
               { id: 'inputs', title: ${JSON.stringify(chapterTitles[0])}, text: '', start: 0, end: 10 },
               { id: 'result', title: ${JSON.stringify(chapterTitles[1])}, text: '', start: 10, end: 20 },
             ] },
-            stateAt: () => ({ amount: 2, method: 'sum' }),
+            stateAt: () => ({ amount: 2, method: 'sum', ...(${dense} ? {second:3,third:0} : {}) }),
             render(values) {
               const { width, height, scale } = shell.layout;
               drawing.resize(width, height);
@@ -641,4 +646,27 @@ test('validated text retains its draft through chrome reparenting and commits on
   expect(
     await page.evaluate(() => (window as any).chromeContract.root.scene.snapshot().amount),
   ).toBe(2);
+});
+
+test('an open dense Conditions select survives both toolbar placements', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await mount(page, 'range', undefined, true);
+  await page.getByRole('button', { name: 'Условия', exact: true }).click();
+  const field = page.getByRole('combobox', { name: 'Способ сравнения результата' });
+  await field.click();
+  const menu = page.getByRole('listbox', { name: 'Способ сравнения результата' });
+  await expect(menu).toBeVisible();
+  for (const width of [960, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await expect(
+      page.locator(
+        `${width === 960 ? '.ve-scene-conditions' : '.ve-scene-header'} > .ve-scene-toolbar`,
+      ),
+    ).toHaveCount(1);
+    await expect(menu).toBeVisible();
+    await expect(field).toBeFocused();
+  }
+  await field.press('End');
+  await field.press('Enter');
+  await expect(field).toContainText('Найти разность');
 });

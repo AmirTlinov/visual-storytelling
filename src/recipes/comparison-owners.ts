@@ -28,6 +28,7 @@ export const routeComparisonModel = comparisonModel({
 });
 export const leverComparisonSubject = comparisonSubject({
   model: leverComparisonModel,
+  frame: { width: 1280, height: 960, scope: 'stage' },
   changes: leverInputKeys,
   views: leverViews,
   recipe(pair) {

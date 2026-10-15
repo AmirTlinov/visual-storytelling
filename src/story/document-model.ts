@@ -125,9 +125,10 @@ export function documentModelsAt(
         if (action.operation) {
           const { model: modelId, name } = action.operation;
           const model = document.models.find((model) => model.id === modelId)!;
-          models[modelId] = owners[model.module]!.operations[name]!(
+          const owner = owners[model.module]!;
+          models[modelId] = owner.operations[name]!(
             models[modelId]!,
-            frame.reveal(id),
+            owner.operationTiming === 'continuous' ? frame.progress(id) : frame.reveal(id),
             model,
           );
           modelInputValues(model, models[modelId]!, owners[model.module]!);

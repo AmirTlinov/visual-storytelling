@@ -1265,4 +1265,44 @@ Upstream review0f3aa34 нашло silent null-default в circuit recipe. Под�
 кандидат0.35.5/core0.47.4: строгие enum/default checks; один internal owner
 generated chapter/qualified beat IDs для всех recipes; удаление пустых font
 probes в lettering/motion без изменения непустого текста. Source review CLEAR;
-build, regression checks и установленная приёмка кандидата ещё не выполнены.
+build/check,27 regressions,14 narrative checks и installed API/custom-module cycle PASS.
+
+### Полная выборка0.35.5 и переделка рычага
+
+Установлен core0.47.4/plugin0.35.5, source8c6cc96;
+release SHA256 `fa34e5842e012ddb36a70076d30c8e10a5c5eb126e2a783415e5bf77d5d06a66`.
+Набор `artifacts/slice14/input-frame-check/run-2c82ae95-ef63-42f3-9559-39856ccb6cd7`
+сохраняет200source и200trusted viewer операций. Все400 изменили предметные
+пиксели правильно; errors:[],6 presentation checks PASS.
+
+| Отсчёт → фактический кадр | p50,мс | p95,мс | max,мс | Gate |
+|---|---:|---:|---:|---|
+| MCP-правка |147,248|241,737|387,726|PASS≤250|
+| Trusted pointerdown зрителя |96,607|214,854|398,971|FAIL≤100|
+
+SDK p95212,910мс. Проверка наблюдения отделена от pixel clock.
+M5Max/18CPU/128GiB, macOS27; loadavg1:10,36→12,48. Перед каждой source
+операцией измеритель ждёт foreground/ready/visible/2rAF; шесть SHA harness
+сохранены до запуска. Старые серии и медленные случаи не удалены.
+
+Зритель отклонил старый контрольный рычаг: движения не видно, условия нельзя
+проверить руками. Это learning/visual FAIL; ответ на прогноз и перенос не получен.
+Следующий кандидат core0.48.0/plugin0.36.0 заменяет статический рисунок общей
+исполняемой моделью: угол, скорость и физическое время читаются из одного state;
+трасса Rapier, закреплённые грузы F/g, невесомая балка, фиксированная ось,
+упоры±18°. Груз двигается прямо на рисунке,± меняет вес. Shared Story владеет
+воспроизведением, SceneHistory — одним шагом на жест. Новый input останавливает
+прошлый запуск и держит горизонтальный старт; restore/undo сохраняют принятое время.
+Reduced motion сохраняет физический смысл. Статическое сравнение переиспользует
+тот же рисунок и масштаб. Прежняя отрисовка рычага удалена.
+
+Source build/check и69 model/delivery checks PASS, включая12 проверок модели
+и2 browser checks рычага. Ещё11 browser-сценариев оболочки PASS. Устранён общий
+defect chrome: изменение parent у toolbar больше не переподключает неподвижные
+fields и не закрывает их select; обе стороны перехода ширины проверены.
+Тест старой озвучки приведён к существующему контракту целых take и фиксированных
+акустических якорей; quiet сохраняет принятый clock с audio.src=null.
+Независимое source review рычага и chrome CLEAR; evidence — `artifacts/lever/`
+и `artifacts/slice14/lever-*.log`. Установленный кандидат и новая проверка
+понимания ещё не приняты.
+Срез14,15 и milestone остаются открытыми. Озвучка опциональна.

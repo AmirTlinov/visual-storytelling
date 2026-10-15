@@ -52,7 +52,8 @@ export { fractionsStory } from './fractions-story.js';
 export type { FractionsStoryInput } from './fractions-story.js';
 export { divisionParts } from './division-parts.js';
 
-export { leverModel } from './lever-model.js';
+export { leverModel, type LeverModelState } from './lever-model.js';
+export { leverStory, type LeverStoryInput } from './lever-story.js';
 export { leverSubject } from './lever.js';
 export { comparisonModel } from './comparison-model.js';
 export { comparisonSubject } from './comparison-subject.js';

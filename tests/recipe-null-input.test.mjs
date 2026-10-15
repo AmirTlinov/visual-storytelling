@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { prepareIllustratedDocument } from '../dist/story/document.js';
 
 const recipes = [
+  { recipe: 'lever', inputs: { leftForce: 4, leftArm: 30, rightForce: 3, rightArm: 20 } },
   { recipe: 'division', inputs: { count: 17, divisor: 4 } },
   {
     recipe: 'fractions',

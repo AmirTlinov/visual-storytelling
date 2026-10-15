@@ -164,7 +164,10 @@ checkpoint сохраняет размеры показанной сцены п�
 `before`/`after`, фактические `changes` и `controlled`. Рисунки получают реальные
 domain module и ID `<model>:before/after`. `comparisonModel` задаёт последовательность
 раскрытия; `comparisonSubject` размещает два обычных рисунка в одном shell.
-`DrawingViewport` содержит только stage/layout, второй плеер или history не создаётся.
+`DrawingViewport` получает stage/layout, а при прямом управлении — input,
+inputGesture и доступ к прежнему Story player. Второй плеер или history не создаётся.
+Для одного управляемого рычага используй [lever](../tools/document-modules/lever/story.json);
+`comparison` нужен для явного сопоставления исходного и изменённого опыта.
 Калибровку рецепта вычисляй по обоим снимкам до рисунка. Рабочие примеры:
 [рычаг](../tools/document-modules/lever-comparison/story.json) и
 [маршрут](../tools/document-modules/route-comparison/story.json).

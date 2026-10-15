@@ -76,9 +76,7 @@ export function sceneChrome({
       toolbar.parentElement !== toolbarParent ||
       fields.parentElement !== fieldsParent;
     const leavingConditions =
-      moved &&
-      ((toolbar.parentElement === conditions && toolbarParent !== conditions) ||
-        (fields.parentElement === conditions && fieldsParent !== conditions));
+      moved && fields.parentElement === conditions && fieldsParent !== conditions;
     const keepEdit = moved && preserveFocus && ownedFocus,
       restoreFocus = keepEdit && document.hasFocus();
     const draft = keepEdit ? holdControlFocus([toolbar, fields]) : undefined;
@@ -91,11 +89,19 @@ export function sceneChrome({
       if (moved) {
         const historyBar =
           conditions.querySelector(':scope > .ve-experiment-history') ?? panel.resources;
-        if (toolbarParent === conditions) conditions.insertBefore(toolbar, historyBar);
-        else if (toolbar.parentElement !== header) conditionsButton.before(toolbar);
-        if (fieldsParent === conditions) conditions.insertBefore(fields, historyBar);
-        else if (fieldsParent === root) controls.before(fields);
-        else if (fields.parentElement !== drawing) stage.before(fields);
+        if (toolbar.parentElement !== toolbarParent) {
+          if (toolbarParent === conditions)
+            conditions.insertBefore(
+              toolbar,
+              fields.parentElement === conditions ? fields : historyBar,
+            );
+          else conditionsButton.before(toolbar);
+        }
+        if (fields.parentElement !== fieldsParent) {
+          if (fieldsParent === conditions) conditions.insertBefore(fields, historyBar);
+          else if (fieldsParent === root) controls.before(fields);
+          else stage.before(fields);
+        }
       }
       // Reparenting a native field emits blur/focus. Its draft and history gesture
       // still belong to the same edit; only an actual departure commits them.

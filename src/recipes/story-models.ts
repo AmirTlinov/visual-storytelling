@@ -2,6 +2,7 @@ import { probabilityModel } from './probability-model.js';
 import { samplingModel } from './sampling-model.js';
 import { probabilityStory } from './probability-story.js';
 import { leverModel } from './lever-model.js';
+import { leverStory } from './lever-story.js';
 import { leverComparisonModel, routeComparisonModel } from './comparison-owners.js';
 import { comparisonStory } from './comparison-story.js';
 import { fractionsModel } from './fractions-model.js';
@@ -34,6 +35,7 @@ import { divisionStory } from './division-story.js';
 import { dependencyRouteStory } from './dependency-route-story.js';
 import type { StoryDocument } from '../story/document-schema.js';
 export const storyRecipes: Readonly<Record<string, (input: unknown) => StoryDocument>> = {
+  lever: (input) => leverStory(input as Parameters<typeof leverStory>[0]),
   probability: (input) => probabilityStory(input as Parameters<typeof probabilityStory>[0]),
   sampling: (input) => probabilityStory(input as Parameters<typeof probabilityStory>[0]),
   comparison: (input) => comparisonStory(input as Parameters<typeof comparisonStory>[0]),
