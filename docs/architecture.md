@@ -305,3 +305,11 @@ build lease; preview наследует его через `recordingBuildRevisio
 использует preview, final delivery вызывает read-only `requireNarration`.
 Изменённые фразы остаются pending; структурно несовместимый preview тихий.
 Монотонное время и целые takes принадлежат прежнему Story/voice pipeline.
+
+Запись публикует `tools/voice/publication.mjs`: проверенные old/new bytes и durable
+journal предшествуют замене owned outputs. Явный retry завершает prepared commit
+или rollback до вызова провайдера; readonly check незавершённую публикацию отклоняет.
+Python использует тонкий subprocess bridge к тому же владельцу. `voice-preparation`
+сохраняет frozen authored inputs до синтеза; retry проверяет их и восстанавливает
+аудиопару в прежнем job snapshot до копирования. Повреждённый authored input остаётся
+ошибкой, новый рабочий проект не подменяет захваченный.

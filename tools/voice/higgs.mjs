@@ -38,6 +38,7 @@ async function installation() {
         ...new Set([process.env.PATH, dirname(command), '/opt/homebrew/bin'].filter(Boolean)),
       ].join(delimiter),
       PYTHONDONTWRITEBYTECODE: '1',
+      VISUAL_STORY_NODE: process.execPath,
       TOKENIZERS_PARALLELISM: 'false',
     },
   };

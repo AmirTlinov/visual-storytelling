@@ -4,6 +4,7 @@ import { narrationSource } from './story-document.mjs';
 import { parse } from 'parse5';
 import { higgsVoice } from './voice/higgs.mjs';
 import { narrationProvider } from './voice/settings.mjs';
+import { recoverNarration, assertNarrationPublished } from './voice/publication.mjs';
 
 function editAudioTags(html, edit) {
   const edits = [];
@@ -218,9 +219,10 @@ export async function silenceSceneCopy(directory) {
 /** The same cached synthesis/alignment route for audio, scaffolding and delivery. */
 export async function buildNarration(
   directory,
-  { signal, progress, cache, managedProcessGroup = false } = {},
+  { signal, progress, cache, managedProcessGroup = false, sourcePrepared } = {},
 ) {
   signal?.throwIfAborted();
+  await recoverNarration(directory);
   const source = await narrationSource(directory);
   if (!source)
     throw new Error('Provide story.json for speech; narration.json is a derived voice job.');
@@ -231,6 +233,18 @@ export async function buildNarration(
     if (error.code !== 'ENOENT') throw error;
   });
   const provider = narrationProvider(settings);
+  settings = { ...settings, enabled: true, provider };
+  await writeFile(settingsFile, JSON.stringify(settings, null, 2) + '\n');
+  for (const name of await readdir(directory)) {
+    signal?.throwIfAborted();
+    if (!name.endsWith('.html')) continue;
+    const file = join(directory, name),
+      html = await readFile(file, 'utf8');
+    const audible = setNarrationMode(html, false);
+    if (audible !== html) await writeFile(file, audible);
+  }
+  // The job owner checkpoints frozen authored inputs before a model can spend work.
+  await sourcePrepared?.();
   let result;
   if (provider === 'higgs') {
     higgsVoice.validate(settings ?? {});
@@ -239,11 +253,8 @@ export async function buildNarration(
       await higgsVoice.build(source, directory, { signal, progress });
     }
     signal?.throwIfAborted();
-    settings = { ...settings, enabled: true, provider };
-    await writeFile(settingsFile, JSON.stringify(settings, null, 2) + '\n');
   } else {
     const { buildAdapterNarration } = await import('./voice/adapter.mjs');
-    settings = { ...settings, enabled: true, provider };
     result = await buildAdapterNarration(directory, source.file, settings, {
       signal,
       progress,
@@ -251,15 +262,6 @@ export async function buildNarration(
       managedProcessGroup,
     });
     signal?.throwIfAborted();
-    await writeFile(settingsFile, JSON.stringify(settings, null, 2) + '\n');
-  }
-  for (const name of await readdir(directory)) {
-    signal?.throwIfAborted();
-    if (!name.endsWith('.html')) continue;
-    const file = join(directory, name),
-      html = await readFile(file, 'utf8');
-    const audible = setNarrationMode(html, false);
-    if (audible !== html) await writeFile(file, audible);
   }
   return result;
 }
@@ -295,6 +297,7 @@ export async function checkNarration(html, directory, { signal, preview } = {}) 
   // The read-only preview owner has verified this exact waveform against an accepted source.
   if (preview?.playable) audioFiles.delete(resolve(directory, 'audio.wav'));
   if (!audioFiles.size) return;
+  await assertNarrationPublished(directory);
   const script = await narrationSource(directory);
   if (!script) return;
   const settings = await readFile(join(directory, 'voice.json'), 'utf8').then(

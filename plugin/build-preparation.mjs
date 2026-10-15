@@ -6,10 +6,7 @@ import { buildScene } from '../tools/build-pages.mjs';
 import { packDirectory } from '../tools/standalone.mjs';
 import { snapshotProject, projectFiles, digest } from '../tools/project-files.mjs';
 import { writeJSON, readJSON } from '../tools/storage.mjs';
-import { prepareEnvironment } from '../tools/environment.mjs';
-import { buildNarration, requireNarration } from '../tools/narration.mjs';
-import { narrationProvider } from '../tools/voice/settings.mjs';
-import { narrationPreview } from '../tools/voice/preview.mjs';
+import { requireNarration } from '../tools/narration.mjs';
 import {
   linkPreparedRuntime,
   assertPreparedDocument,
@@ -21,6 +18,7 @@ import { readStoryProject, storyProjectOwner } from '../tools/story-project.mjs'
 import { renderer } from '../tools/render.mjs';
 import { reuseAcceptedRecording } from './accepted-recording.mjs';
 import { writePreparedBuild, readPreparedBuild, payloadWork } from './build-payload.mjs';
+import { prepareProjectVoice, recoverVoicePreparation } from './voice-preparation.mjs';
 const execute = promisify(execFile);
 
 async function dependencies(source, data, { signal, progress }) {
@@ -129,7 +127,11 @@ async function prepare(input, task, { final = false } = {}) {
         (saved.preparation?.voice ?? false) !== preparation.voice)
     )
       continue;
-    const revision = saved.preparedRevision ?? saved.revision;
+    const recoveredVoice =
+      input.prepareVoice === true && id === input.resumeFrom
+        ? await recoverVoicePreparation(candidate, saved, task)
+        : undefined;
+    const revision = recoveredVoice ?? saved.preparedRevision ?? saved.revision;
     const valid = await projectFiles(candidate).then(
       (value) => value.revision === revision,
       (error) => {
@@ -173,24 +175,7 @@ async function prepare(input, task, { final = false } = {}) {
       : undefined;
   if (voice?.enabled && !preparation.silent && !(reusable && receipt.preparedRevision)) {
     if (preparation.voice) {
-      const plan = await narrationPreview(snapshot, {
-        acceptedDirectory: acceptedRecording?.directory,
-        signal: task.signal,
-      });
-      task.progress(
-        `Подготовка голоса: ${plan.status.preparation.units} мыслей, ${plan.status.preparation.characters} символов; тариф провайдера не задан.`,
-      );
-      const localHiggs = narrationProvider(voice) === 'higgs';
-      await prepareEnvironment(data, {
-        ...task,
-        voice: localHiggs,
-        encoder: true,
-      });
-      await buildNarration(snapshot, {
-        ...task,
-        cache: join(data, 'speech'),
-        managedProcessGroup: Boolean(task.jobId),
-      });
+      await prepareProjectVoice(snapshot, data, acceptedRecording, task);
     }
   }
   if (final && !preparation.silent) await requireNarration(snapshot, task);

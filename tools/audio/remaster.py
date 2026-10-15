@@ -2,7 +2,6 @@
 import json
 from contextlib import contextmanager
 from pathlib import Path
-import shutil
 import tempfile
 
 import soundfile as sf
@@ -13,6 +12,7 @@ from resources import digest, file_digest
 from script import check_timeline, read_script
 from speech import SAMPLE_RATE
 from credits import audio_credits
+from publication import publish, recover
 
 
 def audio_hashes(directory, timeline):
@@ -21,67 +21,17 @@ def audio_hashes(directory, timeline):
                                for name in ("voice.wav", "music.wav") if (directory / name).is_file()}
 
 
-class PublicationRecoveryError(RuntimeError):
-    """Keep the accepted recording available for manual recovery after filesystem failures."""
-    def __init__(self, staging, publication_error, recovery_errors):
-        self.staging = staging
-        self.publication_error = publication_error
-        self.recovery_errors = tuple(recovery_errors)
-        details = "; ".join(f"{action}: {error}" for action, error in recovery_errors)
-        super().__init__(f"Narration could not be fully restored. Recovery files remain at {staging}. {details}")
-
-
 @contextmanager
 def staging_directory(parent, prefix):
-    """Remove temporary audio unless failed recovery still needs its accepted-file backups."""
-    staging = Path(tempfile.mkdtemp(prefix=prefix, dir=parent))
-    preserve = False
-    try:
-        yield staging
-    except PublicationRecoveryError as error:
-        preserve = error.staging == staging
-        raise
-    finally:
-        if not preserve:
-            shutil.rmtree(staging)
-
-
-def publish(staging, output, names):
-    """Publish the recording/receipt together, restoring accepted files on any failure."""
-    previous = staging / ".previous"
-    previous.mkdir()
-    moved, installed = [], []
-    try:
-        for name in names:
-            target = output / name
-            if target.exists():
-                if not target.is_file():
-                    raise ValueError(f"Narration output must be a regular file: {name}")
-                target.replace(previous / name)
-                moved.append(name)
-        for name in names:
-            if (staging / name).exists():
-                (staging / name).replace(output / name)
-                installed.append(name)
-    except BaseException as error:
-        recovery = []
-        for name in installed:
-            try:
-                (output / name).unlink(missing_ok=True)
-            except BaseException as failure:
-                recovery.append((f"removing new {name}", failure))
-        for name in moved:
-            try:
-                (previous / name).replace(output / name)
-            except BaseException as failure:
-                recovery.append((f"restoring {name}", failure))
-        if recovery:
-            raise PublicationRecoveryError(staging, error, recovery) from error
-        raise
+    """Publication owns its durable recovery bytes; caller scratch is disposable."""
+    with tempfile.TemporaryDirectory(prefix=prefix, dir=parent) as staging:
+        yield Path(staging)
 
 
 def reuse_audio(script_path, output, *, source_directory=None):
     """None means changed speech. A stale master is repaired or fails without synthesis."""
+    output.mkdir(parents=True, exist_ok=True)
+    recover(output)
     receipt = output / "timeline.json"
     if not receipt.exists():
         return None

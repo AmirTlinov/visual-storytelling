@@ -1021,3 +1021,40 @@ whole-take repartition, scoped captions, общий silent clock, readonly final
 17,75 с (71 кадр, 4 fps), погрешность меньше кадра. Page errors — 0.
 Доказательство: `artifacts/slice13/real-voice-0.33.0/acceptance.json`; прежнее человеческое
 подтверждение качества звучания не подменяется новым автоматическим тестом.
+
+## Срез 13: восстановление публикации речи
+
+Plugin 0.33.1 / core 0.45.1, macOS arm64.
+Release `13e424ae869d1617e2146f0eb7c5634e4bdc461d18770ab4a9d07cde3f2585f7`,
+packaged core `d16520ad572e68f881d9be686b607d4b655290c6c9966fd2057e3263058bb0e3`,
+runtime `2659b7e32e66289f1ab52e9c88a82ec4fb957acda6333e894879f268c743a220`.
+
+Один `tools/voice/publication.mjs` заменяет JS/Python publish-with-rollback.
+Проверенные old/new bytes, хеши и durable manifest сохраняются до замены owned
+outputs. Используется существующий directory lock. Явный retry поднимает готовую
+preparing-стадию либо canonical journal до провайдера; incomplete/conflicting stage
+сохраняется и блокирует новый платный запрос. Readonly check не восстанавливает
+незавершённую публикацию. Отмена возвращает принятую пару; внешние изменения не
+перезаписываются. Python использует общий owner через тонкий bridge, старые
+PublicationRecoveryError/manual-backup пути удалены.
+
+`voice-preparation` сохраняет набор frozen authored inputs до обращения к модели.
+Повтор проверяет protected files до и после recovery и восстанавливает прежний job
+snapshot до копирования. Новый рабочий проект не подменяет старые входы; изменённый
+захваченный исходник отклоняется. Незавершённые данные не объявляются новой ревизией
+без проверки актуальной записи.
+
+Build/check/skill validator PASS. Source regressions 33/33; Python mastering 6/6.
+Installed SDK/Chromium voice lifecycle 1/1, errors0. Отдельный установленный
+JobRunner через настоящий MCP: worker SIGKILL после audio publication, удаление
+speech cache, `story_retry` успешен, ready1/pending0, дополнительных provider calls0.
+Это protocol tones proof, качество голоса им не оценивается. Независимый reviewer
+воспроизвёл и после исправления проверил activation window, mutation во время
+recovery и mutation следующего output; code scope CLEAR. Его отдельные Python→Node
+и adapter/cancellation probes прошли.
+
+Доказательства: `artifacts/slice13/publication-regressions-final.log`,
+`publication-python-final.log`, `publication-installed.log`,
+`publication-installed-retry.log`, `voice-sdk-0.33.1/recovery.json`,
+`publication-independent-review.md`. Dependency/check cache, полное IO измерение,
+3D budget и срезы 14–15 остаются открытыми; milestone не закрыт.

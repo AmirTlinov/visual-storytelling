@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, mkdtemp, lstat, rename, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { dataDirectory } from '../storage.mjs';
 import { voiceDigest, voiceBytesDigest as hash } from './receipt.mjs';
@@ -11,6 +11,9 @@ import {
 import { validateAdapterSettings, adapterInput, adapterSelection } from './adapter-input.mjs';
 import { readWav, wav, markers, take, rebindCachedTake } from './adapter-take.mjs';
 import { validateSpeechConditions } from '../../dist/story/speech-condition.js';
+import { publishNarration, recoverNarration, assertNarrationPublished } from './publication.mjs';
+const publish = (directory, staging, signal) =>
+  publishNarration(directory, staging, ['audio.wav', 'timeline.json'], { signal });
 const format = 'voice-adapter-v1';
 const maybeJSON = async (file) =>
   readFile(file, 'utf8').then(JSON.parse, (error) => {
@@ -144,50 +147,6 @@ async function inputs(directory, sourceFile, settings) {
   };
 }
 
-/** Publish the paired recording/receipt only after validation; restore both on failure/cancellation. */
-async function publish(directory, staging, signal) {
-  const moved = [],
-    installed = [];
-  try {
-    for (const name of ['audio.wav', 'timeline.json']) {
-      const target = join(directory, name);
-      const existing = await lstat(target).catch((error) => {
-        if (error.code !== 'ENOENT') throw error;
-        return null;
-      });
-      if (existing && !existing.isFile())
-        throw new Error('Narration output must be a regular project file.');
-      if (existing) {
-        await rename(target, join(staging, 'previous-' + name));
-        moved.push(name);
-      }
-    }
-    signal?.throwIfAborted();
-    for (const name of ['audio.wav', 'timeline.json']) {
-      await rename(join(staging, name), join(directory, name));
-      installed.push(name);
-    }
-    signal?.throwIfAborted();
-  } catch (error) {
-    const recovery = [];
-    for (const name of installed)
-      await rm(join(directory, name), { force: true }).catch((failure) => recovery.push(failure));
-    for (const name of moved)
-      await rename(join(staging, 'previous-' + name), join(directory, name)).catch((failure) =>
-        recovery.push(failure),
-      );
-    if (recovery.length) {
-      const failure = new AggregateError(
-        [error, ...recovery],
-        `Narration could not be restored. Recovery files remain at ${staging}.`,
-      );
-      failure.preserveNarrationStaging = true;
-      throw failure;
-    }
-    throw error;
-  }
-}
-
 /** Rebind explicit source units locally, preserving every accepted take and audio byte. */
 export async function bindAdapterRecording(
   directory,
@@ -195,6 +154,7 @@ export async function bindAdapterRecording(
   settings,
   { signal, cache = join(dataDirectory(), 'speech'), previousAdapter } = {},
 ) {
+  await recoverNarration(directory);
   const current = await inputs(directory, sourceFile, validateAdapterSettings(settings));
   const previous = await maybeJSON(join(directory, 'timeline.json'));
   if (
@@ -245,7 +205,6 @@ export async function bindAdapterRecording(
   await checkAdapterNarration(directory, sourceFile, next, settings);
   signal?.throwIfAborted();
   const staging = await mkdtemp(join(dirname(resolve(directory)), '.voice-binding-'));
-  let preserve = false;
   try {
     await writeFile(join(staging, 'audio.wav'), bytes);
     await writeFile(join(staging, 'timeline.json'), JSON.stringify(next, null, 2) + '\n');
@@ -255,11 +214,8 @@ export async function bindAdapterRecording(
     )
       throw new Error('The accepted recording changed during migration.');
     await publish(directory, staging, signal);
-  } catch (error) {
-    preserve = error.preserveNarrationStaging === true;
-    throw error;
   } finally {
-    if (!preserve) await rm(staging, { recursive: true, force: true });
+    await rm(staging, { recursive: true, force: true });
   }
   return next;
 }
@@ -271,6 +227,7 @@ export async function buildAdapterNarration(
   settings,
   { signal, progress = () => {}, cache, managedProcessGroup = false } = {},
 ) {
+  await recoverNarration(directory);
   const config = validateAdapterSettings(settings);
   signal?.throwIfAborted();
   const initial = await inputs(directory, sourceFile, config),
@@ -301,7 +258,6 @@ export async function buildAdapterNarration(
           mix: { ...accepted.mix, mastering },
         };
         const staging = await mkdtemp(join(dirname(resolve(directory)), '.voice-remaster-'));
-        let preserve = false;
         try {
           if (
             hash(await readFile(join(directory, 'audio.wav'))) !== hash(previous) ||
@@ -316,11 +272,8 @@ export async function buildAdapterNarration(
           await writeFile(join(staging, 'audio.wav'), audio);
           await writeFile(join(staging, 'timeline.json'), JSON.stringify(next, null, 2) + '\n');
           await publish(directory, staging, signal);
-        } catch (error) {
-          preserve = error.preserveNarrationStaging === true;
-          throw error;
         } finally {
-          if (!preserve) await rm(staging, { recursive: true, force: true });
+          await rm(staging, { recursive: true, force: true });
         }
       }
       return {
@@ -441,16 +394,12 @@ export async function buildAdapterNarration(
     );
   signal?.throwIfAborted();
   const staging = await mkdtemp(join(dirname(resolve(directory)), '.voice-adapter-'));
-  let preserve = false;
   try {
     await writeFile(join(staging, 'audio.wav'), bytes);
     await writeFile(join(staging, 'timeline.json'), JSON.stringify(timeline, null, 2) + '\n');
     await publish(directory, staging, signal);
-  } catch (error) {
-    preserve = error.preserveNarrationStaging === true;
-    throw error;
   } finally {
-    if (!preserve) await rm(staging, { recursive: true, force: true });
+    await rm(staging, { recursive: true, force: true });
   }
   return {
     duration: timeline.duration,
@@ -469,6 +418,7 @@ export async function checkAdapterNarration(
   audio,
   { requireMastering = true } = {},
 ) {
+  await assertNarrationPublished(directory);
   const config = validateAdapterSettings(settings);
   const sourceFile = typeof script === 'string' ? script : script.file;
   const sourceDirectory = typeof script === 'string' ? directory : (script.directory ?? directory);

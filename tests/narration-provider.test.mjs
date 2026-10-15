@@ -93,7 +93,11 @@ else if (args[0] === 'build') {
     await assert.rejects(audio({ SKETCH_AUDIO_BIN: join(directory, 'missing-higgs') }), (error) =>
       /Голос ещё не подготовлен/.test(error.stderr),
     );
-    await assert.rejects(readFile(join(scene, 'voice.json')), { code: 'ENOENT' });
+    assert.deepEqual(
+      JSON.parse(await readFile(join(scene, 'voice.json'))),
+      { provider: 'higgs', enabled: true },
+      'the explicit voice choice remains saved when its selected model is unavailable',
+    );
     await assert.rejects(readFile(join(scene, 'audio.wav')), { code: 'ENOENT' });
     await audio();
     const settings = JSON.parse(await readFile(join(scene, 'voice.json'), 'utf8'));

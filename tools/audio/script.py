@@ -7,6 +7,7 @@ import wave
 from resources import DEFAULT_DELIVERY, REFERENCE_AUDIO, REFERENCE_TEXT, MUSIC, digest, file_digest
 from quality import validate_alignment
 from mastering_profile import PROFILE_SHA256
+from publication import assert_published
 
 WORD = re.compile(r"[А-Яа-яЁё]+(?:[-‑][А-Яа-яЁё]+)*")
 ID = re.compile(r"[a-z][a-z0-9_.-]*\Z")
@@ -29,6 +30,7 @@ def dependency_digests(spec):
 
 def check_timeline(script_path, timeline_path, *, source_directory=None, require_mastering=True):
     """Keep generated speech and cues attached to the exact authored source."""
+    assert_published(Path(timeline_path).parent)
     source = json.loads(Path(script_path).read_text(encoding="utf-8"))
     timeline = json.loads(Path(timeline_path).read_text(encoding="utf-8"))
     if timeline.get("source_sha256") != digest(source):
