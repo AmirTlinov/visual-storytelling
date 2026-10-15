@@ -6,9 +6,12 @@ import { captureWorkingInput } from './revision-input.mjs';
 import { digest } from '../tools/project-files.mjs';
 import { readJSON, writeJSON } from '../tools/storage.mjs';
 import { storyDocumentAPI, assertPreparedDocument } from '../tools/runtime-package.mjs';
+import { payloadWork, preparedPresentation, writePreparedBuild } from './build-payload.mjs';
 
 /** Prepared components and immutable authored inputs are one ordinary project build. */
-export async function prepareLiveProject(data, project) {
+export async function prepareLiveProject(data, project, toolchainRoot) {
+  if (typeof toolchainRoot !== 'string')
+    throw new Error('A live project needs its owned toolchain.');
   const input = await captureWorkingInput(data, project, project.sourceRevision);
   const snapshot = join(data, 'snapshots', input.inputSnapshot);
   const pin = await assertPreparedDocument(snapshot);
@@ -16,22 +19,28 @@ export async function prepareLiveProject(data, project) {
   const document = pin.manifest?.modules.length
     ? source
     : (await storyDocumentAPI(snapshot)).prepareIllustratedDocument(source).document;
-  const template = await readFile(join(pin.root, 'plugin/dist/live.html'), 'utf8');
-  const setup = `<script>window.__visualStoryDocument=${JSON.stringify(document).replaceAll('<', '\\u003c')}</script>`;
-  const html =
-    pin.manifest?.modules.length || pin.manifest?.resources.length
-      ? (
-          await import(pathToFileURL(join(pin.root, 'tools/prepare-story-project.mjs')).href).then(
-            ({ preparedStoryHTML }) => preparedStoryHTML(snapshot),
-          )
-        ).html
-      : template.replace('</head>', () => setup + '</head>');
+  const moduleRevision = pin.manifest ? await storyProjectOwner(snapshot) : undefined;
+  const work = payloadWork();
+  const presentation = await preparedPresentation(
+    data,
+    digest(JSON.stringify({ runtime: pin.build, moduleRevision })),
+    async () =>
+      pin.manifest?.modules.length || pin.manifest?.resources.length
+        ? (
+            await import(
+              pathToFileURL(join(toolchainRoot, 'tools/prepare-story-project.mjs')).href
+            ).then(({ preparedStoryTemplate }) => preparedStoryTemplate(snapshot))
+          ).html
+        : readFile(join(pin.root, 'plugin/dist/live.html'), 'utf8'),
+    work,
+  );
   const revision = digest(
     JSON.stringify({
       projectId: project.id,
       sourceRevision: project.sourceRevision,
       runtime: pin.build,
-      html,
+      presentation,
+      document,
     }),
   );
   const prepared = {
@@ -40,15 +49,16 @@ export async function prepareLiveProject(data, project) {
     revision,
     sourceRevision: project.sourceRevision,
     snapshot,
-    html,
+    presentation,
+    work: { payload: work },
     live: {
       runtimeBuild: pin.build,
-      moduleRevision: pin.manifest ? await storyProjectOwner(snapshot) : undefined,
+      moduleRevision,
       document,
       ...(pin.manifest?.modules.length && { modules: pin.manifest.modules }),
     },
   };
-  await writeJSON(join(data, 'builds', revision + '.json'), prepared);
+  await writePreparedBuild(data, prepared);
   const receipt = await readJSON(join(snapshot, '.vstory-input.json'));
   await writeJSON(join(snapshot, '.vstory-input.json'), { ...receipt, buildRevision: revision });
   return prepared;

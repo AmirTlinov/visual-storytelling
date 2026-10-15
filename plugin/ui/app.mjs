@@ -7,6 +7,7 @@ import { preferencesUI } from './preferences.mjs';
 import { fileEntrypoint } from './file-entrypoint.mjs';
 import preparedLiveHTML from 'visual-story:prepared-live-scene';
 import { prepareIllustratedDocument } from '../../src/story/document.ts';
+import { withStoryDocument } from '../../tools/story-html.mjs';
 
 const app = new App({ name: 'Visual Storytelling', version: manifest.version });
 const extensions = new OpenAIExtensions(app);
@@ -65,24 +66,20 @@ function previewInput({ arguments: args } = {}) {
   if (provisional?.identity === identity) return;
   if (!provisional) {
     provisional = { id: crypto.randomUUID(), generation: -1, identity, document, ready: false };
-    const setup = `<script>window.__visualStoryDocument=${identity.replaceAll('<', '\\u003c')}</script>`;
     frame.hidden = false;
     $('catalog').hidden = true;
     frame.dataset.provisional = 'true';
     $('notice').textContent = 'Предварительный показ';
     $('notice').hidden = false;
-    frame.srcdoc = sceneDocument(
-      preparedLiveHTML.replace('</head>', () => setup + '</head>'),
-      {
-        displayMode,
-        sessionId: provisional.id,
-        generation: provisional.generation,
-        preview: true,
-        provisional: true,
-        stateRevision: 0,
-        theme: app.getHostContext()?.theme,
-      },
-    );
+    frame.srcdoc = sceneDocument(withStoryDocument(preparedLiveHTML, document), {
+      displayMode,
+      sessionId: provisional.id,
+      generation: provisional.generation,
+      preview: true,
+      provisional: true,
+      stateRevision: 0,
+      theme: app.getHostContext()?.theme,
+    });
   } else {
     provisional.document = document;
     provisional.identity = identity;

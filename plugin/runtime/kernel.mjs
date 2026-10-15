@@ -9,6 +9,7 @@ import { ProjectStore } from '../projects.mjs';
 import { readProjectFile } from '../../tools/project-files.mjs';
 import { JobRunner } from '../jobs.mjs';
 import { ProjectWatch } from '../project-watch.mjs';
+import { refreshProject } from './project-refresh.mjs';
 import { Preferences } from '../preferences.mjs';
 import { projectVoice } from '../voice.mjs';
 import { environmentStatus, configureEnvironment } from '../../tools/environment.mjs';
@@ -24,6 +25,7 @@ import { selectExamples } from '../../tools/catalog-query.mjs';
 import { exampleDetails } from '../../tools/catalog.mjs';
 import { readPinnedRuntime } from '../../tools/runtime-package.mjs';
 import { videoDimensions } from '../../tools/video-dimensions.mjs';
+import { writePreparedBuild, readBuildMetadata } from '../build-payload.mjs';
 
 const [socketPath, data] = process.argv.slice(2),
   directory = await realpath(dirname(process.argv[1]));
@@ -45,33 +47,19 @@ const projects = new ProjectStore(data);
 const preferences = new Preferences(data);
 await configureEnvironment(data);
 await projects.start();
-const watched = new ProjectWatch(async (id) => {
-  const project = await projects.inspect(id);
-  if (
-    updating ||
-    projects.queues.has(id) ||
-    projects.queues.has('delivery:' + id) ||
-    jobs
-      .list(id)
-      .some(
-        (j) =>
-          ['build', 'create'].includes(j.kind) &&
-          j.sourceRevision === project.sourceRevision &&
-          ['queued', 'running'].includes(j.status),
-      )
-  )
-    return;
-  const displayed = [...sessions.sessions.values()].filter((s) => s.build.projectId === id);
-  if (
-    displayed.length &&
-    displayed.some(
-      (s) =>
-        s.build.sourceRevision !== project.sourceRevision &&
-        s.nextBuild?.sourceRevision !== project.sourceRevision,
-    )
-  )
-    await prepareProject(project);
-});
+const watched = new ProjectWatch((id) =>
+  refreshProject(
+    {
+      data,
+      projects,
+      sessions,
+      jobs,
+      prepareProject,
+      isUpdating: () => updating,
+    },
+    id,
+  ),
+);
 const jobs = new JobRunner(
   data,
   join(directory, 'worker.mjs'),
@@ -89,7 +77,7 @@ const jobs = new JobRunner(
     if (['build', 'create'].includes(job.kind) && result.buildRevision) {
       const current = await projects.inspect(job.projectId);
       if (result.sourceRevision !== current.sourceRevision) return { ...result, superseded: true };
-      const prepared = await readJSON(join(data, 'builds', result.buildRevision + '.json'));
+      const prepared = await readBuildMetadata(data, result.buildRevision);
       await authoring.publishBuild(current, prepared);
     }
     setTimeout(scheduleClose, 0);
@@ -114,7 +102,12 @@ const {
   save,
   viewBuild,
   drain: drainSessionWrites,
-} = sessionStorage(data, sessions, () => closing);
+} = sessionStorage(
+  data,
+  sessions,
+  () => closing,
+  (work) => jobs.preserveInputs(work),
+);
 
 const decorate = (session) => ({
   ...sessions.describe(session),
@@ -198,8 +191,7 @@ async function openProject(project, { prepare = true, session } = {}) {
   await jobs.preserveInputs(async () => {
     watched.open(project);
     const prepared =
-      project.buildRevision &&
-      (await readJSON(join(data, 'builds', project.buildRevision + '.json')));
+      project.buildRevision && (await readBuildMetadata(data, project.buildRevision));
     if (!session) {
       session = sessions.open(
         prepared || {
@@ -223,7 +215,7 @@ async function openProject(project, { prepare = true, session } = {}) {
       }
       // Publish the placeholder and its persisted card under the same lease lock.
       if (!prepared)
-        await writeJSON(join(data, 'builds', session.build.revision + '.json'), {
+        await writePreparedBuild(data, {
           ...session.build,
           html: '',
         });
@@ -321,8 +313,8 @@ const operations = {
     if (!prepared)
       throw new Error('This example has no prepared preview. Create a project from it.');
     return jobs.preserveInputs(async () => {
-      await writeJSON(join(data, 'builds', prepared.revision + '.json'), prepared);
-      const s = sessions.open(prepared);
+      const stored = await writePreparedBuild(data, prepared);
+      const s = sessions.open(stored);
       await save(s);
       return decorate(s);
     });

@@ -4,13 +4,14 @@ import { randomUUID } from 'node:crypto';
 import { readJSON, writeJSON } from '../tools/storage.mjs';
 import { projectFiles, snapshotProject } from '../tools/project-files.mjs';
 import { failure } from './errors.mjs';
+import { readBuildMetadata } from './build-payload.mjs';
 
 /** Resolve and freeze a user's revision before queueing work. Jobs never follow working files. */
 export async function revisionInput(data, projects, target) {
   const project = projects.get(target.projectId);
   const base = { projectId: project.id, projectPath: project.path, title: project.title, target };
   if (target.kind === 'build') {
-    const build = await readJSON(join(data, 'builds', target.buildRevision + '.json'));
+    const build = await readBuildMetadata(data, target.buildRevision);
     if (
       build?.projectId !== project.id ||
       build.revision !== target.buildRevision ||

@@ -9,6 +9,7 @@ import { projectFiles } from '../tools/project-files.mjs';
 import { ProjectStore } from '../plugin/projects.mjs';
 import { revisionInput } from '../plugin/revision-input.mjs';
 import { collectCache } from '../plugin/cache.mjs';
+import { preparedBuildHTML } from '../plugin/build-payload.mjs';
 
 async function fixture(t, mutation = '') {
   const directory = await mkdtemp(join(tmpdir(), 'story-workflow-'));
@@ -57,7 +58,10 @@ await writeFile(join(process.env.VISUAL_STORY_OUTPUT, 'index.html'), '<main>' + 
       },
     );
   const html = async (result) =>
-    JSON.parse(await readFile(join(data, 'builds', result.buildRevision + '.json'), 'utf8')).html;
+    preparedBuildHTML(
+      data,
+      JSON.parse(await readFile(join(data, 'builds', result.buildRevision + '.json'), 'utf8')),
+    );
   return { input, build, html };
 }
 

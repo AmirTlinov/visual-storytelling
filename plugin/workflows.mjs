@@ -14,6 +14,7 @@ import { prepareProjectChanges, writeProjectChange } from './project-changes.mjs
 import { videoDimensions } from '../tools/video-dimensions.mjs';
 import { creationCandidate } from './authored-candidate.mjs';
 import { prepareBuild, buildPreparedSnapshot, unchangedInputs } from './build-preparation.mjs';
+import { preparedBuildHTML } from './build-payload.mjs';
 const execute = promisify(execFile);
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -157,7 +158,11 @@ export const workflows = {
       silent: input.options?.silent ?? silent,
       out: output,
       prepareAudio: false,
-      prepared: { ...prepared, directory: join(snapshot, 'dist') },
+      prepared: {
+        ...prepared,
+        ...(formats.includes('html') && { html: await preparedBuildHTML(input.data, prepared) }),
+        directory: join(snapshot, 'dist'),
+      },
       checkpoint: input.checkpoint,
       signal: task.signal,
       onProgress: (done, total) => task.progress('Собираю видео…', { done, total }),

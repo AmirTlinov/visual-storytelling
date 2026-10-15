@@ -10,6 +10,7 @@ import { ProjectStore } from '../plugin/projects.mjs';
 import { renderer } from '../tools/render.mjs';
 import { sceneEntry, scenePage } from '../tools/scene-entry.mjs';
 import { createScene } from '../tools/create-scene.mjs';
+import { preparedBuildHTML } from '../plugin/build-payload.mjs';
 
 test('a malformed draft entry remains inspectable for an authoring repair', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'story-entry-draft-'));
@@ -88,7 +89,7 @@ test(
         );
         const packed = join(directory, fixture + '-portable');
         await mkdir(packed);
-        await writeFile(join(packed, scenePage), built.html);
+        await writeFile(join(packed, scenePage), await preparedBuildHTML(data, built));
         const capture = await renderer({
           directory: packed,
           theme: 'light',

@@ -2,11 +2,12 @@ import { copyFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { readJSON } from '../tools/storage.mjs';
 import { projectFiles } from '../tools/project-files.mjs';
+import { readBuildMetadata } from './build-payload.mjs';
 
 /** A prepared take belongs to the accepted build, never to editable author sources. */
 export async function reuseAcceptedRecording(data, input, target) {
   if (!input.acceptedBuildRevision) return;
-  const build = await readJSON(join(data, 'builds', input.acceptedBuildRevision + '.json'));
+  const build = await readBuildMetadata(data, input.acceptedBuildRevision);
   if (
     build?.projectId !== input.projectId ||
     build.revision !== input.acceptedBuildRevision ||

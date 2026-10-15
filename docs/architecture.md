@@ -127,6 +127,14 @@ receipt; первый undo относится к правке после соз�
 в Chromium worker, не в MCP/ProjectStore. Горячая проверка и замена требуют
 совпадения runtime и module revision; другой код получает обычный candidate.
 Самостоятельный JS/HTML entry использует стандартную сборку без документного manifest.
+`plugin/build-payload.mjs` хранит тяжёлые части подготовленного HTML один раз по
+хешу содержимого. Build содержит ссылки на эти части и собственный документ;
+семантическая правка переиспользует presentation по runtime/module revision.
+HTML восстанавливается и проверяется при attach, reload или выпуске. Cache
+защищает payload и presentation base через существующие build leases. Старую
+сохранённую карточку переводит в этот формат её открытие; GC ничего не мигрирует.
+`tools/story-html.mjs` находит места вставки по HTML-парсеру: строки внутри JS/CSS
+не участвуют в поиске head/body.
 `story_produce` и review используют
 выбранный снимок через общий workflow. Переносимый исходный архив замыкает
 зависимости и убирает машинный pin только в копии для выпуска.
@@ -177,6 +185,9 @@ JobRunner сохраняют свои состояния. `stageEdit` разре
 Journal/recover публикует source, pin, историю, receipt и immutable assets.
 Cache читает registry и leases журнала одной операцией той же очереди
 ProjectStore; публикация registry не может пересечь этот снимок.
+`runtime/project-refresh.mjs` сверяет файловое событие после авторской доставки
+в её существующей очереди. Текущая подготовленная ревизия и уже запущенный job
+исключают повторную сборку, включая промежуток до подтверждения показа.
 MCP `authoring-context.mjs` связывает ссылки в подписанный контекст; состояние
 остаётся у существующих владельцев. ProjectStore проверяет source,
 SessionDirectory — build/state/generation. Исторический receipt разрешается
@@ -256,7 +267,6 @@ Story.prepare и отменяется его signal. Принятый рисун
 `ready` и `SceneView.whenRendered` завершают GPU-кадр через существующий viewport;
 SceneShell.ready ожидает модель и её активный renderer. Перенос документа, контроллера
 и аудио ждёт ready; failed/cancelled candidate восстанавливает принятую композицию.
-
 
 Авторская подсветка идёт через `SceneHandle.emphasize` и общий contour в
 `scene-objects`/`controls/svg-contour`; выбор зрителя сохраняется отдельно. Оба пути

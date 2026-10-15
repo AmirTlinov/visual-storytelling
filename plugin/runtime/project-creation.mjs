@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { readJSON } from '../../tools/storage.mjs';
 import { creationCandidate } from '../authored-candidate.mjs';
 import { prepareLiveProject } from '../live-project.mjs';
+import { readBuildMetadata } from '../build-payload.mjs';
 import { prepareIllustratedDocument } from '../../dist/story/document.js';
 import { failure, errorData } from '../errors.mjs';
 
@@ -33,8 +34,7 @@ export function projectCreation({
         if (existing) {
           const receipt = await projects.editDelivery(project.id, requestId);
           prepared =
-            receipt?.buildRevision &&
-            (await readJSON(join(data, 'builds', receipt.buildRevision + '.json')));
+            receipt?.buildRevision && (await readBuildMetadata(data, receipt.buildRevision));
           if (
             !prepared ||
             (await projects.inspect(project.id)).sourceRevision !== prepared.sourceRevision
@@ -52,11 +52,15 @@ export function projectCreation({
             example: input.example,
           });
           try {
-            prepared = await prepareLiveProject(data, {
-              ...project,
-              path: candidate.snapshot,
-              sourceRevision: candidate.sourceRevision,
-            });
+            prepared = await prepareLiveProject(
+              data,
+              {
+                ...project,
+                path: candidate.snapshot,
+                sourceRevision: candidate.sourceRevision,
+              },
+              resolve(directory, '../..'),
+            );
             const proposal = await projects.stageCreation({
               projectId: project.id,
               sourceRevision: project.sourceRevision,
@@ -253,7 +257,7 @@ export function projectCreation({
     observeCreationDelivery,
     async acceptCreationJob(job, result) {
       return projects.serial('delivery:' + job.projectId, async () => {
-        const prepared = await readJSON(join(data, 'builds', result.buildRevision + '.json'));
+        const prepared = await readBuildMetadata(data, result.buildRevision);
         const proposal = await projects.stageCreation({
           projectId: job.projectId,
           sourceRevision: job.input.baseProject.sourceRevision,

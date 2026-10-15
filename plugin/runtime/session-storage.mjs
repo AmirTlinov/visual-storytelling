@@ -1,16 +1,19 @@
 import { join } from 'node:path';
 import { readJSON, writeJSON } from '../../tools/storage.mjs';
 import { buildReference } from '../session-directory.mjs';
+import { preparedBuildHTML, readPreparedBuild, readBuildMetadata } from '../build-payload.mjs';
 
 /** Persist checkpoints around the single in-memory SessionDirectory. */
-export function sessionStorage(data, sessions, isClosing) {
+export function sessionStorage(data, sessions, isClosing, preserveInputs) {
   const saves = new Map(),
     loads = new Map();
-  async function viewBuild(revision) {
-    const build = await readJSON(join(data, 'builds', revision + '.json'));
-    if (!build || build.revision !== revision || typeof build.html !== 'string')
-      throw new Error('The saved build is unavailable. Rebuild the project.');
-    return build;
+  function viewBuild(revision) {
+    return preserveInputs(async () => {
+      const build = await readPreparedBuild(data, revision);
+      if (!build || build.revision !== revision || !Array.isArray(build.presentation?.parts))
+        throw new Error('The saved build is unavailable. Rebuild the project.');
+      return { ...build, html: await preparedBuildHTML(data, build) };
+    });
   }
 
   function load(id) {
@@ -39,14 +42,18 @@ export function sessionStorage(data, sessions, isClosing) {
         )
       )
         throw new Error('The saved session is invalid.');
-      const source = await readJSON(join(data, 'builds', saved.buildRevision + '.json'));
+      const source = await readBuildMetadata(data, saved.buildRevision);
       if (!source || source.revision !== saved.buildRevision)
         throw new Error('The saved build is unavailable. Rebuild the project.');
+      const next = saved.nextBuildRevision
+        ? await readBuildMetadata(data, saved.nextBuildRevision)
+        : undefined;
+      if (saved.nextBuildRevision && !next)
+        throw new Error('The saved candidate is unavailable. Rebuild the project.');
       if (isClosing()) throw new Error('Runtime shutting down.');
       const session = sessions.open(source);
       session.build.authoredInputs = saved.authoredInputs;
-      if (saved.nextBuildRevision) {
-        const next = await viewBuild(saved.nextBuildRevision);
+      if (next) {
         session.nextBuild = { ...buildReference(next), authoredInputs: saved.nextAuthoredInputs };
       }
       sessions.sessions.delete(session.id);

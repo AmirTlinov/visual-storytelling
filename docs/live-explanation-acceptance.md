@@ -825,14 +825,14 @@ Build/check PASS. Реальная математика, документ и lif
 устаревший выпуск требует явной подготовки. README и короткий навык переведены,
 превью пересобраны. Тест прежнего UI обновлён для открытия общей панели «Условия».
 
-| Удалённый путь | Владелец | Потребители | Доказательство |
-| --- | --- | --- | --- |
-| GPT scene.js и второй HTML entry | StoryDocument / manifest / subject model | каталог, CLI, plugin, archive | source edit, rename, undo, portable build |
-| Частные framing/notes и фасады SceneView | morph/scene-framing, notes-3d, scene/view-access | GPT, MathMorph presentation/story | formula objects, actual arrangement, void restore |
-| Дублированная компоновка навигации stage frame | scene/chrome | все SceneShell frame scopes | chrome reflow/menu/draft checks |
-| Потеря черновика и reset при restore | controls/fields, Story resolveInput intent | GPT prompt, generic text fields, checkpoint | resize → blur → один commit, complete restore |
-| Публикация GPU-кандидата до готовности | Story.prepare / Drawing.ready / Viewport3D | custom subject, composition, shell | cold no-RAF, cancel, failed rollback |
-| Ручные шаблоны со вторыми clock/store/handle | visual-explainer manifest contract | навык, справки, примеры | validator, catalog/source build |
+| Удалённый путь                                 | Владелец                                         | Потребители                                 | Доказательство                                    |
+| ---------------------------------------------- | ------------------------------------------------ | ------------------------------------------- | ------------------------------------------------- |
+| GPT scene.js и второй HTML entry               | StoryDocument / manifest / subject model         | каталог, CLI, plugin, archive               | source edit, rename, undo, portable build         |
+| Частные framing/notes и фасады SceneView       | morph/scene-framing, notes-3d, scene/view-access | GPT, MathMorph presentation/story           | formula objects, actual arrangement, void restore |
+| Дублированная компоновка навигации stage frame | scene/chrome                                     | все SceneShell frame scopes                 | chrome reflow/menu/draft checks                   |
+| Потеря черновика и reset при restore           | controls/fields, Story resolveInput intent       | GPT prompt, generic text fields, checkpoint | resize → blur → один commit, complete restore     |
+| Публикация GPU-кандидата до готовности         | Story.prepare / Drawing.ready / Viewport3D       | custom subject, composition, shell          | cold no-RAF, cancel, failed rollback              |
+| Ручные шаблоны со вторыми clock/store/handle   | visual-explainer manifest contract               | навык, справки, примеры                     | validator, catalog/source build                   |
 
 Доказательства: artifacts/slice12/installed-0.29.2, portable-0.29.2 и журналы среза.
 Копия принятых файлов — artifacts/slice12-review в основном каталоге проекта.
@@ -871,15 +871,69 @@ static detach; actual viewport 390 dark/reduced и 1200 light. Clipping, unreada
 overflow, pageerrors — 0. Голосовая модель/API не запускались. OS-native pixels не
 проверены; браузерная приёмка разрешена пользователем.
 
-| Удалённый путь | Владелец | Потребители | Доказательство |
-| --- | --- | --- | --- |
-| Частный DivisionFocus | scene-objects / svg-contour | single subject, factory chapters | три установленных семейства, reverse, resize |
-| Dispose перед публикацией binding | scene/controller-view / SceneShell | attach/detach, narrated replacement | failed precommit, throwing retirement, shared media |
+| Удалённый путь                                  | Владелец                            | Потребители                                   | Доказательство                                                  |
+| ----------------------------------------------- | ----------------------------------- | --------------------------------------------- | --------------------------------------------------------------- |
+| Частный DivisionFocus                           | scene-objects / svg-contour         | single subject, factory chapters              | три установленных семейства, reverse, resize                    |
+| Dispose перед публикацией binding               | scene/controller-view / SceneShell  | attach/detach, narrated replacement           | failed precommit, throwing retirement, shared media             |
 | Snapshot до paint и раскрытый borrowed renderer | frozen-presentation / Drawing.ready | chapter preview, document replace, GPU raster | delayed ready, cancellation, failed rollback, real WebGL pixels |
-| Несогласованные pending-метки | presentation lifecycle | composition, objects, GPT | cold concealed math, cancellation, accepted SVG |
-| Делегирование legacy API до проверки | runtime-package | semantic authoring | trusted old pin, missing entry/export |
+| Несогласованные pending-метки                   | presentation lifecycle              | composition, objects, GPT                     | cold concealed math, cancellation, accepted SVG                 |
+| Делегирование legacy API до проверки            | runtime-package                     | semantic authoring                            | trusted old pin, missing entry/export                           |
 
 Доказательства: `artifacts/slice13/installed-0.30.0/acceptance.json`,
 `final-regressions.log`, `final-accepted-gpt.log`, `final-chrome.log`,
 `independent-review.md`. Это приёмка пакета корректности. GUI-600 и срезы 14–15,
 скоростные gates и согласованный финальный выпуск milestone остаются открытыми.
+
+## Срез 13: пакет хранения и доставки
+
+Установлен plugin 0.31.0 / core 0.43.0, macOS arm64.
+Release `5a65cc3e798e6b06edc76ea6e6a03cf7b8394aa32efcac5011f70b2021f5a018`,
+core build `9e4345a5e2964e5bf03dab713896574024a7d38e3132de3e850916a7259971cd`,
+архив SHA `33471a28a56134869877d9b53d2186a7abf85c7a30f278aa02918a72e9fdcfee`.
+
+Тяжёлые части HTML имеют content hash и разделяются сохранёнными builds. Документ
+подставляется при attach/reload/выпуске; семантическая правка не собирает полный
+HTML. Авторский module/runtime задаёт общий presentation base. GC защищает граф
+через прежние leases. Выбранная старая карточка переносится в новый формат под
+input/maintenance lock JobRunner; inspection, publication и retries читают metadata.
+Наблюдатель сверяет изменение после доставки и не создаёт повторный full build.
+
+Установленный сервер, настоящий MCP SDK и Chromium: 200 последовательных правок
+в division/fractions/dependency-route, тот же SceneHandle, применённые значения,
+пустая очередь jobs. Прогон повторяет 8 уникальных состояний; 200 разных документов
+и GC отдельно проверяет source regression. Полный MCP edit→observed frame:
+p50 652,6 мс, p95 1125,3 мс, max 2103,5 мс. LLM в этот замер не входит.
+Это ещё не gate локальной операции 250 мс.
+
+Payload owner за 200 правок прочитал 115800 байт descriptor, хешировал и записал
+0 байт тяжёлых ресурсов. Общий payload на диске 7415145 байт, build metadata 16140.
+Эти счётчики не включают чтение/хеширование/копирование authored snapshots.
+Cold create→first frame после запуска сервера: 4,375/2,823/2,656 с; startup 0,339 с.
+Actual viewport 390 dark/reduced и 1200 light: 6 кадров, clipped/unreadable/overflow
+и pageerrors — 0. Это браузерная приёмка установленного сервера, OS-native не заявляется.
+
+Build/check PASS; storage/lease regressions 14/14, kernel/watch 2/2, parser и
+самостоятельные SVG/HTML entries проверены. Ранний delivery regression корректно
+отклонил изменение документации во время выпуска; неизменяемый повтор PASS.
+Независимое ревью нашло и помогло устранить GC/migration race, включая повторную
+доставку. Финальное source review CLEAR.
+
+Установленный 0.31.0 дополнительно прошёл три рассказа: seek/reverse, focus,
+static detach, semantic edit/undo, same handle, 390/1200 и отсутствие audio.
+Авторский TS/SVG-модуль прошёл create/edit/undo/remount/HTML; неверный module и
+scalar input сохранили принятый исходник и рисунок. Логи —
+`installed-final-0.31.0.log`, `installed-custom-0.31.0.log`, сохранённые проекты и
+кадры — `artifacts/slice13/installed-0.31.0/acceptance.json`.
+
+| Удалённый путь                              | Владелец                                       | Потребители                               | Доказательство                                               |
+| ------------------------------------------- | ---------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------ |
+| Полный HTML на каждую semantic revision     | build-payload / live-project                   | MCP, snapshots, delivery, saved cards     | 200 SDK edits, shared payload, exact hydration               |
+| Eager migration при inspection/GC           | metadata reader + protected selected hydration | load, publication, retries, voice, GC     | maintenance barrier, saved card, limit0 collection           |
+| Разрозненный поиск head/body строкой        | tools/story-html                               | authored compiler, UI adapter, standalone | literal closing tags in JS/CSS, actual custom module         |
+| File event до завершения авторской доставки | runtime/project-refresh / delivery queue       | editor watcher, semantic edits            | delayed event, matching prepared revision, no redundant jobs |
+
+Доказательства: `artifacts/slice13/storage-authoring/run-285a1857-695d-4b31-99d8-bab125eab005/acceptance.json`,
+`storage-lock-final.log`, `storage-kernel-final.log`, `quiet-workflow-diagnostic.log`,
+`storage-independent-review.md`. GUI-600 остаётся In Progress: dependency/check cache,
+preview/final и pending speech без скрытого синтеза, verified input sets/dirty paths,
+измеренный 3D budget и оставшаяся приёмка ещё не завершены. Срезы 14–15 открыты.

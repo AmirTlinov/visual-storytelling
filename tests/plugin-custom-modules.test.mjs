@@ -26,6 +26,7 @@ test(
     const host = await pluginHost({
       dataDirectory: join(temporary, 'data'),
       initialTarget: {},
+      serverCommand: join(release, 'runtime/node'),
       serverEntry: join(release, 'plugin/dist/server.mjs'),
     });
     const browser = await chromium.launch(chromiumLaunchOptions());
@@ -64,13 +65,26 @@ test(
       project = job.result.project;
       return job;
     };
-    await edit(await files(join(process.cwd(), 'tools/document-modules/route')));
+    const modules = await files(join(process.cwd(), 'tools/document-modules/route'));
+    const manifest = JSON.parse(
+      modules.find((change) => change.path === 'story-project.json').content,
+    );
+    modules.find((change) => change.path === manifest.modules[0].subject).content +=
+      '\nwindow.literalHead = "</head>";\n';
+    await edit(modules);
     const snapshot = () =>
       app
         .frameLocator('#scene')
         .locator('main')
         .evaluate((root) => root.scene.snapshot());
     await assertEventually(async () => (await snapshot()).blocked === 'warehouse');
+    assert.equal(
+      await app
+        .frameLocator('#scene')
+        .locator('main')
+        .evaluate(() => window.literalHead),
+      '</head>',
+    );
     const edited = (
       await call('story_edit', {
         context: project.context,

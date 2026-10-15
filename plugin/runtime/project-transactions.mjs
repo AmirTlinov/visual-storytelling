@@ -1,8 +1,9 @@
 import { rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { readJSON } from '../../tools/storage.mjs';
 import { prepareLiveProject } from '../live-project.mjs';
+import { readBuildMetadata } from '../build-payload.mjs';
 import { authoredCandidate } from '../authored-candidate.mjs';
 import { buildReference } from '../session-directory.mjs';
 import { failure, errorData } from '../errors.mjs';
@@ -22,6 +23,7 @@ export function samePreparedOwner(view, prepared) {
 /** One proposal/commit/delivery lifecycle; ProjectStore owns its source and receipt. */
 export function projectTransactions({
   data,
+  directory,
   projects,
   jobs,
   sessions,
@@ -51,7 +53,7 @@ export function projectTransactions({
     return true;
   }
   async function acceptCandidate(job, result) {
-    const prepared = await readJSON(join(data, 'builds', result.buildRevision + '.json'));
+    const prepared = await readBuildMetadata(data, result.buildRevision);
     if (
       prepared?.projectId !== job.projectId ||
       prepared.sourceRevision !== job.sourceRevision ||
@@ -105,7 +107,7 @@ export function projectTransactions({
       await projects.editDelivery(projectId, requestId, superseded);
       return superseded;
     }
-    const prepared = await readJSON(join(data, 'builds', receipt.buildRevision + '.json'));
+    const prepared = await readBuildMetadata(data, receipt.buildRevision);
     if (
       prepared?.projectId !== projectId ||
       prepared.sourceRevision !== receipt.project.sourceRevision
@@ -239,11 +241,15 @@ export function projectTransactions({
             const project = await projects.inspect(args.projectId);
             const candidate = await authoredCandidate(data, project, proposed);
             try {
-              preparedCandidate = await prepareLiveProject(data, {
-                ...project,
-                path: candidate.snapshot,
-                sourceRevision: candidate.input.sourceRevision,
-              });
+              preparedCandidate = await prepareLiveProject(
+                data,
+                {
+                  ...project,
+                  path: candidate.snapshot,
+                  sourceRevision: candidate.input.sourceRevision,
+                },
+                resolve(directory, '../..'),
+              );
             } finally {
               await rm(candidate.snapshot, { recursive: true, force: true });
             }
@@ -290,8 +296,8 @@ export function projectTransactions({
               prepared =
                 preparedCandidate ??
                 (priorDelivery?.buildRevision &&
-                  (await readJSON(join(data, 'builds', priorDelivery.buildRevision + '.json')))) ??
-                (await prepareLiveProject(data, project));
+                  (await readBuildMetadata(data, priorDelivery.buildRevision))) ??
+                (await prepareLiveProject(data, project, resolve(directory, '../..')));
               if (!preparedCandidate && !(await publishBuild(project, prepared, false)))
                 throw failure(
                   'source_conflict',

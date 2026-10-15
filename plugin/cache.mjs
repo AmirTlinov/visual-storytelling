@@ -1,6 +1,7 @@
 import { readdir, lstat, readlink, rm } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
 import { readJSON } from '../tools/storage.mjs';
+import { readBuildMetadata } from './build-payload.mjs';
 
 const entries = (path) =>
   readdir(path).catch((error) => {
@@ -23,7 +24,9 @@ export async function collectCache(
 ) {
   const keepBuilds = new Set(buildLeases),
     keepSnapshots = new Set(),
-    keepDependencies = new Set();
+    keepDependencies = new Set(),
+    keepPayloads = new Set(),
+    keepPresentations = new Set();
   for (const project of projects) if (project.buildRevision) keepBuilds.add(project.buildRevision);
   for (const session of sessions) {
     keepBuilds.add(session.build.revision);
@@ -45,8 +48,12 @@ export async function collectCache(
   }
   for (const revision of keepBuilds) {
     if (!/^[a-zA-Z0-9._-]+$/.test(revision)) continue;
-    const build = await readJSON(join(data, 'builds', revision + '.json'));
+    const build = await readBuildMetadata(data, revision);
     if (build?.snapshot) keepSnapshots.add(resolve(build.snapshot));
+    for (const part of build?.presentation?.parts ?? [])
+      if (/^[a-f0-9]{64}$/.test(part.asset)) keepPayloads.add(part.asset);
+    if (/^[a-f0-9]{64}$/.test(build?.presentation?.template))
+      keepPresentations.add(build.presentation.template);
   }
   for (const snapshot of keepSnapshots) {
     const link = await readlink(join(snapshot, 'node_modules')).catch((error) => {
@@ -58,7 +65,14 @@ export async function collectCache(
   const candidates = [];
   let bytes = 0,
     protectedBytes = 0;
-  for (const category of ['builds', 'snapshots', 'dependencies', 'speech'])
+  for (const category of [
+    'builds',
+    'snapshots',
+    'dependencies',
+    'speech',
+    'payloads',
+    'presentation-bases',
+  ])
     for (const name of await entries(join(data, category))) {
       const path = join(data, category, name),
         stat = await lstat(path),
@@ -70,7 +84,11 @@ export async function collectCache(
             ? keepSnapshots.has(path)
             : category === 'dependencies'
               ? keepDependencies.has(path)
-              : false;
+              : category === 'payloads'
+                ? keepPayloads.has(name.replace(/\.html$/, ''))
+                : category === 'presentation-bases'
+                  ? keepPresentations.has(name.replace(/\.json$/, ''))
+                  : false;
       bytes += bytesHere;
       if (protectedEntry) protectedBytes += bytesHere;
       else candidates.push({ path, bytes: bytesHere, used: stat.mtimeMs });

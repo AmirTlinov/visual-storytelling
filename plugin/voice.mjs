@@ -12,6 +12,7 @@ import {
 import { requireVoiceSupport } from '../tools/environment/voice.mjs';
 import { storyDocumentAPI } from '../tools/runtime-package.mjs';
 import { readStoryProject } from '../tools/story-project.mjs';
+import { readBuildMetadata } from './build-payload.mjs';
 
 /** Adapt provider selection to project revisions; edit remains the sole mutation path. */
 export function projectVoice({ data, preferences, projects, edit, prepareDocument }) {
@@ -48,9 +49,7 @@ export function projectVoice({ data, preferences, projects, edit, prepareDocumen
           ? await prepareDocument({ project, sourceRevision, document: source })
           : (
               await storyDocumentAPI(project.path, {
-                installedFrom: (
-                  await readJSON(join(data, 'builds', project.buildRevision + '.json'))
-                )?.snapshot,
+                installedFrom: (await readBuildMetadata(data, project.buildRevision))?.snapshot,
               })
             ).validateStoryDocument(source);
         changes.push({

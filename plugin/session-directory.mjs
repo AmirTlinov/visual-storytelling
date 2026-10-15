@@ -22,7 +22,7 @@ const commandExpired =
   'The view did not confirm this command before its deadline. Inspect before retrying.';
 
 /** Render payloads live in immutable build files, not in session or request history. */
-export function buildReference({ html: _html, ...build }) {
+export function buildReference({ html: _html, presentation: _presentation, ...build }) {
   return build;
 }
 

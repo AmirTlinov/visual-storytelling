@@ -20,6 +20,7 @@ import { contentDigest } from '../tools/build-info.mjs';
 import { readStoryProject, storyProjectOwner } from '../tools/story-project.mjs';
 import { renderer } from '../tools/render.mjs';
 import { reuseAcceptedRecording } from './accepted-recording.mjs';
+import { writePreparedBuild, readPreparedBuild, payloadWork } from './build-payload.mjs';
 const execute = promisify(execFile);
 
 async function dependencies(source, data, { signal, progress }) {
@@ -181,7 +182,7 @@ async function prepare(input, task) {
   let prepared;
   const buildRevision = input.buildRevision ?? (reusable && receipt.buildRevision);
   if (buildRevision) {
-    prepared = await readJSON(join(data, 'builds', buildRevision + '.json'));
+    prepared = await readPreparedBuild(data, buildRevision);
     // A live receipt identifies the same immutable sources. Produce compiles their
     // ordinary entry for the first time; there is no per-operation dist archive.
     if (prepared?.live && prepared.sourceRevision === source.revision && reusable) {
@@ -301,14 +302,16 @@ export async function buildPreparedSnapshot(input, task, result) {
         ...(recipe.manifest?.modules.length && { modules: recipe.manifest.modules }),
       };
   }
-  await writeJSON(join(input.data, 'builds', revision + '.json'), prepared);
+  const work = payloadWork();
+  prepared.work = { payload: work };
+  const stored = await writePreparedBuild(input.data, prepared, work);
   await writeJSON(join(snapshot, '.vstory-input.json'), {
     ...source,
     preparedRevision,
     buildRevision: revision,
     preparation: result.preparation,
   });
-  return { ...result, prepared };
+  return { ...result, prepared: stored };
 }
 
 export async function prepareBuild(input, task) {
