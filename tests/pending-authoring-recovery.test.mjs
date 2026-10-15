@@ -197,6 +197,17 @@ test('an older mounted subject does not prevalidate another subject sharing its 
     samePreparedOwner(division, build('renamed', 'division', { count: 22, divisor: 5 })),
     false,
   );
+  const silent = { ...division.build, narration: { enabled: false } };
+  assert.equal(samePreparedOwner({ build: silent }, division.build), true);
+  assert.equal(samePreparedOwner(division, silent), true);
+  const spoken = { ...division.build, narration: { enabled: true, ready: ['a'] } };
+  assert.equal(samePreparedOwner({ build: spoken }, silent), false);
+  assert.equal(samePreparedOwner(division, spoken), false);
+  assert.equal(samePreparedOwner({ build: spoken }, structuredClone(spoken)), true);
+  assert.equal(
+    samePreparedOwner({ build: spoken }, { ...spoken, narration: { enabled: true, ready: ['b'] } }),
+    false,
+  );
 });
 
 test('selected saved-card migration waits for cache maintenance while metadata loading stays read-only', async (t) => {

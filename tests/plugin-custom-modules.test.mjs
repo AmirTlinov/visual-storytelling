@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile, readdir } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, readdir, mkdir, cp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -22,6 +22,8 @@ test(
   { timeout: 120000 },
   async (t) => {
     const temporary = await mkdtemp(join(tmpdir(), 'plugin-custom-modules-'));
+    const observations = [];
+    let complete = false;
     const release = process.env.VISUAL_STORY_RELEASE ?? join(process.cwd(), '.plugin-release');
     const host = await pluginHost({
       dataDirectory: join(temporary, 'data'),
@@ -31,14 +33,26 @@ test(
     });
     const browser = await chromium.launch(chromiumLaunchOptions());
     t.after(async () => {
+      if (!complete) {
+        const evidence = join(process.cwd(), 'artifacts/plugin-custom-modules', randomUUID());
+        await mkdir(evidence, { recursive: true });
+        await writeFile(join(evidence, 'observations.json'), JSON.stringify(observations, null, 2));
+        await cp(join(temporary, 'data'), join(evidence, 'data'), { recursive: true });
+        await page
+          .screenshot({ path: join(evidence, 'failure.png'), fullPage: true })
+          .catch(() => {});
+        t.diagnostic(`Failure evidence: ${evidence}`);
+      }
       await browser.close();
       await host.close();
       await rm(temporary, { recursive: true, force: true });
     });
     const page = await browser.newPage({ viewport: { width: 960, height: 800 } });
+    page.on('pageerror', (error) => observations.push({ pageError: error.message }));
     page.setDefaultTimeout(15000);
     const call = async (name, args) => {
       const r = await host.client.callTool({ name, arguments: args });
+      observations.push({ name, args, result: r });
       assert.equal(r.isError, undefined, JSON.stringify(r));
       return r;
     };
@@ -152,6 +166,7 @@ test(
         html: result.result.files,
       }),
     );
+    complete = true;
   },
 );
 async function assertEventually(check) {

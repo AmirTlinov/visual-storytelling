@@ -7,10 +7,11 @@ import { verifiedInputWork } from '../../tools/input-verification.mjs';
 
 /** A hot edit retains the mounted model subjects; other identities need a candidate frame. */
 export function samePreparedOwner(view, prepared) {
+  const narration = (build) => (build.narration?.enabled ? build.narration : undefined);
   return (
     view.build.live?.runtimeBuild === prepared.live?.runtimeBuild &&
     view.build.live?.moduleRevision === prepared.live?.moduleRevision &&
-    isDeepStrictEqual(view.build.narration, prepared.narration) &&
+    isDeepStrictEqual(narration(view.build), narration(prepared)) &&
     isDeepStrictEqual(
       view.build.live?.document.models.map(({ id, module }) => ({ id, module })),
       prepared.live?.document.models.map(({ id, module }) => ({ id, module })),
