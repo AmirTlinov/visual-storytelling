@@ -310,9 +310,10 @@
 }
 .ve-scene .ve-scene-conditions {
   --ve-control-unit: 1px;
-  position: fixed;
-  inset: auto;
-  margin: 0;
+  position: relative;
+  width: min(520px, calc(100% - 16px));
+  max-height: min(480px, calc(100dvh - 16px));
+  margin: 8px auto;
   padding: 12px 16px 16px;
   border: 1px solid var(--ve-pencil);
   border-radius: 6px;

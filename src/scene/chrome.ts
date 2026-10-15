@@ -47,8 +47,7 @@ export function sceneChrome({
     );
   };
   const conditions = panel.element,
-    conditionsButton = panel.button,
-    placeConditions = panel.place;
+    conditionsButton = panel.button;
   function updateChrome(preserveFocus = false) {
     if (signal.aborted) return;
     const { mode, presentation: shownPresentation } = state();
@@ -84,8 +83,7 @@ export function sceneChrome({
       restoreFocus = keepEdit && document.hasFocus();
     const draft = keepEdit ? holdControlFocus([toolbar, fields]) : undefined;
     try {
-      if ((!hasConditions || leavingConditions) && conditions.matches(':popover-open'))
-        conditions.hidePopover();
+      if ((!hasConditions || leavingConditions) && panel.open) panel.hide();
       if (header.parentElement !== headerParent) {
         if (headerParent === root) root.insertBefore(header, composition.element);
         else sheet.prepend(header);
@@ -102,14 +100,12 @@ export function sceneChrome({
       // Reparenting a native field emits blur/focus. Its draft and history gesture
       // still belong to the same edit; only an actual departure commits them.
       if (restoreFocus) {
-        if (conditions.contains(focused) && !conditions.matches(':popover-open'))
-          conditions.showPopover();
+        if (conditions.contains(focused) && !panel.open) panel.show();
         draft?.restore();
       }
     } finally {
       draft?.release();
     }
-    placeConditions();
   }
   const resized = () => updateChrome(true);
   root.addEventListener('scene-frame-resize', resized, { signal });
@@ -124,7 +120,7 @@ export function sceneChrome({
   const dispose = () => {
     root.removeEventListener('scene-frame-resize', resized);
     chromeObserver.disconnect();
-    if (conditions.matches(':popover-open')) conditions.hidePopover();
+    panel.hide();
   };
   return { update: updateChrome, dispose };
 }

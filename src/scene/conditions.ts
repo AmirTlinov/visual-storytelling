@@ -10,13 +10,14 @@ const node = <K extends keyof HTMLElementTagNameMap>(
   if (text !== undefined) element.textContent = text;
   return element;
 };
-/** One popover owns condition geometry, keyboard dismissal and optional source disclosure. */
-export function conditionsPanel(title: string, aperture: () => number, signal: AbortSignal) {
+/** Conditions expand below the drawing; one owner retains fields, disclosure and dismissal. */
+export function conditionsPanel(title: string, signal: AbortSignal) {
   const id = `ve-conditions-${++serial}`;
   const element = node('div', {
     id,
     class: 've-scene-conditions',
-    popover: 'auto',
+    hidden: '',
+    tabindex: '-1',
     role: 'dialog',
     'aria-label': 'Условия объяснения',
   });
@@ -25,7 +26,6 @@ export function conditionsPanel(title: string, aperture: () => number, signal: A
     {
       type: 'button',
       class: 've-conditions-trigger',
-      popovertarget: id,
       'aria-expanded': 'false',
       'aria-controls': id,
       hidden: '',
@@ -38,8 +38,6 @@ export function conditionsPanel(title: string, aperture: () => number, signal: A
     'button',
     {
       type: 'button',
-      popovertarget: id,
-      popovertargetaction: 'hide',
       'aria-label': 'Закрыть условия',
     },
     '×',
@@ -51,31 +49,28 @@ export function conditionsPanel(title: string, aperture: () => number, signal: A
   resources.append(summary, content);
   element.append(heading, resources);
   let sources: readonly StoryResource[] = [];
-  const place = () => {
-    if (!element.matches(':popover-open')) return;
-    const viewport = window.visualViewport,
-      left = viewport?.offsetLeft || 0,
-      top = viewport?.offsetTop || 0,
-      width = viewport?.width || innerWidth,
-      height = viewport?.height || innerHeight,
-      bounds = button.getBoundingClientRect();
-    const panelWidth = Math.max(0, Math.min(520, width - 16, aperture()));
-    element.style.width = `${panelWidth}px`;
-    element.style.maxHeight = `${Math.max(0, height - 16)}px`;
-    element.style.left = `${Math.max(left + 8, Math.min(bounds.right - panelWidth, left + width - panelWidth - 8))}px`;
-    element.style.top = `${Math.max(top + 8, Math.min(bounds.bottom + 6, top + height - element.getBoundingClientRect().height - 8))}px`;
+  const show = () => {
+    element.hidden = false;
+    button.setAttribute('aria-expanded', 'true');
+  };
+  const hide = () => {
+    element.hidden = true;
+    button.setAttribute('aria-expanded', 'false');
   };
   const dismiss = (event: Event) => {
     event.preventDefault();
     event.stopPropagation();
-    if (element.matches(':popover-open')) element.hidePopover();
+    hide();
     button.focus({ preventScroll: true });
   };
-  element.addEventListener(
-    'toggle',
+  button.addEventListener(
+    'click',
     () => {
-      button.setAttribute('aria-expanded', String(element.matches(':popover-open')));
-      place();
+      if (!element.hidden) hide();
+      else {
+        show();
+        element.focus({ preventScroll: true });
+      }
     },
     { signal },
   );
@@ -87,12 +82,15 @@ export function conditionsPanel(title: string, aperture: () => number, signal: A
     },
     { signal },
   );
-  resources.addEventListener('toggle', place, { signal });
   return {
     element,
     button,
     resources,
-    place,
+    show,
+    hide,
+    get open() {
+      return !element.hidden;
+    },
     get hasResources() {
       return sources.length > 0;
     },
@@ -123,7 +121,6 @@ export function conditionsPanel(title: string, aperture: () => number, signal: A
       content.replaceChildren(fragment);
       sources = next;
       resources.hidden = !sources.length;
-      place();
     },
   };
 }

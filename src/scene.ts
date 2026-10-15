@@ -219,11 +219,7 @@ function mount(
   const sheet = completeFrame ? node('div') : root;
   const drawing = completeFrame ? node('div', { class: 've-scene-paper' }) : sheet;
   const composition = sceneFrame(completeFrame ? sheet : stage, frame);
-  const panel = conditionsPanel(
-      title,
-      () => composition.element.getBoundingClientRect().width,
-      abort.signal,
-    ),
+  const panel = conditionsPanel(title, abort.signal),
     conditions = panel.element,
     conditionsButton = panel.button,
     header = node('div', { class: 've-scene-header' });

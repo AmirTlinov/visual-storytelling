@@ -935,7 +935,7 @@ test('PNG excludes external Conditions while retaining its numeric draft, focus 
       'external controls do not cover the captured composition',
     );
     assert.deepEqual(await draft(), { value: '', badInput: true, focused: true });
-    assert.equal(await panel.evaluate((node) => node.matches(':popover-open')), true);
+    assert.equal(await panel.isVisible(), true);
     assert.deepEqual(
       await panel.evaluate((node) => [
         node.style.opacity,
@@ -964,7 +964,7 @@ test('PNG excludes external Conditions while retaining its numeric draft, focus 
     await select.press('End');
     await select.press('Enter');
     assert.equal((await render.capture.evaluate((scene) => scene.snapshot())).method, 'difference');
-    assert.equal(await panel.evaluate((node) => node.matches(':popover-open')), true);
+    assert.equal(await panel.isVisible(), true);
   } finally {
     await render.close();
   }

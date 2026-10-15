@@ -107,7 +107,7 @@ async function metrics(page: Page) {
       overflow: document.documentElement.scrollWidth > innerWidth,
       panelOverflow: [
         ...document.querySelectorAll(
-          '.ve-scene-conditions:popover-open,.ve-select-list:popover-open',
+          '.ve-scene-conditions:not([hidden]),.ve-select-list:popover-open',
         ),
       ].some((node) => node.scrollWidth > node.clientWidth + 1),
     };

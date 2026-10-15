@@ -171,14 +171,14 @@ export async function renderer({
               : undefined;
         if (!target) return page.screenshot({ fullPage: true });
         // Conditions are root-owned UI outside the composition, as in SVG.
-        // Opacity keeps the native popup, focus and unfinished field edit alive;
+        // Opacity keeps the panel layout, focus and unfinished field edit alive;
         // nested popovers also leave their parent's painted top layer.
         const chrome = completeFrame
           ? await target.evaluateHandle((element) => {
               const panels = [
                 ...(element
                   .closest('.ve-scene')
-                  ?.querySelectorAll(':scope > .ve-scene-conditions:popover-open') ?? []),
+                  ?.querySelectorAll(':scope > .ve-scene-conditions:not([hidden])') ?? []),
               ];
               return panels
                 .flatMap((panel) => [panel, ...panel.querySelectorAll('[popover]:popover-open')])
