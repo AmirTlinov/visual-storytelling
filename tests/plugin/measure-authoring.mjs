@@ -227,6 +227,7 @@ try {
             });
     if (!(await button.isVisible()))
       await item.frame.getByRole('button', { name: 'Условия', exact: true }).click();
+    await button.scrollIntoViewIfNeeded();
     await root.evaluate(
       () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
     );
