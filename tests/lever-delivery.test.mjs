@@ -1,9 +1,89 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { build } from 'esbuild';
+import { chromium } from 'playwright';
+import { chromiumLaunchOptions } from '../tools/chromium.mjs';
+import { serve } from '../tools/site.mjs';
 import { buildScene } from '../tools/build-pages.mjs';
 import { renderer } from '../tools/render.mjs';
+
+test('a shorter lever keeps every control inside its drawing and rejects oversized API input atomically', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'bounded-lever-'));
+  let browser, server;
+  try {
+    await build({
+      stdin: {
+        resolveDir: process.cwd(),
+        contents: `
+import './dist/style.css';
+import { IllustratedStory } from './dist/story/index.js';
+import { leverSubject, leverModel } from './dist/recipes/index.js';
+window.ready = IllustratedStory.mount(document.querySelector('main'), {
+  document: { version:2, models:[{id:'lever',module:'bounded-lever',inputs:{leftForce:4,leftArm:30,rightForce:3,rightArm:20}}], views:[{id:'diagram',kind:'lever',model:'lever'}], chapters:[] },
+  modules: { 'bounded-lever': leverModel },
+  subjects: { 'bounded-lever': leverSubject({maxArm:40}) },
+});`,
+      },
+      bundle: true,
+      format: 'iife',
+      outfile: join(directory, 'index.js'),
+      loader: { '.woff2': 'dataurl' },
+    });
+    await writeFile(
+      join(directory, 'index.html'),
+      '<link rel="stylesheet" href="index.css"><main></main><script src="index.js"></script>',
+    );
+    server = await serve(directory);
+    browser = await chromium.launch(await chromiumLaunchOptions());
+    const page = await browser.newPage({ viewport: { width: 960, height: 900 } });
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(server.url);
+    await page.evaluate(() => window.ready);
+    const snapshot = () => page.locator('main').evaluate((root) => root.scene.snapshot());
+    const control = (commands) =>
+      page.locator('main').evaluate(async (root, commands) => {
+        await root.scene.control(commands);
+        await root.scene.ready();
+      }, commands);
+    const grip = page.getByRole('slider', { name: 'Правый груз: расстояние от оси', exact: true });
+    assert.equal(await grip.getAttribute('aria-valuemax'), '40');
+    await grip.focus();
+    await page.keyboard.press('End');
+    assert.equal((await snapshot()).rightArm, 40);
+    await page.keyboard.press('ArrowRight');
+    assert.equal((await snapshot()).rightArm, 40);
+    assert(await grip.evaluate((node) => node === document.activeElement));
+    await control([{ type: 'undoExperiment' }]);
+    assert.equal((await snapshot()).rightArm, 20);
+    const box = await grip.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(955, box.y + box.height / 2, { steps: 8 });
+    await page.mouse.up();
+    assert.equal((await snapshot()).rightArm, 40);
+    await control([{ type: 'undoExperiment' }]);
+    assert.equal((await snapshot()).rightArm, 20, 'one undo reverses the entire bounded drag');
+    const accepted = await snapshot();
+    await assert.rejects(
+      control([{ type: 'parameters', values: { rightArm: 41 } }]),
+      /parameter|calibration|exceed/,
+    );
+    assert.deepEqual(await snapshot(), accepted);
+    const inspection = await page.locator('main').evaluate((root) => root.scene.inspect());
+    const arms = inspection.parameters.filter((field) => field.key.endsWith('Arm'));
+    assert.equal(arms.length, 2);
+    assert(arms.every((field) => field.max === 40));
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser?.close();
+    await server?.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 async function readable(page) {
   return page.locator('main').evaluate((root) => {

@@ -146,6 +146,17 @@ test(
           );
           assert.deepEqual(await r.capture.evaluate((scene) => scene.snapshot()), accepted);
           if (kind === 'lever') {
+            const parameters = await r.page
+              .locator('main')
+              .evaluate((root) => root.scene.inspect().parameters);
+            assert.equal(parameters.find((field) => field.key === 'rightArm').max, 100);
+            await r.control([{ type: 'parameters', values: { rightArm: 60 } }]);
+            assert.equal(
+              (await r.capture.evaluate((scene) => scene.snapshot())).comparison.before.inputs
+                .rightArm,
+              60,
+            );
+            await r.control([{ type: 'undoExperiment' }]);
             await r.control([{ type: 'parameters', values: { comparisonValue: 10 } }]);
             assert.equal(
               (await r.capture.evaluate((scene) => scene.snapshot())).comparison.after.state

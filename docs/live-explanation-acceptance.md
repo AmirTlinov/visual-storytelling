@@ -4,6 +4,11 @@
 Этот журнал хранит доказательства и открытые условия, а не заменяет приёмку установленного выпуска.
 Целевая платформа milestone — macOS Apple Silicon; Linux и другие ОС отложены пользователем.
 
+Текущий установленный выпуск0.36.0/core0.48.0: API и SDK/browser cycle PASS;
+полный200/200 speed gate FAIL (p95 source533,569мс, viewer359,760мс).
+Новая human visual/learning приёмка рычага ожидается. Срезы14–15, финальная
+приёмка01–03 и milestone открыты. Ниже сохранена хронология; свежие результаты в конце.
+
 ## GUI-561: группы и остаток
 
 Кандидат: плагин 0.18.2, библиотека 0.31.2, ветка `codex/live-explanation`.
@@ -1247,10 +1252,10 @@ SDK API и побайтовое совпадение API с собранным �
 страницы0. Шесть проверок light/dark/reduced не выявили clipping, unreadable
 text или overflow. **Оба скоростных gate FAIL**:
 
-| Отсчёт → фактический кадр | p50,мс | p95,мс | max,мс |
-|---|---:|---:|---:|
-| MCP-правка |156,362|282,996|522,072|
-| Trusted pointerdown зрителя |105,336|200,821|525,123|
+| Отсчёт → фактический кадр   |  p50,мс |  p95,мс |  max,мс |
+| --------------------------- | ------: | ------: | ------: |
+| MCP-правка                  | 156,362 | 282,996 | 522,072 |
+| Trusted pointerdown зрителя | 105,336 | 200,821 | 525,123 |
 
 SDK call p95 227,104мс; постпроверка наблюдения отделена от pixel timing.
 M5Max/18CPU/128GiB, macOS27; loadavg1 в начале33,993, в конце7,75.
@@ -1275,10 +1280,10 @@ release SHA256 `fa34e5842e012ddb36a70076d30c8e10a5c5eb126e2a783415e5bf77d5d06a66
 сохраняет200source и200trusted viewer операций. Все400 изменили предметные
 пиксели правильно; errors:[],6 presentation checks PASS.
 
-| Отсчёт → фактический кадр | p50,мс | p95,мс | max,мс | Gate |
-|---|---:|---:|---:|---|
-| MCP-правка |147,248|241,737|387,726|PASS≤250|
-| Trusted pointerdown зрителя |96,607|214,854|398,971|FAIL≤100|
+| Отсчёт → фактический кадр   |  p50,мс |  p95,мс |  max,мс | Gate     |
+| --------------------------- | ------: | ------: | ------: | -------- |
+| MCP-правка                  | 147,248 | 241,737 | 387,726 | PASS≤250 |
+| Trusted pointerdown зрителя |  96,607 | 214,854 | 398,971 | FAIL≤100 |
 
 SDK p95212,910мс. Проверка наблюдения отделена от pixel clock.
 M5Max/18CPU/128GiB, macOS27; loadavg1:10,36→12,48. Перед каждой source
@@ -1330,3 +1335,50 @@ cycle тоже PASS: `artifacts/slice14/0.36.0-installed-custom-modules.log`.
 changed observations. No-op, selector-only, failed/stale/unmatched patch дают
 FAIL. Тесты измерителя7/7 PASS. Новая серия не пересчитывает старые raw samples;
 начало clock по-прежнему предшествует чтению нового задания агентом.
+
+### Полная выборка0.36.0 и кандидат0.37.0
+
+Набор `artifacts/slice14/input-frame-check/run-e92a8348-88d1-4b3a-8e6b-71d9e7b6a72c`
+сохраняет200source и200trusted viewer операций физического0.36.0.
+Все400 предметных изменений верны; errors:[],6 presentation checks PASS.
+Оба speed gate FAIL; медленные случаи сохранены.
+
+| Отсчёт → фактический кадр | p50,мс | p95,мс | max,мс |
+|---|---:|---:|---:|
+| MCP-правка |260,953|533,569|1386,283|
+| Trusted pointerdown зрителя |180,573|359,760|671,710|
+
+SDK p95503,945мс. M5Max/18CPU/128GiB/macOS27; loadavg1:7,68→12,05.
+Шесть SHA harness зафиксированы до запуска. Это отдельная серия; прежние
+результаты и короткий pilot9/9 (source127,698/viewer105,965мс) не заменены.
+
+Source-кандидат core0.49.0/plugin0.37.0 устраняет повторную SVG-подготовку
+в division/fractions/dependency-route. Один `drawing-candidate` хранит
+проверенный ресурс вне DOM и передаёт его render по полному ключу; неподтверждённый
+кандидат не входит в objects/selection/SVG export. Static fractions проверяет
+свой итоговый state; рассказ сохраняет5 checkpoints. Ключ входов канонизирует
+`fractionInputs`: порядок полей shell и model больше не создаёт cache miss.
+History capture и idle sampler читают условия без обхода геометрии объектов;
+обычная инспекция сохраняет полный отчёт.
+
+Upstream P2 исправлены: reserve требует строку; реплика требует произносимые
+слова или явный `say:''`; maxArm ограничивает drag/keys/Conditions/API.
+Comparison отделяет предметные controls от общей калибровки рисунка через
+обязательный `parameters`; поэтому выбран новый minor core0.49.0.
+Build/check PASS;103 исходных проверок покрыты итоговыми PASS, включая
+повторные10 после устранения cache miss и обновления source package.
+Три владельца проверяют identity того же подготовленного SVG, export до commit
+и undo. Independent source review runtime/cleanup CLEAR.
+
+| Удалённый путь | Владелец | Потребители | Доказательство |
+|---|---|---|---|
+| validate/dispose → второй prepare | drawing-candidate + предметный drawing | division, fractions, dependency-route | same candidate identity, accepted SVG, undo |
+| Полный object scan при history capture | captureScene/sceneAccess | SceneHistory, widget checkpoint, idle sampler | inputs/subject/selected сохранены, ordinary inspect полный |
+| ProjectStore.edit без runtime preparation | project-authoring/project-transactions | production authoring; storage tests используют локальный helper | production shortcut удалён; journal/recovery/migration checks PASS |
+| Свободные prefs и отдельная обработка старого voice | Preferences: только3собственных ключа; project voice owner | MCP/settings | unowned keys не читаются и не записываются; очередь после ошибки работает |
+| authoring-audit с базой0.26.6/0.13.3 | Linear и текущие architecture/authoring/codex-plugin-tdd | documentation/skill/install | единственный действующий consumer переведён, старая страница удалена |
+
+README/INSTALL сохраняют текущий Mac scope, help больше не обещает скрытый
+синтез; frame и optional voice согласованы с PHILOSOPHY. Старые pins и принятые
+визуальные/звуковые fixtures сохранены. Кандидат ещё не установлен; новые
+author30, full playback и итоговые скоростные gates остаются открытыми.

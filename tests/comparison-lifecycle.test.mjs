@@ -25,7 +25,7 @@ const recipe={title:'test',parameters(m){if(m.module!=='domain')throw Error('Wro
  const node=document.createElement('output');viewport.stage.append(node);
  return {validate(){},render(model,views,state){if(failRender&&model.id.endsWith('after'))throw Error('render failure');node.textContent=state.force;},snapshot:s=>s,dispose(){disposed.push(m.id);node.remove();if(failDispose&&m.id.endsWith('after'))throw Error('dispose failure');}};
 }};
-const subject=comparisonSubject({model:{staticState:v=>({comparison:pair(v.comparisonValue)})},recipe:pair=>{if(failRecipe)throw Error('recipe failure');return recipe;},views:()=>[],changes:['force']});
+const subject=comparisonSubject({model:{staticState:v=>({comparison:pair(v.comparisonValue)})},parameters:recipe.parameters,recipe:pair=>{if(failRecipe)throw Error('recipe failure');return recipe;},views:()=>[],changes:['force']});
 subject.parameters(model);
 const drawing=subject.create({stage:document.querySelector('main'),layout:{width:800,height:400,scale:1,displayWidth:800,displayHeight:400,compact:false}},model);
 window.lab={model,drawing,pair,flags:(render,dispose,recipe=false)=>{failRender=render;failDispose=dispose;failRecipe=recipe;},disposed,render:(value)=>drawing.render(model,[{id:'view'}],{comparison:pair(value),comparisonProgress:1,comparisonCase:'after'})};

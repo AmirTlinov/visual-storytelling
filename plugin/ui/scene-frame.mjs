@@ -551,7 +551,11 @@ async function ready() {
     send({ type: 'ready', report: report('ready') });
     let sampling = false;
     sampleTimer = setInterval(() => {
-      if (!suspended && !sampling && scene.inspect({ presentation: false }).playing) {
+      if (
+        !suspended &&
+        !sampling &&
+        scene.inspect({ presentation: false, objects: false }).playing
+      ) {
         sampling = true;
         void observe('playback').finally(() => {
           sampling = false;

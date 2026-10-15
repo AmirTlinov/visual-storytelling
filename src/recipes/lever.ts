@@ -12,12 +12,16 @@ export function leverSubject({
 }: Partial<LeverCalibration> = {}): StorySubjectRecipe {
   if (![maxForce, maxArm].every((value) => Number.isFinite(value) && value > 0))
     throw new Error('Lever calibration must be positive.');
+  const maximumArm = Math.min(100, Math.floor(maxArm));
   return {
     title: 'Как уравновесить рычаг?',
     frame: { width: 1280, height: 960, scope: 'stage' },
     resolveInput(patch, current, _document, _script, intent) {
+      const values = { ...current.values, ...patch };
+      if (Math.max(Number(values.leftArm), Number(values.rightArm)) > maximumArm)
+        throw new Error(`Lever arms must not exceed ${maximumArm}cm.`);
       return {
-        values: { ...current.values, ...patch },
+        values,
         time: intent === 'input' ? 0 : current.time,
         playback: intent === 'input' ? 'pause' : undefined,
       };
@@ -29,7 +33,7 @@ export function leverSubject({
         type: 'stepper',
         value: model.inputs[key]!,
         min: 0,
-        max: 100,
+        max: key.endsWith('Arm') ? maximumArm : 100,
         step: 1,
       })),
     create(viewport) {
@@ -59,10 +63,18 @@ export function leverSubject({
           if (signature === validated) return;
           const state = leverModel.staticState!(values, model) as LeverModelState;
           for (const text of texts) {
-            const candidate = leverArtwork(view, viewport, model.id, views[0]!.id, state, {
-              maxForce,
-              maxArm,
-            });
+            const candidate = leverArtwork(
+              view,
+              viewport,
+              model.id,
+              views[0]!.id,
+              state,
+              {
+                maxForce,
+                maxArm,
+              },
+              maximumArm,
+            );
             try {
               candidate.render(state, text);
             } finally {
@@ -77,10 +89,18 @@ export function leverSubject({
           const next =
             signature === key && current
               ? current
-              : leverArtwork(view, viewport, model.id, views[0]!.id, state as LeverModelState, {
-                  maxForce,
-                  maxArm,
-                });
+              : leverArtwork(
+                  view,
+                  viewport,
+                  model.id,
+                  views[0]!.id,
+                  state as LeverModelState,
+                  {
+                    maxForce,
+                    maxArm,
+                  },
+                  maximumArm,
+                );
           try {
             next.render(state as LeverModelState, beat?.text);
           } catch (error) {

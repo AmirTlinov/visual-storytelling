@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { ProjectStore } from '../plugin/projects.mjs';
+import { commitStoreEdit } from './plugin/store-edit.mjs';
 import { projectFiles, snapshotProject, projectFile } from '../tools/project-files.mjs';
 import { pinSceneProject } from '../tools/scene-project.mjs';
 import { writeBuildInfo } from '../tools/build-info.mjs';
@@ -30,7 +31,7 @@ async function fixture(t) {
       changes,
       undo,
     };
-    return { args, result: await store.edit(args) };
+    return { args, result: await commitStoreEdit(store, args) };
   };
   return {
     directory,
@@ -204,12 +205,12 @@ test('authoring undo walks applied edits across restart and a new branch; reques
   const third = await f.edit([{ path: 'a.js', content: 'a3' }]);
   const undo = await f.edit(undefined, true);
   assert.equal(await f.text(), 'a2');
-  await f.store.edit(undo.args);
+  await commitStoreEdit(f.store, undo.args);
   assert.equal(await f.text(), 'a2');
   const reopened = new ProjectStore(join(f.directory, 'data'));
   await reopened.start();
   const apply = async (changes, undo = false) =>
-    reopened.edit({
+    commitStoreEdit(reopened, {
       projectId: f.project.id,
       sourceRevision: (await reopened.inspect(f.project.id)).sourceRevision,
       requestId: randomUUID(),
@@ -225,10 +226,10 @@ test('authoring undo walks applied edits across restart and a new branch; reques
   await apply(undefined, true);
   assert.equal(await f.text(), 'a0');
   await assert.rejects(apply(undefined, true), /No authored edit/);
-  assert.equal((await reopened.edit(third.args)).repeated, true);
+  assert.equal((await commitStoreEdit(reopened, third.args)).repeated, true);
   assert.equal(await f.text(), 'a0');
   await assert.rejects(
-    reopened.edit({ ...third.args, changes: [{ path: 'a.js', content: 'reused id' }] }),
+    commitStoreEdit(reopened, { ...third.args, changes: [{ path: 'a.js', content: 'reused id' }] }),
     /requestId/,
   );
 });
@@ -290,7 +291,7 @@ test('create preserves existing documents; registration shares identity and edit
     return result;
   };
   await assert.rejects(
-    f.store.edit({
+    commitStoreEdit(f.store, {
       projectId: f.project.id,
       sourceRevision: state.sourceRevision,
       requestId: randomUUID(),
@@ -376,7 +377,7 @@ test('a staged edit resolves once, commits the validated proposal and repeats it
   const committed = await f.store.commitPreparedEdit(prepared);
   assert.equal(await f.text(), 'validated');
   assert.equal(resolutions, 1);
-  const repeated = await f.store.edit(prepared.args);
+  const repeated = await commitStoreEdit(f.store, prepared.args);
   assert.equal(repeated.repeated, true);
   assert.equal(repeated.sourceRevision, committed.sourceRevision);
   assert.equal(resolutions, 1, 'a receipt does not prepare a new candidate');
@@ -443,7 +444,7 @@ test('project identity fences staged edits and interrupted publication across re
   await writeFile(manifestFile, JSON.stringify(manifest));
   await reopened.recover(f.project);
   assert.equal(await f.text(), 'accepted candidate');
-  assert.equal((await reopened.edit(args)).repeated, true);
+  assert.equal((await commitStoreEdit(reopened, args)).repeated, true);
 });
 
 async function assetFixture(t) {
@@ -494,17 +495,17 @@ test('a migration journal recovers assets and source after restart without the w
         if (boundary === 'after-asset') await publish(...args);
         throw new Error('interrupted asset publication');
       };
-      await assert.rejects(f.store.edit(f.args), /interrupted asset publication/);
+      await assert.rejects(commitStoreEdit(f.store, f.args), /interrupted asset publication/);
       assert.equal(await f.text(), 'a0');
       await access(join(f.root, '.vstory/transaction.json'));
       await rm(f.asset.source);
       const reopened = new ProjectStore(join(f.directory, 'data'));
       await reopened.start();
-      const recovered = await reopened.edit(f.args);
+      const recovered = await commitStoreEdit(reopened, f.args);
       assert.equal(recovered.repeated, true);
       assert.equal(await f.text(), 'new runtime pin');
       assert.deepEqual(await readFile(join(f.root, f.asset.path)), f.bytes);
-      await reopened.edit({
+      await commitStoreEdit(reopened, {
         projectId: f.project.id,
         sourceRevision: recovered.sourceRevision,
         requestId: randomUUID(),

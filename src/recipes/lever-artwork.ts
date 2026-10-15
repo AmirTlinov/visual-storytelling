@@ -24,6 +24,7 @@ export function leverArtwork(
   viewId: string,
   initial: LeverModelState,
   calibration: LeverCalibration,
+  maximumArm: number,
 ) {
   let state = initial;
   const { width, height, scale } = viewport.layout;
@@ -178,7 +179,7 @@ export function leverArtwork(
           tabindex: 0,
           'aria-label': `${side === 'left' ? 'Левый' : 'Правый'} груз: расстояние от оси`,
           'aria-valuemin': 0,
-          'aria-valuemax': 100,
+          'aria-valuemax': maximumArm,
           'aria-valuenow': rationalNumber(load.arm) * 100,
           'aria-valuetext': `${number(rationalNumber(load.arm) * 100)} сантиметров`,
           'data-lever-grip': side,
@@ -192,6 +193,7 @@ export function leverArtwork(
         canvas.setAttribute('role', 'group');
         grips.set(side, {
           side,
+          maximum: maximumArm,
           get arm() {
             return rationalNumber(state[side].arm) * 100;
           },

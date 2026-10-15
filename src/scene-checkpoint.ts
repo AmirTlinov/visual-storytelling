@@ -132,7 +132,7 @@ export function captureScene(
 ): SceneCheckpoint {
   if (basis !== 'presented' && basis !== 'requested')
     throw new Error('Unknown scene capture basis');
-  const state = handle.inspect({ presentation: false });
+  const state = handle.inspect({ presentation: false, objects: false });
   const moment = state.rendering?.[basis];
   if (state.rendering && !moment)
     throw Object.assign(

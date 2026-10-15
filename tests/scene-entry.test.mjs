@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { workflows } from '../plugin/workflows.mjs';
 import { ProjectStore } from '../plugin/projects.mjs';
+import { commitStoreEdit } from './plugin/store-edit.mjs';
 import { renderer } from '../tools/render.mjs';
 import { sceneEntry, scenePage } from '../tools/scene-entry.mjs';
 import { createScene } from '../tools/create-scene.mjs';
@@ -58,7 +59,7 @@ test(
           });
         if (fixture === 'scene-shell')
           changes.push({ path: 'scene.json', content: JSON.stringify({ entry }) });
-        const authored = await projects.edit({
+        const authored = await commitStoreEdit(projects, {
           projectId: project.id,
           sourceRevision: (await projects.inspect(project.id)).sourceRevision,
           requestId: randomUUID(),

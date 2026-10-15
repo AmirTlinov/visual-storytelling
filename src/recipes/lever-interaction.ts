@@ -4,6 +4,7 @@ export type LeverSide = 'left' | 'right';
 export interface LeverGrip {
   readonly side: LeverSide;
   readonly arm: number;
+  readonly maximum: number;
   readonly element: SVGGraphicsElement;
   /** Horizontal screen position at 0/100cm, with the accepted bar angle. */
   project(): (clientX: number, clientY: number) => number;
@@ -29,8 +30,10 @@ export function leverInteraction(
     const side = target.getAttribute('data-lever-grip');
     return side === 'left' || side === 'right' ? grip(side) : undefined;
   };
-  const apply = (side: LeverSide, arm: number) =>
-    viewport.input?.({ [`${side}Arm`]: Math.max(0, Math.min(100, Math.round(arm))) });
+  const apply = (selected: LeverGrip, arm: number) =>
+    viewport.input?.({
+      [`${selected.side}Arm`]: Math.max(0, Math.min(selected.maximum, Math.round(arm))),
+    });
   const grab = pointerGrab(element, select, (selected, event) => {
     if (!viewport.input) return;
     endKeyboard(false);
@@ -46,11 +49,14 @@ export function leverInteraction(
       move(next) {
         const value = Math.max(
           0,
-          Math.min(100, Math.round(initial + armAt(next.clientX, next.clientY) - origin)),
+          Math.min(
+            selected.maximum,
+            Math.round(initial + armAt(next.clientX, next.clientY) - origin),
+          ),
         );
         if (value === last) return;
         last = value;
-        apply(selected.side, value);
+        apply(selected, value);
       },
       release(completed) {
         end?.();
@@ -70,7 +76,7 @@ export function leverInteraction(
         event.key === 'Home'
           ? 0
           : event.key === 'End'
-            ? 100
+            ? selected.maximum
             : event.key === 'ArrowLeft'
               ? selected.arm - sign * amount
               : event.key === 'ArrowRight'
@@ -83,8 +89,8 @@ export function leverInteraction(
         viewport.playback?.pause();
         keyboard = { end: viewport.inputGesture?.(), changed: false };
       }
-      keyboard.changed ||= Math.max(0, Math.min(100, value)) !== selected.arm;
-      apply(selected.side, value);
+      keyboard.changed ||= Math.max(0, Math.min(selected.maximum, value)) !== selected.arm;
+      apply(selected, value);
     },
     { signal: abort.signal },
   );

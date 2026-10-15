@@ -1,5 +1,7 @@
 import { DIVISION_MAX_COUNT } from './division-capacity.js';
 import { divisionParts } from './division-parts.js';
+import { drawingCandidate } from './drawing-candidate.js';
+import { releaseResources } from '../lifecycle.js';
 import type { Surface } from '../ink/surface.js';
 import { object } from '../ink/object.js';
 import { lettering } from '../ink/lettering.js';
@@ -47,6 +49,19 @@ export function divisionDiagram(surface: Surface, id: string) {
   let current: ReturnType<typeof prepare> | undefined;
   let key = '';
   let preparation = 0;
+  const candidate = drawingCandidate<ReturnType<typeof prepare>>();
+
+  const drawingKey = (state: DivisionState, options: DivisionDiagramOptions) =>
+    JSON.stringify([
+      state.id,
+      state.count,
+      state.divisor,
+      options.width,
+      options.height,
+      options.scale,
+      options.text ?? '',
+      options.viewIds,
+    ]);
 
   function validate(state: DivisionState, options: DivisionDiagramOptions) {
     const expected = divisionState(state.count, state.divisor, { id: state.id });
@@ -338,18 +353,9 @@ export function divisionDiagram(surface: Surface, id: string) {
     if (disposed) throw new Error('Division drawing has been disposed');
     validate(state, options);
     const moment = divisionProgress(state, options.progress);
-    const nextKey = JSON.stringify([
-      state.id,
-      state.count,
-      state.divisor,
-      options.width,
-      options.height,
-      options.scale,
-      options.text ?? '',
-      options.viewIds,
-    ]);
+    const nextKey = drawingKey(state, options);
     let next = current;
-    if (nextKey !== key || !next) next = prepare(state, options);
+    if (nextKey !== key || !next) next = candidate.take(nextKey) ?? prepare(state, options);
     const groupedCount = state.quotient * state.divisor;
     const locations = next.from.map((start, i) => {
       const amount =
@@ -412,14 +418,17 @@ export function divisionDiagram(surface: Surface, id: string) {
     validate(state: DivisionState, options: DivisionDiagramOptions) {
       if (disposed) throw new Error('Division drawing has been disposed');
       validate(state, options);
-      const prepared = prepare(state, options);
-      prepared.dispose();
+      candidate.check(drawingKey(state, options), () => prepare(state, options));
     },
     dispose() {
       if (disposed) return;
       disposed = true;
-      current?.dispose();
+      const accepted = current;
       current = undefined;
+      releaseResources(
+        [candidate.dispose, () => accepted?.dispose()],
+        'Division drawing release failed.',
+      );
     },
   };
 }

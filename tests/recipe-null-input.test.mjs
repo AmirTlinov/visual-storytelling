@@ -86,6 +86,27 @@ test('generated chapter and qualified beat IDs avoid every model and view identi
 test('model enum inputs reject null and coercible arrays without changing the selected case', () => {
   for (const [input, field, valid] of [
     [recipes.find((item) => item.recipe === 'fractions'), 'action', 'copy'],
+    [recipes.find((item) => item.recipe === 'dependency-route'), 'reserve', 'shared'],
+    [
+      {
+        recipe: 'comparison',
+        kind: 'dependency-route',
+        inputs: { orderId: '417', reserve: 'none' },
+        changes: { reserve: 'independent' },
+      },
+      'reserve',
+      'shared',
+    ],
+    [
+      {
+        recipe: 'comparison',
+        kind: 'dependency-route',
+        inputs: { orderId: '417', reserve: 'none' },
+        changes: { reserve: 'independent' },
+      },
+      'comparisonValue',
+      'independent',
+    ],
     [recipes.find((item) => item.recipe === 'comparison'), 'comparisonCase', 'after'],
     [recipes.find((item) => item.recipe === 'comparison'), 'comparisonChange', 'rightForce'],
   ]) {

@@ -5,9 +5,11 @@ import { svg } from '../ink/dom.js';
 import { pen, type Point } from '../ink/pen.js';
 import type { Surface } from '../ink/surface.js';
 import { fractionsMotion } from './fractions-motion.js';
+import { drawingCandidate } from './drawing-candidate.js';
+import { releaseResources } from '../lifecycle.js';
 import { formula } from './formula.js';
 import { rationalNumber, rationalText } from '../math/rational.js';
-import type { FractionState } from './fractions-model.js';
+import { fractionInputs, type FractionState } from './fractions-model.js';
 import type { ModelValues } from '../story/model.js';
 
 /** The same calibrated whole fits every row. Geometry moves the model's existing parts. */
@@ -15,6 +17,18 @@ export function fractionsDiagram(view: Surface) {
   let current: ReturnType<typeof prepare> | undefined,
     signature = '',
     disposed = false;
+  const candidate = drawingCandidate<ReturnType<typeof prepare>>();
+  const drawingKey = (
+    state: FractionState,
+    inputs: ModelValues,
+    options: Parameters<typeof prepare>[2],
+  ) =>
+    JSON.stringify([
+      state.parts.map((part) => [part.id, part.amount, part.container]),
+      state.denominator,
+      fractionInputs(inputs),
+      options,
+    ]);
   function prepare(
     state: FractionState,
     inputs: ModelValues,
@@ -314,21 +328,18 @@ export function fractionsDiagram(view: Surface) {
   }
   return {
     validate(state: FractionState, inputs: ModelValues, options: Parameters<typeof prepare>[2]) {
-      const candidate = prepare(state, inputs, options);
-      try {
-        paint(candidate, state, inputs, options);
-      } finally {
-        candidate.dispose();
-      }
+      candidate.check(
+        drawingKey(state, inputs, options),
+        () => prepare(state, inputs, options),
+        (next) => paint(next, state, inputs, options),
+      );
     },
     render(state: FractionState, inputs: ModelValues, options: Parameters<typeof prepare>[2]) {
-      const key = JSON.stringify([
-        state.parts.map((part) => [part.id, part.amount, part.container]),
-        state.denominator,
-        inputs,
-        options,
-      ]);
-      const next = signature === key && current ? current : prepare(state, inputs, options);
+      const key = drawingKey(state, inputs, options);
+      const next =
+        signature === key && current
+          ? current
+          : (candidate.take(key) ?? prepare(state, inputs, options));
       try {
         paint(next, state, inputs, options);
       } catch (error) {
@@ -346,8 +357,12 @@ export function fractionsDiagram(view: Surface) {
     dispose() {
       if (disposed) return;
       disposed = true;
-      current?.dispose();
+      const accepted = current;
       current = undefined;
+      releaseResources(
+        [candidate.dispose, () => accepted?.dispose()],
+        'Fraction drawing release failed.',
+      );
     },
   };
 }

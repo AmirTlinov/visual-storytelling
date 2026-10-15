@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import R from '@dimforge/rapier2d-compat';
-import { leverModel, leverMotion } from '../dist/index.js';
+import { leverModel, leverMotion, leverSubject } from '../dist/index.js';
 import {
   prepareIllustratedDocument,
   prepareStoryDocument,
@@ -10,6 +10,30 @@ import {
 } from '../dist/story/index.js';
 const inputs = { leftForce: 4, leftArm: 30, rightForce: 3, rightArm: 20 };
 const state = (value) => leverModel.staticState(value);
+
+test('short drawing calibration bounds input resolution without narrowing force inputs', () => {
+  const subject = leverSubject({ maxArm: 40.5 });
+  const model = { id: 'lever', module: 'lever', inputs };
+  const fields = subject.parameters(model);
+  assert.equal(fields.find((field) => field.key === 'rightArm').max, 40);
+  assert.equal(fields.find((field) => field.key === 'rightForce').max, 100);
+  const current = { values: inputs, time: 1, playing: false };
+  assert.throws(
+    () => subject.resolveInput({ rightArm: 41 }, current, {}, {}, 'input'),
+    /exceed 40cm/,
+  );
+  assert.deepEqual(subject.resolveInput({ rightArm: 40 }, current, {}, {}, 'input').values, {
+    ...inputs,
+    rightArm: 40,
+  });
+  assert.equal(current.values.rightArm, 20);
+  assert.equal(
+    leverSubject({ maxArm: 200 })
+      .parameters(model)
+      .find((field) => field.key === 'rightArm').max,
+    100,
+  );
+});
 
 test('lever replay retains sign, point-mass inertia, neutral balance and physical stops', () => {
   const a = state(inputs);

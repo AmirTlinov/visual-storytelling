@@ -14,6 +14,7 @@ import {
 } from './dependency-route-model.js';
 import { releaseResources } from '../lifecycle.js';
 import { routeLabelPlacement } from './route-label-placement.js';
+import { drawingCandidate } from './drawing-candidate.js';
 
 export interface DependencyRouteDiagramOptions {
   modelId: string;
@@ -34,6 +35,27 @@ export function dependencyRouteDiagram(view: Surface) {
   let current: ReturnType<typeof prepare> | undefined;
   let key = '';
   let disposed = false;
+  const candidate = drawingCandidate<ReturnType<typeof prepare>>();
+  const drawingKey = (
+    graph: DependencyGraph,
+    trace: DependencyTrace,
+    options: DependencyRouteDiagramOptions,
+  ) =>
+    JSON.stringify([
+      options.modelId,
+      graph,
+      trace.orderId,
+      trace.status,
+      trace.blocked,
+      options.width,
+      options.height,
+      options.scale,
+      options.positions,
+      options.text,
+      options.networkId,
+      options.statusId,
+      options.present,
+    ]);
   function prepare(
     graph: DependencyGraph,
     trace: DependencyTrace,
@@ -231,22 +253,11 @@ export function dependencyRouteDiagram(view: Surface) {
   ) {
     if (!Number.isFinite(options.progress) || options.progress < 0 || options.progress > 1)
       throw new Error('Dependency drawing progress must lie in [0, 1].');
-    const nextKey = JSON.stringify([
-      options.modelId,
-      graph,
-      trace.orderId,
-      trace.status,
-      trace.blocked,
-      options.width,
-      options.height,
-      options.scale,
-      options.positions,
-      options.text,
-      options.networkId,
-      options.statusId,
-      options.present,
-    ]);
-    const next = nextKey === key && current ? current : prepare(graph, trace, options);
+    const nextKey = drawingKey(graph, trace, options);
+    const next =
+      nextKey === key && current
+        ? current
+        : (candidate.take(nextKey) ?? prepare(graph, trace, options));
     const journey = tracePath(
       (trace.route.length ? trace.route : [graph.origin]).map(next.point),
       options.progress,
@@ -297,14 +308,17 @@ export function dependencyRouteDiagram(view: Surface) {
       trace: DependencyTrace,
       options: DependencyRouteDiagramOptions,
     ) {
-      const candidate = prepare(graph, trace, options);
-      candidate.dispose();
+      candidate.check(drawingKey(graph, trace, options), () => prepare(graph, trace, options));
     },
     dispose() {
       if (disposed) return;
       disposed = true;
-      current?.dispose();
+      const accepted = current;
       current = undefined;
+      releaseResources(
+        [candidate.dispose, () => accepted?.dispose()],
+        'Dependency drawing release failed.',
+      );
     },
   };
 }

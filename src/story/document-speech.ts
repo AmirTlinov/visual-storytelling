@@ -1,5 +1,6 @@
 import type { AuthoredBeat, AuthoredChapter, StoryDocument } from './document-schema.js';
 import { spoken } from './document-beat.js';
+import { spokenWords } from './spoken-words.js';
 import { sameSpeechValue } from './speech-condition.js';
 import { validateSpeechConditions } from './speech-condition.js';
 import { keys, record } from './document-fields.js';
@@ -13,6 +14,11 @@ export function authoredSpeech(
   modules: StoryModules,
   path: string,
 ): AuthoredBeat['speech'] {
+  const wording = spoken(beat);
+  if (wording && !spokenWords(wording).length)
+    throw new Error(
+      `${path}.${beat.say === undefined ? 'text' : 'say'}: provide spoken words or set say to an empty string for a silent action.`,
+    );
   if (!spoken(beat) && !beat.text?.trim()) {
     if (beat.speech !== undefined)
       throw new Error(`${path}.speech: silent actions have no recording.`);

@@ -605,7 +605,4 @@ export class ProjectStore {
       };
     });
   }
-  async edit(args) {
-    return this.commitPreparedEdit(await this.stageEdit(args));
-  }
 }

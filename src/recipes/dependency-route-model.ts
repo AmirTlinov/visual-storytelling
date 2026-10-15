@@ -209,7 +209,8 @@ export function dependencyRouteModel(source: DependencyGraph): StoryModelModule 
       typeof input.orderId !== 'string' ||
       !input.orderId.trim() ||
       input.orderId.length > 24 ||
-      !['none', 'shared', 'independent'].includes(String(input.reserve))
+      typeof input.reserve !== 'string' ||
+      !['none', 'shared', 'independent'].includes(input.reserve)
     )
       throw new Error(
         'route.inputs: choose a bounded orderId and reserve none/shared/independent.',
@@ -222,7 +223,7 @@ export function dependencyRouteModel(source: DependencyGraph): StoryModelModule 
         throw new Error(`route.inputs.disabled-${node.id}: expected boolean.`);
     return {
       orderId: input.orderId,
-      reserve: String(input.reserve),
+      reserve: input.reserve,
       ...Object.fromEntries(
         graph.nodes.map((node) => [`disabled-${node.id}`, input[`disabled-${node.id}`] ?? false]),
       ),

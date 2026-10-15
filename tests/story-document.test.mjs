@@ -127,6 +127,25 @@ test('one authored document feeds action IDs, speech and exact aligned chapter b
   assert.equal(owned.narration.music.path, 'a.wav');
 });
 
+test('control tags and punctuation alone cannot become a spoken thought', () => {
+  for (const field of ['say', 'text']) {
+    for (const wording of ['<|emotion:excited|>', '<|emotion:calm|> <|speed:slow|>', '… — !']) {
+      const value = structuredClone(document);
+      value.chapters[0].beats[0] = { id: 'switch', [field]: wording };
+      assert.throws(() => documentNarration(value), /provide spoken words/);
+    }
+  }
+  const valid = structuredClone(document);
+  valid.chapters[0].beats[0].say = '<|emotion:calm|> Лампа гаснет.';
+  assert.equal(documentNarration(valid).segments[0].text, valid.chapters[0].beats[0].say);
+  valid.chapters[0].beats[0] = { id: 'switch', text: '→', say: '', seconds: 2 };
+  assert.equal(
+    documentNarration(valid).segments.length,
+    1,
+    'explicit silence keeps the visible action',
+  );
+});
+
 test('local chapters start immediately while optional narration reserves the final action tail', () => {
   const quiet = {
     version: 2,

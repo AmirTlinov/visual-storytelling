@@ -80,7 +80,7 @@ export const fractionsSubject: StorySubjectRecipe = {
     });
     return {
       validate(candidateModel, views, values, beats) {
-        for (const progress of [0, 0.5, 1, 1.5, 2])
+        for (const progress of beats.length ? [0, 0.5, 1, 1.5, 2] : [2])
           for (const text of new Set([undefined, ...beats.map((beat) => beat.text)]))
             diagram.validate(fractionState(values, progress, { id: candidateModel.id }), values, {
               ...options(views),

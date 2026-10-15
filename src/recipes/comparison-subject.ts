@@ -9,6 +9,7 @@ import type { AuthoredBeat } from '../story/document.js';
 /** Two drawing viewports share the existing shell, input history and Story. */
 export function comparisonSubject(config: {
   model: StoryModelModule;
+  parameters: StorySubjectRecipe['parameters'];
   recipe(pair: ModelComparison): StorySubjectRecipe;
   views(id: string): readonly StoryView[];
   changes: readonly string[];
@@ -31,8 +32,7 @@ export function comparisonSubject(config: {
     },
     parameters(model) {
       const pair = comparison(config.model.staticState!(model.inputs, model));
-      const recipe = config.recipe(pair);
-      const fields = recipe.parameters({
+      const fields = config.parameters({
         ...model,
         id: pair.before.id,
         module: pair.before.module,

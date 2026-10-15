@@ -116,7 +116,7 @@ export interface SceneHandle extends SceneRuntime {
   readonly restoreNotices?: readonly SceneRestoreNotice[];
   capture(options?: SceneCaptureOptions): SceneCheckpoint;
   restore(state: SceneCheckpoint): Promise<SceneInspection>;
-  inspect(options?: { presentation?: boolean }): SceneInspection;
+  inspect(options?: { presentation?: boolean; objects?: boolean }): SceneInspection;
   control(
     commands: readonly SceneCommand[],
     options?: SceneControlOptions,

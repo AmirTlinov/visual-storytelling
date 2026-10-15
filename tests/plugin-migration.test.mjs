@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { writeBuildInfo } from '../tools/build-info.mjs';
 import { pinSceneProject } from '../tools/scene-project.mjs';
 import { ProjectStore } from '../plugin/projects.mjs';
+import { commitStoreEdit } from './plugin/store-edit.mjs';
 import { JobRunner } from '../plugin/jobs.mjs';
 import { workflows } from '../plugin/workflows.mjs';
 import { projectAuthoring } from '../plugin/runtime/project-authoring.mjs';
@@ -144,7 +145,7 @@ test(
     // A later user edit cannot be overwritten by the completion of a migration job.
     await writeFile(join(projectPath, 'scene.js'), 'user-edited-during-preparation');
     await assert.rejects(
-      projects.edit({
+      commitStoreEdit(projects, {
         projectId: project.id,
         sourceRevision: project.sourceRevision,
         requestId: randomUUID(),
@@ -170,7 +171,7 @@ test(
     assert.notDeepEqual(await readFile(join(projectPath, 'package.json')), original[1]);
     assert.deepEqual(await readFile(join(projectPath, oldArchive)), oldBytes);
 
-    await projects.edit({
+    await commitStoreEdit(projects, {
       projectId: project.id,
       sourceRevision: published.sourceRevision,
       requestId: randomUUID(),

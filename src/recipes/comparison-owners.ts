@@ -28,6 +28,7 @@ export const routeComparisonModel = comparisonModel({
 });
 export const leverComparisonSubject = comparisonSubject({
   model: leverComparisonModel,
+  parameters: leverSubject().parameters,
   frame: { width: 1280, height: 960, scope: 'stage' },
   changes: leverInputKeys,
   views: leverViews,
@@ -56,6 +57,7 @@ export const leverComparisonSubject = comparisonSubject({
 });
 export const routeComparisonSubject = comparisonSubject({
   model: routeComparisonModel,
+  parameters: instructionalRouteSubject.parameters,
   frame: { width: 1280, height: 960, scope: 'scene' },
   changes: ['reserve'],
   views: routeViews,

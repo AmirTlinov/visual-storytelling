@@ -129,12 +129,13 @@ Compare content even when versions match; detect stale sources or modified runti
         : command === 'deliver'
           ? `visual-story deliver DIRECTORY [--out artifacts/release] [--formats html,png,svg,mp4,srt,vtt,source]
 
-Runs cached narration, builds, and publishes the requested files together. Default: html.
+Checks the selected voice, builds, and publishes the requested files together. Default: html.
 MP4 exports the whole story; --from SECONDS --to SECONDS selects an interval.
 Video: [--width 960 | --height 540] --fps 30 --jobs 2 --theme light|dark
        Always 16:9; dimensions round to 32×18 pixel units.
---silent keeps an explicitly silent draft. HTML follows the viewer's theme.
-Re-run the same command after changing a line; unchanged voice segments use the cache.`
+--silent explicitly publishes without narration. HTML follows the viewer's theme.
+For enabled narration, run visual-story audio DIRECTORY after changing speech, then deliver.
+Delivery never synthesizes speech; unchanged accepted takes are reused by audio preparation.`
           : command === 'pack'
             ? 'visual-story pack DIST --out story.html [--inline] [--theme auto|light|dark] [--audio compressed|original]\nStandalone audio is compressed by default; --inline additionally applies the chat fragment limit.'
             : help,

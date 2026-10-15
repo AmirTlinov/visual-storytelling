@@ -84,9 +84,12 @@ export interface SceneAccessOwner {
   assertInteractive?(): void;
 }
 export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
-  const inspect = ({ presentation = true }: { presentation?: boolean } = {}): SceneInspection => {
+  const inspect = ({
+    presentation = true,
+    objects: includeObjects = true,
+  }: { presentation?: boolean; objects?: boolean } = {}): SceneInspection => {
     owner.assertLive();
-    const objects = handle.objects?.(),
+    const objects = includeObjects ? handle.objects?.() : undefined,
       review = handle.review();
     return {
       restoreNotices: handle.restoreNotices,
@@ -121,7 +124,7 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
         ...(handle.setTheme ? ['theme'] : []),
         ...(handle.mute ? ['mute'] : []),
         ...(handle.setRate ? ['rate'] : []),
-        ...(handle.select && objects?.length ? ['select'] : []),
+        ...(handle.select && (includeObjects ? objects?.length : handle.objects) ? ['select'] : []),
         ...(['undoExperiment', 'redoExperiment'] as const).filter(
           (key) => typeof handle[key] === 'function',
         ),
