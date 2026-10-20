@@ -1,5 +1,6 @@
 import { chmod, copyFile, lstat, mkdir, readdir, readlink, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { copiedInputBytes } from './input-verification.mjs';
 
 /** An owned authoring or build copy is writable even when its packaged source is immutable. */
 export async function copySceneInput(source, destination, { filter, signal } = {}) {
@@ -17,6 +18,7 @@ export async function copySceneInput(source, destination, { filter, signal } = {
       await copySceneInput(join(source, name), join(destination, name), { filter, signal });
   } else if (entry.isFile()) {
     await copyFile(source, destination);
+    copiedInputBytes(entry.size);
     await chmod(destination, (entry.mode & 0o777) | 0o600);
   } else throw new Error(`A scene input must be a file, directory or symbolic link: ${source}`);
 }

@@ -1,3 +1,7 @@
+import { DIVISION_MAX_COUNT } from './division-capacity.js';
+import { divisionParts } from './division-parts.js';
+import { drawingCandidate } from './drawing-candidate.js';
+import { releaseResources } from '../lifecycle.js';
 import type { Surface } from '../ink/surface.js';
 import { object } from '../ink/object.js';
 import { lettering } from '../ink/lettering.js';
@@ -14,9 +18,7 @@ import {
 } from '../math/division.js';
 
 /** Drawing capacity, separate from the unbounded safe-integer arithmetic model. */
-export const DIVISION_MAX_COUNT = 36;
-export type DivisionFocusTarget = 'groups' | 'remainder' | 'equation';
-export type DivisionFocus = 'all' | readonly DivisionFocusTarget[];
+export { DIVISION_MAX_COUNT } from './division-capacity.js';
 export interface DivisionDiagramOptions {
   width: number;
   height: number;
@@ -25,7 +27,6 @@ export interface DivisionDiagramOptions {
   progress: number;
   showEquation: boolean;
   text?: string;
-  focus?: DivisionFocus;
   viewIds?: { groups: string; equation?: string };
 }
 
@@ -48,6 +49,19 @@ export function divisionDiagram(surface: Surface, id: string) {
   let current: ReturnType<typeof prepare> | undefined;
   let key = '';
   let preparation = 0;
+  const candidate = drawingCandidate<ReturnType<typeof prepare>>();
+
+  const drawingKey = (state: DivisionState, options: DivisionDiagramOptions) =>
+    JSON.stringify([
+      state.id,
+      state.count,
+      state.divisor,
+      options.width,
+      options.height,
+      options.scale,
+      options.text ?? '',
+      options.viewIds,
+    ]);
 
   function validate(state: DivisionState, options: DivisionDiagramOptions) {
     const expected = divisionState(state.count, state.divisor, { id: state.id });
@@ -62,13 +76,6 @@ export function divisionDiagram(surface: Surface, id: string) {
       (options.text !== undefined && typeof options.text !== 'string')
     )
       throw new Error('Division drawing needs valid equation and text options');
-    if (
-      options.focus !== undefined &&
-      options.focus !== 'all' &&
-      (!Array.isArray(options.focus) ||
-        options.focus.some((target) => !['groups', 'remainder', 'equation'].includes(target)))
-    )
-      throw new Error('Unknown division focus');
     if (
       options.viewIds &&
       (typeof options.viewIds.groups !== 'string' ||
@@ -177,7 +184,12 @@ export function divisionDiagram(surface: Surface, id: string) {
       interactive: false,
     });
     const scope = { ...surface, layer: picture.content, pen: drawingPen };
-    const observed = { completedGroups: 0, ungrouped: state.count, complete: false };
+    const observed = {
+      completedGroups: 0,
+      ungrouped: state.count,
+      complete: false,
+      parts: divisionParts(state, options.progress),
+    };
     try {
       const items = from.map((_, i) => {
         const itemId = divisionItemId(state, i);
@@ -186,6 +198,7 @@ export function divisionDiagram(surface: Surface, id: string) {
           label: `Предмет ${i + 1}`,
           value: () => 1,
           unit: 'предмет',
+          provenance: () => observed.parts[i],
           interactive: false,
         });
         cleanups.push(() => {
@@ -247,20 +260,20 @@ export function divisionDiagram(surface: Surface, id: string) {
       target.at(...point(targetX, margin + font));
       cleanups.push(targetLabel.dispose);
       // Check every counter caption before a future frame can select it.
-      for (let completed = 0; completed <= state.quotient; completed++) {
-        sourceLabel.text(`Ещё: ${state.count - completed * state.divisor}`);
-        targetLabel.text(`Группы: ${completed}`);
-        if (
-          sourceLabel.width * options.scale > sourceWidth ||
-          targetLabel.width * options.scale > targetWidth
-        )
-          throw new Error('Division counter labels need a wider drawing');
-      }
-      for (const caption of [`Всего: ${state.count}`, `Остаток: ${state.remainder}`]) {
-        sourceLabel.text(caption);
-        if (sourceLabel.width * options.scale > sourceWidth)
-          throw new Error('Division remainder label needs a wider drawing');
-      }
+      const counters = Array.from({ length: state.quotient + 1 }, (_, completed) => completed);
+      const sourceWidths = sourceLabel.measureWidths([
+        ...counters.map((completed) => `Ещё: ${state.count - completed * state.divisor}`),
+        `Всего: ${state.count}`,
+        `Остаток: ${state.remainder}`,
+      ]);
+      const targetWidths = targetLabel.measureWidths(
+        counters.map((completed) => `Группы: ${completed}`),
+      );
+      if (
+        sourceWidths.some((width) => width * options.scale > sourceWidth) ||
+        targetWidths.some((width) => width * options.scale > targetWidth)
+      )
+        throw new Error('Division counter labels need a wider drawing');
       const identity = formula(
         layer,
         options.viewIds?.equation ?? `${state.id}:identity`,
@@ -311,19 +324,6 @@ export function divisionDiagram(surface: Surface, id: string) {
         second.at(...point(width / 2, equationY + font * 2.7));
         cleanups.push(second.dispose);
       }
-      const focuses = (['groups', 'remainder', 'equation'] as const).map((target) => {
-        const x = target === 'groups' ? targetX : target === 'equation' ? width / 2 : sourceX;
-        const y = target === 'equation' ? equationY + font * 0.3 : margin + font * 1.25;
-        return {
-          target,
-          mark: drawingPen.path(
-            layer,
-            `${id}:focus:${target}`,
-            `M${(x - sourceWidth * 0.28) / options.scale} ${y / options.scale} h${(sourceWidth * 0.56) / options.scale}`,
-            { width: 1.5 / options.scale },
-          ),
-        };
-      });
       return {
         canvas,
         layer,
@@ -333,7 +333,6 @@ export function divisionDiagram(surface: Surface, id: string) {
         sourceLabel,
         targetLabel,
         identity,
-        focuses,
         observed,
         from,
         to,
@@ -354,16 +353,9 @@ export function divisionDiagram(surface: Surface, id: string) {
     if (disposed) throw new Error('Division drawing has been disposed');
     validate(state, options);
     const moment = divisionProgress(state, options.progress);
-    const nextKey = JSON.stringify([
-      state,
-      options.width,
-      options.height,
-      options.scale,
-      options.text ?? '',
-      options.viewIds,
-    ]);
+    const nextKey = drawingKey(state, options);
     let next = current;
-    if (nextKey !== key || !next) next = prepare(state, options);
+    if (nextKey !== key || !next) next = candidate.take(nextKey) ?? prepare(state, options);
     const groupedCount = state.quotient * state.divisor;
     const locations = next.from.map((start, i) => {
       const amount =
@@ -376,7 +368,7 @@ export function divisionDiagram(surface: Surface, id: string) {
       return regroup([start], [next.to[i]!], amount)[0]!;
     });
     // After preparation, rendering only applies already validated positions and captions.
-    Object.assign(next.observed, moment);
+    Object.assign(next.observed, moment, { parts: divisionParts(state, options.progress) });
     next.items.forEach((mark, i) => {
       const [x, y] = locations[i]!;
       mark.element.setAttribute(
@@ -407,20 +399,10 @@ export function divisionDiagram(surface: Surface, id: string) {
     next.source.pigment(moment.complete ? 'red' : 'ink');
     next.targetLabel.text(`Группы: ${moment.completedGroups}`);
     next.identity.show(options.showEquation && moment.complete);
-    const focus = options.focus ?? 'all';
-    for (const { target, mark } of next.focuses)
-      mark.reveal(
-        focus !== 'all' &&
-          focus.includes(target) &&
-          (target !== 'equation' || (options.showEquation && moment.complete))
-          ? 1
-          : 0,
-      );
     next.layer.dataset.count = String(state.count);
     next.layer.dataset.completedGroups = String(moment.completedGroups);
     next.layer.dataset.ungrouped = String(moment.ungrouped);
     next.layer.dataset.complete = String(moment.complete);
-    next.layer.dataset.focus = focus === 'all' ? focus : focus.join(' ');
     if (next !== current) {
       current?.dispose();
       current = next;
@@ -436,14 +418,17 @@ export function divisionDiagram(surface: Surface, id: string) {
     validate(state: DivisionState, options: DivisionDiagramOptions) {
       if (disposed) throw new Error('Division drawing has been disposed');
       validate(state, options);
-      const prepared = prepare(state, options);
-      prepared.dispose();
+      candidate.check(drawingKey(state, options), () => prepare(state, options));
     },
     dispose() {
       if (disposed) return;
       disposed = true;
-      current?.dispose();
+      const accepted = current;
       current = undefined;
+      releaseResources(
+        [candidate.dispose, () => accepted?.dispose()],
+        'Division drawing release failed.',
+      );
     },
   };
 }

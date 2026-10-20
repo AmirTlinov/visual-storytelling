@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { SessionDirectory, buildReference } from '../plugin/session-directory.mjs';
 import { collectCache } from '../plugin/cache.mjs';
 import { writeJSON } from '../tools/storage.mjs';
+import { writePreparedBuild, preparedBuildHTML } from '../plugin/build-payload.mjs';
 
 const frame = (stateRevision, authoring) => ({
   stateRevision,
@@ -128,7 +129,7 @@ test('collection preserves current, candidate, replacement, delayed author, save
       html: '<main>' + revision + '</main>',
     };
     builds.set(revision, build);
-    await writeJSON(join(data, 'builds', revision + '.json'), build);
+    await writePreparedBuild(data, build);
   }
   const { directory, session, view } = await displayed(t, builds.get('current'));
   session.nextBuild = buildReference(builds.get('candidate'));
@@ -211,7 +212,11 @@ test('collection preserves current, candidate, replacement, delayed author, save
   t.after(() => restart.close());
   const loaded = restart.open(restored);
   assert.equal(loaded.build.revision, session.build.revision);
-  assert.equal(restored.html, '<main>delayed</main>', 'disk payload survives for view hydration');
+  assert.equal(
+    await preparedBuildHTML(data, restored),
+    '<main>delayed</main>',
+    'disk payload survives for view hydration',
+  );
   assert.ok(!Object.hasOwn(loaded.build, 'html'));
 });
 
@@ -219,8 +224,8 @@ test('the cache limit budgets disposable data independently of protected builds'
   const data = await mkdtemp(join(tmpdir(), 'story-cache-budget-'));
   t.after(() => rm(data, { recursive: true, force: true }));
   const file = (revision) => join(data, 'builds', revision + '.json');
-  await writeJSON(file('current'), { revision: 'current', html: 'x'.repeat(4096) });
-  await writeJSON(file('reusable'), { revision: 'reusable', html: 'y'.repeat(200) });
+  await writePreparedBuild(data, { revision: 'current', html: 'x'.repeat(4000) });
+  await writePreparedBuild(data, { revision: 'reusable', html: 'y'.repeat(200) });
   const protectedBytes = (await stat(file('current'))).size;
   const disposableBytes = (await stat(file('reusable'))).size;
   const options = {
@@ -241,7 +246,7 @@ test('the cache limit budgets disposable data independently of protected builds'
     limitBytes: 1024,
   });
   assert.deepEqual((await readdir(join(data, 'builds'))).sort(), ['current.json', 'reusable.json']);
-  await writeJSON(file('obsolete'), { revision: 'obsolete', html: 'z'.repeat(2048) });
+  await writePreparedBuild(data, { revision: 'obsolete', html: 'z'.repeat(2048) });
   await utimes(file('obsolete'), 1, 1);
   const obsoleteBytes = (await stat(file('obsolete'))).size;
   const second = await collectCache(data, options);

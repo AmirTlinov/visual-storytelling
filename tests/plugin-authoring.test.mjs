@@ -2,7 +2,7 @@ import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, readdir, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, mkdir, rm, chmod } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
@@ -12,16 +12,26 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
 import { pluginHost } from './plugin/host.mjs';
 import { createProjectFixture } from './plugin/authoring-fixture.mjs';
+import { installRelease } from '../plugin/install.mjs';
 
+async function unlockDirectories(directory) {
+  await chmod(directory, 0o700);
+  for (const entry of await readdir(directory, { withFileTypes: true }))
+    if (entry.isDirectory()) await unlockDirectories(join(directory, entry.name));
+}
 test(
   'installed release completes silent authoring, local narration, cancel/retry, file reopening and portable delivery',
   { timeout: 300000 },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'story-authoring-'));
+    const installed = await installRelease(resolve('.plugin-release'), {
+      directory: join(directory, 'installation'),
+      register: false,
+    });
     const host = await pluginHost({
       dataDirectory: join(directory, 'data'),
-      serverCommand: resolve('.plugin-release/runtime/node'),
-      serverEntry: resolve('.plugin-release/plugin/dist/server.mjs'),
+      serverCommand: join(installed.release, 'runtime/node'),
+      serverEntry: join(installed.release, 'plugin/dist/server.mjs'),
     });
     const browser = await chromium.launch(chromiumLaunchOptions({ headless: true }));
     const page = await browser.newPage();
@@ -71,15 +81,12 @@ test(
       });
       const initial = (await call('story_inspect', { sessionId })).structuredContent;
       await call('story_control', {
-        sessionId,
-        buildRevision: initial.buildRevision,
-        stateRevision: initial.stateRevision,
+        context: initial.context,
         requestId: randomUUID(),
         commands: [{ type: 'rate', value: 0.25 }, { type: 'play' }],
       });
       const edited = await call('story_edit', {
-        projectId: project.id,
-        sourceRevision: before.sourceRevision,
+        context: before.context,
         requestId: randomUUID(),
         changes: [
           {
@@ -88,7 +95,7 @@ test(
           },
         ],
       });
-      await finish(edited.structuredContent.job.id);
+      const editedProject = (await finish(edited.structuredContent.job.id)).result.project;
       await app.locator('#update').waitFor();
       const shownSource = (await call('story_inspect', { sessionId, file: 'scene.js' }))
         .structuredContent;
@@ -98,44 +105,37 @@ test(
         'the shown source stays bound to the playing build',
       );
       assert.equal(shownSource.shownSourceRevision, before.sourceRevision);
-      assert.equal(
-        shownSource.workingSourceRevision,
-        edited.structuredContent.project.sourceRevision,
-      );
+      assert.equal(shownSource.workingSourceRevision, editedProject.sourceRevision);
       await app.locator('#update').click();
       await app
         .frameLocator('#scene')
         .getByText('Проверенная авторская правка', { exact: true })
         .waitFor();
       const shown = await call('story_inspect', { sessionId });
-      assert.equal(
-        shown.structuredContent.sourceRevision,
-        edited.structuredContent.project.sourceRevision,
-      );
+      assert.equal(shown.structuredContent.sourceRevision, editedProject.sourceRevision);
       const conflict = await host.client.callTool({
         name: 'story_edit',
         arguments: {
-          projectId: project.id,
-          sourceRevision: before.sourceRevision,
+          context: before.context,
           requestId: randomUUID(),
           changes: [{ path: 'scene.js', content: file.content }],
         },
       });
       assert.equal(conflict.isError, true);
       const undone = await call('story_edit', {
-        projectId: project.id,
-        sourceRevision: edited.structuredContent.project.sourceRevision,
+        context: editedProject.context,
         requestId: randomUUID(),
         undo: true,
       });
-      await finish(undone.structuredContent.job.id);
+      const undoneProject = (await finish(undone.structuredContent.job.id)).result.project;
       await app
         .frameLocator('#scene')
         .getByText('Одна клетка — один шаг', { exact: true })
         .waitFor();
       const help = await call('story_help', { projectId: project.id, query: 'SceneHandle' });
       assert.match(JSON.stringify(help.structuredContent), /SceneHandle/);
-      const voiceList = (await call('story_voice', { projectId: project.id })).structuredContent;
+      const voiceList = (await call('story_voice', { context: undoneProject.context }))
+        .structuredContent;
       assert.equal(voiceList.provider, 'higgs');
       assert.equal(voiceList.settings.provider, 'higgs');
       assert.deepEqual(
@@ -157,8 +157,7 @@ test(
       const unsupportedVoice = await host.client.callTool({
         name: 'story_voice',
         arguments: {
-          projectId: project.id,
-          sourceRevision: undone.structuredContent.project.sourceRevision,
+          context: undoneProject.context,
           requestId: randomUUID(),
           enabled: true,
           provider: 'macos',
@@ -167,13 +166,12 @@ test(
       assert.equal(unsupportedVoice.isError, true);
       assert.equal(
         (await call('story_inspect', { projectId: project.id })).structuredContent.sourceRevision,
-        undone.structuredContent.project.sourceRevision,
+        undoneProject.sourceRevision,
         'an unsupported provider does not edit the project',
       );
       assert.deepEqual(await readdir(join(directory, 'data/jobs')), jobsBeforeUnsupportedVoice);
       const adapterAdded = await call('story_edit', {
-        projectId: project.id,
-        sourceRevision: undone.structuredContent.project.sourceRevision,
+        context: undoneProject.context,
         requestId: randomUUID(),
         changes: [
           {
@@ -185,10 +183,10 @@ test(
           },
         ],
       });
-      await finish(adapterAdded.structuredContent.job.id);
+      const adapterAddedProject = (await finish(adapterAdded.structuredContent.job.id)).result
+        .project;
       const voiceDisabled = await call('story_voice', {
-        projectId: project.id,
-        sourceRevision: adapterAdded.structuredContent.project.sourceRevision,
+        context: adapterAddedProject.context,
         requestId: randomUUID(),
         enabled: false,
         provider: 'local',
@@ -197,17 +195,17 @@ test(
         voice: 'fixture',
         language: 'ru',
       });
-      await finish(voiceDisabled.structuredContent.job.id);
+      const voiceDisabledProject = (await finish(voiceDisabled.structuredContent.job.id)).result
+        .project;
       await call('story_preferences', { patch: { language: 'en' } });
       const narrated = await call('story_voice', {
-        projectId: project.id,
-        sourceRevision: voiceDisabled.structuredContent.project.sourceRevision,
+        context: voiceDisabledProject.context,
         requestId: randomUUID(),
         enabled: true,
       });
-      await finish(narrated.structuredContent.job.id);
-      const voiceSettings = (await call('story_voice', { projectId: project.id })).structuredContent
-        .settings;
+      const narratedProject = (await finish(narrated.structuredContent.job.id)).result.project;
+      const voiceSettings = (await call('story_voice', { context: narratedProject.context }))
+        .structuredContent.settings;
       assert.equal(voiceSettings.voice, 'fixture');
       assert.equal(voiceSettings.provider, 'local');
       assert.equal(voiceSettings.model, 'fixture');
@@ -226,28 +224,25 @@ test(
         false,
         'enabling narration does not restore the absent sound of a silent clock as mute',
       );
-      const narration = (
-        await call('story_inspect', { projectId: project.id, file: 'narration.json' })
-      ).structuredContent;
+      const narration = (await call('story_inspect', { projectId: project.id, file: 'story.json' }))
+        .structuredContent;
       const script = JSON.parse(narration.content);
-      script.segments.at(-1).text += ' Теперь проверьте свой вариант.';
+      script.chapters.at(-1).beats.at(-1).say += ' Теперь проверьте свой вариант.';
       const spokenEdit = await call('story_edit', {
-        projectId: project.id,
-        sourceRevision: narrated.structuredContent.project.sourceRevision,
+        context: narratedProject.context,
         requestId: randomUUID(),
-        changes: [{ path: 'narration.json', content: JSON.stringify(script, null, 2) }],
+        changes: [{ path: 'story.json', content: JSON.stringify(script, null, 2) }],
       });
-      await finish(spokenEdit.structuredContent.job.id);
+      const spokenEditProject = (await finish(spokenEdit.structuredContent.job.id)).result.project;
       assert.equal(
         (await readdir(join(directory, 'data/speech'))).length,
-        script.segments.length + 1,
+        script.chapters.length + 1,
         'only the changed phrase adds an adapter take',
       );
       const produced = await call('story_produce', {
         target: {
           kind: 'working',
-          projectId: project.id,
-          sourceRevision: spokenEdit.structuredContent.project.sourceRevision,
+          context: spokenEditProject.context,
         },
         requestId: randomUUID(),
         options: {
@@ -368,7 +363,10 @@ test(
         }
       });
       await cleanup(() => host.close());
-      await cleanup(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
+      await cleanup(async () => {
+        await unlockDirectories(directory);
+        await rm(directory, { recursive: true, force: true, maxRetries: 5 });
+      });
       if (failures.length)
         throw new AggregateError(
           [...(primaryError ? [primaryError] : []), ...failures],

@@ -51,14 +51,18 @@ test('chapter edits, history and seeks share the accepted composition position',
     state = await read();
     assert.equal(state.shown.chapter, 'workshop');
     assert.equal(state.chapter, 'workshop.idea');
-    assert.equal(state.values.closed, true, 'a chapter transition samples its own baseline');
+    assert.equal(
+      state.values.closed,
+      false,
+      'a document subject retains viewer conditions across chapters',
+    );
     assert.equal(state.time, state.clock);
     assert.equal(state.playing, false);
     const boundary = await page.evaluate(() => lesson.scene.capture());
     assert.equal(boundary.chapter, 'workshop.idea');
     assert.equal(boundary.progress, 1);
     await page.evaluate(async () => {
-      lesson.shell.input({ closed: false });
+      lesson.shell.input({ closed: true });
       await lesson.story.ready();
       await lesson.scene.control([{ type: 'undoExperiment' }]);
     });
@@ -69,7 +73,7 @@ test('chapter edits, history and seeks share the accepted composition position',
       'undo preserves the outgoing chapter at its exact end',
     );
     assert.equal(state.values.sceneTime, 1);
-    assert.equal(state.values.closed, true);
+    assert.equal(state.values.closed, false);
     await page.evaluate(async () => {
       lesson.story.seek(lesson.story.currentTime);
       await lesson.story.ready();

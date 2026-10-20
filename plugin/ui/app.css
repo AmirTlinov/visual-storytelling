@@ -26,6 +26,7 @@ main {
 }
 body {
   margin: 0;
+  display: flow-root;
 }
 #scene-actions {
   display: flex;

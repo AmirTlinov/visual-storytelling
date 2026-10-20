@@ -2,6 +2,16 @@ import { SVG_NS } from './dom.js';
 
 /** Measure in logical units: a scene's screen scale must never change its glyph advances. */
 export function measureText<T>(text: SVGTextElement, read: (measured: SVGTextElement) => T): T {
+  return measureTextVariants(text, [undefined], read)[0]!;
+}
+
+/** Measure future values in one isolated layout without writing their pen strokes. */
+export function measureTextVariants<T>(
+  text: SVGTextElement,
+  values: readonly (string | undefined)[],
+  read: (measured: SVGTextElement) => T,
+): T[] {
+  if (!values.length) return [];
   const document = text.ownerDocument;
   const stage = document.createElementNS(SVG_NS, 'svg');
   const viewport = text.ownerSVGElement;
@@ -42,10 +52,15 @@ export function measureText<T>(text: SVGTextElement, read: (measured: SVGTextEle
     copy.style.setProperty(property, style.getPropertyValue(property));
   copy.style.display = 'inline';
   copy.style.transform = 'none';
-  stage.append(copy);
+  const copies = values.map((value) => {
+    const variant = copy.cloneNode(true) as SVGTextElement;
+    if (value !== undefined) variant.textContent = value;
+    stage.append(variant);
+    return variant;
+  });
   document.body.append(stage);
   try {
-    return read(copy);
+    return copies.map(read);
   } finally {
     stage.remove();
   }

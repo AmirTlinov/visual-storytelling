@@ -1,3 +1,4 @@
+import { validateStoryDocument } from '../dist/story/document.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -10,14 +11,11 @@ import { chromiumLaunchOptions } from '../tools/chromium.mjs';
 import { pluginHost } from './plugin/host.mjs';
 import { finishFixtureJob } from './plugin/authoring-fixture.mjs';
 
-const explanation = {
-  version: 1,
-  model: { id: 'division', kind: 'division', count: 11, divisor: 3 },
-  views: [
-    { id: 'groups', kind: 'groups', model: 'division' },
-    { id: 'equation', kind: 'equation', model: 'division' },
-  ],
-};
+const document = validateStoryDocument({
+  recipe: 'division',
+  id: 'division',
+  inputs: { count: 11, divisor: 3 },
+});
 
 test(
   'partial subject becomes one saved live scene; atomic edits, retry, undo, reopen and production share its pin',
@@ -48,8 +46,8 @@ test(
           title: 'Invalid references',
           path: invalidCreatePath,
           requestId: randomUUID(),
-          explanation: {
-            ...explanation,
+          document: {
+            ...document,
             views: [{ id: 'objects', kind: 'groups', model: 'missing' }],
           },
         },
@@ -70,8 +68,9 @@ test(
       await page.waitForFunction(() => Boolean(window.pluginTest));
       const app = page.frameLocator('iframe[title="MCP App"]');
       await app.locator('#catalog:not([hidden])').waitFor();
-      await page.evaluate((explanation) => window.pluginTest.partial({ explanation }), {
-        model: { kind: 'division', count: 11, divisor: 3 },
+      await page.evaluate((document) => window.pluginTest.partial({ document }), {
+        recipe: 'division',
+        inputs: { count: 11, divisor: 3 },
       });
       await app.locator('#scene[data-provisional="true"]').waitFor();
       await app.frameLocator('#scene').locator('svg').first().waitFor();
@@ -80,21 +79,21 @@ test(
       await scene.evaluate(() => {
         window.initialScene = document.querySelector('main').scene;
       });
-      await page.evaluate((explanation) => window.pluginTest.partial({ explanation }), {
-        ...explanation,
-        model: { ...explanation.model, divisor: 0 },
+      await page.evaluate((document) => window.pluginTest.partial({ document }), {
+        ...document,
+        models: [{ ...document.models[0], inputs: { ...document.models[0].inputs, divisor: 0 } }],
       });
       assert.equal(
-        await scene.evaluate(() => window.initialScene.authoring.document.model.divisor),
+        await scene.evaluate(() => window.initialScene.authoring.document.models[0].inputs.divisor),
         3,
       );
       const request = {
         title: 'Остаток от деления',
         path: join(directory, 'project'),
-        explanation,
+        document,
         requestId: randomUUID(),
       };
-      request.explanation = { model: { kind: 'division', count: 11, divisor: 3 } };
+      request.document = { recipe: 'division', inputs: { count: 11, divisor: 3 } };
       const started = performance.now();
       const created = await call('story_create', request);
       const creationMs = performance.now() - started;
@@ -115,8 +114,7 @@ test(
       const closedEdit = await host.client.callTool({
         name: 'story_edit',
         arguments: {
-          projectId: project.id,
-          sourceRevision: project.sourceRevision,
+          context: project.context,
           requestId: randomUUID(),
           operations: [{ op: 'set-inputs', modelId: 'division', values: { count: 12 } }],
         },
@@ -139,8 +137,7 @@ test(
       const latencies = [];
       const edit = async (count) => {
         const args = {
-          projectId: project.id,
-          sourceRevision: current.sourceRevision,
+          context: current.context,
           requestId: randomUUID(),
           operations: [{ op: 'set-inputs', modelId: 'division', values: { count } }],
         };
@@ -167,7 +164,7 @@ test(
         'retry returns the original accepted receipt after a later edit',
       );
       assert.equal(
-        await scene.evaluate(() => window.initialScene.authoring.document.model.count),
+        await scene.evaluate(() => window.initialScene.authoring.document.models[0].inputs.count),
         17,
       );
       const frameUI = app.frameLocator('#scene');
@@ -202,8 +199,7 @@ test(
       const invalid = await host.client.callTool({
         name: 'story_edit',
         arguments: {
-          projectId: project.id,
-          sourceRevision: current.sourceRevision,
+          context: current.context,
           requestId: randomUUID(),
           operations: [{ op: 'set-inputs', modelId: 'missing', values: { count: 9 } }],
         },
@@ -214,44 +210,49 @@ test(
         current.sourceRevision,
       );
       assert.equal(
-        await scene.evaluate(() => window.initialScene.authoring.document.model.count),
+        await scene.evaluate(() => window.initialScene.authoring.document.models[0].inputs.count),
         17,
       );
-      const beforeInvalidLayout = await readFile(join(project.path, 'explanation.json'), 'utf8');
+      const beforeInvalidLayout = await readFile(join(project.path, 'story.json'), 'utf8');
       const invalidLayout = await host.client.callTool({
         name: 'story_edit',
         arguments: {
-          projectId: project.id,
-          sourceRevision: current.sourceRevision,
+          context: current.context,
           requestId: randomUUID(),
           operations: [
             {
-              op: 'set-score',
-              score: [
-                { id: 'start', action: 'gather' },
-                { id: 'future-caption', action: 'group', text: 'W'.repeat(90) },
+              op: 'set-chapters',
+              chapters: [
+                {
+                  id: 'experience',
+                  title: 'Layout preflight',
+                  beats: [
+                    { id: 'start', operation: { model: 'division', name: 'gather' } },
+                    {
+                      id: 'future-caption',
+                      operation: { model: 'division', name: 'group' },
+                      text: 'W'.repeat(90),
+                    },
+                  ],
+                },
               ],
             },
           ],
         },
       });
       assert.equal(invalidLayout.isError, true, 'future captions are checked before committing');
-      assert.equal(
-        await readFile(join(project.path, 'explanation.json'), 'utf8'),
-        beforeInvalidLayout,
-      );
+      assert.equal(await readFile(join(project.path, 'story.json'), 'utf8'), beforeInvalidLayout);
       assert.equal(
         (await call('story_inspect', { projectId: project.id })).structuredContent.sourceRevision,
         current.sourceRevision,
       );
       assert.equal(
-        await scene.evaluate(() => window.initialScene.authoring.document.model.count),
+        await scene.evaluate(() => window.initialScene.authoring.document.models[0].inputs.count),
         17,
       );
       const undone = (
         await call('story_edit', {
-          projectId: project.id,
-          sourceRevision: current.sourceRevision,
+          context: current.context,
           requestId: randomUUID(),
           undo: true,
         })
@@ -259,7 +260,7 @@ test(
       current = undone.project;
       assert.equal(undone.shown[0].acknowledgement, 'rendered');
       assert.equal(
-        await scene.evaluate(() => window.initialScene.authoring.document.model.count),
+        await scene.evaluate(() => window.initialScene.authoring.document.models[0].inputs.count),
         14,
       );
       const pin = JSON.parse(await readFile(join(project.path, 'scene-runtime.json'), 'utf8'));
@@ -277,8 +278,7 @@ test(
         await call('story_produce', {
           target: {
             kind: 'build',
-            projectId: project.id,
-            buildRevision: reopened.structuredContent.buildRevision,
+            context: reopened.structuredContent.context,
           },
           requestId: randomUUID(),
           options: { formats: ['html', 'source'], conditions: 'authored' },

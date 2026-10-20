@@ -450,3 +450,9 @@ public domain, движок Three.js — MIT. Происхождение ука�
 `actors` задаёт сохраняющуюся родную анимацию. `teachingRoom` предоставляет `board`,
 `presenter` и `entry`, связанные размещением. [Живые рисунки](lessons.md) входят в `surfaces`:
 их масштаб, проекция, глубина, попадание и снимки принадлежат миру.
+
+Физическая модель может задавать абсолютную позу плоского CharacterStage через
+`pose(id,time,reduced,frame)`: at/scale/rotation и контакты reach. `characters/cast.ts`
+использует тот же риг и CCD solver; подготовленная декорация сохраняет свою постановку.
+[Рабочий физический опыт](../examples/push-block/presentation.js) и
+[контракт](../skills/visual-explainer/references/physics-story.md).

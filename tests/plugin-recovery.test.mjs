@@ -69,10 +69,8 @@ test(
       await original({
         name: 'story_control',
         arguments: {
-          sessionId,
+          context: before.context,
           requestId: randomUUID(),
-          buildRevision: before.buildRevision,
-          stateRevision: before.stateRevision,
           commands: [{ type: 'play' }],
         },
       });
@@ -104,7 +102,7 @@ test(
       assert.ok(page.frames().includes(frame));
       const navigation = await original({
         name: 'story_navigate',
-        arguments: { sessionId, target: { example: 'gpt-model' } },
+        arguments: { context: after.context, target: { example: 'gpt-model' } },
       });
       assert.equal(navigation.isError, undefined, JSON.stringify(navigation));
       assert.notEqual(navigation.structuredContent.sessionId, sessionId);

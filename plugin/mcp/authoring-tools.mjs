@@ -1,6 +1,7 @@
 import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { z } from 'zod';
-import { read, changeView, revisionTarget } from './schema.mjs';
+import { read, changeView, context, contextTarget } from './schema.mjs';
+import { documentOperations } from './document-operations.mjs';
 
 const requestId = z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/);
 const projectId = z.string().uuid();
@@ -13,52 +14,10 @@ const fileChanges = z
   )
   .min(1)
   .max(64);
-const view = z.strictObject({
-  id: z.string().min(1).max(80),
-  kind: z.enum(['groups', 'equation']),
-  model: z.string().min(1).max(80),
-});
-const beat = z.strictObject({
-  id: z.string().min(1).max(80),
-  action: z.enum(['gather', 'group', 'remainder']).optional(),
-  focus: z
-    .array(z.enum(['groups', 'remainder', 'equation']))
-    .min(1)
-    .max(3)
-    .optional(),
-  hold: z.boolean().optional(),
-  seconds: z.number().min(0.2).max(30).optional(),
-  text: z.string().min(1).max(90).optional(),
-});
-const explanationInput = z.strictObject({
-  version: z.literal(1).optional(),
-  title: z.string().min(1).max(160).optional(),
-  model: z.strictObject({
-    id: z.string().min(1).max(80).optional(),
-    kind: z.literal('division'),
-    count: z.number().int().min(0).max(36),
-    divisor: z.number().int().min(1).max(12),
-  }),
-  views: z.array(view).min(1).max(2).optional(),
-  score: z.array(beat).min(1).max(16).optional(),
-});
-const semanticOperations = z
-  .array(
-    z.discriminatedUnion('op', [
-      z.strictObject({
-        op: z.literal('set-inputs'),
-        modelId: z.string().min(1).max(80),
-        values: z.strictObject({
-          count: z.number().int().min(0).max(36).optional(),
-          divisor: z.number().int().min(1).max(12).optional(),
-        }),
-      }),
-      z.strictObject({ op: z.literal('set-views'), views: z.array(view).min(1).max(2) }),
-      z.strictObject({ op: z.literal('set-score'), score: z.array(beat).min(1).max(16) }),
-    ]),
-  )
-  .min(1)
-  .max(16);
+// Transport accepts JSON; the pinned core owns document and operation semantics.
+const storyDocumentInput = z.record(z.string(), z.json()).describe(
+  'Recipe or canonical StoryDocument v2. Supply custom chapters in this initial document to author the complete story in one request. Each chapter has id/title/beats; each beat has id, optional operation:{model,name}, seconds, text (short visible narrative), action (staging intention, not a caption), and optional say (spoken wording). Voice preparation is explicit.',
+);
 export function authoringTools(server, runtime, uri, safely) {
   const result = (value, text) => ({ content: [{ type: 'text', text }], structuredContent: value });
   registerAppTool(
@@ -67,12 +26,12 @@ export function authoringTools(server, runtime, uri, safely) {
     {
       title: 'Создать визуальное объяснение',
       description:
-        'Create from explanation:{model:{kind:"division",count,divisor}}. Supply sessionId to show the new explanation in that already open card, preserving a Back destination. The sessionId is bound to requestId; repeat the same request to resume unconfirmed delivery. Creation alone is not a shown frame: delivery is pending, prepared, shown or failed. The standard staging shows objects, full groups, remainder and equation; supply both inputs, then continue the same card with story_edit operations. Version 1, model ID "division" and groups/equation views are filled by the document validator. Explicit IDs, views and title are optional; add score only to choose a specific order of actions, focus or holds. The saved document is always complete. Runtime is pinned immediately; no per-request npm, archive or compilation. The existing Story owns time and controls. Omit explanation for a source-code scaffold, or supply example="gpt-model" for the exemplar; those prepare through JobRunner and do not accept sessionId. Voice and portable archives are optional production work.',
+        'Create from document:{recipe:"division",inputs:{count,divisor}} or a canonical StoryDocument v2. The pinned core validates and normalizes the complete document. Recipes division, fractions, lever, circuit, dependency-route, comparison, probability and sampling supply short visual stories; chapters:[] creates a real static experiment without playback. Lever is a directly draggable experiment with attached weights, release and physical replay; comparison is an explicit controlled pair. Supply context from the open card to reuse it, preserving a Back destination. Repeat the same requestId and arguments to resume unconfirmed delivery. A saved source or prepared build alone is not a shown frame; inspect delivery and acknowledgement. Continue with story_edit operations. Add custom model/subject JS/TS through story-project.json and one story_edit changes transaction; they share the pinned runtime. Runtime is pinned immediately; prepared documents need no per-request npm or compilation. Omit document for a source-code scaffold, or use example="gpt-model" for the exemplar; these use JobRunner and do not accept a scene context.',
       inputSchema: {
         title: z.string().min(1).max(160),
         example: z.string().min(1).optional(),
-        explanation: explanationInput.optional(),
-        sessionId: z.string().uuid().optional(),
+        document: storyDocumentInput.optional(),
+        context: context.optional(),
         path: z.string().optional(),
         requestId,
       },
@@ -87,23 +46,20 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_edit',
     {
       description:
-        'Apply one complete undoable authoring operation. For a live explanation use operations: set-inputs(modelId,values), set-views(views), or set-score(score). Each payload and the final document are validated before writing; related views/references can change atomically. Explicit input keys override viewer values even when unchanged in the source; other viewer inputs survive. Delivery is shown, prepared, pending or failed: saved source alone is not a rendered result. Retry the same requestId to resume unconfirmed delivery without rewriting; a completed receipt stays historical. sourceRevision fences external edits. For source-code extensions use changes (UTF-8 replacement, null deletion); those retain the existing build/candidate path. Choose operations, changes or undo.',
+        'Apply one complete undoable authoring operation. For a live explanation use operations: set-inputs(modelId,values), set-views(views), set-chapters(chapters), or set-resources(resources). Each payload and the final document are validated before writing; related views/references can change atomically. Explicit input keys override viewer values even when unchanged in the source; other viewer inputs survive. Delivery is shown, prepared, pending or failed: saved source alone is not a rendered result. Retry the same requestId to resume unconfirmed delivery without rewriting; a completed receipt stays historical. The supplied context fences external source changes and binds the scene. Continue from the returned context after success; inspect only for detail or conflict. For source-code extensions use changes (UTF-8 replacement, null deletion); those prepare an immutable candidate before committing. While the job runs, project is the accepted source; on success job.result.project is the committed revision. A failed candidate preserves source, runtime pin and the last working picture. Choose operations, changes or undo.',
       inputSchema: {
-        projectId,
-        sourceRevision: z.string(),
+        context,
         requestId,
         undo: z.boolean().optional(),
         changes: fileChanges.optional(),
-        operations: semanticOperations.optional(),
+        operations: documentOperations.optional(),
       },
       annotations: changeView,
     },
     safely(async (args) =>
       result(
         await runtime.call('edit', args),
-        args.operations
-          ? 'Смысловая операция принята; результат показа указан в receipt.'
-          : 'Правка сохранена; новая версия готовится.',
+        'Результат операции различает подготовку, принятый исходник и показанный кадр.',
       ),
     ),
   );
@@ -111,9 +67,9 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_produce',
     {
       description:
-        'Produce HTML, PNG, supported SVG, video, captions or source from an explicit shown build or working revision. Current conditions require a shown build and sessionId; they apply to HTML and images. Video requires an explicit story or interval. Returns a persistent, inspectable job.',
+        'Produce HTML, PNG, supported SVG, video, captions or source from an explicit shown build or working revision. Current conditions require a build target with an observed scene context; they apply to HTML, images and video. Video requires an explicit story or interval. Returns a persistent, inspectable job.',
       inputSchema: {
-        target: revisionTarget,
+        target: contextTarget,
         requestId,
         options: z
           .object({
@@ -148,7 +104,6 @@ export function authoringTools(server, runtime, uri, safely) {
               )
               .optional(),
             conditions: z.enum(['authored', 'current']).default('authored'),
-            sessionId: z.string().uuid().optional(),
             video: z
               .discriminatedUnion('kind', [
                 z.strictObject({ kind: z.literal('story') }),
@@ -174,7 +129,7 @@ export function authoringTools(server, runtime, uri, safely) {
       description:
         'Review a fixed project revision with its pinned CLI. Returns a persistent job; story_inspect reads progress and the final HTML, frame, and evidence paths. By default captures deterministic scene checkpoints, not playback cadence. Select a cue or time window; scenario names an authored JSON file for a real browser interaction. The source stays unchanged. Use story_cancel or story_retry for interrupted work.',
       inputSchema: {
-        target: revisionTarget,
+        target: contextTarget,
         requestId,
         options: z
           .object({
@@ -242,10 +197,11 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_help',
     {
       description:
-        'Read public APIs, existing projects and the complete gpt-model exemplar. For grouping and remainder start with story_create(explanation), then story_edit(operations) in the same live card. Read ExplanationDocument or mountExplanation for its compact contract. For new source-code behavior create a scaffold, edit, review and open it. queries accepts up to 12 public API names; projectId reads the exact pinned runtime before dependency installation.',
+        'Read public APIs, existing projects and complete catalog examples. For grouping and remainder start with story_create(document), then story_edit(operations) in the same live card. Read StoryDocument, validateStoryDocument or IllustratedStory for its compact contract. For new source-code behavior create a scaffold, edit, review and open it. queries accepts up to 12 public API names; projectId reads the exact pinned runtime before dependency installation.',
       inputSchema: {
         query: z.string().max(300).optional(),
         queries: z.array(z.string().min(1).max(300)).min(1).max(12).optional(),
+        context: context.optional(),
         projectId: projectId.optional(),
         group: z.string().max(100).optional(),
         recommended: z.boolean().optional(),
@@ -271,10 +227,9 @@ export function authoringTools(server, runtime, uri, safely) {
     'story_migrate',
     {
       description:
-        'Explicitly upgrade a project to this plugin’s core. Optional changes use the same UTF-8 replacement/deletion contract as story_edit, so removed APIs can be migrated in the same operation. Applies changes to a separate candidate before building; only a successful candidate publishes sources, package and lockfile as one undoable edit. Supply at most 62 source files plus package.json and package-lock.json. A changed sourceRevision prevents publication. Runtime archives remain available for story_edit undo. Existing views remain visible during preparation.',
+        'Explicitly upgrade a project to this plugin’s core. Optional changes use the same UTF-8 replacement/deletion contract as story_edit, so removed APIs can be migrated in the same operation. Applies changes to a separate candidate before building; only a successful candidate publishes sources, package and lockfile as one undoable edit. Supply at most 62 source files plus package.json and package-lock.json. A changed source in the supplied context prevents publication. Runtime archives remain available for story_edit undo. The result publishes the verified build directly, without a second compilation. Existing views remain visible during preparation.',
       inputSchema: {
-        projectId,
-        sourceRevision: z.string(),
+        context,
         requestId,
         changes: fileChanges.optional(),
       },
@@ -290,8 +245,7 @@ export function authoringTools(server, runtime, uri, safely) {
       description:
         'Inspect or select narration: default local Higgs TTS 3 BF16, a user-selected local model, or an API connected by the agent. For local/api, provide model and a project-relative .mjs adapter; read skills/visual-explainer/references/voice-adapter.md in the installed plugin. The adapter returns WAV and actual speech timestamps; keep API credentials in the runtime environment, outside project files. Inspection checks adapter configuration without a synthesis/API request. enabled=true saves one undoable edit and prepares synchronized narration through the cancellable JobRunner. Only Higgs prepares MLX dependencies. Enable narration when requested; preserve the selected model when it fails. Toggling preserves settings; playback muting is separate.',
       inputSchema: {
-        projectId: projectId.optional(),
-        sourceRevision: z.string().optional(),
+        context: context.optional(),
         requestId: requestId.optional(),
         enabled: z.boolean().optional(),
         provider: z.enum(['higgs', 'local', 'api']).optional(),
@@ -303,11 +257,8 @@ export function authoringTools(server, runtime, uri, safely) {
       annotations: changeView,
     },
     safely(async (args) => {
-      if (
-        args.enabled !== undefined &&
-        (!args.projectId || !args.sourceRevision || !args.requestId)
-      )
-        throw new Error('Changing narration requires projectId, sourceRevision and requestId.');
+      if (args.enabled !== undefined && (!args.context || !args.requestId))
+        throw new Error('Changing narration requires context and requestId.');
       return result(
         await runtime.call('voice', args),
         args.enabled === undefined ? 'Доступные голоса.' : 'Подготавливаю рассказ.',

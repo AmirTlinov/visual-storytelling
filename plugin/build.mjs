@@ -10,6 +10,7 @@ import { packageInfo } from '../tools/build-info.mjs';
 import { readCatalog } from '../tools/catalog.mjs';
 import { scenePage } from '../tools/scene-entry.mjs';
 import { buildOutput } from '../tools/build-output.mjs';
+import { storyProjectPage } from '../tools/story-project.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url)),
   output = join(root, 'plugin/dist');
 if ((await packageInfo(root)).status !== 'current')
@@ -22,12 +23,9 @@ await buildOutput(root, output, async (out) => {
   );
   await mkdir(join(out, 'examples'), { recursive: true });
   const live = join(out, 'scenes', 'live');
-  await buildPage(join(root, 'tools/explanation/index.html'), live, {
+  await buildPage(join(root, 'tools/document-scene/index.html'), live, {
     sourcePackage: true,
-    html: (await readFile(join(root, 'tools/explanation/index.html'), 'utf8')).replace(
-      'src="scene.js"',
-      `src="${join(root, 'plugin/ui/live-scene.mjs')}"`,
-    ),
+    html: storyProjectPage(`import ${JSON.stringify(join(root, 'plugin/ui/live-scene.mjs'))};`),
   });
   const liveHTML = await packDirectory(live, scenePage, { audio: 'original' });
   await writeFile(join(out, 'live.html'), liveHTML);

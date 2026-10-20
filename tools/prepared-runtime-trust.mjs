@@ -43,7 +43,7 @@ export async function assertPreparedRuntimeRoot(root) {
   const receiptFile = join(canonical, '.installation.json');
   const files = [
     receiptFile,
-    ...['package.json', 'dist/build-info.json', 'dist/explanation/document.js'].map((file) =>
+    ...['package.json', 'dist/build-info.json', 'dist/index.js'].map((file) =>
       join(canonical, file),
     ),
   ];

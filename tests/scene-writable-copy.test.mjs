@@ -105,7 +105,7 @@ test(
       await writeFile(join(snapshot, 'drawing.svg'), 'Preparation owns this copied input');
       assert.match(await readFile(join(project, 'drawing.svg'), 'utf8'), /Before build/);
 
-      const release = await deliver(project, { formats: ['source'], prepareAudio: false });
+      const release = await deliver(project, { formats: ['source'] });
       const restored = join(directory, 'restored');
       await mkdir(restored);
       await execute('tar', ['-xzf', join(release.directory, 'source.tar.gz'), '-C', restored]);

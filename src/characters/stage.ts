@@ -1,9 +1,10 @@
+import { releaseResources } from '../lifecycle.js';
 import { characterRenderer, type CharacterRenderer } from './renderer.js';
 import { destination } from './staging/layout.js';
 import { project } from './staging/space.js';
 import { stageFrame, sameShot, type FrameBox } from './staging/camera.js';
 import { world } from './staging/world.js';
-import { performance } from './performance.js';
+import { characterCast } from './cast.js';
 import { compileScore, type CharacterScore } from './score.js';
 import { propFrame, smooth } from './prop-state.js';
 import { artworkSurfaces, mountArtwork } from './artwork.js';
@@ -12,9 +13,9 @@ import { fitFrame } from '../scene-frame.js';
 import { characterSurfaces } from './surfaces.js';
 import type { Shot } from './staging/types.js';
 import type { ChapterFrame } from '../story/composition.js';
-import { characterDetails } from './framing.js';
 import { shotFraming } from './shot-framing.js';
 import { snapshotSVG } from '../export/index.js';
+import { rasterResolution } from '../raster-budget.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 let nextStage = 0;
@@ -98,7 +99,7 @@ export async function characterStage(
   resize();
   let prepared: Awaited<ReturnType<typeof world>> | undefined;
   let disposed = false;
-  let performers: Record<string, ReturnType<typeof performance>> = {};
+  let castOwner: ReturnType<typeof characterCast> | undefined;
   let releasePresentation: (() => void) | undefined;
   let inspect: (() => unknown) | undefined;
   const inspected = canvas as HTMLCanvasElement & { __visualReview?: () => unknown };
@@ -108,12 +109,19 @@ export async function characterStage(
     replay = undefined;
     observer.disconnect();
     if (inspected.__visualReview === inspect) delete inspected.__visualReview;
-    surfaces?.dispose();
-    releasePresentation?.();
-    prepared?.dispose();
-    for (const actor of Object.values(performers)) actor.dispose();
-    if (!shared) graphics.dispose();
-    element.remove();
+    releaseResources(
+      [
+        () => surfaces?.dispose(),
+        () => releasePresentation?.(),
+        () => prepared?.dispose(),
+        () => castOwner?.dispose(),
+        () => {
+          if (!shared) graphics.dispose();
+        },
+        () => element.remove(),
+      ],
+      'Character stage disposal failed.',
+    );
   };
   try {
     const point = (at: CharacterStageOptions['cast'][string]['at']): Point => {
@@ -121,21 +129,8 @@ export async function characterStage(
         return project(set.staging.projection, destination(set.staging, at));
       return typeof at === 'string' ? set.spots[at]! : (at as Point);
     };
-    const actors = Object.fromEntries(
-      Object.entries(cast).map(([id, actor]) => [
-        id,
-        performance(
-          data,
-          pack,
-          actor,
-          score.tracks[id]!,
-          point(actor.at),
-          set.height,
-          options.blend,
-        ),
-      ]),
-    );
-    performers = actors;
+    castOwner = characterCast(data, options, score, point);
+    const { actors } = castOwner;
     if (score.blocking) prepared = await world(options, score.blocking, actors, renderer, signal);
     signal?.throwIfAborted();
     if (Object.keys(options.surfaces ?? {}).length) {
@@ -177,11 +172,13 @@ export async function characterStage(
       }),
     );
     let snapshot: unknown;
+    let raster: ReturnType<typeof rasterResolution> | undefined;
     let manualShot: Shot | undefined;
     let latest: [number, boolean, ChapterFrame | undefined] = [0, false, undefined];
     let camera: FrameBox = { x: 0, y: 0, width: set.width, height: set.height },
       bounds: Record<string, FrameBox> = {};
     let details: Record<string, FrameBox> = {};
+    let castContacts: ReturnType<ReturnType<typeof characterCast>['sample']>['contacts'] = {};
     let propBounds: Record<string, FrameBox> = {};
     const namedSubjects = () => ({ ...bounds, ...propBounds, ...details });
     let focus: readonly string[] | undefined;
@@ -189,6 +186,7 @@ export async function characterStage(
     inspect = () => {
       const rect = canvas.getBoundingClientRect();
       return {
+        receipt: { raster },
         camera,
         changingShot,
         objects: Object.entries(focus ? { ...bounds, ...details } : bounds).map(([id, b]) => ({
@@ -206,24 +204,19 @@ export async function characterStage(
     };
 
     const sampleCast = (time: number, reduced: boolean) => {
-      const actions =
-        prepared?.sample(time, reduced) ??
-        Object.fromEntries(
-          Object.entries(actors).map(([id, actor]) => [id, actor.sample(time, reduced)]),
-        );
-      const actorBounds = Object.fromEntries(
-        Object.entries(actors).map(([id, actor]) => {
-          return [id, actor.bounds()];
-        }),
+      const {
+        actions,
+        actorBounds,
+        details: nextDetails,
+        contacts: nextContacts,
+      } = castOwner!.sample(
+        time,
+        reduced,
+        latest[2],
+        prepared && (() => prepared!.sample(time, reduced)),
       );
-      details = Object.fromEntries(
-        Object.entries(actors).flatMap(([id, actor]) =>
-          Object.entries(characterDetails(actor, pack.rig, set.height)).map(([part, box]) => [
-            `${id}.${part}`,
-            box,
-          ]),
-        ),
-      );
+      details = nextDetails;
+      castContacts = nextContacts;
       return { actions, actorBounds };
     };
     const sample = (time: number, reduced: boolean) => {
@@ -379,17 +372,17 @@ export async function characterStage(
         // Logical dimensions also work when the host is hidden or detached.
         const logicalHeight = set.height,
           logicalWidth = (logicalHeight * camera.width) / camera.height;
-        const dpr = Math.min(
-          devicePixelRatio || 1,
-          2,
-          maxTextureSize / logicalWidth,
-          maxTextureSize / logicalHeight,
+        raster = rasterResolution(
+          logicalWidth,
+          logicalHeight,
+          Math.min(devicePixelRatio || 1, 2),
+          maxTextureSize,
         );
-        const width = Math.max(1, Math.round(logicalWidth * dpr)),
-          height = Math.max(1, Math.round(logicalHeight * dpr));
-        renderer.frame(camera, set.height, width, height);
+        renderer.frame(camera, set.height, raster.width, raster.height);
         surfaces?.begin(
           frame ?? {
+            chapter:
+              score.script.segments?.findLast((segment) => segment.start <= time)?.id ?? 'stage',
             time,
             progress: time / score.script.duration,
             reduced,
@@ -429,6 +422,7 @@ export async function characterStage(
               .map(([id]) => id),
           },
           actions,
+          contacts: castContacts,
           world: prepared?.snapshot(),
           props: propState,
           surfaces: surfaces?.snapshot(),
@@ -548,7 +542,15 @@ export async function characterStage(
     replay = () => stage.render(...latest);
     return stage;
   } catch (error) {
-    dispose();
+    releaseResources(
+      [
+        () => {
+          throw error;
+        },
+        dispose,
+      ],
+      'Character stage initialization failed.',
+    );
     throw error;
   }
 }
@@ -566,6 +568,15 @@ export const CharacterStage = {
       graphics = await characterRenderer(pack);
     const stages: Awaited<ReturnType<typeof characterStage>>[] = [];
     let active: Awaited<ReturnType<typeof characterStage>> | undefined;
+    let disposed = false;
+    const dispose = () => {
+      if (disposed) return;
+      disposed = true;
+      releaseResources(
+        [...stages.map((stage) => () => stage.dispose()), () => graphics.dispose()],
+        'Character sequence disposal failed.',
+      );
+    };
     try {
       for (const [i, entry] of options.entries()) {
         const stage = await characterStage(parent, entry, scores[i]!, graphics);
@@ -587,14 +598,18 @@ export const CharacterStage = {
           active = stage;
           return stage;
         },
-        dispose() {
-          for (const stage of stages) stage.dispose();
-          graphics.dispose();
-        },
+        dispose,
       };
     } catch (error) {
-      for (const stage of stages) stage.dispose();
-      graphics.dispose();
+      releaseResources(
+        [
+          () => {
+            throw error;
+          },
+          dispose,
+        ],
+        'Character sequence initialization failed.',
+      );
       throw error;
     }
   },

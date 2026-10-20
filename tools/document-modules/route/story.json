@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "models": [
+    {
+      "id": "delivery",
+      "module": "delivery-route",
+      "inputs": { "orderId": "417", "reserve": "none", "disabled-warehouse": true }
+    }
+  ],
+  "views": [
+    { "id": "network", "kind": "dependency-network", "model": "delivery" },
+    { "id": "status", "kind": "order-status", "model": "delivery" }
+  ],
+  "chapters": []
+}

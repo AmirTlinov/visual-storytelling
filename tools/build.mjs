@@ -5,7 +5,8 @@ import { buildPages } from './build-pages.mjs';
 import { buildOutput } from './build-output.mjs';
 import { readCatalog } from './catalog.mjs';
 import { buildGalleryIndex } from './gallery/render.mjs';
-import { prepareNarration } from './narration.mjs';
+import { buildNarration } from './narration.mjs';
+import { readJSON } from './storage.mjs';
 import { parseArgs } from 'node:util';
 import { sourceDigest, writeBuildInfo } from './build-info.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -15,7 +16,8 @@ export async function buildGallery(target = resolve(root, 'site'), { narration =
   const catalog = await readCatalog();
   if (narration) {
     for (const name of Object.keys(catalog))
-      await prepareNarration(resolve(root, 'examples', name));
+      if ((await readJSON(resolve(root, 'examples', name, 'voice.json')))?.enabled === true)
+        await buildNarration(resolve(root, 'examples', name));
     if ((await sourceDigest(root)) !== receipt.source)
       throw new Error('Library sources changed while preparing narration. Run the build again.');
     // Narration is prepared against the fresh runtime above; its generated

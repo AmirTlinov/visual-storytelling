@@ -228,13 +228,11 @@ test(
       action: 'attach',
     });
     const first = live(opened.sessionId, rendererA, attachedA.generation);
-    await ready(a, first, 0, 0);
+    const initial = await ready(a, first, 0, 0);
     const control = b.callTool({
       name: 'story_control',
       arguments: {
-        sessionId: opened.sessionId,
-        buildRevision: opened.buildRevision,
-        stateRevision: 0,
+        context: initial.context,
         requestId: randomUUID(),
         commands: [{ type: 'seek', time: 7 }],
       },

@@ -40,7 +40,8 @@ export function frameContext(app, extensions) {
   }
   return {
     update(session, report) {
-      if (removed || closed) return;
+      if (removed || closed || !session.context || session.stateRevision !== report.stateRevision)
+        return;
       const observedCue = report.state.presentedCue ?? report.state.cue;
       const cue = report.checkpoint
         ? observedCue?.id === report.checkpoint.cue
@@ -51,8 +52,7 @@ export function frameContext(app, extensions) {
       latest = {
         sessionId: session.sessionId,
         projectId: session.projectId,
-        buildRevision: session.buildRevision,
-        stateRevision: report.stateRevision,
+        context: session.context,
         renderStatus: report.renderStatus,
         time: Math.round((report.checkpoint?.time ?? report.state.time) * 10) / 10,
         cue: cue

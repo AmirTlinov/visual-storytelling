@@ -8,6 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { build } from 'esbuild';
 import { connectRuntime } from '../plugin/runtime/client.mjs';
 import { writeJSON } from '../tools/storage.mjs';
+import { preparedBuildHTML } from '../plugin/build-payload.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -146,14 +147,19 @@ test(
     assert.equal(cache.limitBytes, 0);
     assert.ok(Number.isFinite(Date.parse(cache.collectedAt)));
     assert.equal(
-      JSON.parse(await readFile(join(data, 'builds', project.buildRevision + '.json'), 'utf8'))
-        .html,
+      await preparedBuildHTML(
+        data,
+        JSON.parse(await readFile(join(data, 'builds', project.buildRevision + '.json'), 'utf8')),
+      ),
       '',
     );
     const reopened = await runtime.call('open', { sessionId: opened.sessionId });
     assert.equal(reopened.buildRevision, 'example-build');
     assert.equal(
-      JSON.parse(await readFile(join(data, 'builds/example-build.json'), 'utf8')).html,
+      await preparedBuildHTML(
+        data,
+        JSON.parse(await readFile(join(data, 'builds/example-build.json'), 'utf8')),
+      ),
       attached.html,
     );
   },

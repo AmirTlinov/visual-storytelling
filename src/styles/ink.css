@@ -1,6 +1,7 @@
 @import './handwriting.css';
 .ve-scene {
-  --ve-ink: light-dark(#292724, #eeece7);
+  --ve-default-ink: light-dark(#292724, #eeece7);
+  --ve-ink: var(--ve-default-ink);
   --ve-surface: var(--background, Canvas);
   --ve-font: SketchPencil, SketchShantell, 'Chalkboard SE', sans-serif;
   --ve-muted: light-dark(#646365, #a6b2c3);

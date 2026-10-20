@@ -1,0 +1,8 @@
+{
+  "recipe": "sampling",
+  "inputs": {
+    "percent": 50,
+    "count": 20,
+    "seed": 42
+  }
+}

@@ -2,7 +2,8 @@ import { compileInkMotion, type InkVertices } from '../ink/fusion/motion.js';
 import { inkDetailVisibility } from '../ink/fusion/detail.js';
 import { fusionText } from '../ink/fusion/text.js';
 import type { FusionShape } from '../ink/fusion/shape.js';
-import { bodySize, shapeSize, type MorphBody, type MorphFrame } from './objects.js';
+import type { MorphBody, MorphFrame } from './objects.js';
+import { bodySize, shapeSize } from './body-geometry.js';
 import { materialState } from '../viewport/morph/field.js';
 
 import type { InkFieldFrame } from '../ink/fusion/geometry.js';

@@ -7,6 +7,7 @@ export { bulb, seedling, spark, workbench } from './props.js';
 export type {
   CharacterPack,
   CharacterStageOptions,
+  CharacterPose,
   CharacterStoryOptions,
   StageSet,
   Actor,

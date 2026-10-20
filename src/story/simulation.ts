@@ -1,5 +1,6 @@
 import { PlayerControls } from '../controls/player-view.js';
 import { sceneHost } from '../host/adapter.js';
+import { releaseResources } from '../lifecycle.js';
 export interface SimulationState {
   value: number;
   done: boolean;
@@ -108,7 +109,30 @@ function mount(element: HTMLElement, model: SimulationOptions) {
     },
     listen,
   );
-  update();
+  function release() {
+    disposed = true;
+    permission?.abort();
+    permission = undefined;
+    playing = false;
+    cancelAnimationFrame(frame);
+    frame = 0;
+    abort.abort();
+    view.dispose();
+    delete element.dataset.playing;
+  }
+  try {
+    update();
+  } catch (cause) {
+    releaseResources(
+      [
+        () => {
+          throw cause;
+        },
+        release,
+      ],
+      'Simulation preparation failed.',
+    );
+  }
   return {
     view,
     update,
@@ -119,11 +143,8 @@ function mount(element: HTMLElement, model: SimulationOptions) {
       return playing;
     },
     dispose() {
-      pause(false);
-      disposed = true;
-      abort.abort();
-      view.dispose();
-      delete element.dataset.playing;
+      if (disposed) return;
+      releaseResources([() => pause(false), release], 'Simulation disposal failed.');
     },
   };
 }

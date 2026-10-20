@@ -17,6 +17,7 @@ export async function pluginHost({
   serverEntry = fileURLToPath(new URL('../../plugin/dist/server.mjs', import.meta.url)),
   fixture,
   initialTarget = { example: 'gpt-model' },
+  webTools = false,
 } = {}) {
   const temporary = !dataDirectory;
   dataDirectory ??= await mkdtemp(join(tmpdir(), 'visual-story-host-'));
@@ -71,7 +72,17 @@ export async function pluginHost({
         res.writeHead(403).end();
         return;
       }
-      if (req.url === '/host.js')
+      if (req.url === '/tools' && webTools && req.headers['x-test-token'] === token)
+        res
+          .writeHead(200, { 'content-type': 'application/json' })
+          .end(
+            JSON.stringify(
+              tools.filter(
+                (tool) => !tool._meta?.ui?.visibility || tool._meta.ui.visibility.includes('model'),
+              ),
+            ),
+          );
+      else if (req.url === '/host.js')
         res.writeHead(200, { 'content-type': 'text/javascript' }).end(code.outputFiles[0].text);
       else if (req.url === '/app')
         res
@@ -84,7 +95,7 @@ export async function pluginHost({
         res
           .writeHead(200, { 'content-type': 'text/html' })
           .end(
-            `<!doctype html><html><head><meta charset="utf-8"><title>Visual Storytelling · MCP contract host</title></head><body data-token="${token}" data-initial="${encodeURIComponent(JSON.stringify(initialTarget))}" style="margin:0;max-width:820px;margin:auto"><script type="module" src="/host.js"></script></body></html>`,
+            `<!doctype html><html><head><meta charset="utf-8"><title>Visual Storytelling · MCP contract host</title></head><body data-token="${token}" data-web-tools="${webTools}" data-initial="${encodeURIComponent(JSON.stringify(initialTarget))}" style="margin:0;max-width:820px;margin:auto"><script type="module" src="/host.js"></script></body></html>`,
           );
       else res.writeHead(404).end();
     } catch (error) {

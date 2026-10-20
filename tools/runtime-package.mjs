@@ -18,15 +18,23 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { packageInfo, resolvePackage } from './build-info.mjs';
 import { assertPreparedRuntimeRoot } from './prepared-runtime-trust.mjs';
+import { readStoryProject } from './story-project.mjs';
+import {
+  readPreparedRuntime,
+  readPinnedRuntime,
+  preparedRuntimeFile,
+  runtimeDependencyFields as fields,
+  archivedBuild,
+  installedRuntime,
+  localFile,
+} from './runtime-reference.mjs';
 
 const execute = promisify(execFile);
 const library = fileURLToPath(new URL('../', import.meta.url));
 const name = '@visual-storytelling/core';
-const fields = ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'];
 const valid = (info) => info && ['current', 'packaged'].includes(info.status);
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const managed = /^file:(?:\.\/)?dependencies\/visual-storytelling-core-([a-f0-9]{64})\.tgz$/;
-export const preparedRuntimeFile = 'scene-runtime.json';
 const readOptional = (file) =>
   readFile(file).catch((error) => {
     if (error.code !== 'ENOENT') throw error;
@@ -58,15 +66,6 @@ async function preparedRuntime({ root = library, build = true, signal } = {}) {
       `Cannot pin ${info.status} runtime at ${root}. Rebuild its source package first.`,
     );
   return info;
-}
-
-async function archiveManifest(file, signal) {
-  const { stdout } = await execute(
-    'tar',
-    ['-xOf', file, 'package/package.json'],
-    command(undefined, signal),
-  );
-  return JSON.parse(stdout);
 }
 
 async function pack(destination, info, { signal } = {}) {
@@ -128,6 +127,23 @@ export async function packRuntime(destination, options = {}) {
 /** A prepared release is already an immutable package; pin its identity before any archive work. */
 async function preparedRelease(root = library) {
   root = await assertPreparedRuntimeRoot(root);
+  if (!(await readOptional(join(root, 'release.json')))) {
+    // The source CLI uses its own generated release. Never select the installer's
+    // current pointer or silently pin an older build after source edits.
+    const source = root;
+    const action = 'Prepare this checkout first: npm run plugin:release.';
+    try {
+      root = await assertPreparedRuntimeRoot(join(source, '.plugin-release'));
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      throw new Error(action, { cause: error });
+    }
+    const [info, release] = await Promise.all([
+      packageInfo(source),
+      readFile(join(root, 'release.json'), 'utf8').then(JSON.parse),
+    ]);
+    if (info.status !== 'current' || release.sourceBuild !== info.build) throw new Error(action);
+  }
   const [release, receipt, pkg] = await Promise.all([
     readFile(join(root, 'release.json'), 'utf8').then(JSON.parse),
     readFile(join(root, 'dist/build-info.json'), 'utf8').then(JSON.parse),
@@ -142,29 +158,6 @@ async function preparedRelease(root = library) {
 export async function pinPreparedRuntime(destination, { root = library } = {}) {
   const pin = await preparedRelease(root);
   await writeFile(join(destination, preparedRuntimeFile), JSON.stringify(pin, null, 2) + '\n');
-  return { ...pin, dependency: `file:${pin.root}` };
-}
-
-/** Read the authored pin, never the installer's current pointer. No npm or compilation. */
-export async function readPreparedRuntime(directory) {
-  const bytes = await readOptional(join(directory, preparedRuntimeFile));
-  if (!bytes) return null;
-  const pin = JSON.parse(bytes);
-  await assertPreparedRuntimeRoot(pin.root);
-  if (
-    pin.schemaVersion !== 1 ||
-    pin.name !== name ||
-    typeof pin.root !== 'string' ||
-    !/^[a-f0-9]{64}$/.test(pin.build) ||
-    (await realpath(pin.root)) !== pin.root
-  )
-    throw new Error('Invalid prepared runtime pin. Restore it or explicitly migrate the project.');
-  const [receipt, pkg] = await Promise.all([
-    readFile(join(pin.root, 'dist/build-info.json'), 'utf8').then(JSON.parse),
-    readFile(join(pin.root, 'package.json'), 'utf8').then(JSON.parse),
-  ]);
-  if (receipt.build !== pin.build || receipt.package !== name || pkg.version !== pin.version)
-    throw new Error('The pinned runtime is unavailable or changed. Restore that release.');
   return { ...pin, dependency: `file:${pin.root}` };
 }
 
@@ -288,136 +281,73 @@ async function updatePreparedSceneRuntime(destination, options, metadata) {
   return { scene: destination, changed: true, prepared: true, build: pin.build, dependency };
 }
 
-export async function explanationAPI(directory) {
-  const pinned = await readPinnedRuntime(directory);
+const documentMigrationRequired = () =>
+  Object.assign(
+    new Error(
+      'This pinned runtime predates StoryDocument v2. Explicitly migrate the project before document authoring.',
+    ),
+    { code: 'runtime_migration_required' },
+  );
+
+export async function storyDocumentAPI(directory, { installedFrom } = {}) {
+  let pinned = await readPinnedRuntime(directory);
+  if (pinned.archive && installedFrom) {
+    const installed = await readPinnedRuntime(installedFrom);
+    if (installed.archive || installed.runtime.build !== pinned.runtime.build)
+      throw new Error('The accepted build does not contain this project’s exact pinned runtime.');
+    pinned = installed;
+  }
   if (pinned.archive)
     throw new Error('Install this project’s pinned dependencies before semantic authoring.');
-  return import(pathToFileURL(join(pinned.root, 'dist/explanation/document.js')).href);
+  const entry = join(pinned.root, 'dist/story/document.js');
+  await access(entry).catch((error) => {
+    if (error.code === 'ENOENT') throw documentMigrationRequired();
+    throw error;
+  });
+  const api = await import(pathToFileURL(entry).href);
+  if (
+    [
+      'prepareStoryDocument',
+      'prepareIllustratedDocument',
+      'editStoryDocument',
+      'authoredInputKeys',
+    ].some((name) => typeof api[name] !== 'function')
+  )
+    throw documentMigrationRequired();
+  return api;
 }
 
-/** A modified source entry must keep using the source build path, never lose authored code. */
-export async function assertPreparedExplanation(directory) {
+/** The manifest owns document/module/resources; arbitrary source entries use the ordinary builder. */
+export async function assertPreparedDocument(directory) {
   const pin = await readPreparedRuntime(directory);
-  if (!pin) throw new Error('Semantic live authoring requires a prepared explanation project.');
-  const [entry, template, page, templatePage, config] = await Promise.all([
-    readFile(join(directory, 'scene.js'), 'utf8'),
-    readFile(join(pin.root, 'tools/explanation/scene.js'), 'utf8'),
-    readFile(join(directory, 'index.html'), 'utf8'),
-    readFile(join(pin.root, 'tools/explanation/index.html'), 'utf8'),
-    readOptional(join(directory, 'scene.json')),
-  ]);
-  const withoutTitle = (html) => html.replace(/<title>.*?<\/title>/s, '<title></title>');
-  if (entry !== template || withoutTitle(page) !== withoutTitle(templatePage) || config)
+  if (!pin) throw new Error('Document authoring requires a prepared StoryDocument project.');
+  await storyDocumentAPI(directory);
+  const file = join(pin.root, 'tools/runtime-package.mjs');
+  const owner = pathToFileURL(file).href;
+  if (owner !== import.meta.url) {
+    await access(file).catch((error) => {
+      if (error.code === 'ENOENT') throw documentMigrationRequired();
+      throw error;
+    });
+    const api = await import(owner);
+    if (typeof api.assertPreparedDocument !== 'function') throw documentMigrationRequired();
+    return api.assertPreparedDocument(directory);
+  }
+  const manifest = await readStoryProject(directory);
+  if (!manifest)
     throw Object.assign(
       new Error(
-        'This project has a custom source entry. Continue through file edits and the existing build.',
+        'This project owns a source entry. Continue through file edits and the existing build, or explicitly adopt story-project.json.',
       ),
       { code: 'custom_scene_entry' },
     );
-  return pin;
+  return { ...pin, manifest };
 }
 
-const localFile = (spec, directory) =>
-  typeof spec === 'string' && spec.startsWith('file:')
-    ? spec.startsWith('file://')
-      ? fileURLToPath(spec)
-      : resolve(directory, spec.slice(5))
-    : undefined;
 const referenced = (manifest, file, directory) =>
   fields.some((field) =>
     Object.values(manifest[field] ?? {}).some((spec) => localFile(spec, directory) === file),
   );
-
-async function archivedBuild(spec, directory, signal) {
-  const hash = typeof spec === 'string' && managed.exec(spec)?.[1];
-  if (!hash) return false;
-  const file = localFile(spec, directory);
-  try {
-    if (!(await lstat(file)).isFile() || digest(await readFile(file)) !== hash) return false;
-    const pkg = await archiveManifest(file, signal);
-    const { stdout } = await execute(
-      'tar',
-      ['-xOf', file, 'package/dist/build-info.json'],
-      command(undefined, signal),
-    );
-    return pkg.name === name && JSON.parse(stdout).build;
-  } catch (error) {
-    signal?.throwIfAborted();
-    if (error.code === 'EACCES') throw error;
-    return false;
-  }
-}
-
-async function installedRuntime(directory) {
-  const root = await resolvePackage(name, directory);
-  if (!root) return null;
-  // An invalid installed receipt is a reason to replace this dependency, not to block repair.
-  try {
-    return await packageInfo(root);
-  } catch {
-    return null;
-  }
-}
-
-/** Read declared package metadata directly; API discovery never installs or builds a project. */
-export async function readPinnedRuntime(directory) {
-  const prepared = await readPreparedRuntime(directory);
-  if (prepared)
-    return {
-      root: prepared.root,
-      runtime: prepared,
-      api: JSON.parse(await readFile(join(prepared.root, 'dist/api.json'), 'utf8')),
-      catalog: JSON.parse(await readFile(join(prepared.root, 'examples/catalog.json'), 'utf8')),
-    };
-  const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
-  const declarations = fields.flatMap((field) =>
-    manifest[field]?.[name] ? [manifest[field][name]] : [],
-  );
-  if (declarations.length !== 1)
-    throw new Error(`Scene must declare ${name} in exactly one dependency field.`);
-  const spec = declarations[0];
-  if (typeof spec === 'string' && managed.test(spec)) {
-    const declaredBuild = await archivedBuild(spec, directory);
-    if (!declaredBuild)
-      throw new Error(
-        'The declared runtime archive is missing or changed. Restore it or explicitly migrate the project.',
-      );
-    const installed = await installedRuntime(directory);
-    if (valid(installed) && installed.build === declaredBuild)
-      return {
-        root: installed.root,
-        runtime: { name, version: installed.version, build: declaredBuild, dependency: spec },
-        api: JSON.parse(await readFile(join(installed.root, 'dist/api.json'), 'utf8')),
-        catalog: JSON.parse(await readFile(join(installed.root, 'examples/catalog.json'), 'utf8')),
-      };
-    const archive = localFile(spec, directory);
-    const read = async (file) =>
-      JSON.parse((await execute('tar', ['-xOf', archive, 'package/' + file], command())).stdout);
-    const [api, catalog, metadata] = await Promise.all([
-      read('dist/api.json'),
-      read('examples/catalog.json'),
-      read('package.json'),
-    ]);
-    return {
-      root: archive + '/package',
-      archive,
-      api,
-      catalog,
-      runtime: { name, version: metadata.version, build: declaredBuild, dependency: spec },
-    };
-  }
-  const installed = await installedRuntime(directory);
-  if (!valid(installed))
-    throw new Error(
-      'The declared runtime archive is missing or changed. Restore it or explicitly migrate the project.',
-    );
-  return {
-    root: installed.root,
-    runtime: { name, version: installed.version, build: installed.build, dependency: spec },
-    api: JSON.parse(await readFile(join(installed.root, 'dist/api.json'), 'utf8')),
-    catalog: JSON.parse(await readFile(join(installed.root, 'examples/catalog.json'), 'utf8')),
-  };
-}
 
 /** Update only this runtime; authored scripts, assets and other dependency specs survive. */
 export async function updateSceneRuntime(destination, options = {}) {
@@ -513,7 +443,12 @@ export async function updateSceneRuntime(destination, options = {}) {
   }
   // A legacy root archive may be hand-authored. Only this owner's path is eligible,
   // and aliases in another dependency field still keep its file alive.
-  if (typeof previous === 'string' && managed.test(previous) && previous !== receipt.dependency) {
+  if (
+    !options.retainPreviousArchive &&
+    typeof previous === 'string' &&
+    managed.test(previous) &&
+    previous !== receipt.dependency
+  ) {
     const old = localFile(previous, destination);
     if (!referenced(manifest, old, destination)) {
       let owned = false;

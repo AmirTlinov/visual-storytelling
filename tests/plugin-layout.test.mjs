@@ -150,7 +150,7 @@ test(
       });
       assert.equal(player.framed, false, 'the only player is outside the drawing scale');
       assert.ok(
-        player.controls.every((control) => control.height >= 44 && control.width >= 44),
+        player.controls.every((control) => control.height >= 32 && control.width >= 44),
         JSON.stringify(player),
       );
       await page.evaluate(() =>

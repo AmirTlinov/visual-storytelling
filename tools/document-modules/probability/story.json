@@ -1,0 +1,9 @@
+{
+  "recipe": "probability",
+  "inputs": {
+    "scoreA": 0,
+    "scoreB": 1,
+    "scoreC": 2,
+    "temperature": 1
+  }
+}

@@ -69,19 +69,23 @@ test('scene owners preserve detail framing, readable cells, atomic input and res
             const cases = [{modelContent:{value:1}}, {privateContent:[1,2]}, {privateContent:null},
               {privateContent:17}, {privateContent:{__visualStory:'author value',value:1}}];
             return cases.map((snapshot,i) => {
-              const receipts=[],restores=[];
-              window.openai={setWidgetState:value=>receipts.push(structuredClone(value))};
+              const receipts=[],restores=[],listeners=new Set(), snapshots=new Map();
+              const id='echo-'+i;
+              const disconnect=document.querySelector('main').scene.connectHost({widgetState:{
+                read:key=>snapshots.get(key),
+                save(key,value){snapshots.set(key,structuredClone(value));receipts.push({id:key,snapshot:structuredClone(value)});},
+                subscribe(key,listener){const receive=(id,value)=>{if(id===key)listener(value)};listeners.add(receive);return()=>listeners.delete(receive);}
+              }});
               const bridge=widgetState('echo-'+i,value=>restores.push(value));
               bridge.save(snapshot); const latest={...snapshot,modelContent:{value:2}}; bridge.save(latest);
-              for(const widgetState of [...receipts].reverse())
-                window.dispatchEvent(new CustomEvent('openai:set_globals',{detail:{globals:{widgetState}}}));
+              for(const receipt of [...receipts].reverse())
+                for(const receive of listeners)receive(receipt.id,receipt.snapshot);
               const ownEchoes=restores.length;
-              window.openai.widgetState=receipts.at(-1);
               const read=bridge.read(); bridge.dispose();
               const next=widgetState('echo-'+i,value=>restores.push(value));
               const external={modelContent:{value:3},privateContent:{__visualStory:'author value',value:42}};
-              window.dispatchEvent(new CustomEvent('openai:set_globals',{detail:{globals:{widgetState:external}}}));
-              next.dispose(); delete window.openai;
+              for(const receive of listeners)receive(id,external);
+              next.dispose(); disconnect();
               return {ownEchoes,read,latest,restores,external};
             });
           };`,

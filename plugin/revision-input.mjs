@@ -4,13 +4,15 @@ import { randomUUID } from 'node:crypto';
 import { readJSON, writeJSON } from '../tools/storage.mjs';
 import { projectFiles, snapshotProject } from '../tools/project-files.mjs';
 import { failure } from './errors.mjs';
+import { readBuildMetadata } from './build-payload.mjs';
+import { contentDigest } from '../tools/build-info.mjs';
 
 /** Resolve and freeze a user's revision before queueing work. Jobs never follow working files. */
-export async function revisionInput(data, projects, target) {
+export async function revisionInput(data, projects, target, { prepared = false } = {}) {
   const project = projects.get(target.projectId);
   const base = { projectId: project.id, projectPath: project.path, title: project.title, target };
   if (target.kind === 'build') {
-    const build = await readJSON(join(data, 'builds', target.buildRevision + '.json'));
+    const build = await readBuildMetadata(data, target.buildRevision);
     if (
       build?.projectId !== project.id ||
       build.revision !== target.buildRevision ||
@@ -25,6 +27,25 @@ export async function revisionInput(data, projects, target) {
       throw failure(
         'build_unavailable',
         'The selected build snapshot is outside preparation storage.',
+      );
+    const receipt = await readJSON(join(build.snapshot, '.vstory-input.json'));
+    if (
+      !receipt ||
+      receipt.buildRevision !== build.revision ||
+      (await projectFiles(build.snapshot)).revision !==
+        (receipt.preparedRevision ?? receipt.revision)
+    )
+      throw failure(
+        'snapshot_changed',
+        'The selected build inputs were modified. Prepare a new working revision.',
+      );
+    if (
+      build.outputDigest &&
+      (await contentDigest(join(build.snapshot, 'dist'), ['.'])) !== build.outputDigest
+    )
+      throw failure(
+        'build_unavailable',
+        'The selected built resources changed. Prepare a new working revision.',
       );
     return {
       ...base,
@@ -41,6 +62,21 @@ export async function revisionInput(data, projects, target) {
         'The working revision changed. Inspect it before preparing.',
         { current, action: 'story_inspect' },
       );
+    if (prepared && current.buildRevision) {
+      const build = await readBuildMetadata(data, current.buildRevision);
+      if (
+        build?.projectId === project.id &&
+        build.sourceRevision === current.sourceRevision &&
+        build.snapshot &&
+        dirname(resolve(build.snapshot)) === resolve(data, 'snapshots')
+      )
+        return {
+          ...base,
+          sourceRevision: build.sourceRevision,
+          inputSnapshot: basename(build.snapshot),
+          buildRevision: build.revision,
+        };
+    }
     return captureWorkingInput(data, project, target.sourceRevision);
   });
 }
@@ -71,5 +107,14 @@ export async function captureWorkingInput(data, project, sourceRevision) {
       await rm(staging, { recursive: true, force: true });
     }
   }
-  return { ...base, sourceRevision: target.sourceRevision, inputSnapshot };
+  await writeJSON(join(snapshot, '.vstory-input.json'), {
+    ...(await readJSON(join(snapshot, '.vstory-input.json'))),
+    acceptedBuildRevision: project.buildRevision,
+  });
+  return {
+    ...base,
+    sourceRevision: target.sourceRevision,
+    inputSnapshot,
+    acceptedBuildRevision: project.buildRevision,
+  };
 }

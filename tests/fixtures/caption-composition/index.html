@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ru">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>Вступление и главы</title>
+  <body class="ve-standalone">
+    <main></main>
+    <script type="module">
+      import { IllustratedStory, inkChapter } from '@visual-storytelling/core/story';
+      import { lettering } from '@visual-storytelling/core/ink';
+      import '@visual-storytelling/core/style.css';
+      const document = {
+        version: 2,
+        models: [],
+        views: [],
+        chapters: ['first', 'second'].map((id, i) => ({
+          id,
+          title: id,
+          beats: [
+            { id: 'look', seconds: 2, text: i ? 'Теперь второй опыт.' : 'Рассмотрим первый опыт.' },
+          ],
+        })),
+      };
+      const collision = false;
+      if (collision)
+        document.chapters[0].beats[0].speech = {
+          id: 'opening',
+          when: { basis: 'authored', models: [] },
+        };
+      const recording = {
+        duration: 5.4,
+        cues: { 'first.look': { start: 1, end: 3 }, 'second.look': { start: 3.4, end: 5.4 } },
+        segments: [
+          {
+            id: 'opening',
+            text: 'Старый опыт.',
+            start: 1,
+            end: 3,
+            audio_start: 1,
+            audio_end: 3,
+            conditions: { basis: 'authored', models: [] },
+          },
+          {
+            id: 'voice.second.look',
+            text: 'Другой старый опыт.',
+            start: 3.4,
+            end: 5.4,
+            audio_start: 3,
+            audio_end: 5.4,
+            conditions: { basis: 'authored', models: [] },
+          },
+        ],
+      };
+      window.galleryReady = IllustratedStory.mount(window.document.querySelector('main'), {
+        document,
+        ...(collision ? { script: recording } : {}),
+        captions: true,
+        chapters: Object.fromEntries(
+          document.chapters.map((chapter) => [
+            chapter.id,
+            (authored) =>
+              inkChapter({
+                ...authored,
+                size: { width: 640, height: 360 },
+                create(view) {
+                  const label = lettering(view.layer, chapter.title, { size: 24 });
+                  label.at(320, 180);
+                  return { render() {}, dispose: label.dispose };
+                },
+              }),
+          ]),
+        ),
+        transition: {
+          duration: collision ? 0 : 0.4,
+          introduction: {
+            seconds: 0.25,
+            id: 'opening',
+            title: 'Смотрим',
+            text: 'Посмотрим вместе.',
+          },
+          mount() {
+            return { render() {}, dispose() {} };
+          },
+        },
+      });
+    </script>
+  </body>
+</html>

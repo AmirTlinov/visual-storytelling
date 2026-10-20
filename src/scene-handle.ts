@@ -1,3 +1,5 @@
+import { releaseResources } from './lifecycle.js';
+import { assertSceneInteraction } from './scene/interaction.js';
 import {
   sceneAccess,
   type SceneCommand,
@@ -35,9 +37,25 @@ declare global {
 
 /** Capabilities supplied by the actual subject, player and drawing owners. */
 export interface SceneRuntime {
+  /** An explicit forward-only experiment borrows the player while Story stays paused. */
+  readonly simulation?: {
+    readonly active: boolean;
+    readonly time: number;
+    readonly reversible: false;
+    readonly storyTime: number;
+    capture(): unknown;
+    validate(value: unknown): void;
+    restore(value: unknown): Promise<void>;
+  };
   /** A compiled subject accepts whole validated authored documents; ProjectStore owns their revisions. */
   readonly authoring?: {
+    /** Addressed model checkpoints and actual drawing-check work; no quality score. */
+    readonly checks?: unknown;
+    /** Derived voice job from this accepted document and its registered module owners. */
+    readonly narration?: unknown;
     readonly document: unknown;
+    /** Prepare a complete document with this subject's modules; leaves source and displayed state intact. */
+    prepare(document: unknown, operations?: readonly unknown[]): unknown;
     validate(document: unknown, options?: { authoredInputs?: readonly string[] }): void;
     replace(
       document: unknown,
@@ -59,6 +77,8 @@ export interface SceneRuntime {
   readonly currentTime?: number;
   readonly playing?: boolean;
   readonly muted?: boolean;
+  /** Applicability of the whole recorded unit at the completed drawing; mute is separate. */
+  readonly speech?: import('./story/speech-gate.js').SpeechAudibility;
   readonly rate?: number;
   readonly selected?: readonly string[];
   objects?(): ReturnType<ReturnType<typeof sceneObjects>['objects']>;
@@ -69,7 +89,7 @@ export interface SceneRuntime {
   mute?(value: boolean): void | Promise<void>;
   setRate?(value: number): void;
   play?(): void | Promise<void>;
-  seek?(time: number): void;
+  seek?(time: number, position?: { mode: 'story' | 'explore' }): void;
   /** Resolve when the latest requested frame is prepared and rendered. */
   ready?(): Promise<void>;
   pause?(): void;
@@ -96,12 +116,14 @@ export interface SceneHandle extends SceneRuntime {
   readonly restoreNotices?: readonly SceneRestoreNotice[];
   capture(options?: SceneCaptureOptions): SceneCheckpoint;
   restore(state: SceneCheckpoint): Promise<SceneInspection>;
-  inspect(options?: { presentation?: boolean }): SceneInspection;
+  inspect(options?: { presentation?: boolean; objects?: boolean }): SceneInspection;
   control(
     commands: readonly SceneCommand[],
     options?: SceneControlOptions,
   ): Promise<SceneInspection>;
   find(query: string): SceneSearchResult[];
+  /** Authored attention shares rendered contours and leaves viewer selection unchanged. */
+  emphasize(ids: readonly string[]): void;
   snapshot(): unknown;
   review(): CueReview;
   presentation(): ScenePresentation;
@@ -111,7 +133,7 @@ export interface SceneHandle extends SceneRuntime {
 export function mountScene<T extends SceneRuntime>(
   root: HTMLElement | SVGSVGElement,
   runtime: T,
-  owner: Omit<SceneAccessOwner, 'assertLive'> = {},
+  owner: Omit<SceneAccessOwner, 'assertLive' | 'assertInteractive'> = {},
 ): T & SceneHandle {
   if (root.scene) throw new Error('Dispose the mounted scene before replacing it');
   let disposed = false;
@@ -127,7 +149,10 @@ export function mountScene<T extends SceneRuntime>(
     review: (): CueReview => ({ duration: handle.duration ?? 0, cues: [], segments: [] }),
     presentation: () => inspectPresentation(root),
     objects: subjects.objects,
-    select: subjects.select,
+    select(ids: readonly string[]) {
+      assertSceneInteraction(root);
+      subjects.select(ids);
+    },
     get selected() {
       return subjects.selected;
     },
@@ -154,6 +179,7 @@ export function mountScene<T extends SceneRuntime>(
       'inspect',
       'control',
       'find',
+      'emphasize',
       'restoreNotices',
     ];
     if ([...keys].some((key) => reserved.includes(String(key))))
@@ -170,6 +196,21 @@ export function mountScene<T extends SceneRuntime>(
             method = value;
             bound = (...args: unknown[]) => {
               assertLive();
+              if (
+                [
+                  'play',
+                  'seek',
+                  'setRate',
+                  'mute',
+                  'setReduced',
+                  'setTheme',
+                  'focus',
+                  'select',
+                  'undoExperiment',
+                  'redoExperiment',
+                ].includes(String(key))
+              )
+                assertSceneInteraction(root);
               if (key === 'snapshot' && handle.rendering && !handle.rendering.presented)
                 return undefined;
               return Reflect.apply(value, runtime, args);
@@ -190,6 +231,7 @@ export function mountScene<T extends SceneRuntime>(
   root.scene = handle;
   extend(runtime, true);
   handle.extend = (extension) => extend(extension) as typeof handle & typeof extension;
+  handle.emphasize = subjects.emphasize;
   handle.connectHost = (host) => {
     assertLive();
     disconnectHost?.();
@@ -207,35 +249,29 @@ export function mountScene<T extends SceneRuntime>(
   handle.dispose = () => {
     if (disposed || root.scene !== handle) return;
     disposed = true;
-    const errors: unknown[] = [];
-    for (const cleanup of [
-      () => disconnectHost?.(),
-      () => subjects.dispose(),
-      () => runtime.dispose(),
-      ...disposal,
-    ]) {
-      try {
-        cleanup();
-      } catch (error) {
-        errors.push(error);
-      }
+    try {
+      releaseResources(
+        [() => disconnectHost?.(), () => subjects.dispose(), () => runtime.dispose(), ...disposal],
+        'Scene disposal failed.',
+      );
+    } finally {
+      disposal.clear();
+      if (root.scene === handle) delete root.scene;
     }
-    disposal.clear();
-    if (root.scene === handle) delete root.scene;
-    if (errors.length === 1) throw errors[0];
-    if (errors.length) throw new AggregateError(errors, 'Scene disposal failed.');
   };
   const access = Object.defineProperties(
     {},
     Object.getOwnPropertyDescriptors(owner),
   ) as SceneAccessOwner;
   access.assertLive = assertLive;
+  access.assertInteractive = () => assertSceneInteraction(root);
   access.playing ??= () => runtime.playing ?? false;
   access.view ??= () => handle.camera;
   Object.assign(handle, sceneAccess(handle, access));
   handle.capture = (options) => captureScene(handle, access.view?.(), options);
   let restoration = 0;
   handle.restore = async (state) => {
+    assertSceneInteraction(root);
     const request = ++restoration;
     const restoring = Object.defineProperties(
       {},

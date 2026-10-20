@@ -48,37 +48,51 @@ test(
         const { structuredContent: current } = await call('story_inspect', { projectId });
         // Keep the hand-edited broken configuration quiet while testing the recovery tool.
         const { structuredContent: edited } = await call('story_edit', {
-          projectId,
-          sourceRevision: current.sourceRevision,
+          context: current.context,
           requestId: randomUUID(),
           changes: [{ path: 'voice.json', content: JSON.stringify(settings, null, 2) + '\n' }],
         });
-        await finishFixtureJob(host.client, edited.job.id);
-        const inspected = await call('story_voice', { projectId });
+        const editedProject = (await finishFixtureJob(host.client, edited.job.id)).result.project;
+        const inspected = await call('story_voice', { context: editedProject.context });
         assert.equal(inspected.structuredContent.ready, false);
         assert.equal(inspected.structuredContent.provider, settings.provider);
-        assert.equal(JSON.stringify(inspected).includes(secret), false, 'voice status must not echo secrets');
+        assert.equal(
+          JSON.stringify(inspected).includes(secret),
+          false,
+          'voice status must not echo secrets',
+        );
         assert.equal(Object.hasOwn(inspected.structuredContent.settings, 'apiKey'), false);
         assert.equal(Object.hasOwn(inspected.structuredContent.settings, 'headers'), false);
         if (settings.provider === 'api') {
-          assert.equal(Object.hasOwn(inspected.structuredContent.settings, 'model'), false,
-            'an object in a string field must not bypass redaction');
+          assert.equal(
+            Object.hasOwn(inspected.structuredContent.settings, 'model'),
+            false,
+            'an object in a string field must not bypass redaction',
+          );
           assert.equal(inspected.structuredContent.readiness, 'configuration-required');
         }
         const request = {
-          projectId,
-          sourceRevision: edited.project.sourceRevision,
+          context: editedProject.context,
           requestId: randomUUID(),
           enabled: false,
         };
         // In particular, omit provider for the removed provider already stored in the file.
         const disabled = await call('story_voice', request);
         assert.equal(JSON.stringify(disabled).includes(secret), false);
-        assert.equal(disabled.structuredContent.project.requestId, request.requestId);
-        assert.notEqual(disabled.structuredContent.project.sourceRevision, request.sourceRevision,
-          'saving the default language must create a real authoring revision');
+        assert.equal(
+          disabled.structuredContent.project.sourceRevision,
+          editedProject.sourceRevision,
+          'the accepted source remains unchanged while its candidate prepares',
+        );
         const completed = await finishFixtureJob(host.client, disabled.structuredContent.job.id);
-        assert.equal(completed.result.sourceRevision, disabled.structuredContent.project.sourceRevision);
+        const disabledProject = completed.result.project;
+        assert.equal(disabledProject.requestId, request.requestId);
+        assert.notEqual(
+          disabledProject.sourceRevision,
+          editedProject.sourceRevision,
+          'saving the default language commits one real authoring revision',
+        );
+        assert.equal(completed.result.sourceRevision, disabledProject.sourceRevision);
         assert.deepEqual(
           JSON.parse(await readFile(join(created.project.path, 'voice.json'), 'utf8')),
           { ...settings, language: 'ru-RU' },

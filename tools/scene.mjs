@@ -105,7 +105,7 @@ visual-story api [NAME.member ... | ./SUBPATH] [--full]       public names or ex
 ${hasCharacters ? 'visual-story characters --help              prepared actors, actions and editable SVG skin kits\n' : ''}visual-story dev DIRECTORY [--port 8793]       rebuild + restore the selected semantic cue
 visual-story session URL [status|inspect|find|control] [--query TEXT] [--commands JSON] [--view ID] [--revision HASH]
 visual-story build DIRECTORY [--cdn]          build dist/; CDN mode loads pinned Rapier remotely
-visual-story audio DIRECTORY                  voice + aligned cues from story.json or narration.json
+visual-story audio DIRECTORY                  optional voice + aligned cues from story.json
 visual-story preview DIST [--port 8793]        serve an existing build
 visual-story review DIST --out review [--cue ID] [--width 375] [--theme dark] [--reduced]
 visual-story review URL --click SELECTOR --target CSS  capture an interaction
@@ -129,12 +129,13 @@ Compare content even when versions match; detect stale sources or modified runti
         : command === 'deliver'
           ? `visual-story deliver DIRECTORY [--out artifacts/release] [--formats html,png,svg,mp4,srt,vtt,source]
 
-Runs cached narration, builds, and publishes the requested files together. Default: html.
+Checks the selected voice, builds, and publishes the requested files together. Default: html.
 MP4 exports the whole story; --from SECONDS --to SECONDS selects an interval.
 Video: [--width 960 | --height 540] --fps 30 --jobs 2 --theme light|dark
        Always 16:9; dimensions round to 32×18 pixel units.
---silent keeps an explicitly silent draft. HTML follows the viewer's theme.
-Re-run the same command after changing a line; unchanged voice segments use the cache.`
+--silent explicitly publishes without narration. HTML follows the viewer's theme.
+For enabled narration, run visual-story audio DIRECTORY after changing speech, then deliver.
+Delivery never synthesizes speech; unchanged accepted takes are reused by audio preparation.`
           : command === 'pack'
             ? 'visual-story pack DIST --out story.html [--inline] [--theme auto|light|dark] [--audio compressed|original]\nStandalone audio is compressed by default; --inline additionally applies the chat fragment limit.'
             : help,

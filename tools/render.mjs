@@ -16,11 +16,15 @@ export async function renderer({
   controls = false,
   directory,
   entry = 'index.html',
+  /** A generated page uses the same renderer, source origin and resource paths. */
+  html,
   reduced = false,
+  profile = 'final',
   signal,
   checkpoint,
 }) {
   signal?.throwIfAborted();
+  if (!['preview', 'final'].includes(profile)) throw new Error('Unknown render profile');
   if (![width, height].every((n) => Number.isInteger(n) && n > 0 && n <= 8192))
     throw new Error('Render viewport width and height must be integers from 1 to 8192');
   const catalog = directory ? undefined : await readCatalog();
@@ -50,6 +54,9 @@ export async function renderer({
       colorScheme: theme,
       reducedMotion: reduced ? 'reduce' : 'no-preference',
     });
+    await context.addInitScript((value) => {
+      globalThis[Symbol.for('visual-storytelling.render-profile')] = value;
+    }, profile);
     const page = await context.newPage();
     const errors = [];
     const messages = new Map();
@@ -76,6 +83,10 @@ export async function renderer({
     page.on('pageerror', onStartupFailure);
     let capture;
     try {
+      if (html !== undefined)
+        await page.route(url, (route) =>
+          route.fulfill({ contentType: 'text/html; charset=utf-8', body: html }),
+        );
       capture = await Promise.race([openScene(page, url), startupFailure]);
     } finally {
       page.off('pageerror', onStartupFailure);
@@ -124,7 +135,7 @@ export async function renderer({
     const info = await capture.evaluate((scene) => scene.info());
     const seek = async (next) => {
       time = next;
-      await seekScene(capture, time);
+      await seekScene(capture, time, checkpoint && { mode: checkpoint.mode });
       if (errors.length) throw new Error(`Scene failed: ${errors.join('; ')}`);
     };
     await seek(0);
@@ -140,6 +151,7 @@ export async function renderer({
       capture,
       url: server.url,
       info,
+      profile,
       get messages() {
         return [...messages.values()];
       },
@@ -159,14 +171,14 @@ export async function renderer({
               : undefined;
         if (!target) return page.screenshot({ fullPage: true });
         // Conditions are root-owned UI outside the composition, as in SVG.
-        // Opacity keeps the native popup, focus and unfinished field edit alive;
+        // Opacity keeps the panel layout, focus and unfinished field edit alive;
         // nested popovers also leave their parent's painted top layer.
         const chrome = completeFrame
           ? await target.evaluateHandle((element) => {
               const panels = [
                 ...(element
                   .closest('.ve-scene')
-                  ?.querySelectorAll(':scope > .ve-scene-conditions:popover-open') ?? []),
+                  ?.querySelectorAll(':scope > .ve-scene-conditions:not([hidden])') ?? []),
               ];
               return panels
                 .flatMap((panel) => [panel, ...panel.querySelectorAll('[popover]:popover-open')])

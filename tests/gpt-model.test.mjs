@@ -28,6 +28,11 @@ test('the browser decoder agrees with the independent PyTorch forward pass on ev
     const result = forward(reference.tokens);
     close(result.logits, reference.logits);
     close(result.probabilities, reference.probabilities);
+    assert.deepEqual(
+      result.normalization.map((row) => row.probabilities),
+      result.probabilities,
+    );
+    assert.ok(result.normalization.every((row) => Math.abs(row.totalProbability - 1) < 1e-14));
     assert.equal(result.next.token, reference.expected);
     assert.ok(result.next.probability > 0.99);
   }
@@ -95,6 +100,11 @@ test('causal attention never observes a future token, including in the second bl
     close(first.blocks[block].output.slice(0, 4), changed.blocks[block].output.slice(0, 4), 1e-13);
     for (const head of first.blocks[block].attention.heads) {
       for (let token = 0; token < first.ids.length; token++) {
+        assert.deepEqual(head.normalization[token].probabilities, head.probabilities[token]);
+        assert.deepEqual(
+          head.normalization[token].masked,
+          head.maskedScores[token].map((value) => value === null),
+        );
         close(
           head.probabilities[token].reduce((a, b) => a + b, 0),
           1,

@@ -91,7 +91,7 @@ test(
       path: join(temporary, 'project'),
       title: 'Delivery retry',
       requestId: randomUUID(),
-      explanation: { model: { kind: 'division', count: 11, divisor: 3 } },
+      document: { recipe: 'division', inputs: { count: 11, divisor: 3 } },
     };
     // A real checkpoint write failure happens after the source and session choice.
     await writeFile(join(data, 'sessions'), 'blocked checkpoint directory');
@@ -113,7 +113,7 @@ test(
     const [pendingCreation] = JSON.parse(await readFile(join(data, 'projects.json'), 'utf8'));
     const pendingSession = pendingCreation.creation.sessionId;
     assert.ok(pendingSession);
-    const sourceFile = join(creation.path, 'explanation.json');
+    const sourceFile = join(creation.path, 'story.json');
     const initialStat = await stat(sourceFile);
     process.kill(pid, 'SIGKILL');
     runtime.close();
@@ -236,9 +236,10 @@ test(
     assert.equal(delivered.shown[0].shownSourceRevision, refused.project.sourceRevision);
     assert.equal((await stat(sourceFile)).mtimeMs, savedStat.mtimeMs);
     assert.equal(await readFile(sourceFile, 'utf8'), savedSource);
-    assert.deepEqual(await readdir(join(project.path, '.vstory/history')), [
-      firstArgs.requestId + '.json',
-    ]);
+    assert.deepEqual(
+      (await readdir(join(project.path, '.vstory/history'))).sort(),
+      [creation.requestId + '.json', firstArgs.requestId + '.json'].sort(),
+    );
     project = delivered.project;
     const nextArgs = args(17),
       next = await start(nextArgs);
@@ -368,7 +369,7 @@ test(
     });
     assert.match(restored.html, /<html/, 'restart hydrates the retained build');
     assert.equal(restored.buildRevision, identity.buildRevision);
-    assert.equal(restored.authoredDocument.model.count, 22);
+    assert.equal(restored.authoredDocument.models[0].inputs.count, 22);
     assert.equal(restored.checkpoint.values.count, 23);
     assert.equal(
       restored.authoring,
@@ -391,7 +392,7 @@ test(
     await ack(undo.command, { report: report(10, 21) });
     assert.equal((await undo.result).delivery, 'shown');
     assert.equal(
-      JSON.parse(await readFile(sourceFile, 'utf8')).model.count,
+      JSON.parse(await readFile(sourceFile, 'utf8')).models[0].inputs.count,
       21,
       'undo reconstructs the previous source after its build was collected',
     );

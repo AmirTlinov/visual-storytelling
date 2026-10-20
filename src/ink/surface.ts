@@ -1,3 +1,4 @@
+import { releaseResources } from '../lifecycle.js';
 import { svg } from './dom.js';
 import { pen } from './pen.js';
 
@@ -170,9 +171,9 @@ export function surface(parent: HTMLElement, options: SurfaceOptions) {
     dispose() {
       if (disposed) return;
       disposed = true;
-      for (const cleanup of [...cleanups]) cleanup();
+      const resources = [...cleanups, () => element.remove()];
       cleanups.clear();
-      element.remove();
+      releaseResources(resources, 'Drawing surface disposal failed.');
     },
   };
 }
