@@ -466,7 +466,7 @@
 .ve-scene > [data-player] {
   margin: 0 auto;
   padding: 0;
-  background: color-mix(in srgb, var(--ve-ink) 3%, var(--ve-surface));
+  background: transparent;
   border-top: 1px solid color-mix(in srgb, var(--ve-pencil) 55%, transparent);
 }
 /* A mounted story keeps its playback space when the subject enters exploration. */

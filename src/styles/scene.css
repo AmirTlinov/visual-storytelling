@@ -140,8 +140,10 @@ html:has(> body.ve-standalone > .ve-scene[data-theme='dark']) {
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Cpath d='M13 2 C5 1 2 6 2 13 C2 21 7 24 14 24 C22 24 25 18 24 11 C24 5 19 2 13 2' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E")
     center/contain no-repeat;
 }
-/* Playback remains a compact row with full-size targets in screen pixels. */
+/* Compact desktop playback; touch targets keep their full screen-pixel size. */
 .ve-scene .ve-player {
+  --ve-player-control-height: 32px;
+  --ve-player-icon-size: 18px;
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
@@ -152,17 +154,19 @@ html:has(> body.ve-standalone > .ve-scene[data-theme='dark']) {
   container: ve-playbar / inline-size;
 }
 .ve-scene .ve-player button {
+  display: grid;
+  place-items: center;
   flex: 0 0 44px;
   min-width: 44px;
   width: 44px;
-  min-height: 44px;
-  height: 44px;
-  padding: 8px;
+  min-height: var(--ve-player-control-height);
+  height: var(--ve-player-control-height);
+  padding: 4px 8px;
 }
 .ve-scene .ve-player button svg {
   display: block;
-  width: 24px;
-  height: 24px;
+  width: var(--ve-player-icon-size);
+  height: var(--ve-player-icon-size);
   fill: none;
   stroke: currentColor;
   stroke-width: 1.6;
@@ -173,13 +177,13 @@ html:has(> body.ve-standalone > .ve-scene[data-theme='dark']) {
   flex: 1 1 0;
   width: 0;
   min-width: 48px;
-  height: 44px;
+  height: var(--ve-player-control-height);
 }
 .ve-scene .ve-player .time {
   flex: 0 0 auto;
   margin: 0;
   font-size: 16px;
-  line-height: 44px;
+  line-height: var(--ve-player-control-height);
 }
 .ve-scene [data-play] [data-icon] {
   display: none;
@@ -281,12 +285,18 @@ html:has(> body.ve-standalone > .ve-scene[data-theme='dark']) {
 
 .ve-scene .ve-player .ve-playback-rate {
   flex: 0 0 auto;
-  min-height: 44px;
+  min-height: var(--ve-player-control-height);
   width: 70px;
   padding: 4px;
   font: inherit;
   font-size: 16px;
   white-space: nowrap;
+}
+@media (any-pointer: coarse) {
+  .ve-scene .ve-player {
+    --ve-player-control-height: 44px;
+    --ve-player-icon-size: 24px;
+  }
 }
 .ve-experiment-history {
   display: flex;
