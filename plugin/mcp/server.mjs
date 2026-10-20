@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { AppStdioTransport } from './transport.mjs';
 import {
   registerAppResource,
   registerAppTool,
@@ -35,10 +35,26 @@ const runtime = contextualRuntime(
   await authoringContext(dataDirectory()),
 );
 const request = (sessionId, request) => runtime.call('request', { sessionId, request });
+const presentation = manifest.extensions['com.openai'].interface;
+const icons = await Promise.all(
+  Object.entries({
+    light: presentation.composerIcon,
+    dark: presentation.composerIconDark,
+  }).map(async ([theme, path]) => {
+    const image = await readFile(join(directory, '../..', path));
+    return {
+      src: `data:image/svg+xml;base64,${image.toString('base64')}`,
+      mimeType: 'image/svg+xml',
+      sizes: ['any'],
+      theme,
+    };
+  }),
+);
 const server = new McpServer({
   name: 'visual-storytelling',
   title: 'Visual Storytelling',
   version: manifest.version,
+  icons,
 });
 new OpenAIExtensions(server);
 const uri = `ui://visual-storytelling/${manifest.version}/${createHash('sha256').update(html).digest('hex').slice(0, 12)}/app.html`;
@@ -57,7 +73,7 @@ const safely = (fn) => async (args) => {
     };
   }
 };
-registerAppResource(server, 'Визуальное объяснение', uri, {}, async () => ({
+registerAppResource(server, 'Визуальное объяснение', uri, { icons }, async () => ({
   contents: [
     {
       uri,
@@ -271,4 +287,4 @@ registerAppTool(
 authoringTools(server, runtime, uri, safely);
 server.server.onclose = () => runtime.close();
 process.on('exit', () => runtime.close());
-await server.connect(new StdioServerTransport());
+await server.connect(new AppStdioTransport({ story_open: icons }));
