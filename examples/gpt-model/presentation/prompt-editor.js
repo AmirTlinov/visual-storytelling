@@ -4,7 +4,7 @@ import { gptInputs } from '../subject-model.js';
 /** The phrase is edited over its tokens; the scene still owns accepted inputs and history. */
 export function promptEditor(shell, current) {
   const form = document.createElement('form');
-  form.className = 'gpt-prompt-editor';
+  form.className = 'gpt-prompt-editor ve-notebook-controls';
   form.hidden = true;
   form.setAttribute('aria-label', 'Изменить фразу');
   const input = document.createElement('input');
@@ -12,7 +12,14 @@ export function promptEditor(shell, current) {
   input.maxLength = 200;
   input.setAttribute('aria-label', 'Фраза');
   input.autocomplete = 'off';
+  const field = document.createElement('div');
+  field.className = 've-control';
+  const line = document.createElement('span');
+  line.className = 've-field';
+  line.append(input);
+  field.append(line);
   const actions = document.createElement('div');
+  actions.className = 'gpt-prompt-actions';
   const done = document.createElement('button');
   done.type = 'submit';
   done.textContent = 'Готово';
@@ -26,7 +33,7 @@ export function promptEditor(shell, current) {
   const error = document.createElement('p');
   error.setAttribute('role', 'alert');
   error.hidden = true;
-  form.append(input, actions, error);
+  form.append(field, actions, error);
   shell.stage.append(form);
   const abort = new AbortController(),
     listen = { signal: abort.signal };
@@ -42,9 +49,9 @@ export function promptEditor(shell, current) {
   };
   const layout = () => {
     const { width, height, scale } = shell.layout;
-    form.style.setProperty('--gpt-editor-unit', `${1 / Math.max(scale, 0.1)}px`);
+    form.style.setProperty('--ve-control-unit', `${1 / Math.max(scale, 0.1)}px`);
     form.style.left = '32px';
-    form.style.width = `${width - 64}px`;
+    form.style.width = `${Math.min(width - 64, 600 / Math.max(scale, 0.1))}px`;
     form.style.maxHeight = `${height - 48}px`;
     form.style.top = `${Math.max(24, Math.min(105, height - form.offsetHeight - 24))}px`;
   };

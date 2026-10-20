@@ -11,55 +11,45 @@
 .ve-scene .ve-svg-button {
   cursor: pointer;
 }
+/* Subject layout; fields, buttons and focus inherit the notebook controls. */
 .ve-scene .gpt-prompt-editor {
   position: absolute;
   z-index: 2;
   overflow: auto;
   box-sizing: border-box;
-  padding: calc(8 * var(--gpt-editor-unit));
+  padding: calc(14 * var(--ve-control-unit));
   background: var(--ve-surface);
-  border: 1px solid var(--ve-pencil);
-  border-radius: calc(5 * var(--gpt-editor-unit));
   color: var(--ve-ink);
-  font: calc(18 * var(--gpt-editor-unit)) / 1.25 var(--ve-font);
+  font: calc(18 * var(--ve-control-unit)) / 1.25 var(--ve-font);
+}
+.ve-scene .gpt-prompt-editor::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--ve-pencil);
+  mask: var(--ve-selection-outline) center / 100% 100% no-repeat;
 }
 .ve-scene .gpt-prompt-editor[hidden] {
   display: none;
 }
-.ve-scene .gpt-prompt-editor input {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: calc(44 * var(--gpt-editor-unit));
-  padding: calc(4 * var(--gpt-editor-unit));
-  border: 0;
-  border-bottom: 1px solid var(--ve-ink);
-  background: transparent;
-  color: inherit;
-  font: inherit;
+.ve-scene .gpt-prompt-editor .ve-control input[type='text'] {
+  padding-inline: calc(14 * var(--ve-control-unit));
 }
-.ve-scene .gpt-prompt-editor > div {
+.ve-scene .gpt-prompt-actions {
   display: flex;
   justify-content: space-between;
-  gap: calc(8 * var(--gpt-editor-unit));
-  margin-top: calc(4 * var(--gpt-editor-unit));
+  gap: calc(6 * var(--ve-control-unit));
+  margin-top: calc(8 * var(--ve-control-unit));
 }
-.ve-scene .gpt-prompt-editor button {
-  min-height: calc(44 * var(--gpt-editor-unit));
-  padding: calc(4 * var(--gpt-editor-unit));
+.ve-scene .gpt-prompt-actions button {
+  padding: calc(4 * var(--ve-control-unit)) calc(8 * var(--ve-control-unit));
   font: inherit;
-  color: inherit;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
   white-space: nowrap;
 }
-.ve-scene .gpt-prompt-editor :is(input, button):focus-visible {
-  outline: 1px solid var(--ve-ink);
-  outline-offset: -1px;
-}
 .ve-scene .gpt-prompt-editor p {
-  font-size: calc(15 * var(--gpt-editor-unit));
-  margin: calc(4 * var(--gpt-editor-unit)) 0 0;
+  font-size: calc(15 * var(--ve-control-unit));
+  margin: calc(4 * var(--ve-control-unit)) 0 0;
   color: var(--ve-red);
   overflow-wrap: anywhere;
 }
