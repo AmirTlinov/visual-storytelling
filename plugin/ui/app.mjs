@@ -3,13 +3,19 @@ import { OpenAIExtensions } from '@openai/mcp-extensions/app';
 import manifest from '../../plugin.json' with { type: 'json' };
 import { sceneDocument } from './scene-document.mjs';
 import { frameContext } from './frame-context.mjs';
+import { cardSizing } from './card-sizing.mjs';
 import { preferencesUI } from './preferences.mjs';
 import { fileEntrypoint } from './file-entrypoint.mjs';
 import preparedLiveHTML from 'visual-story:prepared-live-scene';
 import { prepareIllustratedDocument } from '../../src/story/document.ts';
 import { withStoryDocument } from '../../tools/story-html.mjs';
 
-const app = new App({ name: 'Visual Storytelling', version: manifest.version });
+const app = new App(
+  { name: 'Visual Storytelling', version: manifest.version },
+  {},
+  { autoResize: false },
+);
+const sizing = cardSizing(app);
 const extensions = new OpenAIExtensions(app);
 let modelContext = frameContext(app, extensions);
 const $ = (id) => document.getElementById(id);
@@ -739,6 +745,7 @@ function host(context) {
   modelContext.host(context);
   displayMode = context.displayMode ?? displayMode;
   document.documentElement.dataset.mode = displayMode;
+  sizing.displayMode(displayMode);
   if (provisional) sendSizing(frame, provisional.id, provisional.generation);
   else sendSizing(frame, session?.sessionId, session?.generation);
   if (candidate && session) sendSizing(candidate.frame, session.sessionId, candidate.generation);
@@ -818,8 +825,12 @@ app.ontoolresult = (result) => {
 app.ontoolinputpartial = previewInput;
 app.ontoolinput = previewInput;
 app.onhostcontextchanged = host;
-app.onteardown = dispose;
+app.onteardown = () => {
+  sizing.dispose();
+  return dispose();
+};
 addEventListener('pagehide', () => {
+  sizing.dispose();
   void dispose();
 });
 const connectionTimer = setTimeout(() => {
@@ -829,6 +840,7 @@ try {
   await app.connect();
   clearTimeout(connectionTimer);
   host(app.getHostContext() ?? {});
+  sizing.start();
 } catch (e) {
   clearTimeout(connectionTimer);
   error('Не удалось подключиться к Codex: ' + e.message);
