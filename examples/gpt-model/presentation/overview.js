@@ -1,6 +1,6 @@
 import { MODEL, CONFIG } from '../model.js';
 export function overviewDrawing(context, components = {}) {
-  const { input, enter, selectPreset } = context;
+  const { input, enter, selectPreset, editPrompt } = context;
   const { tokens, vector } = components;
   function drawOverview(d, s) {
     const p = s.values;
@@ -19,18 +19,16 @@ export function overviewDrawing(context, components = {}) {
           pigment: 'purple',
         },
       );
-      d.button('details', 'Детали модели', 32, d.height - d.hit - 10, 610, () =>
+      d.button('edit-prompt', 'Фраза…', 32, d.height - d.hit - 10, 340, editPrompt);
+      d.button('details', 'Модель', 395, d.height - d.hit - 10, 330, () =>
         input({ detailPage: 0 }),
       );
-      d.button('next-token', 'Результат →', 665, d.height - d.hit - 10, d.width - 697, () =>
+      d.button('next-token', 'Результат →', 748, d.height - d.hit - 10, d.width - 780, () =>
         enter('output'),
       );
       return;
     }
-    d.text('Контекст меняется. Операции и обученные веса остаются.', 40, 100, {
-      size: 25,
-      pigment: 'muted',
-    });
+    d.button('edit-prompt', 'Изменить фразу…', 40, 72, 285, editPrompt, { outline: false });
     tokens(d, s, 135);
     const y = 345;
     const blocks = [

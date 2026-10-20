@@ -4,6 +4,7 @@ import { mountComputation } from './computation.js';
 import { drawing, drawingMetrics } from './drawing.js';
 import { gptDrawings } from './presentation/drawings.js';
 import { names } from './selection.js';
+import { promptEditor } from './presentation/prompt-editor.js';
 import {
   fmt,
   percent,
@@ -41,6 +42,8 @@ export function createGPTPresentation(shell) {
   const enter = (view, patch = {}) =>
     shell.input({ view, perspective: 'diagram', detailPage: -1, ...patch });
   const input = (patch) => shell.input(patch);
+  const phrase = promptEditor(shell, () => current);
+  const editPrompt = () => phrase.open();
   const selectPreset = () => {
     const index = PRESETS.findIndex((p) => p.id === current.values.preset);
     input({ preset: PRESETS[(index + 1) % PRESETS.length].id });
@@ -72,6 +75,7 @@ export function createGPTPresentation(shell) {
     input,
     enter,
     selectPreset,
+    editPrompt,
     get current() {
       return current;
     },
@@ -151,6 +155,7 @@ export function createGPTPresentation(shell) {
     mathHost.inert = false;
     delete mathHost.dataset.presentationPending;
     current = { ...state, modelId: identity.modelId };
+    phrase.layout();
     const nextRepresentation = `${identity.view.id}/${state.values.view}`;
     if (representation !== nextRepresentation) {
       releaseRepresentation?.();
@@ -406,6 +411,7 @@ export function createGPTPresentation(shell) {
     prepare,
     ready: (signal) => (!mathHost.hidden ? computation?.ready(signal) : undefined),
     dispose() {
+      phrase.dispose();
       releaseRepresentation?.();
       artwork?.dispose();
       paper.dispose();

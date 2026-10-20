@@ -156,7 +156,7 @@ test('a short review viewport fits measured button lettering and retains subject
   for (const perspective of ['algebra', 'diagram']) {
     await command(page, parameters({ view: 'attention', perspective }));
     await expect(page.locator('.ve-conditions-trigger')).toBeVisible();
-    await expect(page.locator('.ve-scene-header')).toBeVisible();
+    await expect(page.locator('.ve-scene-header')).toBeHidden();
     expect(await page.locator('.ve-conditions-trigger').count()).toBe(1);
     expect(await page.locator('.ve-player').count()).toBe(1);
   }
@@ -1006,25 +1006,32 @@ test('a validated prompt keeps a draft while typing and commits only a complete 
 }) => {
   await page.setViewportSize({ width: 390, height: 900 });
   await ready(page);
-  await page.getByRole('button', { name: 'Условия', exact: true }).click();
-  const input = page.getByRole('textbox', { name: 'Своя фраза', exact: true });
-  await input.pressSequentially('кот говорит');
+  await page.locator('[data-action="edit-prompt"]').click();
+  const input = page.getByRole('textbox', { name: 'Фраза', exact: true });
+  await input.fill('кот говорит');
   expect((await command(page, [])).prompt).toBe('');
   await expect(input).toHaveValue('кот говорит');
   await input.press('Enter');
   expect((await command(page, [])).trace.next.token).toBe('мяу');
-  await input.press('Backspace');
-  await input.pressSequentially('т');
-  await input.press('Tab');
-  expect((await command(page, [])).prompt).toBe('кот говорит');
+  await expect(input).toBeHidden();
+  await page.locator('[data-action="edit-prompt"]').click();
   await input.fill('пёс говорит');
   await input.press('Escape');
+  await expect(input).toBeHidden();
+  await page.locator('[data-action="edit-prompt"]').click();
   await expect(input).toHaveValue('кот говорит');
   await input.fill('кот говорит неизвестное');
   await input.press('Enter');
-  await expect(page.locator('main.ve-scene > .ve-status')).not.toBeEmpty();
+  await expect(page.locator('.gpt-prompt-editor [role="alert"]')).toContainText(
+    'Неизвестное слово',
+  );
   expect((await command(page, [])).prompt).toBe('кот говорит');
-  await expect(input).toHaveValue('кот говорит');
+  await expect(input).toHaveValue('кот говорит неизвестное');
+  await input.fill('пёс говорит');
+  await input.press('Enter');
+  expect((await command(page, [])).trace.next.token).toBe('гав');
+  await command(page, [{ type: 'undoExperiment' }]);
+  expect((await command(page, [])).prompt).toBe('кот говорит');
 });
 
 test('checkpoints and source episode edits preserve the complete accepted GPT attempt', async ({
@@ -1192,4 +1199,78 @@ test('cold math paints without RAF and cancelling its preparation preserves the 
   expect(cancelled.sameSVG).toBe(true);
   expect(cancelled.hidden).toBe(true);
   expect(cancelled.pending).toBe(false);
+});
+
+test('GPT is operated inside the frame on both surfaces without a parameter console', async ({
+  page,
+}) => {
+  await ready(page);
+  for (const width of [390, 1200]) {
+    await page.setViewportSize({ width, height: 900 });
+    await command(page, parameters({ view: 'overview', preset: 'cat-place' }));
+    await expect(page.locator('.ve-parameters')).toBeHidden();
+    await expect(page.locator('.ve-scene-toolbar')).toBeHidden();
+    await expect(page.getByRole('slider', { name: 'token', exact: true })).toBeHidden();
+    await page.locator('[data-action="token-1"]').click();
+    expect((await command(page, [])).token).toBe(1);
+    await page.locator('[data-action="edit-prompt"]').click();
+    const field = page.getByRole('textbox', { name: 'Фраза', exact: true });
+    await field.fill('кот говорит');
+    const bounds = await page.evaluate(() => {
+      const frame = document.querySelector('.ve-stage')!.getBoundingClientRect();
+      const editor = document.querySelector('.gpt-prompt-editor')!.getBoundingClientRect();
+      const controls = [
+        ...document.querySelectorAll('.gpt-prompt-editor input,.gpt-prompt-editor button'),
+      ];
+      return {
+        frame: frame.toJSON(),
+        editor: editor.toJSON(),
+        controls: controls.map((n) => n.getBoundingClientRect().toJSON()),
+      };
+    });
+    expect(bounds.editor.left).toBeGreaterThanOrEqual(bounds.frame.left);
+    expect(bounds.editor.right).toBeLessThanOrEqual(bounds.frame.right);
+    expect(bounds.editor.bottom).toBeLessThanOrEqual(bounds.frame.bottom);
+    for (const control of bounds.controls) expect(control.height).toBeGreaterThanOrEqual(43.9);
+    await page.setViewportSize({ width: width === 390 ? 1200 : 390, height: 900 });
+    await expect(field).toHaveValue('кот говорит');
+    await expect(field).toBeFocused();
+    await field.press('Enter');
+    expect((await command(page, [])).trace.tokens).toEqual(['<начало>', 'кот', 'говорит']);
+    expect((await command(page, [])).trace.next.token).toBe('мяу');
+    await page.setViewportSize({ width, height: 900 });
+    await mkdir(resolve('artifacts/direct-input'), { recursive: true });
+    await page
+      .locator('main.ve-scene')
+      .screenshot({ path: resolve(`artifacts/direct-input/gpt-${width}.png`) });
+  }
+});
+
+test('a rejected phrase remains editable and its error fits the narrow frame', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 });
+  await ready(page);
+  await page.locator('[data-action="edit-prompt"]').click();
+  const input = page.getByRole('textbox', { name: 'Фраза', exact: true });
+  for (const word of ['сверхвысокопроизводительный', 'я'.repeat(200)]) {
+    await input.fill(word);
+    await input.press('Enter');
+    await expect(input).toBeFocused();
+    await expect(input).toHaveValue(word);
+    const bounds = await page.evaluate(() => {
+      const stage = document.querySelector('.ve-stage')!.getBoundingClientRect();
+      const form = document.querySelector<HTMLElement>('.gpt-prompt-editor')!;
+      const error = form.querySelector('[role="alert"]')!.getBoundingClientRect();
+      return {
+        bottom: error.bottom,
+        frameBottom: stage.bottom,
+        overflow: form.scrollWidth > form.clientWidth + 1,
+      };
+    });
+    expect(bounds.bottom).toBeLessThanOrEqual(bounds.frameBottom);
+    expect(bounds.overflow).toBe(false);
+    expect((await command(page, [])).prompt).toBe('');
+  }
+  await input.fill('кот говорит');
+  await input.press('Enter');
+  expect((await command(page, [])).trace.next.token).toBe('мяу');
 });

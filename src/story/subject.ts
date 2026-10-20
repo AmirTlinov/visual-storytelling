@@ -35,6 +35,8 @@ export interface StorySubjectRecipe {
   title: string;
   /** An intrinsic drawing aperture; shared navigation remains outside a stage frame. */
   frame?: SceneOptions['frame'];
+  /** Subject-owned navigation can keep all interaction beside the drawing. */
+  navigation?: SceneOptions['navigation'];
   parameters(model: StoryModel): NonNullable<SceneOptions['parameters']>;
   resolveInput?(
     patch: Readonly<Partial<ModelValues>>,

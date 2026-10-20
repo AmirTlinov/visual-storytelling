@@ -39,10 +39,11 @@ export async function mountIllustratedSubject(
   let drawingHasPlayer = Boolean(initial.chapters.length);
   const shell = SceneShell.mount(root, {
     title: initial.title ?? recipe.title,
-    heading: options.heading ?? (initial.title !== undefined ? 'navigation' : false),
+    heading: options.heading ?? (recipe.navigation !== false && initial.title !== undefined ? 'navigation' : false),
     parameters: recipe.parameters(model),
     resources: initial.resources,
     frame: options.frame ?? recipe.frame,
+    navigation: recipe.navigation,
     captions: options.captions,
     onInput(values) {
       if (controller) return;
@@ -421,7 +422,7 @@ export async function mountIllustratedSubject(
       }
     }
     shell.setResources(next.resources ?? []);
-    shell.setTitle(next.title ?? recipe.title, { visible: next.title !== undefined });
+    shell.setTitle(next.title ?? recipe.title, { visible: options.heading !== false && recipe.navigation !== false && next.title !== undefined });
     handle.extend({
       snapshot: () =>
         coveredSnapshot

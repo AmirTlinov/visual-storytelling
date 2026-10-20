@@ -28,8 +28,9 @@ function viewTime(document, script, view, checked) {
 export default {
   title: 'Как GPT выбирает следующее слово',
   frame: { width: 1280, height: 720, scope: 'stage' },
+  navigation: false,
   parameters: (model) => gptParameters(model.inputs),
-  controls: ['preset', 'prompt', 'token', 'block', 'head'],
+  controls: [],
   resolveInput(patch, current, document, script, intent = 'input') {
     if (intent === 'restore') return { values: gptInputs({ ...current.values, ...patch }) };
     const p = { ...current.values, ...patch };
