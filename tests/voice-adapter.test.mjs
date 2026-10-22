@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, symlink } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { JobRunner } from '../plugin/jobs.mjs';
 import {
   adapterVoiceStatus,
@@ -13,6 +13,7 @@ import {
   validateAdapterSettings,
 } from '../tools/voice/adapter.mjs';
 import { voiceDigest } from '../tools/voice/receipt.mjs';
+import { masteringProfileHash } from '../tools/voice/mastering.mjs';
 
 // Protocol/ownership fixture: tone intervals have measured phrase timestamps.
 // It is deliberately not a TTS model or a listening-quality acceptance test.
@@ -181,6 +182,71 @@ test('local and API selection share verified assembly, precise phrase anchors an
   );
   assert.equal((await f.build()).cached, 0);
   assert.equal((await f.calls()).length, 7);
+});
+
+test('accepted adapter audio remasters locally, preserves alignment and then skips FFmpeg and the provider', async (t) => {
+  const f = await fixture(t, { two: true });
+  f.settings.provider = 'api';
+  await f.save();
+  await f.build();
+  const before = await f.receipt();
+  delete before.mix;
+  await writeFile(join(f.directory, 'timeline.json'), JSON.stringify(before));
+  await assert.rejects(
+    checkAdapterNarration(f.directory, f.source, before, f.settings),
+    /mastering changed/,
+  );
+  const calls = await f.calls();
+  await rm(f.cache, { recursive: true }); // Remix must not require cached takes or call a model.
+  const result = await f.build();
+  assert.equal(result.cached, 2);
+  assert.deepEqual(await f.calls(), calls);
+  const after = await f.receipt();
+  assert.equal(after.mix.mastering.profile_sha256, masteringProfileHash);
+  assert.deepEqual(after.segments, before.segments);
+  assert.deepEqual(after.cues, before.cues);
+  assert.equal(after.duration, before.duration);
+  assert.equal(after.sample_rate, before.sample_rate);
+  assert(Math.abs(after.mix.mastering.integrated_lufs + 16) < 0.2);
+  assert(after.mix.mastering.true_peak_dbtp <= -1.5);
+  const pair = await f.pair(),
+    path = process.env.PATH;
+  try {
+    process.env.PATH = '/nonexistent-no-ffmpeg-or-node';
+    await f.build();
+    await checkAdapterNarration(f.directory, f.source, after, f.settings);
+  } finally {
+    process.env.PATH = path;
+  }
+  assert.deepEqual(await f.pair(), pair);
+  assert.deepEqual(await f.calls(), calls);
+});
+
+test('unavailable mastering and damaged accepted audio cannot trigger another provider request or replace files', async (t) => {
+  const f = await fixture(t);
+  await f.build();
+  const old = await f.receipt();
+  delete old.mix;
+  await writeFile(join(f.directory, 'timeline.json'), JSON.stringify(old));
+  const pair = await f.pair(),
+    calls = await f.calls(),
+    path = process.env.PATH;
+  try {
+    process.env.PATH = '/nonexistent-no-ffmpeg-or-node';
+    await assert.rejects(f.build(), /ffmpeg/);
+  } finally {
+    process.env.PATH = path;
+  }
+  assert.deepEqual(await f.pair(), pair);
+  const silent = Buffer.from(pair[0]);
+  silent.fill(0, 44);
+  await writeFile(join(f.directory, 'audio.wav'), silent);
+  old.audio_sha256 = createHash('sha256').update(silent).digest('hex');
+  await writeFile(join(f.directory, 'timeline.json'), JSON.stringify(old));
+  const damaged = await f.pair();
+  await assert.rejects(f.build(), /silent/);
+  assert.deepEqual(await f.pair(), damaged);
+  assert.deepEqual(await f.calls(), calls);
 });
 
 test('malformed audio, incomplete markers and provider output cannot replace a good recording or leak secrets', async (t) => {

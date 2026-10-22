@@ -22,13 +22,12 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { acquireDirectoryLock } from '../tools/file-lock.mjs';
-import { applicationDirectory } from '../tools/storage.mjs';
+import { installationDirectory } from '../tools/storage.mjs';
+export { installationDirectory } from '../tools/storage.mjs';
 import { parseArgs } from 'node:util';
 
 const execute = promisify(execFile);
 const receiptFile = '.installation.json';
-export const installationDirectory = () =>
-  process.env.VISUAL_STORY_INSTALL_DIR ?? join(applicationDirectory(), 'installation');
 
 /** A stable executable resolves one immutable release before Node or any late import starts. */
 export const launcher = `#!/bin/sh

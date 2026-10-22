@@ -93,8 +93,11 @@ export interface Beat {
   id: string;
   /** Omit to use the longest action's route and contact phases. */
   seconds?: number;
-  text: string;
+  text?: string;
   title?: string;
+  /** Review descriptions do not require a visible caption. */
+  action?: string;
+  hold?: string;
   /** Omitted actors continue their last performance. */
   actors?: Readonly<Record<string, string>>;
   /** Flat props and physical drawings share value tracks. Omitted channels retain their value. */

@@ -11,6 +11,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { installRelease } from '../plugin/install.mjs';
 import { connectRuntime } from '../plugin/runtime/client.mjs';
+import { JobRunner } from '../plugin/jobs.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const shellQuote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
@@ -41,6 +42,46 @@ async function tool(client, name, args = {}) {
 }
 
 test(
+  'runtime retirement stays busy until a successful job is durably saved',
+  { timeout: 7000 },
+  async (t) => {
+    const data = await mkdtemp(join(tmpdir(), 'story-runtime-drain-'));
+    const entry = join(data, 'worker.mjs');
+    await writeFile(
+      entry,
+      `process.on('message', () => process.send({ type: 'result', result: { value: 1 } }, () => process.disconnect()));`,
+    );
+    const runner = new JobRunner(data, entry);
+    const commit = Promise.withResolvers();
+    let savingResult = false;
+    const save = runner.save.bind(runner);
+    runner.save = async (job) => {
+      if (job.status === 'succeeded') {
+        savingResult = true;
+        await commit.promise;
+      }
+      return save(job);
+    };
+    t.after(async () => {
+      commit.resolve();
+      await runner.close();
+      await rm(data, { recursive: true, force: true });
+    });
+    await runner.start();
+    const job = await runner.enqueue('create', { projectId: 'draining' }, randomUUID());
+    await wait(() => savingResult);
+    assert.equal(runner.get(job.id).status, 'succeeded');
+    assert.equal(runner.busy, true, 'a visible result does not release the runtime owner');
+    const stored = () => readFile(join(data, 'jobs', job.id + '.json'), 'utf8').then(JSON.parse);
+    assert.equal((await stored()).status, 'running');
+    commit.resolve();
+    await runner.running;
+    assert.equal(runner.busy, false);
+    assert.equal((await stored()).status, 'succeeded');
+  },
+);
+
+test(
   'installed update drains jobs and connected clients, preserves the session and rejects stale launchers',
   { timeout: 20000 },
   async (t) => {
@@ -52,6 +93,7 @@ test(
       kernels = new Set();
     await mkdir(data);
     t.after(async () => {
+      await writeFile(join(data, 'terminal-save-release'), 'release').catch(() => {});
       await Promise.allSettled([...clients].map((c) => c.close()));
       for (const pid of kernels)
         try {
@@ -81,6 +123,38 @@ test(
           platform: 'node',
           target: 'node22',
           format: 'esm',
+          plugins:
+            name === 'kernel'
+              ? [
+                  {
+                    name: 'hold-terminal-job-publication',
+                    setup(builder) {
+                      builder.onLoad({ filter: /tools\/storage\.mjs$/ }, async ({ path }) => {
+                        const source = await readFile(path, 'utf8');
+                        const entry = 'export async function writeJSON(file, value) {';
+                        assert.ok(source.includes(entry));
+                        return {
+                          loader: 'js',
+                          contents:
+                            "import {writeFile as markTerminal} from 'node:fs/promises';\n" +
+                            source.replace(
+                              entry,
+                              entry +
+                                `
+                    if (file.includes('/jobs/') && value.status === 'succeeded') {
+                      const data = dirname(dirname(file));
+                      await markTerminal(join(data, 'terminal-save-started'), 'started');
+                      while (!(await readFile(join(data, 'terminal-save-release')).then(() => true, () => false)))
+                        await new Promise(resolve => setTimeout(resolve, 5));
+                    }
+                  `,
+                            ),
+                        };
+                      });
+                    },
+                  },
+                ]
+              : [],
           ...(name === 'server'
             ? {
                 banner: {
@@ -234,13 +308,29 @@ process.on('message',async(message)=>{
     await wait(
       async () => (await runtime.call('job', { jobId: created.job.id })).status === 'succeeded',
     );
-    let updated = false;
-    const currentHelp = tool(b, 'story_help', { query: 'Fixture' }).finally(() => {
-      updated = true;
+    // The result is visible before its final save releases JobRunner.active.
+    // Retirement readiness belongs to the runtime, not the job's display status.
+    await wait(async () => {
+      const update = await runtime.call('prepareUpdate');
+      assert.equal(update.updating, true);
+      return update.busy === false;
     });
+    let updated = false;
+    await wait(() =>
+      readFile(join(data, 'terminal-save-started')).then(
+        () => true,
+        () => false,
+      ),
+    );
+    const currentHelp = b
+      .callTool({ name: 'story_help', arguments: { query: 'Fixture' } })
+      .finally(() => {
+        updated = true;
+      });
     await delay(150);
     process.kill(hello.pid, 0); // An already issued command still awaits its renderer's ACK.
     assert.equal(updated, false, 'the successor cannot serve until the previous owner finishes');
+    await writeFile(join(data, 'terminal-save-release'), 'release');
     await runtime.call('exchange', {
       sessionId: opened.sessionId,
       renderer,
@@ -278,8 +368,10 @@ process.on('message',async(message)=>{
     );
     const stale = await a.callTool({ name: 'story_help', arguments: { query: 'Fixture' } });
     assert.equal(stale.structuredContent.error.code, 'RUNTIME_UPDATE_REQUIRED');
+    const help = await currentHelp;
+    assert.equal(help.isError, undefined, JSON.stringify(help));
     assert.equal(
-      (await currentHelp).text,
+      help.structuredContent.text,
       next.release,
       'the same new MCP connection can retry after the previous owner exits',
     );

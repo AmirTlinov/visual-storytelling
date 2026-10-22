@@ -42,6 +42,126 @@ async function fixture(t) {
   };
 }
 
+test('a failed registry write never publishes a successful receipt in memory; retry survives restart', async (t) => {
+  const f = await fixture(t);
+  const file = join(f.directory, 'data/projects.json');
+  const original = await readFile(file);
+  const before = structuredClone(f.store.get(f.project.id));
+  const next = {
+    ...before,
+    creation: { requestId: 'creation-retry', receipt: { accepted: true } },
+  };
+  await rm(file);
+  await mkdir(file);
+  await assert.rejects(f.store.remember(next));
+  assert.deepEqual(f.store.get(f.project.id), before);
+  await rm(file, { recursive: true });
+  await writeFile(file, original);
+  await f.store.remember(next);
+  const reopened = new ProjectStore(join(f.directory, 'data'));
+  await reopened.start();
+  assert.deepEqual(reopened.get(f.project.id), JSON.parse(JSON.stringify(next)));
+});
+
+test('creation reserves its request before files and resumes only its own manifest after restart', async (t) => {
+  for (const explicit of [false, true])
+    await t.test(explicit ? 'explicit path' : 'implicit path', async (t) => {
+      const directory = await mkdtemp(join(tmpdir(), 'story-reservation-'));
+      t.after(() => rm(directory, { recursive: true, force: true }));
+      const data = join(directory, 'data');
+      const path = join(directory, 'project');
+      const store = new ProjectStore(data);
+      const input = {
+        title: 'Reserved',
+        explanation: { model: { kind: 'division', count: 13, divisor: 3 } },
+        ...(explicit ? { path } : {}),
+      };
+      const options = { title: input.title, creation: { requestId: randomUUID(), input } };
+      const gate = Promise.withResolvers();
+      const queued = Promise.withResolvers();
+      store.registrySave = gate.promise;
+      const remember = store.remember.bind(store);
+      store.remember = (record) => {
+        queued.resolve(record);
+        return remember(record);
+      };
+      // Stop at the first materialization boundary, after the real registry commit.
+      store.registerPath = async () => {
+        throw new Error('interrupted before manifest');
+      };
+      const creating = store.create(path, options);
+      const rejected = assert.rejects(creating, /interrupted before manifest/);
+      const reservation = await queued.promise;
+      await assert.rejects(access(path), { code: 'ENOENT' });
+      assert.equal(store.projects.size, 0);
+      gate.resolve();
+      await rejected;
+      const reopened = new ProjectStore(data);
+      await reopened.start();
+      assert.equal(reopened.creation(options.creation.requestId).id, reservation.id);
+      assert.deepEqual(reopened.creation(options.creation.requestId).creation.input, {
+        ...input,
+        ...(explicit ? { path: reservation.path } : {}),
+      });
+      await assert.rejects(
+        reopened.create(path, {
+          ...options,
+          creation: { ...options.creation, requestId: randomUUID() },
+        }),
+        /another project/,
+      );
+      await assert.rejects(
+        reopened.create(path, {
+          ...options,
+          creation: { ...options.creation, input: { ...input, title: 'Changed' } },
+        }),
+        /requestId/,
+      );
+      const foreign = JSON.stringify({ format: 1, id: randomUUID(), title: 'Other project' });
+      await writeFile(join(path, 'story.vstory'), foreign);
+      await assert.rejects(reopened.create(path, options), /another story/);
+      assert.equal(await readFile(join(path, 'story.vstory'), 'utf8'), foreign);
+      await rm(join(path, 'story.vstory'));
+      await writeFile(join(path, 'foreign.js'), 'preserve me');
+      await assert.rejects(reopened.create(path, options), /empty directory/);
+      await assert.rejects(reopened.register(path), /changed before its manifest/);
+      assert.equal(await readFile(join(path, 'foreign.js'), 'utf8'), 'preserve me');
+      await rm(join(path, 'foreign.js'));
+      const recovered = await reopened.create(path, options);
+      assert.equal(recovered.id, reservation.id);
+      assert.equal(recovered.path, reservation.path);
+      assert.equal(
+        JSON.parse(await readFile(join(path, 'story.vstory'), 'utf8')).id,
+        reservation.id,
+      );
+      assert.equal((await reopened.register(path)).id, reservation.id);
+      assert.equal(reopened.projects.size, 1);
+    });
+});
+
+test('a failed first creation commit leaves no candidate directory or unbound project', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'story-reservation-failed-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const data = join(directory, 'data');
+  const file = join(data, 'projects.json');
+  await mkdir(file, { recursive: true });
+  const store = new ProjectStore(data);
+  const path = join(directory, 'implicit-candidate');
+  const options = {
+    title: 'Reserved',
+    creation: { requestId: randomUUID(), input: { title: 'Reserved', explanation: { model: {} } } },
+  };
+  await assert.rejects(store.create(path, options));
+  assert.equal(store.projects.size, 0);
+  await assert.rejects(access(path), { code: 'ENOENT' });
+  await rm(file, { recursive: true });
+  const reopened = new ProjectStore(data);
+  await reopened.start();
+  const project = await reopened.create(path, options);
+  assert.equal(reopened.creation(options.creation.requestId).id, project.id);
+  assert.equal(reopened.projects.size, 1);
+});
+
 test('authoring undo walks applied edits across restart and a new branch; request receipts never become undo entries', async (t) => {
   const f = await fixture(t);
   await f.edit([{ path: 'a.js', content: 'a1' }]);

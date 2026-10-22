@@ -6,6 +6,7 @@ import re
 import wave
 from resources import DEFAULT_DELIVERY, REFERENCE_AUDIO, REFERENCE_TEXT, MUSIC, digest, file_digest
 from quality import validate_alignment
+from mastering_profile import PROFILE_SHA256
 
 WORD = re.compile(r"[А-Яа-яЁё]+(?:[-‑][А-Яа-яЁё]+)*")
 ID = re.compile(r"[a-z][a-z0-9_.-]*\Z")
@@ -26,7 +27,7 @@ def dependency_digests(spec):
             "music": file_digest(music) if music and music.is_file() else None}
 
 
-def check_timeline(script_path, timeline_path, *, source_directory=None):
+def check_timeline(script_path, timeline_path, *, source_directory=None, require_mastering=True):
     """Keep generated speech and cues attached to the exact authored source."""
     source = json.loads(Path(script_path).read_text(encoding="utf-8"))
     timeline = json.loads(Path(timeline_path).read_text(encoding="utf-8"))
@@ -79,6 +80,14 @@ def check_timeline(script_path, timeline_path, *, source_directory=None):
                 raise ValueError("Narration audio does not match its timeline; run visual-story audio")
     except (FileNotFoundError, wave.Error, EOFError) as error:
         raise ValueError("Narration audio is missing or invalid; run visual-story audio") from error
+    if timeline.get("audio_sha256") and file_digest(Path(timeline_path).parent / audio) != timeline["audio_sha256"]:
+        raise ValueError("Narration audio differs from its accepted receipt")
+    for name, expected in timeline.get("stem_sha256", {}).items():
+        if name not in ("voice.wav", "music.wav") or file_digest(Path(timeline_path).parent / name) != expected:
+            raise ValueError("Narration stem differs from its accepted receipt")
+    if require_mastering and (timeline.get("mix", {}).get("mastering", {}).get("profile_sha256") != PROFILE_SHA256
+                              or not timeline.get("audio_sha256")):
+        raise ValueError("Narration mastering changed; run visual-story audio")
 
 
 def without_controls(text):

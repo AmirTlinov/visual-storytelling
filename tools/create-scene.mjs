@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir, readdir, access } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { pinSceneProject } from './scene-project.mjs';
 import { sceneInput } from './assets.mjs';
 import { buildNarration, deferNarration, silenceSceneCopy } from './narration.mjs';
@@ -8,12 +8,14 @@ import { buildOutput } from './build-output.mjs';
 import { sceneEntry } from './scene-entry.mjs';
 import { copySceneInput } from './copy-scene-input.mjs';
 import { projectFiles } from './project-files.mjs';
+import { assertPreparedRuntimeRoot } from './prepared-runtime-trust.mjs';
 
 /** CLI and plugin create the same editable project with an immutable runtime dependency. */
 export async function createScene(
   destination,
   {
     example,
+    explanation,
     title,
     deferAudio = false,
     silent = false,
@@ -25,6 +27,15 @@ export async function createScene(
   signal?.throwIfAborted();
   destination = resolve(destination);
   const catalog = JSON.parse(await readFile(join(root, 'examples/catalog.json'), 'utf8'));
+  if (explanation !== undefined && example !== undefined)
+    throw new Error('Choose an explanation document or a copied example.');
+  if (explanation !== undefined) {
+    root = await assertPreparedRuntimeRoot(root);
+    const { validateExplanation } = await import(
+      pathToFileURL(join(root, 'dist/explanation/document.js')).href
+    );
+    explanation = validateExplanation(explanation);
+  }
   if ([audio, deferAudio, silent].filter(Boolean).length > 1)
     throw new Error('Choose one of --audio, --no-audio or --silent');
   if (example !== undefined && !Object.hasOwn(catalog, example))
@@ -39,7 +50,9 @@ export async function createScene(
     if (error.code !== 'ENOENT') throw error;
   }
   await mkdir(destination, { recursive: true });
-  const source = example ? join(root, 'examples', example) : join(root, 'tools/scaffold');
+  const source = example
+    ? join(root, 'examples', example)
+    : join(root, explanation === undefined ? 'tools/scaffold' : 'tools/explanation');
   const target = destination;
   let runtime;
   const manifest = await readFile(join(target, 'story.vstory')).catch((error) => {
@@ -76,12 +89,23 @@ export async function createScene(
       );
     }
     if (silent) await silenceSceneCopy(destination);
-    runtime = await pinSceneProject(destination, { root, signal });
+    runtime = await pinSceneProject(destination, {
+      root,
+      signal,
+      prepared: explanation !== undefined,
+    });
+    if (explanation !== undefined) {
+      await writeFile(
+        join(destination, 'explanation.json'),
+        JSON.stringify(explanation, null, 2) + '\n',
+      );
+    }
     const hasAudio = await access(join(destination, 'audio.wav')).then(
       () => true,
       () => false,
     );
-    if (!silent && (deferAudio || (!audio && !hasAudio))) await deferNarration(destination);
+    if (explanation === undefined && !silent && (deferAudio || (!audio && !hasAudio)))
+      await deferNarration(destination);
     if (audio) await buildNarration(destination, { signal });
     signal?.throwIfAborted();
     if ((await readdir(target)).some((name) => name !== 'story.vstory'))

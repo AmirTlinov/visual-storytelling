@@ -21,7 +21,7 @@ test(
       const description = (await host.client.listTools()).tools.find(
         ({ name }) => name === 'story_create',
       );
-      assert.equal(description._meta?.ui, undefined, 'authoring does not attach an MCP App');
+      assert.ok(description._meta?.ui?.resourceUri, 'live authoring owns the MCP App entry');
       assert.equal(description.inputSchema.required.includes('example'), false);
       const sessions = (await call('story_inspect', {})).sessions;
       const request = {

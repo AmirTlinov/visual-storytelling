@@ -22,6 +22,8 @@ const gestures = new Set();
 const hostRequests = new Map();
 const widgetListeners = new Map();
 let preparedReplacement;
+// Absent until an authored transition: the mounted build is identified by generation.
+let appliedAuthor = config.authoring;
 function beforePlay({ signal }) {
   if (config.preview || suspended) throw new Error('This preview cannot play.');
   return new Promise((resolve, reject) => {
@@ -93,10 +95,10 @@ async function acknowledge(request, reason) {
   );
   try {
     await rendered(controller.signal);
-    if (!disposed) send({ type: 'ack', id: request.id, report: report(reason) });
+    if (!disposed) send({ type: 'ack', id: request.id, report: report(reason, request.detail) });
   } catch (error) {
     // Pausing already succeeded. A broken preparation must not make stop unavailable.
-    send({ type: 'ack', id: request.id, report: failedReport(error, reason) });
+    send({ type: 'ack', id: request.id, report: failedReport(error, reason, request.detail) });
   } finally {
     clearTimeout(timer);
   }
@@ -135,6 +137,7 @@ const report = (reason, detail = 'state') => {
       detail,
     ).state,
     checkpoint,
+    authoring: appliedAuthor,
     stateRevision,
     renderStatus,
     observationError,
@@ -212,6 +215,38 @@ addEventListener('message', (event) => {
     hostRequests.get(event.data.id)?.(event.data.error ? new Error(event.data.error) : undefined);
     return;
   }
+  if (['author-preview', 'confirm-preview'].includes(event.data.type)) {
+    if (!config.provisional || !scene?.authoring) return;
+    const request = event.data;
+    queue = queue
+      .then(async () => {
+        // A confirmation ahead of this queued preview may already have fixed the identity.
+        if (
+          !config.provisional ||
+          !scene?.authoring ||
+          request.sessionId !== config.sessionId ||
+          request.generation !== config.generation
+        )
+          return;
+        await scene.authoring.replace(request.document, { provisional: true });
+        if (request.type === 'confirm-preview' && request.checkpoint)
+          await scene.restore(request.checkpoint);
+        await rendered();
+        if (request.type === 'confirm-preview') {
+          config.sessionId = request.nextSessionId;
+          config.generation = request.nextGeneration;
+          config.preview = false;
+          config.provisional = false;
+          appliedAuthor = request.authoring;
+          stateRevision = request.stateRevision;
+          document.body.inert = false;
+          renew();
+          send({ type: 'ready', report: report('ready') });
+        } else send({ type: 'preview-content', renderStatus });
+      })
+      .catch((error) => send({ type: 'error', message: error.message }));
+    return;
+  }
   if (event.data.type === 'restore-preview') {
     if (!config.preview || !scene) return;
     const request = event.data;
@@ -255,6 +290,7 @@ addEventListener('message', (event) => {
     // Preparation already restored and awaited this checkpoint. Promotion is synchronous.
     config.generation = event.data.nextGeneration;
     config.preview = false;
+    appliedAuthor = undefined;
     stateRevision = event.data.stateRevision;
     scheduleLayout();
     renew();
@@ -333,12 +369,24 @@ addEventListener('message', (event) => {
       try {
         if (!scene || suspended || Date.now() > request.expiresAt)
           throw new Error('View is unavailable or command expired. Inspect again.');
-        if (request.op === 'control' && request.stateRevision !== stateRevision)
+        if (
+          ['control', 'author', 'author-validate'].includes(request.op) &&
+          request.stateRevision !== stateRevision
+        )
           throw new Error(
             'The user changed the scene. Inspect the latest state before controlling it.',
           );
-        if (request.op === 'control' && gestures.size)
+        if (['control', 'author', 'author-validate'].includes(request.op) && gestures.size)
           throw new Error('The user is adjusting the scene. Wait for the gesture to finish.');
+        if (request.op === 'author-validate') {
+          if (!scene.authoring?.validate)
+            throw new Error(
+              'The shown scene has no semantic authoring validator. Reopen this project.',
+            );
+          scene.authoring.validate(request.document, { authoredInputs: request.authoredInputs });
+          send({ type: 'ack', id: request.id, result: { validated: true } });
+          return;
+        }
         commandController = new AbortController();
         const controller = commandController;
         const deadline = setTimeout(
@@ -352,7 +400,31 @@ addEventListener('message', (event) => {
         );
         let result;
         try {
-          if (request.op === 'control') {
+          if (request.op === 'author') {
+            if (!scene.authoring?.replace)
+              throw new Error('The shown scene has no semantic authoring owner.');
+            await completed(
+              scene.authoring
+                .replace(request.document, {
+                  signal: controller.signal,
+                  authoredInputs: request.authoredInputs,
+                })
+                .then(() => {
+                  appliedAuthor = {
+                    requestId: request.requestId,
+                    commandId: request.id,
+                    buildRevision: request.nextBuildRevision,
+                    sourceRevision: request.sourceRevision,
+                  };
+                  stateRevision++;
+                }),
+              controller.signal,
+            );
+            result = {
+              buildRevision: request.nextBuildRevision,
+              sourceRevision: request.sourceRevision,
+            };
+          } else if (request.op === 'control') {
             try {
               await scene.control(request.commands, { signal: controller.signal });
             } finally {
@@ -373,7 +445,11 @@ addEventListener('message', (event) => {
         send({
           type: 'ack',
           id: request.id,
-          report: scene ? failedReport(error, request.op, request.detail) : undefined,
+          report: scene
+            ? request.op === 'author-validate'
+              ? report(request.op, request.detail)
+              : failedReport(error, request.op, request.detail)
+            : undefined,
           error: request.op === 'inspect' && scene ? undefined : String(error?.message ?? error),
           failure: error?.code?.startsWith('scene_control_')
             ? {
@@ -421,6 +497,7 @@ async function ready() {
     layoutObserver = new ResizeObserver(scheduleLayout);
     layoutObserver.observe(document.body);
     if (!config.preview) renew();
+    if (config.provisional) document.body.inert = true;
     send({ type: 'ready', report: report('ready') });
     let sampling = false;
     sampleTimer = setInterval(() => {

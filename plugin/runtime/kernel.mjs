@@ -4,7 +4,7 @@ import { dirname, join, resolve, isAbsolute, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { pathToFileURL } from 'node:url';
-import { SessionDirectory } from '../session-directory.mjs';
+import { SessionDirectory, buildReference } from '../session-directory.mjs';
 import { readJSON, writeJSON } from '../../tools/storage.mjs';
 import { ProjectStore } from '../projects.mjs';
 import { readProjectFile } from '../../tools/project-files.mjs';
@@ -17,7 +17,7 @@ import { adapterVoiceStatus, validateAdapterSettings } from '../../tools/voice/a
 import { narrationProvider, voiceSettingsForDisplay } from '../../tools/voice/settings.mjs';
 import { requireVoiceSupport } from '../../tools/environment/voice.mjs';
 import { collectCache } from '../cache.mjs';
-import { errorData } from '../errors.mjs';
+import { errorData, failure } from '../errors.mjs';
 import { runtimeBuild, installedRuntime, requireSelectedRuntime } from './identity.mjs';
 import { acquireDirectoryLock } from '../../tools/file-lock.mjs';
 import { revisionInput } from '../revision-input.mjs';
@@ -25,6 +25,9 @@ import { selectExamples } from '../../tools/catalog-query.mjs';
 import { exampleDetails } from '../../tools/catalog.mjs';
 import { readPinnedRuntime } from '../../tools/runtime-package.mjs';
 import { videoDimensions } from '../../tools/video-dimensions.mjs';
+import { createScene } from '../../tools/create-scene.mjs';
+import { prepareLiveProject } from '../live-project.mjs';
+import { validateExplanation } from '../../dist/explanation/document.js';
 
 const [socketPath, data] = process.argv.slice(2),
   directory = await realpath(dirname(process.argv[1]));
@@ -51,6 +54,7 @@ const watched = new ProjectWatch(async (id) => {
   if (
     updating ||
     projects.queues.has(id) ||
+    projects.queues.has('delivery:' + id) ||
     jobs
       .list(id)
       .some(
@@ -89,28 +93,18 @@ const jobs = new JobRunner(
       const current = await projects.inspect(job.projectId);
       if (result.sourceRevision !== current.sourceRevision) return { ...result, superseded: true };
       const prepared = await readJSON(join(data, 'builds', result.buildRevision + '.json'));
-      await projects.remember({
-        ...projects.get(job.projectId),
+      await projects.update(job.projectId, {
         buildRevision: result.buildRevision,
       });
       watched.open(projects.get(job.projectId));
       for (const session of sessions.sessions.values())
         if (session.build.projectId === job.projectId) {
-          session.nextBuild = prepared;
+          session.nextBuild = buildReference(prepared);
           session.wake?.();
         }
     }
     setTimeout(scheduleClose, 0);
-    await jobs
-      .preserveInputs(async () =>
-        collectCache(data, {
-          limitMB: (await preferences.read()).cacheLimitMB,
-          projects: await projects.list(),
-          sessions: [...sessions.sessions.values()],
-          snapshotLeases: jobs.snapshotLeases(),
-        }),
-      )
-      .catch((error) => console.error('Cache: ' + error.message));
+    scheduleCache();
     return result;
   },
   { toolchainRoot: resolve(directory, '../..') },
@@ -127,6 +121,27 @@ let closing = false,
   idleTimer,
   socketIdentity;
 let playbackClaim = Promise.resolve();
+let cacheReport = null;
+
+function scheduleCache() {
+  jobs.requestMaintenance(async () => {
+    const result = await collectCache(data, {
+      limitMB: (await preferences.read()).cacheLimitMB,
+      projects: await projects.list(),
+      sessions: [...sessions.sessions.values()],
+      snapshotLeases: jobs.snapshotLeases(),
+      buildLeases: sessions.buildLeases(),
+    });
+    cacheReport = { ...result, collectedAt: new Date().toISOString() };
+  });
+}
+
+async function viewBuild(revision) {
+  const build = await readJSON(join(data, 'builds', revision + '.json'));
+  if (!build || build.revision !== revision || typeof build.html !== 'string')
+    throw new Error('The saved build is unavailable. Rebuild the project.');
+  return build;
+}
 
 function load(id) {
   if (closing) return Promise.reject(new Error('Runtime shutting down.'));
@@ -157,6 +172,7 @@ function load(id) {
       generation: saved.generation,
       stateRevision: saved.stateRevision,
       observedAt: saved.observedAt,
+      presentationMetrics: saved.presentationMetrics,
       returnTo: saved.returnTo ?? [],
       widgetState: saved.widgetState ?? {},
     });
@@ -179,6 +195,7 @@ function save(s) {
     generation: s.generation,
     stateRevision: s.stateRevision,
     observedAt: s.observedAt,
+    presentationMetrics: s.presentationMetrics,
     returnTo: s.returnTo ?? [],
     widgetState: s.widgetState ?? {},
   };
@@ -216,6 +233,172 @@ async function prepareProject(project, requestId = randomUUID()) {
   } finally {
     work.delete(preparation);
     scheduleClose();
+  }
+}
+
+async function publishLiveProject(project) {
+  return jobs.preserveInputs(async () => {
+    const prepared = await prepareLiveProject(data, project);
+    if ((await projects.inspect(project.id)).sourceRevision !== project.sourceRevision)
+      throw failure('source_conflict', 'Source changed while preparing its delivery.', {
+        action: 'story_inspect',
+      });
+    await projects.update(project.id, { buildRevision: prepared.revision });
+    watched.open(projects.get(project.id));
+    return prepared;
+  });
+}
+
+async function createLiveProject(project, input, requestId) {
+  const existing = await readJSON(join(project.path, 'package.json'));
+  const created = existing
+    ? undefined
+    : await createScene(project.path, {
+        root: resolve(directory, '../..'),
+        title: input.title,
+        explanation: input.explanation,
+        example: input.example,
+      });
+  const authored = {
+    ...(await projects.inspect(project.id)),
+    runtime: created?.runtime ?? (await readPinnedRuntime(project.path)).runtime,
+  };
+  const prepared = await publishLiveProject(authored);
+  const pendingSession = projects.get(project.id).creation?.sessionId ?? randomUUID();
+  // Choose the durable identity before opening an in-memory scene. A failed registry
+  // write must not leave an unregistered session which a retry could duplicate.
+  await projects.update(project.id, {
+    creation: { requestId, input, sessionId: pendingSession },
+  });
+  let session;
+  if (
+    sessions.sessions.has(pendingSession) ||
+    (await readJSON(join(data, 'sessions', pendingSession + '.json')))
+  )
+    session = await load(pendingSession);
+  else {
+    session = sessions.open(prepared);
+    sessions.sessions.delete(session.id);
+    session.id = pendingSession;
+    sessions.sessions.set(session.id, session);
+  }
+  await save(session);
+  const receipt = { ...decorate(session), project: authored, authoring: 'ready' };
+  await projects.update(project.id, {
+    lastSessionId: session.id,
+    creation: { requestId, input, sessionId: session.id, receipt },
+  });
+  scheduleCache();
+  return receipt;
+}
+
+async function rememberCreationDelivery(projectId, delivery) {
+  await projects.update(projectId, (project) => {
+    if (project.creation.delivery?.result.delivery === 'shown') return;
+    return { creation: { ...project.creation, delivery } };
+  });
+}
+
+// The existing frame-report channel completes navigation delivery without another agent call.
+async function observeCreationDelivery(session) {
+  if (!session.build.projectId) return;
+  await projects.update(session.build.projectId, (project) => {
+    const creation = project.creation;
+    const previous = creation?.delivery;
+    // SessionDirectory owns attach/generation and validates every incoming report.
+    // A remount can replace the renderer while retaining this exact creation.
+    // Recheck its current observation inside the registry queue before publishing.
+    if (
+      !previous ||
+      previous.result.delivery === 'shown' ||
+      creation.sessionId !== session.id ||
+      !session.renderer ||
+      !session.ready ||
+      sessions.expired(session) ||
+      session.build.sourceRevision !== creation.receipt.sourceRevision
+    )
+      return;
+    const delivery =
+      session.renderStatus === 'rendered'
+        ? 'shown'
+        : session.renderStatus === 'prepared'
+          ? 'prepared'
+          : 'failed';
+    if (
+      previous.result.delivery === delivery &&
+      previous.renderer === session.renderer &&
+      previous.generation === session.generation
+    )
+      return;
+    return {
+      creation: {
+        ...creation,
+        delivery: {
+          renderer: session.renderer,
+          generation: session.generation,
+          result: {
+            delivery,
+            shown: [{ ...sessions.describe(session), acknowledgement: session.renderStatus }],
+          },
+        },
+      },
+    };
+  });
+}
+
+async function deliverCreatedExplanation(receipt, fromSessionId) {
+  if (!fromSessionId) return receipt;
+  const projectId = receipt.project.id;
+  const response = () => ({
+    ...receipt,
+    presentation: { kind: 'existing-card', fromSessionId },
+    ...projects.get(projectId).creation.delivery.result,
+  });
+  const previous = projects.get(projectId).creation.delivery;
+  if (previous?.result.delivery === 'shown') return response();
+  try {
+    const destination = await load(receipt.sessionId);
+    await observeCreationDelivery(destination);
+    if (projects.get(projectId).creation.delivery?.result.delivery === 'shown') return response();
+    // The exact destination may have remounted since navigation. Its current
+    // attachment owns delivery, even before the first report can rebind the receipt.
+    if (
+      destination.renderer &&
+      !sessions.expired(destination) &&
+      destination.build.sourceRevision === receipt.sourceRevision
+    )
+      return response();
+    const source = await load(fromSessionId);
+    if (!source.renderer || !source.ready || sessions.expired(source))
+      throw failure(
+        'view_closed',
+        'Open the original card and wait for its ready frame, then retry the same requestId.',
+        { action: 'story_open' },
+      );
+    if (source.navigation && source.navigation.sessionId !== receipt.sessionId)
+      throw failure(
+        'navigation_conflict',
+        'The original card is already opening another explanation.',
+      );
+    await rememberCreationDelivery(projectId, {
+      renderer: source.renderer,
+      result: { delivery: 'pending', shown: [] },
+    });
+    const destinationResult = await operations.navigate({
+      sessionId: fromSessionId,
+      target: { sessionId: receipt.sessionId },
+    });
+    if (destinationResult.sessionId !== receipt.sessionId)
+      throw failure('navigation_conflict', 'The original card opened another explanation.');
+    return response();
+  } catch (error) {
+    const current = projects.get(projectId).creation.delivery;
+    if (current?.result.delivery !== 'shown')
+      await rememberCreationDelivery(projectId, {
+        ...current,
+        result: { delivery: 'failed', shown: [], error: errorData(error) },
+      });
+    return response();
   }
 }
 
@@ -269,47 +452,53 @@ async function queueRevision(kind, { target, requestId, options = {} }) {
   });
 }
 async function openProject(project, { prepare = true, session } = {}) {
-  watched.open(project);
-  const prepared =
-    project.buildRevision &&
-    (await readJSON(join(data, 'builds', project.buildRevision + '.json')));
-  if (!session) {
-    session = sessions.open(
-      prepared || {
-        projectId: project.id,
-        title: project.title,
-        revision: 'preparing-' + project.id,
-        html: '',
-      },
-    );
-    if (project.lastSessionId) {
-      const previous = await load(project.lastSessionId).catch(() => null);
-      if (previous?.build.projectId === project.id) {
-        session.checkpoint = structuredClone(previous.checkpoint);
-        session.widgetState = structuredClone(previous.widgetState ?? {});
+  await jobs.preserveInputs(async () => {
+    watched.open(project);
+    const prepared =
+      project.buildRevision &&
+      (await readJSON(join(data, 'builds', project.buildRevision + '.json')));
+    if (!session) {
+      session = sessions.open(
+        prepared || {
+          projectId: project.id,
+          title: project.title,
+          revision: 'preparing-' + project.id,
+          html: '',
+        },
+      );
+      if (project.lastSessionId) {
+        const previous = await load(project.lastSessionId).catch(() => null);
+        if (previous?.build.projectId === project.id) {
+          session.checkpoint = structuredClone(previous.checkpoint);
+          session.widgetState = structuredClone(previous.widgetState ?? {});
+        }
       }
+      // Publish the placeholder and its persisted card under the same lease lock.
+      if (!prepared)
+        await writeJSON(join(data, 'builds', session.build.revision + '.json'), {
+          ...session.build,
+          html: '',
+        });
     }
-    // Persist the placeholder as well so interrupted creation can be reopened.
-    if (!prepared)
-      await writeJSON(join(data, 'builds', session.build.revision + '.json'), session.build);
-  }
-  if (session.build.projectId !== project.id)
-    throw new Error('The saved session belongs to another project.');
-  if (
-    prepared &&
-    prepared.revision !== session.build.revision &&
-    prepared.sourceRevision === project.sourceRevision
-  )
-    session.nextBuild = prepared;
+    if (session.build.projectId !== project.id)
+      throw new Error('The saved session belongs to another project.');
+    if (
+      prepared &&
+      prepared.revision !== session.build.revision &&
+      prepared.sourceRevision === project.sourceRevision
+    )
+      session.nextBuild = buildReference(prepared);
+    await save(session);
+    if (project.lastSessionId !== session.id)
+      await projects.update(project.id, { lastSessionId: session.id });
+  });
+  // Preparation captures its own inputs; never acquire that lock recursively.
   if (
     prepare &&
     session.build.sourceRevision !== project.sourceRevision &&
     session.nextBuild?.sourceRevision !== project.sourceRevision
   )
     await prepareProject(project);
-  await save(session);
-  if (project.lastSessionId !== session.id)
-    await projects.remember({ ...projects.get(project.id), lastSessionId: session.id });
   return { ...decorate(session), project };
 }
 async function createdProject(job) {
@@ -322,7 +511,13 @@ async function createdProject(job) {
 }
 const operations = {
   async hello() {
-    return { protocol, build, serverInstance: sessions.instance, pid: process.pid };
+    return {
+      protocol,
+      build,
+      serverInstance: sessions.instance,
+      pid: process.pid,
+      cache: cacheReport,
+    };
   },
   async prepareUpdate() {
     const installed = await installedRuntime(directory);
@@ -330,7 +525,16 @@ const operations = {
     updating = true;
     watched.close();
     scheduleClose();
-    return { updating: true, busy: jobs.busy };
+    // A terminal job is already observable while its receipt is still being saved.
+    // The successor can wait on the existing bounded owner-lock handoff for that drain;
+    // only an unfinished preparation requires the caller to retry later.
+    return {
+      updating: true,
+      busy: Boolean(
+        jobs.queue.length ||
+          (jobs.active && ['queued', 'running', 'cancelling'].includes(jobs.active.job.status)),
+      ),
+    };
   },
   async open({ sessionId, projectId, path, example: exampleId } = {}) {
     if (sessionId) {
@@ -356,18 +560,53 @@ const operations = {
     const prepared = await readJSON(join(directory, 'examples', exampleId + '.json'));
     if (!prepared)
       throw new Error('This example has no prepared preview. Create a project from it.');
-    await writeJSON(join(data, 'builds', prepared.revision + '.json'), prepared);
-    const s = sessions.open(prepared);
-    await save(s);
-    return decorate(s);
+    return jobs.preserveInputs(async () => {
+      await writeJSON(join(data, 'builds', prepared.revision + '.json'), prepared);
+      const s = sessions.open(prepared);
+      await save(s);
+      return decorate(s);
+    });
   },
-  async create({ path, title = 'Новое объяснение', example, requestId }) {
+  async create({ path, title = 'Новое объяснение', example, explanation, requestId, sessionId }) {
+    if (sessionId !== undefined && explanation === undefined)
+      throw new Error(
+        'sessionId requires a prepared explanation; source-code scaffolds and examples open after preparation.',
+      );
+    if (explanation !== undefined) {
+      if (example !== undefined)
+        throw new Error('Choose an explanation document or a copied example.');
+      explanation = validateExplanation(explanation);
+    }
     return projects.serial('create:' + requestId, async () => {
+      const requestedPath = path;
       if (path && !isAbsolute(path)) throw new Error('Choose an absolute project path.');
+      const previousLive = projects.creation(requestId);
+      if (previousLive) {
+        const requested = {
+          title,
+          ...(example !== undefined ? { example } : {}),
+          explanation,
+          ...(sessionId !== undefined ? { sessionId } : {}),
+          ...(path ? { path: await projects.canonicalPath(path) } : {}),
+        };
+        if (!isDeepStrictEqual(previousLive.creation.input, requested))
+          throw new Error('requestId already belongs to another project creation.');
+        if (!previousLive.creation.receipt)
+          await projects.create(previousLive.path, {
+            title,
+            example,
+            creation: { requestId, input: requested },
+          });
+        const receipt =
+          previousLive.creation.receipt ??
+          (await createLiveProject(previousLive, requested, requestId));
+        return deliverCreatedExplanation(receipt, sessionId);
+      }
       const previous = jobs.forRequest(requestId);
       if (previous) {
         if (
           previous.kind !== 'create' ||
+          explanation !== undefined ||
           previous.input.title !== title ||
           previous.input.example !== example ||
           (path && previous.input.projectPath !== (await realpath(path)))
@@ -384,7 +623,25 @@ const operations = {
         throw new Error(
           'Unknown example. Omit example for an empty project or use story_help to inspect the exemplar.',
         );
-      const project = await projects.create(path, { title, example });
+      const input = {
+        title,
+        ...(example !== undefined ? { example } : {}),
+        explanation,
+        ...(sessionId !== undefined ? { sessionId } : {}),
+        ...(requestedPath ? { path } : {}),
+      };
+      const project = await projects.create(path, {
+        title,
+        example,
+        ...(explanation !== undefined ? { creation: { requestId, input } } : {}),
+      });
+      if (explanation !== undefined) {
+        const input = projects.get(project.id).creation.input;
+        return deliverCreatedExplanation(
+          await createLiveProject(project, input, requestId),
+          sessionId,
+        );
+      }
       const job = await jobs.enqueue(
         'create',
         {
@@ -433,7 +690,9 @@ const operations = {
     };
   },
   async preferences({ patch } = {}) {
-    return patch ? preferences.update(patch) : preferences.read();
+    const value = patch ? await preferences.update(patch) : await preferences.read();
+    if (patch?.cacheLimitMB !== undefined) scheduleCache();
+    return value;
   },
   async voice({
     projectId,
@@ -670,26 +929,146 @@ const operations = {
     return api;
   },
   async edit(args) {
-    const project = await projects.edit(args);
-    const previous = project.repeated && jobs.forRequest(args.requestId + '-build');
-    return {
-      project,
-      job: previous
-        ? jobs.describe(previous)
-        : await prepareProject(project, args.requestId + '-build'),
-    };
+    return projects.serial('delivery:' + args.projectId, async () => {
+      const proposed = await projects.prepareSemanticEdit(args);
+      if (proposed) {
+        const views = [...sessions.sessions.values()].filter(
+          (session) =>
+            session.build.projectId === args.projectId &&
+            session.build.live &&
+            session.renderer &&
+            session.ready &&
+            !sessions.expired(session),
+        );
+        if (!views.length)
+          throw failure(
+            'view_closed',
+            'Open this project with story_open(projectId) and wait for its ready frame before a semantic edit.',
+            { action: 'story_open' },
+          );
+        for (const session of views)
+          await sessions.request(session.id, {
+            op: 'author-validate',
+            buildRevision: session.build.revision,
+            stateRevision: session.stateRevision,
+            document: proposed.document,
+            authoredInputs: proposed.authoredInputs,
+          });
+      }
+      const project = await projects.edit(args);
+      const priorDelivery =
+        project.repeated && (await projects.editDelivery(args.projectId, args.requestId));
+      if (project.semantic) {
+        if (
+          priorDelivery?.shown?.length &&
+          priorDelivery.shown.every(
+            (view) =>
+              !view.error &&
+              view.acknowledgement === 'rendered' &&
+              view.shownSourceRevision === project.sourceRevision,
+          )
+        )
+          return priorDelivery;
+        if ((await projects.inspect(project.id)).sourceRevision !== project.sourceRevision)
+          return {
+            project,
+            shown: [],
+            delivery: 'superseded',
+            message:
+              'This operation was saved before a newer edit. Its interrupted delivery is not replayed.',
+          };
+        let prepared;
+        const shown = [];
+        try {
+          prepared = await publishLiveProject(project);
+        } catch (error) {
+          const result = { project, shown, delivery: 'failed', error: errorData(error) };
+          await projects.editDelivery(args.projectId, args.requestId, result);
+          return result;
+        }
+        for (const session of sessions.sessions.values()) {
+          if (session.build.projectId !== project.id || !session.build.live) continue;
+          if (!session.renderer || !session.ready || sessions.expired(session)) continue;
+          try {
+            const deliveredHere = priorDelivery?.shown?.some(
+              (view) =>
+                !view.error &&
+                view.sessionId === session.id &&
+                view.buildRevision === prepared.revision &&
+                ['rendered', 'prepared', 'failed'].includes(view.acknowledgement),
+            );
+            const observed =
+              deliveredHere && session.build.revision === prepared.revision
+                ? await sessions.request(session.id, { op: 'inspect' })
+                : await sessions.request(
+                    session.id,
+                    {
+                      op: 'author',
+                      requestId: args.requestId,
+                      buildRevision: session.build.revision,
+                      stateRevision: session.stateRevision,
+                      nextBuildRevision: prepared.revision,
+                      sourceRevision: project.sourceRevision,
+                      document: prepared.live.document,
+                      authoredInputs: project.authoredInputs,
+                    },
+                    { authoredBuild: prepared },
+                  );
+            shown.push(observed);
+            await save(session);
+          } catch (error) {
+            shown.push({
+              sessionId: session.id,
+              error: errorData(error),
+              shownSourceRevision: sessions.describe(session).shownSourceRevision,
+            });
+          }
+        }
+        const delivery = !shown.length
+          ? 'pending'
+          : shown.every((view) => !view.error && view.acknowledgement === 'rendered')
+            ? 'shown'
+            : shown.some((view) => view.error || view.acknowledgement === 'failed')
+              ? 'failed'
+              : 'prepared';
+        const result = { project, buildRevision: prepared.revision, shown, delivery };
+        await projects.editDelivery(args.projectId, args.requestId, result);
+        scheduleCache();
+        return result;
+      }
+      const previous = project.repeated && jobs.forRequest(args.requestId + '-build');
+      return {
+        project,
+        job: previous
+          ? jobs.describe(previous)
+          : await prepareProject(project, args.requestId + '-build'),
+      };
+    });
   },
   produce: (args) => queueRevision('produce', args),
   review: (args) => queueRevision('review', args),
   async migrate({ projectId, sourceRevision, requestId, changes }) {
-    const project = await projects.inspect(projectId);
-    if (sourceRevision !== project.sourceRevision)
-      throw new Error('Project changed. Inspect its source before migrating.');
-    return jobs.enqueue(
-      'migrate',
-      { data, projectId, projectPath: project.path, sourceRevision, changes },
-      requestId,
-    );
+    return projects.serial('revision:' + requestId, async () => {
+      const previous = jobs.forRequest(requestId);
+      if (previous) {
+        if (
+          previous.kind !== 'migrate' ||
+          previous.projectId !== projectId ||
+          previous.sourceRevision !== sourceRevision ||
+          !isDeepStrictEqual(previous.input.changes, changes)
+        )
+          throw new Error('requestId already belongs to another preparation.');
+        return jobs.describe(previous);
+      }
+      const project = await projects.inspect(projectId);
+      if (sourceRevision !== project.sourceRevision)
+        throw new Error('Project changed. Inspect its source before migrating.');
+      return jobs.enqueue(
+        'migrate',
+        { data, projectId, projectPath: project.path, sourceRevision, changes },
+        requestId,
+      );
+    });
   },
   async job({ jobId, waitMs = 0 }) {
     return jobs.wait(jobId, { timeout: waitMs });
@@ -705,7 +1084,7 @@ const operations = {
     sessions.validate(session, renderer, generation);
     if (!session.nextBuild) throw new Error('No prepared update.');
     return {
-      ...session.nextBuild,
+      ...(await viewBuild(session.nextBuild.revision)),
       checkpoint: session.checkpoint,
       stateRevision: session.stateRevision,
       widgetState: session.widgetState ?? {},
@@ -714,6 +1093,7 @@ const operations = {
   async replace(args) {
     const result = await sessions.replace(args);
     await save(sessions.get(args.sessionId));
+    scheduleCache();
     return result;
   },
   async request({ sessionId, request }) {
@@ -726,6 +1106,7 @@ const operations = {
     await save(s);
     return {
       ...attached,
+      html: (await viewBuild(attached.buildRevision)).html,
       widgetState: s.widgetState ?? {},
       jobs: jobs.list(s.build.projectId).filter((j) => j.projectId === s.build.projectId),
     };
@@ -736,13 +1117,18 @@ const operations = {
     await save(s);
     return {
       ...result,
+      ...(result.recovery === 'reload' && { html: (await viewBuild(result.buildRevision)).html }),
       widgetState: s.widgetState ?? {},
       jobs: jobs.list(s.build.projectId).filter((j) => j.projectId === s.build.projectId),
     };
   },
   async exchange(params) {
     const { state: _state, ...result } = await sessions.exchange(params);
-    if (params.report) await save(sessions.get(params.sessionId));
+    if (params.report) {
+      const session = sessions.get(params.sessionId);
+      await save(session);
+      await observeCreationDelivery(session);
+    }
     return {
       ...result,
       navigation: sessions.get(params.sessionId).navigation,
@@ -753,7 +1139,11 @@ const operations = {
   },
   async detach(params) {
     const detached = sessions.detach(params);
-    if (detached) delete sessions.get(params.sessionId).navigation;
+    if (detached) {
+      delete sessions.get(params.sessionId).navigation;
+      await save(sessions.get(params.sessionId));
+      scheduleCache();
+    }
     return { detached };
   },
   async list() {
@@ -892,6 +1282,7 @@ await new Promise((resolve, reject) => {
 socketIdentity = await lstat(socketPath);
 await chmod(socketPath, 0o600);
 scheduleClose();
+scheduleCache();
 for (const signal of ['SIGINT', 'SIGTERM'])
   process.once(signal, () => {
     for (const socket of connections) socket.destroy();

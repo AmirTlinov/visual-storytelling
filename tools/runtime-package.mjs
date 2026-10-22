@@ -1,11 +1,23 @@
 import { execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
-import { readFile, writeFile, mkdir, mkdtemp, rm, access, lstat } from 'node:fs/promises';
+import {
+  readFile,
+  writeFile,
+  mkdir,
+  mkdtemp,
+  rm,
+  access,
+  lstat,
+  realpath,
+  symlink,
+  rename,
+} from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { packageInfo, resolvePackage } from './build-info.mjs';
+import { assertPreparedRuntimeRoot } from './prepared-runtime-trust.mjs';
 
 const execute = promisify(execFile);
 const library = fileURLToPath(new URL('../', import.meta.url));
@@ -14,6 +26,7 @@ const fields = ['dependencies', 'devDependencies', 'optionalDependencies', 'peer
 const valid = (info) => info && ['current', 'packaged'].includes(info.status);
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const managed = /^file:(?:\.\/)?dependencies\/visual-storytelling-core-([a-f0-9]{64})\.tgz$/;
+export const preparedRuntimeFile = 'scene-runtime.json';
 const readOptional = (file) =>
   readFile(file).catch((error) => {
     if (error.code !== 'ENOENT') throw error;
@@ -112,6 +125,198 @@ export async function packRuntime(destination, options = {}) {
   return (await pack(resolve(destination), await preparedRuntime(options), options)).receipt;
 }
 
+/** A prepared release is already an immutable package; pin its identity before any archive work. */
+async function preparedRelease(root = library) {
+  root = await assertPreparedRuntimeRoot(root);
+  const [release, receipt, pkg] = await Promise.all([
+    readFile(join(root, 'release.json'), 'utf8').then(JSON.parse),
+    readFile(join(root, 'dist/build-info.json'), 'utf8').then(JSON.parse),
+    readFile(join(root, 'package.json'), 'utf8').then(JSON.parse),
+  ]);
+  if (pkg.name !== name || release.core?.build !== receipt.build || receipt.package !== name)
+    throw new Error('Prepare an immutable plugin release before creating a live explanation.');
+  await access(join(root, 'plugin/dist/live.html'));
+  return { schemaVersion: 1, name, version: pkg.version, build: receipt.build, root };
+}
+
+export async function pinPreparedRuntime(destination, { root = library } = {}) {
+  const pin = await preparedRelease(root);
+  await writeFile(join(destination, preparedRuntimeFile), JSON.stringify(pin, null, 2) + '\n');
+  return { ...pin, dependency: `file:${pin.root}` };
+}
+
+/** Read the authored pin, never the installer's current pointer. No npm or compilation. */
+export async function readPreparedRuntime(directory) {
+  const bytes = await readOptional(join(directory, preparedRuntimeFile));
+  if (!bytes) return null;
+  const pin = JSON.parse(bytes);
+  await assertPreparedRuntimeRoot(pin.root);
+  if (
+    pin.schemaVersion !== 1 ||
+    pin.name !== name ||
+    typeof pin.root !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(pin.build) ||
+    (await realpath(pin.root)) !== pin.root
+  )
+    throw new Error('Invalid prepared runtime pin. Restore it or explicitly migrate the project.');
+  const [receipt, pkg] = await Promise.all([
+    readFile(join(pin.root, 'dist/build-info.json'), 'utf8').then(JSON.parse),
+    readFile(join(pin.root, 'package.json'), 'utf8').then(JSON.parse),
+  ]);
+  if (receipt.build !== pin.build || receipt.package !== name || pkg.version !== pin.version)
+    throw new Error('The pinned runtime is unavailable or changed. Restore that release.');
+  return { ...pin, dependency: `file:${pin.root}` };
+}
+
+/** The same pinned package resolves normal scene imports during build and delivery. */
+export async function linkPreparedRuntime(directory) {
+  const pin = await readPreparedRuntime(directory);
+  if (!pin) return null;
+  const pkg = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
+  if (pkg.dependencies?.[name] !== pin.dependency)
+    throw new Error('The scene dependency differs from its prepared runtime pin.');
+  const extra = fields
+    .flatMap((field) => Object.keys(pkg[field] ?? {}))
+    .filter((key) => key !== name);
+  if (extra.length) return null; // An extended package follows the normal lockfile installer.
+  const parent = join(directory, 'node_modules/@visual-storytelling');
+  await mkdir(parent, { recursive: true });
+  const target = join(parent, 'core');
+  try {
+    await symlink(pin.root, target, 'dir');
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    if ((await realpath(target).catch(() => null)) !== pin.root) {
+      if (!(await lstat(target)).isSymbolicLink())
+        throw new Error('Installed scene runtime differs from its pin. Repair its dependencies.');
+      // Undo and explicit migration can change the authored pin. Replace only this
+      // dependency link; never remove or mutate either immutable release directory.
+      const temporary = join(parent, '.core-' + randomUUID());
+      try {
+        await symlink(pin.root, temporary, 'dir');
+        await rename(temporary, target);
+      } finally {
+        await rm(temporary, { force: true });
+      }
+    }
+  }
+  return pin;
+}
+
+async function updatePreparedSceneRuntime(destination, options, metadata) {
+  const { manifest, owner, before, lock, pinBefore } = metadata;
+  const signal = options.signal;
+  signal?.throwIfAborted();
+  const pin = await preparedRelease(options.root);
+  const dependency = `file:${pin.root}`;
+  const previous = JSON.parse(pinBefore);
+  if (
+    previous.schemaVersion !== 1 ||
+    previous.name !== name ||
+    typeof previous.root !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(previous.build) ||
+    manifest[owner][name] !== `file:${previous.root}`
+  )
+    throw new Error(
+      'The scene dependency differs from its prepared runtime pin. Restore its metadata before migrating.',
+    );
+  if (
+    previous.root === pin.root &&
+    previous.build === pin.build &&
+    manifest[owner][name] === dependency
+  )
+    return { scene: destination, changed: false, prepared: true, build: pin.build, dependency };
+  if (owner !== 'dependencies')
+    throw new Error(
+      'A prepared scene runtime must remain in dependencies. Restore its package.json.',
+    );
+  const files = [
+    [join(destination, 'package.json'), Buffer.from(before)],
+    [join(destination, 'package-lock.json'), lock],
+    [join(destination, preparedRuntimeFile), pinBefore],
+  ];
+  for (const [file, bytes] of files) {
+    const current = await readOptional(file);
+    if (bytes ? !current?.equals(bytes) : current !== null)
+      throw new Error(
+        'Scene runtime metadata changed while preparing its update. Retry after edits finish.',
+      );
+  }
+  const restoreMetadata = async () => {
+    for (const [file, bytes] of files)
+      if (bytes) await writeFile(file, bytes);
+      else await rm(file, { force: true });
+  };
+  const extra = fields
+    .flatMap((field) => Object.keys(manifest[field] ?? {}))
+    .some((key) => key !== name);
+  const install = ['install', '--ignore-scripts', '--no-audit', '--no-fund'];
+  try {
+    signal?.throwIfAborted();
+    manifest[owner][name] = dependency;
+    await writeFile(files[0][0], JSON.stringify(manifest, null, 2) + '\n');
+    await writeFile(files[2][0], JSON.stringify(pin, null, 2) + '\n');
+    if (extra) await execute('npm', install, command(destination, signal));
+    else {
+      await rm(files[1][0], { force: true });
+      await linkPreparedRuntime(destination);
+    }
+    signal?.throwIfAborted();
+    await readPreparedRuntime(destination);
+    if ((await resolvePackage(name, destination)) !== pin.root)
+      throw new Error('Installed runtime differs from the selected prepared release.');
+  } catch (error) {
+    await restoreMetadata();
+    let rollback;
+    try {
+      if (extra) await execute('npm', [...install, '--offline'], command(destination));
+      else await linkPreparedRuntime(destination);
+    } catch (failure) {
+      rollback = failure;
+    } finally {
+      await restoreMetadata();
+    }
+    throw new Error(
+      `Runtime update failed; package.json, lockfile and prepared pin restored. ${
+        rollback
+          ? `Installed dependencies need repair: ${rollback.message}`
+          : 'Previous dependencies restored.'
+      } ${error.message}`,
+      { cause: error },
+    );
+  }
+  return { scene: destination, changed: true, prepared: true, build: pin.build, dependency };
+}
+
+export async function explanationAPI(directory) {
+  const pinned = await readPinnedRuntime(directory);
+  if (pinned.archive)
+    throw new Error('Install this project’s pinned dependencies before semantic authoring.');
+  return import(pathToFileURL(join(pinned.root, 'dist/explanation/document.js')).href);
+}
+
+/** A modified source entry must keep using the source build path, never lose authored code. */
+export async function assertPreparedExplanation(directory) {
+  const pin = await readPreparedRuntime(directory);
+  if (!pin) throw new Error('Semantic live authoring requires a prepared explanation project.');
+  const [entry, template, page, templatePage, config] = await Promise.all([
+    readFile(join(directory, 'scene.js'), 'utf8'),
+    readFile(join(pin.root, 'tools/explanation/scene.js'), 'utf8'),
+    readFile(join(directory, 'index.html'), 'utf8'),
+    readFile(join(pin.root, 'tools/explanation/index.html'), 'utf8'),
+    readOptional(join(directory, 'scene.json')),
+  ]);
+  const withoutTitle = (html) => html.replace(/<title>.*?<\/title>/s, '<title></title>');
+  if (entry !== template || withoutTitle(page) !== withoutTitle(templatePage) || config)
+    throw Object.assign(
+      new Error(
+        'This project has a custom source entry. Continue through file edits and the existing build.',
+      ),
+      { code: 'custom_scene_entry' },
+    );
+  return pin;
+}
+
 const localFile = (spec, directory) =>
   typeof spec === 'string' && spec.startsWith('file:')
     ? spec.startsWith('file://')
@@ -156,6 +361,14 @@ async function installedRuntime(directory) {
 
 /** Read declared package metadata directly; API discovery never installs or builds a project. */
 export async function readPinnedRuntime(directory) {
+  const prepared = await readPreparedRuntime(directory);
+  if (prepared)
+    return {
+      root: prepared.root,
+      runtime: prepared,
+      api: JSON.parse(await readFile(join(prepared.root, 'dist/api.json'), 'utf8')),
+      catalog: JSON.parse(await readFile(join(prepared.root, 'examples/catalog.json'), 'utf8')),
+    };
   const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
   const declarations = fields.flatMap((field) =>
     manifest[field]?.[name] ? [manifest[field][name]] : [],
@@ -219,6 +432,15 @@ export async function updateSceneRuntime(destination, options = {}) {
     throw new Error(`Scene must declare ${name} in exactly one dependency field.`);
   const owner = owners[0],
     previous = manifest[owner][name];
+  const pinBefore = await readOptional(join(destination, preparedRuntimeFile));
+  if (pinBefore)
+    return updatePreparedSceneRuntime(destination, options, {
+      manifest,
+      owner,
+      before,
+      lock,
+      pinBefore,
+    });
   const info = await preparedRuntime(options);
   const current = await installedRuntime(destination);
   if (

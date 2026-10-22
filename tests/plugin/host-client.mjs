@@ -86,6 +86,13 @@ async function mount(sessionId, result) {
 }
 window.pluginTest = {
   call,
+  partial(args) {
+    return bridge.sendToolInputPartial({ arguments: args });
+  },
+  async result(result) {
+    opened = result;
+    await bridge.sendToolResult(result);
+  },
   delayFocus(ms) {
     focusDelay = ms;
   },

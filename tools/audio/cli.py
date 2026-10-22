@@ -19,6 +19,10 @@ def main():
     check.add_argument("script", type=Path)
     check.add_argument("--timeline", type=Path, required=True)
     check.add_argument("--source-directory", type=Path, help="Base for a generated script's authored relative resources")
+    refresh = commands.add_parser("remaster", help="Reuse an accepted performance without synthesis or model loading")
+    refresh.add_argument("script", type=Path)
+    refresh.add_argument("--out", type=Path, required=True)
+    refresh.add_argument("--source-directory", type=Path)
     build = commands.add_parser("build", help="Build audio.wav, voice.wav and timeline.json from a JSON script")
     build.add_argument("script", type=Path)
     build.add_argument("--out", type=Path, required=True)
@@ -39,6 +43,10 @@ def main():
         elif args.command == "check":
             from script import check_timeline
             check_timeline(args.script, args.timeline, source_directory=args.source_directory)
+        elif args.command == "remaster":
+            from remaster import reuse_audio
+            timeline = reuse_audio(args.script.resolve(), args.out.resolve(), source_directory=args.source_directory)
+            print(json.dumps({"reused": timeline is not None}, allow_nan=False))
         elif args.command == "audition":
             from audition import audition
             audition(args.script.resolve(), args.segment, args.out.resolve(), args.seeds, args.device)

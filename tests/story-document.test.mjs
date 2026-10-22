@@ -110,7 +110,7 @@ test('one authored document feeds action IDs, speech and exact aligned chapter b
   assert.equal(owned.narration.music.path, 'a.wav');
 });
 
-test('quiet chapters start immediately, retain action timing and need no speech installation', () => {
+test('local chapters start immediately while optional narration reserves the final action tail', () => {
   const quiet = {
     title: 'Проверка площади',
     chapters: [
@@ -131,7 +131,11 @@ test('quiet chapters start immediately, retain action timing and need no speech 
   };
   const projection = documentNarration(quiet);
   assert.equal(projection.intro, 0);
-  assert.equal(projection.segments[0].pause_after, 0.6);
+  assert.equal(
+    projection.segments[0].pause_after,
+    4.6,
+    'text supplies optional spoken wording: reserve its four-second action and chapter pause',
+  );
   assert.equal(projection.segments[0].text, 'Запишите предположение. Удвоим ширину.');
   const chapter = documentChapter(quiet, 'area');
   assert.equal(chapter.seconds, 7);
@@ -140,6 +144,14 @@ test('quiet chapters start immediately, retain action timing and need no speech 
   assert.equal(chapter.script.cues.change.end, 7);
   assert.deepEqual(chapter.script.cues.change.speech, { start: 3, end: 5 });
   assert.equal(chapter.beats[0].timing, undefined);
+  const silent = structuredClone(quiet);
+  for (const beat of silent.chapters[0].beats) beat.say = '';
+  assert.deepEqual(documentNarration(silent).segments, []);
+  const silentChapter = documentChapter(silent, 'area');
+  assert.equal(silentChapter.seconds, chapter.seconds);
+  assert.equal(silentChapter.script.cues.predict.start, 0);
+  assert.equal(silentChapter.script.cues.change.end, 7);
+  assert.equal(silentChapter.script.cues.change.speech, undefined);
 });
 
 test('aligned chapter local time preserves spoken words and the final action tail', () => {

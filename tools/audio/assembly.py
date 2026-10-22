@@ -1,7 +1,6 @@
 """Own the single timeline: clips, pauses, word cues and final audio."""
 import json
 from pathlib import Path
-import tempfile
 import time
 
 import numpy as np
@@ -14,6 +13,7 @@ from resources import ALIGN_REPO, ALIGN_REVISION, digest, prepare_music
 from script import read_script, timed_cues, check_action_windows, speech_passages, dependency_digests
 from speech import SAMPLE_RATE, Speaker
 from quality import complete_take
+from remaster import reuse_audio, audio_hashes, publish, staging_directory
 
 
 def prepared_take(speaker, aligner, segment, passages):
@@ -48,6 +48,11 @@ def prepared_take(speaker, aligner, segment, passages):
 
 def build_audio(script_path, output, device, *, speaker=None, aligner=None, report=True, source_directory=None):
     started = time.perf_counter()
+    reused = reuse_audio(script_path, output, source_directory=source_directory)
+    if reused is not None:
+        if report:
+            print(json.dumps({"output": str(output), "duration": reused["duration"], "reused_performance": True}, allow_nan=False))
+        return reused
     source_digest = digest(json.loads(script_path.read_text()))
     spec = read_script(script_path, source_directory=source_directory)
     if spec.get("music") and not spec["music"].get("path"):
@@ -95,7 +100,7 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
     check_action_windows(cues, len(voice) / SAMPLE_RATE)
     output.parent.mkdir(parents=True, exist_ok=True)
     # Assemble to a temporary sibling. Failed builds never replace a working mix.
-    with tempfile.TemporaryDirectory(prefix=".sketch-audio-", dir=output.parent) as temporary:
+    with staging_directory(output.parent, ".sketch-audio-") as temporary:
         staging = Path(temporary)
         print("Mixing the shared timeline", flush=True)
         mix_info = mix(voice, spec.get("music"), staging)
@@ -120,6 +125,7 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
         }
         if "captionAliases" in spec:
             timeline["captionAliases"] = spec["captionAliases"]
+        audio_hashes(staging, timeline)
         # Rechecking cached speech must not change the authored package identity.
         # Keep the original receipt when only this run's timings/cache hits differ;
         # current build statistics are still reported below.
@@ -128,7 +134,7 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
             timeline = previous_timeline
             (staging / "timeline.json").write_bytes(previous.read_bytes())
         else:
-            (staging / "timeline.json").write_text(json.dumps(timeline, ensure_ascii=False, indent=2) + "\n")
+            (staging / "timeline.json").write_text(json.dumps(timeline, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
         (staging / "narration.txt").write_text("\n\n".join(s["spoken"] for s in spec["segments"]) + "\n")
         write_listening_page(staging / "voice-preview.html", title="Озвучка рассказа",
                              transcript="\n\n".join(s["spoken"] for s in spec["segments"]),
@@ -139,11 +145,7 @@ def build_audio(script_path, output, device, *, speaker=None, aligner=None, repo
             raise RuntimeError("Narration or its voice/music inputs changed during the build; rerun with the current script")
         output.mkdir(parents=True, exist_ok=True)
         # Own only these output names; keep user-authored JS and illustrations.
-        for name in ("audio.wav", "voice.wav", "music.wav", "CREDITS.txt", "timeline.json", "narration.txt", "voice-preview.html"):
-            if (staging / name).exists():
-                (staging / name).replace(output / name)
-            elif name == "music.wav":
-                (output / name).unlink(missing_ok=True)
+        publish(staging, output, ("audio.wav", "voice.wav", "music.wav", "CREDITS.txt", "timeline.json", "narration.txt", "voice-preview.html"))
     if report:
         print(json.dumps({"output": str(output), "preview": str(output / "voice-preview.html"),
                           "duration": timeline["duration"], "build_seconds": build["seconds"],

@@ -22,6 +22,14 @@ export { default as rough } from 'roughjs';
 export { gsap } from 'gsap';
 export * from './explorer/index.js';
 export * from './host/widget-state.js';
+export * from './explanation/index.js';
+export {
+  divisionState,
+  divisionProgress,
+  divisionItemId,
+  divisionGroupId,
+} from './math/division.js';
+export type { DivisionState } from './math/division.js';
 
 export { TensorData, tensorOriginId } from './math/tensor.js';
 export type { TensorDataOptions, TensorOrigin } from './math/tensor.js';

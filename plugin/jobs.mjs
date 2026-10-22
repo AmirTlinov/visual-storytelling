@@ -51,6 +51,8 @@ export class JobRunner {
     this.inputs = Promise.resolve();
     this.observers = new Map();
     this.closed = false;
+    this.maintenanceRequested = false;
+    this.maintenanceRun = null;
   }
   toolchain() {
     if (!this.toolchains.has(this.entry)) {
@@ -201,6 +203,33 @@ export class JobRunner {
     this.inputs = next;
     return next;
   }
+  /** Coalesce cache work and exclude both source capture and new worker starts. */
+  requestMaintenance(work = this.maintenanceWork) {
+    if (this.closed || !work) return;
+    this.maintenanceWork = work;
+    this.maintenanceRequested = true;
+    this.maintain();
+  }
+  maintain() {
+    if (this.closed || this.busy || this.maintenanceRun || !this.maintenanceRequested) return;
+    this.maintenanceRun = this.preserveInputs(() => {
+      // Capture takes inputs before enqueues; maintenance uses the same lock order.
+      const next = this.enqueues
+        .catch(() => {})
+        .then(async () => {
+          if (this.closed || this.busy) return;
+          this.maintenanceRequested = false;
+          await this.maintenanceWork();
+        });
+      this.enqueues = next;
+      return next;
+    })
+      .catch((error) => console.error('Preparation cache: ' + error.message))
+      .finally(() => {
+        this.maintenanceRun = null;
+        this.maintain();
+      });
+  }
   save(job) {
     const copy = structuredClone(job),
       id = job.id;
@@ -324,6 +353,7 @@ export class JobRunner {
       this.active = null;
       this.running = null;
       this.pump();
+      this.requestMaintenance();
     });
     void this.running.catch((error) => console.error(error.message));
   }
@@ -423,6 +453,7 @@ export class JobRunner {
         .map((j) => this.cancel(j.id)),
     );
     await this.running;
+    await this.maintenanceRun;
     await Promise.allSettled([...this.saves.values()]);
   }
 }

@@ -7,6 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
+import { createHash } from 'node:crypto';
+import { masteringProfileHash } from '../tools/voice/mastering.mjs';
 import { buildScene } from '../tools/build-pages.mjs';
 import {
   checkNarration,
@@ -202,6 +204,8 @@ test('scene builds reject stale generated narration while silent and independent
     );
     const aligned = {
       audio: 'audio.wav',
+      audio_sha256: createHash('sha256').update(pcm).digest('hex'),
+      mix: { mastering: { profile_sha256: masteringProfileHash } },
       source_sha256: JSON.parse(stdout).source,
       synthesis: { reference_sha256: JSON.parse(stdout).reference },
       sample_rate: 48000,
@@ -362,6 +366,8 @@ from pathlib import Path
 sys.path.insert(0,sys.argv[1])
 from script import read_script,timed_cues,dependency_digests
 from resources import digest
+from resources import file_digest
+from mastering_profile import PROFILE_SHA256
 path,root=Path(sys.argv[2]),Path(sys.argv[3])
 spec=read_script(path,source_directory=root)
 segment=spec['segments'][0]
@@ -370,7 +376,7 @@ inputs=dependency_digests(spec)
 with wave.open(str(root/'audio.wav'),'wb') as wav:
  wav.setparams((1,2,48000,96000,'NONE','none'));wav.writeframes(bytes(192000))
 (root/'timeline.json').write_text(json.dumps({'audio':'audio.wav','source_sha256':digest(json.loads(path.read_text())),
- 'sample_rate':48000,'duration':2,'synthesis':{'reference_sha256':inputs['reference_audio']},'mix':{'music':{'source_sha256':inputs['music']}},
+ 'sample_rate':48000,'duration':2,'audio_sha256':file_digest(root/'audio.wav'),'synthesis':{'reference_sha256':inputs['reference_audio']},'mix':{'mastering':{'profile_sha256':PROFILE_SHA256},'music':{'source_sha256':inputs['music']}},
  'segments':[{'id':segment['id'],'title':segment.get('title'),'text':segment['spoken'],'start':1,'end':1.5,'words':words}],
  'cues':timed_cues(segment,words)}))
 `,

@@ -37,11 +37,36 @@ export const command = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('theme'), value: z.enum(['auto', 'light', 'dark', 'inherit']) }),
   z.strictObject({ type: z.literal('reduced'), value: z.boolean() }),
 ]);
+// App performance.now() offsets, in milliseconds, against this timeOrigin.
+// Rendered means a frame opportunity, never screenshot/pixel evidence.
+const timestamp = z.number().finite().nonnegative().max(Number.MAX_SAFE_INTEGER);
+export const viewMetrics = z.strictObject({
+  timeOrigin: timestamp,
+  resourceMountedAt: timestamp,
+  inputAt: timestamp.optional(),
+  toolResultAt: timestamp.optional(),
+  attachStartedAt: timestamp.optional(),
+  attachCompletedAt: timestamp.optional(),
+  firstReportStartedAt: timestamp.optional(),
+  firstPreparedAt: timestamp.optional(),
+  firstContentAt: timestamp.optional(),
+  confirmedPreparedAt: timestamp.optional(),
+  confirmedAt: timestamp.optional(),
+});
 export const viewReport = z
   .object({
     stateRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
     renderStatus: z.enum(['rendered', 'prepared', 'failed']).optional(),
     observationError: z.string().max(4096).optional(),
+    metrics: viewMetrics.optional(),
+    authoring: z
+      .object({
+        requestId: id,
+        commandId: id,
+        buildRevision: revision,
+        sourceRevision: revision,
+      })
+      .optional(),
     state: z.record(z.string(), z.unknown()),
     checkpoint: z
       .object({

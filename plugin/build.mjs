@@ -3,7 +3,7 @@ import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
-import { buildScene } from '../tools/build-pages.mjs';
+import { buildScene, buildPage } from '../tools/build-pages.mjs';
 import { packDirectory } from '../tools/standalone.mjs';
 import { packagePlugin, shippedExamples } from './package.mjs';
 import { packageInfo } from '../tools/build-info.mjs';
@@ -21,6 +21,16 @@ await buildOutput(root, output, async (out) => {
     JSON.stringify(Object.fromEntries(shippedExamples.map((id) => [id, catalog[id]]))),
   );
   await mkdir(join(out, 'examples'), { recursive: true });
+  const live = join(out, 'scenes', 'live');
+  await buildPage(join(root, 'tools/explanation/index.html'), live, {
+    sourcePackage: true,
+    html: (await readFile(join(root, 'tools/explanation/index.html'), 'utf8')).replace(
+      'src="scene.js"',
+      `src="${join(root, 'plugin/ui/live-scene.mjs')}"`,
+    ),
+  });
+  const liveHTML = await packDirectory(live, scenePage, { audio: 'original' });
+  await writeFile(join(out, 'live.html'), liveHTML);
   for (const id of shippedExamples) {
     const built = join(out, 'scenes', id);
     await buildScene(join(root, 'examples', id), built, { sourcePackage: true, silent: true });
@@ -46,6 +56,19 @@ await buildOutput(root, output, async (out) => {
     minify: true,
     metafile: true,
     plugins: [
+      {
+        name: 'prepared-live-scene',
+        setup(build) {
+          build.onResolve({ filter: /^visual-story:prepared-live-scene$/ }, () => ({
+            path: 'live.html',
+            namespace: 'prepared-live',
+          }));
+          build.onLoad({ filter: /.*/, namespace: 'prepared-live' }, () => ({
+            contents: liveHTML,
+            loader: 'text',
+          }));
+        },
+      },
       {
         name: 'frame-source',
         setup(build) {

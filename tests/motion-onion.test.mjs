@@ -186,17 +186,48 @@ test('saved player shares the PNG weights, seeks in both directions and restores
   await page.getByLabel('Перейти ко времени, секунды').fill('');
   await page.getByLabel('Перейти ко времени, секунды').press('Tab');
   assert.equal(await page.getByLabel('Перейти ко времени, секунды').inputValue(), '1');
-  await page.locator('.motion-play').evaluate((root) => {
-    root.dispatchEvent(new CustomEvent('motionrange', { detail: { from: 0, to: 0.5 } }));
-    root.dispatchEvent(new CustomEvent('motionseek', { detail: { time: 1.5 } }));
-    root.querySelector('[data-play]').click();
+  const playback = await page.locator('.motion-play').evaluate((root) => {
+    const requestFrame = window.requestAnimationFrame;
+    const cancelFrame = window.cancelAnimationFrame;
+    let pending;
+    window.requestAnimationFrame = (callback) => {
+      pending = callback;
+      return 1;
+    };
+    window.cancelAnimationFrame = () => {
+      pending = undefined;
+    };
+    try {
+      // A queued animation frame can carry a timestamp older than the click which
+      // starts playback. Keep that ordering deterministic instead of racing RAF.
+      const queuedAt = performance.now() - 1;
+      root.dispatchEvent(new CustomEvent('motionrange', { detail: { from: 0, to: 0.5 } }));
+      root.dispatchEvent(new CustomEvent('motionseek', { detail: { time: 1.5 } }));
+      root.querySelector('[data-play]').click();
+      const chart = root.querySelector('[data-temporal-chart]');
+      const started = chart.getAttribute('aria-valuenow');
+      pending(queuedAt);
+      const firstTick = chart.getAttribute('aria-valuenow');
+      pending(performance.now() + 600);
+      return {
+        started,
+        firstTick,
+        ended: chart.getAttribute('aria-valuenow'),
+        button: root.querySelector('[data-play]').textContent,
+      };
+    } finally {
+      window.requestAnimationFrame = requestFrame;
+      window.cancelAnimationFrame = cancelFrame;
+    }
   });
   assert.equal(
-    await chart.getAttribute('aria-valuenow'),
+    playback.started,
     '1.5',
     'manual seek clears the old episode range',
   );
-  await page.locator('[data-play]').click();
+  assert.equal(playback.firstTick, '1.5', 'a queued frame cannot rewind the selected timestamp');
+  assert.equal(playback.ended, '2', 'resumed playback reaches the complete recording end');
+  assert.equal(playback.button, 'Воспроизвести');
   await page.locator('[data-view="frame"]').click();
   assert(await page.locator('.motion-play img').isVisible());
   await page.setViewportSize({ width: 800, height: 600 });

@@ -106,17 +106,25 @@ export function selectControl(
       menu.hidePopover();
       return;
     }
-    const width = Math.max(0, Math.min(Math.max(r.width, 280), right - left - margin * 2)),
+    const availableWidth = Math.max(0, right - left - margin * 2),
       below = Math.max(0, bottom - r.bottom - margin - gap),
       above = Math.max(0, r.top - top - margin - gap);
-    const up = below < Math.min(180, rows.length * 44 + 20) && above > below;
     // Top-layer choices use physical control sizes, independently of the drawing's
-    // scale and of an enclosing conditions popover.
+    // scale. Measure the labels, selection mark and padding before limiting height.
+    const scrollTop = scroll.scrollTop;
+    menu.style.width = 'max-content';
+    menu.style.minWidth = `${Math.min(r.width, availableWidth)}px`;
+    menu.style.maxWidth = `${availableWidth}px`;
+    menu.style.maxHeight = 'none';
+    const natural = menu.getBoundingClientRect();
+    const up = below < natural.height && above > below;
+    const width = natural.width;
     menu.style.width = `${width}px`;
-    menu.style.maxHeight = `${Math.max(0, Math.min(320, up ? above : below))}px`;
+    menu.style.maxHeight = `${up ? above : below}px`;
     menu.style.left = `${Math.max(left + margin, Math.min(r.left, right - width - margin))}px`;
     const menuHeight = menu.getBoundingClientRect().height;
     menu.style.top = `${Math.max(top + margin, Math.min(up ? r.top - menuHeight - gap : r.bottom + gap, bottom - menuHeight - margin))}px`;
+    scroll.scrollTop = scrollTop;
   }
   const close = () => {
     if (isOpen()) menu.hidePopover();
@@ -240,21 +248,29 @@ export function selectControl(
     },
     { ...listen, capture: true },
   );
+  const resize = new ResizeObserver(() => {
+    if (isOpen()) place();
+  });
+  resize.observe(trigger);
+  resize.observe(scroll);
+  listen.signal?.addEventListener('abort', () => resize.disconnect(), { once: true });
   return {
     trigger,
     menu,
     setValue(value: ControlValue) {
-      selected = Math.max(
-        0,
-        (p.options ?? []).findIndex((option) => option.value === value),
-      );
-      trigger.textContent = (p.options ?? [])[selected]?.label || 'Нет вариантов';
+      selected = (p.options ?? []).findIndex((option) => option.value === value);
+      const label =
+        (p.options ?? [])[selected]?.label ??
+        (rows.length ? (p.format?.(value) ?? String(value)) : 'Нет вариантов');
+      const changed = trigger.textContent !== label;
+      if (changed) trigger.textContent = label;
       trigger.setAttribute('aria-label', p.label);
       menu.setAttribute('aria-label', p.label);
       trigger.disabled = Boolean(p.disabled) || !rows.length;
       if (trigger.disabled) close();
       rows.forEach((row, i) => row.setAttribute('aria-selected', String(i === selected)));
       if (!isOpen()) mark(selected);
+      else if (changed) place();
     },
   };
 }
