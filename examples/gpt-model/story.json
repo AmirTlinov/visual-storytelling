@@ -1,0 +1,360 @@
+{
+  "version": 2,
+  "title": "Как GPT выбирает следующее слово",
+  "models": [
+    {
+      "id": "gpt",
+      "module": "gpt",
+      "inputs": {
+        "preset": "cat-place",
+        "token": 3,
+        "source": 1,
+        "block": 0,
+        "head": 0,
+        "channel": 0,
+        "view": "overview",
+        "perspective": "diagram",
+        "kind": "score",
+        "projection": "q",
+        "phase": 0,
+        "guess": "",
+        "checked": false,
+        "generated": false,
+        "ablate": false,
+        "axis": 0,
+        "term": 0,
+        "normKind": "ln1",
+        "detailPage": -1,
+        "candidate": -1,
+        "prompt": ""
+      }
+    }
+  ],
+  "views": [
+    {
+      "id": "gpt.view.overview",
+      "kind": "overview",
+      "model": "gpt"
+    },
+    {
+      "id": "gpt.view.embedding",
+      "kind": "embedding",
+      "model": "gpt"
+    },
+    {
+      "id": "gpt.view.block",
+      "kind": "block",
+      "model": "gpt"
+    },
+    {
+      "id": "gpt.view.attention",
+      "kind": "attention",
+      "model": "gpt"
+    },
+    {
+      "id": "gpt.view.scores",
+      "kind": "scores",
+      "model": "gpt"
+    },
+    {
+      "id": "gpt.view.projection",
+      "kind": "projection",
+      "model": "gpt"
+    },
+    {
+      "id": "gpt.view.norm",
+      "kind": "norm",
+      "model": "gpt"
+    },
+    {
+      "id": "gpt.view.residual",
+      "kind": "residual",
+      "model": "gpt"
+    },
+    {
+      "id": "gpt.view.mlp",
+      "kind": "mlp",
+      "model": "gpt"
+    },
+    {
+      "id": "gpt.view.output",
+      "kind": "output",
+      "model": "gpt"
+    },
+    {
+      "id": "gpt.view.logits",
+      "kind": "logits",
+      "model": "gpt"
+    },
+    {
+      "id": "gpt.view.merge",
+      "kind": "merge",
+      "model": "gpt"
+    },
+    {
+      "id": "gpt.view.model",
+      "kind": "model",
+      "model": "gpt"
+    },
+    {
+      "id": "gpt.view.calculation",
+      "kind": "calculation",
+      "model": "gpt"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "overview",
+      "title": "Продолжить фразу",
+      "views": ["gpt.view.overview"],
+      "beats": [
+        {
+          "id": "step",
+          "seconds": 10,
+          "say": "У фразы пока нет продолжения. Проследим, как эта маленькая модель получает из слов числа и выбирает следующий токен.",
+          "hold": "Проследить путь выбранной фразы через два блока к месту следующего слова.",
+          "operation": {
+            "model": "gpt",
+            "name": "overview"
+          }
+        }
+      ]
+    },
+    {
+      "id": "embedding",
+      "title": "Токен и позиция",
+      "views": ["gpt.view.embedding"],
+      "beats": [
+        {
+          "id": "word",
+          "seconds": 4,
+          "say": "Для каждого слова возьмём восемь чисел из обученной таблицы.",
+          "operation": {
+            "model": "gpt",
+            "name": "embed-token"
+          },
+          "timing": {
+            "duration": 2
+          },
+          "speech": {
+            "id": "voice.gpt.embedding",
+            "when": {
+              "basis": "presented",
+              "models": []
+            }
+          }
+        },
+        {
+          "id": "position",
+          "seconds": 4,
+          "say": "Добавим числа его позиции.",
+          "operation": {
+            "model": "gpt",
+            "name": "embed-position"
+          },
+          "timing": {
+            "duration": 2
+          },
+          "speech": {
+            "id": "voice.gpt.embedding",
+            "when": {
+              "basis": "presented",
+              "models": []
+            }
+          }
+        },
+        {
+          "id": "sum",
+          "seconds": 4,
+          "say": "Теперь вектор зависит и от слова, и от его места.",
+          "operation": {
+            "model": "gpt",
+            "name": "embed-sum"
+          },
+          "timing": {
+            "duration": 2
+          },
+          "speech": {
+            "id": "voice.gpt.embedding",
+            "when": {
+              "basis": "presented",
+              "models": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "block",
+      "title": "Внутри блока",
+      "views": ["gpt.view.block"],
+      "beats": [
+        {
+          "id": "enter",
+          "seconds": 2,
+          "say": "Этот вектор проходит через блок.",
+          "operation": {
+            "model": "gpt",
+            "name": "block"
+          },
+          "speech": {
+            "id": "voice.gpt.block",
+            "when": {
+              "basis": "presented",
+              "models": []
+            }
+          }
+        },
+        {
+          "id": "attention",
+          "seconds": 4,
+          "say": "Сначала к нему добавляются сведения из контекста,",
+          "operation": {
+            "model": "gpt",
+            "name": "block-attention"
+          },
+          "timing": {
+            "duration": 2
+          },
+          "speech": {
+            "id": "voice.gpt.block",
+            "when": {
+              "basis": "presented",
+              "models": []
+            }
+          }
+        },
+        {
+          "id": "mlp",
+          "seconds": 4,
+          "say": "затем — результат преобразования самого вектора.",
+          "operation": {
+            "model": "gpt",
+            "name": "block-mlp"
+          },
+          "timing": {
+            "duration": 2
+          },
+          "speech": {
+            "id": "voice.gpt.block",
+            "when": {
+              "basis": "presented",
+              "models": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "attention",
+      "title": "Собрать контекст",
+      "views": ["gpt.view.attention"],
+      "beats": [
+        {
+          "id": "step",
+          "seconds": 10,
+          "say": "Посмотрим на первую прибавку. Выбранный токен получает взвешенную смесь значений доступных ему токенов. У каждой связи здесь свой вес.",
+          "hold": "Сопоставить доступные токены, проценты на связях и место взвешенной суммы; будущие токены закрыты.",
+          "operation": {
+            "model": "gpt",
+            "name": "attention"
+          }
+        }
+      ]
+    },
+    {
+      "id": "calculation",
+      "title": "Посчитать сходство",
+      "views": ["gpt.view.calculation"],
+      "beats": [
+        {
+          "id": "step",
+          "seconds": 14,
+          "say": "Сначала посчитаем оценку одной связи. Перемножим парные координаты запроса и ключа, сложим вклады и разделим сумму на корень из размерности.",
+          "action": "Пары координат выбранных Q и K дают произведения, их сумма и масштабирование дают оценку связи.",
+          "operation": {
+            "model": "gpt",
+            "name": "calculation"
+          }
+        }
+      ]
+    },
+    {
+      "id": "residual",
+      "title": "Прибавка к вектору",
+      "views": ["gpt.view.residual"],
+      "beats": [
+        {
+          "id": "step",
+          "seconds": 9,
+          "say": "Собранный контекст вернётся в общий поток. Сравните три строки: исходный вектор, прибавку и их сумму.",
+          "hold": "Сравнить согласованные координаты исходного вектора, результата attention и суммы.",
+          "operation": {
+            "model": "gpt",
+            "name": "residual"
+          }
+        }
+      ]
+    },
+    {
+      "id": "mlp",
+      "title": "Преобразовать вектор",
+      "views": ["gpt.view.mlp"],
+      "beats": [
+        {
+          "id": "step",
+          "seconds": 9,
+          "say": "Теперь каждый вектор преобразуется отдельно. Из восьми координат получаются тридцать две, нелинейная функция меняет их, и обратно возвращается прибавка из восьми чисел.",
+          "hold": "Проследить размеры 8 → 32 → 8 и место нелинейного преобразования перед новой прибавкой.",
+          "operation": {
+            "model": "gpt",
+            "name": "mlp"
+          }
+        }
+      ]
+    },
+    {
+      "id": "prediction",
+      "title": "Ваш прогноз",
+      "views": ["gpt.view.output"],
+      "beats": [
+        {
+          "id": "step",
+          "seconds": 8,
+          "say": "После двух блоков модель оценит возможные продолжения. Какое слово вы ожидаете увидеть? Выберите его и сравните с результатом.",
+          "hold": "Выбрать продолжение показанного префикса до открытия вероятностей.",
+          "operation": {
+            "model": "gpt",
+            "name": "prediction"
+          },
+          "awaitInput": {
+            "model": "gpt"
+          }
+        }
+      ]
+    },
+    {
+      "id": "output",
+      "title": "Следующий токен",
+      "views": ["gpt.view.output"],
+      "beats": [
+        {
+          "id": "step",
+          "seconds": 12,
+          "say": "Вот вероятности продолжений. Можно добавить самый вероятный токен к фразе: модель пройдёт тот же путь ещё раз, уже с новым контекстом.",
+          "action": "Открываются вероятности; по нажатию «Добавить» выбранный моделью токен возвращает изменённую фразу на общую схему.",
+          "operation": {
+            "model": "gpt",
+            "name": "output"
+          }
+        }
+      ]
+    }
+  ],
+  "narration": {
+    "intro": 0,
+    "outro": 0,
+    "pause": 0,
+    "music": null
+  }
+}

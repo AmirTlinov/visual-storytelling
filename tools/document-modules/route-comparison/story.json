@@ -1,0 +1,6 @@
+{
+  "recipe": "comparison",
+  "kind": "dependency-route",
+  "inputs": { "orderId": "417", "reserve": "shared", "disabled-provider": true },
+  "changes": { "reserve": "independent" }
+}

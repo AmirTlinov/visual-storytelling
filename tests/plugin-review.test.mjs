@@ -92,7 +92,7 @@ test(
     const project = await call('story_inspect', { projectId });
     const before = await projectFiles(project.path);
     const request = {
-      target: { kind: 'working', projectId, sourceRevision: project.sourceRevision },
+      target: { kind: 'working', context: project.context },
       requestId: randomUUID(),
       options: {
         from: 0,
@@ -140,7 +140,7 @@ test(
     );
     const scenarioProject = await call('story_inspect', { projectId });
     const scenario = await call('story_review', {
-      target: { kind: 'working', projectId, sourceRevision: scenarioProject.sourceRevision },
+      target: { kind: 'working', context: scenarioProject.context },
       requestId: randomUUID(),
       options: { scenario: 'review-flow.json', width: 360, height: 480 },
     });
@@ -210,7 +210,7 @@ await writeFile(join(process.env.VISUAL_STORY_OUTPUT, 'index.html'), '<main>muta
     );
     const changed = await call('story_inspect', { projectId });
     const rejected = await call('story_review', {
-      target: { kind: 'working', projectId, sourceRevision: changed.sourceRevision },
+      target: { kind: 'working', context: changed.context },
       requestId: randomUUID(),
     });
     const failed = await wait(rejected.id);

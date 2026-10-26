@@ -24,15 +24,15 @@
     }
   ],
   "cues": {
-    "move_x": {
+    "horizontal.move_x": {
       "start": 0,
       "end": 6
     },
-    "move_y": {
+    "vertical.move_y": {
       "start": 6,
       "end": 12
     },
-    "result_arrow": {
+    "result.result_arrow": {
       "start": 12,
       "end": 20
     }

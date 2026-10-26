@@ -24,9 +24,7 @@ test(
       await app.locator('html[data-connection="connected"]').waitFor();
       const first = (await call('story_inspect')).structuredContent.sessions[0];
       await call('story_control', {
-        ...Object.fromEntries(
-          ['sessionId', 'buildRevision', 'stateRevision'].map((k) => [k, first[k]]),
-        ),
+        context: first.context,
         requestId: randomUUID(),
         commands: [
           { type: 'seek', time: 8 },
@@ -35,7 +33,7 @@ test(
       });
       const before = await state(first.sessionId);
       const visited = await call('story_navigate', {
-        sessionId: first.sessionId,
+        context: before.context,
         target: { example: 'gpt-model' },
       });
       await app.locator('#back').waitFor();
@@ -60,9 +58,7 @@ test(
       for (const id of [first.sessionId, otherId]) {
         const current = await state(id);
         await call('story_control', {
-          sessionId: id,
-          buildRevision: current.buildRevision,
-          stateRevision: current.stateRevision,
+          context: current.context,
           requestId: randomUUID(),
           commands: [{ type: 'play' }],
         });
@@ -78,9 +74,7 @@ test(
       const pendingPlay = host.client.callTool({
         name: 'story_control',
         arguments: {
-          sessionId: first.sessionId,
-          buildRevision: current.buildRevision,
-          stateRevision: current.stateRevision,
+          context: current.context,
           requestId: randomUUID(),
           commands: [{ type: 'play' }],
         },
@@ -88,7 +82,7 @@ test(
       await page.waitForFunction((count) => pluginTest.focusRequests > count, priorFocus);
       const pauseStart = performance.now();
       await call('story_control', {
-        sessionId: first.sessionId,
+        context: current.context,
         requestId: randomUUID(),
         commands: [{ type: 'pause' }],
       });

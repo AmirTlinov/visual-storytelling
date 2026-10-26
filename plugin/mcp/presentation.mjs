@@ -54,6 +54,7 @@ export function presentSession(value, detail = 'state') {
     mode: state.mode,
     viewTransition: state.viewTransition,
     muted: state.muted,
+    speech: state.speech,
     rate: state.rate,
     selected: state.selected,
     objects:

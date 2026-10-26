@@ -1,4 +1,4 @@
-import { measureText } from './text-measure.js';
+import { measureText, measureTextVariants } from './text-measure.js';
 import { svg } from './dom.js';
 import { SketchMotion } from './motion.js';
 import { glyphs } from './glyphs.js';
@@ -147,10 +147,12 @@ export function lettering(
     label.textContent = value;
     element.setAttribute('aria-label', value);
     label.setAttribute('font-size', String(nominalSize));
-    width = measureText(label, (text) => text.getComputedTextLength());
+    // Empty labels have no advances or ink; token placeholders need no layout probe.
+    if (!value) measured = { x: 0, y: 0, width: 0, height: 0 };
+    width = value ? measureText(label, (text) => text.getComputedTextLength()) : 0;
     write(progress);
     if (!bounds && options.maxWidth !== undefined) {
-      measured = inkBounds(label, content);
+      measured ??= inkBounds(label, content);
       const size = Math.max(
         Math.min(nominalSize, minSize),
         Math.min(nominalSize, (nominalSize * options.maxWidth) / (measured.width || 1)),
@@ -170,7 +172,7 @@ export function lettering(
       else delete element.dataset.layoutError;
     }
     if (bounds) {
-      measured = inkBounds(label, content);
+      measured ??= inkBounds(label, content);
       const rx = measured.width / (bounds.width - padding * 2);
       const ry = measured.height / (bounds.height - padding * 2);
       const ratio = bounds.shape === 'ellipse' ? Math.hypot(rx, ry) : Math.max(rx, ry);
@@ -189,6 +191,10 @@ export function lettering(
     element,
     text,
     write,
+    /** Native advances at the current font size and fit; leaves the displayed ink intact. */
+    measureWidths(values: readonly string[]) {
+      return measureTextVariants(label, values, (text) => text.getComputedTextLength() * scale);
+    },
     get width() {
       return width;
     },

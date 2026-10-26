@@ -116,8 +116,8 @@ test(
       await page.goto(host.url);
       const app = page.frameLocator('iframe[title="MCP App"]');
       await app.locator('#catalog:not([hidden])').waitFor();
-      const explanation = { model: { kind: 'division', count: 13, divisor: 3 } };
-      await page.evaluate((explanation) => window.pluginTest.partial({ explanation }), explanation);
+      const document = { recipe: 'division', inputs: { count: 13, divisor: 3 } };
+      await page.evaluate((document) => window.pluginTest.partial({ document }), document);
       await app.frameLocator('#scene').locator('svg').first().waitFor();
       const created = await host.client.callTool({
         name: 'story_create',
@@ -125,7 +125,7 @@ test(
           title: 'Presentation timing',
           path: join(temporary, 'project'),
           requestId: randomUUID(),
-          explanation,
+          document,
         },
       });
       assert.equal(created.isError, undefined);

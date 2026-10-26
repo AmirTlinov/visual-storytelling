@@ -1,3 +1,5 @@
+import { sceneHost, watchSceneHost } from './host/adapter.js';
+
 export interface SceneFrameOptions {
   width: number;
   height: number;
@@ -47,19 +49,26 @@ export function sceneFrame(
       standalone = root.closest('.ve-standalone');
     const availableWidth =
       root.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-    if (!availableWidth) return;
+    // A collapsed host can expose padding with zero viewport or a negative aperture.
+    // Retain the last composition until it can actually be fitted again.
+    if (availableWidth <= 0 || innerWidth <= 0 || innerHeight <= 0) return;
     let availableHeight = Infinity;
     if (root.closest('[data-scene-frame]')) {
       availableHeight =
         root.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
-    } else if (standalone && standalone.querySelectorAll(':scope > .ve-scene').length === 1) {
+    } else if (
+      sceneHost()?.frameSizing?.height !== 'content' &&
+      standalone &&
+      standalone.querySelectorAll(':scope > .ve-scene').length === 1
+    ) {
       const box = root.getBoundingClientRect();
       const chrome = Math.max(0, box.height - element.getBoundingClientRect().height);
       const top = Math.max(0, box.top + scrollY);
       const body = getComputedStyle(document.body);
       const bottom = (parseFloat(body.marginBottom) || 0) + (parseFloat(body.paddingBottom) || 0);
-      availableHeight = Math.max(1, innerHeight - top - chrome - bottom);
+      availableHeight = innerHeight - top - chrome - bottom;
     }
+    if (availableHeight <= 0) return;
     const fit = fitFrame(width, height, availableWidth, availableHeight);
     const changed = element.dataset.frameScale !== String(fit.scale);
     element.dataset.frameLayout = 'fixed';
@@ -79,12 +88,22 @@ export function sceneFrame(
       });
   };
   const observer = new ResizeObserver(schedule);
+  let releaseSizing: (() => void) | undefined;
+  const bindSizing = () => {
+    releaseSizing?.();
+    releaseSizing = sceneHost()?.frameSizing?.subscribe?.(schedule);
+    schedule();
+  };
+  const releaseHost = watchSceneHost(bindSizing);
+  bindSizing();
   observer.observe(element);
   window.addEventListener('resize', resize);
   return {
     element,
     resize,
     dispose() {
+      releaseHost();
+      releaseSizing?.();
       observer.disconnect();
       cancelAnimationFrame(pending);
       window.removeEventListener('resize', resize);
@@ -233,6 +252,7 @@ export function inspectPresentation(stage: HTMLElement | SVGSVGElement): ScenePr
   const inspect = (node: Element, object: InspectedObject, canvas = false) => {
     if (
       object.visible === false ||
+      (object.width === 0 && object.height === 0) ||
       object.data?.framing === 'background' ||
       ![object.x, object.y, object.width, object.height].every(Number.isFinite)
     )
@@ -269,14 +289,15 @@ export function inspectPresentation(stage: HTMLElement | SVGSVGElement): ScenePr
       result.clipped.push({ id: object.id, bounds: rectangle(object), clip });
   };
   const nodes = subject.querySelectorAll<HTMLElement | SVGElement>(
-    '[data-review-id], [data-camera-world], svg text, [data-lettering-size], canvas' +
+    '[data-review-id], [data-camera-world], svg text, [data-lettering-size], .ve-annotation > .ve-label, canvas' +
       (subject === framed
         ? ', .ve-heading, .ve-chapter-navigation, .modes, .ve-parameters, [data-player], .ve-captions, .ve-select-list:popover-open'
         : ''),
   );
   for (const [index, node] of [...nodes].entries()) {
     if (!visible(node) || node.closest('[data-review-framing="background"]')) continue;
-    const id = node.dataset.reviewId || node.id || `${node.localName}:${index}`;
+    const id =
+      node.dataset.reviewId || node.dataset.object || node.id || `${node.localName}:${index}`;
     let text: InspectedObject['data'];
     if ((node.localName === 'text' || node.dataset.letteringSize) && 'getScreenCTM' in node) {
       text = {
@@ -285,6 +306,15 @@ export function inspectPresentation(stage: HTMLElement | SVGSVGElement): ScenePr
             node as SVGGraphicsElement,
             Number(node.dataset.letteringSize) || parseFloat(styleOf(node).fontSize),
           ),
+          minimum: Number(node.dataset.minimumFontSize) || 14,
+        },
+      };
+    } else if (node instanceof HTMLElement && node.classList.contains('ve-label')) {
+      text = {
+        text: {
+          pixels:
+            (parseFloat(styleOf(node).fontSize) * node.getBoundingClientRect().height) /
+            node.offsetHeight,
           minimum: Number(node.dataset.minimumFontSize) || 14,
         },
       };

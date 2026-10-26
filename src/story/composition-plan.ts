@@ -1,4 +1,5 @@
 import { cueSheet, type Script, type Cue, type Chapter } from './cues.js';
+import { mapRecordedSpeech } from './recorded-speech.js';
 
 export interface ChapterIntroduction {
   seconds: number;
@@ -184,10 +185,8 @@ export function composeChapters(
       }
       for (const s of chapter.script.segments ?? [])
         segments.push({
-          ...s,
+          ...mapRecordedSpeech(s, map),
           id: `${chapter.id}.${s.id}`,
-          ...range(s),
-          words: s.words?.map((w) => ({ ...w, ...range(w) })),
         });
     }
     if (!chapter.script?.segments?.length && chapter.text.trim())

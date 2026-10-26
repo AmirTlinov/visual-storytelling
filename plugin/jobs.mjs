@@ -8,6 +8,7 @@ import { readJSON, writeJSON } from '../tools/storage.mjs';
 import { digest } from '../tools/project-files.mjs';
 import { contentDigest } from '../tools/build-info.mjs';
 import { failure } from './errors.mjs';
+import { reusePreparation } from './preparation-reuse.mjs';
 
 const processGroups = process.platform !== 'win32';
 function signalWorker(child, signal) {
@@ -139,6 +140,10 @@ export class JobRunner {
   }
   describe(job) {
     const { input, signature, requestIds, ...visible } = job;
+    if (visible.result?.project) {
+      const { creation, migration, ...result } = visible.result;
+      visible.result = result;
+    }
     return visible;
   }
   get(id) {
@@ -146,11 +151,9 @@ export class JobRunner {
     if (!job) throw new Error('Unknown job.');
     return this.describe(job);
   }
-  wait(id, { until = 'settled', timeout = 15000 } = {}) {
+  wait(id, { timeout = 15000 } = {}) {
     const current = this.get(id);
-    const ready = (job) =>
-      !['queued', 'running', 'cancelling'].includes(job.status) ||
-      (until === 'authored' && job.authored);
+    const ready = (job) => !['queued', 'running', 'cancelling'].includes(job.status);
     if (ready(current) || !timeout) return Promise.resolve(current);
     return new Promise((resolve) => {
       const listeners = this.observers.get(id) ?? new Set();
@@ -177,7 +180,9 @@ export class JobRunner {
   list(projectId) {
     return [...this.jobs.values()]
       .filter((j) => !projectId || j.projectId === projectId)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .sort((a, b) =>
+        (b.lastRequestedAt ?? b.createdAt).localeCompare(a.lastRequestedAt ?? a.createdAt),
+      )
       .slice(0, 30)
       .map((j) => this.describe(j));
   }
@@ -257,25 +262,8 @@ export class JobRunner {
     if (typeof requestId !== 'string' || !/^[a-zA-Z0-9_-]{8,128}$/.test(requestId))
       throw new Error('Supply a stable requestId for this preparation.');
     const signature = digest(JSON.stringify({ kind, input }));
-    const previous = this.forRequest(requestId);
-    if (previous) {
-      if (previous.signature !== signature)
-        throw new Error('requestId already belongs to another preparation.');
-      return this.describe(previous);
-    }
-    const same = [...this.jobs.values()].find(
-      (j) => j.signature === signature && ['queued', 'running'].includes(j.status),
-    );
-    if (same) {
-      (same.requestIds ??= []).push(requestId);
-      try {
-        await this.save(same);
-      } catch (error) {
-        same.requestIds.pop();
-        throw error;
-      }
-      return this.describe(same);
-    }
+    const reused = await reusePreparation(this, { kind, input, requestId, signature });
+    if (reused) return reused;
     const job = {
       id: randomUUID(),
       requestId,
@@ -298,7 +286,8 @@ export class JobRunner {
         if (
           previous !== job &&
           previous.projectId === job.projectId &&
-          (previous.kind === 'build' || (previous.kind === 'create' && previous.authored)) &&
+          previous.kind === 'build' &&
+          Boolean(previous.input.authoring) === Boolean(job.input.authoring) &&
           previous.sourceRevision !== job.sourceRevision &&
           ['queued', 'running'].includes(previous.status)
         ) {
@@ -306,6 +295,19 @@ export class JobRunner {
           await this.cancel(previous.id);
         }
     this.pump();
+    return this.describe(job);
+  }
+  /** Finish delivery of a durably accepted candidate without starting its worker again. */
+  async acceptPreparedResult(id, result) {
+    const job = this.jobs.get(id);
+    if (!job || ['queued', 'running', 'cancelling'].includes(job.status))
+      throw new Error('A running preparation cannot be replaced by a publication receipt.');
+    job.result = result;
+    job.status = 'succeeded';
+    job.stage = 'Готово';
+    job.finishedAt ??= new Date().toISOString();
+    delete job.error;
+    await this.save(job);
     return this.describe(job);
   }
   async cancel(id) {
@@ -382,16 +384,6 @@ export class JobRunner {
             terminal = { error: error.message };
           });
           child.on('message', (message) => {
-            if (message?.type === 'authored' && job.status === 'running' && !terminal) {
-              job.authored = message.project;
-              job.sourceRevision = message.project.sourceRevision;
-              job.input = {
-                ...job.input,
-                sourceRevision: message.project.sourceRevision,
-                inputSnapshot: message.project.inputSnapshot,
-              };
-              void this.save(job).catch((error) => console.error(error.message));
-            }
             if (message?.type === 'progress' && job.status === 'running' && !terminal) {
               job.stage = message.stage;
               job.progress = message.progress;

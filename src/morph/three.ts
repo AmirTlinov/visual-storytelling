@@ -12,13 +12,14 @@ import type { Viewport3D } from '../viewport/three.js';
 import { quantityBounds, quantityStep } from './measure.js';
 import { morphBody3D } from './body-3d.js';
 import { mathBodies } from './math-bodies.js';
-import { mathPlan } from './math.js';
+import { mathPlan } from './plan.js';
 import { mathNumber } from './numbers.js';
 import { mathDelivery3D, type MathDelivery3DOptions } from './delivery-3d.js';
 import { cellLayout, validateCellColumns } from './layout.js';
 import { contentViewport } from '../layout/content.js';
 import type { MathOperation, MathMorphPlan } from './types.js';
 import { mathSemantics } from './semantics.js';
+import { mathNotes3D } from './notes-3d.js';
 import {
   morphTiming,
   mathMotionFrame,
@@ -43,6 +44,7 @@ function mount(
     formula?: boolean;
     /** Suppress auxiliary written steps when an authored explanation supplies them. */
     notes?: boolean | 'operators';
+    inputNames?: (part: import('./types.js').MathPart) => string | undefined;
     /** Presentation rounding only; arithmetic and inspected values remain exact. */
     format?: (value: number) => string;
     /** Deliver the computed result into this receiver using a separate Story cue. */
@@ -114,7 +116,7 @@ function mount(
       parts.get(key)!.object.position.set(...record.part.position);
     }
   }
-  const notes = new Map<string, { anchor: Object3D; label: ReturnType<typeof view.label> }>();
+  const notes = mathNotes3D(view, object);
   const ruler = new LineSegments(
     new BufferGeometry(),
     view.ink(new LineBasicMaterial({ transparent: true, opacity: 0.3 }), 'ink'),
@@ -187,13 +189,7 @@ function mount(
       : { tone: 'ink', size: 17 },
   );
   let rulerKey = '';
-  function clear() {
-    for (const { anchor, label } of notes.values()) {
-      label.remove();
-      anchor.removeFromParent();
-    }
-    notes.clear();
-  }
+  const clear = notes.clear;
   function setOperation(next: MathOperation | MathMorphPlan) {
     if (disposed) throw new Error('Math morph has been disposed');
     const prepared = mathPlan(next); // Validate before replacing the visible operation.
@@ -353,36 +349,11 @@ function mount(
     }
     if (deliveredBounds) bounds.union(deliveredBounds);
     body.render(mathBodies(frame, measured, options.format));
-    const currentNotes = new Set((frame.notes ?? []).map((note) => note.id));
-    for (const [id, note] of notes)
-      if (!currentNotes.has(id)) {
-        note.label.remove();
-        note.anchor.removeFromParent();
-        notes.delete(id);
-      }
-    for (const note of frame.notes ?? []) {
-      if (!notes.has(note.id)) {
-        const anchor = new Object3D();
-        object.add(anchor);
-        notes.set(note.id, {
-          anchor,
-          label: view.label('', anchor, {
-            space: 'world',
-            height: note.size[1],
-            maxWidth: note.size[0],
-          }),
-        });
-      }
-      const entry = notes.get(note.id)!;
-      entry.anchor.position.set(...note.position);
-      entry.label.set(note.text);
-      entry.label.opacity(note.opacity);
-      entry.label.show(
-        annotationsVisible &&
-          options.notes !== false &&
-          (options.notes !== 'operators' || note.id.startsWith('operator:')),
-      );
-    }
+    notes.render(frame, {
+      visible: annotationsVisible,
+      notes: options.notes,
+      inputNames: options.inputNames,
+    });
     view.invalidate();
     return frame;
   }
@@ -429,6 +400,9 @@ function mount(
   return {
     object,
     bounds,
+    get arrangement() {
+      return arrangement;
+    },
     render,
     setOperation,
     setDelivery,

@@ -9,6 +9,7 @@ import { projectFiles } from '../tools/project-files.mjs';
 import { ProjectStore } from '../plugin/projects.mjs';
 import { revisionInput } from '../plugin/revision-input.mjs';
 import { collectCache } from '../plugin/cache.mjs';
+import { preparedBuildHTML } from '../plugin/build-payload.mjs';
 
 async function fixture(t, mutation = '') {
   const directory = await mkdtemp(join(tmpdir(), 'story-workflow-'));
@@ -57,7 +58,10 @@ await writeFile(join(process.env.VISUAL_STORY_OUTPUT, 'index.html'), '<main>' + 
       },
     );
   const html = async (result) =>
-    JSON.parse(await readFile(join(data, 'builds', result.buildRevision + '.json'), 'utf8')).html;
+    preparedBuildHTML(
+      data,
+      JSON.parse(await readFile(join(data, 'builds', result.buildRevision + '.json'), 'utf8')),
+    );
   return { input, build, html };
 }
 
@@ -118,8 +122,15 @@ test('quiet working delivery and retry preserve the chosen inputs without prepar
     JSON.stringify({ provider: 'higgs', enabled: true }),
   );
   await writeFile(
-    join(input.projectPath, 'narration.json'),
-    JSON.stringify({ segments: [{ id: 'start', text: 'Покажем результат.' }] }),
+    join(input.projectPath, 'story.json'),
+    JSON.stringify({
+      version: 2,
+      models: [],
+      views: [],
+      chapters: [
+        { id: 'start', title: 'Результат', beats: [{ id: 'show', say: 'Покажем результат.' }] },
+      ],
+    }),
   );
   input.sourceRevision = (await projectFiles(input.projectPath)).revision;
   const projects = new ProjectStore(input.data);
@@ -173,12 +184,12 @@ test('quiet working delivery and retry preserve the chosen inputs without prepar
   const receipt = JSON.parse(
     await readFile(join(input.data, 'snapshots', firstTask.jobId, '.vstory-input.json'), 'utf8'),
   );
-  assert.deepEqual(receipt.preparation, { silent: true });
+  assert.deepEqual(receipt.preparation, { silent: true, voice: false });
   assert.equal(
     JSON.parse(await readFile(join(input.projectPath, 'voice.json'), 'utf8')).enabled,
     true,
   );
-  // A different narration choice cannot reuse the quiet prepared output as audible.
+  // Audible final requires a current recording and cannot prepare it implicitly.
   await assert.rejects(
     workflows.produce(
       {
@@ -189,9 +200,9 @@ test('quiet working delivery and retry preserve the chosen inputs without prepar
       },
       task(),
     ),
-    /Unexpected resource download/,
+    /Generated narration has no matching timeline/,
   );
-  assert.ok(downloads > 0);
+  assert.equal(downloads, 0);
 });
 
 test('incompatible video dimensions fail before source capture or environment preparation', async () => {

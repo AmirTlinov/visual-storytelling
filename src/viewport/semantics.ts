@@ -199,7 +199,7 @@ export function semanticObjects3D(
       const label = document.createElement('span');
       label.textContent = meaning.label;
       label.style.cssText =
-        'position:absolute;left:0;bottom:100%;max-width:240px;background:var(--ve-surface, white);color:var(--ve-ink, #17212b);padding:3px 6px;border-radius:4px;font-size:13px;white-space:normal;';
+        'position:absolute;left:0;bottom:100%;max-width:240px;background:var(--ve-surface);color:var(--ve-ink);padding:3px 6px;border-radius:4px;font-size:13px;white-space:normal;';
       element.append(label);
       stage.append(element);
       const forget = describeObject(element, meaning);

@@ -7,9 +7,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { workflows } from '../plugin/workflows.mjs';
 import { ProjectStore } from '../plugin/projects.mjs';
+import { commitStoreEdit } from './plugin/store-edit.mjs';
 import { renderer } from '../tools/render.mjs';
 import { sceneEntry, scenePage } from '../tools/scene-entry.mjs';
 import { createScene } from '../tools/create-scene.mjs';
+import { preparedBuildHTML } from '../plugin/build-payload.mjs';
 
 test('a malformed draft entry remains inspectable for an authoring repair', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'story-entry-draft-'));
@@ -57,7 +59,7 @@ test(
           });
         if (fixture === 'scene-shell')
           changes.push({ path: 'scene.json', content: JSON.stringify({ entry }) });
-        const authored = await projects.edit({
+        const authored = await commitStoreEdit(projects, {
           projectId: project.id,
           sourceRevision: (await projects.inspect(project.id)).sourceRevision,
           requestId: randomUUID(),
@@ -88,7 +90,7 @@ test(
         );
         const packed = join(directory, fixture + '-portable');
         await mkdir(packed);
-        await writeFile(join(packed, scenePage), built.html);
+        await writeFile(join(packed, scenePage), await preparedBuildHTML(data, built));
         const capture = await renderer({
           directory: packed,
           theme: 'light',

@@ -17,17 +17,46 @@ import { handwritingTransform, handwritingProfiles, type Handwriting } from './h
 
 const paths = new WeakMap<SVGPathElement, PathInk>(),
   lettering = new WeakMap<SVGTextElement, TextInk>();
+// Glyph centerlines are fixed in local coordinates. Instance transforms and theme
+// change their placement/paint, not their length. The shipped alphabet bounds this cache.
+const glyphPaths = new Set(Object.values(SketchPencil).flat()),
+  glyphLengths = new Map<string, number>(),
+  glyphCSS = new Map<string, string>(),
+  ownedGlyphs = new WeakMap<SVGPathElement, { d: string; css: string }>();
+function registerGlyph(path: SVGPathElement, d: string) {
+  if (!glyphPaths.has(d)) return;
+  let css = glyphCSS.get(d);
+  if (css === undefined) {
+    const declaration = document.createElement('span').style;
+    declaration.setProperty('d', `path(${JSON.stringify(d)})`);
+    css = declaration.getPropertyValue('d');
+    glyphCSS.set(d, css);
+  }
+  ownedGlyphs.set(path, { d, css });
+}
+function pathLength(path: SVGPathElement, signature: string) {
+  const glyph = ownedGlyphs.get(path);
+  if (!glyph || path.getAttribute('d') !== glyph.d || signature !== glyph.css)
+    return path.getTotalLength();
+  const cached = glyphLengths.get(glyph.d);
+  if (cached !== undefined) return cached;
+  const length = path.getTotalLength();
+  glyphLengths.set(glyph.d, length);
+  return length;
+}
 function geometry(path: SVGPathElement) {
-  const signature = path.getAttribute('d');
+  // CSS d can override the presentation attribute, including on an owned glyph.
+  const style = getComputedStyle(path),
+    css = style.getPropertyValue('d'),
+    signature = JSON.stringify([path.getAttribute('d'), css]);
   if (paths.has(path) && paths.get(path)!.signature !== signature) {
-    paths.get(path)!.length = path.getTotalLength();
+    paths.get(path)!.length = pathLength(path, css);
     paths.get(path)!.signature = signature;
   }
   if (!paths.has(path)) {
-    const length = path.getTotalLength(),
+    const length = pathLength(path, css),
       tip = document.createElementNS(NS, 'circle');
-    const style = getComputedStyle(path),
-      width = parseFloat(style.strokeWidth) || 2;
+    const width = parseFloat(style.strokeWidth) || 2;
     tip.setAttribute('r', String(width > 8 ? 0 : Math.max(0.22, width * 0.7)));
     tip.setAttribute('fill', path.style.stroke || path.getAttribute('stroke') || 'currentColor');
     tip.setAttribute('stroke', 'none');
@@ -98,33 +127,37 @@ function prepareText(text: SVGTextElement) {
     group.setAttribute('transform', text.getAttribute('transform')!);
   text.after(group);
   const strokes: SVGPathElement[] = [];
-  measureText(text, (measured) =>
-    Array.from(text.textContent ?? '').forEach((char, i) => {
-      if (/\s/.test(char)) return;
-      const glyph = SketchPencil[char];
-      if (!glyph)
-        throw Error(`No pen strokes for ${char}; add them in src/ink/glyphs.ts or use static text`);
-      const advance = measured.getSubStringLength(i, 1),
-        position = measured.getStartPositionOfChar(i),
-        letter = document.createElementNS(NS, 'g');
-      letter.setAttribute(
-        'transform',
-        `translate(${position.x} ${position.y}) matrix(${handwritingTransform(char, advance, size, profile).join(' ')})`,
-      );
-      group.append(letter);
-      glyph.forEach((d) => {
-        const path = document.createElementNS(NS, 'path');
-        path.setAttribute('d', d);
-        path.setAttribute('fill', 'none');
-        path.setAttribute('stroke', 'currentColor');
-        path.setAttribute('stroke-width', String(profile.stroke));
-        path.setAttribute('stroke-linecap', 'round');
-        path.setAttribute('stroke-linejoin', 'round');
-        letter.append(path);
-        strokes.push(path);
-      });
-    }),
-  );
+  if (text.textContent)
+    measureText(text, (measured) =>
+      Array.from(text.textContent ?? '').forEach((char, i) => {
+        if (/\s/.test(char)) return;
+        const glyph = SketchPencil[char];
+        if (!glyph)
+          throw Error(
+            `No pen strokes for ${char}; add them in src/ink/glyphs.ts or use static text`,
+          );
+        const advance = measured.getSubStringLength(i, 1),
+          position = measured.getStartPositionOfChar(i),
+          letter = document.createElementNS(NS, 'g');
+        letter.setAttribute(
+          'transform',
+          `translate(${position.x} ${position.y}) matrix(${handwritingTransform(char, advance, size, profile).join(' ')})`,
+        );
+        group.append(letter);
+        glyph.forEach((d) => {
+          const path = document.createElementNS(NS, 'path');
+          path.setAttribute('d', d);
+          path.setAttribute('fill', 'none');
+          path.setAttribute('stroke', 'currentColor');
+          path.setAttribute('stroke-width', String(profile.stroke));
+          path.setAttribute('stroke-linecap', 'round');
+          path.setAttribute('stroke-linejoin', 'round');
+          registerGlyph(path, d);
+          letter.append(path);
+          strokes.push(path);
+        });
+      }),
+    );
   text.style.fillOpacity = '0';
   // Include small pen-lift intervals between strokes. Their placement is stable.
   const weights = strokes.map((p) => geometry(p).length + 0.9),

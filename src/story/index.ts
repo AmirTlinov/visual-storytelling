@@ -43,7 +43,19 @@ export type { ChapterIntroduction } from './composition-plan.js';
 
 export { inkChapter } from './ink-chapter.js';
 export type { InkDrawing, InkViewport } from './ink-chapter.js';
-export { authoredChapter, documentNarration, documentScript, documentChapter } from './document.js';
-export type { StoryDocument, AuthoredBeat } from './document.js';
+export * from './document.js';
+export type { StorySubjectRecipe, StorySubjectDrawing, StorySubjects } from './subject.js';
 export { IllustratedStory } from './illustrated.js';
-export type { IllustratedStoryOptions } from './illustrated.js';
+export type {
+  IllustratedStoryOptions,
+  IllustratedChapter,
+  IllustratedChapterFrame,
+} from './illustrated.js';
+export { documentRuntime } from './runtime.js';
+
+export * from './comparison.js';
+export type { DrawingViewport } from './subject.js';
+export { SimulationMode } from './simulation-mode.js';
+
+export type { SpeechConditions, SpeechModelCondition } from './speech-condition.js';
+export type { SpeechAudibility } from './speech-gate.js';

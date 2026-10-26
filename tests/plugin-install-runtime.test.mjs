@@ -193,7 +193,7 @@ process.on('message',async(message)=>{
  if(message.type==='cancel')return;
  const {input}=message;
  await appendFile(join(input.data,'starts'),'worker started\\n');
- process.send({type:'authored',project:{id:input.projectId,path:input.projectPath,sourceRevision:'fixture'}});
+ process.send({type:'progress',stage:'Preparing fixture'});
  while(!await access(join(input.data,'finish')).then(()=>true,()=>false))await delay(20);
  const {value}=await import('./value.mjs');
  process.send({type:'result',result:{value}},()=>process.disconnect());
@@ -281,8 +281,14 @@ process.on('message',async(message)=>{
         example: 'fixture',
         requestId,
       };
-    const created = await tool(a, 'story_create', input);
-    assert.equal(created.job.status, 'running');
+    const creating = tool(a, 'story_create', input);
+    const runningJob = await wait(async () => {
+      for (const name of await readdir(join(data, 'jobs')).catch(() => [])) {
+        const job = JSON.parse(await readFile(join(data, 'jobs', name), 'utf8'));
+        if (job.requestId === requestId && job.status === 'running') return job;
+      }
+      return false;
+    });
     const control = runtime.call('request', {
       sessionId: opened.sessionId,
       request: { op: 'seek', time: 8 },
@@ -306,7 +312,7 @@ process.on('message',async(message)=>{
     process.kill(hello.pid, 0); // The active job retains its immutable release, not stdio clients.
     await writeFile(join(data, 'finish'), 'finish');
     await wait(
-      async () => (await runtime.call('job', { jobId: created.job.id })).status === 'succeeded',
+      async () => (await runtime.call('job', { jobId: runningJob.id })).status === 'succeeded',
     );
     // The result is visible before its final save releases JobRunner.active.
     // Retirement readiness belongs to the runtime, not the job's display status.
@@ -339,6 +345,8 @@ process.on('message',async(message)=>{
       acknowledgements: [{ id: commands.commands[0].id, result: { time: 8 } }],
     });
     assert.equal((await control).result.time, 8);
+    const created = await creating;
+    assert.equal(created.job.id, runningJob.id);
     const finalCheckpoint = { ...checkpoint, time: 9, progress: 0.9 };
     const finalPoll = runtime
       .call('exchange', {
@@ -385,7 +393,7 @@ process.on('message',async(message)=>{
     assert.equal(recovered.generation, attached.generation + 1);
     assert.deepEqual(recovered.checkpoint, finalCheckpoint);
     const again = await tool(b, 'story_create', input);
-    assert.equal(again.job.id, created.job.id);
+    assert.equal(again.job.id, runningJob.id);
     assert.equal(again.job.status, 'succeeded');
     assert.deepEqual(
       again.job.result,

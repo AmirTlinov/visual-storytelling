@@ -34,7 +34,7 @@ function mount<T, R>(
     disposed = false;
   let field: HTMLElement | null = null;
   function record() {
-    if (pending || applying) return;
+    if (disposed || pending || applying) return;
     const next = copy(read());
     if (equal(next, current)) return;
     revision++;
@@ -45,12 +45,17 @@ function mount<T, R>(
     changed();
   }
   function begin() {
-    if (applying || pending) return;
+    if (disposed || applying || pending) return;
     revision++;
     current = copy(read());
     pending = true;
   }
   function end() {
+    if (disposed) {
+      pending = false;
+      field = null;
+      return;
+    }
     if (!pending) return;
     pending = false;
     field = null;
@@ -266,6 +271,8 @@ function mount<T, R>(
     redo: () => travel(false),
     dispose() {
       disposed = true;
+      pending = false;
+      field = null;
       abort.abort();
     },
   };

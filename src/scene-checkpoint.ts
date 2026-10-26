@@ -22,6 +22,8 @@ export interface SceneCheckpoint {
   /** Opaque subject inputs when standard parameters cannot express the experiment. */
   subject?: unknown;
   view?: unknown;
+  /** Forward simulation conditions and position, serialized by its existing model owner. */
+  simulation?: unknown;
 }
 
 /** The model owner restores its inputs and position together, before publishing a frame. */
@@ -35,6 +37,8 @@ export interface SceneSubject {
 }
 
 export interface SceneView {
+  /** Complete pending paint through the view's existing renderer, even in a concealed host. */
+  whenRendered?(signal?: AbortSignal): Promise<unknown>;
   readonly transition?: 'running' | 'idle';
   validateFocus?(ids: readonly string[]): void;
   focus?(ids: readonly string[]): void;
@@ -50,7 +54,8 @@ export interface SceneRestoreNotice {
     | 'objects-missing'
     | 'parameters-changed'
     | 'subject-incompatible'
-    | 'view-incompatible';
+    | 'view-incompatible'
+    | 'simulation-incompatible';
   message: string;
   ids?: string[];
   chapter?: string;
@@ -127,7 +132,7 @@ export function captureScene(
 ): SceneCheckpoint {
   if (basis !== 'presented' && basis !== 'requested')
     throw new Error('Unknown scene capture basis');
-  const state = handle.inspect({ presentation: false });
+  const state = handle.inspect({ presentation: false, objects: false });
   const moment = state.rendering?.[basis];
   if (state.rendering && !moment)
     throw Object.assign(
@@ -171,6 +176,7 @@ export function captureScene(
         ? copySubject(handle.subject.capture({ basis }))
         : undefined,
     view: visible ? view?.capture?.() : undefined,
+    simulation: handle.simulation?.active ? copySubject(handle.simulation.capture()) : undefined,
   };
 }
 
@@ -188,6 +194,9 @@ export async function restoreScene(
     !['story', 'explore'].includes(state.mode)
   )
     throw new Error('Invalid scene checkpoint');
+  const savedSimulation =
+    state.simulation === undefined ? undefined : copySubject(state.simulation);
+  if (savedSimulation !== undefined) handle.simulation?.validate(savedSimulation);
   const capabilities = handle.inspect({ presentation: false }).capabilities;
   // Story's immutable request includes opaque subject inputs that flat controls cannot expose.
   const condition = () => handle.condition ?? JSON.stringify(handle.rendering?.requested);
@@ -366,6 +375,15 @@ export async function restoreScene(
         },
       ]),
     );
+  assertCurrent();
+  if (savedSimulation !== undefined) {
+    if (handle.simulation) await complete(handle.simulation.restore(savedSimulation));
+    else
+      notices.push({
+        code: 'simulation-incompatible',
+        message: 'Живой опыт недоступен в этой сцене. Восстановлен момент рассказа.',
+      });
+  }
   assertCurrent();
   return { ...handle.inspect(), restoreNotices: notices };
 }

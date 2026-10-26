@@ -6,7 +6,14 @@ import {
   placeLabels,
   SvgLayout,
   describeObject,
+  probabilityBar,
 } from '@visual-storytelling/core';
+
+export function drawingMetrics({ height, scale, compact }) {
+  const size = Math.max(compact ? 24 : 25, 16 / Math.max(scale, 0.1));
+  const hit = Math.max(48, 44 / Math.max(scale, 0.1));
+  return { size, hit, detailActionY: height - 2 * hit - 32 };
+}
 
 // Subject geometry uses the public pen, lettering, hit-target and label owners.
 export function drawing(view, { width, height, scale, compact }, input) {
@@ -18,8 +25,7 @@ export function drawing(view, { width, height, scale, compact }, input) {
     sequences = [];
   let sequence;
   const animate = (draw) => sequence?.draw.push(draw);
-  const size = Math.max(compact ? 24 : 25, 16 / Math.max(scale, 0.1));
-  const hit = Math.max(48, 44 / Math.max(scale, 0.1));
+  const { size, hit, detailActionY } = drawingMetrics({ height, scale, compact });
   const overflow = SvgLayout.overflow(view.layer);
   disposers.push(() => overflow.dispose());
   let id = 0;
@@ -72,6 +78,20 @@ export function drawing(view, { width, height, scale, compact }, input) {
     obstacles.push({ x, y, width: w, height: h });
     return g;
   };
+  const probability = (name, value, x, y, w, h, meaning) => {
+    const g = group(`${name}-group`);
+    const bar = probabilityBar({ ...view, layer: g.content }, name, value, {
+      x,
+      y,
+      width: w,
+      height: h,
+      size: compact ? size : Math.max(size, 30),
+      meaning,
+    });
+    disposers.push(bar.dispose);
+    obstacles.push({ x, y, width: w, height: h });
+    return bar;
+  };
   const buttonDimensions = (bounds, w = 0, h = hit) => ({
     width: Math.max(w, hit, Math.ceil(bounds.width + 12)),
     height: Math.max(h, hit, Math.ceil(bounds.height + 12)),
@@ -91,7 +111,7 @@ export function drawing(view, { width, height, scale, compact }, input) {
     y,
     w,
     onPress,
-    { pressed, pigment = 'ink', height: h = hit, outline = true, meaning } = {},
+    { pressed, pigment = 'ink', height: h = hit, outline = true, meaning, objectId = name } = {},
   ) => {
     const g = group(name, pigment);
     const ink = lettering(g.content, label, { size, minSize: size });
@@ -117,8 +137,8 @@ export function drawing(view, { width, height, scale, compact }, input) {
     const b = svgButton(g.content, { x, y, width: w, height: h, label, pressed, onPress });
     b.element.dataset.action = name;
     if (meaning) {
-      b.element.dataset.object = name;
-      disposers.push(describeObject(b.element, { label, ...meaning }));
+      b.element.dataset.object = objectId;
+      disposers.push(describeObject(b.element, { label, ...meaning, interactive: false }));
     }
     obstacles.push({ x, y, width: w, height: h });
     disposers.push(() => b.dispose());
@@ -179,20 +199,21 @@ export function drawing(view, { width, height, scale, compact }, input) {
     compact,
     size,
     hit,
-    detailActionY: height - 2 * hit - 32,
+    detailActionY,
     text,
     note,
     line,
     box,
+    probability,
     group,
     button,
     buttonSize,
     annotation,
     explain,
     settle,
-    sequence(name, from, to, build) {
+    sequence(name, build) {
       const previous = sequence;
-      sequence = { name, from, to, draw: [] };
+      sequence = { name, draw: [] };
       sequences.push(sequence);
       try {
         build();
@@ -200,14 +221,9 @@ export function drawing(view, { width, height, scale, compact }, input) {
         sequence = previous;
       }
     },
-    render(frame, mode) {
-      for (const { from, to, draw } of sequences) {
-        const progress =
-          mode === 'explore'
-            ? 1
-            : frame.reduced
-              ? Number(frame.time >= from)
-              : Math.max(0, Math.min(1, (frame.time - from) / (to - from)));
+    render(steps, mode) {
+      for (const { name, draw } of sequences) {
+        const progress = mode === 'explore' || !steps ? 1 : (steps[name] ?? 0);
         draw.forEach((reveal) => reveal(progress));
       }
     },

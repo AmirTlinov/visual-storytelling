@@ -21,3 +21,11 @@ export type { FusionTextOptions } from './fusion/text.js';
 
 export * from './marks.js';
 export { SketchMotion } from './motion.js';
+export {
+  notebookDrawing,
+  notebookDrawingMetrics,
+  type NotebookDrawing,
+  type NotebookViewport,
+  type NotebookButtonOptions,
+  type NotebookVectorOptions,
+} from './notebook.js';

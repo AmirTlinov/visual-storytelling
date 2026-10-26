@@ -1,0 +1,95 @@
+{
+  "version": 2,
+  "title": "Что остаётся в сечении куба?",
+  "resources": [
+    {
+      "id": "cube-geometry",
+      "kind": "model",
+      "title": "Куб и параллельная грань плоскость",
+      "description": "Точный куб[-1,1]³ пересекается плоскостьюz=constant.",
+      "limits": [
+        "Плоскость параллельна грани; произвольные наклонные сечения здесь не моделируются.",
+        "Единица длины условная; внутри куба площадь сечения равна4 квадратным единицам."
+      ]
+    }
+  ],
+  "models": [
+    {
+      "id": "cube",
+      "module": "cube-section",
+      "inputs": {
+        "offset": 0
+      },
+      "resources": ["cube-geometry"]
+    }
+  ],
+  "views": [
+    {
+      "id": "cut-view",
+      "kind": "cube-cut",
+      "model": "cube"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "whole",
+      "title": "Введём плоскость",
+      "beats": [
+        {
+          "id": "observe",
+          "seconds": 2,
+          "text": "Проведём плоскость через куб со стороной 2."
+        },
+        {
+          "id": "approach",
+          "seconds": 3,
+          "operation": {
+            "model": "cube",
+            "name": "approach"
+          },
+          "text": "Она параллельна этой грани."
+        },
+        {
+          "id": "finish",
+          "seconds": 1,
+          "operation": {
+            "model": "cube",
+            "name": "finish"
+          }
+        }
+      ]
+    },
+    {
+      "id": "detail",
+      "title": "Рассмотрим сечение",
+      "beats": [
+        {
+          "id": "closer",
+          "seconds": 4,
+          "text": "Приблизимся к общим точкам плоскости и куба."
+        },
+        {
+          "id": "observe",
+          "seconds": 3,
+          "text": "Получился квадрат: его сторона тоже равна 2."
+        }
+      ]
+    },
+    {
+      "id": "return",
+      "title": "Вернёмся к кубу",
+      "beats": [
+        {
+          "id": "context",
+          "seconds": 5,
+          "text": "Это сечение всё ещё находится внутри того же куба."
+        },
+        {
+          "id": "try",
+          "seconds": 3,
+          "text": "Что изменится, если сдвинуть плоскость?"
+        }
+      ]
+    }
+  ]
+}

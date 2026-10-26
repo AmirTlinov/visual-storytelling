@@ -44,6 +44,7 @@ export interface SceneInspection {
   duration: number;
   playing: boolean;
   muted?: boolean;
+  speech?: import('./story/speech-gate.js').SpeechAudibility;
   rate?: number;
   selected?: readonly string[];
   objects?: ReturnType<NonNullable<SceneHandle['objects']>>;
@@ -80,18 +81,23 @@ export interface SceneAccessOwner {
     position: { time: number; mode: 'story' | 'explore' },
   ): void | Promise<void>;
   assertLive(): void;
+  assertInteractive?(): void;
 }
 export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
-  const inspect = ({ presentation = true }: { presentation?: boolean } = {}): SceneInspection => {
+  const inspect = ({
+    presentation = true,
+    objects: includeObjects = true,
+  }: { presentation?: boolean; objects?: boolean } = {}): SceneInspection => {
     owner.assertLive();
-    const objects = handle.objects?.(),
+    const objects = includeObjects ? handle.objects?.() : undefined,
       review = handle.review();
     return {
       restoreNotices: handle.restoreNotices,
       time: handle.currentTime ?? 0,
       duration: handle.duration ?? 0,
-      playing: owner.playing?.() ?? false,
+      playing: handle.playing ?? owner.playing?.() ?? false,
       muted: handle.muted,
+      speech: handle.speech,
       rate: handle.rate,
       selected: handle.selected,
       objects,
@@ -118,7 +124,7 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
         ...(handle.setTheme ? ['theme'] : []),
         ...(handle.mute ? ['mute'] : []),
         ...(handle.setRate ? ['rate'] : []),
-        ...(handle.select && objects?.length ? ['select'] : []),
+        ...(handle.select && (includeObjects ? objects?.length : handle.objects) ? ['select'] : []),
         ...(['undoExperiment', 'redoExperiment'] as const).filter(
           (key) => typeof handle[key] === 'function',
         ),
@@ -328,6 +334,7 @@ export function sceneAccess(handle: SceneHandle, owner: SceneAccessOwner) {
       for (const [index, c] of commands.entries()) {
         try {
           owner.assertLive();
+          if (c.type !== 'pause') owner.assertInteractive?.();
           signal?.throwIfAborted();
           validate(c);
           switch (c.type) {

@@ -35,7 +35,7 @@ test(
       const call = async (name, arguments_ = {}) => {
         const result = await host.client.callTool({
           name,
-          arguments: { sessionId, ...arguments_ },
+          arguments: name === 'story_inspect' ? { sessionId, ...arguments_ } : arguments_,
         });
         assert.equal(result.isError, undefined, result.structuredContent?.error?.message);
         return result.structuredContent;
@@ -44,8 +44,7 @@ test(
         const state = await call('story_inspect');
         return call('story_control', {
           requestId: randomUUID(),
-          buildRevision: state.buildRevision,
-          stateRevision: state.stateRevision,
+          context: state.context,
           commands,
         });
       };

@@ -8,8 +8,11 @@ import { fileURLToPath } from 'node:url';
 import { writeBuildInfo } from '../tools/build-info.mjs';
 import { pinSceneProject } from '../tools/scene-project.mjs';
 import { ProjectStore } from '../plugin/projects.mjs';
+import { commitStoreEdit } from './plugin/store-edit.mjs';
 import { JobRunner } from '../plugin/jobs.mjs';
 import { workflows } from '../plugin/workflows.mjs';
+import { projectAuthoring } from '../plugin/runtime/project-authoring.mjs';
+import { SessionDirectory } from '../plugin/session-directory.mjs';
 
 // Uses the current built package, because the failure is an actual removed public export.
 test(
@@ -102,6 +105,14 @@ test(
     );
     await runner.start();
     t.after(() => runner.close());
+    const authoring = projectAuthoring({
+      data,
+      directory: fileURLToPath(new URL('../plugin/dist', import.meta.url)),
+      projects,
+      jobs: runner,
+      sessions: new SessionDirectory(),
+      watched: { open() {} },
+    });
     let migration = await runner.enqueue(
       'migrate',
       {
@@ -134,7 +145,7 @@ test(
     // A later user edit cannot be overwritten by the completion of a migration job.
     await writeFile(join(projectPath, 'scene.js'), 'user-edited-during-preparation');
     await assert.rejects(
-      projects.edit({
+      commitStoreEdit(projects, {
         projectId: project.id,
         sourceRevision: project.sourceRevision,
         requestId: randomUUID(),
@@ -149,18 +160,18 @@ test(
     assert.deepEqual(await readFile(join(projectPath, 'package.json')), original[1]);
     await writeFile(join(projectPath, 'scene.js'), oldSource);
 
-    const published = await projects.edit({
-      projectId: project.id,
-      sourceRevision: project.sourceRevision,
-      requestId: randomUUID(),
-      ...result.migration,
-    });
+    const published = (await authoring.acceptMigration(migration, result)).project;
+    assert.equal(
+      published.sourceRevision,
+      result.sourceRevision,
+      'the verified candidate includes the same archived pins as the committed source',
+    );
     assert.equal(await readFile(join(projectPath, 'scene.js'), 'utf8'), newSource);
     await assert.rejects(access(join(projectPath, 'obsolete.js')), { code: 'ENOENT' });
     assert.notDeepEqual(await readFile(join(projectPath, 'package.json')), original[1]);
     assert.deepEqual(await readFile(join(projectPath, oldArchive)), oldBytes);
 
-    await projects.edit({
+    await commitStoreEdit(projects, {
       projectId: project.id,
       sourceRevision: published.sourceRevision,
       requestId: randomUUID(),

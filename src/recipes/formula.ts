@@ -1,11 +1,15 @@
 import { object } from '../ink/object.js';
 import { lettering } from '../ink/lettering.js';
 import type { Pigment } from '../ink/palette.js';
+import type { ObjectMeaning } from '../scene-objects.js';
 
 export interface Term<K extends string> {
   id: K;
   text: string | number;
   pigment?: Pigment;
+  /** A formula may represent the same measured object as the drawing. */
+  objectId?: string;
+  meaning?: ObjectMeaning;
 }
 export function formula<K extends string>(
   parent: SVGElement,
@@ -18,7 +22,8 @@ export function formula<K extends string>(
   const entries = terms.map((term) => {
     if (ids.has(term.id)) throw new Error(`Duplicate formula term: ${term.id}`);
     ids.add(term.id);
-    const part = object(mark.content, `${id}:${term.id}`, term.pigment);
+    const part = object(mark.content, term.objectId ?? `${id}:${term.id}`, term.pigment);
+    if (term.meaning) part.describe(term.meaning);
     const label = lettering(part.content, term.text, { size, anchor: 'start', tabular: true });
     return { term, part, label };
   });
@@ -55,7 +60,10 @@ export function formula<K extends string>(
       );
     },
     dispose() {
-      for (const entry of entries) entry.label.dispose();
+      for (const entry of entries) {
+        entry.label.dispose();
+        entry.part.dispose();
+      }
       mark.dispose();
     },
   };

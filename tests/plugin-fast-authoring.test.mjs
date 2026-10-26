@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { pluginHost } from './plugin/host.mjs';
 
 test(
-  'create exposes editable files and pinned batch help before completion, then edits coalesce to the final revision',
+  'create accepts a verified baseline with pinned batch help, then candidate edits coalesce',
   { timeout: 120000 },
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'story-fast-authoring-'));
@@ -69,14 +69,12 @@ test(
       assert.ok(help.examples[0].editing.some(({ file }) => file === 'scene.js'));
       assert.match(help.text, /PlotIntervalOptions/);
       const first = await call('story_edit', {
-        projectId: created.project.id,
-        sourceRevision: created.project.sourceRevision,
+        context: created.project.context,
         requestId: randomUUID(),
         changes: [{ path: 'note.txt', content: 'first' }],
       });
       const second = await call('story_edit', {
-        projectId: created.project.id,
-        sourceRevision: first.project.sourceRevision,
+        context: first.project.context,
         requestId: randomUUID(),
         changes: [{ path: 'note.txt', content: 'accepted' }],
       });
@@ -93,7 +91,11 @@ test(
         if (!['queued', 'running', 'cancelling'].includes(job.status)) break;
       }
       assert.equal(job.status, 'succeeded', JSON.stringify(job));
-      assert.equal(job.result.sourceRevision, second.project.sourceRevision);
+      assert.equal(job.result.sourceRevision, job.result.project.sourceRevision);
+      assert.equal(
+        (await call('story_inspect', { projectId: created.project.id })).sourceRevision,
+        job.result.sourceRevision,
+      );
       assert.equal(
         (await call('story_inspect', { projectId: created.project.id, file: 'note.txt' })).content,
         'accepted',

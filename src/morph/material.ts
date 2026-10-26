@@ -1,7 +1,8 @@
 import { volumeField, type VolumePoint } from '../viewport/morph/field.js';
 import { dampedSpring } from '../physics/spring.js';
 import { physicalMaterials } from '../physics/materials.js';
-import { bodySize, type MorphBody, type MorphFrame } from './objects.js';
+import type { MorphBody, MorphFrame } from './objects.js';
+import { bodySize } from './body-geometry.js';
 
 // One material law for every authored shape. Geometry supplies contact, strain
 // and release; no operation-specific pulse or animation phase drives the spring.

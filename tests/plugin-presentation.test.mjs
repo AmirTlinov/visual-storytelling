@@ -10,6 +10,8 @@ test('projection remains stable across renderer and tool boundaries without losi
     duration: 8,
     playing: false,
     mode: 'explore',
+    muted: false,
+    speech: { applicable: false, audible: false, unit: 'voice.lesson.number' },
     objects: Array.from({ length: 23 }, (_, id) => ({
       id: 'object-' + id,
       label: 'Object ' + id,
@@ -25,6 +27,8 @@ test('projection remains stable across renderer and tool boundaries without losi
     presentation: { bounds: [0, 0, 100, 100] },
   };
   const compact = presentSession({ state });
+  assert.deepEqual(compact.state.speech, state.speech);
+  assert.equal(compact.state.muted, false);
   assert.equal(compact.state.objects.length, 20);
   assert.equal(compact.state.moreObjects, 3);
   assert.equal(compact.state.objects[0].value, undefined);
@@ -63,10 +67,18 @@ test('failed preparation retains a separately confirmed cue across projection bo
     },
   });
   assert.equal(report.state.cue.id, 'second', 'inspection retains accepted input detail');
-  assert.deepEqual(report.state.presentedCue, cues[0], 'observation describes the retained picture');
+  assert.deepEqual(
+    report.state.presentedCue,
+    cues[0],
+    'observation describes the retained picture',
+  );
   assert.deepEqual(wire(presentSession(wire(report))), wire(report));
   const brokenRender = presentSession({
     state: { time: 6, duration: 10, review: { cues }, rendering: { phase: 'failed' } },
   });
-  assert.equal(brokenRender.state.presentedCue, undefined, 'an unconfirmed frame has no presented cue');
+  assert.equal(
+    brokenRender.state.presentedCue,
+    undefined,
+    'an unconfirmed frame has no presented cue',
+  );
 });

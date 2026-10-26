@@ -25,13 +25,23 @@ export function svgInteractionContour(target: SVGGraphicsElement, id: string) {
     path.setAttribute('stroke-linejoin', 'round');
   }
   element.append(selection, focus);
-  target.after(element);
+  const root = target instanceof SVGSVGElement;
+  if (root) target.append(element);
+  else target.after(element);
   const attribute = (node: Element, name: string, value: string) => {
     if (node.getAttribute(name) !== value) node.setAttribute(name, value);
   };
   return {
     element,
-    update(bounds: Bounds = target.getBBox()) {
+    update(bounds?: Bounds) {
+      if (!bounds) {
+        if (root) element.remove();
+        try {
+          bounds = target.getBBox();
+        } finally {
+          if (root) target.append(element);
+        }
+      }
       const inset = Math.min(2.5, bounds.width / 4, bounds.height / 4),
         x = bounds.x + inset,
         y = bounds.y + inset,
@@ -75,6 +85,9 @@ export function svgInteractionContour(target: SVGGraphicsElement, id: string) {
     },
     selected(active: boolean) {
       element.toggleAttribute('data-contour-selected', active);
+    },
+    emphasize(active: boolean) {
+      element.toggleAttribute('data-contour-emphasized', active);
     },
     dispose() {
       element.remove();

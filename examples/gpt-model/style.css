@@ -1,13 +1,55 @@
-#gpt-model .ve-stage {
+.ve-scene .ve-stage {
   min-height: 0;
 }
-#gpt-model .gpt-computation {
+.ve-scene .gpt-computation {
   position: absolute;
   z-index: 1;
 }
-#gpt-model .gpt-computation[hidden] {
+.ve-scene .gpt-computation[hidden] {
   display: none;
 }
-#gpt-model .ve-svg-button {
+.ve-scene .ve-svg-button {
   cursor: pointer;
+}
+/* Subject layout; fields, buttons and focus inherit the notebook controls. */
+.ve-scene .gpt-prompt-editor {
+  position: absolute;
+  z-index: 2;
+  overflow: auto;
+  box-sizing: border-box;
+  padding: calc(14 * var(--ve-control-unit));
+  background: var(--ve-surface);
+  color: var(--ve-ink);
+  font: calc(18 * var(--ve-control-unit)) / 1.25 var(--ve-font);
+}
+.ve-scene .gpt-prompt-editor::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--ve-pencil);
+  mask: var(--ve-selection-outline) center / 100% 100% no-repeat;
+}
+.ve-scene .gpt-prompt-editor[hidden] {
+  display: none;
+}
+.ve-scene .gpt-prompt-editor .ve-control input[type='text'] {
+  padding-inline: calc(14 * var(--ve-control-unit));
+}
+.ve-scene .gpt-prompt-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: calc(6 * var(--ve-control-unit));
+  margin-top: calc(8 * var(--ve-control-unit));
+}
+.ve-scene .gpt-prompt-actions button {
+  padding: calc(4 * var(--ve-control-unit)) calc(8 * var(--ve-control-unit));
+  font: inherit;
+  white-space: nowrap;
+}
+.ve-scene .gpt-prompt-editor p {
+  font-size: calc(15 * var(--ve-control-unit));
+  margin: calc(4 * var(--ve-control-unit)) 0 0;
+  color: var(--ve-red);
+  overflow-wrap: anywhere;
 }

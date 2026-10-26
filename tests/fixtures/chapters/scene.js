@@ -15,10 +15,16 @@ window.galleryReady = (async () => {
     title: 'Путь энергии',
     text: 'Источник, цепь и лампа.',
     controls: ['closed'],
-    valuesAt: (frame) => ({ closed: frame.beat?.id !== 'explain' }),
     create: circuitDiagram,
   };
-  const parameters = [{ key: 'closed', label: 'Цепь замкнута', type: 'toggle', value: true }];
+  const parameters = [
+    {
+      key: 'closed',
+      label: 'Цепь замкнута',
+      type: 'toggle',
+      value: document.models[0].inputs.closed,
+    },
+  ];
   const skin = 'tesla-workshop',
     other = 'mira-scholar';
   const room = teachingRoom({
@@ -51,7 +57,6 @@ window.galleryReady = (async () => {
           ...chapter,
           surfaces: { board: { ...drawing, size: { width: 640, height: 250 } } },
           controls: drawing.controls,
-          valuesAt: drawing.valuesAt,
         }),
       experiment: (chapter) => inkChapter({ ...drawing, ...chapter }),
     },

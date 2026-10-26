@@ -39,7 +39,10 @@ window.galleryReady = (async () => {
   const story = shell.attachStory({
     audio: root.querySelector('[data-audio]'),
     script: timing,
-    stateAt: (frame) => ({ x: 3 * frame.progress('move_x'), y: 2 * frame.progress('move_y') }),
+    stateAt: (frame) => ({
+      x: 3 * frame.progress('horizontal.move_x'),
+      y: 2 * frame.progress('vertical.move_y'),
+    }),
     render(values) {
       pose = values;
       const { width, height, scale } = shell.layout;

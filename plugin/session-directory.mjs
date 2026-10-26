@@ -1,4 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto';
+import { attachSession } from './session-attachment.mjs';
 import { failure } from './errors.mjs';
 import { presentSession } from './mcp/presentation.mjs';
 import { viewMetrics } from './mcp/schema.mjs';
@@ -21,7 +22,7 @@ const commandExpired =
   'The view did not confirm this command before its deadline. Inspect before retrying.';
 
 /** Render payloads live in immutable build files, not in session or request history. */
-export function buildReference({ html: _html, ...build }) {
+export function buildReference({ html: _html, presentation: _presentation, ...build }) {
   return build;
 }
 
@@ -112,8 +113,10 @@ export class SessionDirectory {
       buildRevision: session.build.revision,
       projectId: session.build.projectId,
       sourceRevision: session.build.sourceRevision,
+      authoredInputs: session.build.authoredInputs,
       shownSourceRevision: session.shownSourceRevision,
       title: session.build.title,
+      narration: session.build.narration,
       returnAvailable: Boolean(session.returnTo?.length),
       generation: session.generation,
       stateRevision: session.stateRevision,
@@ -139,73 +142,7 @@ export class SessionDirectory {
   }
 
   attach(id, renderer) {
-    const s = this.get(id);
-    // Each takeover observes the owner selected by its predecessor, including failed attempts.
-    const attempt = (s.attaching ?? Promise.resolve())
-      .catch(() => {})
-      .then(async () => {
-        this.get(id);
-        if (s.replacement)
-          throw new Error('The scene is applying an update. Retry after it finishes.');
-        let reason = s.checkpoint ? 'reconnect' : 'initial';
-        if (s.renderer === renderer) reason = 'current';
-        else {
-          s.handoff = true;
-          try {
-            if (s.renderer) {
-              reason = 'handoff';
-              if (this.expired(s)) reason = 'lease-expired';
-              else {
-                try {
-                  // A live owner must confirm its pause before another renderer takes over.
-                  await this.request(id, { op: 'suspend' });
-                } catch (error) {
-                  this.get(id);
-                  if (s.renderer && !this.expired(s)) {
-                    await this.resume(s);
-                    throw error;
-                  }
-                  reason = s.renderer ? 'lease-expired' : 'reconnect';
-                }
-              }
-            }
-            this.get(id);
-            this.rejectPending(s, 'Renderer changed. Inspect before issuing another command.');
-            s.generation++;
-            s.appliedAuthor = undefined;
-            s.renderer = renderer;
-            this.pruneAttempts(s);
-            s.ready = false;
-            s.lastPollAt = Date.now();
-            s.wake?.();
-          } finally {
-            s.handoff = false;
-          }
-        }
-        return {
-          ...this.describe(s),
-          checkpoint: s.checkpoint,
-          ...(s.build.live && { authoredDocument: s.build.live.document }),
-          authoring: s.appliedAuthor && {
-            requestId: s.appliedAuthor.requestId,
-            commandId: s.appliedAuthor.id,
-            buildRevision: s.appliedAuthor.build.revision,
-            sourceRevision: s.appliedAuthor.build.sourceRevision,
-          },
-          // Expiry recovers the last observation, not proof of the former renderer's final frame.
-          restoration: {
-            reason,
-            observedAt: s.observedAt,
-            checkpoint: s.checkpoint ? 'last-confirmed' : 'none',
-          },
-        };
-      });
-    s.attaching = attempt;
-    const finished = () => {
-      if (s.attaching === attempt) s.attaching = null;
-    };
-    attempt.then(finished, finished);
-    return attempt;
+    return attachSession(this, id, renderer);
   }
 
   validate(s, renderer, generation) {
@@ -399,6 +336,7 @@ export class SessionDirectory {
         }
         s.state = report.state;
         if (report.checkpoint) s.checkpoint = report.checkpoint;
+        if (report.checkpoint && report.renderStatus === 'rendered') delete s.build.authoredInputs;
         s.stateRevision = report.stateRevision;
         s.renderStatus = report.renderStatus ?? 'rendered';
         if (s.renderStatus === 'rendered') s.shownSourceRevision = s.build.sourceRevision;
@@ -455,6 +393,9 @@ export class SessionDirectory {
             ? s.receipts.get(pending.requestId).observed
             : {
                 ...this.describe(s),
+                ...(pending.authoringSourceRevision !== undefined && {
+                  authoringSourceRevision: pending.authoringSourceRevision,
+                }),
                 result: ack.result,
                 acknowledgement: s.renderStatus,
               },
@@ -490,7 +431,7 @@ export class SessionDirectory {
       request.commands?.length &&
       request.commands.every((c) => c.type === 'pause');
     if (
-      ['control', 'author', 'author-validate'].includes(request.op) &&
+      ['control', 'author', 'author-validate', 'author-prepare'].includes(request.op) &&
       !pauseOnly &&
       (!request.buildRevision || request.stateRevision === undefined)
     )
@@ -514,6 +455,21 @@ export class SessionDirectory {
       if (previous.observed) return Promise.resolve(previous.observed);
       if (!authoredBuild || !previous.rejected) return previous.promise;
     }
+    if (
+      (request.expectedInstance !== undefined && request.expectedInstance !== this.instance) ||
+      (request.expectedGeneration !== undefined && request.expectedGeneration !== s.generation)
+    )
+      return Promise.reject(
+        failure(
+          'scene_context_conflict',
+          'The scene renderer changed. Read its observed context before a new command.',
+          {
+            field: 'context',
+            current: this.describe(s),
+            action: 'story_inspect',
+          },
+        ),
+      );
     if (!s.renderer || this.expired(s))
       return Promise.reject(
         failure('view_closed', 'Open the scene before controlling it.', { action: 'story_open' }),
@@ -577,6 +533,7 @@ export class SessionDirectory {
         requestId: key,
         buildRevision: request.buildRevision,
         stateRevision: request.stateRevision,
+        authoringSourceRevision: request.authoringSourceRevision,
       });
       s.queue.push({
         ...request,
@@ -605,7 +562,13 @@ export class SessionDirectory {
   expirePending(s) {
     const now = Date.now();
     for (const [id, pending] of s.pending) {
-      if (pending.expiresAt > now) continue;
+      if (pending.expiresAt > now) {
+        // Timer wakeup and wall time can differ by a millisecond. Keep the same
+        // deadline live; an early callback must not strand commands or takeover.
+        clearTimeout(pending.timer);
+        pending.timer = setTimeout(() => this.expirePending(s), pending.expiresAt - now);
+        continue;
+      }
       clearTimeout(pending.timer);
       s.pending.delete(id);
       s.queue = s.queue.filter((command) => command.id !== id);

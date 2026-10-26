@@ -143,3 +143,27 @@ window.pluginTest = {
   },
 };
 await mount();
+if (document.body.dataset.webTools === 'true') {
+  if (!document.modelContext) document.body.dataset.webMcp = 'unavailable';
+  else {
+    const publicTools = await fetch('/tools', { headers: { 'x-test-token': token } }).then((r) =>
+      r.json(),
+    );
+    for (const tool of publicTools)
+      await document.modelContext.registerTool({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        async execute(args) {
+          if (tool.name === 'story_create') await bridge.sendToolInputPartial({ arguments: args });
+          const result = await call(tool.name, args);
+          if (tool.name === 'story_create' || tool.name === 'story_open') {
+            opened = result;
+            await bridge.sendToolResult(result);
+          }
+          return result;
+        },
+      });
+    document.body.dataset.webMcp = 'ready';
+  }
+}

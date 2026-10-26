@@ -1,3 +1,5 @@
+import { softmax, rankProbabilities, normalizeLogits } from '@visual-storytelling/core';
+export { softmax };
 import checkpoint from './checkpoint.json' with { type: 'json' };
 
 function freeze(value) {
@@ -107,21 +109,6 @@ export function linear(input, weight, bias = Array(weight[0]?.length ?? 0).fill(
   );
 }
 
-/** Stable softmax. Masked entries use -Infinity internally and receive exactly zero. */
-export function softmax(values) {
-  if (
-    !Array.isArray(values) ||
-    !values.length ||
-    values.some((value) => !finite(value) && value !== -Infinity)
-  )
-    throw new Error('Softmax needs finite scores or a causal mask.');
-  const maximum = Math.max(...values);
-  if (!Number.isFinite(maximum)) throw new Error('Softmax needs at least one unmasked score.');
-  const exponentials = values.map((value) => (value === -Infinity ? 0 : Math.exp(value - maximum)));
-  const total = sum(exponentials);
-  return exponentials.map((value) => value / total);
-}
-
 /** GPT-2's tanh approximation, shared exactly with the disclosed training script. */
 export function gelu(value) {
   if (!finite(value)) throw new Error('GELU needs a finite input.');
@@ -198,9 +185,10 @@ export function forward(input, { ablateHead } = {}) {
       const maskedScores = scaledScores.map((row, i) =>
         row.map((value, j) => (j <= i ? value : null)),
       );
-      const probabilities = maskedScores.map((row) =>
-        softmax(row.map((value) => (value === null ? -Infinity : value))),
+      const normalization = maskedScores.map((row) =>
+        normalizeLogits(row.map((value) => (value === null ? -Infinity : value))),
       );
+      const probabilities = normalization.map((trace) => trace.probabilities);
       const weightedValues = probabilities.map((row) =>
         row.map((probability, j) => values[j].map((value) => probability * value)),
       );
@@ -217,6 +205,7 @@ export function forward(input, { ablateHead } = {}) {
         scores,
         scaledScores,
         maskedScores,
+        normalization,
         probabilities,
         weightedValues,
         output,
@@ -245,7 +234,8 @@ export function forward(input, { ablateHead } = {}) {
     MODEL.weights.tokenEmbedding.map((row) => row[channel]),
   );
   const logits = linear(finalNorm.output, unembedding);
-  const probabilities = logits.map(softmax);
+  const normalization = logits.map((row) => normalizeLogits(row));
+  const probabilities = normalization.map((trace) => trace.probabilities);
   const ranking = rankingAt({ logits, probabilities }, ids.length - 1);
   return freeze({
     tokens,
@@ -254,6 +244,7 @@ export function forward(input, { ablateHead } = {}) {
     blocks,
     finalNorm,
     logits,
+    normalization,
     probabilities,
     next: { ...ranking[0] },
     ranking,
@@ -266,12 +257,12 @@ export function forward(input, { ablateHead } = {}) {
 export function rankingAt(trace, token = trace.logits.length - 1) {
   if (!Number.isSafeInteger(token) || token < 0 || token >= trace.logits.length)
     throw new Error('Выберите существующую позицию токена.');
-  return VOCAB.map((word, id) => ({
+  return rankProbabilities(trace.probabilities[token]).map((id) => ({
     id,
-    token: word,
+    token: VOCAB[id],
     logit: trace.logits[token][id],
     probability: trace.probabilities[token][id],
-  })).sort((a, b) => b.probability - a.probability || a.id - b.id);
+  }));
 }
 
 /** Greedy decoding is explicit; it is not sampling and does not imply certainty. */

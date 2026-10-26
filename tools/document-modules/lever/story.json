@@ -1,0 +1,4 @@
+{
+  "recipe": "lever",
+  "inputs": { "leftForce": 4, "leftArm": 30, "rightForce": 3, "rightArm": 20 }
+}

@@ -4,7 +4,7 @@ import { lettering } from '../ink/lettering.js';
 import { paragraph } from '../ink/paragraph.js';
 import { cellLayout, validateCellColumns } from './layout.js';
 import { contentViewport } from '../layout/content.js';
-import { mathPlan } from './math.js';
+import { mathPlan } from './plan.js';
 import { mathNumber } from './numbers.js';
 import { morphBody2D } from './body-2d.js';
 import { mathBodies } from './math-bodies.js';

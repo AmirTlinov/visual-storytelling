@@ -17,9 +17,15 @@ const source = await build({
 });
 
 const { documentNarration, documentScript, documentChapter, authoredChapter } = await import(
-  'data:text/javascript;base64,' + Buffer.from(source.outputFiles[0].text).toString('base64')
+  'data:text/javascript;base64,' +
+    Buffer.from(
+      source.outputFiles[0].text + '\n//# sourceURL=story-document-under-test.mjs',
+    ).toString('base64')
 );
 const document = {
+  version: 2,
+  models: [],
+  views: [],
   title: 'Путь света',
   chapters: [
     {
@@ -29,6 +35,7 @@ const document = {
         {
           id: 'switch',
           say: 'Разомкнём цепь.',
+          speech: { id: 'room', when: { basis: 'authored', models: [] } },
           text: 'Лампа гаснет.',
           perform: [{ action: 'press', actor: 'hero', target: 'switch' }],
         },
@@ -37,7 +44,14 @@ const document = {
     {
       id: 'paper',
       title: 'На странице',
-      beats: [{ id: 'try', say: 'Проверьте сами.', text: 'Переключатель доступен.' }],
+      beats: [
+        {
+          id: 'try',
+          say: 'Проверьте сами.',
+          text: 'Переключатель доступен.',
+          speech: { id: 'paper', when: { basis: 'authored', models: [] } },
+        },
+      ],
     },
   ],
 };
@@ -55,7 +69,7 @@ test('speech projection follows the scene consumer inherited from its workspace'
     );
     await writeFile(
       join(consumer, 'dist/story/document.js'),
-      'export const documentNarration = document => ({ owner: "scene-consumer-7", title: document.title, intro: .75 });',
+      'export const validateStoryDocument = document => document; export const documentNarration = document => ({ owner: "scene-consumer-7", title: document.title, intro: .75 });',
     );
     await writeFile(join(scene, 'story.json'), JSON.stringify(document));
     projection = await narrationSource(scene);
@@ -87,7 +101,10 @@ test('one authored document feeds action IDs, speech and exact aligned chapter b
     ],
   };
   const script = documentScript(document, aligned);
-  assert.deepEqual(script.cues['paper.try'], aligned.cues['paper.try']);
+  assert.deepEqual(script.cues['paper.try'], {
+    ...aligned.cues['paper.try'],
+    action: document.chapters[1].beats[0].text,
+  });
   assert.equal(script.cues.paper.start, 10);
   assert.throws(
     () =>
@@ -100,7 +117,7 @@ test('one authored document feeds action IDs, speech and exact aligned chapter b
   assert.throws(
     () =>
       documentNarration({ ...document, chapters: [document.chapters[0], document.chapters[0]] }),
-    /Invalid chapter/,
+    /duplicate ID/,
   );
   const owned = { ...document, narration: { voice: { seed: 1 }, music: { path: 'a.wav' } } };
   const projection = documentNarration(owned);
@@ -110,8 +127,30 @@ test('one authored document feeds action IDs, speech and exact aligned chapter b
   assert.equal(owned.narration.music.path, 'a.wav');
 });
 
+test('control tags and punctuation alone cannot become a spoken thought', () => {
+  for (const field of ['say', 'text']) {
+    for (const wording of ['<|emotion:excited|>', '<|emotion:calm|> <|speed:slow|>', '… — !']) {
+      const value = structuredClone(document);
+      value.chapters[0].beats[0] = { id: 'switch', [field]: wording };
+      assert.throws(() => documentNarration(value), /provide spoken words/);
+    }
+  }
+  const valid = structuredClone(document);
+  valid.chapters[0].beats[0].say = '<|emotion:calm|> Лампа гаснет.';
+  assert.equal(documentNarration(valid).segments[0].text, valid.chapters[0].beats[0].say);
+  valid.chapters[0].beats[0] = { id: 'switch', text: '→', say: '', seconds: 2 };
+  assert.equal(
+    documentNarration(valid).segments.length,
+    1,
+    'explicit silence keeps the visible action',
+  );
+});
+
 test('local chapters start immediately while optional narration reserves the final action tail', () => {
   const quiet = {
+    version: 2,
+    models: [],
+    views: [],
     title: 'Проверка площади',
     chapters: [
       {
@@ -132,11 +171,17 @@ test('local chapters start immediately while optional narration reserves the fin
   const projection = documentNarration(quiet);
   assert.equal(projection.intro, 0);
   assert.equal(
-    projection.segments[0].pause_after,
+    projection.segments[1].pause_after,
     4.6,
     'text supplies optional spoken wording: reserve its four-second action and chapter pause',
   );
-  assert.equal(projection.segments[0].text, 'Запишите предположение. Удвоим ширину.');
+  assert.deepEqual(
+    projection.segments.map((unit) => [unit.id, unit.text]),
+    [
+      ['voice.area.predict', 'Запишите предположение.'],
+      ['voice.area.change', 'Удвоим ширину.'],
+    ],
+  );
   const chapter = documentChapter(quiet, 'area');
   assert.equal(chapter.seconds, 7);
   assert.equal(chapter.script.cues.predict.start, 0);
@@ -180,8 +225,35 @@ test('aligned chapter local time preserves spoken words and the final action tai
   assert.deepEqual(chapter.beats[0].perform, document.chapters[0].beats[0].perform);
 });
 
+test('a chapter preserves the accepted head and tail when projecting its recorded speech', () => {
+  const aligned = documentScript(document, {
+    duration: 13,
+    cues: { 'room.switch': { start: 4.4, end: 7 }, 'paper.try': { start: 10, end: 12 } },
+    segments: [
+      { id: 'room', start: 4.4, end: 7, audio_start: 4, audio_end: 7.4, text: 'Разомкнём цепь.' },
+      {
+        id: 'paper',
+        start: 10,
+        end: 12,
+        audio_start: 9.8,
+        audio_end: 12.2,
+        text: 'Проверьте сами.',
+      },
+    ],
+  });
+  assert.equal(aligned.cues.room.start, 4);
+  assert.equal(aligned.cues.room.end, 7.4);
+  const local = documentChapter(document, 'room', aligned).script;
+  assert.equal(local.segments[0].audio_start, 0);
+  assert.equal(local.segments[0].audio_end, local.duration);
+  assert.equal(local.segments[0].start, 4.4 - 4);
+});
+
 test('document action timing survives speech projection and uses existing time after its phrase', () => {
   const story = {
+    version: 2,
+    models: [],
+    views: [],
     title: 'Действие',
     chapters: [
       {
@@ -192,9 +264,16 @@ test('document action timing survives speech projection and uses existing time a
             id: 'start',
             text: 'Вычисляем',
             say: 'Начнём.',
+            speech: { id: 'lesson', when: { basis: 'authored', models: [] } },
             timing: { until: 'finish', delay: 0.2 },
           },
-          { id: 'finish', text: 'Завершаем', say: 'Закончим.', timing: { duration: 4 } },
+          {
+            id: 'finish',
+            text: 'Завершаем',
+            say: 'Закончим.',
+            timing: { duration: 4 },
+            speech: { id: 'lesson', when: { basis: 'authored', models: [] } },
+          },
         ],
       },
     ],
@@ -223,19 +302,7 @@ test('document action timing survives speech projection and uses existing time a
   assert.equal(script.segments, aligned.segments);
 
   story.chapters[0].beats[0].timing.duration = 2;
-  const malformed = documentNarration(story).segments[0].cues[0].timing;
-  assert.equal(malformed.duration, 2, 'projection preserves invalid JSON for the cue validator');
-  assert.throws(
-    () =>
-      documentScript(story, {
-        ...aligned,
-        cues: {
-          ...aligned.cues,
-          'lesson.start': { ...aligned.cues['lesson.start'], timing: malformed },
-        },
-      }),
-    /exactly one of duration or until/,
-  );
+  assert.throws(() => documentNarration(story), /choose duration or until/);
 });
 
 test('repeated thoughts bind to their own spoken words, including a quote inside an earlier thought', async () => {
@@ -247,12 +314,20 @@ test('repeated thoughts bind to their own spoken words, including a quote inside
     'Ток идет!',
   ];
   const spec = documentNarration({
+    version: 2,
+    models: [],
+    views: [],
     title: 'Повтор',
     chapters: [
       {
         id: 'room',
         title: 'Комната',
-        beats: sayings.map((say, index) => ({ id: `say${index}`, say, text: 'Видимое действие' })),
+        beats: sayings.map((say, index) => ({
+          id: `say${index}`,
+          say,
+          text: 'Видимое действие',
+          speech: { id: 'room', when: { basis: 'authored', models: [] } },
+        })),
       },
     ],
   });
@@ -287,9 +362,12 @@ test('repeated thoughts bind to their own spoken words, including a quote inside
   assert.throws(
     () =>
       documentNarration({
+        version: 2,
+        models: [],
+        views: [],
         title: 'Invalid',
         chapters: [{ id: 'room', title: 'Room', beats: [{ say: 'Речь.', text: 'Действие' }] }],
       }),
-    /unique ID/,
+    /stable ID/,
   );
 });

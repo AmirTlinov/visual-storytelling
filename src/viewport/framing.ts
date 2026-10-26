@@ -86,7 +86,7 @@ export function readableFrame(camera: T.PerspectiveCamera, options: ReadableFram
   let low = Math.max(
     (minimum.width * focal) / (right - left),
     (minimum.height * focal) / (bottom - top),
-    ...anchors.map((a) => a.z + 0.1),
+    ...anchors.map((a) => a.z + Math.min(minimum.width, minimum.height)),
   );
   let high = low;
   while (!intervals(high).fits) high *= 1.5;

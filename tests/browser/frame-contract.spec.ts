@@ -374,7 +374,7 @@ test('a long chapter title fits the standalone stage controls on a narrow surfac
     await openFixture(page, 'chapters');
     await page.evaluate(() => window.galleryReady);
     const chapter = page.locator('.ve-heading').getByRole('combobox', { name: 'Глава' });
-    await expect(chapter).toHaveText('Проследим цепь.');
+    await expect(chapter).toHaveText('Главы');
     const bounds = await chapter.boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(375);

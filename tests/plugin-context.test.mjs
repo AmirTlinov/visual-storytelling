@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { frameContext } from '../plugin/ui/frame-context.mjs';
 import { presentSession, toolResult } from '../plugin/mcp/presentation.mjs';
 
-const session = { sessionId: 'shown', buildRevision: 'build-1' };
+const session = { sessionId: 'shown', context: 'bound-context', stateRevision: 2 };
 const report = {
   stateRevision: 2,
   state: { time: 1, mode: 'explore', cue: { id: 'move', action: 'Move the object' } },
@@ -131,7 +131,8 @@ test('the complete context payload stays within 1500 characters while retaining 
   const owner = {
     sessionId: 's'.repeat(36),
     projectId: 'p'.repeat(36),
-    buildRevision: 'b'.repeat(64),
+    context: 'c'.repeat(700),
+    stateRevision: 18,
   };
   const current = {
     stateRevision: 18,
@@ -157,7 +158,7 @@ test('the complete context payload stays within 1500 characters while retaining 
   assert.ok(JSON.stringify(updates[0]).length <= 1500);
   const observation = updates[0].structuredContent.visualStory;
   assert.equal(observation.sessionId, owner.sessionId);
-  assert.equal(observation.buildRevision, owner.buildRevision);
+  assert.equal(observation.context, owner.context);
   assert.equal(observation.cue.id, current.state.cue.id);
   assert.equal(Object.keys(observation.parameters).length + observation.moreParameters, 8);
   context.update(owner, current);
@@ -187,7 +188,10 @@ test('context keeps the retained picture, time, condition and cue together after
       rendering: { phase: 'failed', requested: { time: 6 }, presented: { time: 0 } },
     },
   });
-  context.update(session, { ...retained, stateRevision: 3, renderStatus: 'failed' });
+  context.update(
+    { ...session, stateRevision: 3 },
+    { ...retained, stateRevision: 3, renderStatus: 'failed' },
+  );
   t.mock.timers.tick(120);
   await Promise.resolve();
   const observation = updates[0].structuredContent.visualStory;

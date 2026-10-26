@@ -2,17 +2,16 @@
 .ve-scene {
   --ve-selection-outline: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 48' preserveAspectRatio='none'%3E%3Cpath d='M12 4 Q86 2.5 190 4.5 Q196 4.5 196 11 Q194.8 24 195.5 38 Q195.5 44 189 43.5 Q100 45 10 43 Q4 43 4.5 37 Q3 23 4.5 10 Q4.5 4 12 4 L21 3.7' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E");
 }
-.ve-scene button:not(:where(.ve-frame *, [data-object])):focus-visible,
+.ve-scene button:not(:where(.ve-frame :not(.ve-notebook-controls *), [data-object])):focus-visible,
 .ve-scene .ve-field :is(input, textarea):focus-visible,
 .ve-scene :is(.ve-choices, .ve-control-toggle, .ve-control-checkbox) input:focus-visible,
 .ve-scene :is(select, input[type='range']):focus-visible {
   outline: none;
 }
 .ve-scene
-  button:not(:where(.ve-frame *, [data-object], .ve-field *)):focus-visible:not(
-    :disabled,
-    [aria-disabled='true']
-  )::after,
+  button:not(
+    :where(.ve-frame :not(.ve-notebook-controls *), [data-object], .ve-field *)
+  ):focus-visible:not(:disabled, [aria-disabled='true'])::after,
 .ve-scene .ve-field:has(:focus-visible)::after,
 .ve-scene .ve-choices label:has(input:focus-visible)::after,
 .ve-scene :is(.ve-control-toggle, .ve-control-checkbox):has(input:focus-visible)::after {
@@ -59,4 +58,10 @@
     outline: 2px solid Highlight;
     outline-offset: 2px;
   }
+}
+
+/* Text selection uses the same marker as the drawing. */
+.ve-scene :is(.ve-control, .ve-notebook-controls) ::selection {
+  color: var(--ve-ink);
+  background: var(--ve-highlight);
 }

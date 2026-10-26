@@ -5,18 +5,21 @@ export function pointerGrab<T>(
   start: (
     target: T,
     event: PointerEvent,
-  ) => { move(event: PointerEvent): void; release(): void } | undefined,
+  ) => { move(event: PointerEvent): void; release(completed?: boolean): void } | undefined,
 ) {
   const abort = new AbortController();
   let active: ReturnType<typeof start>, pointer: number | undefined;
-  function release() {
+  function release(completed = false) {
     const session = active;
     const captured = pointer;
     active = undefined;
     pointer = undefined;
-    session?.release();
-    if (captured !== undefined && element.hasPointerCapture(captured))
-      element.releasePointerCapture(captured);
+    try {
+      session?.release(completed);
+    } finally {
+      if (captured !== undefined && element.hasPointerCapture(captured))
+        element.releasePointerCapture(captured);
+    }
   }
   element.addEventListener(
     'pointerdown',
@@ -48,15 +51,21 @@ export function pointerGrab<T>(
     element.addEventListener(
       name,
       ((event: PointerEvent) => {
-        if (event.pointerId === pointer) release();
+        if (event.pointerId === pointer) release(name === 'pointerup');
       }) as EventListener,
       { capture: true, signal: abort.signal },
     );
+  element.ownerDocument.defaultView?.addEventListener('blur', () => release(), {
+    signal: abort.signal,
+  });
   return {
     release,
     dispose() {
-      release();
-      abort.abort();
+      try {
+        release();
+      } finally {
+        abort.abort();
+      }
     },
   };
 }

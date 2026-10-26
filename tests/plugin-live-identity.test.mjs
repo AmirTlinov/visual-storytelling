@@ -21,11 +21,11 @@ test(
         stdin: {
           resolveDir: process.cwd(),
           contents: `
-          import {mountExplanation} from './src/explanation/mount.ts';
-          import './src/style.css';
-          window.galleryReady = mountExplanation(document.querySelector('main'), {
-            model:{kind:'division',count:11,divisor:3}
-          }).then(scene => {window.initialScene = scene});
+          import {IllustratedStory} from './dist/story/illustrated.js';
+          import './dist/style.css';
+          window.galleryReady = IllustratedStory.mount(document.querySelector('main'), {document: {
+            recipe:'division',inputs:{count:11,divisor:3}
+          }}).then(({scene}) => {window.initialScene = scene});
         `,
         },
         bundle: true,
@@ -66,7 +66,7 @@ test(
             (element) => element.dataset.object,
           ),
         }));
-      assert.equal((await observe()).document.model.id, 'division');
+      assert.equal((await observe()).document.models[0].id, 'division');
       const send = (request, sessionId = 'preview', generation = -1) =>
         page.evaluate(
           ({ request, sessionId, generation }) => {
@@ -81,13 +81,13 @@ test(
         );
       await send({
         type: 'author-preview',
-        document: { model: { id: 'apples', kind: 'division', count: 11, divisor: 3 } },
+        document: { recipe: 'division', id: 'apples', inputs: { count: 11, divisor: 3 } },
       });
       await page.waitForFunction(() =>
         messages.some((message) => message.type === 'preview-content'),
       );
       const preview = await observe();
-      assert.equal(preview.document.model.id, 'apples');
+      assert.equal(preview.document.models[0].id, 'apples');
       assert.equal(preview.state.id, 'apples');
       assert.ok(preview.ids.every((id) => id.startsWith('apples:')));
       assert.ok(preview.sameHandle);
@@ -100,7 +100,7 @@ test(
         const replace = owner.replace;
         owner.replace = async (document, options) => {
           authoringCalls.push({
-            id: document.model.id,
+            id: document.models[0].id,
             provisional: options?.provisional === true,
           });
           if (document.title === 'Confirmed') {
@@ -112,7 +112,7 @@ test(
           return replace(document, options);
         };
         addEventListener('message', (event) => {
-          if (event.data?.document?.model?.id === 'stale') window.staleReceived = true;
+          if (event.data?.document?.id === 'stale') window.staleReceived = true;
         });
       });
       await send({
@@ -125,7 +125,7 @@ test(
       await frame.waitForFunction(() => window.confirmationEntered);
       await send({
         type: 'author-preview',
-        document: { model: { id: 'stale', kind: 'division', count: 30, divisor: 6 } },
+        document: { recipe: 'division', id: 'stale', inputs: { count: 30, divisor: 6 } },
       });
       await frame.waitForFunction(() => window.staleReceived);
       await frame.evaluate(() => window.releaseConfirmation());
@@ -157,7 +157,11 @@ test(
       ]);
       assert.ok(page.frames().includes(frame), 'confirmation preserves the iframe');
       assert.ok((await observe()).sameHandle);
-      const edited = { ...canonical, title: 'Edited', model: { ...canonical.model, count: 17 } };
+      const edited = {
+        ...canonical,
+        title: 'Edited',
+        models: [{ ...canonical.models[0], inputs: { ...canonical.models[0].inputs, count: 17 } }],
+      };
       const accepted = await command({
         op: 'author',
         stateRevision: 7,
@@ -173,7 +177,17 @@ test(
       assert.equal(beforeRename.state.count, 17);
       const rename = {
         ...edited,
-        model: { ...edited.model, id: 'oranges' },
+        models: [{ ...edited.models[0], id: 'oranges' }],
+        chapters: edited.chapters.map((chapter) => ({
+          ...chapter,
+          beats: chapter.beats.map((beat) => ({
+            ...beat,
+            ...(beat.operation && { operation: { ...beat.operation, model: 'oranges' } }),
+            ...(beat.focus && {
+              focus: beat.focus.map((target) => target.replace('apples:', 'oranges:')),
+            }),
+          })),
+        })),
         views: edited.views.map((view) => ({ ...view, model: 'oranges' })),
       };
       const invalid = await command({
@@ -184,7 +198,7 @@ test(
         nextBuildRevision: 'bad-build',
         sourceRevision: 'bad-source',
       });
-      assert.match(invalid.error, /retain the subject identity/);
+      assert.match(invalid.error, /retain the prepared subject identity/i);
       assert.deepEqual(
         await observe(),
         beforeRename,
@@ -195,6 +209,41 @@ test(
         { id: 'apples', provisional: false },
         { id: 'oranges', provisional: false },
       ]);
+      // The same accepted subject can gain and release its narrative owner repeatedly.
+      for (const [index, narrative] of [false, true, false].entries()) {
+        const before = await command({ op: 'inspect' });
+        const replacement = { ...edited, chapters: narrative ? edited.chapters : [] };
+        const replaced = await command({
+          op: 'author',
+          stateRevision: before.report.stateRevision,
+          document: replacement,
+          nextBuildRevision: `transition-${index}`,
+          sourceRevision: `transition-source-${index}`,
+        });
+        assert.equal(replaced.error, undefined);
+        assert.ok((await observe()).sameHandle);
+        assert.ok(page.frames().includes(frame));
+        const state = replaced.report.state;
+        assert.equal(state.capabilities.includes('seek'), narrative);
+        assert.equal(state.capabilities.includes('play'), narrative);
+        assert.equal(state.capabilities.includes('cue'), narrative);
+        assert.equal(state.duration, narrative ? 8 : 0);
+        const controlled = await command({
+          op: 'control',
+          stateRevision: replaced.report.stateRevision,
+          commands: [{ type: 'parameters', values: { count: 22 + index } }],
+        });
+        assert.equal(controlled.error, undefined);
+        assert.equal(
+          controlled.report.state.parameters.find((p) => p.key === 'count').value,
+          22 + index,
+        );
+        assert.equal((await observe()).state.count, 22 + index);
+        assert.equal(
+          await frame.getByRole('button', { name: 'Рассказ', exact: true }).isVisible(),
+          narrative,
+        );
+      }
       assert.deepEqual(
         await page.evaluate(() => messages.filter((message) => message.type === 'error')),
         [],

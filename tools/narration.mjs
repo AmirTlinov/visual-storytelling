@@ -3,8 +3,8 @@ import { join, resolve, dirname } from 'node:path';
 import { narrationSource } from './story-document.mjs';
 import { parse } from 'parse5';
 import { higgsVoice } from './voice/higgs.mjs';
-import { buildAdapterNarration, checkAdapterNarration } from './voice/adapter.mjs';
 import { narrationProvider } from './voice/settings.mjs';
+import { recoverNarration, assertNarrationPublished } from './voice/publication.mjs';
 
 function editAudioTags(html, edit) {
   const edits = [];
@@ -13,7 +13,7 @@ function editAudioTags(html, edit) {
       edit(node.sourceCodeLocation, edits, node);
     }
     for (const child of node.childNodes ?? []) visit(child);
-    if (node.content) visit(node.content);
+    // Template contents are inert examples, never the scene's live media hook.
   };
   visit(parse(html, { sourceCodeLocationInfo: true }));
   for (const change of edits.sort((a, b) => b.start - a.start))
@@ -22,10 +22,22 @@ function editAudioTags(html, edit) {
 }
 
 /** Change actual audio tags without touching scripts, styles or quoted examples. */
-export function setNarrationMode(html, silent) {
+export function setNarrationMode(html, silent, { preparedClock } = {}) {
   let found = false;
   const prepared = editAudioTags(html, (location, edits, node) => {
     found = true;
+    const clock = location?.attrs?.['data-story-preview'];
+    if (clock && preparedClock !== undefined)
+      edits.push({
+        start: clock.startOffset,
+        end: clock.endOffset,
+        text: preparedClock ? 'data-story-preview="true"' : '',
+      });
+    else if (preparedClock && location?.startTag) {
+      const end =
+        location.startTag.endOffset - (html[location.startTag.endOffset - 2] === '/' ? 2 : 1);
+      edits.push({ start: end, end, text: ' data-story-preview="true"' });
+    }
     const attribute = location?.attrs?.['data-silent'];
     if (attribute)
       edits.push({
@@ -49,14 +61,30 @@ export function setNarrationMode(html, silent) {
     }
   });
   if (!silent && !found) {
-    const audio =
-      '<audio data-story-audio data-story-timeline="timeline.json" src="audio.wav" preload="auto"></audio>';
+    const audio = `<audio data-story-audio data-story-timeline="timeline.json" src="audio.wav" preload="auto"${preparedClock ? ' data-story-preview="true"' : ''}></audio>`;
     // Source documents may begin as quiet lessons without an audio element.
     const body = parse(html, { sourceCodeLocationInfo: true })
       .childNodes.find((node) => node.tagName === 'html')
       ?.childNodes.find((node) => node.tagName === 'body');
-    const end = body?.sourceCodeLocation?.endTag?.startOffset ?? prepared.length;
-    return prepared.slice(0, end) + audio + prepared.slice(end);
+    // Packed scene scripts may execute while the parser is still in the body.
+    // Publish media before them so the scene mounts with its actual clock.
+    const start = body?.sourceCodeLocation?.startTag?.endOffset ?? 0;
+    return prepared.slice(0, start) + audio + prepared.slice(start);
+  }
+  if (!silent) {
+    const hooks = [];
+    const withoutHooks = editAudioTags(prepared, (location, edits, node) => {
+      if (!location || !node.attrs.some(({ name }) => name === 'data-story-audio')) return;
+      hooks.push(prepared.slice(location.startOffset, location.endOffset));
+      edits.push({ start: location.startOffset, end: location.endOffset, text: '' });
+    });
+    if (hooks.length) {
+      const body = parse(withoutHooks, { sourceCodeLocationInfo: true })
+        .childNodes.find((node) => node.tagName === 'html')
+        ?.childNodes.find((node) => node.tagName === 'body');
+      const start = body?.sourceCodeLocation?.startTag?.endOffset ?? 0;
+      return withoutHooks.slice(0, start) + hooks.join('') + withoutHooks.slice(start);
+    }
   }
   return prepared;
 }
@@ -66,7 +94,7 @@ export function playbackHTML(html, { silent = false } = {}) {
   if (silent) html = setNarrationMode(html, true);
   return editAudioTags(html, (location, edits, node) => {
     if (!node.attrs.some(({ name, value }) => name === 'data-silent' && value === 'true')) return;
-    for (const name of ['src', 'data-src', 'data-story-timeline']) {
+    for (const name of ['src', 'data-src']) {
       const span = location?.attrs?.[name];
       if (span) edits.push({ start: span.startOffset, end: span.endOffset, text: '' });
     }
@@ -91,7 +119,22 @@ export function playbackTimeline(timeline) {
     ...(timeline.segments && {
       segments: timeline.segments.map((segment) => ({
         // The audio span includes pauses that authored chapter and motion windows use.
-        ...fields(segment, ['id', 'title', 'text', 'start', 'end', 'audio_start', 'audio_end']),
+        ...fields(segment, [
+          'id',
+          'title',
+          'text',
+          'displayText',
+          'captionApplicable',
+          'start',
+          'end',
+          'audio_start',
+          'audio_end',
+          'conditions',
+          'source_text',
+          'seed',
+          'source_seed',
+          'delivery',
+        ]),
         ...(segment.words && {
           words: segment.words.map((word) => fields(word, ['text', 'start', 'end'])),
         }),
@@ -103,7 +146,7 @@ export function playbackTimeline(timeline) {
 /** Defer synthesis without changing the editable speech, timing or selected provider. */
 export async function deferNarration(directory) {
   const names = await readdir(directory);
-  if (names.some((name) => ['voice.json', 'narration.json', 'story.json'].includes(name))) {
+  if (names.some((name) => ['voice.json', 'story.json'].includes(name))) {
     const file = join(directory, 'voice.json');
     const settings = names.includes('voice.json') ? JSON.parse(await readFile(file, 'utf8')) : {};
     if (settings.enabled !== false)
@@ -177,37 +220,22 @@ export async function silenceSceneCopy(directory) {
 /** The same cached synthesis/alignment route for audio, scaffolding and delivery. */
 export async function buildNarration(
   directory,
-  { signal, progress, cache, managedProcessGroup = false } = {},
+  { signal, progress, cache, managedProcessGroup = false, sourcePrepared } = {},
 ) {
   signal?.throwIfAborted();
+  await recoverNarration(directory);
   const source = await narrationSource(directory);
-  if (!source) throw new Error('Provide story.json or narration.json for speech');
+  if (!source)
+    throw new Error('Provide story.json for speech; narration.json is a derived voice job.');
+  // Explicit preparation freezes IDs/dependencies for CLI and plugin consumers alike.
+  await writeFile(join(directory, 'story.json'), JSON.stringify(source.document, null, 2) + '\n');
   const settingsFile = join(directory, 'voice.json');
   let settings = await readFile(settingsFile, 'utf8').then(JSON.parse, (error) => {
     if (error.code !== 'ENOENT') throw error;
   });
   const provider = narrationProvider(settings);
-  let result;
-  if (provider === 'higgs') {
-    higgsVoice.validate(settings ?? {});
-    if (!(await higgsVoice.reuse(source, directory, { signal }))) {
-      await higgsVoice.prepare(settings ?? {}, { signal });
-      await higgsVoice.build(source, directory, { signal, progress });
-    }
-    signal?.throwIfAborted();
-    settings = { ...settings, enabled: true, provider };
-    await writeFile(settingsFile, JSON.stringify(settings, null, 2) + '\n');
-  } else {
-    settings = { ...settings, enabled: true, provider };
-    result = await buildAdapterNarration(directory, source.file, settings, {
-      signal,
-      progress,
-      cache,
-      managedProcessGroup,
-    });
-    signal?.throwIfAborted();
-    await writeFile(settingsFile, JSON.stringify(settings, null, 2) + '\n');
-  }
+  settings = { ...settings, enabled: true, provider };
+  await writeFile(settingsFile, JSON.stringify(settings, null, 2) + '\n');
   for (const name of await readdir(directory)) {
     signal?.throwIfAborted();
     if (!name.endsWith('.html')) continue;
@@ -216,10 +244,30 @@ export async function buildNarration(
     const audible = setNarrationMode(html, false);
     if (audible !== html) await writeFile(file, audible);
   }
+  // The job owner checkpoints frozen authored inputs before a model can spend work.
+  await sourcePrepared?.();
+  let result;
+  if (provider === 'higgs') {
+    higgsVoice.validate(settings ?? {});
+    if (!(await higgsVoice.reuse(source, directory, { signal }))) {
+      await higgsVoice.prepare(settings ?? {}, { signal });
+      await higgsVoice.build(source, directory, { signal, progress });
+    }
+    signal?.throwIfAborted();
+  } else {
+    const { buildAdapterNarration } = await import('./voice/adapter.mjs');
+    result = await buildAdapterNarration(directory, source.file, settings, {
+      signal,
+      progress,
+      cache,
+      managedProcessGroup,
+    });
+    signal?.throwIfAborted();
+  }
   return result;
 }
 
-export async function checkNarration(html, directory, { signal } = {}) {
+export async function checkNarration(html, directory, { signal, preview } = {}) {
   signal?.throwIfAborted();
   const audioFiles = new Set();
   const local = (url, base = directory) => {
@@ -247,7 +295,10 @@ export async function checkNarration(html, directory, { signal } = {}) {
     for (const child of node.childNodes ?? []) visit(child);
   }
   visit(parse(html));
+  // The read-only preview owner has verified this exact waveform against an accepted source.
+  if (preview?.playable) audioFiles.delete(resolve(directory, 'audio.wav'));
   if (!audioFiles.size) return;
+  await assertNarrationPublished(directory);
   const script = await narrationSource(directory);
   if (!script) return;
   const settings = await readFile(join(directory, 'voice.json'), 'utf8').then(
@@ -270,6 +321,8 @@ export async function checkNarration(html, directory, { signal } = {}) {
       }
       if (local(receipt.audio, folder) !== audio) continue;
       matched = true;
+      if (receipt.segments?.some((unit) => unit.displayText !== undefined))
+        throw new Error('Accepted narration cannot contain a derived pending caption.');
       if (!receipt.source_sha256)
         throw new Error('Generated narration has no source receipt. Run visual-story audio.');
       const selected = narrationProvider(settings);
@@ -277,6 +330,7 @@ export async function checkNarration(html, directory, { signal } = {}) {
       if (provider !== selected)
         throw new Error('Narration provider changed. Prepare the selected voice before building.');
       if (selected !== 'higgs') {
+        const { checkAdapterNarration } = await import('./voice/adapter.mjs');
         await checkAdapterNarration(directory, script, receipt, settings, audio);
         break;
       }
@@ -294,8 +348,8 @@ export async function checkNarration(html, directory, { signal } = {}) {
   }
 }
 
-/** Reuse the receipt check and speech cache before an audible development rebuild. */
-export async function prepareNarration(directory, { audible = false, signal } = {}) {
+/** Read-only final gate. Preparing a voice is a separate explicit action. */
+export async function requireNarration(directory, { signal, silent = false } = {}) {
   signal?.throwIfAborted();
   const settings = await readFile(join(directory, 'voice.json'), 'utf8').then(
     JSON.parse,
@@ -303,24 +357,8 @@ export async function prepareNarration(directory, { audible = false, signal } = 
       if (error.code !== 'ENOENT') throw error;
     },
   );
-  if (settings?.enabled === false) return deferNarration(directory);
-  let rebuilt = false;
-  for (const name of await readdir(directory)) {
-    signal?.throwIfAborted();
-    if (!name.endsWith('.html')) continue;
-    const file = join(directory, name);
-    let html = await readFile(file, 'utf8');
-    try {
-      await checkNarration(audible ? setNarrationMode(html, false) : html, directory, { signal });
-    } catch (error) {
-      signal?.throwIfAborted();
-      if (rebuilt || !(await narrationSource(directory))) throw error;
-      await buildNarration(directory, { signal });
-      rebuilt = true;
-      html = await readFile(file, 'utf8');
-      await checkNarration(html, directory, { signal });
-    }
-    const next = audible ? setNarrationMode(html, false) : html;
-    if (next !== html) await writeFile(file, next);
-  }
+  if (silent || settings?.enabled === false) return { silent: true };
+  if (settings?.enabled !== true) return { silent: false };
+  await checkNarration('<audio data-story-audio src="audio.wav"></audio>', directory, { signal });
+  return { silent: false };
 }
