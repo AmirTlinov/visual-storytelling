@@ -1,8 +1,46 @@
 # Минимальный авторский модуль
 
-Полный исполняемый пример ([counter](../../../tools/document-modules/counter/)) создаётся одним вызовом `story_create(title, changes, requestId)` без предварительного `story_help`. Передай `story-project.json`, `model.js`, `drawing.js` и `story.json` в одном массиве `changes`:
+[Исполняемый counter](../../../tools/document-modules/counter/) показывает четыре
+согласованных файла. Передай их одним `story_create(title, changes, requestId)`.
+Этот рисунок подходит счётчику; для другой предметной формы сохрани manifest,
+модель и lifecycle, выбрав построение по [авторскому маршруту](authoring-guide.md).
 
-`story-project.json`:
+`story-project.json` — JSON-манифест, который связывает модуль и его исходники:
+
+```json
+{
+  "version": 1,
+  "modules": [{ "id": "counter", "model": "model.js", "subject": "drawing.js" }],
+  "resources": []
+}
+```
+
+`model.js` — проверка входов, чистое состояние и операция:
+
+```js
+export default {
+  validateInputs(value) {
+    if (
+      !value ||
+      Object.keys(value).some((key) => key !== 'count') ||
+      !Number.isSafeInteger(value.count) ||
+      value.count < 0 ||
+      value.count > 99
+    )
+      throw new Error('count: choose 0–99');
+    return { count: value.count };
+  },
+  state: (inputs) => ({ ...inputs }),
+  operations: { increment: (state) => ({ ...state, count: state.count + 1 }) },
+  validateViews(views) {
+    if (views.length !== 1 || views[0].kind !== 'counter') throw new Error('counter view required');
+  },
+  focusTargets: (_model, views) => views.map((view) => view.id),
+};
+
+```
+
+`drawing.js` — рисунок и предметное управление на общем viewport:
 
 ```js
 import { surface, notebookDrawing } from '@visual-storytelling/core';
@@ -71,69 +109,10 @@ export default {
     };
   },
 };
+
 ```
 
-`model.js` (`StoryModelModule` — проверка входов, чистое состояние, операции, представления и цели фокуса):
-
-```js
-export default {
-  validateInputs(value) {
-    if (
-      !value ||
-      Object.keys(value).some((key) => key !== 'count') ||
-      !Number.isSafeInteger(value.count) ||
-      value.count < 0 ||
-      value.count > 99
-    )
-      throw new Error('count: choose 0–99');
-    return { count: value.count };
-  },
-  state: (inputs) => ({ ...inputs }),
-  operations: { increment: (state) => ({ ...state, count: state.count + 1 }) },
-  validateViews(views) {
-    if (views.length !== 1 || views[0].kind !== 'counter') throw new Error('counter view required');
-  },
-  focusTargets: (_model, views) => views.map((view) => view.id),
-};
-```
-
-`drawing.js` (`StorySubjectRecipe` — входы модели `parameters` и рисунок `create(shell, model)`):
-
-```js
-import { surface, node } from '@visual-storytelling/core';
-export default {
-  title: 'Один шаг',
-  parameters: (model) => [
-    { key: 'count', label: 'Число', type: 'stepper', value: model.inputs.count, min: 0, max: 99, step: 1 },
-  ],
-  create(shell, model) {
-    const view = surface(shell.stage, {
-      id: 'counter-view',
-      width: shell.layout.width,
-      height: shell.layout.height,
-      title: 'Один шаг',
-      description: 'Прибавляем один.',
-      grid: false,
-    });
-    const mark = node(view, model.id, 0, { pigment: 'ink', size: 44, minSize: 44, width: 100, height: 80 });
-    return {
-      validate() {},
-      render(_model, _views, state) {
-        view.resize(shell.layout.width, shell.layout.height, false);
-        mark.value(state.count);
-        mark.at(shell.layout.width / 2, shell.layout.height / 2);
-      },
-      snapshot: (state) => ({ ...state }),
-      dispose() {
-        mark.dispose();
-        view.dispose();
-      },
-    };
-  },
-};
-```
-
-`story.json` (вход, представление и причинное действие):
+`story.json` — условия, представление и действие:
 
 ```json
 {
@@ -148,10 +127,17 @@ export default {
     }]
   }]
 }
+
 ```
 
-Операция получает состояние и абсолютный прогресс: прямой и обратный seek дают один результат. Значения берутся из переданного `state`; `render` не изменяет документ. Точечные изменения существующего кода передавай через `story_edit` с `changes: [{ path: "drawing.js", edits: [{ oldString, newString }] }]`, собирая связанные правки в один вызов.
+Операция получает абсолютный прогресс: прямой и обратный seek дают один результат.
+Рисунок читает переданный `state`; время и ввод принадлежат оболочке. Начни с
+состояния 2, действия до 3 и ручного ввода 7. Затем расширяй свою предметную сцену.
+Точечные правки существующего кода передавай через `story_edit(changes)` с `edits`,
+объединяя связанные файлы в один вызов.
 
-[Контракт модуля](document-modules.md) описывает предметный ввод, `frame`, представления и барьер прогноза. [GPT](../../../examples/gpt-model/story-project.json) показывает реальные вычисления, MathMorph и несколько ракурсов одного trace. [Непрерывный заказ](../../../tools/document-modules/continuous-order/story.json) сохраняет одну модель между связанными эпизодами.
-
-Проверь: исходные 2 → операция 3 → ручной ввод 7 остаётся 7 → seek снова 3. Ошибка входа сохраняет прошлый рабочий кадр. Затем проверь редактирование через `story_edit`, undo, reopen и автономный HTML. В каждом случае остаются одни часы, плеер и SceneHandle. Сборка исходников сохраняет manifest, модули и pin runtime.
+[Контракт модуля](document-modules.md) описывает `frame`, представления и прогноз.
+[GPT](../../../examples/gpt-model/story-project.json) показывает вычисления и trace;
+[непрерывный заказ](../../../tools/document-modules/continuous-order/story.json)
+сохраняет одну модель через несколько эпизодов. Сборка исходников сохраняет
+manifest, модули и pin runtime.
